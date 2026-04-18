@@ -12,7 +12,7 @@ export default async function handler(req, res) {
         `https://api.tiendanube.com/v1/6978415/orders?per_page=200&page=${page}`,
         {
           headers: {
-            'Authentication': 'bearer e0afbc53decaf8f8116003fc1023e18b0b94db9',
+            'Authentication': 'bearer 71be8939bf409df5b98caa80e22d7227ad288f82',
             'User-Agent': 'SolunaGestion (soluna.biolight@gmail.com)'
           }
         }
