@@ -62,59 +62,61 @@ const TIPO_C = {
   Devolución: { bg:C.orangeBg, text:C.orange },
 };
 
-// ─── CSV Parser ───
-function parseCSV(text) {
-  const rows = []; let i = 0; const len = text.length;
-  function parseField() {
-    if (i >= len || text[i] === '\n' || text[i] === '\r') return '';
-    if (text[i] === '"') {
-      i++; let val = '';
-      while (i < len) {
-        if (text[i] === '"') { if (i+1 < len && text[i+1] === '"') { val+='"'; i+=2; } else { i++; break; } }
-        else { val+=text[i]; i++; }
-      }
-      return val.trim();
-    }
-    let val = '';
-    while (i < len && text[i] !== ';' && text[i] !== '\n' && text[i] !== '\r') { val+=text[i]; i++; }
-    return val.trim();
-  }
-  while (i < len) {
-    const row = [];
-    while (i < len && text[i] !== '\n') { row.push(parseField()); if (i < len && text[i] === ';') i++; }
-    if (text[i] === '\n') i++; if (text[i] === '\r') i++;
-    if (row.length > 1) rows.push(row);
-  }
-  if (rows.length < 2) return [];
-  const headers = rows[0];
-  return rows.slice(1).map(r => { const obj = {}; headers.forEach((h,idx) => { obj[h] = r[idx]||''; }); return obj; });
+// ─── Tienda Nube API → Orders ───
+function buildOrdersFromAPI(apiData) {
+  if (!Array.isArray(apiData)) return [];
+  return apiData.map(o => {
+    const shipping = o.shipping_address || {};
+    const customer = o.client_details || {};
+    const products = (o.products || []).map(p => ({
+      nombre: p.name || '',
+      precio: String(p.price || ''),
+      cantidad: String(p.quantity || '1'),
+      sku: (p.sku || p.variant_values?.join('-') || ''),
+    }));
+    return {
+      numero: String(o.number || o.id),
+      fecha: o.created_at ? new Date(o.created_at).toLocaleDateString('es-AR') : '',
+      comprador: `${shipping.name || ''} ${shipping.last_name || ''}`.trim() || o.contact_name || '',
+      email: o.contact_email || '',
+      telefono: o.contact_phone || '',
+      dni: o.contact_identification || '',
+      estadoOrden: o.status || '',
+      estadoPago: o.payment_status || '',
+      estadoEnvio: o.shipping_status || '',
+      total: String(o.total || ''),
+      subtotal: String(o.subtotal || ''),
+      descuento: String(o.discount || '0'),
+      costoEnvio: String(o.shipping_cost_customer || '0'),
+      nombreEnvio: `${shipping.name || ''} ${shipping.last_name || ''}`.trim(),
+      telEnvio: o.contact_phone || '',
+      direccion: shipping.address || '',
+      dirNumero: shipping.number || '',
+      piso: shipping.floor || '',
+      localidad: shipping.locality || '',
+      ciudad: shipping.city || '',
+      cp: shipping.zipcode || '',
+      provincia: shipping.province || '',
+      medioEnvio: o.shipping_option || '',
+      medioPago: o.payment_details?.method || o.gateway_name || '',
+      canal: o.storefront || '',
+      tracking: o.shipping_tracking_number || '',
+      linkOrden: `https://solunabiolight2.mitiendanube.com/admin/orders/${o.id}`,
+      fechaPago: o.paid_at || '',
+      fechaEnvio: o.shipped_at || '',
+      productos: products,
+    };
+  }).sort((a, b) => parseInt(b.numero) - parseInt(a.numero));
 }
 
-function buildOrders(csvRows) {
-  const map = {};
-  for (const row of csvRows) {
-    const num = row['Número de orden']; if (!num) continue;
-    if (!map[num]) {
-      map[num] = {
-        numero:num, fecha:row['Fecha']||'', comprador:row['Nombre del comprador']||'',
-        email:row['Email']||'', telefono:row['Teléfono']||'', dni:row['DNI / CUIT']||'',
-        estadoOrden:row['Estado de la orden']||'', estadoPago:row['Estado del pago']||'',
-        estadoEnvio:row['Estado del envío']||'', total:row['Total']||'',
-        subtotal:row['Subtotal de productos']||'', descuento:row['Descuento']||'',
-        costoEnvio:row['Costo de envío']||'', nombreEnvio:row['Nombre para el envío']||'',
-        telEnvio:row['Teléfono para el envío']||'', direccion:row['Dirección']||'',
-        dirNumero:row['Número']||'', piso:row['Piso']||'', localidad:row['Localidad']||'',
-        ciudad:row['Ciudad']||'', cp:row['Código postal']||'', provincia:row['Provincia o estado']||'',
-        medioEnvio:row['Medio de envío']||'', medioPago:row['Medio de pago']||'',
-        canal:row['Canal']||'', tracking:(row['Código de tracking del envío']||'').replace(/^="?"?/,'').replace(/"$/,''),
-        linkOrden:row['Enlace a la orden']||'', fechaPago:row['Fecha de pago']||'',
-        fechaEnvio:row['Fecha de envío']||'', productos:[],
-      };
-    }
-    const prod = row['Nombre del producto'];
-    if (prod) map[num].productos.push({ nombre:prod, precio:row['Precio del producto']||'', cantidad:row['Cantidad del producto']||'', sku:row['SKU']||'' });
-  }
-  return Object.values(map).sort((a,b) => parseInt(b.numero)-parseInt(a.numero));
+// Estado envío mapping TN → español
+function mapEstadoEnvio(s) {
+  const m = { unpacked:"No está empaquetado", ready_to_ship:"Listo para enviar", shipped:"Enviado", delivered:"Entregado" };
+  return m[s] || s || '—';
+}
+function mapEstadoPago(s) {
+  const m = { pending:"Pendiente", paid:"Pagado", voided:"Anulado", refunded:"Reembolsado", abandoned:"Abandonado" };
+  return m[s] || s || '—';
 }
 
 function getLensColors(productos) {
@@ -262,6 +264,7 @@ export default function SolunaGestion() {
   const [orders,        setOrders]        = useState([]);
   const [reclamos,      setReclamos]      = useState([]);
   const [fbStatus,      setFbStatus]      = useState("connecting");
+  const [ordersStatus,  setOrdersStatus]  = useState("idle"); // idle | loading | ok | error
   const [tab,           setTab]           = useState("pedidos");
   const [search,        setSearch]        = useState("");
   const [filterEnvio,   setFilterEnvio]   = useState("");
@@ -272,7 +275,6 @@ export default function SolunaGestion() {
   const [reclamoDetail, setReclamoDetail] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [saving,        setSaving]        = useState(false);
-  const fileRef = useRef(null);
 
   // Font
   useEffect(()=>{
@@ -284,9 +286,27 @@ export default function SolunaGestion() {
     document.body.style.background = C.bg;
   },[]);
 
-  // Orders cache
-  useEffect(()=>{ try { const s=localStorage.getItem("soluna_orders_v3"); if(s) setOrders(JSON.parse(s)); } catch(e){} },[]);
-  useEffect(()=>{ if(orders.length) localStorage.setItem("soluna_orders_v3",JSON.stringify(orders)); },[orders]);
+  // Orders: load cache first, then fetch from API
+  async function fetchOrders() {
+    setOrdersStatus("loading");
+    try {
+      const res = await fetch('/api/orders');
+      const data = await res.json();
+      const built = buildOrdersFromAPI(data.map(o => ({
+        ...o,
+        shipping_status: mapEstadoEnvio(o.shipping_status),
+        payment_status: mapEstadoPago(o.payment_status),
+      })));
+      setOrders(built);
+      setOrdersStatus("ok");
+      localStorage.setItem("soluna_orders_v3", JSON.stringify(built));
+    } catch(e) { setOrdersStatus("error"); }
+  }
+
+  useEffect(()=>{
+    try { const s=localStorage.getItem("soluna_orders_v3"); if(s) setOrders(JSON.parse(s)); } catch(e){}
+    fetchOrders();
+  },[]);
 
   // Firebase listener
   useEffect(()=>{
@@ -298,14 +318,6 @@ export default function SolunaGestion() {
     }, ()=>setFbStatus("error"));
     return ()=>unsub();
   },[]);
-
-  function handleFile(e) {
-    const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev=>{ setOrders(buildOrders(parseCSV(ev.target.result))); };
-    reader.readAsText(file,'ISO-8859-1');
-    e.target.value='';
-  }
 
   function getOrderReclamos(num) { return reclamos.filter(r=>r.orderNum===num); }
   const emptyForm = (orderNum="") => ({ _docId:null, orderNum, tipo:"Cambio", motivo:"", descripcion:"", estado:"Pendiente", resolucion:"", notas:"", productosRecibe:[{producto:"",cantidad:1}], productosEnvia:[{producto:"",cantidad:1}] });
@@ -380,10 +392,9 @@ export default function SolunaGestion() {
                 + Nuevo Reclamo
               </button>
             )}
-            <button onClick={()=>fileRef.current?.click()} style={{ ...btnSecondary, fontSize:12 }}>
-              📁 {orders.length?"Actualizar CSV":"Importar CSV"}
+            <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{ ...btnSecondary, fontSize:12, opacity:ordersStatus==="loading"?0.6:1 }}>
+              {ordersStatus==="loading" ? "⟳ Sincronizando..." : "⟳ Sincronizar pedidos"}
             </button>
-            <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} style={{ display:"none" }}/>
           </div>
         </div>
       </div>
@@ -393,10 +404,18 @@ export default function SolunaGestion() {
         {/* ── No data ── */}
         {orders.length===0 && (
           <div style={{ textAlign:"center",padding:"100px 20px" }}>
-            <div style={{ width:64,height:64,borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 20px" }}>📁</div>
-            <div style={{ fontSize:20,fontWeight:600,color:C.text,marginBottom:8 }}>Importá tus pedidos</div>
-            <div style={{ fontSize:14,color:C.textMd,maxWidth:360,margin:"0 auto 24px",lineHeight:1.6 }}>Exportá tus ventas desde Tienda Nube (Ventas → Exportar) y subí el archivo CSV.</div>
-            <button onClick={()=>fileRef.current?.click()} style={{ ...btnPrimary,padding:"10px 24px",fontSize:14 }}>📁 Seleccionar CSV</button>
+            <div style={{ width:64,height:64,borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 20px" }}>
+              {ordersStatus==="loading" ? "⟳" : "📦"}
+            </div>
+            <div style={{ fontSize:20,fontWeight:600,color:C.text,marginBottom:8 }}>
+              {ordersStatus==="loading" ? "Cargando pedidos..." : ordersStatus==="error" ? "Error al cargar pedidos" : "Cargando pedidos..."}
+            </div>
+            <div style={{ fontSize:14,color:C.textMd,maxWidth:360,margin:"0 auto 24px",lineHeight:1.6 }}>
+              {ordersStatus==="error" ? "No se pudo conectar con Tienda Nube." : "Conectando con Tienda Nube..."}
+            </div>
+            {ordersStatus==="error" && (
+              <button onClick={fetchOrders} style={{ ...btnPrimary,padding:"10px 24px",fontSize:14 }}>⟳ Reintentar</button>
+            )}
           </div>
         )}
 
