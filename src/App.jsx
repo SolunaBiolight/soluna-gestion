@@ -942,4 +942,104 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
             <div style={{width:52,height:52,borderRadius:14,background:T.redBg,border:`1px solid ${T.red}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,marginBottom:20}}>📋</div>
             <div style={{fontSize:20,fontWeight:800,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Reclamos</div>
             <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:20}}>Administrá cambios y devoluciones de productos vinculados a tus pedidos de Tienda Nube.</div>
-            <div style={{display:"flex",
+            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`1px solid ${T.borderL}`}}>
+              <div><div style={{fontSize:26,fontWeight:800,color:T.accent,letterSpacing:-1}}>{ordersCount}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>pedidos</div></div>
+              <div style={{width:1,background:T.borderL}}/>
+              <div><div style={{fontSize:26,fontWeight:800,color:T.red,letterSpacing:-1}}>{reclamosCount}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>reclamos</div></div>
+            </div>
+          </button>
+
+          {/* Canjes */}
+          <button onClick={()=>onNavigate("canjes")}
+            style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:32,textAlign:"left",cursor:"pointer",transition:"all 0.2s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=T.purple;e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 12px 32px rgba(0,0,0,0.25)`;}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+            <div style={{width:52,height:52,borderRadius:14,background:T.purpleBg,border:`1px solid ${T.purple}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,marginBottom:20}}>🤝</div>
+            <div style={{fontSize:20,fontWeight:800,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Canjes</div>
+            <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:20}}>Seguimiento de influencers, productos enviados, actividades comprometidas y contenido publicado.</div>
+            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`1px solid ${T.borderL}`}}>
+              <div><div style={{fontSize:26,fontWeight:800,color:T.purple,letterSpacing:-1}}>{canjesCount}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>canjes</div></div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// ROOT APP
+// ═══════════════════════════════════════════
+export default function App() {
+  const [page,setPage]=useState("home");
+  const [orders,setOrders]=useState([]);
+  const [ordersStatus,setOrdersStatus]=useState("idle");
+  const [fbStatus,setFbStatus]=useState("connecting");
+  const [reclamosCount,setReclamosCount]=useState(0);
+  const [canjesCount,setCanjesCount]=useState(0);
+  const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("soluna_theme")!=="light"; } catch(e){ return true; } });
+
+  const T = darkMode ? DARK : LIGHT;
+
+  useEffect(()=>{
+    const l=document.createElement("link");
+    l.href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap";
+    l.rel="stylesheet";
+    document.head.appendChild(l);
+  },[]);
+
+  useEffect(()=>{
+    document.body.style.margin="0";
+    document.body.style.background=T.bg;
+  },[T.bg]);
+
+  useEffect(()=>{
+    try { localStorage.setItem("soluna_theme", darkMode?"dark":"light"); } catch(e){}
+  },[darkMode]);
+
+  async function fetchOrders() {
+    setOrdersStatus("loading");
+    try {
+      const res=await fetch('/api/orders');
+      const data=await res.json();
+      const built=buildOrdersFromAPI(data);
+      setOrders(built);
+      setOrdersStatus("ok");
+      localStorage.setItem("soluna_orders_v3",JSON.stringify(built));
+    } catch(e){setOrdersStatus("error");}
+  }
+
+  useEffect(()=>{
+    try{const s=localStorage.getItem("soluna_orders_v3");if(s)setOrders(JSON.parse(s));}catch(e){}
+    fetchOrders();
+  },[]);
+
+  useEffect(()=>{
+    const u1=onSnapshot(collection(db,"reclamos"),snap=>{setReclamosCount(snap.size);setFbStatus("ok");},()=>setFbStatus("error"));
+    const u2=onSnapshot(collection(db,"canjes"),snap=>setCanjesCount(snap.size),()=>{});
+    return ()=>{u1();u2();};
+  },[]);
+
+  // Theme toggle button — always visible
+  const themeBtn = (
+    <button
+      onClick={()=>setDarkMode(d=>!d)}
+      style={{
+        position:"fixed", bottom:24, right:24, zIndex:999,
+        width:48, height:48, borderRadius:"50%",
+        background:T.card, border:`1px solid ${T.border}`,
+        fontSize:22, cursor:"pointer",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        boxShadow:"0 4px 16px rgba(0,0,0,0.2)",
+        transition:"all 0.2s",
+      }}
+      title={darkMode?"Cambiar a modo claro":"Cambiar a modo oscuro"}
+    >
+      {darkMode ? "☀️" : "🌙"}
+    </button>
+  );
+
+  if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} onHome={()=>setPage("home")}/>{themeBtn}</>;
+  if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} onHome={()=>setPage("home")}/>{themeBtn}</>;
+  return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount}/>{themeBtn}</>;
+}
