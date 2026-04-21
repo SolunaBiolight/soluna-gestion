@@ -435,7 +435,6 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   // Global search (pedidos + reclamos)
   const globalResults=useMemo(()=>{
     if(!searchGlobal||searchGlobal.length<1) return {pedidos:[],reclamos:[]};
-    const s=searchGlobal.toLowerCase();
     const s=searchGlobal.toLowerCase().trim();
     // Primero exacto por número, luego parcial por número, luego por nombre/email
     const exacto=orders.filter(o=>o.numero===s);
