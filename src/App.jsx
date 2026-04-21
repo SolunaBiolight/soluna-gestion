@@ -2117,34 +2117,40 @@ export default function App() {
     } catch(e){}
   }
 
-  async function fetchOrders() {
-    if(!user) return;
+  async function fetchOrders(uid) {
+    const targetUid = uid || user?.uid;
+    if(!targetUid) return;
     setOrdersStatus("loading");
     try {
-      const res=await fetch(`/api/orders?uid=${user.uid}`);
+      const res=await fetch(`/api/orders?uid=${targetUid}`);
       const data=await res.json();
+      if(!Array.isArray(data)) throw new Error("Bad response");
       const built=buildOrdersFromAPI(data);
       setOrders(built);
       setOrdersStatus("ok");
-      // Cache con clave por uid para no mezclar usuarios
-      localStorage.setItem(`soluna_orders_${user.uid}`,JSON.stringify(built));
+      localStorage.setItem(`soluna_orders_${targetUid}`,JSON.stringify(built));
     } catch(e){setOrdersStatus("error");}
   }
 
-  // Fetch orders on login — cargar cache primero, luego actualizar en background
+  // Fetch orders on login — load cache instantly, then refresh in background
   useEffect(()=>{
     if(!user) return;
-    // Cargar cache del usuario actual inmediatamente
+    // Load cache immediately for instant display
     try{
-      const cached=localStorage.getItem(`soluna_orders_${user.uid}`);
+      const cached=localStorage.getItem(`soluna_orders_${user.uid}`)
+        || localStorage.getItem("soluna_orders_v3");
       if(cached){
-        setOrders(JSON.parse(cached));
-        setOrdersStatus("ok");
+        const parsed=JSON.parse(cached);
+        if(Array.isArray(parsed)&&parsed.length>0){
+          setOrders(parsed);
+          setOrdersStatus("ok");
+          localStorage.setItem(`soluna_orders_${user.uid}`,cached);
+        }
       }
     }catch(e){}
-    // Actualizar en background
-    fetchOrders();
-  },[user]);
+    // Always refresh from API in background
+    fetchOrders(user.uid);
+  },[user?.uid]);
 
   // Re-fetch when store connects/disconnects
   const prevTnRef=useRef(null);
@@ -2155,26 +2161,23 @@ export default function App() {
       const tn=snap.data().stores?.find(s=>s.type==="tiendanube");
       const newId=tn?.storeId||null;
       if(prevTnRef.current!==null && prevTnRef.current!==newId) {
-        // Tienda cambió — limpiar cache y recargar
         try{ localStorage.removeItem(`soluna_orders_${user.uid}`); }catch(e){}
         setOrders([]);
-        fetchOrders();
+        fetchOrders(user.uid);
       }
       prevTnRef.current=newId;
     });
     return ()=>unsub();
-  },[user]);
+  },[user?.uid]);
 
   useEffect(()=>{
     if(!user) return;
     const q1=query(collection(db,"reclamos"),where("ownerId","==",user.uid));
     const q2=query(collection(db,"canjes"),where("ownerId","==",user.uid));
-    const q3=onSnapshot(doc(db,"users",user.uid),()=>{});
     const u1=onSnapshot(q1,snap=>{setReclamosCount(snap.size);setFbStatus("ok");},()=>setFbStatus("error"));
     const u2=onSnapshot(q2,snap=>{
       const canjesData=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       setCanjesCount(canjesData.length);
-      // Leer preferencias de alertas del usuario
       getDoc(doc(db,"users",user.uid)).then(userSnap=>{
         const alertasCfg=userSnap.data()?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
         const hoy=new Date().toISOString().split('T')[0];
