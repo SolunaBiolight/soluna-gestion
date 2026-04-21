@@ -453,7 +453,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
 
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1400,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <button onClick={onHome} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
@@ -476,7 +476,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         </div>
       </div>
 
-      <div style={{maxWidth:1400,margin:"0 auto",padding:"0 24px"}}>
+      <div style={{maxWidth:1400,margin:"0 auto",padding:"0 16px"}}>
 
         {/* ── DASHBOARD ── */}
         {view==="dashboard"&&(
@@ -1209,7 +1209,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 28px",position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:62,gap:16,maxWidth:1280,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <button onClick={onHome} style={{...BtnSecondary(T),padding:"8px 14px",fontSize:13}}>← Inicio</button>
@@ -1227,7 +1227,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
         </div>
       </div>
 
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"0 28px"}}>
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"0 16px"}}>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:"24px 0 0"}}>
           <StatCard T={T} label="Total canjes" value={stats.total} color={T.textMd}/>
           <StatCard T={T} label="Pend. envío" value={stats.pendientes} color={T.yellow}/>
@@ -1669,7 +1669,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column"}}>
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 28px"}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:64,maxWidth:1000,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${T.accent},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🌙</div>
@@ -1689,13 +1689,13 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         </div>
       </div>
 
-      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"48px 28px"}}>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"32px 16px"}}>
         <div style={{textAlign:"center",marginBottom:48,maxWidth:520}}>
           <h1 style={{fontSize:36,fontWeight:800,margin:"0 0 12px",letterSpacing:-1,color:T.text}}>Bienvenida 👋</h1>
           <p style={{fontSize:17,color:T.textMd,margin:0,lineHeight:1.7}}>Seleccioná una sección para gestionar tu negocio.</p>
         </div>
 
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,width:"100%",maxWidth:760,marginBottom:32}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,width:"100%",maxWidth:760,marginBottom:32}}>
           {/* Reclamos */}
           <button onClick={()=>onNavigate("reclamos")}
             style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:32,textAlign:"left",cursor:"pointer",transition:"all 0.2s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
@@ -1904,7 +1904,6 @@ function ConfigScreen({T, user, onBack}) {
   }
 
   async function connectTiendaNube() {
-    // Tienda Nube OAuth flow
     const clientId = "30036";
     const redirectUri = encodeURIComponent(`${window.location.origin}/api/tn-callback`);
     const state = encodeURIComponent(user.uid);
@@ -1914,7 +1913,7 @@ function ConfigScreen({T, user, onBack}) {
   }
 
   async function disconnectStore(storeType) {
-    if(!window.confirm(`¿Desvinculár ${storeType}?`)) return;
+    if(!window.confirm(`¿Desvincular ${storeType}?`)) return;
     setSaving(true);
     const stores=(userDoc?.stores||[]).filter(s=>s.type!==storeType);
     await updateDoc(doc(db,"users",user.uid),{stores});
@@ -1922,79 +1921,101 @@ function ConfigScreen({T, user, onBack}) {
     setMsg(`${storeType} desvinculado.`);
   }
 
+  async function toggleAlerta(key) {
+    const current=userDoc?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
+    const updated={...current,[key]:!current[key]};
+    await updateDoc(doc(db,"users",user.uid),{alertas:updated});
+  }
+
   const tnStore=userDoc?.stores?.find(s=>s.type==="tiendanube");
   const shStore=userDoc?.stores?.find(s=>s.type==="shopify");
+  const alertasCfg=userDoc?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
+
+  const Toggle=({active,onToggle})=>(
+    <div onClick={onToggle} style={{width:44,height:24,borderRadius:20,background:active?T.accentSolid:T.border,cursor:"pointer",position:"relative",transition:"background 0.2s",flexShrink:0}}>
+      <div style={{position:"absolute",top:3,left:active?22:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.3)"}}/>
+    </div>
+  );
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 28px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:62,maxWidth:800,margin:"0 auto"}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:56,maxWidth:800,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onBack} style={{...BtnSecondary(T),padding:"7px 14px",fontSize:13}}>← Volver</button>
-            <span style={{fontWeight:700,fontSize:16,color:T.text}}>⚙️ Configuración</span>
+            <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
+            <span style={{fontWeight:700,fontSize:15,color:T.text}}>⚙️ Configuración</span>
           </div>
         </div>
       </div>
 
-      <div style={{maxWidth:800,margin:"0 auto",padding:"32px 28px 64px"}}>
+      <div style={{maxWidth:800,margin:"0 auto",padding:"20px 16px 80px"}}>
 
         {/* Perfil */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 28px",marginBottom:20}}>
-          <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Cuenta</div>
-          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20}}>
-            {user?.photoURL?<img src={user.photoURL} style={{width:48,height:48,borderRadius:"50%",border:`2px solid ${T.border}`}} alt=""/>:<div style={{width:48,height:48,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>👤</div>}
-            <div>
-              <div style={{fontSize:16,fontWeight:700,color:T.text}}>{user?.displayName||userDoc?.nombre||"Usuario"}</div>
-              <div style={{fontSize:13,color:T.textSm,marginTop:2}}>{user?.email}</div>
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuenta</div>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+            {user?.photoURL?<img src={user.photoURL} style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${T.border}`,flexShrink:0}} alt=""/>:<div style={{width:44,height:44,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>👤</div>}
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||userDoc?.nombre||"Usuario"}</div>
+              <div style={{fontSize:12,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.email}</div>
               <div style={{fontSize:11,color:T.accent,marginTop:3,fontWeight:500}}>Plan {userDoc?.plan||"free"}</div>
             </div>
           </div>
-          <button onClick={handleSignOut} style={{...BtnDanger(T),fontSize:13}}>Cerrar sesión</button>
+          <button onClick={handleSignOut} style={{...BtnDanger(T),fontSize:13,width:"100%",justifyContent:"center"}}>Cerrar sesión</button>
         </div>
 
-        {/* Tiendas conectadas */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 28px",marginBottom:20}}>
-          <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Tiendas conectadas</div>
-
-          {/* Tienda Nube */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 0",borderBottom:`1px solid ${T.borderL}`}}>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <div style={{width:40,height:40,borderRadius:10,background:"#00a0e3",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>☁️</div>
-              <div>
-                <div style={{fontSize:15,fontWeight:700,color:T.text}}>Tienda Nube</div>
-                {tnStore?<div style={{fontSize:12,color:T.green,marginTop:2}}>✓ Conectado — {tnStore.storeName||tnStore.storeId}</div>:<div style={{fontSize:12,color:T.textSm,marginTop:2}}>No conectado</div>}
+        {/* Tiendas */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Tiendas conectadas</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderBottom:`1px solid ${T.borderL}`,gap:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+              <div style={{width:36,height:36,borderRadius:8,background:"#00a0e3",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>☁️</div>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Tienda Nube</div>
+                {tnStore?<div style={{fontSize:11,color:T.green,marginTop:1}}>✓ {tnStore.storeName||tnStore.storeId}</div>:<div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
               </div>
             </div>
             {tnStore
-              ?<button onClick={()=>disconnectStore("tiendanube")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>Desvincular</button>
-              :<button onClick={connectTiendaNube} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Conectar</button>
+              ?<button onClick={()=>disconnectStore("tiendanube")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
+              :<button onClick={connectTiendaNube} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Conectar</button>
             }
           </div>
-
-          {/* Shopify */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 0"}}>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <div style={{width:40,height:40,borderRadius:10,background:"#96BF48",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🛍️</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",gap:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:36,height:36,borderRadius:8,background:"#96BF48",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🛍️</div>
               <div>
-                <div style={{fontSize:15,fontWeight:700,color:T.text}}>Shopify</div>
-                {shStore?<div style={{fontSize:12,color:T.green,marginTop:2}}>✓ Conectado — {shStore.storeName||shStore.storeId}</div>:<div style={{fontSize:12,color:T.textSm,marginTop:2}}>Próximamente</div>}
+                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Shopify</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Próximamente</div>
               </div>
             </div>
-            <button disabled style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",opacity:0.4}}>Próximamente</button>
+            <button disabled style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:0.4,flexShrink:0}}>Próximamente</button>
           </div>
         </div>
 
-        {/* Mensaje feedback */}
-        {msg&&(
-          <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.green,marginBottom:16}}>
-            {msg}
-          </div>
-        )}
+        {/* Alertas de Canjes */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Alertas de canjes</div>
+          {[
+            {key:"recordatorio",icon:"⏰",label:"Recordatorios vencidos",desc:"Avisar cuando un recordatorio de seguimiento pasó su fecha"},
+            {key:"sinrespuesta",icon:"📦",label:"Enviados sin respuesta",desc:"Avisar cuando un canje lleva +15 días enviado sin respuesta"},
+            {key:"contenido",icon:"🎬",label:"Contenido pendiente",desc:"Avisar cuando un influencer debe contenido y no lo entregó"},
+          ].map(a=>(
+            <div key={a.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:`1px solid ${T.borderL}`,gap:12}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:600,color:T.text,display:"flex",alignItems:"center",gap:7}}><span>{a.icon}</span>{a.label}</div>
+                <div style={{fontSize:12,color:T.textSm,marginTop:3,lineHeight:1.4}}>{a.desc}</div>
+              </div>
+              <Toggle active={alertasCfg[a.key]!==false} onToggle={()=>toggleAlerta(a.key)}/>
+            </div>
+          ))}
+        </div>
 
-        {/* Info plan */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 28px"}}>
-          <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Plan actual</div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        {msg&&<div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.green,marginBottom:16}}>{msg}</div>}
+
+        {/* Plan */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px"}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Plan actual</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
             <div>
               <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Free</div>
               <div style={{fontSize:13,color:T.textMd,marginTop:4}}>Acceso completo durante el período de beta.</div>
@@ -2029,6 +2050,24 @@ export default function App() {
     l.href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap";
     l.rel="stylesheet";
     document.head.appendChild(l);
+    // Viewport meta for mobile
+    let meta=document.querySelector('meta[name="viewport"]');
+    if(!meta){meta=document.createElement("meta");meta.name="viewport";document.head.appendChild(meta);}
+    meta.content="width=device-width, initial-scale=1, maximum-scale=1";
+    // Global responsive styles
+    const style=document.createElement("style");
+    style.textContent=`
+      *{box-sizing:border-box;}
+      body{margin:0;overflow-x:hidden;}
+      @media(max-width:600px){
+        .hide-mobile{display:none!important;}
+        .stack-mobile{flex-direction:column!important;}
+        .full-mobile{width:100%!important;min-width:0!important;}
+        .pad-mobile{padding:12px 14px!important;}
+        .font-mobile{font-size:13px!important;}
+      }
+    `;
+    document.head.appendChild(style);
   },[]);
 
   useEffect(()=>{
@@ -2093,7 +2132,8 @@ export default function App() {
 
   useEffect(()=>{
     if(!user) return;
-    try{const s=localStorage.getItem("soluna_orders_v3");if(s)setOrders(JSON.parse(s));}catch(e){}
+    // Limpiar cache del usuario anterior
+    try{ localStorage.removeItem("soluna_orders_v3"); }catch(e){}
     fetchOrders();
   },[user]);
 
@@ -2101,24 +2141,29 @@ export default function App() {
     if(!user) return;
     const q1=query(collection(db,"reclamos"),where("ownerId","==",user.uid));
     const q2=query(collection(db,"canjes"),where("ownerId","==",user.uid));
+    const q3=onSnapshot(doc(db,"users",user.uid),()=>{});
     const u1=onSnapshot(q1,snap=>{setReclamosCount(snap.size);setFbStatus("ok");},()=>setFbStatus("error"));
     const u2=onSnapshot(q2,snap=>{
       const canjesData=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       setCanjesCount(canjesData.length);
-      const hoy=new Date().toISOString().split('T')[0];
-      const hace15=new Date(Date.now()-15*86400000).toISOString().split('T')[0];
-      const alerts=[];
-      canjesData.forEach(c=>{
-        if(c.recordatorio&&c.recordatorio<=hoy) alerts.push({tipo:"recordatorio",canje:c,msg:`Recordatorio vencido`});
-        if(c.estado==="Enviado"&&c.fechaEnvio&&c.fechaEnvio<=hace15) alerts.push({tipo:"sinrespuesta",canje:c,msg:`Enviado hace +15 días sin respuesta`});
-        if(c.estado==="Contenido pendiente"){
-          const cont=c.contenido||[];
-          const total=cont.reduce((s,x)=>s+(x.acordados||0),0);
-          const entregados=cont.reduce((s,x)=>s+(x.entregados||0),0);
-          if(total>0&&entregados<total) alerts.push({tipo:"contenido",canje:c,msg:`Debe ${total-entregados} contenido(s)`});
-        }
-      });
-      setAlertas(alerts);
+      // Leer preferencias de alertas del usuario
+      getDoc(doc(db,"users",user.uid)).then(userSnap=>{
+        const alertasCfg=userSnap.data()?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
+        const hoy=new Date().toISOString().split('T')[0];
+        const hace15=new Date(Date.now()-15*86400000).toISOString().split('T')[0];
+        const alerts=[];
+        canjesData.forEach(c=>{
+          if(alertasCfg.recordatorio!==false&&c.recordatorio&&c.recordatorio<=hoy) alerts.push({tipo:"recordatorio",canje:c,msg:`Recordatorio vencido`});
+          if(alertasCfg.sinrespuesta!==false&&c.estado==="Enviado"&&c.fechaEnvio&&c.fechaEnvio<=hace15) alerts.push({tipo:"sinrespuesta",canje:c,msg:`Enviado hace +15 días sin respuesta`});
+          if(alertasCfg.contenido!==false&&c.estado==="Contenido pendiente"){
+            const cont=c.contenido||[];
+            const total=cont.reduce((s,x)=>s+(x.acordados||0),0);
+            const entregados=cont.reduce((s,x)=>s+(x.entregados||0),0);
+            if(total>0&&entregados<total) alerts.push({tipo:"contenido",canje:c,msg:`Debe ${total-entregados} contenido(s)`});
+          }
+        });
+        setAlertas(alerts);
+      }).catch(()=>{});
     },()=>{});
     return ()=>{u1();u2();};
   },[user]);
