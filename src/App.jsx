@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs } from "firebase/firestore";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDT-cAeF1lm-xhIDtv0FZam88yhvLIcbMo",
@@ -12,6 +13,11 @@ const firebaseConfig = {
 };
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
+const auth = getAuth(fbApp);
+const googleProvider = new GoogleAuthProvider();
+
+// Owner email for existing data migration
+const OWNER_EMAIL = "soluna.biolight@gmail.com";
 
 // ─── Theme ───
 const DARK = {
@@ -276,7 +282,7 @@ function OrderSearchField({T, orders, onSelect}) {
 // ═══════════════════════════════════════════
 // APP RECLAMOS
 // ═══════════════════════════════════════════
-function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
+function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome}) {
   const [reclamos,setReclamos]=useState([]);
   const [plantillas,setPlantillas]=useState([]);
   const [view,setView]=useState("dashboard"); // dashboard | buscar | reclamos | config
@@ -307,7 +313,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
   ];
 
   useEffect(()=>{
-    const unsub1=onSnapshot(collection(db,"reclamos"),snap=>{
+    const q=query(collection(db,"reclamos"),where("ownerId","==",user?.uid||"__none__"));
+    const unsub1=onSnapshot(q,snap=>{
       const data=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
       setReclamos(data);
@@ -350,7 +357,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
       if(reclamoForm._docId) {
         await updateDoc(doc(db,"reclamos",reclamoForm._docId),{...p,updatedAt:serverTimestamp(),...(reclamoForm.estado==="Resuelto"&&prev?.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
       } else {
-        await addDoc(collection(db,"reclamos"),{...p,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),resolvedAt:null,historial:[{accion:"Reclamo creado",fecha:new Date().toISOString()}]});
+        await addDoc(collection(db,"reclamos"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),resolvedAt:null,historial:[{accion:"Reclamo creado",fecha:new Date().toISOString()}]});
       }
       setReclamoForm(null);
     } catch(e){alert("Error al guardar.");}
@@ -378,12 +385,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
   }
 
   async function savePlantillas(lista) {
-    try{ await updateDoc(doc(db,"config","plantillas"),{lista}).catch(async()=>{ await addDoc(collection(db,"config"),{lista}); }); }catch(e){}
-    // simpler: use setDoc
-    try{
-      const {setDoc}=await import("firebase/firestore");
-      await setDoc(doc(db,"config","plantillas"),{lista});
-    }catch(e){}
+    try{ await setDoc(doc(db,"config","plantillas"),{lista}); }catch(e){}
     setPlantillas(lista);
   }
 
@@ -1084,7 +1086,7 @@ function NotasRapidas({T, canje, onAdd}) {
 // ═══════════════════════════════════════════
 // APP CANJES
 // ═══════════════════════════════════════════
-function AppCanjes({T, fbStatus, onHome}) {
+function AppCanjes({T, fbStatus, user, onHome}) {
   const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
@@ -1100,7 +1102,8 @@ function AppCanjes({T, fbStatus, onHome}) {
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
 
   useEffect(()=>{
-    const unsub=onSnapshot(collection(db,"canjes"),snap=>{
+    const qc=query(collection(db,"canjes"),where("ownerId","==",user?.uid||"__none__"));
+    const unsub=onSnapshot(qc,snap=>{
       const data=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
       setCanjes(data);
@@ -1140,7 +1143,7 @@ function AppCanjes({T, fbStatus, onHome}) {
         const prev=canjes.find(c=>c._docId===form._docId);
         await updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Finalizado"&&prev?.estado!=="Finalizado"?{finalizadoAt:serverTimestamp()}:{})});
       } else {
-        await addDoc(collection(db,"canjes"),{...p,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+        await addDoc(collection(db,"canjes"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
       }
       setForm(null);
     } catch(e){alert("Error al guardar.");}
@@ -1663,7 +1666,7 @@ function AppCanjes({T, fbStatus, onHome}) {
 // ═══════════════════════════════════════════
 // HOME SCREEN
 // ═══════════════════════════════════════════
-function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas}) {
+function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user}) {
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column"}}>
@@ -1676,9 +1679,13 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               <div style={{fontSize:12,color:T.textSm}}>Panel de Gestión</div>
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 12px"}}>
-            <span style={{width:7,height:7,borderRadius:"50%",background:fbDot,boxShadow:`0 0 6px ${fbDot}`}}/>
-            <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>{fbStatus==="ok"?"Firebase en vivo":fbStatus==="error"?"Sin conexión":"Conectando..."}</span>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            {user?.photoURL&&<img src={user.photoURL} style={{width:32,height:32,borderRadius:"50%",border:`2px solid ${T.border}`}} alt=""/>}
+            <div style={{display:"flex",alignItems:"center",gap:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 12px"}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:fbDot,boxShadow:`0 0 6px ${fbDot}`}}/>
+              <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
+            </div>
+            <button onClick={()=>onNavigate("config")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>⚙️</button>
           </div>
         </div>
       </div>
@@ -1757,9 +1764,255 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 }
 
 // ═══════════════════════════════════════════
+// AUTH SCREEN
+// ═══════════════════════════════════════════
+function AuthScreen({T}) {
+  const [mode,setMode]=useState("login"); // login | register
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [nombre,setNombre]=useState("");
+  const [error,setError]=useState("");
+  const [loading,setLoading]=useState(false);
+  const iS=InputStyle(T);
+
+  const errMsg=(code)=>{
+    const map={
+      "auth/user-not-found":"No existe una cuenta con ese email.",
+      "auth/wrong-password":"Contraseña incorrecta.",
+      "auth/email-already-in-use":"Ya existe una cuenta con ese email.",
+      "auth/weak-password":"La contraseña debe tener al menos 6 caracteres.",
+      "auth/invalid-email":"El email no es válido.",
+      "auth/invalid-credential":"Email o contraseña incorrectos.",
+      "auth/popup-closed-by-user":"Cerraste el popup antes de completar el login.",
+    };
+    return map[code]||"Ocurrió un error. Intentá de nuevo.";
+  };
+
+  async function handleGoogle() {
+    setLoading(true); setError("");
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      await ensureUserDoc(result.user);
+    } catch(e){ setError(errMsg(e.code)); }
+    setLoading(false);
+  }
+
+  async function handleEmail() {
+    if(!email||!password) return setError("Completá email y contraseña.");
+    setLoading(true); setError("");
+    try {
+      if(mode==="register") {
+        if(!nombre.trim()) return setError("Ingresá tu nombre.");
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(result.user, {displayName: nombre});
+        await ensureUserDoc(result.user, nombre);
+      } else {
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        await ensureUserDoc(result.user);
+      }
+    } catch(e){ setError(errMsg(e.code)); }
+    setLoading(false);
+  }
+
+  async function ensureUserDoc(user, displayName) {
+    const ref = doc(db, "users", user.uid);
+    const snap = await getDoc(ref);
+    if(!snap.exists()) {
+      await setDoc(ref, {
+        uid: user.uid,
+        email: user.email,
+        nombre: displayName || user.displayName || user.email.split("@")[0],
+        createdAt: serverTimestamp(),
+        plan: "free",
+        stores: [],
+      });
+    }
+  }
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:420}}>
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:40}}>
+          <div style={{width:56,height:56,borderRadius:16,background:`linear-gradient(135deg,${T.accentSolid},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 14px"}}>🌙</div>
+          <div style={{fontSize:24,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Soluna Gestión</div>
+          <div style={{fontSize:14,color:T.textMd,marginTop:4}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
+        </div>
+
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:28}}>
+          {/* Google */}
+          <button onClick={handleGoogle} disabled={loading} style={{...BtnSecondary(T),width:"100%",justifyContent:"center",padding:"13px",fontSize:15,marginBottom:20,opacity:loading?0.6:1}}>
+            <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            Continuar con Google
+          </button>
+
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+            <div style={{flex:1,height:1,background:T.border}}/>
+            <span style={{fontSize:12,color:T.textSm}}>o con email</span>
+            <div style={{flex:1,height:1,background:T.border}}/>
+          </div>
+
+          {mode==="register"&&(
+            <div style={{marginBottom:12}}>
+              <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nombre</label>
+              <input style={iS} placeholder="Tu nombre" value={nombre} onChange={e=>setNombre(e.target.value)} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
+            </div>
+          )}
+          <div style={{marginBottom:12}}>
+            <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Email</label>
+            <input style={iS} type="email" placeholder="tu@email.com" value={email} onChange={e=>setEmail(e.target.value)} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
+          </div>
+          <div style={{marginBottom:20}}>
+            <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Contraseña</label>
+            <input style={iS} type="password" placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder} onKeyDown={e=>e.key==="Enter"&&handleEmail()}/>
+          </div>
+
+          {error&&<div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"10px 14px",fontSize:13,color:T.red,marginBottom:16}}>{error}</div>}
+
+          <button onClick={handleEmail} disabled={loading} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",padding:"13px",fontSize:15,opacity:loading?0.6:1}}>
+            {loading?"Cargando...":(mode==="login"?"Iniciar sesión":"Crear cuenta")}
+          </button>
+
+          <div style={{textAlign:"center",marginTop:18,fontSize:13,color:T.textMd}}>
+            {mode==="login"?<>¿No tenés cuenta? <button onClick={()=>{setMode("register");setError("");}} style={{background:"none",border:"none",color:T.accent,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13}}>Registrate</button></>
+            :<>¿Ya tenés cuenta? <button onClick={()=>{setMode("login");setError("");}} style={{background:"none",border:"none",color:T.accent,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13}}>Iniciá sesión</button></>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// CONFIG SCREEN
+// ═══════════════════════════════════════════
+function ConfigScreen({T, user, onBack}) {
+  const [userDoc,setUserDoc]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState("");
+  const iS=InputStyle(T);
+
+  useEffect(()=>{
+    if(!user) return;
+    const unsub=onSnapshot(doc(db,"users",user.uid),snap=>{
+      if(snap.exists()) setUserDoc(snap.data());
+    });
+    return ()=>unsub();
+  },[user]);
+
+  async function handleSignOut() {
+    await signOut(auth);
+  }
+
+  async function connectTiendaNube() {
+    // Tienda Nube OAuth flow
+    const clientId = "30036";
+    const redirectUri = encodeURIComponent(`${window.location.origin}/api/tn-callback`);
+    const state = encodeURIComponent(user.uid);
+    const url = `https://www.tiendanube.com/apps/${clientId}/authorize?state=${state}&redirect_uri=${redirectUri}`;
+    window.open(url, "_blank");
+    setMsg("Completá la autorización en la ventana que se abrió. Una vez autorizado, tu tienda aparecerá conectada.");
+  }
+
+  async function disconnectStore(storeType) {
+    if(!window.confirm(`¿Desvinculár ${storeType}?`)) return;
+    setSaving(true);
+    const stores=(userDoc?.stores||[]).filter(s=>s.type!==storeType);
+    await updateDoc(doc(db,"users",user.uid),{stores});
+    setSaving(false);
+    setMsg(`${storeType} desvinculado.`);
+  }
+
+  const tnStore=userDoc?.stores?.find(s=>s.type==="tiendanube");
+  const shStore=userDoc?.stores?.find(s=>s.type==="shopify");
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 28px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:62,maxWidth:800,margin:"0 auto"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={onBack} style={{...BtnSecondary(T),padding:"7px 14px",fontSize:13}}>← Volver</button>
+            <span style={{fontWeight:700,fontSize:16,color:T.text}}>⚙️ Configuración</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{maxWidth:800,margin:"0 auto",padding:"32px 28px 64px"}}>
+
+        {/* Perfil */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 28px",marginBottom:20}}>
+          <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Cuenta</div>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20}}>
+            {user?.photoURL?<img src={user.photoURL} style={{width:48,height:48,borderRadius:"50%",border:`2px solid ${T.border}`}} alt=""/>:<div style={{width:48,height:48,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>👤</div>}
+            <div>
+              <div style={{fontSize:16,fontWeight:700,color:T.text}}>{user?.displayName||userDoc?.nombre||"Usuario"}</div>
+              <div style={{fontSize:13,color:T.textSm,marginTop:2}}>{user?.email}</div>
+              <div style={{fontSize:11,color:T.accent,marginTop:3,fontWeight:500}}>Plan {userDoc?.plan||"free"}</div>
+            </div>
+          </div>
+          <button onClick={handleSignOut} style={{...BtnDanger(T),fontSize:13}}>Cerrar sesión</button>
+        </div>
+
+        {/* Tiendas conectadas */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 28px",marginBottom:20}}>
+          <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Tiendas conectadas</div>
+
+          {/* Tienda Nube */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 0",borderBottom:`1px solid ${T.borderL}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:40,height:40,borderRadius:10,background:"#00a0e3",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>☁️</div>
+              <div>
+                <div style={{fontSize:15,fontWeight:700,color:T.text}}>Tienda Nube</div>
+                {tnStore?<div style={{fontSize:12,color:T.green,marginTop:2}}>✓ Conectado — {tnStore.storeName||tnStore.storeId}</div>:<div style={{fontSize:12,color:T.textSm,marginTop:2}}>No conectado</div>}
+              </div>
+            </div>
+            {tnStore
+              ?<button onClick={()=>disconnectStore("tiendanube")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>Desvincular</button>
+              :<button onClick={connectTiendaNube} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Conectar</button>
+            }
+          </div>
+
+          {/* Shopify */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 0"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:40,height:40,borderRadius:10,background:"#96BF48",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🛍️</div>
+              <div>
+                <div style={{fontSize:15,fontWeight:700,color:T.text}}>Shopify</div>
+                {shStore?<div style={{fontSize:12,color:T.green,marginTop:2}}>✓ Conectado — {shStore.storeName||shStore.storeId}</div>:<div style={{fontSize:12,color:T.textSm,marginTop:2}}>Próximamente</div>}
+              </div>
+            </div>
+            <button disabled style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",opacity:0.4}}>Próximamente</button>
+          </div>
+        </div>
+
+        {/* Mensaje feedback */}
+        {msg&&(
+          <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.green,marginBottom:16}}>
+            {msg}
+          </div>
+        )}
+
+        {/* Info plan */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 28px"}}>
+          <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Plan actual</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Free</div>
+              <div style={{fontSize:13,color:T.textMd,marginTop:4}}>Acceso completo durante el período de beta.</div>
+            </div>
+            <div style={{background:T.accentSolid+"22",border:`1px solid ${T.accentSolid}44`,borderRadius:10,padding:"8px 16px",fontSize:13,fontWeight:600,color:T.accent}}>Beta gratuita</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
 // ROOT APP
 // ═══════════════════════════════════════════
 export default function App() {
+  const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   const [page,setPage]=useState("home");
   const [orders,setOrders]=useState([]);
   const [ordersStatus,setOrdersStatus]=useState("idle");
@@ -1768,6 +2021,7 @@ export default function App() {
   const [canjesCount,setCanjesCount]=useState(0);
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("soluna_theme")!=="light"; } catch(e){ return true; } });
+  const [migrated,setMigrated]=useState(false);
 
   const T = darkMode ? DARK : LIGHT;
 
@@ -1787,7 +2041,46 @@ export default function App() {
     try { localStorage.setItem("soluna_theme", darkMode?"dark":"light"); } catch(e){}
   },[darkMode]);
 
+  // Auth state listener
+  useEffect(()=>{
+    const unsub=onAuthStateChanged(auth, async (u)=>{
+      setUser(u);
+      if(u) {
+        // Migrate legacy data for owner account
+        if(u.email===OWNER_EMAIL && !migrated) {
+          await migrateLegacyData(u.uid);
+          setMigrated(true);
+        }
+      }
+    });
+    return ()=>unsub();
+  },[]);
+
+  // Migrate existing data to owner's uid
+  async function migrateLegacyData(uid) {
+    try {
+      // Check reclamos without ownerId
+      const recSnap = await getDocs(query(collection(db,"reclamos"), where("ownerId","==",uid)));
+      if(recSnap.empty) {
+        // Assign ownerId to all existing reclamos
+        const allRec = await getDocs(collection(db,"reclamos"));
+        for(const d of allRec.docs) {
+          if(!d.data().ownerId) await updateDoc(d.ref,{ownerId:uid});
+        }
+      }
+      // Same for canjes
+      const canSnap = await getDocs(query(collection(db,"canjes"), where("ownerId","==",uid)));
+      if(canSnap.empty) {
+        const allCan = await getDocs(collection(db,"canjes"));
+        for(const d of allCan.docs) {
+          if(!d.data().ownerId) await updateDoc(d.ref,{ownerId:uid});
+        }
+      }
+    } catch(e){}
+  }
+
   async function fetchOrders() {
+    if(!user) return;
     setOrdersStatus("loading");
     try {
       const res=await fetch('/api/orders');
@@ -1800,16 +2093,19 @@ export default function App() {
   }
 
   useEffect(()=>{
+    if(!user) return;
     try{const s=localStorage.getItem("soluna_orders_v3");if(s)setOrders(JSON.parse(s));}catch(e){}
     fetchOrders();
-  },[]);
+  },[user]);
 
   useEffect(()=>{
-    const u1=onSnapshot(collection(db,"reclamos"),snap=>{setReclamosCount(snap.size);setFbStatus("ok");},()=>setFbStatus("error"));
-    const u2=onSnapshot(collection(db,"canjes"),snap=>{
+    if(!user) return;
+    const q1=query(collection(db,"reclamos"),where("ownerId","==",user.uid));
+    const q2=query(collection(db,"canjes"),where("ownerId","==",user.uid));
+    const u1=onSnapshot(q1,snap=>{setReclamosCount(snap.size);setFbStatus("ok");},()=>setFbStatus("error"));
+    const u2=onSnapshot(q2,snap=>{
       const canjesData=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       setCanjesCount(canjesData.length);
-      // Calcular alertas
       const hoy=new Date().toISOString().split('T')[0];
       const hace15=new Date(Date.now()-15*86400000).toISOString().split('T')[0];
       const alerts=[];
@@ -1826,28 +2122,34 @@ export default function App() {
       setAlertas(alerts);
     },()=>{});
     return ()=>{u1();u2();};
-  },[]);
+  },[user]);
 
-  // Theme toggle button — always visible
   const themeBtn = (
-    <button
-      onClick={()=>setDarkMode(d=>!d)}
-      style={{
-        position:"fixed", bottom:24, right:24, zIndex:999,
-        width:48, height:48, borderRadius:"50%",
-        background:T.card, border:`1px solid ${T.border}`,
-        fontSize:22, cursor:"pointer",
-        display:"flex", alignItems:"center", justifyContent:"center",
-        boxShadow:"0 4px 16px rgba(0,0,0,0.2)",
-        transition:"all 0.2s",
-      }}
-      title={darkMode?"Cambiar a modo claro":"Cambiar a modo oscuro"}
-    >
-      {darkMode ? "☀️" : "🌙"}
+    <button onClick={()=>setDarkMode(d=>!d)}
+      style={{position:"fixed",bottom:24,right:24,zIndex:999,width:48,height:48,borderRadius:"50%",background:T.card,border:`1px solid ${T.border}`,fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 16px rgba(0,0,0,0.2)",transition:"all 0.2s"}}
+      title={darkMode?"Modo claro":"Modo oscuro"}>
+      {darkMode?"☀️":"🌙"}
     </button>
   );
 
-  if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} onHome={()=>setPage("home")}/>{themeBtn}</>;
-  if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} onHome={()=>setPage("home")}/>{themeBtn}</>;
-  return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas}/>{themeBtn}</>;
+  // Loading
+  if(user===undefined) return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:16}}>🌙</div>
+        <div style={{fontSize:16,color:T.textMd}}>Cargando...</div>
+      </div>
+    </div>
+  );
+
+  // Not logged in
+  if(!user) return <>{themeBtn}<AuthScreen T={T}/></>;
+
+  // Config
+  if(page==="config") return <>{themeBtn}<ConfigScreen T={T} user={user} onBack={()=>setPage("home")}/></>;
+
+  // App
+  if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
+  if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
+  return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user}/>{themeBtn}</>;
 }
