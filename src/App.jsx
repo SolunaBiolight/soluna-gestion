@@ -432,9 +432,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
 
   // Global search (pedidos + reclamos)
   const globalResults=useMemo(()=>{
-    if(!searchGlobal||searchGlobal.length<2) return {pedidos:[],reclamos:[]};
+    if(!searchGlobal||searchGlobal.length<1) return {pedidos:[],reclamos:[]};
     const s=searchGlobal.toLowerCase();
-    const pedidos=orders.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s)||o.telefono.includes(s)).slice(0,8);
+    const s=searchGlobal.toLowerCase().trim();
+    // Primero exacto por número, luego parcial por número, luego por nombre/email
+    const exacto=orders.filter(o=>o.numero===s);
+    const parcialNum=orders.filter(o=>o.numero!==s&&o.numero.includes(s));
+    const porNombre=orders.filter(o=>!o.numero.includes(s)&&(o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s)||o.telefono.includes(s)));
+    const pedidos=[...exacto,...parcialNum,...porNombre].slice(0,8);
     const recls=reclamos.filter(r=>{ const o=orders.find(o=>o.numero===r.orderNum); return r.orderNum.includes(s)||(o&&(o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s))); }).slice(0,5);
     return {pedidos,recls};
   },[searchGlobal,orders,reclamos]);
@@ -491,7 +496,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
                   onBlur={e=>e.target.style.borderColor=T.inputBorder}
                 />
               </div>
-              {searchGlobal.length>=2&&(
+              {searchGlobal.length>=1&&(
                 <div style={{marginTop:12}}>
                   {globalResults.pedidos?.length>0&&(
                     <>
@@ -636,7 +641,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
               <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:16,color:T.textSm}}>🔍</span>
               <input autoFocus style={{...iS,paddingLeft:42,fontSize:16,padding:"14px 14px 14px 42px"}} placeholder="Ej: Guillermo, +5411..., #1369" value={searchGlobal} onChange={e=>setSearchGlobal(e.target.value)}/>
             </div>
-            {searchGlobal.length>=2&&(
+            {searchGlobal.length>=1&&(
               <div>
                 {globalResults.pedidos?.length>0&&(
                   <>
