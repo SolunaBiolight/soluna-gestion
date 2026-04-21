@@ -2130,11 +2130,25 @@ export default function App() {
     } catch(e){setOrdersStatus("error");}
   }
 
+  // Watch user doc — refetch orders when store connects/disconnects
+  const [tnStoreId,setTnStoreId]=useState(null);
   useEffect(()=>{
     if(!user) return;
-    // Limpiar cache del usuario anterior
     try{ localStorage.removeItem("soluna_orders_v3"); }catch(e){}
+    const unsub=onSnapshot(doc(db,"users",user.uid),snap=>{
+      if(!snap.exists()) return;
+      const tn=snap.data().stores?.find(s=>s.type==="tiendanube");
+      const newId=tn?.storeId||null;
+      setTnStoreId(prev=>{
+        if(prev!==newId) {
+          // Store changed — refetch
+          setTimeout(()=>fetchOrders(),500);
+        }
+        return newId;
+      });
+    });
     fetchOrders();
+    return ()=>unsub();
   },[user]);
 
   useEffect(()=>{
