@@ -402,20 +402,17 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
   // Stats
   const hoy=new Date().toISOString().split('T')[0];
   const hace3=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
+  const pctCambios=orders.length>0?((reclamos.filter(r=>r.tipo==="Cambio").length/orders.length)*100).toFixed(1):null;
+  const pctDevoluciones=orders.length>0?((reclamos.filter(r=>r.tipo==="Devolución").length/orders.length)*100).toFixed(1):null;
   const stats={
     total:reclamos.length,
-    nuevos:reclamos.filter(r=>r.estado==="Nuevo").length,
-    abiertos:reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado)).length,
-    urgentes:reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado)&&r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]<=hace3).length,
+    pendientes:reclamos.filter(r=>r.estado==="Nuevo").length,
     resueltos:reclamos.filter(r=>r.estado==="Resuelto").length,
     rechazados:reclamos.filter(r=>r.estado==="Rechazado").length,
     cambios:reclamos.filter(r=>r.tipo==="Cambio").length,
     devoluciones:reclamos.filter(r=>r.tipo==="Devolución").length,
+    urgentes:reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado)&&r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]<=hace3).length,
   };
-
-  // Tiempo promedio resolución
-  const resueltos=reclamos.filter(r=>r.resolvedAt?.seconds&&r.createdAt?.seconds);
-  const tiempoPromedio=resueltos.length>0?Math.round(resueltos.reduce((s,r)=>(r.resolvedAt.seconds-r.createdAt.seconds)+s,0)/resueltos.length/86400):null;
 
   // Filtered reclamos
   const filteredReclamos=useMemo(()=>reclamos.filter(r=>{
@@ -480,20 +477,28 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
           <div style={{padding:"24px 0 48px"}}>
             {/* Stats row */}
             <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:28}}>
-              {[
-                {label:"Abiertos",value:stats.abiertos,color:T.blue,icon:"📂"},
-                {label:"Nuevos",value:stats.nuevos,color:T.accent,icon:"🆕"},
-                {label:"⚠ Urgentes (+3 días)",value:stats.urgentes,color:T.red,icon:"🔴"},
-                {label:"Resueltos",value:stats.resueltos,color:T.green,icon:"✅"},
-                {label:"Cambios",value:stats.cambios,color:T.purple,icon:"🔄"},
-                {label:"Devoluciones",value:stats.devoluciones,color:T.orange,icon:"↩️"},
-                {label:"Tiempo prom. resolución",value:tiempoPromedio!=null?`${tiempoPromedio}d`:"—",color:T.textMd,icon:"⏱"},
-              ].map(s=>(
-                <div key={s.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",flex:"1 1 120px",minWidth:110}}>
-                  <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>{s.icon} {s.label}</div>
-                  <div style={{fontSize:28,fontWeight:800,color:s.color,letterSpacing:-1}}>{s.value}</div>
-                </div>
-              ))}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",flex:"1 1 120px",minWidth:120}}>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>📋 Reclamos totales</div>
+                <div style={{fontSize:32,fontWeight:800,color:T.text,letterSpacing:-1}}>{stats.total}</div>
+              </div>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",flex:"1 1 120px",minWidth:120}}>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>🆕 Pendientes</div>
+                <div style={{fontSize:32,fontWeight:800,color:stats.pendientes>0?T.blue:T.textMd,letterSpacing:-1}}>{stats.pendientes}</div>
+              </div>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",flex:"1 1 120px",minWidth:120}}>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>✅ Resueltos</div>
+                <div style={{fontSize:32,fontWeight:800,color:T.green,letterSpacing:-1}}>{stats.resueltos}</div>
+              </div>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",flex:"1 1 120px",minWidth:120}}>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>🔄 Cambios</div>
+                <div style={{fontSize:32,fontWeight:800,color:T.purple,letterSpacing:-1}}>{stats.cambios}</div>
+                {pctCambios&&<div style={{fontSize:12,color:T.textSm,marginTop:4,fontWeight:500}}>{pctCambios}% de pedidos</div>}
+              </div>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",flex:"1 1 120px",minWidth:120}}>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>↩️ Devoluciones</div>
+                <div style={{fontSize:32,fontWeight:800,color:T.orange,letterSpacing:-1}}>{stats.devoluciones}</div>
+                {pctDevoluciones&&<div style={{fontSize:12,color:T.textSm,marginTop:4,fontWeight:500}}>{pctDevoluciones}% de pedidos</div>}
+              </div>
             </div>
 
             {/* Pipeline por estado */}
