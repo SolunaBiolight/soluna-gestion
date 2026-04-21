@@ -72,7 +72,7 @@ const LIGHT = {
 
 // ─── Constants ───
 const MOTIVOS_R = ["Producto dañado","Color incorrecto","No cumple expectativas","Problema con el lente","Error en el pedido","Armazón roto","Otro"];
-const ESTADOS_R = ["Pendiente","En proceso","Resuelto","Rechazado"];
+const ESTADOS_R = ["Nuevo","Contactado","Esperando producto","Producto recibido","Envío en camino","Resuelto","Rechazado"];
 const TIPOS_R = ["Cambio","Devolución"];
 const PRODUCTOS = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Líquido Limpia Cristales"];
 const SKU_LENTE = { "AMARILLO-NN":"Amarillo","AMARILLO-TT":"Amarillo","NARAN-NN":"Naranja","NARAN-TT":"Naranja","ROJ-NN":"Rojo","ROJ-TT":"Rojo","N-N":"Negro","N-R":"Negro/Rojo","R-R":"Rojo/Rojo","CLIP-ON":"Clip-On","LIQ":"Líquido" };
@@ -103,10 +103,16 @@ function getEstadoEnvioC(T, estado) {
 }
 function getEstadoRC(T, estado) {
   const m = {
-    Pendiente:    { dot:T.blue,   bg:T.blueBg,   text:T.blue   },
-    "En proceso": { dot:T.yellow, bg:T.yellowBg, text:T.yellow },
-    Resuelto:     { dot:T.green,  bg:T.greenBg,  text:T.green  },
-    Rechazado:    { dot:T.red,    bg:T.redBg,    text:T.red    },
+    Nuevo:               { dot:T.blue,   bg:T.blueBg,   text:T.blue   },
+    Contactado:          { dot:T.yellow, bg:T.yellowBg, text:T.yellow },
+    "Esperando producto":{ dot:T.orange, bg:T.orangeBg, text:T.orange },
+    "Producto recibido": { dot:T.purple, bg:T.purpleBg, text:T.purple },
+    "Envío en camino":   { dot:T.accent, bg:T.accentSolid+"18", text:T.accent },
+    Resuelto:            { dot:T.green,  bg:T.greenBg,  text:T.green  },
+    Rechazado:           { dot:T.red,    bg:T.redBg,    text:T.red    },
+    // legacy
+    Pendiente:           { dot:T.blue,   bg:T.blueBg,   text:T.blue   },
+    "En proceso":        { dot:T.yellow, bg:T.yellowBg, text:T.yellow },
   };
   return m[estado] || { dot:T.textSm, bg:T.borderL, text:T.textSm };
 }
@@ -266,416 +272,685 @@ function OrderSearchField({T, orders, onSelect}) {
   );
 }
 
+
 // ═══════════════════════════════════════════
 // APP RECLAMOS
 // ═══════════════════════════════════════════
 function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
   const [reclamos,setReclamos]=useState([]);
-  const [tab,setTab]=useState("pedidos");
+  const [plantillas,setPlantillas]=useState([]);
+  const [view,setView]=useState("dashboard"); // dashboard | buscar | reclamos | config
   const [search,setSearch]=useState("");
-  const [filterEnvio,setFilterEnvio]=useState("");
-  const [filterReclamo,setFilterReclamo]=useState("");
-  const [selectedOrder,setSelectedOrder]=useState(null);
-  const [actionModal,setActionModal]=useState(null);
+  const [filterEstado,setFilterEstado]=useState("");
+  const [filterTipo,setFilterTipo]=useState("");
+  const [filterUrgentes,setFilterUrgentes]=useState(false);
+  const [activeReclamo,setActiveReclamo]=useState(null);
   const [reclamoForm,setReclamoForm]=useState(null);
-  const [reclamoDetail,setReclamoDetail]=useState(null);
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [saving,setSaving]=useState(false);
+  const [plantillaEdit,setPlantillaEdit]=useState(null);
+  const [copiedMsg,setCopiedMsg]=useState(null);
+  const [searchGlobal,setSearchGlobal]=useState("");
   const iS=InputStyle(T);
+  const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
+
+  // Default plantillas
+  const DEFAULT_PLANTILLAS=[
+    {id:"p1",estado:"Nuevo",tipo:"Cambio",nombre:"Confirmar reclamo",mensaje:"Hola [nombre]! Te contactamos desde Soluna Biolight. Recibimos tu solicitud de cambio para el pedido #[pedido]. ¿Podés confirmarnos el problema con tu producto? 🙏"},
+    {id:"p2",estado:"Contactado",tipo:"Cambio",nombre:"Instrucciones de devolución",mensaje:"Hola [nombre]! Para procesar tu cambio necesitamos que nos devuelvas el producto. Te compartimos la dirección de envío: [dirección]. Por favor avisanos el tracking cuando lo envíes 📦"},
+    {id:"p3",estado:"Esperando producto",tipo:"Cambio",nombre:"Seguimiento envío",mensaje:"Hola [nombre]! ¿Pudiste enviar el producto? Quedamos esperando el código de seguimiento para coordinar tu cambio 😊"},
+    {id:"p4",estado:"Producto recibido",tipo:"Cambio",nombre:"Producto recibido",mensaje:"Hola [nombre]! Recibimos el producto. Estamos preparando tu cambio y te avisamos cuando esté en camino 🎉"},
+    {id:"p5",estado:"Envío en camino",tipo:"Cambio",nombre:"Cambio enviado",mensaje:"Hola [nombre]! Tu nuevo producto ya está en camino 🚀 Tracking: [tracking]. Podés seguirlo en andreani.com. Cualquier consulta estamos acá!"},
+    {id:"p6",estado:"Resuelto",tipo:"Cambio",nombre:"Cierre cambio",mensaje:"Hola [nombre]! Esperamos que hayas recibido tu producto y estés conforme ✨ Gracias por elegirnos! Cualquier consulta no dudes en escribirnos."},
+    {id:"p7",estado:"Nuevo",tipo:"Devolución",nombre:"Confirmar devolución",mensaje:"Hola [nombre]! Recibimos tu solicitud de devolución del pedido #[pedido]. ¿Podés contarnos el motivo? Así agilizamos el proceso 🙏"},
+    {id:"p8",estado:"Envío en camino",tipo:"Devolución",nombre:"Reembolso procesado",mensaje:"Hola [nombre]! Ya procesamos tu reembolso. En 3-5 días hábiles debería verse reflejado en tu cuenta. Gracias por tu paciencia 💜"},
+  ];
 
   useEffect(()=>{
-    const unsub=onSnapshot(collection(db,"reclamos"),snap=>{
+    const unsub1=onSnapshot(collection(db,"reclamos"),snap=>{
       const data=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
       setReclamos(data);
     },()=>{});
-    return ()=>unsub();
+    const unsub2=onSnapshot(doc(db,"config","plantillas"),snap=>{
+      if(snap.exists()) setPlantillas(snap.data().lista||DEFAULT_PLANTILLAS);
+      else setPlantillas(DEFAULT_PLANTILLAS);
+    },()=>setPlantillas(DEFAULT_PLANTILLAS));
+    return ()=>{unsub1();unsub2();};
   },[]);
 
-  const emptyForm=(orderNum="")=>({_docId:null,orderNum,tipo:"Cambio",motivo:"",descripcion:"",estado:"Pendiente",resolucion:"",notas:"",productosRecibe:[{producto:"",cantidad:1}],productosEnvia:[{producto:"",cantidad:1}]});
+  const emptyForm=(orderNum="")=>({
+    _docId:null, orderNum, tipo:"Cambio", motivo:"", descripcion:"", estado:"Nuevo",
+    resolucion:"", notas:"", trackingCambio:"",
+    productosRecibe:[{producto:"",cantidad:1}],
+    productosEnvia:[{producto:"",cantidad:1}],
+    historial:[],
+    // devolución
+    estadoRecepcion:"", estadoReembolso:"",
+  });
 
   async function saveReclamo() {
     if(!reclamoForm?.motivo||!reclamoForm?.orderNum) return;
     setSaving(true);
     try {
-      const p={orderNum:reclamoForm.orderNum,tipo:reclamoForm.tipo,motivo:reclamoForm.motivo,descripcion:reclamoForm.descripcion||"",estado:reclamoForm.estado,resolucion:reclamoForm.resolucion||"",notas:reclamoForm.notas||"",productosRecibe:reclamoForm.productosRecibe||[],productosEnvia:reclamoForm.productosEnvia||[]};
+      const prev=reclamos.find(r=>r._docId===reclamoForm._docId);
+      const estadoCambio=prev&&prev.estado!==reclamoForm.estado;
+      const histEntry=estadoCambio?[...(reclamoForm.historial||[]),{accion:`Estado → ${reclamoForm.estado}`,fecha:new Date().toISOString()}]:reclamoForm.historial||[];
+      const p={
+        orderNum:reclamoForm.orderNum, tipo:reclamoForm.tipo, motivo:reclamoForm.motivo,
+        descripcion:reclamoForm.descripcion||"", estado:reclamoForm.estado,
+        resolucion:reclamoForm.resolucion||"", notas:reclamoForm.notas||"",
+        trackingCambio:reclamoForm.trackingCambio||"",
+        productosRecibe:reclamoForm.productosRecibe||[],
+        productosEnvia:reclamoForm.productosEnvia||[],
+        historial:histEntry,
+        estadoRecepcion:reclamoForm.estadoRecepcion||"",
+        estadoReembolso:reclamoForm.estadoReembolso||"",
+      };
       if(reclamoForm._docId) {
-        const prev=reclamos.find(r=>r._docId===reclamoForm._docId);
         await updateDoc(doc(db,"reclamos",reclamoForm._docId),{...p,updatedAt:serverTimestamp(),...(reclamoForm.estado==="Resuelto"&&prev?.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
       } else {
-        await addDoc(collection(db,"reclamos"),{...p,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),resolvedAt:null});
+        await addDoc(collection(db,"reclamos"),{...p,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),resolvedAt:null,historial:[{accion:"Reclamo creado",fecha:new Date().toISOString()}]});
       }
       setReclamoForm(null);
     } catch(e){alert("Error al guardar.");}
     setSaving(false);
   }
 
-  async function deleteReclamo(docId) {
-    try{await deleteDoc(doc(db,"reclamos",docId));}catch(e){}
-    setDeleteConfirm(null);setReclamoDetail(null);
+  async function addNotaReclamo(docId,texto) {
+    if(!texto.trim()) return;
+    const r=reclamos.find(r=>r._docId===docId);
+    if(!r) return;
+    const entry={accion:`Nota: ${texto}`,fecha:new Date().toISOString()};
+    await updateDoc(doc(db,"reclamos",docId),{historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp()});
   }
 
-  const filteredOrders=useMemo(()=>orders.filter(o=>{
-    if(filterEnvio&&o.estadoEnvio!==filterEnvio) return false;
-    if(search){const s=search.toLowerCase();return o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s)||o.productos.some(p=>p.nombre.toLowerCase().includes(s));}
-    return true;
-  }),[orders,search,filterEnvio]);
+  async function updateEstado(docId,nuevoEstado) {
+    const r=reclamos.find(r=>r._docId===docId);
+    if(!r) return;
+    const entry={accion:`Estado → ${nuevoEstado}`,fecha:new Date().toISOString()};
+    await updateDoc(doc(db,"reclamos",docId),{estado:nuevoEstado,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(nuevoEstado==="Resuelto"&&r.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
+  }
 
+  async function deleteReclamo(docId) {
+    try{await deleteDoc(doc(db,"reclamos",docId));}catch(e){}
+    setDeleteConfirm(null);setActiveReclamo(null);
+  }
+
+  async function savePlantillas(lista) {
+    try{ await updateDoc(doc(db,"config","plantillas"),{lista}).catch(async()=>{ await addDoc(collection(db,"config"),{lista}); }); }catch(e){}
+    // simpler: use setDoc
+    try{
+      const {setDoc}=await import("firebase/firestore");
+      await setDoc(doc(db,"config","plantillas"),{lista});
+    }catch(e){}
+    setPlantillas(lista);
+  }
+
+  function copyMensaje(plantilla,reclamo) {
+    const o=orders.find(o=>o.numero===reclamo.orderNum);
+    let msg=plantilla.mensaje
+      .replace(/\[nombre\]/g, o?.comprador||reclamo.orderNum)
+      .replace(/\[pedido\]/g, reclamo.orderNum)
+      .replace(/\[tracking\]/g, reclamo.trackingCambio||"—")
+      .replace(/\[dirección\]/g, "Av. Ejemplo 1234, Buenos Aires");
+    navigator.clipboard.writeText(msg);
+    setCopiedMsg(plantilla.id);
+    setTimeout(()=>setCopiedMsg(null),2000);
+  }
+
+  // Stats
+  const hoy=new Date().toISOString().split('T')[0];
+  const hace3=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
+  const stats={
+    total:reclamos.length,
+    nuevos:reclamos.filter(r=>r.estado==="Nuevo").length,
+    abiertos:reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado)).length,
+    urgentes:reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado)&&r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]<=hace3).length,
+    resueltos:reclamos.filter(r=>r.estado==="Resuelto").length,
+    rechazados:reclamos.filter(r=>r.estado==="Rechazado").length,
+    cambios:reclamos.filter(r=>r.tipo==="Cambio").length,
+    devoluciones:reclamos.filter(r=>r.tipo==="Devolución").length,
+  };
+
+  // Tiempo promedio resolución
+  const resueltos=reclamos.filter(r=>r.resolvedAt?.seconds&&r.createdAt?.seconds);
+  const tiempoPromedio=resueltos.length>0?Math.round(resueltos.reduce((s,r)=>(r.resolvedAt.seconds-r.createdAt.seconds)+s,0)/resueltos.length/86400):null;
+
+  // Filtered reclamos
   const filteredReclamos=useMemo(()=>reclamos.filter(r=>{
-    if(filterReclamo&&r.estado!==filterReclamo) return false;
-    if(search){const s=search.toLowerCase();const o=orders.find(o=>o.numero===r.orderNum);return r.orderNum.includes(s)||(o&&o.comprador.toLowerCase().includes(s));}
+    if(filterEstado&&r.estado!==filterEstado) return false;
+    if(filterTipo&&r.tipo!==filterTipo) return false;
+    if(filterUrgentes){
+      if(["Resuelto","Rechazado"].includes(r.estado)) return false;
+      if(!r.createdAt?.seconds||new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]>hace3) return false;
+    }
+    if(search){
+      const s=search.toLowerCase();
+      const o=orders.find(o=>o.numero===r.orderNum);
+      return r.orderNum.includes(s)||(o&&(o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s)||o.telefono.includes(s)));
+    }
     return true;
-  }),[reclamos,search,filterReclamo,orders]);
+  }),[reclamos,search,filterEstado,filterTipo,filterUrgentes,hace3]);
 
-  const stats={total:reclamos.length,pendientes:reclamos.filter(r=>r.estado==="Pendiente").length,enProceso:reclamos.filter(r=>r.estado==="En proceso").length,resueltos:reclamos.filter(r=>r.estado==="Resuelto").length,rechazados:reclamos.filter(r=>r.estado==="Rechazado").length};
-  const selOrder=orders.find(o=>o.numero===selectedOrder);
-  const detailR=reclamos.find(r=>r._docId===reclamoDetail);
-  const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
+  // Global search (pedidos + reclamos)
+  const globalResults=useMemo(()=>{
+    if(!searchGlobal||searchGlobal.length<2) return {pedidos:[],reclamos:[]};
+    const s=searchGlobal.toLowerCase();
+    const pedidos=orders.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s)||o.telefono.includes(s)).slice(0,8);
+    const recls=reclamos.filter(r=>{ const o=orders.find(o=>o.numero===r.orderNum); return r.orderNum.includes(s)||(o&&(o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s))); }).slice(0,5);
+    return {pedidos,recls};
+  },[searchGlobal,orders,reclamos]);
 
+  const activeR=reclamos.find(r=>r._docId===activeReclamo);
+  const activeOrder=activeR?orders.find(o=>o.numero===activeR.orderNum):null;
+
+  // ── Render ──
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
+
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 28px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:62,gap:16,maxWidth:1280,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <button onClick={onHome} style={{...BtnSecondary(T),padding:"8px 14px",fontSize:13}}>← Inicio</button>
-            <span style={{color:T.textSm,fontSize:16}}>/</span>
-            <span style={{fontWeight:700,fontSize:16,color:T.text}}>📋 Reclamos</span>
-            <div style={{display:"flex",alignItems:"center",gap:5,background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"4px 10px"}}>
-              <span style={{width:7,height:7,borderRadius:"50%",background:fbDot,boxShadow:`0 0 5px ${fbDot}`}}/>
-              <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{fbStatus==="ok"?"en vivo":fbStatus==="error"?"sin conexión":"conectando"}</span>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1400,margin:"0 auto"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={onHome} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
+            <span style={{color:T.textSm,fontSize:15}}>/</span>
+            <span style={{fontWeight:700,fontSize:15,color:T.text}}>📋 Reclamos</span>
+            <div style={{display:"flex",alignItems:"center",gap:4,background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"3px 10px"}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:fbDot,boxShadow:`0 0 5px ${fbDot}`}}/>
+              <span style={{fontSize:11,color:T.textSm}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
             </div>
           </div>
-          <div style={{display:"flex",gap:10}}>
-            <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13}}>+ Nuevo Reclamo</button>
-            <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:13,opacity:ordersStatus==="loading"?0.5:1}}>
-              {ordersStatus==="loading"?"⟳ Sincronizando...":"⟳ Sincronizar"}
-            </button>
+          <div style={{display:"flex",gap:6}}>
+            {["dashboard","buscar","reclamos","config"].map(v=>{
+              const labels={dashboard:"📊 Dashboard",buscar:"🔍 Buscar",reclamos:"📋 Reclamos",config:"⚙️ Plantillas"};
+              const isCurrent=view===v;
+              return <button key={v} onClick={()=>{setView(v);setActiveReclamo(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",background:isCurrent?T.accentSolid:T.card,color:isCurrent?"#fff":T.textMd,borderColor:isCurrent?T.accentSolid:T.border}}>{labels[v]}{v==="reclamos"&&stats.urgentes>0&&<span style={{background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"1px 6px",marginLeft:4}}>{stats.urgentes}</span>}</button>;
+            })}
+            <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>+ Nuevo</button>
+            <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>⟳</button>
           </div>
         </div>
       </div>
 
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"0 28px"}}>
-        {/* Stats */}
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:"24px 0 0"}}>
-          <StatCard T={T} label="Pedidos" value={orders.length} color={T.accent}/>
-          <StatCard T={T} label="Reclamos" value={stats.total} color={T.textMd}/>
-          <StatCard T={T} label="Pendientes" value={stats.pendientes} color={T.blue}/>
-          <StatCard T={T} label="En proceso" value={stats.enProceso} color={T.yellow}/>
-          <StatCard T={T} label="Resueltos" value={stats.resueltos} color={T.green}/>
-          <StatCard T={T} label="Rechazados" value={stats.rechazados} color={T.red}/>
-        </div>
+      <div style={{maxWidth:1400,margin:"0 auto",padding:"0 24px"}}>
 
-        {/* Tabs */}
-        <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginTop:24}}>
-          {[{id:"pedidos",label:"Pedidos",icon:"📦"},{id:"reclamos",label:"Reclamos",icon:"📋"}].map(t=>(
-            <button key={t.id} onClick={()=>{setTab(t.id);setSearch("");setFilterEnvio("");setFilterReclamo("");}}
-              style={{padding:"14px 22px",fontSize:15,fontWeight:tab===t.id?700:400,color:tab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:tab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,marginBottom:-1,transition:"color 0.15s"}}>
-              {t.icon} {t.label}
-              {t.id==="reclamos"&&stats.pendientes>0&&<span style={{background:T.accentSolid,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>{stats.pendientes}</span>}
-            </button>
-          ))}
-        </div>
-
-        {/* Filters */}
-        <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-          <div style={{position:"relative",flex:"1 1 260px",minWidth:220}}>
-            <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:14}}>🔍</span>
-            <input placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,paddingLeft:36,fontSize:14}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
-          </div>
-          {tab==="pedidos"&&(
-            <select value={filterEnvio} onChange={e=>setFilterEnvio(e.target.value)} style={{...iS,width:"auto",flex:"0 1 190px",fontSize:14,color:filterEnvio?T.accent:T.textMd}}>
-              <option value="">Estado de envío</option>
-              {["No está empaquetado","Listo para enviar","Enviado","Entregado"].map(e=><option key={e}>{e}</option>)}
-            </select>
-          )}
-          {tab==="reclamos"&&(
-            <select value={filterReclamo} onChange={e=>setFilterReclamo(e.target.value)} style={{...iS,width:"auto",flex:"0 1 160px",fontSize:14,color:filterReclamo?T.accent:T.textMd}}>
-              <option value="">Estado</option>
-              {ESTADOS_R.map(e=><option key={e}>{e}</option>)}
-            </select>
-          )}
-          <span style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>{tab==="pedidos"?`${filteredOrders.length} pedidos`:`${filteredReclamos.length} reclamos`}</span>
-        </div>
-
-        {/* Pedidos */}
-        {tab==="pedidos"&&(
-          <div style={{paddingBottom:48}}>
-            {orders.length===0?(
-              <div style={{textAlign:"center",padding:"80px 20px"}}>
-                <div style={{fontSize:48,marginBottom:16}}>{ordersStatus==="loading"?"⟳":"📦"}</div>
-                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>{ordersStatus==="loading"?"Cargando pedidos...":ordersStatus==="error"?"Error al conectar":"Sin pedidos"}</div>
-              </div>
-            ):(
-              <>
-                <div style={{display:"grid",gridTemplateColumns:"90px 1fr 1fr 180px 120px 80px",gap:8,padding:"8px 16px",fontSize:12,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span>Pedido</span><span>Cliente</span><span>Productos</span><span>Estado envío</span><span>Total</span><span>Fecha</span>
+        {/* ── DASHBOARD ── */}
+        {view==="dashboard"&&(
+          <div style={{padding:"24px 0 48px"}}>
+            {/* Stats row */}
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:28}}>
+              {[
+                {label:"Abiertos",value:stats.abiertos,color:T.blue,icon:"📂"},
+                {label:"Nuevos",value:stats.nuevos,color:T.accent,icon:"🆕"},
+                {label:"⚠ Urgentes (+3 días)",value:stats.urgentes,color:T.red,icon:"🔴"},
+                {label:"Resueltos",value:stats.resueltos,color:T.green,icon:"✅"},
+                {label:"Cambios",value:stats.cambios,color:T.purple,icon:"🔄"},
+                {label:"Devoluciones",value:stats.devoluciones,color:T.orange,icon:"↩️"},
+                {label:"Tiempo prom. resolución",value:tiempoPromedio!=null?`${tiempoPromedio}d`:"—",color:T.textMd,icon:"⏱"},
+              ].map(s=>(
+                <div key={s.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",flex:"1 1 120px",minWidth:110}}>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>{s.icon} {s.label}</div>
+                  <div style={{fontSize:28,fontWeight:800,color:s.color,letterSpacing:-1}}>{s.value}</div>
                 </div>
-                {filteredOrders.map(o=>{
-                  const hasR=reclamos.some(r=>r.orderNum===o.numero);
-                  const ec=getEstadoEnvioC(T,o.estadoEnvio);
-                  return (
-                    <div key={o.numero} onClick={()=>setSelectedOrder(o.numero)}
-                      style={{display:"grid",gridTemplateColumns:"90px 1fr 1fr 180px 120px 80px",gap:8,padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",alignItems:"center",borderRadius:4}}
-                      onMouseEnter={e=>e.currentTarget.style.background=T.card}
-                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                      <div style={{display:"flex",alignItems:"center",gap:6}}>
-                        <span style={{fontWeight:700,color:T.accent,fontSize:15}}>#{o.numero}</span>
-                        {hasR&&<span title="Tiene reclamo" style={{color:T.red,fontSize:12}}>⚠</span>}
-                      </div>
-                      <div>
-                        <div style={{fontSize:14,fontWeight:600,color:T.text}}>{o.comprador}</div>
-                        <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{o.email}</div>
-                      </div>
-                      <div style={{display:"flex",alignItems:"center",gap:7}}>
-                        <LensDots productos={o.productos}/>
-                        <span style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                          {o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}
-                        </span>
-                      </div>
-                      <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
-                      <span style={{fontSize:14,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>
-                      <span style={{fontSize:12,color:T.textSm}}>{fmtDate(o.fecha).split('/').slice(0,2).join('/')}</span>
+              ))}
+            </div>
+
+            {/* Pipeline por estado */}
+            <div style={{fontSize:13,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.6,marginBottom:12}}>Pipeline de reclamos</div>
+            <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:8,marginBottom:28}}>
+              {ESTADOS_R.map(estado=>{
+                const sc=getEstadoRC(T,estado);
+                const count=reclamos.filter(r=>r.estado===estado).length;
+                return (
+                  <div key={estado} onClick={()=>{setView("reclamos");setFilterEstado(estado);}} style={{background:T.card,border:`1px solid ${sc.dot}44`,borderRadius:12,padding:"16px 18px",flex:"0 0 150px",cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=sc.dot} onMouseLeave={e=>e.currentTarget.style.borderColor=sc.dot+"44"}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+                      <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot}}/>
+                      <span style={{fontSize:11,fontWeight:600,color:sc.text}}>{estado}</span>
                     </div>
-                  );
-                })}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Reclamos */}
-        {tab==="reclamos"&&(
-          <div style={{paddingBottom:48}}>
-            {filteredReclamos.length===0?(
-              <div style={{textAlign:"center",padding:"80px 20px"}}>
-                <div style={{fontSize:48,marginBottom:16}}>📋</div>
-                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>{reclamos.length===0?"Sin reclamos todavía":"Sin resultados"}</div>
-              </div>
-            ):(
-              <>
-                <div style={{display:"grid",gridTemplateColumns:"90px 1fr 1fr 130px 120px 90px",gap:8,padding:"8px 16px",fontSize:12,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span>Pedido</span><span>Cliente</span><span>Motivo</span><span>Estado</span><span>Tipo</span><span>Fecha</span>
-                </div>
-                {filteredReclamos.map(r=>{
-                  const o=orders.find(o=>o.numero===r.orderNum);
-                  const sc=getEstadoRC(T,r.estado);
-                  const tc=getTipoRC(T,r.tipo);
-                  return (
-                    <div key={r._docId} onClick={()=>setReclamoDetail(r._docId)}
-                      style={{display:"grid",gridTemplateColumns:"90px 1fr 1fr 130px 120px 90px",gap:8,padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",alignItems:"center",borderLeft:`3px solid ${sc.dot}`,borderRadius:4}}
-                      onMouseEnter={e=>e.currentTarget.style.background=T.card}
-                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                      <span style={{fontWeight:700,color:T.accent,fontSize:15}}>#{r.orderNum}</span>
-                      <div>
-                        <div style={{fontSize:14,fontWeight:600,color:T.text}}>{o?.comprador||"—"}</div>
-                        <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{o?.email||""}</div>
-                      </div>
-                      <span style={{fontSize:13,color:T.textMd}}>{r.motivo}</span>
-                      <Badge T={T} colors={sc}>{r.estado}</Badge>
-                      <Badge T={T} colors={tc}>{r.tipo}</Badge>
-                      <span style={{fontSize:12,color:T.textSm}}>{fmtTs(r.createdAt)}</span>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Order Detail Modal */}
-      <Modal T={T} open={!!selOrder} onClose={()=>setSelectedOrder(null)} title={selOrder?`Pedido #${selOrder.numero}`:""} width={640}>
-        {selOrder&&(
-          <div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:18}}>
-              <button onClick={()=>{setSelectedOrder(null);setReclamoForm(emptyForm(selOrder.numero));}} style={{...BtnDanger(T),fontSize:13}}>📋 Crear Reclamo</button>
-              <button onClick={()=>setActionModal({type:"direccion",order:selOrder})} style={{...BtnSecondary(T),fontSize:13}}>📍 Dirección</button>
-              <button onClick={()=>setActionModal({type:"etiqueta",order:selOrder})} style={{...BtnSecondary(T),fontSize:13,color:T.accent}}>🏷️ Andreani</button>
-              {selOrder.linkOrden&&<a href={selOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:13,textDecoration:"none",color:T.purple}}>🔗 Tienda Nube</a>}
-            </div>
-            <Divider T={T}/>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 28px",fontSize:14,marginBottom:14}}>
-              {[["Cliente",selOrder.comprador],["Email",selOrder.email],["Teléfono",selOrder.telefono],["DNI/CUIT",selOrder.dni],["Fecha",fmtDate(selOrder.fecha)],["Pago",selOrder.medioPago],["Estado pago",selOrder.estadoPago],["Estado envío",selOrder.estadoEnvio],["Tracking",selOrder.tracking||"—"]].map(([l,v])=>v?(
-                <div key={l} style={{display:"flex",gap:10,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                  <span style={{color:T.textSm,minWidth:100,flexShrink:0,fontSize:13}}>{l}</span>
-                  <span style={{color:T.text,fontSize:13,fontWeight:500}}>{v}</span>
-                </div>
-              ):null)}
-            </div>
-            <Divider T={T}/>
-            <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>Productos</div>
-            {selOrder.productos.map((p,i)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:i<selOrder.productos.length-1?`1px solid ${T.borderL}`:"none"}}>
-                <div><div style={{fontSize:14,color:T.text}}>{p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'')}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>SKU: {p.sku} · x{p.cantidad}</div></div>
-                <span style={{fontSize:14,fontWeight:700,color:T.text}}>{fmtMoney(p.precio)}</span>
-              </div>
-            ))}
-            <div style={{display:"flex",justifyContent:"flex-end",marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`}}>
-              <span style={{fontSize:18,fontWeight:800,color:T.text}}>{fmtMoney(selOrder.total)}</span>
-            </div>
-            {reclamos.filter(r=>r.orderNum===selOrder.numero).length>0&&(
-              <>
-                <Divider T={T}/>
-                <div style={{fontSize:12,textTransform:"uppercase",color:T.red,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>Reclamos asociados</div>
-                {reclamos.filter(r=>r.orderNum===selOrder.numero).map(r=>(
-                  <div key={r._docId} onClick={()=>{setSelectedOrder(null);setReclamoDetail(r._docId);setTab("reclamos");}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",cursor:"pointer",borderBottom:`1px solid ${T.borderL}`}}>
-                    <div style={{display:"flex",gap:8,alignItems:"center"}}><Badge T={T} colors={getEstadoRC(T,r.estado)} small>{r.estado}</Badge><span style={{fontSize:13,color:T.textMd}}>{r.tipo} — {r.motivo}</span></div>
-                    <span style={{color:T.accent,fontSize:13}}>→</span>
+                    <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:-1}}>{count}</div>
                   </div>
-                ))}
+                );
+              })}
+            </div>
+
+            {/* Urgentes */}
+            {stats.urgentes>0&&(
+              <>
+                <div style={{fontSize:13,fontWeight:600,color:T.red,textTransform:"uppercase",letterSpacing:0.6,marginBottom:12}}>⚠ Reclamos urgentes (más de 3 días sin resolver)</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado)&&r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]<=hace3).map(r=>{
+                    const o=orders.find(o=>o.numero===r.orderNum);
+                    const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):0;
+                    const sc=getEstadoRC(T,r.estado);
+                    return (
+                      <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");}} style={{background:T.card,border:`1.5px solid ${T.red}44`,borderLeft:`4px solid ${T.red}`,borderRadius:10,padding:"14px 18px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background=T.card}>
+                        <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                          <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"6px 10px",fontSize:13,fontWeight:700,color:T.red}}>{dias}d</div>
+                          <div>
+                            <div style={{fontSize:14,fontWeight:700,color:T.text}}>{o?.comprador||`Pedido #${r.orderNum}`}</div>
+                            <div style={{fontSize:12,color:T.textSm,marginTop:2}}>#{r.orderNum} · {r.motivo} · {r.tipo}</div>
+                          </div>
+                        </div>
+                        <Badge T={T} colors={sc}>{r.estado}</Badge>
+                      </div>
+                    );
+                  })}
+                </div>
               </>
             )}
           </div>
         )}
-      </Modal>
 
-      {/* Direccion Modal */}
-      <Modal T={T} open={actionModal?.type==="direccion"} onClose={()=>setActionModal(null)} title="Dirección de Envío">
-        {actionModal?.order&&(
-          <div>
-            <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:24,marginBottom:16}}>
-              <div style={{fontSize:18,fontWeight:700,marginBottom:14,color:T.text}}>{actionModal.order.nombreEnvio}</div>
-              <div style={{fontSize:15,lineHeight:2,color:T.textMd}}>
-                <div>{actionModal.order.direccion} {actionModal.order.dirNumero}{actionModal.order.piso?`, Piso ${actionModal.order.piso}`:''}</div>
-                <div>{actionModal.order.localidad}{actionModal.order.ciudad?`, ${actionModal.order.ciudad}`:''}</div>
-                <div style={{color:T.text,fontWeight:600}}>CP {actionModal.order.cp} — {actionModal.order.provincia}</div>
-                <div style={{marginTop:6}}>📞 {actionModal.order.telEnvio||actionModal.order.telefono}</div>
-              </div>
+        {/* ── BUSCAR ── */}
+        {view==="buscar"&&(
+          <div style={{padding:"28px 0 48px",maxWidth:700}}>
+            <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:-0.5}}>Buscar cliente o pedido</div>
+            <div style={{fontSize:14,color:T.textMd,marginBottom:20}}>Buscá por nombre, email, teléfono o número de pedido.</div>
+            <div style={{position:"relative",marginBottom:20}}>
+              <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:16,color:T.textSm}}>🔍</span>
+              <input autoFocus style={{...iS,paddingLeft:42,fontSize:16,padding:"14px 14px 14px 42px"}} placeholder="Ej: Guillermo, +5411..., #1369" value={searchGlobal} onChange={e=>setSearchGlobal(e.target.value)}/>
             </div>
-            <button onClick={()=>navigator.clipboard.writeText(fullAddress(actionModal.order))} style={{...BtnSecondary(T),width:"100%",justifyContent:"center"}}>📋 Copiar dirección</button>
-          </div>
-        )}
-      </Modal>
-
-      {/* Etiqueta Modal */}
-      <Modal T={T} open={actionModal?.type==="etiqueta"} onClose={()=>setActionModal(null)} title="Etiqueta Andreani" width={480}>
-        {actionModal?.order&&(
-          <div>
-            <div style={{border:`2px dashed ${T.accent}`,borderRadius:12,padding:24,background:T.bg,marginBottom:16}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
-                <div><div style={{fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:1}}>Remitente</div><div style={{fontSize:15,fontWeight:700,color:T.text,marginTop:4}}>Soluna Biolight</div></div>
-                <div style={{fontSize:12,color:T.textSm,fontFamily:"monospace"}}>#{actionModal.order.numero}</div>
-              </div>
-              <div style={{borderTop:`1px solid ${T.border}`,paddingTop:16}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:1,marginBottom:10}}>Destinatario</div>
-                <div style={{fontSize:18,fontWeight:800,color:T.text,marginBottom:10}}>{actionModal.order.nombreEnvio}</div>
-                <div style={{fontSize:14,lineHeight:1.9,color:T.textMd}}>
-                  <div>{actionModal.order.direccion} {actionModal.order.dirNumero}{actionModal.order.piso?`, Piso ${actionModal.order.piso}`:''}</div>
-                  <div>{actionModal.order.localidad}{actionModal.order.ciudad?` — ${actionModal.order.ciudad}`:''}</div>
-                  <div style={{color:T.text,fontWeight:600}}>CP {actionModal.order.cp} — {actionModal.order.provincia}</div>
-                  <div style={{marginTop:4}}>Tel: {actionModal.order.telEnvio||actionModal.order.telefono}</div>
-                </div>
-              </div>
-              {actionModal.order.tracking&&<div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${T.border}`}}><div style={{fontSize:11,color:T.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Tracking</div><div style={{fontSize:17,fontWeight:800,fontFamily:"monospace",color:T.text,marginTop:6}}>{actionModal.order.tracking}</div></div>}
-            </div>
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={()=>{ const t=`DESTINATARIO: ${actionModal.order.nombreEnvio}\n${actionModal.order.direccion} ${actionModal.order.dirNumero}${actionModal.order.piso?', Piso '+actionModal.order.piso:''}\n${actionModal.order.localidad}${actionModal.order.ciudad?' — '+actionModal.order.ciudad:''}\nCP ${actionModal.order.cp} — ${actionModal.order.provincia}\nTel: ${actionModal.order.telEnvio||actionModal.order.telefono}\nPedido #${actionModal.order.numero}`; navigator.clipboard.writeText(t); }} style={{...BtnSecondary(T),flex:1,justifyContent:"center"}}>📋 Copiar</button>
-              <button onClick={()=>window.print()} style={{...BtnSecondary(T),flex:1,justifyContent:"center"}}>🖨️ Imprimir</button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* Reclamo Form Modal */}
-      <Modal T={T} open={!!reclamoForm} onClose={()=>setReclamoForm(null)} title={reclamoForm?._docId?"Editar Reclamo":reclamoForm?.orderNum?`Nuevo Reclamo — #${reclamoForm.orderNum}`:"Nuevo Reclamo"}>
-        {reclamoForm&&(
-          <div>
-            {!reclamoForm._docId&&!reclamoForm.orderNum&&<Field T={T} label="Pedido" required><OrderSearchField T={T} orders={orders} onSelect={num=>setReclamoForm(f=>({...f,orderNum:num}))}/></Field>}
-            {(()=>{const o=orders.find(o=>o.numero===reclamoForm.orderNum);return o?(
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div><span style={{fontWeight:700,fontSize:14,color:T.text}}>#{o.numero} — {o.comprador}</span><div style={{color:T.textSm,fontSize:12,marginTop:3}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div></div>
-                {!reclamoForm._docId&&<button onClick={()=>setReclamoForm(f=>({...f,orderNum:""}))} style={{...BtnDanger(T),padding:"5px 10px",fontSize:12}}>Cambiar</button>}
-              </div>
-            ):null;})()}
-            {reclamoForm.orderNum&&(
-              <>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-                  <Field T={T} label="Tipo"><select style={iS} value={reclamoForm.tipo} onChange={e=>setReclamoForm(f=>({...f,tipo:e.target.value}))}>{TIPOS_R.map(t=><option key={t}>{t}</option>)}</select></Field>
-                  <Field T={T} label="Motivo" required><select style={iS} value={reclamoForm.motivo} onChange={e=>setReclamoForm(f=>({...f,motivo:e.target.value}))}><option value="">Seleccionar...</option>{MOTIVOS_R.map(m=><option key={m}>{m}</option>)}</select></Field>
-                </div>
-                {reclamoForm.tipo==="Cambio"&&(
-                  <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:16,marginBottom:16}}>
-                    <div style={{fontSize:12,textTransform:"uppercase",color:T.purple,fontWeight:700,letterSpacing:0.5,marginBottom:12}}>🔄 Detalle del cambio</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 18px"}}>
-                      {["productosRecibe","productosEnvia"].map((key,side)=>(
-                        <div key={key}>
-                          <div style={{fontSize:12,color:T.textSm,fontWeight:600,marginBottom:8,textTransform:"uppercase"}}>{side===0?"Nos devuelve":"Le enviamos"}</div>
-                          {(reclamoForm[key]||[]).map((item,i)=>(
-                            <div key={i} style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
-                              <select style={{...iS,flex:1,fontSize:12,padding:"8px 10px"}} value={item.producto} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],producto:e.target.value};setReclamoForm(f=>({...f,[key]:arr}));}}><option value="">Producto...</option>{PRODUCTOS.map(p=><option key={p}>{p}</option>)}</select>
-                              <input type="number" min={1} value={item.cantidad} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],cantidad:parseInt(e.target.value)||1};setReclamoForm(f=>({...f,[key]:arr}));}} style={{...iS,width:52,textAlign:"center",fontSize:12,padding:"8px 4px",flexShrink:0}}/>
-                              {reclamoForm[key].length>1&&<button onClick={()=>setReclamoForm(f=>({...f,[key]:f[key].filter((_,j)=>j!==i)}))} style={{...BtnDanger(T),padding:"5px 8px",fontSize:12,flexShrink:0}}>✕</button>}
+            {searchGlobal.length>=2&&(
+              <div>
+                {globalResults.pedidos?.length>0&&(
+                  <>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>Pedidos ({globalResults.pedidos.length})</div>
+                    {globalResults.pedidos.map(o=>{
+                      const hasR=reclamos.filter(r=>r.orderNum===o.numero);
+                      return (
+                        <div key={o.numero} style={{background:T.card,border:`1px solid ${hasR.length>0?T.red+"44":T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:10,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=hasR.length>0?T.red+"44":T.border}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                            <div>
+                              <div style={{fontSize:16,fontWeight:800,color:T.text}}>{o.comprador}</div>
+                              <div style={{fontSize:13,color:T.accent,marginTop:2}}>Pedido #{o.numero}</div>
+                              <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{o.email} · {o.telefono}</div>
                             </div>
-                          ))}
-                          <button onClick={()=>setReclamoForm(f=>({...f,[key]:[...(f[key]||[]),{producto:"",cantidad:1}]}))} style={{...BtnSecondary(T),width:"100%",justifyContent:"center",fontSize:12,padding:"7px"}}>+ Agregar</button>
+                            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                              <Badge T={T} colors={getEstadoEnvioC(T,o.estadoEnvio)}>{o.estadoEnvio}</Badge>
+                              <span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>
+                            </div>
+                          </div>
+                          <div style={{fontSize:12,color:T.textSm,marginBottom:12}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(' · ')}</div>
+                          {hasR.length>0&&(
+                            <div style={{marginBottom:12}}>
+                              {hasR.map(r=>(
+                                <div key={r._docId} onClick={e=>{e.stopPropagation();setActiveReclamo(r._docId);setView("reclamos");}} style={{display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:8,padding:"4px 10px",marginRight:6,cursor:"pointer",fontSize:12,color:T.red,fontWeight:500}}>
+                                  ⚠ {r.tipo} · {r.estado}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div style={{display:"flex",gap:8}}>
+                            <button onClick={()=>{setReclamoForm(emptyForm(o.numero));}} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>+ Crear Reclamo</button>
+                            {o.telefono&&<a href={`https://wa.me/${o.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",textDecoration:"none",color:T.green}}>💬 WhatsApp</a>}
+                          </div>
                         </div>
+                      );
+                    })}
+                  </>
+                )}
+                {globalResults.recls?.length>0&&(
+                  <>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10,marginTop:16}}>Reclamos activos ({globalResults.recls.length})</div>
+                    {globalResults.recls.map(r=>{
+                      const o=orders.find(o=>o.numero===r.orderNum);
+                      const sc=getEstadoRC(T,r.estado);
+                      return (
+                        <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");}} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:8,cursor:"pointer",transition:"background 0.1s",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background=T.card}>
+                          <div>
+                            <div style={{fontSize:14,fontWeight:600,color:T.text}}>#{r.orderNum} · {o?.comprador||"—"}</div>
+                            <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{r.tipo} · {r.motivo}</div>
+                          </div>
+                          <Badge T={T} colors={sc}>{r.estado}</Badge>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+                {!globalResults.pedidos?.length&&!globalResults.recls?.length&&(
+                  <div style={{textAlign:"center",padding:"40px 20px",color:T.textSm}}>
+                    <div style={{fontSize:32,marginBottom:10}}>🔍</div>
+                    <div style={{fontSize:15,color:T.textMd}}>Sin resultados para "{searchGlobal}"</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── RECLAMOS LIST + PANEL UNIFICADO ── */}
+        {view==="reclamos"&&(
+          <div style={{display:"grid",gridTemplateColumns:activeR?"1fr 420px":"1fr",gap:20,padding:"20px 0 48px",alignItems:"start"}}>
+            {/* Lista */}
+            <div>
+              {/* Filters */}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+                <div style={{position:"relative",flex:"1 1 200px",minWidth:180}}>
+                  <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:T.textSm}}>🔍</span>
+                  <input placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,paddingLeft:32,fontSize:13}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
+                </div>
+                <select value={filterEstado} onChange={e=>setFilterEstado(e.target.value)} style={{...iS,width:"auto",flex:"0 1 160px",fontSize:12,color:filterEstado?T.accent:T.textMd}}><option value="">Estado</option>{ESTADOS_R.map(e=><option key={e}>{e}</option>)}</select>
+                <select value={filterTipo} onChange={e=>setFilterTipo(e.target.value)} style={{...iS,width:"auto",flex:"0 1 130px",fontSize:12,color:filterTipo?T.accent:T.textMd}}><option value="">Tipo</option>{TIPOS_R.map(t=><option key={t}>{t}</option>)}</select>
+                <button onClick={()=>setFilterUrgentes(v=>!v)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",borderColor:filterUrgentes?T.red:T.border,color:filterUrgentes?T.red:T.textMd,background:filterUrgentes?T.redBg:T.card}}>⚠ Urgentes</button>
+                <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{filteredReclamos.length} reclamos</span>
+              </div>
+
+              {filteredReclamos.length===0?(
+                <div style={{textAlign:"center",padding:"60px 20px",color:T.textSm}}>
+                  <div style={{fontSize:36,marginBottom:10}}>📋</div>
+                  <div style={{fontSize:15,color:T.textMd}}>{reclamos.length===0?"Sin reclamos todavía":"Sin resultados"}</div>
+                </div>
+              ):(
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {filteredReclamos.map(r=>{
+                    const o=orders.find(o=>o.numero===r.orderNum);
+                    const sc=getEstadoRC(T,r.estado);
+                    const tc=getTipoRC(T,r.tipo);
+                    const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):0;
+                    const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=3;
+                    const isActive=activeReclamo===r._docId;
+                    return (
+                      <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
+                        style={{background:isActive?T.surface:T.card,border:`1.5px solid ${isActive?T.accentSolid:urgente?T.red+"44":T.border}`,borderLeft:`4px solid ${sc.dot}`,borderRadius:10,padding:"14px 16px",cursor:"pointer",transition:"all 0.12s"}}
+                        onMouseEnter={e=>{if(!isActive)e.currentTarget.style.background=T.surface;}}
+                        onMouseLeave={e=>{if(!isActive)e.currentTarget.style.background=T.card;}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                          <div style={{flex:1}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                              <span style={{fontWeight:700,fontSize:14,color:T.accent}}>#{r.orderNum}</span>
+                              <span style={{fontSize:14,fontWeight:600,color:T.text}}>{o?.comprador||"—"}</span>
+                              {urgente&&<span style={{fontSize:10,background:T.redBg,color:T.red,border:`1px solid ${T.red}44`,borderRadius:4,padding:"2px 6px",fontWeight:700}}>+{dias}d</span>}
+                            </div>
+                            <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>{r.motivo}</div>
+                            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                              <Badge T={T} colors={sc}>{r.estado}</Badge>
+                              <Badge T={T} colors={tc}>{r.tipo}</Badge>
+                              {r.trackingCambio&&<span style={{fontSize:11,color:T.purple,background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:4,padding:"2px 6px"}}>📦 {r.trackingCambio.slice(0,12)}...</span>}
+                            </div>
+                          </div>
+                          <div style={{fontSize:11,color:T.textSm,whiteSpace:"nowrap"}}>{fmtTs(r.createdAt)}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Panel unificado */}
+            {activeR&&activeOrder&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",position:"sticky",top:76}}>
+                {/* Header panel */}
+                <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"16px 18px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:16,fontWeight:800,color:T.text}}>{activeOrder.comprador}</div>
+                    <div style={{fontSize:12,color:T.accent,marginTop:2}}>Pedido #{activeR.orderNum} · {activeR.tipo}</div>
+                  </div>
+                  <button onClick={()=>setActiveReclamo(null)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:14}}>✕</button>
+                </div>
+
+                <div style={{maxHeight:"80vh",overflow:"auto",padding:"16px 18px"}}>
+
+                  {/* Estado actual + cambio rápido */}
+                  {(()=>{const sc=getEstadoRC(T,activeR.estado);return(
+                    <div style={{background:sc.bg,border:`1px solid ${sc.dot}33`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                        <span style={{width:10,height:10,borderRadius:"50%",background:sc.dot,boxShadow:`0 0 6px ${sc.dot}`}}/>
+                        <span style={{fontSize:15,fontWeight:700,color:sc.text}}>{activeR.estado}</span>
+                      </div>
+                      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                        {ESTADOS_R.filter(e=>e!==activeR.estado).map(e=>{const c=getEstadoRC(T,e);return(
+                          <button key={e} onClick={()=>updateEstado(activeR._docId,e)} style={{fontSize:11,fontWeight:500,padding:"4px 10px",borderRadius:6,background:T.card,color:c.text,border:`1px solid ${c.dot}44`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{e}</button>
+                        );})}
+                      </div>
+                    </div>
+                  );})()}
+
+                  {/* Datos del cliente */}
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Cliente</div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {activeOrder.telefono&&<a href={`https://wa.me/${activeOrder.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",textDecoration:"none",color:T.green}}>💬 {activeOrder.telefono}</a>}
+                      {activeOrder.email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4}}>✉️ {activeOrder.email}</span>}
+                    </div>
+                  </div>
+
+                  {/* Productos del pedido */}
+                  <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Productos comprados</div>
+                    {activeOrder.productos.map((p,i)=>(
+                      <div key={i} style={{fontSize:13,color:T.text,padding:"4px 0",borderBottom:i<activeOrder.productos.length-1?`1px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between"}}>
+                        <span>{p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'')}</span>
+                        <span style={{color:T.textSm}}>x{p.cantidad}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Detalle del cambio */}
+                  {activeR.tipo==="Cambio"&&(
+                    <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>🔄 Cambio</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:8,alignItems:"start",marginBottom:12}}>
+                        <div>
+                          <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Nos devuelve</div>
+                          {(activeR.productosRecibe||[]).filter(p=>p.producto).map((item,i)=><div key={i} style={{fontSize:13,fontWeight:600,color:T.red,marginBottom:2}}>{item.cantidad>1&&<span style={{color:T.textSm,fontSize:11}}>{item.cantidad}× </span>}{item.producto}</div>)}
+                        </div>
+                        <div style={{color:T.textSm,paddingTop:18,fontSize:16}}>→</div>
+                        <div>
+                          <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Le enviamos</div>
+                          {(activeR.productosEnvia||[]).filter(p=>p.producto).map((item,i)=><div key={i} style={{fontSize:13,fontWeight:600,color:T.green,marginBottom:2}}>{item.cantidad>1&&<span style={{color:T.textSm,fontSize:11}}>{item.cantidad}× </span>}{item.producto}</div>)}
+                        </div>
+                      </div>
+                      {/* Tracking del cambio */}
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Tracking del nuevo envío</div>
+                      <div style={{display:"flex",gap:8}}>
+                        <input style={{...iS,flex:1,fontSize:13,padding:"8px 12px"}} value={activeR.trackingCambio||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:e.target.value,updatedAt:serverTimestamp()});}} />
+                        {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",textDecoration:"none",color:T.purple,flexShrink:0}}>📦 Ver</a>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Devolución */}
+                  {activeR.tipo==="Devolución"&&(
+                    <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.orange,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>↩️ Devolución</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+                        <div style={{marginBottom:10}}>
+                          <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:5}}>Recepción del producto</div>
+                          <select style={{...iS,fontSize:12}} value={activeR.estadoRecepcion||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoRecepcion:e.target.value,updatedAt:serverTimestamp()});}}>
+                            <option value="">—</option>
+                            <option>Esperando envío</option>
+                            <option>En tránsito</option>
+                            <option>Recibido</option>
+                            <option>Inspeccionado</option>
+                          </select>
+                        </div>
+                        <div>
+                          <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:5}}>Estado del reembolso</div>
+                          <select style={{...iS,fontSize:12}} value={activeR.estadoReembolso||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoReembolso:e.target.value,updatedAt:serverTimestamp()});}}>
+                            <option value="">—</option>
+                            <option>Pendiente</option>
+                            <option>En proceso</option>
+                            <option>Procesado</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Plantillas de mensajes */}
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Mensajes rápidos</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {plantillas.filter(p=>p.tipo===activeR.tipo||p.estado===activeR.estado).slice(0,4).map(p=>(
+                        <button key={p.id} onClick={()=>copyMensaje(p,activeR)}
+                          style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",justifyContent:"space-between",width:"100%",background:copiedMsg===p.id?T.greenBg:T.card,borderColor:copiedMsg===p.id?T.green:T.border,color:copiedMsg===p.id?T.green:T.text,transition:"all 0.2s"}}>
+                          <span>{p.nombre}</span>
+                          <span style={{fontSize:11,color:copiedMsg===p.id?T.green:T.textSm}}>{copiedMsg===p.id?"✓ Copiado":"📋 Copiar"}</span>
+                        </button>
                       ))}
                     </div>
                   </div>
-                )}
-                <Field T={T} label="Descripción"><textarea style={{...iS,minHeight:70,resize:"vertical"}} value={reclamoForm.descripcion} onChange={e=>setReclamoForm(f=>({...f,descripcion:e.target.value}))} placeholder="Detalle del reclamo..."/></Field>
-                {reclamoForm._docId&&(
-                  <Field T={T} label="Estado">
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {ESTADOS_R.map(e=>{const c=getEstadoRC(T,e);const sel=reclamoForm.estado===e;return <button key={e} onClick={()=>setReclamoForm(f=>({...f,estado:e}))} style={{display:"flex",alignItems:"center",gap:7,padding:"9px 16px",borderRadius:10,fontSize:13,fontWeight:sel?700:500,background:sel?c.bg:T.card,color:sel?c.text:T.textMd,border:`1.5px solid ${sel?c.dot:T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}><span style={{width:8,height:8,borderRadius:"50%",background:sel?c.dot:T.textSm}}/>{e}</button>;})}
-                    </div>
-                  </Field>
-                )}
-                {reclamoForm._docId&&<Field T={T} label="Resolución"><textarea style={{...iS,minHeight:60,resize:"vertical"}} value={reclamoForm.resolucion} onChange={e=>setReclamoForm(f=>({...f,resolucion:e.target.value}))} placeholder="Qué se hizo..."/></Field>}
-                <Field T={T} label="Notas internas"><textarea style={{...iS,minHeight:55,resize:"vertical"}} value={reclamoForm.notas} onChange={e=>setReclamoForm(f=>({...f,notas:e.target.value}))} placeholder="Notas para el equipo..."/></Field>
-                <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:10}}>
-                  <button onClick={()=>setReclamoForm(null)} style={BtnSecondary(T)}>Cancelar</button>
-                  <button onClick={saveReclamo} disabled={saving||!reclamoForm.motivo} style={{...BtnPrimary(T),opacity:saving||!reclamoForm.motivo?0.5:1}}>{saving?"Guardando...":(reclamoForm._docId?"Guardar cambios":"Crear Reclamo")}</button>
+
+                  {/* Historial */}
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Historial</div>
+                    <HistorialReclamo T={T} reclamo={activeR} onAdd={addNotaReclamo}/>
+                  </div>
+
+                  {/* Acciones */}
+                  <div style={{display:"flex",gap:8,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+                    {deleteConfirm===activeR._docId?(
+                      <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><button onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
+                    ):(
+                      <><button onClick={()=>setDeleteConfirm(activeR._docId)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>Eliminar</button><button onClick={()=>{setReclamoForm({...activeR,productosRecibe:activeR.productosRecibe||[{producto:"",cantidad:1}],productosEnvia:activeR.productosEnvia||[{producto:"",cantidad:1}],historial:activeR.historial||[],trackingCambio:activeR.trackingCambio||"",estadoRecepcion:activeR.estadoRecepcion||"",estadoReembolso:activeR.estadoReembolso||""});}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Editar todo</button>
+                      {activeOrder.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.purple}}>🔗 TN</a>}</>
+                    )}
+                  </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
         )}
-      </Modal>
 
-      {/* Reclamo Detail Modal */}
-      <Modal T={T} open={!!detailR} onClose={()=>setReclamoDetail(null)} title={detailR?`Reclamo — Pedido #${detailR.orderNum}`:""}>
-        {detailR&&(()=>{
-          const r=detailR; const o=orders.find(o=>o.numero===r.orderNum);
-          const sc=getEstadoRC(T,r.estado); const tc=getTipoRC(T,r.tipo);
-          return (
-            <div>
-              <div style={{background:sc.bg,border:`1px solid ${sc.dot}44`,borderRadius:12,padding:"16px 20px",marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{width:12,height:12,borderRadius:"50%",background:sc.dot,boxShadow:`0 0 8px ${sc.dot}`}}/><span style={{fontSize:17,fontWeight:700,color:sc.text}}>{r.estado}</span></div>
-                <span style={{background:tc.bg,color:tc.text,padding:"5px 14px",borderRadius:20,fontSize:13,fontWeight:600}}>{r.tipo}</span>
+        {/* ── CONFIGURACION PLANTILLAS ── */}
+        {view==="config"&&(
+          <div style={{padding:"24px 0 48px",maxWidth:720}}>
+            <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:-0.5}}>⚙️ Plantillas de mensajes</div>
+            <div style={{fontSize:14,color:T.textMd,marginBottom:24}}>Editá los mensajes pre-armados. Usá [nombre], [pedido], [tracking] como variables que se reemplazan automáticamente.</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {plantillas.map((p,i)=>(
+                <div key={p.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                  {plantillaEdit===p.id?(
+                    <div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px",marginBottom:10}}>
+                        <div><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:4}}>Nombre</div><input style={{...iS,fontSize:13}} value={p.nombre} onChange={e=>{const l=[...plantillas];l[i]={...p,nombre:e.target.value};setPlantillas(l);}}/></div>
+                        <div><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:4}}>Tipo</div><select style={{...iS,fontSize:13}} value={p.tipo} onChange={e=>{const l=[...plantillas];l[i]={...p,tipo:e.target.value};setPlantillas(l);}}><option>Cambio</option><option>Devolución</option></select></div>
+                        <div><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:4}}>Estado</div><select style={{...iS,fontSize:13}} value={p.estado} onChange={e=>{const l=[...plantillas];l[i]={...p,estado:e.target.value};setPlantillas(l);}}>{ESTADOS_R.map(e=><option key={e}>{e}</option>)}</select></div>
+                      </div>
+                      <div style={{marginBottom:10}}><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:4}}>Mensaje</div><textarea style={{...iS,minHeight:80,resize:"vertical",fontSize:13}} value={p.mensaje} onChange={e=>{const l=[...plantillas];l[i]={...p,mensaje:e.target.value};setPlantillas(l);}}/></div>
+                      <div style={{display:"flex",gap:8"}}>
+                        <button onClick={()=>{savePlantillas(plantillas);setPlantillaEdit(null);}} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Guardar</button>
+                        <button onClick={()=>setPlantillaEdit(null)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px"}}>Cancelar</button>
+                      </div>
+                    </div>
+                  ):(
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+                      <div style={{flex:1}}>
+                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                          <span style={{fontSize:14,fontWeight:700,color:T.text}}>{p.nombre}</span>
+                          <Badge T={T} colors={getTipoRC(T,p.tipo)} small>{p.tipo}</Badge>
+                          <Badge T={T} colors={getEstadoRC(T,p.estado)} small>{p.estado}</Badge>
+                        </div>
+                        <div style={{fontSize:13,color:T.textMd,lineHeight:1.5}}>{p.mensaje}</div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexShrink:0}}>
+                        <button onClick={()=>setPlantillaEdit(p.id)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>Editar</button>
+                        <button onClick={()=>{const l=plantillas.filter((_,j)=>j!==i);savePlantillas(l);}} style={{...BtnDanger(T),fontSize:12,padding:"6px 10px"}}>✕</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button onClick={()=>{const nueva={id:`p${Date.now()}`,nombre:"Nueva plantilla",tipo:"Cambio",estado:"Nuevo",mensaje:"Hola [nombre]!"};const l=[...plantillas,nueva];savePlantillas(l);setPlantillaEdit(nueva.id);}} style={{...BtnPrimary(T),fontSize:13,marginTop:16}}>+ Agregar plantilla</button>
+          </div>
+        )}
+      </div>
+
+      {/* Form Modal - Nuevo/Editar Reclamo */}
+      <Modal T={T} open={!!reclamoForm} onClose={()=>setReclamoForm(null)} title={reclamoForm?._docId?"Editar Reclamo":reclamoForm?.orderNum?`Nuevo Reclamo — #${reclamoForm.orderNum}`:"Nuevo Reclamo"} width={580}>
+        {reclamoForm&&(
+          <div>
+            {!reclamoForm._docId&&!reclamoForm.orderNum&&<Field T={T} label="Pedido" required><OrderSearchField T={T} orders={orders} onSelect={num=>setReclamoForm(f=>({...f,orderNum:num}))}/></Field>}
+            {(()=>{const o=orders.find(o=>o.numero===reclamoForm.orderNum);return o?(<div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><span style={{fontWeight:700,fontSize:14,color:T.text}}>#{o.numero} — {o.comprador}</span><div style={{color:T.textSm,fontSize:12,marginTop:2}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div></div>{!reclamoForm._docId&&<button onClick={()=>setReclamoForm(f=>({...f,orderNum:""}))} style={{...BtnDanger(T),padding:"4px 8px",fontSize:11}}>Cambiar</button>}</div>):null;})()}
+            {reclamoForm.orderNum&&(<>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+                <Field T={T} label="Tipo"><select style={iS} value={reclamoForm.tipo} onChange={e=>setReclamoForm(f=>({...f,tipo:e.target.value}))}>{TIPOS_R.map(t=><option key={t}>{t}</option>)}</select></Field>
+                <Field T={T} label="Motivo" required><select style={iS} value={reclamoForm.motivo} onChange={e=>setReclamoForm(f=>({...f,motivo:e.target.value}))}><option value="">—</option>{MOTIVOS_R.map(m=><option key={m}>{m}</option>)}</select></Field>
               </div>
-              {o&&<div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}><div style={{fontWeight:700,fontSize:15,color:T.text}}>#{o.numero} — {o.comprador}</div><div style={{fontSize:13,color:T.textSm,marginTop:4}}>{o.email} · {o.telefono}</div><div style={{fontSize:13,color:T.textSm,marginTop:3}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div></div>}
-              <div style={{fontSize:14,marginBottom:12,color:T.textMd}}><span style={{color:T.textSm}}>Motivo: </span><span style={{fontWeight:600,color:T.text}}>{r.motivo}</span></div>
-              {r.tipo==="Cambio"&&((r.productosRecibe?.length>0)||(r.productosEnvia?.length>0))&&(
-                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:16,marginBottom:14}}>
-                  <div style={{fontSize:12,textTransform:"uppercase",color:T.purple,fontWeight:700,letterSpacing:0.5,marginBottom:12}}>🔄 Detalle del cambio</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:12,alignItems:"start"}}>
-                    <div><div style={{fontSize:12,color:T.textSm,fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Nos devuelve</div>{(r.productosRecibe||[]).map((item,i)=><div key={i} style={{fontSize:14,fontWeight:600,color:T.red,marginBottom:3}}>{item.cantidad>1&&<span style={{color:T.textSm,fontSize:12}}>{item.cantidad}× </span>}{item.producto||"—"}</div>)}</div>
-                    <div style={{color:T.textSm,paddingTop:22,fontSize:18}}>→</div>
-                    <div><div style={{fontSize:12,color:T.textSm,fontWeight:600,textTransform:"uppercase",marginBottom:6}}>Le enviamos</div>{(r.productosEnvia||[]).map((item,i)=><div key={i} style={{fontSize:14,fontWeight:600,color:T.green,marginBottom:3}}>{item.cantidad>1&&<span style={{color:T.textSm,fontSize:12}}>{item.cantidad}× </span>}{item.producto||"—"}</div>)}</div>
+              {reclamoForm.tipo==="Cambio"&&(
+                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:14,marginBottom:12}}>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:700,letterSpacing:0.5,marginBottom:10}}>🔄 Detalle del cambio</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+                    {["productosRecibe","productosEnvia"].map((key,side)=>(
+                      <div key={key}>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase"}}>{side===0?"Nos devuelve":"Le enviamos"}</div>
+                        {(reclamoForm[key]||[]).map((item,i)=>(
+                          <div key={i} style={{display:"flex",gap:4,marginBottom:6,alignItems:"center"}}>
+                            <select style={{...iS,flex:1,fontSize:12,padding:"7px 8px"}} value={item.producto} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],producto:e.target.value};setReclamoForm(f=>({...f,[key]:arr}));}}><option value="">—</option>{PRODUCTOS.map(p=><option key={p}>{p}</option>)}</select>
+                            <input type="number" min={1} value={item.cantidad} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],cantidad:parseInt(e.target.value)||1};setReclamoForm(f=>({...f,[key]:arr}));}} style={{...iS,width:48,textAlign:"center",fontSize:12,padding:"7px 4px",flexShrink:0}}/>
+                            {reclamoForm[key].length>1&&<button onClick={()=>setReclamoForm(f=>({...f,[key]:f[key].filter((_,j)=>j!==i)}))} style={{...BtnDanger(T),padding:"4px 6px",fontSize:12,flexShrink:0}}>✕</button>}
+                          </div>
+                        ))}
+                        <button onClick={()=>setReclamoForm(f=>({...f,[key]:[...(f[key]||[]),{producto:"",cantidad:1}]}))} style={{...BtnSecondary(T),width:"100%",justifyContent:"center",fontSize:11,padding:"5px"}}>+ Agregar</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{marginTop:12}}>
+                  <Field T={T} label="Tracking del nuevo envío">
+                    <input style={iS} value={reclamoForm.trackingCambio||""} onChange={e=>setReclamoForm(f=>({...f,trackingCambio:e.target.value}))} placeholder="Código Andreani"/>
+                  </Field>
                   </div>
                 </div>
               )}
-              {r.descripcion&&<div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:14,marginBottom:10,fontSize:14,color:T.textMd,lineHeight:1.6}}>{r.descripcion}</div>}
-              {r.resolucion&&<div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:14,marginBottom:10}}><div style={{fontSize:11,textTransform:"uppercase",color:T.green,fontWeight:700,marginBottom:5}}>Resolución</div><div style={{fontSize:14,color:T.text,lineHeight:1.6}}>{r.resolucion}</div></div>}
-              {r.notas&&<div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:12,padding:14,marginBottom:10}}><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:5}}>Notas internas</div><div style={{fontSize:14,color:T.text,lineHeight:1.6}}>{r.notas}</div></div>}
-              <div style={{fontSize:12,color:T.textSm,marginTop:12}}>Creado: {fmtTs(r.createdAt)}{r.resolvedAt?.seconds?` · Resuelto: ${fmtTs(r.resolvedAt)}`:''}</div>
-              <Divider T={T}/>
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-                {deleteConfirm===r._docId?(
-                  <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:14,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteReclamo(r._docId)} style={{...BtnDanger(T),padding:"8px 16px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:13}}>No</button></div>
-                ):(
-                  <><button onClick={()=>setDeleteConfirm(r._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setReclamoDetail(null);setReclamoForm({...r});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button></>
-                )}
+              <Field T={T} label="Descripción"><textarea style={{...iS,minHeight:60,resize:"vertical"}} value={reclamoForm.descripcion} onChange={e=>setReclamoForm(f=>({...f,descripcion:e.target.value}))} placeholder="Detalle del reclamo..."/></Field>
+              {reclamoForm._docId&&(
+                <Field T={T} label="Estado">
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {ESTADOS_R.map(e=>{const c=getEstadoRC(T,e);const sel=reclamoForm.estado===e;return(<button key={e} onClick={()=>setReclamoForm(f=>({...f,estado:e}))} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,fontSize:12,fontWeight:sel?700:400,background:sel?c.bg:T.card,color:sel?c.text:T.textMd,border:`1.5px solid ${sel?c.dot:T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}><span style={{width:7,height:7,borderRadius:"50%",background:sel?c.dot:T.textSm}}/>{e}</button>);})}
+                  </div>
+                </Field>
+              )}
+              <Field T={T} label="Notas internas"><textarea style={{...iS,minHeight:50,resize:"vertical"}} value={reclamoForm.notas||""} onChange={e=>setReclamoForm(f=>({...f,notas:e.target.value}))} placeholder="Notas para el equipo..."/></Field>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}>
+                <button onClick={()=>setReclamoForm(null)} style={BtnSecondary(T)}>Cancelar</button>
+                <button onClick={saveReclamo} disabled={saving||!reclamoForm.motivo} style={{...BtnPrimary(T),opacity:saving||!reclamoForm.motivo?0.5:1}}>{saving?"Guardando...":(reclamoForm._docId?"Guardar":"Crear Reclamo")}</button>
               </div>
-            </div>
-          );
-        })()}
+            </>)}
+          </div>
+        )}
       </Modal>
     </div>
   );
 }
+
+// ─── Historial Reclamo Component ───
+function HistorialReclamo({T, reclamo, onAdd}) {
+  const [texto,setTexto]=useState("");
+  const [guardando,setGuardando]=useState(false);
+  const iS=InputStyle(T);
+  const historial=[...(reclamo.historial||[])].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+  async function handleAdd(){
+    if(!texto.trim()) return;
+    setGuardando(true);
+    await onAdd(reclamo._docId,texto);
+    setTexto("");setGuardando(false);
+  }
+  return(
+    <div>
+      <div style={{display:"flex",gap:6,marginBottom:10}}>
+        <input style={{...iS,flex:1,fontSize:12,padding:"7px 10px"}} value={texto} onChange={e=>setTexto(e.target.value)} placeholder="Agregar nota..." onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();handleAdd();}}}/>
+        <button onClick={handleAdd} disabled={guardando||!texto.trim()} style={{...BtnPrimary(T),padding:"7px 12px",fontSize:12,opacity:guardando||!texto.trim()?0.5:1}}>+</button>
+      </div>
+      {historial.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:200,overflow:"auto"}}>
+          {historial.map((n,i)=>(
+            <div key={i} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:7,padding:"7px 10px",display:"flex",gap:8}}>
+              <span style={{fontSize:13,flexShrink:0}}>{n.accion.startsWith("Nota:")?"💬":"📌"}</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,color:T.text,lineHeight:1.4}}>{n.accion.replace("Nota: ","")}</div>
+                <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{new Date(n.fecha).toLocaleDateString('es-AR')} {new Date(n.fecha).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 // ─── Notas Rápidas Component ───
 function NotasRapidas({T, canje, onAdd}) {
