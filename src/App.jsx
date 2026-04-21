@@ -2126,28 +2126,42 @@ export default function App() {
       const built=buildOrdersFromAPI(data);
       setOrders(built);
       setOrdersStatus("ok");
-      localStorage.setItem("soluna_orders_v3",JSON.stringify(built));
+      // Cache con clave por uid para no mezclar usuarios
+      localStorage.setItem(`soluna_orders_${user.uid}`,JSON.stringify(built));
     } catch(e){setOrdersStatus("error");}
   }
 
-  // Watch user doc — refetch orders when store connects/disconnects
-  const [tnStoreId,setTnStoreId]=useState(null);
+  // Fetch orders on login — cargar cache primero, luego actualizar en background
   useEffect(()=>{
     if(!user) return;
-    try{ localStorage.removeItem("soluna_orders_v3"); }catch(e){}
+    // Cargar cache del usuario actual inmediatamente
+    try{
+      const cached=localStorage.getItem(`soluna_orders_${user.uid}`);
+      if(cached){
+        setOrders(JSON.parse(cached));
+        setOrdersStatus("ok");
+      }
+    }catch(e){}
+    // Actualizar en background
+    fetchOrders();
+  },[user]);
+
+  // Re-fetch when store connects/disconnects
+  const prevTnRef=useRef(null);
+  useEffect(()=>{
+    if(!user) return;
     const unsub=onSnapshot(doc(db,"users",user.uid),snap=>{
       if(!snap.exists()) return;
       const tn=snap.data().stores?.find(s=>s.type==="tiendanube");
       const newId=tn?.storeId||null;
-      setTnStoreId(prev=>{
-        if(prev!==newId) {
-          // Store changed — refetch
-          setTimeout(()=>fetchOrders(),500);
-        }
-        return newId;
-      });
+      if(prevTnRef.current!==null && prevTnRef.current!==newId) {
+        // Tienda cambió — limpiar cache y recargar
+        try{ localStorage.removeItem(`soluna_orders_${user.uid}`); }catch(e){}
+        setOrders([]);
+        fetchOrders();
+      }
+      prevTnRef.current=newId;
     });
-    fetchOrders();
     return ()=>unsub();
   },[user]);
 
