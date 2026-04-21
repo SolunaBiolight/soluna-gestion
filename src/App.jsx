@@ -2082,7 +2082,7 @@ export default function App() {
     if(!user) return;
     setOrdersStatus("loading");
     try {
-      const res=await fetch('/api/orders');
+      const res=await fetch(`/api/orders?uid=${user.uid}`);
       const data=await res.json();
       const built=buildOrdersFromAPI(data);
       setOrders(built);
