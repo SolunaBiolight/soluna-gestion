@@ -475,6 +475,86 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
         {/* ── DASHBOARD ── */}
         {view==="dashboard"&&(
           <div style={{padding:"24px 0 48px"}}>
+
+            {/* Buscador prominente */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:24}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.textMd,marginBottom:10}}>🔍 Buscar cliente o pedido</div>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:18,color:T.textSm}}>🔍</span>
+                <input
+                  autoFocus
+                  style={{...InputStyle(T),paddingLeft:44,fontSize:16,padding:"14px 14px 14px 44px",borderRadius:10,borderColor:T.inputBorder}}
+                  placeholder="Nombre, email, teléfono o número de pedido..."
+                  value={searchGlobal}
+                  onChange={e=>setSearchGlobal(e.target.value)}
+                  onFocus={e=>e.target.style.borderColor=T.accent}
+                  onBlur={e=>e.target.style.borderColor=T.inputBorder}
+                />
+              </div>
+              {searchGlobal.length>=2&&(
+                <div style={{marginTop:12}}>
+                  {globalResults.pedidos?.length>0&&(
+                    <>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Pedidos ({globalResults.pedidos.length})</div>
+                      {globalResults.pedidos.map(o=>{
+                        const hasR=reclamos.filter(r=>r.orderNum===o.numero);
+                        return (
+                          <div key={o.numero} style={{background:T.bg,border:`1px solid ${hasR.length>0?T.red+"44":T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:8,transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=hasR.length>0?T.red+"44":T.border}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                              <div>
+                                <div style={{fontSize:15,fontWeight:800,color:T.text}}>{o.comprador}</div>
+                                <div style={{fontSize:13,color:T.accent,marginTop:2}}>Pedido #{o.numero}</div>
+                                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{o.email}{o.telefono?` · ${o.telefono}`:""}</div>
+                              </div>
+                              <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                                <Badge T={T} colors={getEstadoEnvioC(T,o.estadoEnvio)}>{o.estadoEnvio}</Badge>
+                                <span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>
+                              </div>
+                            </div>
+                            <div style={{fontSize:12,color:T.textSm,marginBottom:10}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(' · ')}</div>
+                            {hasR.length>0&&(
+                              <div style={{marginBottom:10}}>
+                                {hasR.map(r=>(
+                                  <span key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");setSearchGlobal("");}} style={{display:"inline-flex",alignItems:"center",gap:5,background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:6,padding:"3px 10px",marginRight:6,cursor:"pointer",fontSize:12,color:T.red,fontWeight:500}}>
+                                    ⚠ {r.tipo} · {r.estado}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            <div style={{display:"flex",gap:8}}>
+                              <button onClick={()=>{setReclamoForm(emptyForm(o.numero));setSearchGlobal("");}} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>+ Crear Reclamo</button>
+                              {o.telefono&&<a href={`https://wa.me/${o.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",textDecoration:"none",color:T.green}}>💬 WhatsApp</a>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                  {globalResults.recls?.length>0&&(
+                    <>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8,marginTop:12}}>Reclamos activos ({globalResults.recls.length})</div>
+                      {globalResults.recls.map(r=>{
+                        const o=orders.find(o=>o.numero===r.orderNum);
+                        const sc=getEstadoRC(T,r.estado);
+                        return (
+                          <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");setSearchGlobal("");}} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",marginBottom:6,cursor:"pointer",transition:"background 0.1s",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background=T.bg}>
+                            <div>
+                              <div style={{fontSize:13,fontWeight:600,color:T.text}}>#{r.orderNum} · {o?.comprador||"—"}</div>
+                              <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{r.tipo} · {r.motivo}</div>
+                            </div>
+                            <Badge T={T} colors={sc}>{r.estado}</Badge>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                  {!globalResults.pedidos?.length&&!globalResults.recls?.length&&(
+                    <div style={{textAlign:"center",padding:"20px",color:T.textSm,fontSize:14}}>Sin resultados para "{searchGlobal}"</div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Stats row */}
             <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:28}}>
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",flex:"1 1 120px",minWidth:120}}>
