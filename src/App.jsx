@@ -830,7 +830,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, onHome}) {
                         <div><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:4}}>Estado</div><select style={{...iS,fontSize:13}} value={p.estado} onChange={e=>{const l=[...plantillas];l[i]={...p,estado:e.target.value};setPlantillas(l);}}>{ESTADOS_R.map(e=><option key={e}>{e}</option>)}</select></div>
                       </div>
                       <div style={{marginBottom:10}}><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:4}}>Mensaje</div><textarea style={{...iS,minHeight:80,resize:"vertical",fontSize:13}} value={p.mensaje} onChange={e=>{const l=[...plantillas];l[i]={...p,mensaje:e.target.value};setPlantillas(l);}}/></div>
-                      <div style={{display:"flex",gap:8"}}>
+                      <div style={{display:"flex",gap:8}}>
                         <button onClick={()=>{savePlantillas(plantillas);setPlantillaEdit(null);}} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Guardar</button>
                         <button onClick={()=>setPlantillaEdit(null)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px"}}>Cancelar</button>
                       </div>
