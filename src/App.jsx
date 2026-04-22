@@ -1711,7 +1711,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     return window.XLSX;
   }
 
-  // Export as XLSX for Andreani
+  // Export as XLSX using official Andreani template
   async function exportAndreani() {
     const selOrders=exportables.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
@@ -1720,7 +1720,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 
     try {
       const XLSX=await loadXLSX();
-      const headers=["Paquete Guardado","Peso (grs)","Alto (cm)","Ancho (cm)","Profundidad (cm)","Valor declarado ($ C/IVA) *","Numero Interno","Nombre *","Apellido *","DNI *","Email *","Celular código *","Celular número *","Calle *","Número *","Piso","Departamento","Provincia / Localidad / CP *","Observaciones"];
+
+      // Fetch the official Andreani template (kept in /public)
+      const templateRes=await fetch('/andreani_template.xlsx');
+      if(!templateRes.ok) throw new Error("No se pudo cargar el template de Andreani. Verificá que andreani_template.xlsx esté en la carpeta public/");
+      const templateBuf=await templateRes.arrayBuffer();
 
       function buildRows(ords) {
         return ords.map(o=>{
@@ -1733,30 +1737,49 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           const prov=(o.provincia||"").toUpperCase();
           const loc=(o.localidad||o.ciudad||"").toUpperCase();
           const cp=o.cp||"";
-          return ["",parseInt(exportCfg.peso)||200,parseInt(exportCfg.alto)||5,parseInt(exportCfg.ancho)||5,parseInt(exportCfg.prof)||5,parseInt(exportCfg.valor)||6000,`#${o.numero}`,nombre,apellido,o.dni||"",o.email||"",telCod,telNum,o.direccion||"",o.dirNumero||"",o.piso||"",`${prov} / ${loc} / ${cp}`,""];
+          // Columns A-S (19 cols): match exact Andreani format
+          return [
+            "",                              // A: Paquete Guardado
+            parseInt(exportCfg.peso)||200,   // B: Peso (grs)
+            parseInt(exportCfg.alto)||5,     // C: Alto (cm)
+            parseInt(exportCfg.ancho)||5,    // D: Ancho (cm)
+            parseInt(exportCfg.prof)||5,     // E: Profundidad (cm)
+            parseInt(exportCfg.valor)||6000, // F: Valor declarado
+            `#${o.numero}`,                  // G: Numero Interno
+            nombre,                          // H: Nombre
+            apellido,                        // I: Apellido
+            o.dni||"",                       // J: DNI
+            o.email||"",                     // K: Email
+            telCod,                          // L: Celular código
+            telNum,                          // M: Celular número
+            o.direccion||"",                 // N: Calle
+            o.dirNumero||"",                 // O: Número
+            o.piso||"",                      // P: Piso
+            "",                              // Q: Departamento
+            `${prov} / ${loc} / ${cp}`,      // R: Provincia/Localidad/CP
+            ""                               // S: Observaciones
+          ];
         });
       }
 
       const date=new Date().toISOString().split('T')[0];
 
-      function makeWorkbook(rows, sheetName) {
-        const wb=XLSX.utils.book_new();
-        const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
-        // Set column widths
-        ws['!cols']=[{wch:20},{wch:10},{wch:8},{wch:8},{wch:10},{wch:18},{wch:12},{wch:15},{wch:15},{wch:12},{wch:25},{wch:10},{wch:14},{wch:20},{wch:8},{wch:6},{wch:6},{wch:30},{wch:15}];
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
-        return wb;
+      function writeToTemplate(rows, filename) {
+        const wb=XLSX.read(templateBuf, {type:"array"});
+        const ws=wb.Sheets["A domicilio"];
+        // Write data starting from row 3 (after group headers + col headers)
+        XLSX.utils.sheet_add_aoa(ws, rows, {origin:"A3"});
+        XLSX.writeFile(wb, filename);
       }
 
       if(exportCfg.separar) {
-        const wb1=makeWorkbook(buildRows(selOrders),"A domicilio");
-        XLSX.writeFile(wb1,`EnvioMasivoExcelPaquetes-domicilio-${date}.xlsx`);
-        await new Promise(r=>setTimeout(r,500));
-        const wb2=makeWorkbook([],"A sucursal");
-        XLSX.writeFile(wb2,`EnvioMasivoExcelPaquetes-sucursal-${date}.xlsx`);
+        writeToTemplate(buildRows(selOrders), `EnvioMasivoExcelPaquetes-domicilio-${date}.xlsx`);
+        await new Promise(r=>setTimeout(r,600));
+        // Second file with empty data (sucursal)
+        const wb2=XLSX.read(templateBuf, {type:"array"});
+        XLSX.writeFile(wb2, `EnvioMasivoExcelPaquetes-sucursal-${date}.xlsx`);
       } else {
-        const wb=makeWorkbook(buildRows(selOrders),"A domicilio");
-        XLSX.writeFile(wb,`EnvioMasivoExcelPaquetes-${date}.xlsx`);
+        writeToTemplate(buildRows(selOrders), `EnvioMasivoExcelPaquetes-${date}.xlsx`);
       }
 
       setExportModal(false);
