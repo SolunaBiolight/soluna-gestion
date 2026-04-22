@@ -1201,7 +1201,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
     const csv=[headers,...rows].map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
     const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");a.href=url;a.download="canjes-soluna.csv";a.click();URL.revokeObjectURL(url);
+    const a=document.createElement("a");a.href=url;a.download="canjes-growith.csv";a.click();URL.revokeObjectURL(url);
   }
 
   const stats={total:canjes.length,pendientes:canjes.filter(c=>c.estado==="Pendiente envío").length,enviados:canjes.filter(c=>c.estado==="Enviado").length,contPend:canjes.filter(c=>c.estado==="Contenido pendiente").length,publicados:canjes.filter(c=>c.estado==="Contenido publicado").length,finalizados:canjes.filter(c=>c.estado==="Finalizado").length};
@@ -1674,8 +1674,8 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${T.accent},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🌙</div>
             <div>
-              <div style={{fontWeight:800,fontSize:16,color:T.text,letterSpacing:-0.3}}>Soluna Biolight</div>
-              <div style={{fontSize:12,color:T.textSm}}>Panel de Gestión</div>
+              <div style={{fontWeight:800,fontSize:16,color:T.text,letterSpacing:-0.3}}>Growith</div>
+              <div style={{fontSize:12,color:T.textSm}}>Gestión de tu negocio</div>
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -1834,7 +1834,7 @@ function AuthScreen({T}) {
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{width:56,height:56,borderRadius:16,background:`linear-gradient(135deg,${T.accentSolid},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 14px"}}>🌙</div>
-          <div style={{fontSize:24,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Soluna Gestión</div>
+          <div style={{fontSize:24,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Growith</div>
           <div style={{fontSize:14,color:T.textMd,marginTop:4}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
         </div>
 
@@ -2012,16 +2012,52 @@ function ConfigScreen({T, user, onBack}) {
 
         {msg&&<div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.green,marginBottom:16}}>{msg}</div>}
 
-        {/* Plan */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px"}}>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Plan actual</div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-            <div>
-              <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Free</div>
-              <div style={{fontSize:13,color:T.textMd,marginTop:4}}>Acceso completo durante el período de beta.</div>
+        {/* Plan / Suscripción */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Plan actual</div>
+
+          {/* Plan cards */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginBottom:16}}>
+            {/* Free */}
+            <div style={{border:`2px solid ${userDoc?.plan==="free"||!userDoc?.plan?T.accentSolid:T.border}`,borderRadius:12,padding:"18px 20px",position:"relative",background:userDoc?.plan==="free"||!userDoc?.plan?T.accentSolid+"0a":T.bg}}>
+              {(userDoc?.plan==="free"||!userDoc?.plan)&&<div style={{position:"absolute",top:-10,left:16,background:T.accentSolid,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>PLAN ACTUAL</div>}
+              <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:4}}>Free</div>
+              <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1,marginBottom:12}}>$0<span style={{fontSize:13,fontWeight:400,color:T.textSm}}>/mes</span></div>
+              <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
+                {["1 tienda conectada","Gestión de reclamos","Gestión de canjes","Hasta 500 pedidos/mes"].map(f=>(
+                  <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:13,color:T.textMd}}>
+                    <span style={{color:T.green,fontSize:12}}>✓</span>{f}
+                  </div>
+                ))}
+                {["Meta Ads automático","Publicación de campañas","Soporte prioritario"].map(f=>(
+                  <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:13,color:T.textSm}}>
+                    <span style={{color:T.textSm,fontSize:12}}>✕</span>{f}
+                  </div>
+                ))}
+              </div>
+              <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Plan gratuito para siempre</div>
             </div>
-            <div style={{background:T.accentSolid+"22",border:`1px solid ${T.accentSolid}44`,borderRadius:10,padding:"8px 16px",fontSize:13,fontWeight:600,color:T.accent}}>Beta gratuita</div>
+
+            {/* Total */}
+            <div style={{border:`2px solid ${userDoc?.plan==="total"?T.accentSolid:T.border}`,borderRadius:12,padding:"18px 20px",position:"relative",background:userDoc?.plan==="total"?T.accentSolid+"0a":T.bg}}>
+              {userDoc?.plan==="total"&&<div style={{position:"absolute",top:-10,left:16,background:T.accentSolid,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>PLAN ACTUAL</div>}
+              <div style={{position:"absolute",top:-10,right:16,background:`linear-gradient(135deg,${T.accentSolid},${T.purple})`,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>⚡ RECOMENDADO</div>
+              <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:4}}>Total</div>
+              <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1,marginBottom:12}}>$29<span style={{fontSize:13,fontWeight:400,color:T.textSm}}>/mes</span></div>
+              <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
+                {["Tiendas ilimitadas","Gestión de reclamos","Gestión de canjes","Pedidos ilimitados","Meta Ads automático","Publicación de campañas","Reportes avanzados","Soporte prioritario"].map(f=>(
+                  <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:13,color:T.textMd}}>
+                    <span style={{color:T.green,fontSize:12}}>✓</span>{f}
+                  </div>
+                ))}
+              </div>
+              {userDoc?.plan==="total"
+                ?<button onClick={async()=>{if(window.confirm("¿Cancelar suscripción Total?"))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:13}}>Cancelar suscripción</button>
+                :<button onClick={()=>{setMsg("Próximamente podrás suscribirte al plan Total. Te avisaremos cuando esté disponible! 🚀");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>Quiero el plan Total</button>
+              }
+            </div>
           </div>
+          <div style={{fontSize:12,color:T.textSm,textAlign:"center"}}>¿Preguntas sobre los planes? Escribinos a <span style={{color:T.accent}}>hola@growith.app</span></div>
         </div>
       </div>
     </div>
