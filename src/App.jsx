@@ -1699,14 +1699,27 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   function toggleSelect(num){setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});}
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
 
-  // Export as CSV (works in all browsers without external libs)
+  // Load SheetJS for XLSX generation
+  async function loadXLSX() {
+    if(window.XLSX) return window.XLSX;
+    await new Promise((resolve,reject)=>{
+      const s=document.createElement('script');
+      s.src='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+      s.onload=resolve; s.onerror=reject;
+      document.head.appendChild(s);
+    });
+    return window.XLSX;
+  }
+
+  // Export as XLSX for Andreani
   async function exportAndreani() {
     const selOrders=exportables.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
     setExporting(true);
-    await new Promise(r=>setTimeout(r,100)); // let UI update
+    await new Promise(r=>setTimeout(r,100));
 
     try {
+      const XLSX=await loadXLSX();
       const headers=["Paquete Guardado","Peso (grs)","Alto (cm)","Ancho (cm)","Profundidad (cm)","Valor declarado ($ C/IVA) *","Numero Interno","Nombre *","Apellido *","DNI *","Email *","Celular código *","Celular número *","Calle *","Número *","Piso","Departamento","Provincia / Localidad / CP *","Observaciones"];
 
       function buildRows(ords) {
@@ -1715,7 +1728,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           const nombre=partes[0]||"";
           const apellido=partes.slice(1).join(' ')||"";
           const tel=(o.telefono||"").replace(/\D/g,'');
-          const telCod=tel.length>0?"54":"";
+          const telCod=tel.length>0?54:"";
           const telNum=tel.replace(/^54/,'').replace(/^0/,'');
           const prov=(o.provincia||"").toUpperCase();
           const loc=(o.localidad||o.ciudad||"").toUpperCase();
@@ -1724,26 +1737,26 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         });
       }
 
-      function toCSV(rows) {
-        return [headers,...rows].map(r=>r.map(v=>{
-          const s=String(v==null?"":v);
-          return s.includes(',')||s.includes('"')||s.includes('\n')?`"${s.replace(/"/g,'""')}"`:s;
-        }).join(',')).join('\r\n');
-      }
-
       const date=new Date().toISOString().split('T')[0];
 
+      function makeWorkbook(rows, sheetName) {
+        const wb=XLSX.utils.book_new();
+        const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
+        // Set column widths
+        ws['!cols']=[{wch:20},{wch:10},{wch:8},{wch:8},{wch:10},{wch:18},{wch:12},{wch:15},{wch:15},{wch:12},{wch:25},{wch:10},{wch:14},{wch:20},{wch:8},{wch:6},{wch:6},{wch:30},{wch:15}];
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        return wb;
+      }
+
       if(exportCfg.separar) {
-        // File 1: domicilio
-        const blob1=new Blob(["\uFEFF"+toCSV(buildRows(selOrders))],{type:"text/csv;charset=utf-8"});
-        const a1=document.createElement("a");a1.href=URL.createObjectURL(blob1);a1.download=`andreani-domicilio-${date}.csv`;a1.click();
+        const wb1=makeWorkbook(buildRows(selOrders),"A domicilio");
+        XLSX.writeFile(wb1,`EnvioMasivoExcelPaquetes-domicilio-${date}.xlsx`);
         await new Promise(r=>setTimeout(r,500));
-        // File 2: sucursal (empty template)
-        const blob2=new Blob(["\uFEFF"+toCSV([])],{type:"text/csv;charset=utf-8"});
-        const a2=document.createElement("a");a2.href=URL.createObjectURL(blob2);a2.download=`andreani-sucursal-${date}.csv`;a2.click();
+        const wb2=makeWorkbook([],"A sucursal");
+        XLSX.writeFile(wb2,`EnvioMasivoExcelPaquetes-sucursal-${date}.xlsx`);
       } else {
-        const blob=new Blob(["\uFEFF"+toCSV(buildRows(selOrders))],{type:"text/csv;charset=utf-8"});
-        const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`andreani-${date}.csv`;a.click();
+        const wb=makeWorkbook(buildRows(selOrders),"A domicilio");
+        XLSX.writeFile(wb,`EnvioMasivoExcelPaquetes-${date}.xlsx`);
       }
 
       setExportModal(false);
@@ -2079,7 +2092,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <button onClick={()=>setExportModal(false)} disabled={exporting} style={{...BtnSecondary(T),opacity:exporting?0.5:1}}>Cancelar</button>
             <button onClick={exportAndreani} disabled={exporting} style={{...BtnPrimary(T),opacity:exporting?0.7:1,minWidth:160,justifyContent:"center"}}>
-              {exporting?"⏳ Generando archivo...":"⬇️ Descargar CSV"}
+              {exporting?"⏳ Generando archivo...":"⬇️ Descargar XLSX"}
             </button>
           </div>
         </div>
