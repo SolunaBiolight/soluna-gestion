@@ -1666,20 +1666,427 @@ function AppCanjes({T, fbStatus, user, onHome}) {
 // APP ENVIOS
 // ═══════════════════════════════════════════
 function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
-  const [tab,setTab]=useState("panel"); // panel | sku | seguimientos
+  const [tab,setTab]=useState("panel");
   const [selected,setSelected]=useState(new Set());
   const [exportModal,setExportModal]=useState(false);
+  const [exporting,setExporting]=useState(false);
   const [exportCfg,setExportCfg]=useState({peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000",separar:false});
-  const [pdfFile,setPdfFile]=useState(null);
-  const [pdfResults,setPdfResults]=useState([]);
-  const [pdfProcessing,setPdfProcessing]=useState(false);
+  const [filterEstadoEnvio,setFilterEstadoEnvio]=useState("");
+  const [searchEnvios,setSearchEnvios]=useState("");
+  // SKU tab
   const [skuFile,setSkuFile]=useState(null);
+  const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
   const [skuResults,setSkuResults]=useState([]);
   const [skuProcessing,setSkuProcessing]=useState(false);
+  // Seguimientos tab
+  const [pdfFile,setPdfFile]=useState(null);
+  const [pdfPending,setPdfPending]=useState(false);
+  const [pdfResults,setPdfResults]=useState([]);
+  const [pdfProcessing,setPdfProcessing]=useState(false);
   const [sendingTracking,setSendingTracking]=useState({});
   const [trackingSent,setTrackingSent]=useState({});
   const iS=InputStyle(T);
-  const fbDot={connecting:T.yellow,ok:T.green,error:T.red}["ok"];
+
+  // Pedidos exportables
+  const exportables=useMemo(()=>orders.filter(o=>{
+    const exportable=o.estadoPago==="Pagado"&&(o.estadoEnvio==="No está empaquetado"||o.estadoEnvio==="Listo para enviar");
+    if(!exportable) return false;
+    if(filterEstadoEnvio&&o.estadoEnvio!==filterEstadoEnvio) return false;
+    if(searchEnvios){const s=searchEnvios.toLowerCase();return o.numero.includes(s)||o.comprador.toLowerCase().includes(s);}
+    return true;
+  }),[orders,filterEstadoEnvio,searchEnvios]);
+
+  function toggleSelect(num){setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});}
+  function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
+
+  // Export as CSV (works in all browsers without external libs)
+  async function exportAndreani() {
+    const selOrders=exportables.filter(o=>selected.has(o.numero));
+    if(!selOrders.length) return;
+    setExporting(true);
+    await new Promise(r=>setTimeout(r,100)); // let UI update
+
+    try {
+      const headers=["Paquete Guardado","Peso (grs)","Alto (cm)","Ancho (cm)","Profundidad (cm)","Valor declarado ($ C/IVA) *","Numero Interno","Nombre *","Apellido *","DNI *","Email *","Celular código *","Celular número *","Calle *","Número *","Piso","Departamento","Provincia / Localidad / CP *","Observaciones"];
+
+      function buildRows(ords) {
+        return ords.map(o=>{
+          const partes=o.comprador.trim().split(' ');
+          const nombre=partes[0]||"";
+          const apellido=partes.slice(1).join(' ')||"";
+          const tel=(o.telefono||"").replace(/\D/g,'');
+          const telCod=tel.length>0?"54":"";
+          const telNum=tel.replace(/^54/,'').replace(/^0/,'');
+          const prov=(o.provincia||"").toUpperCase();
+          const loc=(o.localidad||o.ciudad||"").toUpperCase();
+          const cp=o.cp||"";
+          return ["",parseInt(exportCfg.peso)||200,parseInt(exportCfg.alto)||5,parseInt(exportCfg.ancho)||5,parseInt(exportCfg.prof)||5,parseInt(exportCfg.valor)||6000,`#${o.numero}`,nombre,apellido,o.dni||"",o.email||"",telCod,telNum,o.direccion||"",o.dirNumero||"",o.piso||"",`${prov} / ${loc} / ${cp}`,""];
+        });
+      }
+
+      function toCSV(rows) {
+        return [headers,...rows].map(r=>r.map(v=>{
+          const s=String(v==null?"":v);
+          return s.includes(',')||s.includes('"')||s.includes('\n')?`"${s.replace(/"/g,'""')}"`:s;
+        }).join(',')).join('\r\n');
+      }
+
+      const date=new Date().toISOString().split('T')[0];
+
+      if(exportCfg.separar) {
+        // File 1: domicilio
+        const blob1=new Blob(["\uFEFF"+toCSV(buildRows(selOrders))],{type:"text/csv;charset=utf-8"});
+        const a1=document.createElement("a");a1.href=URL.createObjectURL(blob1);a1.download=`andreani-domicilio-${date}.csv`;a1.click();
+        await new Promise(r=>setTimeout(r,500));
+        // File 2: sucursal (empty template)
+        const blob2=new Blob(["\uFEFF"+toCSV([])],{type:"text/csv;charset=utf-8"});
+        const a2=document.createElement("a");a2.href=URL.createObjectURL(blob2);a2.download=`andreani-sucursal-${date}.csv`;a2.click();
+      } else {
+        const blob=new Blob(["\uFEFF"+toCSV(buildRows(selOrders))],{type:"text/csv;charset=utf-8"});
+        const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`andreani-${date}.csv`;a.click();
+      }
+
+      setExportModal(false);
+      setSelected(new Set());
+    } catch(e){ alert("Error al exportar: "+e.message); }
+    setExporting(false);
+  }
+
+  // Parse PDF — shared logic using fetch+text extraction via server
+  async function parsePdf(file, type) {
+    const setter=type==="sku"?setSkuProcessing:setPdfProcessing;
+    const resultSetter=type==="sku"?setSkuResults:setPdfResults;
+    setter(true);
+    resultSetter([]);
+
+    try {
+      // Use FileReader to get base64, then parse text client-side
+      const text=await extractPdfText(file);
+      const pages=text.split("---PAGE---");
+      const results=[];
+
+      for(let i=0;i<pages.length;i++) {
+        const pageText=pages[i];
+        // Match tracking number (18+ digits starting with 36)
+        const trackingMatch=pageText.match(/(?:N[°º]?\s*de\s*seguimiento[:\s]*)?(\b36\d{16,}\b)/i);
+        // Match internal order number
+        const internoMatch=pageText.match(/N[°º]?\s*Interno[:\s]*#?(\d{3,6})/i);
+
+        if(trackingMatch||internoMatch) {
+          const tracking=trackingMatch?trackingMatch[1].trim():"";
+          const pedidoNum=internoMatch?internoMatch[1].trim():"";
+          if(type==="sku") {
+            const order=orders.find(o=>o.numero===pedidoNum);
+            const skus=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`).join(', '):"No encontrado en TN";
+            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order});
+          } else {
+            results.push({pagina:i+1,tracking,pedidoNum,status:"pending"});
+          }
+        }
+      }
+      resultSetter(results);
+      if(results.length===0) alert("No se encontraron rótulos con N° de seguimiento o N° Interno en el PDF. Verificá que sea un PDF de Andreani.");
+    } catch(e){ alert("Error al procesar el PDF: "+e.message); }
+    setter(false);
+  }
+
+  async function extractPdfText(file) {
+    // Load pdf.js from CDN via script tag
+    if(!window.pdfjsLib) {
+      await new Promise((resolve,reject)=>{
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        s.onload=resolve;s.onerror=reject;
+        document.head.appendChild(s);
+      });
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const arrayBuffer=await file.arrayBuffer();
+    const pdf=await window.pdfjsLib.getDocument({data:arrayBuffer}).promise;
+    const pages=[];
+    for(let i=1;i<=pdf.numPages;i++) {
+      const page=await pdf.getPage(i);
+      const content=await page.getTextContent();
+      pages.push(content.items.map(item=>item.str).join(' '));
+    }
+    return pages.join('---PAGE---');
+  }
+
+  async function sendTracking(result) {
+    if(!result.pedidoNum||!result.tracking) return;
+    setSendingTracking(p=>({...p,[result.pedidoNum]:true}));
+    try {
+      const order=orders.find(o=>o.numero===result.pedidoNum);
+      if(!order) throw new Error("Pedido no encontrado en TN");
+      const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
+      const data=await res.json();
+      if(res.ok) setTrackingSent(p=>({...p,[result.pedidoNum]:true}));
+      else throw new Error(data.error||"Error al enviar");
+    } catch(e){ alert("Error: "+e.message); }
+    setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
+  }
+
+  async function sendAllTracking() {
+    for(const r of pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum])) {
+      await sendTracking(r);
+    }
+  }
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
+      {/* Topbar */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:1280,margin:"0 auto"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={onHome} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
+            <span style={{color:T.textSm,fontSize:15}}>/</span>
+            <span style={{fontWeight:700,fontSize:15,color:T.text}}>🚚 Envíos</span>
+          </div>
+          <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>
+            {ordersStatus==="loading"?"⟳ Sincronizando...":"⟳ Sincronizar"}
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px"}}>
+        <div style={{display:"flex",maxWidth:1280,margin:"0 auto"}}>
+          {[{id:"panel",label:"📦 Panel de Envíos"},{id:"sku",label:"🏷️ SKU en Rótulos"},{id:"seguimientos",label:"📍 Seguimientos"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"13px 18px",fontSize:14,fontWeight:tab===t.id?700:400,color:tab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:tab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:-1,transition:"color 0.15s"}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 16px 64px"}}>
+
+        {/* ── PANEL DE ENVIOS ── */}
+        {tab==="panel"&&(
+          <div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
+              <StatCard T={T} label="Exportables" value={exportables.length} color={T.blue}/>
+              <StatCard T={T} label="Seleccionados" value={selected.size} color={T.accent}/>
+              <StatCard T={T} label="Total pedidos" value={orders.length} color={T.textMd}/>
+            </div>
+
+            {/* Filters */}
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+              <div style={{position:"relative",flex:"1 1 200px",minWidth:160}}>
+                <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:13}}>🔍</span>
+                <input placeholder="Buscar pedido o cliente..." value={searchEnvios} onChange={e=>setSearchEnvios(e.target.value)} style={{...iS,paddingLeft:30,fontSize:13}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
+              </div>
+              <select value={filterEstadoEnvio} onChange={e=>setFilterEstadoEnvio(e.target.value)} style={{...iS,width:"auto",flex:"0 1 190px",fontSize:13,color:filterEstadoEnvio?T.accent:T.textMd}}>
+                <option value="">Todos los estados</option>
+                <option>No está empaquetado</option>
+                <option>Listo para enviar</option>
+              </select>
+              <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
+                {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
+              </button>
+              {selected.size>0&&(
+                <button onClick={()=>setExportModal(true)} style={{...BtnPrimary(T),fontSize:13}}>
+                  ⬇️ Exportar {selected.size} pedido{selected.size!==1?"s":""} para Andreani
+                </button>
+              )}
+              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Solo pedidos con pago aprobado</span>
+            </div>
+
+            {exportables.length===0?(
+              <div style={{textAlign:"center",padding:"80px 20px"}}>
+                <div style={{fontSize:48,marginBottom:16}}>📦</div>
+                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>{orders.length===0?"Sincronizando pedidos...":"Sin pedidos exportables"}</div>
+                <div style={{fontSize:14,color:T.textSm,marginTop:8}}>Pedidos con pago aprobado y sin enviar aparecerán acá</div>
+              </div>
+            ):(
+              <>
+                <div style={{display:"grid",gridTemplateColumns:"40px 90px 1fr 1fr 150px 100px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                  <span/><span>Pedido</span><span>Cliente</span><span>Productos</span><span>Estado</span><span>Total</span>
+                </div>
+                {exportables.map(o=>{
+                  const sel=selected.has(o.numero);
+                  const ec=getEstadoEnvioC(T,o.estadoEnvio);
+                  return (
+                    <div key={o.numero} onClick={()=>toggleSelect(o.numero)}
+                      style={{display:"grid",gridTemplateColumns:"40px 90px 1fr 1fr 150px 100px",gap:8,padding:"13px 14px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center"}}
+                      onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
+                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
+                      <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
+                      </div>
+                      <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{o.comprador}</div>
+                        <div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.localidad||o.ciudad}{o.provincia?`, ${o.provincia}`:""}</div>
+                      </div>
+                      <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        <LensDots productos={o.productos}/>
+                        <span style={{marginLeft:6}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</span>
+                      </div>
+                      <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
+                      <span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── SKU EN ROTULOS ── */}
+        {tab==="sku"&&(
+          <div style={{maxWidth:700}}>
+            <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
+              Subí el PDF de rótulos de Andreani. La app detecta el N° de pedido, busca los SKUs en tus pedidos de Tienda Nube y genera un resumen de lo despachado.
+            </div>
+
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>1. Seleccioná el PDF de rótulos</div>
+              <input type="file" accept=".pdf" onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(true);setSkuResults([]);}}} style={{...iS,cursor:"pointer",fontSize:13,marginBottom:skuPending?12:0}}/>
+              {skuPending&&!skuProcessing&&(
+                <button onClick={()=>{setSkuPending(false);parsePdf(skuFile,"sku");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,marginTop:12}}>
+                  🔍 Analizar PDF
+                </button>
+              )}
+            </div>
+
+            {skuProcessing&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:32,textAlign:"center",marginBottom:16}}>
+                <div style={{fontSize:28,marginBottom:10}}>⏳</div>
+                <div style={{fontSize:15,fontWeight:600,color:T.text}}>Analizando PDF...</div>
+                <div style={{fontSize:13,color:T.textSm,marginTop:6}}>Extrayendo SKUs de cada rótulo</div>
+                <div style={{width:60,height:4,background:T.accentSolid,borderRadius:20,margin:"16px auto 0",animation:"pulse 1s infinite"}}/>
+              </div>
+            )}
+
+            {skuResults.length>0&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontSize:14,fontWeight:700,color:T.text}}>✅ {skuResults.length} rótulos analizados</span>
+                  <button onClick={()=>{
+                    const lines=["RESUMEN DE SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString('es-AR'),"Total de páginas: "+skuResults.length,"","DETALLE DE SKU DESPACHADOS:",""];
+                    const skuMap={};
+                    skuResults.forEach(r=>{const order=orders.find(o=>o.numero===r.pedidoNum);if(order)order.productos.forEach(p=>{skuMap[p.sku]=(skuMap[p.sku]||0)+(parseInt(p.cantidad)||1);});});
+                    Object.entries(skuMap).sort().forEach(([sku,qty])=>lines.push(`${sku}: CANTIDAD TOTAL: ${qty}`));
+                    const blob=new Blob([lines.join('\n')],{type:"text/plain"});
+                    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="resumen-sku.txt";a.click();
+                  }} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>⬇️ Exportar resumen</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"60px 80px 1fr",gap:8,padding:"8px 18px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`}}>
+                  <span>Página</span><span>Pedido</span><span>SKUs</span>
+                </div>
+                {skuResults.map((r,i)=>(
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"60px 80px 1fr",gap:8,padding:"12px 18px",borderBottom:i<skuResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
+                    <span style={{fontSize:12,color:T.textSm}}>Pág. {r.pagina}</span>
+                    <span style={{fontWeight:700,color:r.found?T.accent:T.red,fontSize:13}}>#{r.pedidoNum||"—"}</span>
+                    <div>
+                      <div style={{fontSize:13,color:r.found?T.text:T.red}}>{r.skus}</div>
+                      {!r.found&&<div style={{fontSize:11,color:T.red,marginTop:2}}>⚠ Pedido no encontrado</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── SEGUIMIENTOS ── */}
+        {tab==="seguimientos"&&(
+          <div style={{maxWidth:700}}>
+            <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
+              Subí el PDF de rótulos de Andreani ya impresos. La app extrae el N° de seguimiento y pedido, y los envía a Tienda Nube automáticamente.
+            </div>
+
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>1. Seleccioná el PDF de rótulos Andreani</div>
+              <input type="file" accept=".pdf" onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfPending(true);setPdfResults([]);setTrackingSent({});}}} style={{...iS,cursor:"pointer",fontSize:13}}/>
+              {pdfPending&&!pdfProcessing&&(
+                <button onClick={()=>{setPdfPending(false);parsePdf(pdfFile,"tracking");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,marginTop:12}}>
+                  🔍 Analizar PDF y extraer seguimientos
+                </button>
+              )}
+            </div>
+
+            {pdfProcessing&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:32,textAlign:"center",marginBottom:16}}>
+                <div style={{fontSize:28,marginBottom:10}}>⏳</div>
+                <div style={{fontSize:15,fontWeight:600,color:T.text}}>Analizando PDF...</div>
+                <div style={{fontSize:13,color:T.textSm,marginTop:6}}>Extrayendo números de seguimiento</div>
+              </div>
+            )}
+
+            {pdfResults.length>0&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:14,fontWeight:700,color:T.text}}>✅ {pdfResults.length} seguimientos detectados</span>
+                  <button onClick={sendAllTracking} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>
+                    🚀 Enviar todos a Tienda Nube
+                  </button>
+                </div>
+                {pdfResults.map((r,i)=>{
+                  const order=orders.find(o=>o.numero===r.pedidoNum);
+                  const sent=trackingSent[r.pedidoNum];
+                  const sending=sendingTracking[r.pedidoNum];
+                  return (
+                    <div key={i} style={{padding:"14px 18px",borderBottom:i<pdfResults.length-1?`1px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,background:sent?T.greenBg:"transparent",transition:"background 0.3s"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"—"}</span>
+                          {order&&<span style={{fontSize:13,color:T.text}}>{order.comprador}</span>}
+                          {!order&&r.pedidoNum&&<span style={{fontSize:12,color:T.red}}>⚠ Pedido no encontrado</span>}
+                        </div>
+                        <div style={{fontSize:12,color:T.textSm,fontFamily:"monospace",wordBreak:"break-all"}}>{r.tracking||"Sin tracking detectado"}</div>
+                      </div>
+                      <div style={{flexShrink:0}}>
+                        {sent?<span style={{fontSize:13,color:T.green,fontWeight:600}}>✓ Enviado</span>
+                        :sending?<span style={{fontSize:13,color:T.yellow}}>⏳ Enviando...</span>
+                        :r.tracking&&r.pedidoNum?
+                          <button onClick={()=>sendTracking(r)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Enviar a TN</button>
+                        :<span style={{fontSize:12,color:T.red}}>Sin datos</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Export Modal */}
+      <Modal T={T} open={exportModal} onClose={()=>!exporting&&setExportModal(false)} title={`Exportar ${selected.size} pedido${selected.size!==1?"s":""} para Andreani`} width={480}>
+        <div>
+          <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,fontSize:13,color:T.textMd}}>
+            <span style={{fontWeight:700,color:T.text}}>{selected.size}</span> pedido{selected.size!==1?"s":""} seleccionado{selected.size!==1?"s":""}. Se exportarán solo los marcados.
+          </div>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>📦 Paquete</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+            <Field T={T} label="Peso (g)"><input style={iS} type="number" value={exportCfg.peso} onChange={e=>setExportCfg(c=>({...c,peso:e.target.value}))} placeholder="200"/></Field>
+            <Field T={T} label="Valor declarado ($)"><input style={iS} type="number" value={exportCfg.valor} onChange={e=>setExportCfg(c=>({...c,valor:e.target.value}))} placeholder="6000"/></Field>
+            <Field T={T} label="Alto (cm)"><input style={iS} type="number" value={exportCfg.alto} onChange={e=>setExportCfg(c=>({...c,alto:e.target.value}))} placeholder="5"/></Field>
+            <Field T={T} label="Ancho (cm)"><input style={iS} type="number" value={exportCfg.ancho} onChange={e=>setExportCfg(c=>({...c,ancho:e.target.value}))} placeholder="5"/></Field>
+          </div>
+          <Field T={T} label="Prof. (cm)"><input style={iS} type="number" value={exportCfg.prof} onChange={e=>setExportCfg(c=>({...c,prof:e.target.value}))} placeholder="5"/></Field>
+          <div onClick={()=>!exporting&&setExportCfg(c=>({...c,separar:!c.separar}))} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"14px",background:T.bg,border:`1.5px solid ${exportCfg.separar?T.accentSolid:T.border}`,borderRadius:10,cursor:"pointer",marginBottom:20,transition:"all 0.15s"}}>
+            <div style={{width:20,height:20,borderRadius:4,border:`2px solid ${exportCfg.separar?T.accentSolid:T.border}`,background:exportCfg.separar?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>
+              {exportCfg.separar&&<span style={{color:"#fff",fontSize:12}}>✓</span>}
+            </div>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:T.text}}>Separar Domicilios / Sucursales</div>
+              <div style={{fontSize:12,color:T.textSm,marginTop:3}}>Genera 2 archivos CSV en lugar de uno</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <button onClick={()=>setExportModal(false)} disabled={exporting} style={{...BtnSecondary(T),opacity:exporting?0.5:1}}>Cancelar</button>
+            <button onClick={exportAndreani} disabled={exporting} style={{...BtnPrimary(T),opacity:exporting?0.7:1,minWidth:160,justifyContent:"center"}}>
+              {exporting?"⏳ Generando archivo...":"⬇️ Descargar CSV"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
 
   // Pedidos exportables: pago aprobado y no enviados
   const exportables=useMemo(()=>orders.filter(o=>
