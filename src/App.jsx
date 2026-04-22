@@ -1699,19 +1699,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   function toggleSelect(num){setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});}
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
 
-  // Load SheetJS for XLSX generation
-  async function loadXLSX() {
-    if(window.XLSX) return window.XLSX;
-    await new Promise((resolve,reject)=>{
-      const s=document.createElement('script');
-      s.src='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
-      s.onload=resolve; s.onerror=reject;
-      document.head.appendChild(s);
-    });
-    return window.XLSX;
-  }
-
-  // Export as XLSX using official Andreani template
+  // Export as XLSX using official Andreani template (XML injection - 100% compatible)
   async function exportAndreani() {
     const selOrders=exportables.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
@@ -1719,15 +1707,35 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     await new Promise(r=>setTimeout(r,100));
 
     try {
-      const XLSX=await loadXLSX();
-
-      // Fetch the official Andreani template (kept in /public)
+      // Fetch official Andreani template from /public
       const templateRes=await fetch('/andreani_template.xlsx');
-      if(!templateRes.ok) throw new Error("No se pudo cargar el template de Andreani. Verificá que andreani_template.xlsx esté en la carpeta public/");
+      if(!templateRes.ok) throw new Error("No se pudo cargar el template. Verificá que andreani_template.xlsx esté en la carpeta public/");
       const templateBuf=await templateRes.arrayBuffer();
 
+      // Load JSZip to manipulate the xlsx (zip) directly
+      if(!window.JSZip) {
+        await new Promise((res,rej)=>{
+          const s=document.createElement('script');
+          s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+          s.onload=res; s.onerror=rej;
+          document.head.appendChild(s);
+        });
+      }
+
+      function buildRowXML(rowNum, values) {
+        const cols='ABCDEFGHIJKLMNOPQRS';
+        const cells=values.map((val,i)=>{
+          const ref=`${cols[i]}${rowNum}`;
+          if(val===''||val===null||val===undefined) return `<x:c r="${ref}"/>`;
+          if(typeof val==='number') return `<x:c r="${ref}"><x:v>${val}</x:v></x:c>`;
+          const esc=String(val).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          return `<x:c r="${ref}" t="inlineStr"><x:is><x:t>${esc}</x:t></x:is></x:c>`;
+        }).join('');
+        return `<x:row r="${rowNum}" spans="1:19">${cells}</x:row>`;
+      }
+
       function buildRows(ords) {
-        return ords.map(o=>{
+        return ords.map((o,i)=>{
           const partes=o.comprador.trim().split(' ');
           const nombre=partes[0]||"";
           const apellido=partes.slice(1).join(' ')||"";
@@ -1737,49 +1745,35 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           const prov=(o.provincia||"").toUpperCase();
           const loc=(o.localidad||o.ciudad||"").toUpperCase();
           const cp=o.cp||"";
-          // Columns A-S (19 cols): match exact Andreani format
-          return [
-            "",                              // A: Paquete Guardado
-            parseInt(exportCfg.peso)||200,   // B: Peso (grs)
-            parseInt(exportCfg.alto)||5,     // C: Alto (cm)
-            parseInt(exportCfg.ancho)||5,    // D: Ancho (cm)
-            parseInt(exportCfg.prof)||5,     // E: Profundidad (cm)
-            parseInt(exportCfg.valor)||6000, // F: Valor declarado
-            `#${o.numero}`,                  // G: Numero Interno
-            nombre,                          // H: Nombre
-            apellido,                        // I: Apellido
-            o.dni||"",                       // J: DNI
-            o.email||"",                     // K: Email
-            telCod,                          // L: Celular código
-            telNum,                          // M: Celular número
-            o.direccion||"",                 // N: Calle
-            o.dirNumero||"",                 // O: Número
-            o.piso||"",                      // P: Piso
-            "",                              // Q: Departamento
-            `${prov} / ${loc} / ${cp}`,      // R: Provincia/Localidad/CP
-            ""                               // S: Observaciones
-          ];
-        });
+          const vals=["",parseInt(exportCfg.peso)||200,parseInt(exportCfg.alto)||5,parseInt(exportCfg.ancho)||5,parseInt(exportCfg.prof)||5,parseInt(exportCfg.valor)||6000,`#${o.numero}`,nombre,apellido,o.dni||"",o.email||"",telCod,telNum,o.direccion||"",o.dirNumero||"",o.piso||"",``,`${prov} / ${loc} / ${cp}`,""];
+          return buildRowXML(i+3, vals);
+        }).join('');
+      }
+
+      async function generateXlsx(ords) {
+        const zip=await window.JSZip.loadAsync(templateBuf);
+        const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
+        const rowsXML=buildRows(ords);
+        const totalRows=2+ords.length;
+        let newSheet=sheet1
+          .replace('</x:sheetData>', rowsXML+'</x:sheetData>')
+          .replace(/<x:dimension ref="[^"]+"\/>/, `<x:dimension ref="A1:S${totalRows}"/>`);
+        zip.file('xl/worksheets/sheet1.xml', newSheet);
+        return await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
       }
 
       const date=new Date().toISOString().split('T')[0];
 
-      function writeToTemplate(rows, filename) {
-        const wb=XLSX.read(templateBuf, {type:"array"});
-        const ws=wb.Sheets["A domicilio"];
-        // Write data starting from row 3 (after group headers + col headers)
-        XLSX.utils.sheet_add_aoa(ws, rows, {origin:"A3"});
-        XLSX.writeFile(wb, filename);
-      }
-
       if(exportCfg.separar) {
-        writeToTemplate(buildRows(selOrders), `EnvioMasivoExcelPaquetes-domicilio-${date}.xlsx`);
+        const blob1=await generateXlsx(selOrders);
+        const a1=document.createElement('a');a1.href=URL.createObjectURL(blob1);a1.download=`EnvioMasivoExcelPaquetes-domicilio-${date}.xlsx`;a1.click();
         await new Promise(r=>setTimeout(r,600));
-        // Second file with empty data (sucursal)
-        const wb2=XLSX.read(templateBuf, {type:"array"});
-        XLSX.writeFile(wb2, `EnvioMasivoExcelPaquetes-sucursal-${date}.xlsx`);
+        // Empty file for sucursal
+        const blob2=await generateXlsx([]);
+        const a2=document.createElement('a');a2.href=URL.createObjectURL(blob2);a2.download=`EnvioMasivoExcelPaquetes-sucursal-${date}.xlsx`;a2.click();
       } else {
-        writeToTemplate(buildRows(selOrders), `EnvioMasivoExcelPaquetes-${date}.xlsx`);
+        const blob=await generateXlsx(selOrders);
+        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`EnvioMasivoExcelPaquetes-${date}.xlsx`;a.click();
       }
 
       setExportModal(false);
