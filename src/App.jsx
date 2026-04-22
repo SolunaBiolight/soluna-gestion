@@ -1699,30 +1699,55 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   function toggleSelect(num){setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});}
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
 
-  // Export as XLSX using official Andreani template (XML injection - 100% compatible)
+  // Andreani locations cache
+  const andreaniLocsRef=useRef(null);
+  async function loadAndreaniLocations() {
+    if(andreaniLocsRef.current) return andreaniLocsRef.current;
+    const res=await fetch('/andreani_locations.json');
+    if(!res.ok) throw new Error("No se pudo cargar la lista de localidades");
+    const data=await res.json();
+    const cpIndex={};
+    data.forEach(loc=>{
+      const parts=loc.split(' / ');
+      if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}
+    });
+    andreaniLocsRef.current={list:data,cpIndex};
+    return andreaniLocsRef.current;
+  }
+
+  function findAndreaniLocation(locs,cp,provincia,localidad) {
+    const byCp=locs.cpIndex[cp?.trim()]||[];
+    if(byCp.length===1) return byCp[0];
+    if(byCp.length>1){
+      const locU=(localidad||"").toUpperCase().trim();
+      const match=byCp.find(l=>l.includes(locU));
+      return match||byCp[0];
+    }
+    const provU=(provincia||"").toUpperCase().trim();
+    const locU=(localidad||"").toUpperCase().trim();
+    const match=locs.list.find(l=>l.startsWith(provU)&&l.includes(locU));
+    if(match) return match;
+    const provMatch=locs.list.find(l=>l.startsWith(provU));
+    return provMatch||`${provU} / ${locU} / ${cp||""}`;
+  }
+
+  // Export as XLSX using official Andreani template (XML injection)
   async function exportAndreani() {
     const selOrders=exportables.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
     setExporting(true);
     await new Promise(r=>setTimeout(r,100));
-
     try {
-      // Fetch official Andreani template from /public
-      const templateRes=await fetch('/andreani_template.xlsx');
-      if(!templateRes.ok) throw new Error("No se pudo cargar el template. Verificá que andreani_template.xlsx esté en la carpeta public/");
+      const [templateRes,locs]=await Promise.all([
+        fetch('/andreani_template.xlsx'),
+        loadAndreaniLocations()
+      ]);
+      if(!templateRes.ok) throw new Error("No se pudo cargar el template. Verificá que andreani_template.xlsx esté en public/");
       const templateBuf=await templateRes.arrayBuffer();
-
-      // Load JSZip to manipulate the xlsx (zip) directly
-      if(!window.JSZip) {
-        await new Promise((res,rej)=>{
-          const s=document.createElement('script');
-          s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-          s.onload=res; s.onerror=rej;
-          document.head.appendChild(s);
-        });
+      if(!window.JSZip){
+        await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
       }
-
-      function buildRowXML(rowNum, values) {
+      function buildRowXML(rowNum,values){
         const cols='ABCDEFGHIJKLMNOPQRS';
         const cells=values.map((val,i)=>{
           const ref=`${cols[i]}${rowNum}`;
@@ -1733,8 +1758,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         }).join('');
         return `<x:row r="${rowNum}" spans="1:19">${cells}</x:row>`;
       }
-
-      function buildRows(ords) {
+      function buildRows(ords){
         return ords.map((o,i)=>{
           const partes=o.comprador.trim().split(' ');
           const nombre=partes[0]||"";
@@ -1742,43 +1766,38 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           const tel=(o.telefono||"").replace(/\D/g,'');
           const telCod=tel.length>0?54:"";
           const telNum=tel.replace(/^54/,'').replace(/^0/,'');
-          const prov=(o.provincia||"").toUpperCase();
-          const loc=(o.localidad||o.ciudad||"").toUpperCase();
-          const cp=o.cp||"";
-          const vals=["",parseInt(exportCfg.peso)||200,parseInt(exportCfg.alto)||5,parseInt(exportCfg.ancho)||5,parseInt(exportCfg.prof)||5,parseInt(exportCfg.valor)||6000,`#${o.numero}`,nombre,apellido,o.dni||"",o.email||"",telCod,telNum,o.direccion||"",o.dirNumero||"",o.piso||"",``,`${prov} / ${loc} / ${cp}`,""];
-          return buildRowXML(i+3, vals);
+          const ubicacion=findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
+          const vals=["",parseInt(exportCfg.peso)||200,parseInt(exportCfg.alto)||5,parseInt(exportCfg.ancho)||5,parseInt(exportCfg.prof)||5,parseInt(exportCfg.valor)||6000,
+            o.numero,nombre,apellido,o.dni||"",o.email||"",telCod,telNum,
+            o.direccion||"",o.dirNumero||"",o.piso||"","",ubicacion,""];
+          return buildRowXML(i+3,vals);
         }).join('');
       }
-
-      async function generateXlsx(ords) {
+      async function generateXlsx(ords){
         const zip=await window.JSZip.loadAsync(templateBuf);
         const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
         const rowsXML=buildRows(ords);
         const totalRows=2+ords.length;
         let newSheet=sheet1
-          .replace('</x:sheetData>', rowsXML+'</x:sheetData>')
-          .replace(/<x:dimension ref="[^"]+"\/>/, `<x:dimension ref="A1:S${totalRows}"/>`);
-        zip.file('xl/worksheets/sheet1.xml', newSheet);
-        return await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+          .replace('</x:sheetData>',rowsXML+'</x:sheetData>')
+          .replace(/<x:dimension ref="[^"]+"\//,`<x:dimension ref="A1:S${totalRows}"/`);
+        zip.file('xl/worksheets/sheet1.xml',newSheet);
+        return await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
       }
-
       const date=new Date().toISOString().split('T')[0];
-
-      if(exportCfg.separar) {
+      if(exportCfg.separar){
         const blob1=await generateXlsx(selOrders);
         const a1=document.createElement('a');a1.href=URL.createObjectURL(blob1);a1.download=`EnvioMasivoExcelPaquetes-domicilio-${date}.xlsx`;a1.click();
         await new Promise(r=>setTimeout(r,600));
-        // Empty file for sucursal
         const blob2=await generateXlsx([]);
         const a2=document.createElement('a');a2.href=URL.createObjectURL(blob2);a2.download=`EnvioMasivoExcelPaquetes-sucursal-${date}.xlsx`;a2.click();
       } else {
         const blob=await generateXlsx(selOrders);
         const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`EnvioMasivoExcelPaquetes-${date}.xlsx`;a.click();
       }
-
       setExportModal(false);
       setSelected(new Set());
-    } catch(e){ alert("Error al exportar: "+e.message); }
+    } catch(e){alert("Error al exportar: "+e.message);}
     setExporting(false);
   }
 
