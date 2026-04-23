@@ -286,7 +286,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [reclamos,setReclamos]=useState([]);
   const [plantillas,setPlantillas]=useState([]);
   const [view,setView]=useState("dashboard"); // dashboard | buscar | reclamos | config
-  const [dashView,setDashView]=useState("pipeline"); // pipeline | kanban
+  const [dashView,setDashView]=useState("kanban"); // kanban | pipeline
+  const [kanbanTipo,setKanbanTipo]=useState("Todos");
   const [search,setSearch]=useState("");
   const [filterEstado,setFilterEstado]=useState("");
   const [filterTipo,setFilterTipo]=useState("");
@@ -592,7 +593,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
               <div style={{fontSize:13,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.6}}>Pipeline de reclamos</div>
               <div style={{display:"flex",gap:4,background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:3}}>
-                {[{id:"pipeline",label:"📊 Pipeline"},{id:"kanban",label:"⬜ Kanban"}].map(v=>(
+                {[{id:"kanban",label:"⬜ Kanban"},{id:"pipeline",label:"📊 Pipeline"}].map(v=>(
                   <button key={v.id} onClick={()=>setDashView(v.id)} style={{padding:"5px 14px",fontSize:12,fontWeight:dashView===v.id?700:400,borderRadius:6,border:"none",background:dashView===v.id?T.accentSolid:"transparent",color:dashView===v.id?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>{v.label}</button>
                 ))}
               </div>
@@ -619,13 +620,19 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
             {/* Vista Kanban */}
             {dashView==="kanban"&&(
+            <div>
+              {/* Filtro tipo */}
+              <div style={{display:"flex",gap:6,marginBottom:14}}>
+                {["Todos","Cambio","Devolución","Consulta"].map(t=>(
+                  <button key={t} onClick={()=>setKanbanTipo(t)} style={{padding:"5px 14px",fontSize:12,fontWeight:kanbanTipo===t?700:400,borderRadius:20,border:`1px solid ${kanbanTipo===t?T.accentSolid:T.border}`,background:kanbanTipo===t?T.accentSolid:"transparent",color:kanbanTipo===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>{t}</button>
+                ))}
+              </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:28}}>
               {ESTADOS_R.map(estado=>{
                 const sc=getEstadoRC(T,estado);
-                const items=reclamos.filter(r=>r.estado===estado);
+                const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo));
                 return (
                   <div key={estado} style={{background:T.card,border:`1px solid ${sc.dot}44`,borderRadius:12,overflow:"hidden",minHeight:80}}>
-                    {/* Column header */}
                     <div style={{padding:"10px 14px",background:sc.dot+"18",borderBottom:`1px solid ${sc.dot}33`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
                         <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
@@ -633,7 +640,6 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                       </div>
                       <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:20,padding:"1px 8px"}}>{items.length}</span>
                     </div>
-                    {/* Cards */}
                     <div style={{padding:8,display:"flex",flexDirection:"column",gap:6,maxHeight:380,overflowY:"auto"}}>
                       {items.length===0&&(
                         <div style={{textAlign:"center",padding:"16px 8px",fontSize:12,color:T.textSm}}>Sin reclamos</div>
@@ -642,6 +648,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         const o=orders.find(o=>o.numero===r.orderNum);
                         const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):null;
                         const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=3;
+                        const tieneNota=!!r.notasInternas;
                         return (
                           <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");}}
                             style={{background:T.bg,border:`1px solid ${urgente?T.red+"44":T.borderL}`,borderRadius:8,padding:"10px 12px",cursor:"pointer",transition:"all 0.12s",borderLeft:urgente?`3px solid ${T.red}`:"3px solid transparent"}}
@@ -651,7 +658,10 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                             <div style={{fontSize:11,color:T.accent,marginBottom:4}}>#{r.orderNum}</div>
                             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4,flexWrap:"wrap"}}>
                               <span style={{fontSize:10,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:4,padding:"1px 6px",color:T.textMd}}>{r.tipo}</span>
-                              {dias!==null&&<span style={{fontSize:10,color:urgente?T.red:T.textSm,fontWeight:urgente?700:400}}>{dias}d</span>}
+                              <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                                {tieneNota&&<span style={{fontSize:10,color:T.yellow}} title="Tiene notas internas">🔒</span>}
+                                {dias!==null&&<span style={{fontSize:10,color:urgente?T.red:T.textSm,fontWeight:urgente?700:400}}>{dias}d</span>}
+                              </div>
                             </div>
                             {r.motivo&&<div style={{fontSize:10,color:T.textSm,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.motivo}</div>}
                           </div>
@@ -661,6 +671,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   </div>
                 );
               })}
+            </div>
             </div>
             )}
 
@@ -929,6 +940,23 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     </div>
                   )}
 
+                  {/* Notas internas */}
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>🔒 Notas internas</div>
+                    <textarea
+                      rows={3}
+                      placeholder="Notas privadas (no visibles para el cliente)..."
+                      defaultValue={activeR.notasInternas||""}
+                      onBlur={async e=>{
+                        const val=e.target.value;
+                        if(val!==(activeR.notasInternas||""))
+                          await updateDoc(doc(db,"reclamos",activeR._docId),{notasInternas:val,updatedAt:serverTimestamp()});
+                      }}
+                      style={{...InputStyle(T),width:"100%",resize:"vertical",fontSize:12,padding:"8px 10px",lineHeight:1.5,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",minHeight:70,background:T.yellowBg||T.surface,borderColor:T.yellow+"44"}}
+                      onFocus={e=>e.target.style.borderColor=T.yellow}
+                    />
+                  </div>
+
                   {/* Plantillas de mensajes */}
                   <div style={{marginBottom:14}}>
                     <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Mensajes rápidos</div>
@@ -950,7 +978,39 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   </div>
 
                   {/* Acciones */}
-                  <div style={{display:"flex",gap:8,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+                  <div style={{display:"flex",gap:8,paddingTop:12,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
+                    {/* Generar etiqueta Andreani */}
+                    <button onClick={async()=>{
+                      try {
+                        const o=activeOrder;
+                        if(!o) return alert("No se encontró el pedido");
+                        const [templateRes,locsRes]=await Promise.all([fetch('/andreani_template.xlsx'),fetch('/andreani_locations.json')]);
+                        if(!templateRes.ok||!locsRes.ok) throw new Error("No se pudo cargar el template o localidades. Verificá que estén en public/");
+                        const templateBuf=await templateRes.arrayBuffer();
+                        const locs=await locsRes.json();
+                        const cpIndex={};
+                        locs.forEach(loc=>{const parts=loc.split(' / ');if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}});
+                        function findLoc(cp,prov,loc2){const byCp=cpIndex[cp?.trim()]||[];if(byCp.length===1)return byCp[0];if(byCp.length>1){const m=byCp.find(l=>l.includes((loc2||"").toUpperCase().trim()));return m||byCp[0];}const m=locs.find(l=>l.startsWith((prov||"").toUpperCase())&&l.includes((loc2||"").toUpperCase().trim()));return m||`${prov||""} / ${loc2||""} / ${cp||""}`;}
+                        if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+                        const partes=o.comprador.trim().split(' ');
+                        const nombre=partes[0]||"";
+                        const apellido=partes.slice(1).join(' ')||"";
+                        const tel=(o.telefono||"").replace(/\D/g,'');
+                        const telCod=tel.length>0?54:"";
+                        const telNum=tel.replace(/^54/,'').replace(/^0/,'');
+                        const ubicacion=findLoc(o.cp,o.provincia,o.localidad||o.ciudad);
+                        const cols='ABCDEFGHIJKLMNOPQRS';
+                        const vals=["",200,5,5,5,6000,o.numero,nombre,apellido,o.dni||"",o.email||"",telCod,telNum,o.direccion||"",o.dirNumero||"",o.piso||"","",ubicacion,""];
+                        const cells=vals.map((val,i)=>{const ref=`${cols[i]}3`;if(val===''||val===null)return `<x:c r="${ref}"/>`;if(typeof val==='number')return `<x:c r="${ref}"><x:v>${val}</x:v></x:c>`;const esc=String(val).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');return `<x:c r="${ref}" t="inlineStr"><x:is><x:t>${esc}</x:t></x:is></x:c>`;}).join('');
+                        const rowXML=`<x:row r="3" spans="1:19">${cells}</x:row>`;
+                        const zip=await window.JSZip.loadAsync(templateBuf);
+                        const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
+                        const newSheet=sheet1.replace('</x:sheetData>',rowXML+'</x:sheetData>').replace(/<x:dimension ref="[^"]+"\//,'<x:dimension ref="A1:S3"/');
+                        zip.file('xl/worksheets/sheet1.xml',newSheet);
+                        const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+                        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`EnvioMasivoExcelPaquetes-${o.numero}.xlsx`;a.click();
+                      } catch(e){alert("Error: "+e.message);}
+                    }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue}}>📦 Andreani</button>
                     {deleteConfirm===activeR._docId?(
                       <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><button onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
                     ):(
