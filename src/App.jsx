@@ -286,6 +286,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [reclamos,setReclamos]=useState([]);
   const [plantillas,setPlantillas]=useState([]);
   const [view,setView]=useState("dashboard"); // dashboard | buscar | reclamos | config
+  const [dashView,setDashView]=useState("pipeline"); // pipeline | kanban
   const [search,setSearch]=useState("");
   const [filterEstado,setFilterEstado]=useState("");
   const [filterTipo,setFilterTipo]=useState("");
@@ -588,7 +589,17 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             </div>
 
             {/* Pipeline por estado */}
-            <div style={{fontSize:13,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.6,marginBottom:12}}>Pipeline de reclamos</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.6}}>Pipeline de reclamos</div>
+              <div style={{display:"flex",gap:4,background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:3}}>
+                {[{id:"pipeline",label:"📊 Pipeline"},{id:"kanban",label:"⬜ Kanban"}].map(v=>(
+                  <button key={v.id} onClick={()=>setDashView(v.id)} style={{padding:"5px 14px",fontSize:12,fontWeight:dashView===v.id?700:400,borderRadius:6,border:"none",background:dashView===v.id?T.accentSolid:"transparent",color:dashView===v.id?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>{v.label}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Vista Pipeline */}
+            {dashView==="pipeline"&&(
             <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:8,marginBottom:28}}>
               {ESTADOS_R.map(estado=>{
                 const sc=getEstadoRC(T,estado);
@@ -604,6 +615,54 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 );
               })}
             </div>
+            )}
+
+            {/* Vista Kanban */}
+            {dashView==="kanban"&&(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:28}}>
+              {ESTADOS_R.map(estado=>{
+                const sc=getEstadoRC(T,estado);
+                const items=reclamos.filter(r=>r.estado===estado);
+                return (
+                  <div key={estado} style={{background:T.card,border:`1px solid ${sc.dot}44`,borderRadius:12,overflow:"hidden",minHeight:80}}>
+                    {/* Column header */}
+                    <div style={{padding:"10px 14px",background:sc.dot+"18",borderBottom:`1px solid ${sc.dot}33`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
+                        <span style={{fontSize:12,fontWeight:700,color:sc.text}}>{estado}</span>
+                      </div>
+                      <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:20,padding:"1px 8px"}}>{items.length}</span>
+                    </div>
+                    {/* Cards */}
+                    <div style={{padding:8,display:"flex",flexDirection:"column",gap:6,maxHeight:380,overflowY:"auto"}}>
+                      {items.length===0&&(
+                        <div style={{textAlign:"center",padding:"16px 8px",fontSize:12,color:T.textSm}}>Sin reclamos</div>
+                      )}
+                      {items.map(r=>{
+                        const o=orders.find(o=>o.numero===r.orderNum);
+                        const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):null;
+                        const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=3;
+                        return (
+                          <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");}}
+                            style={{background:T.bg,border:`1px solid ${urgente?T.red+"44":T.borderL}`,borderRadius:8,padding:"10px 12px",cursor:"pointer",transition:"all 0.12s",borderLeft:urgente?`3px solid ${T.red}`:"3px solid transparent"}}
+                            onMouseEnter={e=>e.currentTarget.style.borderColor=sc.dot}
+                            onMouseLeave={e=>e.currentTarget.style.borderColor=urgente?T.red+"44":T.borderL}>
+                            <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o?.comprador||`Pedido #${r.orderNum}`}</div>
+                            <div style={{fontSize:11,color:T.accent,marginBottom:4}}>#{r.orderNum}</div>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4,flexWrap:"wrap"}}>
+                              <span style={{fontSize:10,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:4,padding:"1px 6px",color:T.textMd}}>{r.tipo}</span>
+                              {dias!==null&&<span style={{fontSize:10,color:urgente?T.red:T.textSm,fontWeight:urgente?700:400}}>{dias}d</span>}
+                            </div>
+                            {r.motivo&&<div style={{fontSize:10,color:T.textSm,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.motivo}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            )}
 
             {/* Urgentes */}
             {stats.urgentes>0&&(
