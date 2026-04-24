@@ -95,15 +95,16 @@ function fmtDate(d) { if(!d) return '—'; const p=d.split(' ')[0].split('/'); i
 function fmtTs(ts) { if(!ts?.seconds) return '—'; return new Date(ts.seconds*1000).toLocaleDateString('es-AR'); }
 function fullAddress(o) { let a=o.direccion||''; if(o.dirNumero) a+=' '+o.dirNumero; if(o.piso) a+=', Piso '+o.piso; return [a,o.localidad,o.ciudad,o.cp?`CP ${o.cp}`:'',o.provincia].filter(Boolean).join(', '); }
 function getLensColors(productos) { const s=new Set(); for(const p of productos){const c=SKU_LENTE[p.sku];if(c)s.add(c);} return [...s]; }
-function mapEstadoEnvio(s) { return {"unpacked":"No está empaquetado","ready_to_ship":"Listo para enviar","shipped":"Enviado","delivered":"Entregado"}[s]||s||'—'; }
+function mapEstadoEnvio(s) { return {"unpacked":"Por empaquetar","ready_to_ship":"Por enviar","shipped":"Enviado","delivered":"Entregado","unshipped":"Por empaquetar"}[s]||s||'—'; }
 function mapEstadoPago(s) { return {"pending":"Pendiente","paid":"Pagado","voided":"Anulado","refunded":"Reembolsado","abandoned":"Abandonado"}[s]||s||'—'; }
 
 function getEstadoEnvioC(T, estado) {
   const m = {
-    "No está empaquetado":{ dot:T.yellow, bg:T.yellowBg, text:T.yellow },
-    "Listo para enviar":  { dot:T.blue,   bg:T.blueBg,   text:T.blue   },
-    "Enviado":            { dot:T.purple, bg:T.purpleBg, text:T.purple },
-    "Entregado":          { dot:T.green,  bg:T.greenBg,  text:T.green  },
+    "Por cobrar":     { dot:T.orange, bg:T.orangeBg, text:T.orange },
+    "Por empaquetar": { dot:T.yellow, bg:T.yellowBg, text:T.yellow },
+    "Por enviar":     { dot:T.blue,   bg:T.blueBg,   text:T.blue   },
+    "Enviado":        { dot:T.purple, bg:T.purpleBg, text:T.purple },
+    "Entregado":      { dot:T.green,  bg:T.greenBg,  text:T.green  },
   };
   return m[estado] || { dot:T.textSm, bg:T.borderL, text:T.textSm };
 }
@@ -143,13 +144,20 @@ function buildOrdersFromAPI(data) {
   if(!Array.isArray(data)) return [];
   return data.map(o=>{
     const sh=o.shipping_address||{};
+    // Determinar estado de envío igual que TN
+    let estadoEnvio;
+    if(o.payment_status==="pending"||o.payment_status==="abandoned"||o.payment_status==="voided") {
+      estadoEnvio="Por cobrar";
+    } else {
+      estadoEnvio=mapEstadoEnvio(o.shipping_status);
+    }
     return {
       numero:String(o.number||o.id),
       fecha:o.created_at?new Date(o.created_at).toLocaleDateString('es-AR'):'',
       comprador:`${sh.name||''} ${sh.last_name||''}`.trim()||o.contact_name||'',
       email:o.contact_email||'', telefono:o.contact_phone||'', dni:o.contact_identification||'',
       estadoOrden:o.status||'', estadoPago:mapEstadoPago(o.payment_status),
-      estadoEnvio:mapEstadoEnvio(o.shipping_status),
+      estadoEnvio,
       total:String(o.total||''), subtotal:String(o.subtotal||''), descuento:String(o.discount||'0'),
       costoEnvio:String(o.shipping_cost_customer||'0'),
       nombreEnvio:`${sh.name||''} ${sh.last_name||''}`.trim(),
@@ -1769,7 +1777,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [exportModal,setExportModal]=useState(false);
   const [exporting,setExporting]=useState(false);
   const [exportCfg,setExportCfg]=useState({peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000",separar:false});
-  const [filterEstadoEnvio,setFilterEstadoEnvio]=useState("");
+  const [tabEnvio,setTabEnvio]=useState("empaquetar");
   const [searchEnvios,setSearchEnvios]=useState("");
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
@@ -1785,13 +1793,26 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [trackingSent,setTrackingSent]=useState({});
   const iS=InputStyle(T);
 
-  // Pedidos exportables
+  // Pedidos exportables — filtrados por tab estilo TN
+  const TAB_ESTADOS={
+    cobrar:     o=>o.estadoEnvio==="Por cobrar",
+    empaquetar: o=>o.estadoEnvio==="Por empaquetar",
+    enviar:     o=>o.estadoEnvio==="Por enviar",
+    enviado:    o=>o.estadoEnvio==="Enviado",
+    entregado:  o=>o.estadoEnvio==="Entregado",
+  };
   const exportables=useMemo(()=>orders.filter(o=>{
-    if(o.estadoPago!=="Pagado") return false;
-    if(filterEstadoEnvio&&o.estadoEnvio!==filterEstadoEnvio) return false;
+    if(!TAB_ESTADOS[tabEnvio]?.(o)) return false;
     if(searchEnvios){const s=searchEnvios.toLowerCase();return o.numero.includes(s)||o.comprador.toLowerCase().includes(s);}
     return true;
-  }),[orders,filterEstadoEnvio,searchEnvios]);
+  }),[orders,tabEnvio,searchEnvios]);
+  const counts=useMemo(()=>({
+    cobrar:    orders.filter(o=>o.estadoEnvio==="Por cobrar").length,
+    empaquetar:orders.filter(o=>o.estadoEnvio==="Por empaquetar").length,
+    enviar:    orders.filter(o=>o.estadoEnvio==="Por enviar").length,
+    enviado:   orders.filter(o=>o.estadoEnvio==="Enviado").length,
+    entregado: orders.filter(o=>o.estadoEnvio==="Entregado").length,
+  }),[orders]);
 
   function toggleSelect(num){setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});}
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
@@ -2050,25 +2071,32 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         {/* ── PANEL DE ENVIOS ── */}
         {tab==="panel"&&(
           <div>
-            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
-              <StatCard T={T} label="Exportables" value={exportables.length} color={T.blue}/>
-              <StatCard T={T} label="Seleccionados" value={selected.size} color={T.accent}/>
-              <StatCard T={T} label="Total pedidos" value={orders.length} color={T.textMd}/>
+            {/* Tabs estilo TN */}
+            <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+              {[
+                {id:"cobrar",    label:"Por cobrar",     color:T.orange},
+                {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
+                {id:"enviar",    label:"Por enviar",     color:T.blue},
+                {id:"enviado",   label:"Enviado",        color:T.purple},
+                {id:"entregado", label:"Entregado",      color:T.green},
+              ].map(t=>(
+                <button key={t.id} onClick={()=>{setTabEnvio(t.id);setSelected(new Set());}}
+                  style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id?700:500,border:`1.5px solid ${tabEnvio===t.id?t.color:T.border}`,background:tabEnvio===t.id?t.color+"18":T.card,color:tabEnvio===t.id?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:t.color,flexShrink:0}}/>
+                  {t.label}
+                  <span style={{background:tabEnvio===t.id?t.color:T.surface,color:tabEnvio===t.id?"#fff":T.textSm,fontSize:12,fontWeight:700,borderRadius:20,padding:"1px 8px",minWidth:22,textAlign:"center"}}>
+                    {counts[t.id]}
+                  </span>
+                </button>
+              ))}
             </div>
 
-            {/* Filters */}
+            {/* Buscador y acciones */}
             <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
               <div style={{position:"relative",flex:"1 1 200px",minWidth:160}}>
                 <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:13}}>🔍</span>
                 <input placeholder="Buscar pedido o cliente..." value={searchEnvios} onChange={e=>setSearchEnvios(e.target.value)} style={{...iS,paddingLeft:30,fontSize:13}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
               </div>
-              <select value={filterEstadoEnvio} onChange={e=>setFilterEstadoEnvio(e.target.value)} style={{...iS,width:"auto",flex:"0 1 200px",fontSize:13,color:filterEstadoEnvio?T.accent:T.textMd}}>
-                <option value="">Todos los estados</option>
-                <option>No está empaquetado</option>
-                <option>Listo para enviar</option>
-                <option>Enviado</option>
-                <option>Entregado</option>
-              </select>
               <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
                 {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
               </button>
@@ -2077,14 +2105,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   ⬇️ Exportar {selected.size} pedido{selected.size!==1?"s":""} para Andreani
                 </button>
               )}
-              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Solo pedidos con pago aprobado</span>
+              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{exportables.length} pedidos</span>
             </div>
 
             {exportables.length===0?(
               <div style={{textAlign:"center",padding:"80px 20px"}}>
                 <div style={{fontSize:48,marginBottom:16}}>📦</div>
-                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>{orders.length===0?"Sincronizando pedidos...":"Sin pedidos exportables"}</div>
-                <div style={{fontSize:14,color:T.textSm,marginTop:8}}>Pedidos con pago aprobado y sin enviar aparecerán acá</div>
+                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>{orders.length===0?"Sincronizando pedidos...":"Sin pedidos en esta categoría"}</div>
               </div>
             ):(
               <>
