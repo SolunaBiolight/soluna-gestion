@@ -978,37 +978,16 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   </div>
 
                   {/* Acciones */}
+                  {/* Acciones */}
                   <div style={{display:"flex",gap:8,paddingTop:12,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
                     {/* Generar etiqueta Andreani */}
                     <button onClick={async()=>{
                       try {
                         const o=activeOrder;
                         if(!o) return alert("No se encontró el pedido");
-                        const [templateRes,locsRes]=await Promise.all([fetch('/andreani_template.xlsx'),fetch('/andreani_locations.json')]);
-                        if(!templateRes.ok||!locsRes.ok) throw new Error("No se pudo cargar el template o localidades. Verificá que estén en public/");
-                        const templateBuf=await templateRes.arrayBuffer();
-                        const locs=await locsRes.json();
-                        const cpIndex={};
-                        locs.forEach(loc=>{const parts=loc.split(' / ');if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}});
-                        function findLoc(cp,prov,loc2){const byCp=cpIndex[cp?.trim()]||[];if(byCp.length===1)return byCp[0];if(byCp.length>1){const m=byCp.find(l=>l.includes((loc2||"").toUpperCase().trim()));return m||byCp[0];}const m=locs.find(l=>l.startsWith((prov||"").toUpperCase())&&l.includes((loc2||"").toUpperCase().trim()));return m||`${prov||""} / ${loc2||""} / ${cp||""}`;}
-                        if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
-                        const partes=o.comprador.trim().split(' ');
-                        const nombre=partes[0]||"";
-                        const apellido=partes.slice(1).join(' ')||"";
-                        const tel=(o.telefono||"").replace(/\D/g,'');
-                        const telCod=tel.length>0?54:"";
-                        const telNum=tel.replace(/^54/,'').replace(/^0/,'');
-                        const ubicacion=findLoc(o.cp,o.provincia,o.localidad||o.ciudad);
-                        const cols='ABCDEFGHIJKLMNOPQRS';
-                        const vals=["",200,5,5,5,6000,o.numero,nombre,apellido,o.dni||"",o.email||"",telCod,telNum,o.direccion||"",o.dirNumero||"",o.piso||"","",ubicacion,""];
-                        const cells=vals.map((val,i)=>{const ref=`${cols[i]}3`;if(val===''||val===null)return `<x:c r="${ref}"/>`;if(typeof val==='number')return `<x:c r="${ref}"><x:v>${val}</x:v></x:c>`;const esc=String(val).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');return `<x:c r="${ref}" t="inlineStr"><x:is><x:t>${esc}</x:t></x:is></x:c>`;}).join('');
-                        const rowXML=`<x:row r="3" spans="1:19">${cells}</x:row>`;
-                        const zip=await window.JSZip.loadAsync(templateBuf);
-                        const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
-                        const newSheet=sheet1.replace('</x:sheetData>',rowXML+'</x:sheetData>').replace(/<x:dimension ref="[^"]+"\//,'<x:dimension ref="A1:S3"/');
-                        zip.file('xl/worksheets/sheet1.xml',newSheet);
-                        const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-                        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`EnvioMasivoExcelPaquetes-${o.numero}.xlsx`;a.click();
+                        const locs=await loadAndreaniLocations();
+                        const b=await generateAndreaniXlsx([o],locs,{peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"});
+                        const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`EnvioMasivoExcelPaquetes-${o.numero}.xlsx`;a.click();
                       } catch(e){alert("Error: "+e.message);}
                     }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue}}>📦 Andreani</button>
                     {deleteConfirm===activeR._docId?(
@@ -1826,99 +1805,108 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     if(!res.ok) throw new Error("No se pudo cargar la lista de localidades");
     const data=await res.json();
     const cpIndex={};
-    data.forEach(loc=>{
-      const parts=loc.split(' / ');
-      if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}
-    });
+    data.forEach(loc=>{const parts=loc.split(' / ');if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}});
     andreaniLocsRef.current={list:data,cpIndex};
     return andreaniLocsRef.current;
   }
-
   function findAndreaniLocation(locs,cp,provincia,localidad) {
     const byCp=locs.cpIndex[cp?.trim()]||[];
     if(byCp.length===1) return byCp[0];
-    if(byCp.length>1){
-      const locU=(localidad||"").toUpperCase().trim();
-      const match=byCp.find(l=>l.includes(locU));
-      return match||byCp[0];
-    }
-    const provU=(provincia||"").toUpperCase().trim();
-    const locU=(localidad||"").toUpperCase().trim();
+    if(byCp.length>1){const locU=(localidad||"").toUpperCase().trim();const match=byCp.find(l=>l.includes(locU));return match||byCp[0];}
+    const provU=(provincia||"").toUpperCase().trim();const locU=(localidad||"").toUpperCase().trim();
     const match=locs.list.find(l=>l.startsWith(provU)&&l.includes(locU));
     if(match) return match;
-    const provMatch=locs.list.find(l=>l.startsWith(provU));
-    return provMatch||`${provU} / ${locU} / ${cp||""}`;
+    return locs.list.find(l=>l.startsWith(provU))||`${provU} / ${locU} / ${cp||""}`;
   }
-
-  // Export as XLSX using official Andreani template (XML injection)
+  async function generateAndreaniXlsx(ordersData,locs,exportCfgLocal) {
+    if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+    const templateRes=await fetch('/andreani_template.xlsx');
+    if(!templateRes.ok) throw new Error("No se pudo cargar el template. Verificá que andreani_template.xlsx esté en public/");
+    const templateBuf=await templateRes.arrayBuffer();
+    const zip=await window.JSZip.loadAsync(templateBuf);
+    const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
+    const existingStrings=[];
+    const ssRx=/<x:t[^>]*>([\s\S]*?)<\/x:t>/g;
+    let m2;
+    while((m2=ssRx.exec(ssXml))!==null) existingStrings.push(m2[1]);
+    const strMap=new Map();
+    existingStrings.forEach((s,i)=>strMap.set(s,i));
+    const newStrings=[...existingStrings];
+    function getIdx(s){const k=String(s||"");if(strMap.has(k))return strMap.get(k);const i=newStrings.length;newStrings.push(k);strMap.set(k,i);return i;}
+    function sCell(ref,val){return `<c r="${ref}" t="s"><v>${getIdx(val)}</v></c>`;}
+    function nCell(ref,val){if(val===''||val===null||val===undefined)return sCell(ref,'');return `<c r="${ref}"><v>${val}</v></c>`;}
+    let rowsXml='';
+    const cfg=exportCfgLocal||exportCfg;
+    ordersData.forEach((o,i)=>{
+      const rn=i+3;
+      const partes=o.comprador.trim().split(' ');
+      const nombre=partes[0]||"";const apellido=partes.slice(1).join(' ')||"";
+      const tel=(o.telefono||"").replace(/\D/g,'');
+      const clean=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
+      let telCod="",telNum="";
+      if(clean.length>=8){telCod=clean.length>=10?clean.slice(0,clean.length-8):"";telNum=clean.length>=10?clean.slice(clean.length-8):clean;}
+      const ubicacion=findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
+      const dirNum=o.dirNumero||"";
+      const cells=[
+        sCell(`A${rn}`,""),
+        nCell(`B${rn}`,parseInt(cfg?.peso)||200),
+        nCell(`C${rn}`,parseInt(cfg?.alto)||5),
+        nCell(`D${rn}`,parseInt(cfg?.ancho)||5),
+        nCell(`E${rn}`,parseInt(cfg?.prof)||5),
+        nCell(`F${rn}`,parseInt(cfg?.valor)||6000),
+        sCell(`G${rn}`,`#${o.numero}`),
+        sCell(`H${rn}`,nombre),
+        sCell(`I${rn}`,apellido),
+        o.dni&&!isNaN(o.dni)?nCell(`J${rn}`,parseFloat(o.dni)):sCell(`J${rn}`,o.dni||""),
+        sCell(`K${rn}`,o.email||""),
+        telCod?nCell(`L${rn}`,parseFloat(telCod)):sCell(`L${rn}`,""),
+        telNum?nCell(`M${rn}`,parseFloat(telNum)):sCell(`M${rn}`,""),
+        sCell(`N${rn}`,o.direccion||""),
+        dirNum&&!isNaN(dirNum)?nCell(`O${rn}`,parseFloat(dirNum)):sCell(`O${rn}`,dirNum||""),
+        sCell(`P${rn}`,o.piso||""),
+        sCell(`Q${rn}`,""),
+        sCell(`R${rn}`,ubicacion),
+        sCell(`S${rn}`,""),
+      ].join('');
+      rowsXml+=`<row r="${rn}" spans="1:19" x14ac:dyDescent="0.25">${cells}</row>`;
+    });
+    const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
+    let newSheet=sheet1;
+    if(!newSheet.includes('xmlns:x14ac')) newSheet=newSheet.replace('<worksheet ','<worksheet xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" ');
+    const totalRows=2+ordersData.length;
+    newSheet=newSheet
+      .replace(/<dimension ref="[^"]+"\//,`<dimension ref="A1:S${totalRows}"/`)
+      .replace(/<x:dimension ref="[^"]+"\//,`<x:dimension ref="A1:S${totalRows}"/`)
+      .replace('</sheetData>',rowsXml+'</sheetData>')
+      .replace('</x:sheetData>',rowsXml+'</x:sheetData>');
+    zip.file('xl/worksheets/sheet1.xml',newSheet);
+    const newSsItems=newStrings.map(s=>{const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const sp=s!==s.trim()||s.includes('\n')?' xml:space="preserve"':'';return `<x:si><x:t${sp}>${esc}</x:t></x:si>`;}).join('');
+    zip.file('xl/sharedStrings.xml',`<?xml version="1.0" encoding="utf-8"?><x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${newStrings.length}" uniqueCount="${newStrings.length}">${newSsItems}</x:sst>`);
+    return await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
+  }
   async function exportAndreani() {
     const selOrders=exportables.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
     setExporting(true);
     await new Promise(r=>setTimeout(r,100));
     try {
-      const [templateRes,locs]=await Promise.all([
-        fetch('/andreani_template.xlsx'),
-        loadAndreaniLocations()
-      ]);
-      if(!templateRes.ok) throw new Error("No se pudo cargar el template. Verificá que andreani_template.xlsx esté en public/");
-      const templateBuf=await templateRes.arrayBuffer();
-      if(!window.JSZip){
-        await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
-      }
-      function buildRowXML(rowNum,values){
-        const cols='ABCDEFGHIJKLMNOPQRS';
-        const cells=values.map((val,i)=>{
-          const ref=`${cols[i]}${rowNum}`;
-          if(val===''||val===null||val===undefined) return `<x:c r="${ref}"/>`;
-          if(typeof val==='number') return `<x:c r="${ref}"><x:v>${val}</x:v></x:c>`;
-          const esc=String(val).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-          return `<x:c r="${ref}" t="inlineStr"><x:is><x:t>${esc}</x:t></x:is></x:c>`;
-        }).join('');
-        return `<x:row r="${rowNum}" spans="1:19">${cells}</x:row>`;
-      }
-      function buildRows(ords){
-        return ords.map((o,i)=>{
-          const partes=o.comprador.trim().split(' ');
-          const nombre=partes[0]||"";
-          const apellido=partes.slice(1).join(' ')||"";
-          const tel=(o.telefono||"").replace(/\D/g,'');
-          const telCod=tel.length>0?54:"";
-          const telNum=tel.replace(/^54/,'').replace(/^0/,'');
-          const ubicacion=findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
-          const vals=["",parseInt(exportCfg.peso)||200,parseInt(exportCfg.alto)||5,parseInt(exportCfg.ancho)||5,parseInt(exportCfg.prof)||5,parseInt(exportCfg.valor)||6000,
-            o.numero,nombre,apellido,o.dni||"",o.email||"",telCod,telNum,
-            o.direccion||"",o.dirNumero||"",o.piso||"","",ubicacion,""];
-          return buildRowXML(i+3,vals);
-        }).join('');
-      }
-      async function generateXlsx(ords){
-        const zip=await window.JSZip.loadAsync(templateBuf);
-        const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
-        const rowsXML=buildRows(ords);
-        const totalRows=2+ords.length;
-        let newSheet=sheet1
-          .replace('</x:sheetData>',rowsXML+'</x:sheetData>')
-          .replace(/<x:dimension ref="[^"]+"\//,`<x:dimension ref="A1:S${totalRows}"/`);
-        zip.file('xl/worksheets/sheet1.xml',newSheet);
-        return await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-      }
+      const locs=await loadAndreaniLocations();
       const date=new Date().toISOString().split('T')[0];
       if(exportCfg.separar){
-        const blob1=await generateXlsx(selOrders);
-        const a1=document.createElement('a');a1.href=URL.createObjectURL(blob1);a1.download=`EnvioMasivoExcelPaquetes-domicilio-${date}.xlsx`;a1.click();
+        const b1=await generateAndreaniXlsx(selOrders,locs);
+        const a1=document.createElement('a');a1.href=URL.createObjectURL(b1);a1.download=`EnvioMasivoExcelPaquetes-domicilio-${date}.xlsx`;a1.click();
         await new Promise(r=>setTimeout(r,600));
-        const blob2=await generateXlsx([]);
-        const a2=document.createElement('a');a2.href=URL.createObjectURL(blob2);a2.download=`EnvioMasivoExcelPaquetes-sucursal-${date}.xlsx`;a2.click();
+        const b2=await generateAndreaniXlsx([],locs);
+        const a2=document.createElement('a');a2.href=URL.createObjectURL(b2);a2.download=`EnvioMasivoExcelPaquetes-sucursal-${date}.xlsx`;a2.click();
       } else {
-        const blob=await generateXlsx(selOrders);
-        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`EnvioMasivoExcelPaquetes-${date}.xlsx`;a.click();
+        const b=await generateAndreaniXlsx(selOrders,locs);
+        const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`EnvioMasivoExcelPaquetes-${date}.xlsx`;a.click();
       }
-      setExportModal(false);
-      setSelected(new Set());
+      setExportModal(false);setSelected(new Set());
     } catch(e){alert("Error al exportar: "+e.message);}
     setExporting(false);
   }
+
 
   // Parse PDF — shared logic using fetch+text extraction via server
   async function parsePdf(file, type) {
