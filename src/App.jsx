@@ -1833,46 +1833,79 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     function nC(ref,val){return (val===''||val===null||val===undefined)?sC(ref,''):'<c r="'+ref+'"><v>'+val+'</v></c>';}
     const cfg=cfgOverride||exportCfg;
     let rowsXml='';
-    ordersData.forEach(function(o,i){
-      const rn=i+3;
-      const partes=o.comprador.trim().split(' ');
-      const nombre=partes[0]||"";const apellido=partes.slice(1).join(' ')||"";
-      const tel=(o.telefono||"").replace(/[^0-9]/g,'');
-      const clean=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
-      let telCod='',telNum='';
-      if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
-      else if(clean.length>0){telNum=clean;}
-      const ubicacion=findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
-      const dirNum=String(o.dirNumero||"");
-      const cells=[
-        sC('A'+rn,""),
-        nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
-        nC('C'+rn,parseInt(cfg&&cfg.alto)||5),
-        nC('D'+rn,parseInt(cfg&&cfg.ancho)||5),
-        nC('E'+rn,parseInt(cfg&&cfg.prof)||5),
-        nC('F'+rn,parseInt(cfg&&cfg.valor)||6000),
-        sC('G'+rn,'#'+o.numero),
-        sC('H'+rn,nombre),
-        sC('I'+rn,apellido),
-        (o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),
-        sC('K'+rn,o.email||""),
-        telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
-        telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
-        sC('N'+rn,o.direccion||""),
-        (dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):sC('O'+rn,dirNum),
-        sC('P'+rn,o.piso||""),
-        sC('Q'+rn,""),
-        sC('R'+rn,ubicacion),
-        sC('S'+rn,""),
-      ].join('');
-      rowsXml+='<row r="'+rn+'" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
-    });
+    // Clean invalid chars for Andreani (-, /, etc → space)
+    function cleanField(s){return String(s||"").replace(/[-\/\\|#*]+/g,' ').replace(/\s{2,}/g,' ').trim();}
+
+    // Separate domicilio vs sucursal
+    function isSucursal(o){
+      const dir=(o.direccion||"").toUpperCase();
+      return dir.includes('PUNTO ANDREANI')||dir.includes('HOP ')||dir.includes('SUCURSAL ')||dir.includes('ANDREANI ');
+    }
+    const domicilioOrders=ordersData.filter(o=>!isSucursal(o));
+    const sucursalOrders=ordersData.filter(o=>isSucursal(o));
+
+    function buildRowsXml(ords, startRow){
+      let xml='';
+      ords.forEach(function(o,i){
+        const rn=startRow+i;
+        const partes=o.comprador.trim().split(' ');
+        const nombre=cleanField(partes[0]||"");
+        const apellido=cleanField(partes.slice(1).join(' ')||"");
+        const tel=(o.telefono||"").replace(/[^0-9]/g,'');
+        const clean=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
+        let telCod='',telNum='';
+        if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
+        else if(clean.length>0){telNum=clean;}
+        const ubicacion=findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
+        const dirNum=String(o.dirNumero||"");
+        const direccion=cleanField(o.direccion||"");
+        const cells=[
+          sC('A'+rn,""),
+          nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
+          nC('C'+rn,parseInt(cfg&&cfg.alto)||5),
+          nC('D'+rn,parseInt(cfg&&cfg.ancho)||5),
+          nC('E'+rn,parseInt(cfg&&cfg.prof)||5),
+          nC('F'+rn,parseInt(cfg&&cfg.valor)||6000),
+          sC('G'+rn,'#'+o.numero),
+          sC('H'+rn,nombre),
+          sC('I'+rn,apellido),
+          (o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),
+          sC('K'+rn,cleanField(o.email||"")),
+          telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
+          telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
+          sC('N'+rn,direccion),
+          (dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):sC('O'+rn,cleanField(dirNum)),
+          sC('P'+rn,cleanField(o.piso||"")),
+          sC('Q'+rn,""),
+          sC('R'+rn,ubicacion),
+          sC('S'+rn,""),
+        ].join('');
+        xml+='<row r="'+rn+'" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
+      });
+      return xml;
+    }
+
+    const domRowsXml=buildRowsXml(domicilioOrders,3);
+    const sucRowsXml=buildRowsXml(sucursalOrders,3);
+
+    // Update sheet1 (domicilio)
     const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
-    const totalRows=2+ordersData.length;
-    const newSheet=sheet1
-      .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows+'"/>')
-      .replace('</sheetData>',rowsXml+'</sheetData>');
-    zip.file('xl/worksheets/sheet1.xml',newSheet);
+    const totalRows1=2+domicilioOrders.length;
+    const newSheet1=sheet1
+      .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows1+'"/>')
+      .replace('</sheetData>',domRowsXml+'</sheetData>');
+    zip.file('xl/worksheets/sheet1.xml',newSheet1);
+
+    // Update sheet2 (sucursal) if exists
+    const sheet2file=zip.file('xl/worksheets/sheet2.xml');
+    if(sheet2file&&sucursalOrders.length>0){
+      const sheet2=await sheet2file.async('string');
+      const totalRows2=2+sucursalOrders.length;
+      const newSheet2=sheet2
+        .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows2+'"/>')
+        .replace('</sheetData>',sucRowsXml+'</sheetData>');
+      zip.file('xl/worksheets/sheet2.xml',newSheet2);
+    }
     const newSsItems=newSS.map(function(s){
       const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       const sp=(s!==s.trim()||s.indexOf('\n')>=0)?' xml:space="preserve"':'';
