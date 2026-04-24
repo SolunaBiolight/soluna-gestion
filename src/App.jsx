@@ -1792,7 +1792,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null});
-  const tabCacheRef=useRef({}); // cache en memoria: {cobrar:[...], empaquetar:[...], enviar:[...]}
+  const [tabOrders,setTabOrders]=useState([]); // pedidos del tab activo
+  const [tabLoading,setTabLoading]=useState(false);
+  const tabCacheRef=useRef({});
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
@@ -1807,14 +1809,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [trackingSent,setTrackingSent]=useState({});
   const iS=InputStyle(T);
 
-  // Pedidos exportables — la API ya filtra por tab, solo aplicar búsqueda si hay texto
+  // Pedidos exportables — usar tabOrders (local) no orders (global)
   const exportables=useMemo(()=>{
     if(searchEnvios){
       const s=searchEnvios.toLowerCase();
-      return orders.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
+      return tabOrders.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
     }
-    return orders;
-  },[orders,searchEnvios]);
+    return tabOrders;
+  },[tabOrders,searchEnvios]);
 
   // Fetch contadores de los 3 tabs activos en paralelo
   async function fetchTabCounts(uid) {
@@ -2066,11 +2068,36 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+total+'" uniqueCount="'+total+'">'+newSsItems+'</sst>');
     return zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
   }
-  // Fetch tab counts on mount
-  useEffect(()=>{ if(user?.uid){ fetchTabCounts(user.uid); } },[]);
+  const locationOverridesRef=useRef({});
+  const sucursalOverridesRef=useRef({});
 
-  const locationOverridesRef=useRef({}); // domicilio: {numero: "PROV / LOC / CP"}
-  const sucursalOverridesRef=useRef({});  // sucursal: {numero: "NOMBRE SUCURSAL"}
+  // Fetch local tab orders — independiente del estado global de orders
+  async function fetchTabOrders(tab) {
+    if(!user?.uid) return;
+    if(tabCacheRef.current[tab]) {
+      setTabOrders(tabCacheRef.current[tab]);
+      return;
+    }
+    setTabLoading(true);
+    try {
+      const res=await fetch(`/api/orders?uid=${user.uid}&tab=${tab}`);
+      const data=await res.json();
+      if(Array.isArray(data)){
+        const built=buildOrdersFromAPI(data);
+        tabCacheRef.current[tab]=built;
+        setTabOrders(built);
+      }
+    } catch(e){ console.error(e); }
+    setTabLoading(false);
+  }
+
+  // Al montar: cargar tab empaquetar + contadores
+  useEffect(()=>{
+    if(user?.uid){
+      fetchTabCounts(user.uid);
+      fetchTabOrders("empaquetar");
+    }
+  },[]);
 
   function isSucursalOrder(o) {
     const dir=(o.direccion||"").toUpperCase();
@@ -2078,7 +2105,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   }
 
   async function exportAndreani() {
-    const selOrders=exportables.filter(o=>selected.has(o.numero));
+    const selOrders=tabOrders.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
     setExporting(true);
     await new Promise(r=>setTimeout(r,100));
@@ -2226,11 +2253,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             <span style={{fontWeight:700,fontSize:15,color:T.text}}>🚚 Envíos</span>
           </div>
           <button onClick={()=>{
-            tabCacheRef.current={}; // limpiar cache
-            fetchOrders(user?.uid,tabEnvio);
+            tabCacheRef.current={};
+            setTabOrders([]);
+            fetchTabOrders(tabEnvio);
             fetchTabCounts(user?.uid);
-          }} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>
-            {ordersStatus==="loading"?"⟳ Sincronizando...":"⟳ Sincronizar"}
+          }} disabled={tabLoading} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:tabLoading?0.5:1}}>
+            {tabLoading?"⟳ Sincronizando...":"⟳ Sincronizar"}
           </button>
         </div>
       </div>
@@ -2260,13 +2288,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
               ].map(t=>(
                 <button key={t.id} onClick={()=>{
                   setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");
-                  if(tabCacheRef.current[t.id]){
-                    // Usar cache — no re-fetchear
-                    setOrders(tabCacheRef.current[t.id]);
-                    setOrdersStatus("ok");
-                  } else {
-                    fetchOrders(user?.uid,t.id);
-                  }
+                  fetchTabOrders(t.id);
                   if(!tabCounts[t.id]) fetchTabCounts(user?.uid);
                 }}
                   style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id&&!searchEnvios?700:500,border:`1.5px solid ${tabEnvio===t.id&&!searchEnvios?t.color:T.border}`,background:tabEnvio===t.id&&!searchEnvios?t.color+"18":T.card,color:tabEnvio===t.id&&!searchEnvios?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
@@ -2287,18 +2309,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                     const val=e.target.value;
                     setSearchEnvios(val);
                     if(val.trim().length>=2){
-                      // Buscar directamente en TN API
                       try{
                         const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(val.trim())}`);
                         const data=await r.json();
                         if(Array.isArray(data)){
                           const built=buildOrdersFromAPI(data);
-                          setOrders(built);
+                          setTabOrders(built);
                         }
                       }catch(e){}
                     } else if(val.trim().length===0){
-                      // Volver al tab activo
-                      fetchOrders(user?.uid,tabEnvio);
+                      // Volver al cache del tab activo
+                      if(tabCacheRef.current[tabEnvio]) setTabOrders(tabCacheRef.current[tabEnvio]);
+                      else fetchTabOrders(tabEnvio);
                     }
                   }}
                   style={{...iS,paddingLeft:32,fontSize:13,borderColor:searchEnvios?T.accent:T.inputBorder}}
@@ -2328,10 +2350,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
               </span>
             </div>
 
-            {exportables.length===0?(
+            {tabLoading?(
+              <div style={{textAlign:"center",padding:"80px 20px"}}>
+                <div style={{fontSize:32,marginBottom:12}}>⏳</div>
+                <div style={{fontSize:16,fontWeight:600,color:T.textMd}}>Cargando pedidos...</div>
+              </div>
+            ):exportables.length===0?(
               <div style={{textAlign:"center",padding:"80px 20px"}}>
                 <div style={{fontSize:48,marginBottom:16}}>📦</div>
-                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>{orders.length===0?"Sincronizando pedidos...":"Sin pedidos en esta categoría"}</div>
+                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>Sin pedidos en esta categoría</div>
               </div>
             ):(
               <>
