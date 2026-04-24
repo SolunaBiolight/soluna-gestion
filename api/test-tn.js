@@ -27,23 +27,21 @@ export default async function handler(req, res) {
     'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)'
   };
 
-  const tests = {
-    "enviar_v1": "payment_status=paid&shipping_status=ready_to_ship&status=open",
-    "enviar_v2": "payment_status=paid,partially_refunded&shipping_status=ready_to_ship&status=open",
-    "enviar_v3": "payment_status=paid,partially_refunded&shipping_status=ready_to_ship,partially_shipped&status=open",
-    "enviar_v4": "shipping_status=ready_to_ship&status=open",
-    "enviar_v5": "shipping_status=ready_to_ship,partially_shipped&status=open",
-  };
+  // Get raw fields of order #1847 specifically
+  const r = await fetch(
+    `https://api.tiendanube.com/v1/${storeId}/orders?q=1847&per_page=5&fields=id,number,status,payment_status,shipping_status,fulfillments`,
+    { headers }
+  );
+  const data = await r.json();
 
-  const results = {};
-  for (const [key, params] of Object.entries(tests)) {
-    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=10&${params}`, { headers });
-    const d = await r.json();
-    results[key] = {
-      count: Array.isArray(d) ? d.length : null,
-      sample: Array.isArray(d) ? d.map(o => ({ number: o.number, payment_status: o.payment_status, shipping_status: o.shipping_status })) : d
-    };
+  // Also try all possible shipping_status values
+  const statusTests = ["packed","ready_to_ship","fulfilled","label_purchased","awaiting_pickup"];
+  const statusResults = {};
+  for (const ss of statusTests) {
+    const r2 = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=5&shipping_status=${ss}&status=open`, { headers });
+    const d2 = await r2.json();
+    statusResults[ss] = Array.isArray(d2) ? d2.length : d2?.code || "error";
   }
 
-  res.json(results);
+  res.json({ order_1847: Array.isArray(data) ? data : data, statusTests: statusResults });
 }
