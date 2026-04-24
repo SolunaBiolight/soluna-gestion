@@ -16,15 +16,13 @@ export default async function handler(req, res) {
   const { storeId, accessToken } = tnStore;
   const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
 
-  // Buscar los 3 pedidos que marcaste como empaquetados
-  const numbers = [1847, 1861, 1862]; // cambiá estos si son otros
-  const results = {};
-  
+  const numbers = [1847, 1867, 1869];
+  const orders = {};
   for (const num of numbers) {
     const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${num}&per_page=3`, { headers });
     const data = await r.json();
     const o = Array.isArray(data) ? data.find(o => o.number === num) : null;
-    results[num] = o ? {
+    orders[num] = o ? {
       status: o.status,
       payment_status: o.payment_status,
       shipping_status: o.shipping_status,
@@ -32,18 +30,22 @@ export default async function handler(req, res) {
     } : "not found";
   }
 
-  // También probar qué filtros devuelven resultados ahora
-  const filterTests = {
-    "fulfilled+open": "shipping_status=fulfilled&status=open",
-    "unshipped+open": "shipping_status=unshipped&status=open",
-    "packed+open":    "shipping_status=packed&status=open",
+  // Test all shipping_status values that might match
+  const tests = {
+    "fulfilled+open":    "shipping_status=fulfilled&status=open&per_page=10",
+    "unshipped+open":    "shipping_status=unshipped&status=open&per_page=10",
+    "packed+open":       "shipping_status=packed&status=open&per_page=10",
+    "ready_to_ship":     "shipping_status=ready_to_ship&per_page=10",
+    "label_purchased":   "shipping_status=label_purchased&per_page=10",
+    "awaiting_pickup":   "shipping_status=awaiting_pickup&per_page=10",
+    "booked":            "shipping_status=booked&per_page=10",
   };
-  const filterResults = {};
-  for (const [key, params] of Object.entries(filterTests)) {
-    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=10&${params}`, { headers });
+  const filters = {};
+  for (const [key, params] of Object.entries(tests)) {
+    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?${params}`, { headers });
     const d = await r.json();
-    filterResults[key] = Array.isArray(d) ? { count: d.length, numbers: d.map(o=>o.number) } : d;
+    filters[key] = Array.isArray(d) ? { count: d.length, numbers: d.map(o=>o.number) } : { error: d?.message || d?.code };
   }
 
-  res.json({ orders: results, filters: filterResults });
+  res.json({ orders, filters });
 }
