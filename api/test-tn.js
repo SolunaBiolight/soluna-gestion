@@ -16,17 +16,23 @@ export default async function handler(req, res) {
   const { storeId, accessToken } = tnStore;
   const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
 
-  // Test empaquetar: paid + unpacked + open
-  const r1 = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&shipping_status=unpacked&status=open&per_page=200`, { headers });
-  const d1 = await r1.json();
+  // Get exact status of the 3 PACKED orders
+  const results = {};
+  for (const num of [1847, 1867, 1869]) {
+    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${num}&per_page=3`, { headers });
+    const d = await r.json();
+    const o = Array.isArray(d) ? d.find(o => o.number === num) : null;
+    results[num] = o ? { shipping_status: o.shipping_status, status: o.status, fulfillments: o.fulfillments?.map(f=>f.status) } : "not found";
+  }
 
-  // Test enviar: unshipped + open, filter PACKED
-  const r2 = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?shipping_status=unshipped&status=open&per_page=200`, { headers });
-  const d2 = await r2.json();
-  const packed = Array.isArray(d2) ? d2.filter(o => o.fulfillments?.some(f => f.status === 'PACKED')) : [];
+  // Try fetching with each possible shipping_status that these orders might have
+  const statusValues = ["fulfilled","packed","ready","booked","handling","label_created","picked_up"];
+  const statusTests = {};
+  for (const ss of statusValues) {
+    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?shipping_status=${ss}&status=open&per_page=5`, { headers });
+    const d = await r.json();
+    statusTests[ss] = Array.isArray(d) ? d.length : (d?.code || "error");
+  }
 
-  res.json({
-    empaquetar: { count: Array.isArray(d1) ? d1.length : null, numbers: Array.isArray(d1) ? d1.map(o=>o.number) : d1 },
-    enviar: { total_unshipped: Array.isArray(d2) ? d2.length : null, packed_count: packed.length, packed_numbers: packed.map(o=>o.number) }
-  });
+  res.json({ packed_orders: results, status_tests: statusTests });
 }
