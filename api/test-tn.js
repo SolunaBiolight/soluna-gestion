@@ -27,22 +27,22 @@ export default async function handler(req, res) {
     'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)'
   };
 
-  // Test with status=open added + different shipped combinations
   const tests = {
-    "empaquetar+open":        "payment_status=paid&shipping_status=unpacked&status=open",
-    "cobrar+open":            "payment_status=pending,partially_paid&status=open",
-    "enviado_shipped":        "shipping_status=shipped&status=open",
-    "enviado_shipped+paid":   "shipping_status=shipped&payment_status=paid&status=open",
-    "all_open_p1":            "status=open&per_page=200&page=1",
-    "all_open_p2":            "status=open&per_page=200&page=2",
-    "all_open_p3":            "status=open&per_page=200&page=3",
+    "enviar_v1": "payment_status=paid&shipping_status=ready_to_ship&status=open",
+    "enviar_v2": "payment_status=paid,partially_refunded&shipping_status=ready_to_ship&status=open",
+    "enviar_v3": "payment_status=paid,partially_refunded&shipping_status=ready_to_ship,partially_shipped&status=open",
+    "enviar_v4": "shipping_status=ready_to_ship&status=open",
+    "enviar_v5": "shipping_status=ready_to_ship,partially_shipped&status=open",
   };
 
   const results = {};
   for (const [key, params] of Object.entries(tests)) {
-    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&${params}`, { headers });
+    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=10&${params}`, { headers });
     const d = await r.json();
-    results[key] = Array.isArray(d) ? d.length : d;
+    results[key] = {
+      count: Array.isArray(d) ? d.length : null,
+      sample: Array.isArray(d) ? d.map(o => ({ number: o.number, payment_status: o.payment_status, shipping_status: o.shipping_status })) : d
+    };
   }
 
   res.json(results);
