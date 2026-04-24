@@ -16,25 +16,24 @@ function initAdmin() {
 const FALLBACK_STORE_ID = "6978415";
 const FALLBACK_TOKEN = "71be8939bf409df5b98caa80e22d7227ad288f82";
 
-// Mapeo exacto de tabs TN → parámetros de la API
+// Mapeo exacto de tabs TN → parámetros confirmados por la API
+// La API acepta múltiples valores separados por coma en un solo parámetro
 const TAB_PARAMS = {
-  cobrar:     { payment_status: "pending,partially_paid" },
-  empaquetar: { payment_status: "paid,partially_paid,partially_refunded", shipping_status: "unpacked,partially_shipped" },
-  enviar:     { payment_status: "paid,partially_refunded", shipping_status: "ready_to_ship,partially_shipped" },
-  enviado:    { shipping_status: "shipped" },
-  entregado:  { shipping_status: "delivered" },
+  cobrar:     "payment_status=pending,partially_paid",
+  empaquetar: "payment_status=paid,partially_paid,partially_refunded&shipping_status=unpacked,partially_shipped",
+  enviar:     "payment_status=paid,partially_refunded&shipping_status=ready_to_ship,partially_shipped",
+  enviado:    "shipping_status=shipped",
+  entregado:  "shipping_status=delivered",
 };
 
-async function fetchAllPages(storeId, accessToken, params = {}) {
-  const buildUrl = (page) => {
-    const qs = new URLSearchParams({ per_page: "200", page: String(page), ...params });
-    return `https://api.tiendanube.com/v1/${storeId}/orders?${qs}`;
-  };
-
+async function fetchAllPages(storeId, accessToken, extraParams = "") {
   const headers = {
     'Authentication': `bearer ${accessToken}`,
     'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)'
   };
+
+  const buildUrl = (page) =>
+    `https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&page=${page}${extraParams ? "&" + extraParams : ""}`;
 
   const firstRes = await fetch(buildUrl(1), { headers });
   const firstData = await firstRes.json();
@@ -43,7 +42,7 @@ async function fetchAllPages(storeId, accessToken, params = {}) {
 
   // Traer páginas restantes en paralelo
   const extraPages = await Promise.all(
-    [2, 3, 4, 5, 6, 7, 8, 9, 10].map(p =>
+    [2,3,4,5,6,7,8,9,10].map(p =>
       fetch(buildUrl(p), { headers })
         .then(r => r.json())
         .then(d => Array.isArray(d) ? d : [])
@@ -51,14 +50,13 @@ async function fetchAllPages(storeId, accessToken, params = {}) {
     )
   );
 
-  let allOrders = [...firstData];
+  let all = [...firstData];
   for (const page of extraPages) {
     if (page.length === 0) break;
-    allOrders = allOrders.concat(page);
+    all = all.concat(page);
     if (page.length < 200) break;
   }
-
-  return allOrders;
+  return all;
 }
 
 export default async function handler(req, res) {
@@ -75,8 +73,7 @@ export default async function handler(req, res) {
       const db = initAdmin();
       const userSnap = await db.collection("users").doc(uid).get();
       if (userSnap.exists) {
-        const userData = userSnap.data();
-        const tnStore = (userData.stores || []).find(s => s.type === "tiendanube");
+        const tnStore = (userSnap.data().stores || []).find(s => s.type === "tiendanube");
         if (tnStore?.accessToken && tnStore?.storeId) {
           storeId = tnStore.storeId;
           accessToken = tnStore.accessToken;
@@ -88,8 +85,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const params = tab && TAB_PARAMS[tab] ? TAB_PARAMS[tab] : {};
-    const orders = await fetchAllPages(storeId, accessToken, params);
+    const extraParams = tab && TAB_PARAMS[tab] ? TAB_PARAMS[tab] : "";
+    const orders = await fetchAllPages(storeId, accessToken, extraParams);
     res.status(200).json(orders);
   } catch(e) {
     res.status(500).json({ error: e.message });
