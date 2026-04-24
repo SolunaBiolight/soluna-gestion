@@ -1787,8 +1787,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 
   // Pedidos exportables
   const exportables=useMemo(()=>orders.filter(o=>{
-    const exportable=o.estadoPago==="Pagado"&&(o.estadoEnvio==="No está empaquetado"||o.estadoEnvio==="Listo para enviar");
-    if(!exportable) return false;
+    if(o.estadoPago!=="Pagado") return false;
     if(filterEstadoEnvio&&o.estadoEnvio!==filterEstadoEnvio) return false;
     if(searchEnvios){const s=searchEnvios.toLowerCase();return o.numero.includes(s)||o.comprador.toLowerCase().includes(s);}
     return true;
@@ -1802,7 +1801,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   async function loadAndreaniLocations() {
     if(andreaniLocsRef.current) return andreaniLocsRef.current;
     const res=await fetch('/andreani_locations.json');
-    if(!res.ok) throw new Error("No se pudo cargar la lista de localidades");
+    if(!res.ok) throw new Error("No se pudo cargar localidades");
     const data=await res.json();
     const cpIndex={};
     data.forEach(loc=>{const parts=loc.split(' / ');if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}});
@@ -1810,79 +1809,78 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     return andreaniLocsRef.current;
   }
   function findAndreaniLocation(locs,cp,provincia,localidad) {
-    const byCp=locs.cpIndex[cp?.trim()]||[];
+    const byCp=locs.cpIndex[String(cp||"").trim()]||[];
     if(byCp.length===1) return byCp[0];
-    if(byCp.length>1){const locU=(localidad||"").toUpperCase().trim();const match=byCp.find(l=>l.includes(locU));return match||byCp[0];}
+    if(byCp.length>1){const locU=(localidad||"").toUpperCase().trim();const m=byCp.find(l=>l.includes(locU));return m||byCp[0];}
     const provU=(provincia||"").toUpperCase().trim();const locU=(localidad||"").toUpperCase().trim();
-    const match=locs.list.find(l=>l.startsWith(provU)&&l.includes(locU));
-    if(match) return match;
-    return locs.list.find(l=>l.startsWith(provU))||`${provU} / ${locU} / ${cp||""}`;
+    const m=locs.list.find(l=>l.startsWith(provU)&&l.includes(locU));
+    return m||(locs.list.find(l=>l.startsWith(provU))||provU+' / '+locU+' / '+(cp||""));
   }
-  async function generateAndreaniXlsx(ordersData,locs,exportCfgLocal) {
+  async function generateAndreaniXlsx(ordersData,locs,cfgOverride) {
     if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
-    const templateRes=await fetch('/andreani_template.xlsx');
-    if(!templateRes.ok) throw new Error("No se pudo cargar el template. Verificá que andreani_template.xlsx esté en public/");
-    const templateBuf=await templateRes.arrayBuffer();
-    const zip=await window.JSZip.loadAsync(templateBuf);
+    const tRes=await fetch('/andreani_template.xlsx');
+    if(!tRes.ok) throw new Error("No se pudo cargar el template. Verificá que andreani_template.xlsx esté en public/");
+    const tBuf=await tRes.arrayBuffer();
+    const zip=await window.JSZip.loadAsync(tBuf);
     const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
-    const existingStrings=[];
-    const ssRx=/<x:t[^>]*>([\s\S]*?)<\/x:t>/g;
-    let m2;
-    while((m2=ssRx.exec(ssXml))!==null) existingStrings.push(m2[1]);
-    const strMap=new Map();
-    existingStrings.forEach((s,i)=>strMap.set(s,i));
-    const newStrings=[...existingStrings];
-    function getIdx(s){const k=String(s||"");if(strMap.has(k))return strMap.get(k);const i=newStrings.length;newStrings.push(k);strMap.set(k,i);return i;}
-    function sCell(ref,val){return `<c r="${ref}" t="s"><v>${getIdx(val)}</v></c>`;}
-    function nCell(ref,val){if(val===''||val===null||val===undefined)return sCell(ref,'');return `<c r="${ref}"><v>${val}</v></c>`;}
+    const existSS=[];
+    const ssRx=/<t[^>]*>([\s\S]*?)<\/t>/g;
+    let mx;while((mx=ssRx.exec(ssXml))!==null)existSS.push(mx[1]);
+    const ssMap=new Map();existSS.forEach((s,i)=>ssMap.set(s,i));
+    const newSS=[...existSS];
+    function idx(s){const k=String(s==null?"":s);if(ssMap.has(k))return ssMap.get(k);const i=newSS.length;newSS.push(k);ssMap.set(k,i);return i;}
+    function sC(ref,val){return '<c r="'+ref+'" t="s"><v>'+idx(val)+'</v></c>';}
+    function nC(ref,val){return (val===''||val===null||val===undefined)?sC(ref,''):'<c r="'+ref+'"><v>'+val+'</v></c>';}
+    const cfg=cfgOverride||exportCfg;
     let rowsXml='';
-    const cfg=exportCfgLocal||exportCfg;
-    ordersData.forEach((o,i)=>{
+    ordersData.forEach(function(o,i){
       const rn=i+3;
       const partes=o.comprador.trim().split(' ');
       const nombre=partes[0]||"";const apellido=partes.slice(1).join(' ')||"";
-      const tel=(o.telefono||"").replace(/\D/g,'');
+      const tel=(o.telefono||"").replace(/[^0-9]/g,'');
       const clean=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
-      let telCod="",telNum="";
-      if(clean.length>=8){telCod=clean.length>=10?clean.slice(0,clean.length-8):"";telNum=clean.length>=10?clean.slice(clean.length-8):clean;}
+      let telCod='',telNum='';
+      if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
+      else if(clean.length>0){telNum=clean;}
       const ubicacion=findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
-      const dirNum=o.dirNumero||"";
+      const dirNum=String(o.dirNumero||"");
       const cells=[
-        sCell(`A${rn}`,""),
-        nCell(`B${rn}`,parseInt(cfg?.peso)||200),
-        nCell(`C${rn}`,parseInt(cfg?.alto)||5),
-        nCell(`D${rn}`,parseInt(cfg?.ancho)||5),
-        nCell(`E${rn}`,parseInt(cfg?.prof)||5),
-        nCell(`F${rn}`,parseInt(cfg?.valor)||6000),
-        sCell(`G${rn}`,`#${o.numero}`),
-        sCell(`H${rn}`,nombre),
-        sCell(`I${rn}`,apellido),
-        o.dni&&!isNaN(o.dni)?nCell(`J${rn}`,parseFloat(o.dni)):sCell(`J${rn}`,o.dni||""),
-        sCell(`K${rn}`,o.email||""),
-        telCod?nCell(`L${rn}`,parseFloat(telCod)):sCell(`L${rn}`,""),
-        telNum?nCell(`M${rn}`,parseFloat(telNum)):sCell(`M${rn}`,""),
-        sCell(`N${rn}`,o.direccion||""),
-        dirNum&&!isNaN(dirNum)?nCell(`O${rn}`,parseFloat(dirNum)):sCell(`O${rn}`,dirNum||""),
-        sCell(`P${rn}`,o.piso||""),
-        sCell(`Q${rn}`,""),
-        sCell(`R${rn}`,ubicacion),
-        sCell(`S${rn}`,""),
+        sC('A'+rn,""),
+        nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
+        nC('C'+rn,parseInt(cfg&&cfg.alto)||5),
+        nC('D'+rn,parseInt(cfg&&cfg.ancho)||5),
+        nC('E'+rn,parseInt(cfg&&cfg.prof)||5),
+        nC('F'+rn,parseInt(cfg&&cfg.valor)||6000),
+        sC('G'+rn,'#'+o.numero),
+        sC('H'+rn,nombre),
+        sC('I'+rn,apellido),
+        (o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),
+        sC('K'+rn,o.email||""),
+        telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
+        telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
+        sC('N'+rn,o.direccion||""),
+        (dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):sC('O'+rn,dirNum),
+        sC('P'+rn,o.piso||""),
+        sC('Q'+rn,""),
+        sC('R'+rn,ubicacion),
+        sC('S'+rn,""),
       ].join('');
-      rowsXml+=`<row r="${rn}" spans="1:19" x14ac:dyDescent="0.25">${cells}</row>`;
+      rowsXml+='<row r="'+rn+'" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
     });
     const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
-    let newSheet=sheet1;
-    if(!newSheet.includes('xmlns:x14ac')) newSheet=newSheet.replace('<worksheet ','<worksheet xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" ');
     const totalRows=2+ordersData.length;
-    newSheet=newSheet
-      .replace(/<dimension ref="[^"]+"\//,`<dimension ref="A1:S${totalRows}"/`)
-      .replace(/<x:dimension ref="[^"]+"\//,`<x:dimension ref="A1:S${totalRows}"/`)
-      .replace('</sheetData>',rowsXml+'</sheetData>')
-      .replace('</x:sheetData>',rowsXml+'</x:sheetData>');
+    const newSheet=sheet1
+      .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows+'"/>')
+      .replace('</sheetData>',rowsXml+'</sheetData>');
     zip.file('xl/worksheets/sheet1.xml',newSheet);
-    const newSsItems=newStrings.map(s=>{const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const sp=s!==s.trim()||s.includes('\n')?' xml:space="preserve"':'';return `<x:si><x:t${sp}>${esc}</x:t></x:si>`;}).join('');
-    zip.file('xl/sharedStrings.xml',`<?xml version="1.0" encoding="utf-8"?><x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${newStrings.length}" uniqueCount="${newStrings.length}">${newSsItems}</x:sst>`);
-    return await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
+    const newSsItems=newSS.map(function(s){
+      const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const sp=(s!==s.trim()||s.indexOf('\n')>=0)?' xml:space="preserve"':'';
+      return '<si><t'+sp+'>'+esc+'</t></si>';
+    }).join('');
+    const total=newSS.length;
+    zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+total+'" uniqueCount="'+total+'">'+newSsItems+'</sst>');
+    return zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
   }
   async function exportAndreani() {
     const selOrders=exportables.filter(o=>selected.has(o.numero));
@@ -1894,19 +1892,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       const date=new Date().toISOString().split('T')[0];
       if(exportCfg.separar){
         const b1=await generateAndreaniXlsx(selOrders,locs);
-        const a1=document.createElement('a');a1.href=URL.createObjectURL(b1);a1.download=`EnvioMasivoExcelPaquetes-domicilio-${date}.xlsx`;a1.click();
+        const a1=document.createElement('a');a1.href=URL.createObjectURL(b1);a1.download='EnvioMasivoExcelPaquetes-domicilio-'+date+'.xlsx';a1.click();
         await new Promise(r=>setTimeout(r,600));
         const b2=await generateAndreaniXlsx([],locs);
-        const a2=document.createElement('a');a2.href=URL.createObjectURL(b2);a2.download=`EnvioMasivoExcelPaquetes-sucursal-${date}.xlsx`;a2.click();
+        const a2=document.createElement('a');a2.href=URL.createObjectURL(b2);a2.download='EnvioMasivoExcelPaquetes-sucursal-'+date+'.xlsx';a2.click();
       } else {
         const b=await generateAndreaniXlsx(selOrders,locs);
-        const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`EnvioMasivoExcelPaquetes-${date}.xlsx`;a.click();
+        const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';a.click();
       }
       setExportModal(false);setSelected(new Set());
     } catch(e){alert("Error al exportar: "+e.message);}
     setExporting(false);
   }
-
 
   // Parse PDF — shared logic using fetch+text extraction via server
   async function parsePdf(file, type) {
@@ -2032,10 +2029,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                 <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:13}}>🔍</span>
                 <input placeholder="Buscar pedido o cliente..." value={searchEnvios} onChange={e=>setSearchEnvios(e.target.value)} style={{...iS,paddingLeft:30,fontSize:13}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
               </div>
-              <select value={filterEstadoEnvio} onChange={e=>setFilterEstadoEnvio(e.target.value)} style={{...iS,width:"auto",flex:"0 1 190px",fontSize:13,color:filterEstadoEnvio?T.accent:T.textMd}}>
+              <select value={filterEstadoEnvio} onChange={e=>setFilterEstadoEnvio(e.target.value)} style={{...iS,width:"auto",flex:"0 1 200px",fontSize:13,color:filterEstadoEnvio?T.accent:T.textMd}}>
                 <option value="">Todos los estados</option>
                 <option>No está empaquetado</option>
                 <option>Listo para enviar</option>
+                <option>Enviado</option>
+                <option>Entregado</option>
               </select>
               <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
                 {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
