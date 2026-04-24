@@ -46,6 +46,11 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
   return all;
 }
 
+// Fecha de hace N días en formato ISO para TN
+function daysAgo(n) {
+  return new Date(Date.now() - n * 86400000).toISOString().split('T')[0];
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -72,7 +77,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Búsqueda por número o nombre directamente en TN
+    // Búsqueda directa en TN por número o nombre
     if (q) {
       const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
       const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${encodeURIComponent(q)}&per_page=20`, { headers });
@@ -80,19 +85,19 @@ export default async function handler(req, res) {
       return res.status(200).json(Array.isArray(data) ? data : []);
     }
 
-    // Por cobrar: payment_status=pending,partially_paid + open
+    // Por cobrar: pending/partially_paid + open (pocos, fetch directo)
     if (tab === 'cobrar') {
       const orders = await fetchAllPages(storeId, accessToken, "payment_status=pending,partially_paid&status=open");
       if (countOnly === 'true') return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
       return res.status(200).json(orders);
     }
 
-    // Por empaquetar y Por enviar: ambos vienen de paid+open, diferenciados por fulfillment.status
+    // Por empaquetar y Por enviar: paid+open solo de los últimos 60 días
+    // Esto garantiza que no traemos pedidos históricos de meses atrás
     if (tab === 'empaquetar' || tab === 'enviar') {
-      const all = await fetchAllPages(storeId, accessToken, "payment_status=paid&status=open");
-      
-      // Por enviar = tienen al menos un fulfillment PACKED
-      // Por empaquetar = no tienen fulfillments PACKED (UNPACKED o sin fulfillments)
+      const since = daysAgo(60); // pedidos de los últimos 60 días
+      const all = await fetchAllPages(storeId, accessToken, `payment_status=paid&status=open&created_at_min=${since}`);
+
       const porEnviar = all.filter(o => o.fulfillments?.some(f => f.status === 'PACKED'));
       const porEmpaquetar = all.filter(o => !o.fulfillments?.some(f => f.status === 'PACKED'));
 
@@ -103,7 +108,7 @@ export default async function handler(req, res) {
       return res.status(200).json(tab === 'enviar' ? porEnviar : porEmpaquetar);
     }
 
-    // Fallback: últimos 200 pedidos
+    // Fallback
     const orders = await fetchPage(storeId, accessToken, "", 1, 200);
     res.status(200).json(orders);
   } catch(e) {
