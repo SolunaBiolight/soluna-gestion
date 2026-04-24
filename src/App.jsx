@@ -1994,7 +1994,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
           sC('N'+rn,direccion),
-          (dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):sC('O'+rn,cleanField(dirNum)),
+          (dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):sC('O'+rn,cleanField(dirNum)||'S/N'),
           sC('P'+rn,cleanField(o.piso||"")),
           sC('Q'+rn,""),
           sC('R'+rn,ubicacion),
