@@ -1787,7 +1787,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [exportCfg,setExportCfg]=useState({peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000",separar:false});
   const [tabEnvio,setTabEnvio]=useState("empaquetar");
   const [searchEnvios,setSearchEnvios]=useState("");
-  const [searchLibre,setSearchLibre]=useState(false); // buscar en todos los pedidos
+  const [searchLibre,setSearchLibre]=useState(false);
+  const [locationModal,setLocationModal]=useState(null); // {order, locs, resolve}
+  const [locSearch,setLocSearch]=useState("");
+  const [locSearchType,setLocSearchType]=useState("ciudad"); // ciudad|cp|calle
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
@@ -1829,25 +1832,79 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   function toggleSelect(num){setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});}
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
 
-  // Andreani locations cache
+  // Andreani locations cache — lee del template xlsx directamente
   const andreaniLocsRef=useRef(null);
   async function loadAndreaniLocations() {
     if(andreaniLocsRef.current) return andreaniLocsRef.current;
-    const res=await fetch('/andreani_locations.json');
-    if(!res.ok) throw new Error("No se pudo cargar localidades");
-    const data=await res.json();
+    const res=await fetch('/andreani_template.xlsx');
+    if(!res.ok) throw new Error("No se pudo cargar el template de Andreani");
+    const buf=await res.arrayBuffer();
+    // Leer sharedStrings del xlsx (es un zip)
+    if(!window.JSZip){await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});}
+    const zip=await window.JSZip.loadAsync(buf);
+    const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
+    const strings=[];
+    const rx=/<t[^>]*>([\s\S]*?)<\/t>/g;
+    let m;while((m=rx.exec(ssXml))!==null)strings.push(m[1]);
+    // Filtrar solo las que tienen formato PROVINCIA / LOCALIDAD / CP
+    const locPattern=/^[A-ZÁÉÍÓÚÑÜ\s]+ \/ [A-ZÁÉÍÓÚÑÜ\s0-9]+ \/ \d+$/;
+    const list=strings.filter(s=>locPattern.test(s.trim()));
+    // Índice por CP
     const cpIndex={};
-    data.forEach(loc=>{const parts=loc.split(' / ');if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}});
-    andreaniLocsRef.current={list:data,cpIndex};
+    list.forEach(loc=>{
+      const parts=loc.split(' / ');
+      if(parts.length===3){
+        const cp=parts[2].trim();
+        if(!cpIndex[cp])cpIndex[cp]=[];
+        cpIndex[cp].push(loc);
+      }
+    });
+    // Índice por provincia
+    const provIndex={};
+    list.forEach(loc=>{
+      const prov=loc.split(' / ')[0].trim();
+      if(!provIndex[prov])provIndex[prov]=[];
+      provIndex[prov].push(loc);
+    });
+    andreaniLocsRef.current={list,cpIndex,provIndex};
     return andreaniLocsRef.current;
   }
   function findAndreaniLocation(locs,cp,provincia,localidad) {
-    const byCp=locs.cpIndex[String(cp||"").trim()]||[];
+    const cpStr=String(cp||"").trim();
+    const provU=(provincia||"").toUpperCase().trim()
+      .replace(/^CIUDAD AUTONOMA.*/,"CAPITAL FEDERAL")
+      .replace(/^CABA$/,"CAPITAL FEDERAL");
+    const locU=(localidad||"").toUpperCase().trim();
+
+    // 1. CP exacto + localidad
+    const byCp=locs.cpIndex[cpStr]||[];
     if(byCp.length===1) return byCp[0];
-    if(byCp.length>1){const locU=(localidad||"").toUpperCase().trim();const m=byCp.find(l=>l.includes(locU));return m||byCp[0];}
-    const provU=(provincia||"").toUpperCase().trim();const locU=(localidad||"").toUpperCase().trim();
-    const m=locs.list.find(l=>l.startsWith(provU)&&l.includes(locU));
-    return m||(locs.list.find(l=>l.startsWith(provU))||provU+' / '+locU+' / '+(cp||""));
+    if(byCp.length>1){
+      const byLoc=byCp.find(l=>l.toUpperCase().includes(locU)&&locU.length>2);
+      if(byLoc) return byLoc;
+      const byProv=byCp.find(l=>l.startsWith(provU));
+      if(byProv) return byProv;
+      return byCp[0];
+    }
+
+    // 2. Provincia + localidad
+    const provList=locs.provIndex[provU]||[];
+    if(provList.length>0){
+      const byLoc=provList.find(l=>l.toUpperCase().includes(locU)&&locU.length>2);
+      if(byLoc) return byLoc;
+    }
+
+    // 3. No encontrado — retornar null para mostrar modal
+    return null;
+  }
+
+  function searchAndreaniLocations(locs, query, type) {
+    if(!query||query.length<2) return [];
+    const q=query.toUpperCase().trim();
+    if(type==="cp") return (locs.cpIndex[q]||[]).slice(0,20);
+    if(type==="ciudad") return locs.list.filter(l=>l.toUpperCase().includes(q)).slice(0,20);
+    if(type==="calle") return locs.list.filter(l=>l.toUpperCase().includes(q)).slice(0,20);
+    return [];
   }
   async function generateAndreaniXlsx(ordersData,locs,cfgOverride) {
     if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
@@ -1889,7 +1946,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         let telCod='',telNum='';
         if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
         else if(clean.length>0){telNum=clean;}
-        const ubicacion=findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
+        const ubicacion=locationOverridesRef.current[o.numero]||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
         const dirNum=String(o.dirNumero||"");
         const direccion=cleanField(o.direccion||"");
         const cells=[
@@ -1948,6 +2005,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+total+'" uniqueCount="'+total+'">'+newSsItems+'</sst>');
     return zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
   }
+  // locationOverrides: {orderNumero: ubicacionString}
+  const locationOverridesRef=useRef({});
+
   async function exportAndreani() {
     const selOrders=exportables.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
@@ -1955,6 +2015,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     await new Promise(r=>setTimeout(r,100));
     try {
       const locs=await loadAndreaniLocations();
+
+      // Check for unresolved locations
+      const unresolved=[];
+      for(const o of selOrders){
+        if(locationOverridesRef.current[o.numero]) continue;
+        const loc=findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
+        if(!loc) unresolved.push(o);
+      }
+
+      if(unresolved.length>0){
+        setExporting(false);
+        // Show modal for first unresolved
+        await resolveLocationsSequentially(unresolved,locs);
+        return;
+      }
+
       const date=new Date().toISOString().split('T')[0];
       if(exportCfg.separar){
         const b1=await generateAndreaniXlsx(selOrders,locs);
@@ -1967,8 +2043,23 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';a.click();
       }
       setExportModal(false);setSelected(new Set());
+      locationOverridesRef.current={};
     } catch(e){alert("Error al exportar: "+e.message);}
     setExporting(false);
+  }
+
+  async function resolveLocationsSequentially(unresolvedOrders,locs) {
+    for(const o of unresolvedOrders){
+      const chosen=await new Promise(resolve=>{
+        setLocationModal({order:o,locs,resolve});
+        setLocSearch("");setLocSearchType("ciudad");
+      });
+      if(chosen===null) return; // user cancelled
+      locationOverridesRef.current[o.numero]=chosen;
+    }
+    // All resolved — re-trigger export
+    setExportModal(true);
+    setTimeout(()=>exportAndreani(),100);
   }
 
   // Parse PDF — shared logic using fetch+text extraction via server
@@ -2132,15 +2223,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
               </div>
             ):(
               <>
-                <div style={{display:"grid",gridTemplateColumns:"40px 90px 1fr 1fr 150px 100px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span/><span>Pedido</span><span>Cliente</span><span>Productos</span><span>Estado</span><span>Total</span>
+                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                  <span/><span>Pedido</span><span>Cliente</span><span>Productos</span><span>Estado</span><span>Envío</span><span>Total</span>
                 </div>
                 {exportables.map(o=>{
                   const sel=selected.has(o.numero);
                   const ec=getEstadoEnvioC(T,o.estadoEnvio);
+                  const isSuc=o.medioEnvio&&(o.medioEnvio.toLowerCase().includes('sucursal')||o.medioEnvio.toLowerCase().includes('hop')||o.medioEnvio.toLowerCase().includes('punto'));
                   return (
                     <div key={o.numero} onClick={()=>toggleSelect(o.numero)}
-                      style={{display:"grid",gridTemplateColumns:"40px 90px 1fr 1fr 150px 100px",gap:8,padding:"13px 14px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center"}}
+                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"13px 14px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center"}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
                       <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
@@ -2156,6 +2248,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                         <span style={{marginLeft:6}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</span>
                       </div>
                       <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
+                      <div style={{fontSize:11,color:isSuc?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
+                        <span>{isSuc?"🏪":"🏠"}</span>
+                        <span>{o.medioEnvio||"—"}</span>
+                      </div>
                       <span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>
                     </div>
                   );
@@ -2284,6 +2380,70 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           </div>
         )}
       </div>
+
+      {/* Location Resolution Modal */}
+      <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);}}} title="Confirmar localidad Andreani" width={560}>
+        {locationModal&&(()=>{
+          const {order,locs,resolve}=locationModal;
+          const results=searchAndreaniLocations(locs,locSearch,locSearchType);
+          return (
+            <div>
+              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:4}}>⚠ No se encontró la localidad exacta</div>
+                <div style={{fontSize:13,color:T.text}}>Pedido <strong>#{order.numero}</strong> — {order.comprador}</div>
+                <div style={{fontSize:12,color:T.textSm,marginTop:3}}>{order.direccion} {order.dirNumero}, {order.localidad||order.ciudad}, {order.provincia} — CP {order.cp}</div>
+              </div>
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Buscar localidad Andreani</div>
+                <div style={{display:"flex",gap:6,marginBottom:10}}>
+                  {["ciudad","cp","calle"].map(t=>(
+                    <button key={t} onClick={()=>{setLocSearchType(t);setLocSearch("");}}
+                      style={{padding:"6px 14px",fontSize:12,fontWeight:locSearchType===t?700:400,borderRadius:8,border:`1.5px solid ${locSearchType===t?T.accentSolid:T.border}`,background:locSearchType===t?T.accentSolid:"transparent",color:locSearchType===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textTransform:"capitalize"}}>
+                      {t==="cp"?"Código Postal":t==="ciudad"?"Ciudad":"Calle"}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  autoFocus
+                  style={{...InputStyle(T),fontSize:14,marginBottom:10}}
+                  placeholder={locSearchType==="cp"?"Ej: 1712":locSearchType==="ciudad"?"Ej: Córdoba, Rosario...":"Ej: San Martín..."}
+                  value={locSearch}
+                  onChange={e=>setLocSearch(e.target.value)}
+                />
+                {results.length>0&&(
+                  <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,maxHeight:240,overflow:"auto"}}>
+                    {results.map((loc,i)=>{
+                      const parts=loc.split(' / ');
+                      return (
+                        <div key={i} onClick={()=>{resolve(loc);setLocationModal(null);}}
+                          style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
+                          onMouseEnter={e=>e.currentTarget.style.background=T.card}
+                          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                          <div style={{fontSize:13,fontWeight:600,color:T.text}}>{parts[1]}</div>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{parts[0]} · CP {parts[2]}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {locSearch.length>=2&&results.length===0&&(
+                  <div style={{padding:"20px",textAlign:"center",color:T.textSm,fontSize:13,background:T.bg,borderRadius:10,border:`1px solid ${T.border}`}}>
+                    Sin resultados para "{locSearch}"
+                  </div>
+                )}
+              </div>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+                <button onClick={()=>{resolve(null);setLocationModal(null);}} style={{...BtnSecondary(T),fontSize:13}}>Cancelar exportación</button>
+                <button onClick={()=>{
+                  // Skip this order - use first valid location as fallback
+                  const fallback=locs.list.find(l=>l.startsWith((order.provincia||"BUENOS AIRES").toUpperCase()))||locs.list[0];
+                  resolve(fallback);setLocationModal(null);
+                }} style={{...BtnDanger(T),fontSize:13}}>Usar primera disponible</button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
 
       {/* Export Modal */}
       <Modal T={T} open={exportModal} onClose={()=>!exporting&&setExportModal(false)} title={`Exportar ${selected.size} pedido${selected.size!==1?"s":""} para Andreani`} width={480}>
