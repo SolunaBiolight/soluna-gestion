@@ -16,20 +16,13 @@ function initAdmin() {
 const FALLBACK_STORE_ID = "6978415";
 const FALLBACK_TOKEN = "71be8939bf409df5b98caa80e22d7227ad288f82";
 
-// Filtros exactos confirmados mirando la UI de TN:
-// Por cobrar     → Pago pendiente + Pago parcialmente recibido
-// Por empaquetar → Pago recibido + Pago parcialmente recibido + Pago parcialmente reembolsado
-//                  + Por empaquetar + Parcialmente empaquetadas
-// Por enviar     → Pago recibido + Pago parcialmente reembolsado
-//                  + Por enviar + Parcialmente enviadas
-// Enviado        → shipping_status=shipped
-// Entregado      → shipping_status=delivered
+// Filtros confirmados contra la API real de TN
 const TAB_PARAMS = {
-  cobrar:     "payment_status=pending,partially_paid",
-  empaquetar: "payment_status=paid,partially_paid,partially_refunded&shipping_status=unpacked,partially_shipped",
-  enviar:     "payment_status=paid,partially_refunded&shipping_status=ready_to_ship,partially_shipped",
-  enviado:    "shipping_status=shipped",
-  entregado:  "shipping_status=delivered",
+  cobrar:     "payment_status=pending,partially_paid&status=open",
+  empaquetar: "payment_status=paid&shipping_status=unpacked&status=open",
+  enviar:     "payment_status=paid&shipping_status=ready_to_ship&status=open",
+  enviado:    "shipping_status=shipped",   // status=closed, no filtrar por open
+  entregado:  "shipping_status=delivered", // idem
 };
 
 async function fetchAllPages(storeId, accessToken, extraParams = "") {
@@ -44,6 +37,8 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
   const firstRes = await fetch(buildUrl(1), { headers });
   if (!firstRes.ok) {
     const err = await firstRes.json().catch(() => ({}));
+    // 404 "Last page is 0" = no results, not an error
+    if (firstRes.status === 404) return [];
     throw new Error(`TN API error ${firstRes.status}: ${err.message || "Unknown"}`);
   }
   const firstData = await firstRes.json();
@@ -54,7 +49,7 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
   const extraPages = await Promise.all(
     [2,3,4,5,6,7,8,9,10].map(p =>
       fetch(buildUrl(p), { headers })
-        .then(r => r.json())
+        .then(r => r.ok ? r.json() : [])
         .then(d => Array.isArray(d) ? d : [])
         .catch(() => [])
     )
