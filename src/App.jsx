@@ -2855,24 +2855,12 @@ export default function App() {
     return {cobrar:"Por cobrar",empaquetar:"Por empaquetar",enviar:"Por enviar",enviado:"Enviado",entregado:"Entregado"}[tab]||"";
   }
 
-  // Fetch orders on login — load cache instantly, then refresh in background
+  // Fetch orders on login — fetch empaquetar tab por defecto
   useEffect(()=>{
     if(!user) return;
-    // Load cache immediately for instant display
-    try{
-      const cached=localStorage.getItem(`soluna_orders_${user.uid}`)
-        || localStorage.getItem("soluna_orders_v3");
-      if(cached){
-        const parsed=JSON.parse(cached);
-        if(Array.isArray(parsed)&&parsed.length>0){
-          setOrders(parsed);
-          setOrdersStatus("ok");
-          localStorage.setItem(`soluna_orders_${user.uid}`,cached);
-        }
-      }
-    }catch(e){}
-    // Always refresh from API in background
-    fetchOrders(user.uid);
+    // Limpiar cache viejo para que no interfiera con los nuevos filtros por tab
+    try{ localStorage.removeItem(`soluna_orders_${user.uid}`); localStorage.removeItem("soluna_orders_v3"); }catch(e){}
+    fetchOrders(user.uid, "empaquetar");
   },[user?.uid]);
 
   // Re-fetch when store connects/disconnects
@@ -2949,6 +2937,6 @@ export default function App() {
   // App
   if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
   if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
-  if(page==="envios") return <><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={()=>fetchOrders(user?.uid)} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
+  if(page==="envios") return <><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
   return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user}/>{themeBtn}</>;
 }
