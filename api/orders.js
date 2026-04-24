@@ -20,9 +20,9 @@ const FALLBACK_TOKEN = "71be8939bf409df5b98caa80e22d7227ad288f82";
 const TAB_PARAMS = {
   cobrar:     "payment_status=pending,partially_paid&status=open",
   empaquetar: "payment_status=paid&shipping_status=unpacked&status=open",
-  enviar:     "payment_status=paid&shipping_status=ready_to_ship&status=open",
-  enviado:    "shipping_status=shipped",   // status=closed, no filtrar por open
-  entregado:  "shipping_status=delivered", // idem
+  enviar:     "shipping_status=fulfilled&status=open",
+  enviado:    "shipping_status=shipped",
+  entregado:  "shipping_status=delivered",
 };
 
 async function fetchAllPages(storeId, accessToken, extraParams = "") {
