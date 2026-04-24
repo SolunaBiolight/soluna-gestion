@@ -144,12 +144,20 @@ function buildOrdersFromAPI(data) {
   if(!Array.isArray(data)) return [];
   return data.map(o=>{
     const sh=o.shipping_address||{};
-    // Determinar estado de envío igual que TN
+    // Determinar tab de TN exacto según combinación pago+envío
     let estadoEnvio;
-    if(o.payment_status==="pending"||o.payment_status==="abandoned"||o.payment_status==="voided") {
+    const ps=o.payment_status; // pending|paid|partially_paid|partially_refunded|voided|refunded|abandoned
+    const ss=o.shipping_status; // unpacked|ready_to_ship|shipped|delivered|partially_shipped
+    if(ps==="pending"||ps==="partially_paid") {
       estadoEnvio="Por cobrar";
+    } else if((ps==="paid"||ps==="partially_paid"||ps==="partially_refunded")&&(ss==="unpacked"||ss==="partially_shipped"||!ss)) {
+      estadoEnvio="Por empaquetar";
+    } else if((ps==="paid"||ps==="partially_refunded")&&(ss==="ready_to_ship"||ss==="partially_shipped")) {
+      estadoEnvio="Por enviar";
+    } else if(ss==="shipped"||ss==="delivered") {
+      estadoEnvio=mapEstadoEnvio(ss);
     } else {
-      estadoEnvio=mapEstadoEnvio(o.shipping_status);
+      estadoEnvio=mapEstadoEnvio(ss);
     }
     return {
       numero:String(o.number||o.id),
@@ -2736,6 +2744,7 @@ export default function App() {
   const T = darkMode ? DARK : LIGHT;
 
   useEffect(()=>{
+    document.title="Growith";
     const l=document.createElement("link");
     l.href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap";
     l.rel="stylesheet";
