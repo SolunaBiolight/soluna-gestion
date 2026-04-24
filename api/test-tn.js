@@ -16,35 +16,26 @@ export default async function handler(req, res) {
   const { storeId, accessToken } = tnStore;
   const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
 
-  // Get full detail of order 1847 to see all fields
-  const r1 = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=1847&per_page=3`, { headers });
-  const orders = await r1.json();
-  const o = Array.isArray(orders) ? orders.find(o=>o.number===1847) : null;
+  // Get all unshipped+open orders and check their fulfillment status
+  const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?shipping_status=unshipped&status=open&per_page=50`, { headers });
+  const orders = await r.json();
 
-  // Test all possible filter combos that could give 1 result
-  const tests = {
-    "packed+open":           "shipping_status=packed&status=open",
-    "unshipped+fulfilled":   "shipping_status=unshipped,fulfilled&status=open",
-    "ready_to_ship+open":    "shipping_status=ready_to_ship&status=open",
-    "label_purchased":       "shipping_status=label_purchased&status=open",
-    "pending_fulfillment":   "shipping_status=pending_fulfillment&status=open",
-  };
+  const summary = Array.isArray(orders) ? orders.map(o => ({
+    number: o.number,
+    shipping_status: o.shipping_status,
+    fulfillments_count: o.fulfillments?.length || 0,
+    fulfillments_status: o.fulfillments?.map(f => f.status) || [],
+    has_packed: o.fulfillments?.some(f => f.status === 'PACKED') || false,
+  })) : orders;
 
-  const results = {};
-  for (const [key, params] of Object.entries(tests)) {
-    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=5&${params}`, { headers });
-    const d = await r.json();
-    results[key] = Array.isArray(d) ? { count: d.length, numbers: d.map(o=>o.number) } : d;
-  }
+  const packed = summary.filter ? summary.filter(o => o.has_packed) : [];
+  const not_packed = summary.filter ? summary.filter(o => !o.has_packed) : [];
 
   res.json({
-    order_1847_full: o ? {
-      number: o.number,
-      status: o.status,
-      payment_status: o.payment_status,
-      shipping_status: o.shipping_status,
-      fulfillments: o.fulfillments?.map(f=>({status:f.status,shipping:f.shipping?.option?.name})),
-    } : "not found",
-    filter_tests: results
+    total_unshipped_open: Array.isArray(orders) ? orders.length : 0,
+    with_PACKED_fulfillment: packed.length,
+    packed_numbers: packed.map(o => o.number),
+    without_packed: not_packed.length,
+    sample_not_packed: not_packed.slice(0,3),
   });
 }
