@@ -16,14 +16,6 @@ function initAdmin() {
 const FALLBACK_STORE_ID = "6978415";
 const FALLBACK_TOKEN = "71be8939bf409df5b98caa80e22d7227ad288f82";
 
-const TAB_PARAMS = {
-  cobrar:     "payment_status=pending,partially_paid&status=open",
-  empaquetar: "payment_status=paid&shipping_status=unpacked&status=open",
-  enviar:     "shipping_status=fulfilled&status=open",
-  // buscar: últimos 200 pedidos para búsqueda rápida
-  buscar:     "",
-};
-
 async function fetchPage(storeId, accessToken, extraParams, page, perPage=200) {
   const headers = {
     'Authentication': `bearer ${accessToken}`,
@@ -40,13 +32,11 @@ async function fetchPage(storeId, accessToken, extraParams, page, perPage=200) {
 async function fetchAllPages(storeId, accessToken, extraParams = "") {
   const first = await fetchPage(storeId, accessToken, extraParams, 1);
   if (first.length === 0 || first.length < 200) return first;
-
   const extras = await Promise.all(
     [2,3,4,5,6,7,8,9,10].map(p =>
       fetchPage(storeId, accessToken, extraParams, p).catch(() => [])
     )
   );
-
   let all = [...first];
   for (const page of extras) {
     if (page.length === 0) break;
@@ -82,37 +72,39 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Búsqueda directa por número o nombre
+    // Búsqueda por número o nombre directamente en TN
     if (q) {
-      const headers = {
-        'Authentication': `bearer ${accessToken}`,
-        'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)'
-      };
-      const r = await fetch(
-        `https://api.tiendanube.com/v1/${storeId}/orders?q=${encodeURIComponent(q)}&per_page=20`,
-        { headers }
-      );
+      const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
+      const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${encodeURIComponent(q)}&per_page=20`, { headers });
       const data = await r.json();
-      res.status(200).json(Array.isArray(data) ? data : []);
-      return;
+      return res.status(200).json(Array.isArray(data) ? data : []);
     }
 
-    const extraParams = tab && TAB_PARAMS[tab] !== undefined ? TAB_PARAMS[tab] : "";
-
-    if (countOnly === 'true') {
-      const first = await fetchPage(storeId, accessToken, extraParams, 1, 200);
-      res.status(200).json(Array.from({length: first.length}, (_,i) => ({id:i})));
-      return;
+    // Por cobrar: payment_status=pending,partially_paid + open
+    if (tab === 'cobrar') {
+      const orders = await fetchAllPages(storeId, accessToken, "payment_status=pending,partially_paid&status=open");
+      if (countOnly === 'true') return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
+      return res.status(200).json(orders);
     }
 
-    // Para búsqueda libre solo traer los últimos 200
-    if (tab === 'buscar') {
-      const orders = await fetchPage(storeId, accessToken, "", 1, 200);
-      res.status(200).json(orders);
-      return;
+    // Por empaquetar y Por enviar: ambos vienen de paid+open, diferenciados por fulfillment.status
+    if (tab === 'empaquetar' || tab === 'enviar') {
+      const all = await fetchAllPages(storeId, accessToken, "payment_status=paid&status=open");
+      
+      // Por enviar = tienen al menos un fulfillment PACKED
+      // Por empaquetar = no tienen fulfillments PACKED (UNPACKED o sin fulfillments)
+      const porEnviar = all.filter(o => o.fulfillments?.some(f => f.status === 'PACKED'));
+      const porEmpaquetar = all.filter(o => !o.fulfillments?.some(f => f.status === 'PACKED'));
+
+      if (countOnly === 'true') {
+        const count = tab === 'enviar' ? porEnviar.length : porEmpaquetar.length;
+        return res.status(200).json(Array.from({length: count}, (_,i) => ({id:i})));
+      }
+      return res.status(200).json(tab === 'enviar' ? porEnviar : porEmpaquetar);
     }
 
-    const orders = await fetchAllPages(storeId, accessToken, extraParams);
+    // Fallback: últimos 200 pedidos
+    const orders = await fetchPage(storeId, accessToken, "", 1, 200);
     res.status(200).json(orders);
   } catch(e) {
     res.status(500).json({ error: e.message });
