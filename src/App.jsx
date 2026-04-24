@@ -1792,6 +1792,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null});
+  const tabCacheRef=useRef({}); // cache en memoria: {cobrar:[...], empaquetar:[...], enviar:[...]}
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
@@ -2224,7 +2225,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             <span style={{color:T.textSm,fontSize:15}}>/</span>
             <span style={{fontWeight:700,fontSize:15,color:T.text}}>🚚 Envíos</span>
           </div>
-          <button onClick={()=>{fetchOrders(user?.uid,tabEnvio);fetchTabCounts(user?.uid);}} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>
+          <button onClick={()=>{
+            tabCacheRef.current={}; // limpiar cache
+            fetchOrders(user?.uid,tabEnvio);
+            fetchTabCounts(user?.uid);
+          }} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>
             {ordersStatus==="loading"?"⟳ Sincronizando...":"⟳ Sincronizar"}
           </button>
         </div>
@@ -2253,7 +2258,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                 {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
                 {id:"enviar",    label:"Por enviar",     color:T.blue},
               ].map(t=>(
-                <button key={t.id} onClick={()=>{setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");fetchOrders(user?.uid,t.id);fetchTabCounts(user?.uid);}}
+                <button key={t.id} onClick={()=>{
+                  setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");
+                  if(tabCacheRef.current[t.id]){
+                    // Usar cache — no re-fetchear
+                    setOrders(tabCacheRef.current[t.id]);
+                    setOrdersStatus("ok");
+                  } else {
+                    fetchOrders(user?.uid,t.id);
+                  }
+                  if(!tabCounts[t.id]) fetchTabCounts(user?.uid);
+                }}
                   style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id&&!searchEnvios?700:500,border:`1.5px solid ${tabEnvio===t.id&&!searchEnvios?t.color:T.border}`,background:tabEnvio===t.id&&!searchEnvios?t.color+"18":T.card,color:tabEnvio===t.id&&!searchEnvios?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:t.color,flexShrink:0}}/>
                   {t.label}
@@ -3110,8 +3125,9 @@ export default function App() {
       const data=await res.json();
       if(!Array.isArray(data)) throw new Error("Bad response");
       const built=buildOrdersFromAPI(data);
-      // Siempre reemplazar completamente — nunca mergear
       setOrders(built);
+      // Guardar en cache por tab
+      if(tab) tabCacheRef.current[tab]=built;
       setOrdersStatus("ok");
     } catch(e){setOrdersStatus("error");}
   }
