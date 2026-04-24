@@ -1787,6 +1787,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [exportCfg,setExportCfg]=useState({peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000",separar:false});
   const [tabEnvio,setTabEnvio]=useState("empaquetar");
   const [searchEnvios,setSearchEnvios]=useState("");
+  const [searchLibre,setSearchLibre]=useState(false); // buscar en todos los pedidos
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
@@ -1810,9 +1811,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     entregado:  o=>o.estadoEnvio==="Entregado",
   };
   const exportables=useMemo(()=>orders.filter(o=>{
-    if(!TAB_ESTADOS[tabEnvio]?.(o)) return false;
-    if(searchEnvios){const s=searchEnvios.toLowerCase();return o.numero.includes(s)||o.comprador.toLowerCase().includes(s);}
-    return true;
+    if(searchEnvios) {
+      // Búsqueda libre en todos los pedidos
+      const s=searchEnvios.toLowerCase();
+      return o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s);
+    }
+    return TAB_ESTADOS[tabEnvio]?.(o)||false;
   }),[orders,tabEnvio,searchEnvios]);
   const counts=useMemo(()=>({
     cobrar:    orders.filter(o=>o.estadoEnvio==="Por cobrar").length,
@@ -2080,7 +2084,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         {tab==="panel"&&(
           <div>
             {/* Tabs estilo TN */}
-            <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
               {[
                 {id:"cobrar",    label:"Por cobrar",     color:T.orange},
                 {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
@@ -2088,11 +2092,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                 {id:"enviado",   label:"Enviado",        color:T.purple},
                 {id:"entregado", label:"Entregado",      color:T.green},
               ].map(t=>(
-                <button key={t.id} onClick={()=>{setTabEnvio(t.id);setSelected(new Set());}}
-                  style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id?700:500,border:`1.5px solid ${tabEnvio===t.id?t.color:T.border}`,background:tabEnvio===t.id?t.color+"18":T.card,color:tabEnvio===t.id?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
+                <button key={t.id} onClick={()=>{setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");fetchOrders(user?.uid,t.id);}}
+                  style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id&&!searchEnvios?700:500,border:`1.5px solid ${tabEnvio===t.id&&!searchEnvios?t.color:T.border}`,background:tabEnvio===t.id&&!searchEnvios?t.color+"18":T.card,color:tabEnvio===t.id&&!searchEnvios?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:t.color,flexShrink:0}}/>
                   {t.label}
-                  <span style={{background:tabEnvio===t.id?t.color:T.surface,color:tabEnvio===t.id?"#fff":T.textSm,fontSize:12,fontWeight:700,borderRadius:20,padding:"1px 8px",minWidth:22,textAlign:"center"}}>
+                  <span style={{background:tabEnvio===t.id&&!searchEnvios?t.color:T.surface,color:tabEnvio===t.id&&!searchEnvios?"#fff":T.textSm,fontSize:12,fontWeight:700,borderRadius:20,padding:"1px 8px",minWidth:22,textAlign:"center"}}>
                     {counts[t.id]}
                   </span>
                 </button>
@@ -2103,8 +2107,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
               <div style={{position:"relative",flex:"1 1 200px",minWidth:160}}>
                 <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:13}}>🔍</span>
-                <input placeholder="Buscar pedido o cliente..." value={searchEnvios} onChange={e=>setSearchEnvios(e.target.value)} style={{...iS,paddingLeft:30,fontSize:13}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
+                <input placeholder="Buscar en todos los pedidos..." value={searchEnvios} onChange={e=>setSearchEnvios(e.target.value)} style={{...iS,paddingLeft:30,fontSize:13,borderColor:searchEnvios?T.accent:T.inputBorder}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=searchEnvios?T.accent:T.inputBorder}/>
               </div>
+              {(searchEnvios||selected.size>0)&&(
+                <button onClick={()=>{setSearchEnvios("");setSelected(new Set());}} style={{...BtnSecondary(T),fontSize:13,color:T.red,borderColor:T.red+"44"}}>
+                  ✕ Borrar filtros
+                </button>
+              )}
               <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
                 {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
               </button>
@@ -2113,7 +2122,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   ⬇️ Exportar {selected.size} pedido{selected.size!==1?"s":""} para Andreani
                 </button>
               )}
-              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{exportables.length} pedidos</span>
+              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{searchEnvios?`${exportables.length} resultados en todos los pedidos`:`${exportables.length} pedidos`}</span>
             </div>
 
             {exportables.length===0?(
@@ -2816,19 +2825,34 @@ export default function App() {
     } catch(e){}
   }
 
-  async function fetchOrders(uid) {
+  async function fetchOrders(uid, tab) {
     const targetUid = uid || user?.uid;
     if(!targetUid) return;
     setOrdersStatus("loading");
     try {
-      const res=await fetch(`/api/orders?uid=${targetUid}`);
+      const tabParam = tab ? `&tab=${tab}` : "";
+      const res=await fetch(`/api/orders?uid=${targetUid}${tabParam}`);
       const data=await res.json();
       if(!Array.isArray(data)) throw new Error("Bad response");
       const built=buildOrdersFromAPI(data);
-      setOrders(built);
+      // Si es fetch de tab específico, mergear con los orders existentes
+      if(tab) {
+        setOrders(prev => {
+          const prevFiltered = prev.filter(o => o.estadoEnvio !== tabToEstado(tab));
+          const merged = [...prevFiltered, ...built];
+          merged.sort((a,b)=>parseInt(b.numero)-parseInt(a.numero));
+          return merged;
+        });
+      } else {
+        setOrders(built);
+        localStorage.setItem(`soluna_orders_${targetUid}`,JSON.stringify(built));
+      }
       setOrdersStatus("ok");
-      localStorage.setItem(`soluna_orders_${targetUid}`,JSON.stringify(built));
     } catch(e){setOrdersStatus("error");}
+  }
+
+  function tabToEstado(tab) {
+    return {cobrar:"Por cobrar",empaquetar:"Por empaquetar",enviar:"Por enviar",enviado:"Enviado",entregado:"Entregado"}[tab]||"";
   }
 
   // Fetch orders on login — load cache instantly, then refresh in background
