@@ -16,13 +16,12 @@ function initAdmin() {
 const FALLBACK_STORE_ID = "6978415";
 const FALLBACK_TOKEN = "71be8939bf409df5b98caa80e22d7227ad288f82";
 
-// Filtros confirmados contra la API real de TN
 const TAB_PARAMS = {
   cobrar:     "payment_status=pending,partially_paid&status=open",
   empaquetar: "payment_status=paid&shipping_status=unpacked&status=open",
   enviar:     "shipping_status=fulfilled&status=open",
-  enviado:    "shipping_status=shipped",
-  entregado:  "shipping_status=delivered",
+  // buscar: últimos 200 pedidos para búsqueda rápida
+  buscar:     "",
 };
 
 async function fetchPage(storeId, accessToken, extraParams, page, perPage=200) {
@@ -32,7 +31,7 @@ async function fetchPage(storeId, accessToken, extraParams, page, perPage=200) {
   };
   const url = `https://api.tiendanube.com/v1/${storeId}/orders?per_page=${perPage}&page=${page}${extraParams ? "&" + extraParams : ""}`;
   const res = await fetch(url, { headers });
-  if (res.status === 404) return []; // "Last page is 0" = no results
+  if (res.status === 404) return [];
   if (!res.ok) throw new Error(`TN API error ${res.status}`);
   const data = await res.json();
   return Array.isArray(data) ? data : [];
@@ -42,7 +41,6 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
   const first = await fetchPage(storeId, accessToken, extraParams, 1);
   if (first.length === 0 || first.length < 200) return first;
 
-  // Traer páginas restantes en paralelo
   const extras = await Promise.all(
     [2,3,4,5,6,7,8,9,10].map(p =>
       fetchPage(storeId, accessToken, extraParams, p).catch(() => [])
@@ -58,27 +56,11 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
   return all;
 }
 
-async function fetchCount(storeId, accessToken, extraParams) {
-  // Fetch first page with per_page=200 to count
-  // TN doesn't have a count endpoint so we need to paginate
-  const first = await fetchPage(storeId, accessToken, extraParams, 1, 200);
-  if (first.length < 200) return first.length;
-
-  // Need more pages
-  let total = first.length;
-  for (let p = 2; p <= 20; p++) {
-    const page = await fetchPage(storeId, accessToken, extraParams, p, 200);
-    total += page.length;
-    if (page.length < 200) break;
-  }
-  return total;
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
 
-  const { uid, tab, countOnly } = req.query;
+  const { uid, tab, countOnly, q } = req.query;
 
   let storeId = FALLBACK_STORE_ID;
   let accessToken = FALLBACK_TOKEN;
@@ -100,13 +82,33 @@ export default async function handler(req, res) {
   }
 
   try {
-    const extraParams = tab && TAB_PARAMS[tab] ? TAB_PARAMS[tab] : "";
+    // Búsqueda directa por número o nombre
+    if (q) {
+      const headers = {
+        'Authentication': `bearer ${accessToken}`,
+        'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)'
+      };
+      const r = await fetch(
+        `https://api.tiendanube.com/v1/${storeId}/orders?q=${encodeURIComponent(q)}&per_page=20`,
+        { headers }
+      );
+      const data = await r.json();
+      res.status(200).json(Array.isArray(data) ? data : []);
+      return;
+    }
+
+    const extraParams = tab && TAB_PARAMS[tab] !== undefined ? TAB_PARAMS[tab] : "";
 
     if (countOnly === 'true') {
-      // Return minimal array just for counting
-      const count = await fetchCount(storeId, accessToken, extraParams);
-      // Return array of {id} objects so frontend can use .length
-      res.status(200).json(Array.from({length: count}, (_,i) => ({id:i})));
+      const first = await fetchPage(storeId, accessToken, extraParams, 1, 200);
+      res.status(200).json(Array.from({length: first.length}, (_,i) => ({id:i})));
+      return;
+    }
+
+    // Para búsqueda libre solo traer los últimos 200
+    if (tab === 'buscar') {
+      const orders = await fetchPage(storeId, accessToken, "", 1, 200);
+      res.status(200).json(orders);
       return;
     }
 

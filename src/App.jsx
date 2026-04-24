@@ -1791,7 +1791,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [locationModal,setLocationModal]=useState(null);
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
-  const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null,enviado:null,entregado:null});
+  const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null});
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
@@ -1815,9 +1815,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     return orders;
   },[orders,searchEnvios]);
 
-  // Fetch contadores de todos los tabs en paralelo
+  // Fetch contadores de los 3 tabs activos en paralelo
   async function fetchTabCounts(uid) {
-    const tabs=["cobrar","empaquetar","enviar","enviado","entregado"];
+    const tabs=["cobrar","empaquetar","enviar"];
     const results = await Promise.all(
       tabs.map(tab=>
         fetch(`/api/orders?uid=${uid}&tab=${tab}&countOnly=true`)
@@ -1826,10 +1826,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           .catch(()=>0)
       )
     );
-    setTabCounts({
-      cobrar:results[0],empaquetar:results[1],enviar:results[2],
-      enviado:results[3],entregado:results[4]
-    });
+    setTabCounts({cobrar:results[0],empaquetar:results[1],enviar:results[2]});
   }
 
   const counts=tabCounts;
@@ -2249,16 +2246,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         {/* ── PANEL DE ENVIOS ── */}
         {tab==="panel"&&(
           <div>
-            {/* Tabs estilo TN */}
-            <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+            {/* Tabs + Buscador */}
+            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
               {[
                 {id:"cobrar",    label:"Por cobrar",     color:T.orange},
                 {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
                 {id:"enviar",    label:"Por enviar",     color:T.blue},
-                {id:"enviado",   label:"Enviado",        color:T.purple},
-                {id:"entregado", label:"Entregado",      color:T.green},
               ].map(t=>(
-                <button key={t.id} onClick={()=>{setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");fetchOrders(user?.uid,t.id).then(()=>fetchTabCounts(user?.uid));}}
+                <button key={t.id} onClick={()=>{setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");fetchOrders(user?.uid,t.id);fetchTabCounts(user?.uid);}}
                   style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id&&!searchEnvios?700:500,border:`1.5px solid ${tabEnvio===t.id&&!searchEnvios?t.color:T.border}`,background:tabEnvio===t.id&&!searchEnvios?t.color+"18":T.card,color:tabEnvio===t.id&&!searchEnvios?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:t.color,flexShrink:0}}/>
                   {t.label}
@@ -2267,19 +2262,44 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   </span>
                 </button>
               ))}
-            </div>
-
-            {/* Buscador y acciones */}
-            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
-              <div style={{position:"relative",flex:"1 1 200px",minWidth:160}}>
-                <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:13}}>🔍</span>
-                <input placeholder="Buscar en todos los pedidos..." value={searchEnvios} onChange={e=>setSearchEnvios(e.target.value)} style={{...iS,paddingLeft:30,fontSize:13,borderColor:searchEnvios?T.accent:T.inputBorder}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=searchEnvios?T.accent:T.inputBorder}/>
+              {/* Buscador global - busca en TODOS los pedidos */}
+              <div style={{position:"relative",flex:"1 1 220px",minWidth:180}}>
+                <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:searchEnvios?T.accent:T.textSm,fontSize:13}}>🔍</span>
+                <input
+                  placeholder="Buscar pedido por número o nombre..."
+                  value={searchEnvios}
+                  onChange={async e=>{
+                    const val=e.target.value;
+                    setSearchEnvios(val);
+                    if(val.trim().length>=2){
+                      // Buscar directamente en TN API
+                      try{
+                        const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(val.trim())}`);
+                        const data=await r.json();
+                        if(Array.isArray(data)){
+                          const built=buildOrdersFromAPI(data);
+                          setOrders(built);
+                        }
+                      }catch(e){}
+                    } else if(val.trim().length===0){
+                      // Volver al tab activo
+                      fetchOrders(user?.uid,tabEnvio);
+                    }
+                  }}
+                  style={{...iS,paddingLeft:32,fontSize:13,borderColor:searchEnvios?T.accent:T.inputBorder}}
+                  onFocus={e=>e.target.style.borderColor=T.accent}
+                  onBlur={e=>e.target.style.borderColor=searchEnvios?T.accent:T.inputBorder}
+                />
               </div>
-              {(searchEnvios||selected.size>0)&&(
-                <button onClick={()=>{setSearchEnvios("");setSelected(new Set());}} style={{...BtnSecondary(T),fontSize:13,color:T.red,borderColor:T.red+"44"}}>
-                  ✕ Borrar filtros
+              {searchEnvios&&(
+                <button onClick={()=>{setSearchEnvios("");setSelected(new Set());fetchOrders(user?.uid,tabEnvio);}} style={{...BtnSecondary(T),fontSize:13,color:T.red,borderColor:T.red+"44",flexShrink:0}}>
+                  ✕ Limpiar
                 </button>
               )}
+            </div>
+
+            {/* Acciones */}
+            <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
               <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
                 {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
               </button>
@@ -2288,7 +2308,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   ⬇️ Exportar {selected.size} pedido{selected.size!==1?"s":""} para Andreani
                 </button>
               )}
-              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{searchEnvios?`${exportables.length} resultados en todos los pedidos`:`${exportables.length} pedidos`}</span>
+              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>
+                {searchEnvios?`${exportables.length} resultados`:`${exportables.length} pedidos`}
+              </span>
             </div>
 
             {exportables.length===0?(
