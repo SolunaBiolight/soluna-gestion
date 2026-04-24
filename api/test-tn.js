@@ -16,36 +16,23 @@ export default async function handler(req, res) {
   const { storeId, accessToken } = tnStore;
   const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
 
-  const numbers = [1847, 1867, 1869];
-  const orders = {};
-  for (const num of numbers) {
-    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${num}&per_page=3`, { headers });
-    const data = await r.json();
-    const o = Array.isArray(data) ? data.find(o => o.number === num) : null;
-    orders[num] = o ? {
-      status: o.status,
-      payment_status: o.payment_status,
-      shipping_status: o.shipping_status,
-      fulfillments: o.fulfillments?.map(f => ({ status: f.status, shipping: f.shipping?.option?.name })) || [],
-    } : "not found";
-  }
+  // Traer paid+open y filtrar los PACKED en backend
+  const r = await fetch(
+    `https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&status=open&per_page=200`,
+    { headers }
+  );
+  const orders = await r.json();
+  
+  if (!Array.isArray(orders)) return res.json({ error: orders });
 
-  // Test all shipping_status values that might match
-  const tests = {
-    "fulfilled+open":    "shipping_status=fulfilled&status=open&per_page=10",
-    "unshipped+open":    "shipping_status=unshipped&status=open&per_page=10",
-    "packed+open":       "shipping_status=packed&status=open&per_page=10",
-    "ready_to_ship":     "shipping_status=ready_to_ship&per_page=10",
-    "label_purchased":   "shipping_status=label_purchased&per_page=10",
-    "awaiting_pickup":   "shipping_status=awaiting_pickup&per_page=10",
-    "booked":            "shipping_status=booked&per_page=10",
-  };
-  const filters = {};
-  for (const [key, params] of Object.entries(tests)) {
-    const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?${params}`, { headers });
-    const d = await r.json();
-    filters[key] = Array.isArray(d) ? { count: d.length, numbers: d.map(o=>o.number) } : { error: d?.message || d?.code };
-  }
+  const packed = orders.filter(o => o.fulfillments?.some(f => f.status === 'PACKED'));
+  const unpacked = orders.filter(o => !o.fulfillments?.some(f => f.status === 'PACKED'));
 
-  res.json({ orders, filters });
+  res.json({
+    total_paid_open: orders.length,
+    por_enviar_PACKED: packed.length,
+    packed_numbers: packed.map(o => o.number),
+    por_empaquetar_rest: unpacked.length,
+    sample_unpacked: unpacked.slice(0,3).map(o=>({number:o.number,shipping_status:o.shipping_status,fulfillments:o.fulfillments?.map(f=>f.status)})),
+  });
 }
