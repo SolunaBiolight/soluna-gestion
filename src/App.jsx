@@ -2835,24 +2835,10 @@ export default function App() {
       const data=await res.json();
       if(!Array.isArray(data)) throw new Error("Bad response");
       const built=buildOrdersFromAPI(data);
-      // Si es fetch de tab específico, mergear con los orders existentes
-      if(tab) {
-        setOrders(prev => {
-          const prevFiltered = prev.filter(o => o.estadoEnvio !== tabToEstado(tab));
-          const merged = [...prevFiltered, ...built];
-          merged.sort((a,b)=>parseInt(b.numero)-parseInt(a.numero));
-          return merged;
-        });
-      } else {
-        setOrders(built);
-        localStorage.setItem(`soluna_orders_${targetUid}`,JSON.stringify(built));
-      }
+      // Siempre reemplazar completamente — nunca mergear
+      setOrders(built);
       setOrdersStatus("ok");
     } catch(e){setOrdersStatus("error");}
-  }
-
-  function tabToEstado(tab) {
-    return {cobrar:"Por cobrar",empaquetar:"Por empaquetar",enviar:"Por enviar",enviado:"Enviado",entregado:"Entregado"}[tab]||"";
   }
 
   // Fetch orders on login — fetch empaquetar tab por defecto

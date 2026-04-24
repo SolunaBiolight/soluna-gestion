@@ -16,8 +16,14 @@ function initAdmin() {
 const FALLBACK_STORE_ID = "6978415";
 const FALLBACK_TOKEN = "71be8939bf409df5b98caa80e22d7227ad288f82";
 
-// Mapeo exacto de tabs TN → parámetros confirmados por la API
-// La API acepta múltiples valores separados por coma en un solo parámetro
+// Filtros exactos confirmados mirando la UI de TN:
+// Por cobrar     → Pago pendiente + Pago parcialmente recibido
+// Por empaquetar → Pago recibido + Pago parcialmente recibido + Pago parcialmente reembolsado
+//                  + Por empaquetar + Parcialmente empaquetadas
+// Por enviar     → Pago recibido + Pago parcialmente reembolsado
+//                  + Por enviar + Parcialmente enviadas
+// Enviado        → shipping_status=shipped
+// Entregado      → shipping_status=delivered
 const TAB_PARAMS = {
   cobrar:     "payment_status=pending,partially_paid",
   empaquetar: "payment_status=paid,partially_paid,partially_refunded&shipping_status=unpacked,partially_shipped",
@@ -36,6 +42,10 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
     `https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&page=${page}${extraParams ? "&" + extraParams : ""}`;
 
   const firstRes = await fetch(buildUrl(1), { headers });
+  if (!firstRes.ok) {
+    const err = await firstRes.json().catch(() => ({}));
+    throw new Error(`TN API error ${firstRes.status}: ${err.message || "Unknown"}`);
+  }
   const firstData = await firstRes.json();
   if (!Array.isArray(firstData) || firstData.length === 0) return [];
   if (firstData.length < 200) return firstData;
