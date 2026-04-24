@@ -1788,9 +1788,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [tabEnvio,setTabEnvio]=useState("empaquetar");
   const [searchEnvios,setSearchEnvios]=useState("");
   const [searchLibre,setSearchLibre]=useState(false);
-  const [locationModal,setLocationModal]=useState(null); // {order, locs, resolve}
+  const [locationModal,setLocationModal]=useState(null);
   const [locSearch,setLocSearch]=useState("");
-  const [locSearchType,setLocSearchType]=useState("ciudad"); // ciudad|cp|calle
+  const [locSearchType,setLocSearchType]=useState("ciudad");
+  const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null,enviado:null,entregado:null});
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
@@ -1805,29 +1806,33 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [trackingSent,setTrackingSent]=useState({});
   const iS=InputStyle(T);
 
-  // Pedidos exportables — filtrados por tab estilo TN
-  const TAB_ESTADOS={
-    cobrar:     o=>o.estadoEnvio==="Por cobrar",
-    empaquetar: o=>o.estadoEnvio==="Por empaquetar",
-    enviar:     o=>o.estadoEnvio==="Por enviar",
-    enviado:    o=>o.estadoEnvio==="Enviado",
-    entregado:  o=>o.estadoEnvio==="Entregado",
-  };
-  const exportables=useMemo(()=>orders.filter(o=>{
-    if(searchEnvios) {
-      // Búsqueda libre en todos los pedidos
+  // Pedidos exportables — la API ya filtra por tab, solo aplicar búsqueda si hay texto
+  const exportables=useMemo(()=>{
+    if(searchEnvios){
       const s=searchEnvios.toLowerCase();
-      return o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s);
+      return orders.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
     }
-    return TAB_ESTADOS[tabEnvio]?.(o)||false;
-  }),[orders,tabEnvio,searchEnvios]);
-  const counts=useMemo(()=>({
-    cobrar:    orders.filter(o=>o.estadoEnvio==="Por cobrar").length,
-    empaquetar:orders.filter(o=>o.estadoEnvio==="Por empaquetar").length,
-    enviar:    orders.filter(o=>o.estadoEnvio==="Por enviar").length,
-    enviado:   orders.filter(o=>o.estadoEnvio==="Enviado").length,
-    entregado: orders.filter(o=>o.estadoEnvio==="Entregado").length,
-  }),[orders]);
+    return orders;
+  },[orders,searchEnvios]);
+
+  // Fetch contadores de todos los tabs en paralelo
+  async function fetchTabCounts(uid) {
+    const tabs=["cobrar","empaquetar","enviar","enviado","entregado"];
+    const results = await Promise.all(
+      tabs.map(tab=>
+        fetch(`/api/orders?uid=${uid}&tab=${tab}&countOnly=true`)
+          .then(r=>r.json())
+          .then(d=>Array.isArray(d)?d.length:0)
+          .catch(()=>0)
+      )
+    );
+    setTabCounts({
+      cobrar:results[0],empaquetar:results[1],enviar:results[2],
+      enviado:results[3],entregado:results[4]
+    });
+  }
+
+  const counts=tabCounts;
 
   function toggleSelect(num){setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});}
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
@@ -2063,6 +2068,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+total+'" uniqueCount="'+total+'">'+newSsItems+'</sst>');
     return zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
   }
+  // Fetch tab counts on mount
+  useEffect(()=>{ if(user?.uid){ fetchTabCounts(user.uid); } },[]);
+
   const locationOverridesRef=useRef({}); // domicilio: {numero: "PROV / LOC / CP"}
   const sucursalOverridesRef=useRef({});  // sucursal: {numero: "NOMBRE SUCURSAL"}
 
@@ -2219,7 +2227,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             <span style={{color:T.textSm,fontSize:15}}>/</span>
             <span style={{fontWeight:700,fontSize:15,color:T.text}}>🚚 Envíos</span>
           </div>
-          <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>
+          <button onClick={()=>{fetchOrders(user?.uid,tabEnvio);fetchTabCounts(user?.uid);}} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>
             {ordersStatus==="loading"?"⟳ Sincronizando...":"⟳ Sincronizar"}
           </button>
         </div>
@@ -2250,12 +2258,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                 {id:"enviado",   label:"Enviado",        color:T.purple},
                 {id:"entregado", label:"Entregado",      color:T.green},
               ].map(t=>(
-                <button key={t.id} onClick={()=>{setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");fetchOrders(user?.uid,t.id);}}
+                <button key={t.id} onClick={()=>{setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");fetchOrders(user?.uid,t.id).then(()=>fetchTabCounts(user?.uid));}}
                   style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id&&!searchEnvios?700:500,border:`1.5px solid ${tabEnvio===t.id&&!searchEnvios?t.color:T.border}`,background:tabEnvio===t.id&&!searchEnvios?t.color+"18":T.card,color:tabEnvio===t.id&&!searchEnvios?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:t.color,flexShrink:0}}/>
                   {t.label}
                   <span style={{background:tabEnvio===t.id&&!searchEnvios?t.color:T.surface,color:tabEnvio===t.id&&!searchEnvios?"#fff":T.textSm,fontSize:12,fontWeight:700,borderRadius:20,padding:"1px 8px",minWidth:22,textAlign:"center"}}>
-                    {counts[t.id]}
+                    {counts[t.id]===null?"•":counts[t.id]}
                   </span>
                 </button>
               ))}

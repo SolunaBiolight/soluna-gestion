@@ -91,6 +91,15 @@ export default async function handler(req, res) {
 
   try {
     const extraParams = tab && TAB_PARAMS[tab] ? TAB_PARAMS[tab] : "";
+
+    // countOnly: fetch all pages but just to get total count
+    // We still need all pages to get accurate count, but we return minimal data
+    if (req.query.countOnly === 'true') {
+      const orders = await fetchAllPages(storeId, accessToken, extraParams);
+      res.status(200).json(orders.map(o => ({ id: o.id, number: o.number })));
+      return;
+    }
+
     const orders = await fetchAllPages(storeId, accessToken, extraParams);
     res.status(200).json(orders);
   } catch(e) {
