@@ -3113,7 +3113,7 @@ export default function App() {
       if(prevTnRef.current!==null && prevTnRef.current!==newId) {
         try{ localStorage.removeItem(`soluna_orders_${user.uid}`); }catch(e){}
         setOrders([]);
-        fetchOrders(user.uid);
+        fetchOrders(user.uid, "empaquetar");
       }
       prevTnRef.current=newId;
     });

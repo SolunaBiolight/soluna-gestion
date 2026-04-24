@@ -25,38 +25,32 @@ const TAB_PARAMS = {
   entregado:  "shipping_status=delivered",
 };
 
-async function fetchAllPages(storeId, accessToken, extraParams = "") {
+async function fetchPage(storeId, accessToken, extraParams, page, perPage=200) {
   const headers = {
     'Authentication': `bearer ${accessToken}`,
     'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)'
   };
+  const url = `https://api.tiendanube.com/v1/${storeId}/orders?per_page=${perPage}&page=${page}${extraParams ? "&" + extraParams : ""}`;
+  const res = await fetch(url, { headers });
+  if (res.status === 404) return []; // "Last page is 0" = no results
+  if (!res.ok) throw new Error(`TN API error ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
 
-  const buildUrl = (page) =>
-    `https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&page=${page}${extraParams ? "&" + extraParams : ""}`;
-
-  const firstRes = await fetch(buildUrl(1), { headers });
-  if (!firstRes.ok) {
-    const err = await firstRes.json().catch(() => ({}));
-    // 404 "Last page is 0" = no results, not an error
-    if (firstRes.status === 404) return [];
-    throw new Error(`TN API error ${firstRes.status}: ${err.message || "Unknown"}`);
-  }
-  const firstData = await firstRes.json();
-  if (!Array.isArray(firstData) || firstData.length === 0) return [];
-  if (firstData.length < 200) return firstData;
+async function fetchAllPages(storeId, accessToken, extraParams = "") {
+  const first = await fetchPage(storeId, accessToken, extraParams, 1);
+  if (first.length === 0 || first.length < 200) return first;
 
   // Traer páginas restantes en paralelo
-  const extraPages = await Promise.all(
+  const extras = await Promise.all(
     [2,3,4,5,6,7,8,9,10].map(p =>
-      fetch(buildUrl(p), { headers })
-        .then(r => r.ok ? r.json() : [])
-        .then(d => Array.isArray(d) ? d : [])
-        .catch(() => [])
+      fetchPage(storeId, accessToken, extraParams, p).catch(() => [])
     )
   );
 
-  let all = [...firstData];
-  for (const page of extraPages) {
+  let all = [...first];
+  for (const page of extras) {
     if (page.length === 0) break;
     all = all.concat(page);
     if (page.length < 200) break;
@@ -64,11 +58,27 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
   return all;
 }
 
+async function fetchCount(storeId, accessToken, extraParams) {
+  // Fetch first page with per_page=200 to count
+  // TN doesn't have a count endpoint so we need to paginate
+  const first = await fetchPage(storeId, accessToken, extraParams, 1, 200);
+  if (first.length < 200) return first.length;
+
+  // Need more pages
+  let total = first.length;
+  for (let p = 2; p <= 20; p++) {
+    const page = await fetchPage(storeId, accessToken, extraParams, p, 200);
+    total += page.length;
+    if (page.length < 200) break;
+  }
+  return total;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
 
-  const { uid, tab } = req.query;
+  const { uid, tab, countOnly } = req.query;
 
   let storeId = FALLBACK_STORE_ID;
   let accessToken = FALLBACK_TOKEN;
@@ -92,11 +102,11 @@ export default async function handler(req, res) {
   try {
     const extraParams = tab && TAB_PARAMS[tab] ? TAB_PARAMS[tab] : "";
 
-    // countOnly: fetch all pages but just to get total count
-    // We still need all pages to get accurate count, but we return minimal data
-    if (req.query.countOnly === 'true') {
-      const orders = await fetchAllPages(storeId, accessToken, extraParams);
-      res.status(200).json(orders.map(o => ({ id: o.id, number: o.number })));
+    if (countOnly === 'true') {
+      // Return minimal array just for counting
+      const count = await fetchCount(storeId, accessToken, extraParams);
+      // Return array of {id} objects so frontend can use .length
+      res.status(200).json(Array.from({length: count}, (_,i) => ({id:i})));
       return;
     }
 
