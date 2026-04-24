@@ -1839,34 +1839,37 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     const res=await fetch('/andreani_template.xlsx');
     if(!res.ok) throw new Error("No se pudo cargar el template de Andreani");
     const buf=await res.arrayBuffer();
-    // Leer sharedStrings del xlsx (es un zip)
     if(!window.JSZip){await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});}
     const zip=await window.JSZip.loadAsync(buf);
     const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
     const strings=[];
     const rx=/<t[^>]*>([\s\S]*?)<\/t>/g;
     let m;while((m=rx.exec(ssXml))!==null)strings.push(m[1]);
-    // Filtrar solo las que tienen formato PROVINCIA / LOCALIDAD / CP
+
+    // Localidades domicilio: PROVINCIA / LOCALIDAD / CP
     const locPattern=/^[A-ZÁÉÍÓÚÑÜ\s]+ \/ [A-ZÁÉÍÓÚÑÜ\s0-9]+ \/ \d+$/;
     const list=strings.filter(s=>locPattern.test(s.trim()));
-    // Índice por CP
     const cpIndex={};
     list.forEach(loc=>{
       const parts=loc.split(' / ');
-      if(parts.length===3){
-        const cp=parts[2].trim();
-        if(!cpIndex[cp])cpIndex[cp]=[];
-        cpIndex[cp].push(loc);
-      }
+      if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}
     });
-    // Índice por provincia
     const provIndex={};
     list.forEach(loc=>{
       const prov=loc.split(' / ')[0].trim();
       if(!provIndex[prov])provIndex[prov]=[];
       provIndex[prov].push(loc);
     });
-    andreaniLocsRef.current={list,cpIndex,provIndex};
+
+    // Sucursales: leer col A de sheet4 (Configuracion!A2:A2552)
+    const sheet4Xml=await zip.file('xl/worksheets/sheet4.xml').async('string');
+    const aCells=[...sheet4Xml.matchAll(/<c r="A(\d+)"[^>]*t="s"[^>]*><v>(\d+)<\/v>/g)];
+    const sucursales=aCells
+      .map(([,row,idx])=>strings[parseInt(idx)]||"")
+      .filter(s=>s.trim()&&s!=="Sucursal");
+
+    // Índice de sucursales para búsqueda rápida
+    andreaniLocsRef.current={list,cpIndex,provIndex,sucursales};
     return andreaniLocsRef.current;
   }
   function findAndreaniLocation(locs,cp,provincia,localidad) {
@@ -1906,6 +1909,27 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     if(type==="calle") return locs.list.filter(l=>l.toUpperCase().includes(q)).slice(0,20);
     return [];
   }
+
+  function findAndreaniSucursal(locs, direccion) {
+    if(!locs.sucursales||!direccion) return null;
+    const dirU=direccion.toUpperCase().trim();
+    // Exact match
+    const exact=locs.sucursales.find(s=>s.toUpperCase()===dirU);
+    if(exact) return exact;
+    // Partial match — buscar por palabras clave de la dirección
+    const words=dirU.replace(/[^A-Z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>3);
+    for(const word of words){
+      const match=locs.sucursales.find(s=>s.toUpperCase().includes(word));
+      if(match) return match;
+    }
+    return null; // no match — mostrar modal
+  }
+
+  function searchSucursales(locs, query) {
+    if(!query||query.length<2||!locs.sucursales) return [];
+    const q=query.toUpperCase().trim();
+    return locs.sucursales.filter(s=>s.toUpperCase().includes(q)).slice(0,25);
+  }
   async function generateAndreaniXlsx(ordersData,locs,cfgOverride) {
     if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
     const tRes=await fetch('/andreani_template.xlsx');
@@ -1934,18 +1958,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     const domicilioOrders=ordersData.filter(o=>!isSucursal(o));
     const sucursalOrders=ordersData.filter(o=>isSucursal(o));
 
-    function buildRowsXml(ords, startRow){
+    function getPersonData(o){
+      const partes=o.comprador.trim().split(' ');
+      const nombre=cleanField(partes[0]||"");
+      const apellido=cleanField(partes.slice(1).join(' ')||"");
+      const tel=(o.telefono||"").replace(/[^0-9]/g,'');
+      const clean=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
+      let telCod='',telNum='';
+      if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
+      else if(clean.length>0){telNum=clean;}
+      return {nombre,apellido,telCod,telNum};
+    }
+
+    // Sheet1: envíos a domicilio
+    function buildDomicilioRowsXml(ords, startRow){
       let xml='';
       ords.forEach(function(o,i){
         const rn=startRow+i;
-        const partes=o.comprador.trim().split(' ');
-        const nombre=cleanField(partes[0]||"");
-        const apellido=cleanField(partes.slice(1).join(' ')||"");
-        const tel=(o.telefono||"").replace(/[^0-9]/g,'');
-        const clean=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
-        let telCod='',telNum='';
-        if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
-        else if(clean.length>0){telNum=clean;}
+        const {nombre,apellido,telCod,telNum}=getPersonData(o);
         const ubicacion=locationOverridesRef.current[o.numero]||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
         const dirNum=String(o.dirNumero||"");
         const direccion=cleanField(o.direccion||"");
@@ -1975,8 +2005,36 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       return xml;
     }
 
-    const domRowsXml=buildRowsXml(domicilioOrders,3);
-    const sucRowsXml=buildRowsXml(sucursalOrders,3);
+    // Sheet2: envíos a sucursal — col N = nombre sucursal (sin O,P,Q,R,S)
+    function buildSucursalRowsXml(ords, startRow){
+      let xml='';
+      ords.forEach(function(o,i){
+        const rn=startRow+i;
+        const {nombre,apellido,telCod,telNum}=getPersonData(o);
+        const sucursal=sucursalOverridesRef.current[o.numero]||findAndreaniSucursal(locs,o.direccion)||"";
+        const cells=[
+          sC('A'+rn,""),
+          nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
+          nC('C'+rn,parseInt(cfg&&cfg.alto)||5),
+          nC('D'+rn,parseInt(cfg&&cfg.ancho)||5),
+          nC('E'+rn,parseInt(cfg&&cfg.prof)||5),
+          nC('F'+rn,parseInt(cfg&&cfg.valor)||6000),
+          sC('G'+rn,'#'+o.numero),
+          sC('H'+rn,nombre),
+          sC('I'+rn,apellido),
+          (o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),
+          sC('K'+rn,cleanField(o.email||"")),
+          telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
+          telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
+          sC('N'+rn,sucursal),
+        ].join('');
+        xml+='<row r="'+rn+'" spans="1:14" x14ac:dyDescent="0.25">'+cells+'</row>';
+      });
+      return xml;
+    }
+
+    const domRowsXml=buildDomicilioRowsXml(domicilioOrders,3);
+    const sucRowsXml=buildSucursalRowsXml(sucursalOrders,3);
 
     // Update sheet1 (domicilio)
     const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
@@ -2005,8 +2063,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+total+'" uniqueCount="'+total+'">'+newSsItems+'</sst>');
     return zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
   }
-  // locationOverrides: {orderNumero: ubicacionString}
-  const locationOverridesRef=useRef({});
+  const locationOverridesRef=useRef({}); // domicilio: {numero: "PROV / LOC / CP"}
+  const sucursalOverridesRef=useRef({});  // sucursal: {numero: "NOMBRE SUCURSAL"}
+
+  function isSucursalOrder(o) {
+    const dir=(o.direccion||"").toUpperCase();
+    return dir.includes('PUNTO ANDREANI')||dir.includes('HOP ')||dir.includes('SUCURSAL ')||dir.includes('ANDREANI ');
+  }
 
   async function exportAndreani() {
     const selOrders=exportables.filter(o=>selected.has(o.numero));
@@ -2015,49 +2078,53 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     await new Promise(r=>setTimeout(r,100));
     try {
       const locs=await loadAndreaniLocations();
+      const domicilioOrders=selOrders.filter(o=>!isSucursalOrder(o));
+      const sucursalOrders=selOrders.filter(o=>isSucursalOrder(o));
 
-      // Check for unresolved locations
-      const unresolved=[];
-      for(const o of selOrders){
-        if(locationOverridesRef.current[o.numero]) continue;
-        const loc=findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
-        if(!loc) unresolved.push(o);
-      }
+      // Check unresolved domicilios
+      const unresolvedDom=domicilioOrders.filter(o=>{
+        if(locationOverridesRef.current[o.numero]) return false;
+        return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
+      });
 
-      if(unresolved.length>0){
+      // Check unresolved sucursales
+      const unresolvedSuc=sucursalOrders.filter(o=>{
+        if(sucursalOverridesRef.current[o.numero]) return false;
+        return !findAndreaniSucursal(locs,o.direccion);
+      });
+
+      if(unresolvedDom.length>0||unresolvedSuc.length>0){
         setExporting(false);
-        // Show modal for first unresolved
-        await resolveLocationsSequentially(unresolved,locs);
+        await resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs);
         return;
       }
 
       const date=new Date().toISOString().split('T')[0];
-      if(exportCfg.separar){
-        const b1=await generateAndreaniXlsx(selOrders,locs);
-        const a1=document.createElement('a');a1.href=URL.createObjectURL(b1);a1.download='EnvioMasivoExcelPaquetes-domicilio-'+date+'.xlsx';a1.click();
-        await new Promise(r=>setTimeout(r,600));
-        const b2=await generateAndreaniXlsx([],locs);
-        const a2=document.createElement('a');a2.href=URL.createObjectURL(b2);a2.download='EnvioMasivoExcelPaquetes-sucursal-'+date+'.xlsx';a2.click();
-      } else {
-        const b=await generateAndreaniXlsx(selOrders,locs);
-        const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';a.click();
-      }
+      const b=await generateAndreaniXlsx(selOrders,locs);
+      const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';a.click();
       setExportModal(false);setSelected(new Set());
-      locationOverridesRef.current={};
+      locationOverridesRef.current={};sucursalOverridesRef.current={};
     } catch(e){alert("Error al exportar: "+e.message);}
     setExporting(false);
   }
 
-  async function resolveLocationsSequentially(unresolvedOrders,locs) {
-    for(const o of unresolvedOrders){
+  async function resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs) {
+    for(const o of unresolvedDom){
       const chosen=await new Promise(resolve=>{
-        setLocationModal({order:o,locs,resolve});
+        setLocationModal({order:o,locs,resolve,type:"domicilio"});
         setLocSearch("");setLocSearchType("ciudad");
       });
-      if(chosen===null) return; // user cancelled
+      if(chosen===null) return;
       locationOverridesRef.current[o.numero]=chosen;
     }
-    // All resolved — re-trigger export
+    for(const o of unresolvedSuc){
+      const chosen=await new Promise(resolve=>{
+        setLocationModal({order:o,locs,resolve,type:"sucursal"});
+        setLocSearch("");setLocSearchType("ciudad");
+      });
+      if(chosen===null) return;
+      sucursalOverridesRef.current[o.numero]=chosen;
+    }
     setExportModal(true);
     setTimeout(()=>exportAndreani(),100);
   }
@@ -2381,41 +2448,60 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         )}
       </div>
 
-      {/* Location Resolution Modal */}
-      <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);}}} title="Confirmar localidad Andreani" width={560}>
+      {/* Location / Sucursal Resolution Modal */}
+      <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);}}} title={locationModal?.type==="sucursal"?"Confirmar sucursal Andreani":"Confirmar localidad Andreani"} width={560}>
         {locationModal&&(()=>{
-          const {order,locs,resolve}=locationModal;
-          const results=searchAndreaniLocations(locs,locSearch,locSearchType);
+          const {order,locs,resolve,type}=locationModal;
+          const isSuc=type==="sucursal";
+          const results=isSuc?searchSucursales(locs,locSearch):searchAndreaniLocations(locs,locSearch,locSearchType);
           return (
             <div>
               <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:4}}>⚠ No se encontró la localidad exacta</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:4}}>
+                  ⚠ {isSuc?"No se encontró la sucursal exacta":"No se encontró la localidad exacta"}
+                </div>
                 <div style={{fontSize:13,color:T.text}}>Pedido <strong>#{order.numero}</strong> — {order.comprador}</div>
-                <div style={{fontSize:12,color:T.textSm,marginTop:3}}>{order.direccion} {order.dirNumero}, {order.localidad||order.ciudad}, {order.provincia} — CP {order.cp}</div>
+                <div style={{fontSize:12,color:T.textSm,marginTop:3}}>
+                  {isSuc?order.direccion:`${order.direccion} ${order.dirNumero}, ${order.localidad||order.ciudad}, ${order.provincia} — CP ${order.cp}`}
+                </div>
               </div>
               <div style={{marginBottom:14}}>
-                <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Buscar localidad Andreani</div>
-                <div style={{display:"flex",gap:6,marginBottom:10}}>
-                  {["ciudad","cp","calle"].map(t=>(
-                    <button key={t} onClick={()=>{setLocSearchType(t);setLocSearch("");}}
-                      style={{padding:"6px 14px",fontSize:12,fontWeight:locSearchType===t?700:400,borderRadius:8,border:`1.5px solid ${locSearchType===t?T.accentSolid:T.border}`,background:locSearchType===t?T.accentSolid:"transparent",color:locSearchType===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textTransform:"capitalize"}}>
-                      {t==="cp"?"Código Postal":t==="ciudad"?"Ciudad":"Calle"}
-                    </button>
-                  ))}
+                <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
+                  {isSuc?"Buscar sucursal Andreani":"Buscar localidad Andreani"}
                 </div>
+                {!isSuc&&(
+                  <div style={{display:"flex",gap:6,marginBottom:10}}>
+                    {["ciudad","cp","calle"].map(t=>(
+                      <button key={t} onClick={()=>{setLocSearchType(t);setLocSearch("");}}
+                        style={{padding:"6px 14px",fontSize:12,fontWeight:locSearchType===t?700:400,borderRadius:8,border:`1.5px solid ${locSearchType===t?T.accentSolid:T.border}`,background:locSearchType===t?T.accentSolid:"transparent",color:locSearchType===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textTransform:"capitalize"}}>
+                        {t==="cp"?"Código Postal":t==="ciudad"?"Ciudad":"Calle"}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <input
                   autoFocus
                   style={{...InputStyle(T),fontSize:14,marginBottom:10}}
-                  placeholder={locSearchType==="cp"?"Ej: 1712":locSearchType==="ciudad"?"Ej: Córdoba, Rosario...":"Ej: San Martín..."}
+                  placeholder={isSuc?"Ej: BELGRANO, MONROE, HOP...":locSearchType==="cp"?"Ej: 1712":locSearchType==="ciudad"?"Ej: Córdoba, Rosario...":"Ej: San Martín..."}
                   value={locSearch}
                   onChange={e=>setLocSearch(e.target.value)}
                 />
                 {results.length>0&&(
-                  <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,maxHeight:240,overflow:"auto"}}>
-                    {results.map((loc,i)=>{
-                      const parts=loc.split(' / ');
+                  <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,maxHeight:280,overflow:"auto"}}>
+                    {results.map((item,i)=>{
+                      if(isSuc){
+                        return (
+                          <div key={i} onClick={()=>{resolve(item);setLocationModal(null);}}
+                            style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
+                            onMouseEnter={e=>e.currentTarget.style.background=T.card}
+                            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{item}</div>
+                          </div>
+                        );
+                      }
+                      const parts=item.split(' / ');
                       return (
-                        <div key={i} onClick={()=>{resolve(loc);setLocationModal(null);}}
+                        <div key={i} onClick={()=>{resolve(item);setLocationModal(null);}}
                           style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
                           onMouseEnter={e=>e.currentTarget.style.background=T.card}
                           onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -2435,8 +2521,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
               <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
                 <button onClick={()=>{resolve(null);setLocationModal(null);}} style={{...BtnSecondary(T),fontSize:13}}>Cancelar exportación</button>
                 <button onClick={()=>{
-                  // Skip this order - use first valid location as fallback
-                  const fallback=locs.list.find(l=>l.startsWith((order.provincia||"BUENOS AIRES").toUpperCase()))||locs.list[0];
+                  const fallback=isSuc?(locs.sucursales[0]||""):(locs.list.find(l=>l.startsWith((order.provincia||"BUENOS AIRES").toUpperCase()))||locs.list[0]||"");
                   resolve(fallback);setLocationModal(null);
                 }} style={{...BtnDanger(T),fontSize:13}}>Usar primera disponible</button>
               </div>
