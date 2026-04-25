@@ -1473,7 +1473,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
 
   const emptyForm=()=>({
     _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"",
-    producto:"", estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
+    productos:[], producto:"", estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
     fechaEnvio:"", fechaPublicacion:"",
     foto:"", nicho:"",
     contenido: ACTIVIDADES.map(tipo=>({tipo, acordados:0, entregados:0})),
@@ -1489,7 +1489,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
       const p={
         influencer:form.influencer, usuario:form.usuario||"", red:form.red,
         seguidores:form.seguidores||"", email:form.email||"", telefono:form.telefono||"",
-        producto:form.producto||"", estado:form.estado, tracking:form.tracking||"",
+        productos:form.productos||[], producto:(form.productos&&form.productos[0])||form.producto||"", estado:form.estado, tracking:form.tracking||"",
         notas:form.notas||"", linkContenido:form.linkContenido||"",
         fechaEnvio:form.fechaEnvio||"", fechaPublicacion:form.fechaPublicacion||"",
         foto:form.foto||"", nicho:form.nicho||"",
@@ -1815,7 +1815,23 @@ function AppCanjes({T, fbStatus, user, onHome}) {
               <Field T={T} label="Red social"><select style={iS} value={form.red} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>{REDES.map(r=><option key={r}>{r}</option>)}</select></Field>
               <Field T={T} label="Nicho"><select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}><option value="">—</option>{NICHOS.map(n=><option key={n}>{n}</option>)}</select></Field>
               <Field T={T} label="Seguidores"><input style={iS} type="number" value={form.seguidores} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></Field>
-              <Field T={T} label="Producto"><select style={iS} value={form.producto} onChange={e=>setForm(f=>({...f,producto:e.target.value}))}><option value="">—</option>{PRODUCTOS_CANJE.map(p=><option key={p}>{p}</option>)}</select></Field>
+              {/* Productos múltiples */}
+              <Field T={T} label="Productos enviados">
+                <div>
+                  {(form.productos&&form.productos.length>0?form.productos:[form.producto||""]).map((prod,idx)=>(
+                    <div key={idx} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+                      <select style={{...iS,flex:1,fontSize:12}} value={prod} onChange={e=>{const arr=[...(form.productos&&form.productos.length>0?form.productos:[form.producto||""])];arr[idx]=e.target.value;setForm(f=>({...f,productos:arr,producto:arr[0]||""}));}}>
+                        <option value="">— Sin especificar —</option>
+                        {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
+                      </select>
+                      {(form.productos&&form.productos.length>0?form.productos:[form.producto||""]).length>1&&(
+                        <button type="button" onClick={()=>{const arr=(form.productos&&form.productos.length>0?form.productos:[form.producto||""]).filter((_,j)=>j!==idx);setForm(f=>({...f,productos:arr,producto:arr[0]||""}));}} style={{...BtnDanger(T),padding:"5px 8px",fontSize:12,flexShrink:0}}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" onClick={()=>{const arr=[...(form.productos&&form.productos.length>0?form.productos:[form.producto||""]),""];setForm(f=>({...f,productos:arr}));}} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",marginTop:2}}>+ Agregar producto</button>
+                </div>
+              </Field>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
               <Field T={T} label="Email"><input style={iS} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@ejemplo.com"/></Field>
@@ -1905,7 +1921,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
 
           return (
             <div>
-              {/* Header: estado + red + links */}
+              {/* Header: estado + links */}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:14,flexWrap:"wrap"}}>
                 <div style={{display:"flex",alignItems:"center",gap:7,background:sc.bg,border:`1px solid ${sc.dot}33`,borderRadius:8,padding:"6px 12px"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
@@ -1920,13 +1936,9 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                 </div>
               </div>
 
-              {recordatorioVencido&&(
-                <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
-                  <span>⏰</span><span style={{fontSize:12,fontWeight:600,color:T.yellow}}>Recordatorio: {c.recordatorio}</span>
-                </div>
-              )}
+              {recordatorioVencido&&<div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:12,display:"flex",alignItems:"center",gap:8}}><span>⏰</span><span style={{fontSize:12,fontWeight:600,color:T.yellow}}>Recordatorio: {c.recordatorio}</span></div>}
 
-              {/* Info influencer compacta */}
+              {/* Info influencer */}
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
                 {c.foto?<img src={c.foto} style={{width:40,height:40,borderRadius:10,objectFit:"cover",border:`1px solid ${T.border}`,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:40,height:40,borderRadius:10,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>👤</div>}
                 <div>
@@ -1945,7 +1957,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                   <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>📦 Productos enviados</span>
                   <button onClick={addProducto} style={{...BtnSecondary(T),fontSize:11,padding:"3px 9px"}}>+ Agregar</button>
                 </div>
-                {productosActuales.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin especificar — presioná + Agregar</div>}
+                {productosActuales.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin especificar</div>}
                 {productosActuales.map((prod,idx)=>(
                   <div key={idx} style={{display:"flex",gap:6,marginBottom:idx<productosActuales.length-1?6:0,alignItems:"center"}}>
                     <select defaultValue={prod} onChange={e=>updateProductoAt(idx,e.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 10px",flex:1}}>
@@ -1957,7 +1969,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                 ))}
               </div>
 
-              {/* Contenido comprometido — editable inline, compacto */}
+              {/* Contenido comprometido — editable inline */}
               <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                   <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>🎬 Contenido</span>
@@ -1987,7 +1999,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                     </div>
                   );
                 })}
-                <div style={{fontSize:10,color:T.textSm,marginTop:6}}>💡 Tab para guardar</div>
+                <div style={{fontSize:10,color:T.textSm,marginTop:6}}>💡 Tab o Enter para guardar</div>
               </div>
 
               {(c.alcance||c.reproducciones||c.likes||c.guardados)&&(
@@ -2015,13 +2027,14 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                 {deleteConfirm===c._docId?(
                   <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:13,color:T.red}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"7px 14px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"7px 14px",fontSize:13}}>No</button></div>
                 ):(
-                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar completo</button></>
+                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,productos:Array.isArray(c.productos)&&c.productos.length>0?c.productos:(c.producto?[c.producto]:[]),contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar completo</button></>
                 )}
               </div>
             </div>
           );
         })()}
       </Modal>
+
     </div>
   );
 }
@@ -2576,7 +2589,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         // TRACKING: 15 dígitos que empiezan con 36 — testeado 14/14 con pdfjs real
         const trackingMatch=pageText.match(/\b(36\d{13})\b/);
 
-        // N° INTERNO — 3 intentos en cascada (pdfjs parte "N° Interno:" y "#1865" en items distintos)
+        // N° INTERNO — 3 intentos en cascada
         let internoMatch=pageText.match(/N[°º\u00b0\u00ba]?\s*Interno[^0-9#]{0,8}#?\s*(\d{3,6})/i);
         if(!internoMatch) internoMatch=pageText.match(/Interno[:\s]{1,6}#?\s*(\d{3,6})/i);
         if(!internoMatch) internoMatch=pageText.match(/#(\d{3,6})\b/);
@@ -2619,7 +2632,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     for(let i=1;i<=pdf.numPages;i++) {
       const page=await pdf.getPage(i);
       const content=await page.getTextContent();
-      // pdfjs-dist 3.11 separa spans — colapsar múltiples espacios para que los regex funcionen
+      // pdfjs-dist 3.11 separa spans — colapsar múltiples espacios (testeado 14/14)
       const raw=content.items.map(item=>item.str).join(' ');
       pages.push(raw.replace(/\s{2,}/g,' '));
     }

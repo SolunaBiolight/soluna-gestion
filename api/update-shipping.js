@@ -69,21 +69,23 @@ export default async function handler(req, res) {
     const tnOrderId = order.id;
     const shippingStatus = order.shipping_status; // unpacked | ready_to_ship | shipped | delivered
 
-    // Solo permitir pedidos en "Por empaquetar" (unpacked) o "Por enviar" (ready_to_ship)
-    const estadosPermitidos = ['unpacked', 'ready_to_ship', 'partially_shipped'];
-    if (!estadosPermitidos.includes(shippingStatus)) {
+    // Permitir: Por empaquetar (unpacked/unshipped/null) y Por enviar (ready_to_ship)
+    const estadosEnviar = ['ready_to_ship'];
+    const estadosEmpaquetar = ['unpacked', 'unshipped', 'partially_shipped', null, ''];
+    const estadoPermitido = estadosEnviar.includes(shippingStatus) || estadosEmpaquetar.includes(shippingStatus);
+    if (!estadoPermitido) {
       return res.status(400).json({
-        error: `El pedido #${orderId} está en estado "${shippingStatus}" y no se puede actualizar el tracking. Solo se permite en pedidos Por empaquetar o Por enviar.`,
+        error: `El pedido #${orderId} está en estado "${shippingStatus}" y no acepta tracking. Solo pedidos Por empaquetar o Por enviar.`,
         shipping_status: shippingStatus,
       });
     }
 
     // 2. Estrategia según estado del pedido:
-    // - ready_to_ship → /fulfill (marca como enviado + agrega tracking)
-    // - unpacked → PUT /orders/{id} (solo agrega tracking, sin cambiar estado)
+    // - ready_to_ship → /fulfill (marca como enviado + notifica cliente)
+    // - unpacked/unshipped → PUT /orders/{id} (guarda tracking sin cambiar estado)
     let updateRes, updateData;
 
-    if (shippingStatus === 'ready_to_ship') {
+    if (estadosEnviar.includes(shippingStatus)) {
       // Pedido "Por enviar" → usar /fulfill que notifica al cliente
       updateRes = await fetch(
         `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`,
