@@ -45,13 +45,13 @@ export default async function handler(req, res) {
     }
   }
 
-  try {
-    const tnHeaders = {
-      'Authentication': `bearer ${accessToken}`,
-      'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
-      'Content-Type': 'application/json',
-    };
+  const tnHeaders = {
+    'Authentication': `bearer ${accessToken}`,
+    'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
+    'Content-Type': 'application/json',
+  };
 
+  try {
     // 1. Buscar el pedido por número
     const searchRes = await fetch(
       `https://api.tiendanube.com/v1/${storeId}/orders?q=${orderId}&per_page=5`,
@@ -67,66 +67,58 @@ export default async function handler(req, res) {
     }
 
     const tnOrderId = order.id;
-    const shippingStatus = order.shipping_status; // unpacked | ready_to_ship | shipped | delivered
-
-    // Permitir: Por empaquetar (unpacked/unshipped/null) y Por enviar (ready_to_ship)
-    const estadosEnviar = ['ready_to_ship'];
-    const estadosEmpaquetar = ['unpacked', 'unshipped', 'partially_shipped', null, ''];
-    const estadoPermitido = estadosEnviar.includes(shippingStatus) || estadosEmpaquetar.includes(shippingStatus);
-    if (!estadoPermitido) {
+    const shippingStatus = order.shipping_status;
+    // Doc TN v1: shipping_status puede ser "unpacked", "fulfilled", "unfulfilled"
+    // También aparece "unshipped", "ready_to_ship" en algunas versiones
+    const estadosNoPermitidos = ['fulfilled'];
+    if (estadosNoPermitidos.includes(shippingStatus)) {
       return res.status(400).json({
-        error: `El pedido #${orderId} está en estado "${shippingStatus}" y no acepta tracking. Solo pedidos Por empaquetar o Por enviar.`,
+        error: `El pedido #${orderId} ya fue enviado (${shippingStatus}). No se puede actualizar el tracking.`,
         shipping_status: shippingStatus,
       });
     }
 
-    // 2. Estrategia según estado del pedido:
-    // - ready_to_ship → /fulfill (marca como enviado + notifica cliente)
-    // - unpacked/unshipped → PUT /orders/{id} (guarda tracking sin cambiar estado)
-    let updateRes, updateData;
+    // 2. PUT /orders/{id} — actualiza shipping_tracking_number directamente
+    //    Solo requiere write_orders scope (que el token OAuth sí tiene).
+    //    /fulfill da 403 porque requiere write_fulfillment_orders (scope adicional).
+    const putRes = await fetch(
+      `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}`,
+      {
+        method: 'PUT',
+        headers: tnHeaders,
+        body: JSON.stringify({
+          shipping_tracking_number: tracking,
+          shipping_tracking_url: `https://www.andreani.com/#!/informacionEnvio/${tracking}`,
+        })
+      }
+    );
+    const putData = await putRes.json();
 
-    if (estadosEnviar.includes(shippingStatus)) {
-      // Pedido "Por enviar" → usar /fulfill que notifica al cliente
-      updateRes = await fetch(
-        `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`,
-        {
-          method: 'POST',
-          headers: tnHeaders,
-          body: JSON.stringify({ shipping_tracking_number: tracking, notify_customer: true })
-        }
-      );
-      updateData = await updateRes.json();
+    if (!putRes.ok) {
+      return res.status(putRes.status).json({
+        error: putData.message || putData.description || `TN respondió ${putRes.status}`,
+        detail: putData,
+      });
+    }
 
-      // Si /fulfill falla, fallback a PUT directo
-      if (!updateRes.ok) {
-        updateRes = await fetch(
-          `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}`,
+    // 3. Opcionalmente marcar como enviado via POST /pack + /fulfill si está en unshipped
+    //    Solo si el PUT fue exitoso y el pedido no está ya en ready_to_ship
+    //    Esto actualiza el estado visible en el admin de TN
+    if (shippingStatus === 'ready_to_ship' || shippingStatus === 'unpacked') {
+      try {
+        await fetch(
+          `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`,
           {
-            method: 'PUT',
+            method: 'POST',
             headers: tnHeaders,
-            body: JSON.stringify({ shipping_tracking_number: tracking })
+            body: JSON.stringify({
+              shipping_tracking_number: tracking,
+              notify_customer: true,
+            })
           }
         );
-        updateData = await updateRes.json();
-      }
-    } else {
-      // Pedido "Por empaquetar" → PUT directo, solo guarda el tracking sin cambiar estado
-      updateRes = await fetch(
-        `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}`,
-        {
-          method: 'PUT',
-          headers: tnHeaders,
-          body: JSON.stringify({ shipping_tracking_number: tracking })
-        }
-      );
-      updateData = await updateRes.json();
-    }
-
-    if (!updateRes.ok) {
-      return res.status(updateRes.status).json({
-        error: updateData.message || updateData.description || `TN respondió ${updateRes.status}`,
-        shipping_status: shippingStatus,
-      });
+        // Ignoramos el resultado — si falla no pasa nada, el tracking ya fue seteado
+      } catch(_) {}
     }
 
     res.status(200).json({
@@ -135,6 +127,7 @@ export default async function handler(req, res) {
       tracking,
       shipping_status: shippingStatus,
     });
+
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
