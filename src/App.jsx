@@ -187,6 +187,21 @@ function buildOrdersFromAPI(data) {
 const _andreaniLocsCache = { current: null };
 
 // ─── UI Components ───
+
+// Inject spinner keyframe CSS once
+if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
+  const s=document.createElement("style");
+  s.id="growith-spin";
+  s.textContent=`@keyframes growith-spin{to{transform:rotate(360deg)}}`;
+  document.head.appendChild(s);
+}
+
+function Spinner({size=14,color="#fff",style={}}) {
+  return (
+    <span style={{display:"inline-block",width:size,height:size,border:`2px solid ${color}44`,borderTop:`2px solid ${color}`,borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",flexShrink:0,...style}}/>
+  );
+}
+
 function Badge({T, colors, children, small}) {
   return (
     <span style={{
@@ -603,7 +618,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               return <button key={v} onClick={()=>{setView(v);setActiveReclamo(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",background:isCurrent?T.accentSolid:T.card,color:isCurrent?"#fff":T.textMd,borderColor:isCurrent?T.accentSolid:T.border}}>{labels[v]}{v==="reclamos"&&stats.urgentes>0&&<span style={{background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"1px 6px",marginLeft:4}}>{stats.urgentes}</span>}</button>;
             })}
             <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>+ Nuevo</button>
-            <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>⟳</button>
+            <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
           </div>
         </div>
       </div>
@@ -727,7 +742,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                       })}
                     </>
                   )}
-                  {searchApiLoading&&<div style={{textAlign:"center",padding:"16px",color:T.textSm,fontSize:13}}>⏳ Buscando...</div>}
+                  {searchApiLoading&&<div style={{textAlign:"center",padding:"16px",color:T.textSm,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando...</div>}
                   {!searchApiLoading&&!globalResults.pedidos?.length&&!globalResults.recls?.length&&(
                     <div style={{textAlign:"center",padding:"20px",color:T.textSm,fontSize:14}}>Sin resultados para "{searchGlobal}"</div>
                   )}
@@ -1184,7 +1199,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   {/* Acciones */}
                   <div style={{display:"flex",gap:8,paddingTop:12,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
                     {/* Generar etiqueta Andreani */}
-                    <button onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue,opacity:activeOrder?1:0.4}}>📦 Etiqueta Andreani</button>
+                    <button onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue,opacity:activeOrder?1:0.4,display:"inline-flex",alignItems:"center",gap:6}}>📦 Etiqueta Andreani</button>
                     {deleteConfirm===activeR._docId?(
                       <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><button onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
                     ):(
@@ -2533,7 +2548,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             fetchTabOrders(tabEnvio);
             fetchTabCounts(user?.uid);
           }} disabled={tabLoading} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:tabLoading?0.5:1}}>
-            {tabLoading?"⟳ Sincronizando...":"⟳ Sincronizar"}
+            {tabLoading?<><Spinner size={13} color={T.textMd}/> Sincronizando...</>:"⟳ Sincronizar"}
           </button>
         </div>
       </div>
@@ -2616,7 +2631,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                     }catch(ex){}
                     setBuscarLoading(false);
                   }} disabled={buscarLoading} style={{...BtnPrimary(T),fontSize:13,opacity:buscarLoading?0.6:1}}>
-                    {buscarLoading?"Buscando...":"Buscar"}
+                    {buscarLoading?<><Spinner size={13}/> Buscando...</>:"Buscar"}
                   </button>
                 </div>
               </div>
@@ -2635,7 +2650,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
               </button>
               {selected.size>0&&(
                 <button onClick={()=>setExportModal(true)} style={{...BtnPrimary(T),fontSize:13}}>
-                  ⬇️ Exportar {selected.size} pedido{selected.size!==1?"s":""} para Andreani
+                  ⬇️ Exportar {selected.size} pedido{selected.size!==1?"s":""}
                 </button>
               )}
               <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>
@@ -2645,9 +2660,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             )}
 
             {tabLoading||buscarLoading?(
-              <div style={{textAlign:"center",padding:"80px 20px"}}>
-                <div style={{fontSize:32,marginBottom:12}}>⏳</div>
-                <div style={{fontSize:16,fontWeight:600,color:T.textMd}}>Cargando pedidos...</div>
+              <div style={{textAlign:"center",padding:"80px 20px",display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
+                <Spinner size={36} color={T.accent}/>
+                <div style={{fontSize:15,fontWeight:600,color:T.textMd}}>Cargando pedidos...</div>
               </div>
             ):exportables.length===0?(
               <div style={{textAlign:"center",padding:"80px 20px"}}>
@@ -2943,7 +2958,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <button onClick={()=>setExportModal(false)} disabled={exporting} style={{...BtnSecondary(T),opacity:exporting?0.5:1}}>Cancelar</button>
             <button onClick={exportAndreani} disabled={exporting} style={{...BtnPrimary(T),opacity:exporting?0.7:1,minWidth:160,justifyContent:"center"}}>
-              {exporting?"⏳ Generando archivo...":"⬇️ Descargar XLSX"}
+              {exporting?<><Spinner size={14}/> Generando...</>:<>⬇️ Descargar XLSX</>}
             </button>
           </div>
         </div>
