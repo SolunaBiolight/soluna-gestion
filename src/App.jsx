@@ -174,6 +174,7 @@ function buildOrdersFromAPI(data) {
       cp:sh.zipcode||'', provincia:sh.province||'',
       medioEnvio:o.shipping_option||'', medioPago:o.payment_details?.method||o.gateway_name||'',
       esSucursal:o.fulfillments?.some(f=>f.shipping?.option?.name?.toLowerCase().includes('sucursal'))||o.shipping_option==="Punto de retiro"||false,
+      pickupDetails:o.shipping_pickup_details||null,
       canal:o.storefront||'', tracking:o.shipping_tracking_number||'',
       linkOrden:`https://solunabiolight2.mitiendanube.com/admin/orders/${o.id}`,
       fechaPago:o.paid_at||'', fechaEnvio:o.shipped_at||'',
@@ -1792,6 +1793,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [locationModal,setLocationModal]=useState(null);
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
+  const [sucursalConfirmed,setSucursalConfirmed]=useState(null); // {numero, nombre}
   const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null});
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos"); // todos|domicilio|sucursal
   const [tabOrders,setTabOrders]=useState([]); // pedidos del tab activo
@@ -1920,19 +1922,70 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     return [];
   }
 
-  function findAndreaniSucursal(locs, direccion) {
-    if(!locs.sucursales||!direccion) return null;
-    const dirU=direccion.toUpperCase().trim();
-    // Exact match
-    const exact=locs.sucursales.find(s=>s.toUpperCase()===dirU);
-    if(exact) return exact;
-    // Partial match — buscar por palabras clave de la dirección
-    const words=dirU.replace(/[^A-Z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>3);
-    for(const word of words){
-      const match=locs.sucursales.find(s=>s.toUpperCase().includes(word));
-      if(match) return match;
+  function findAndreaniSucursal(locs, direccion, pickupDetails) {
+    if(!locs.sucursales) return null;
+
+    function cl(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
+    function firstNum(s){ const m=String(s||"").match(/(\d+)/); return m?m[1]:""; }
+
+    if(!pickupDetails) return null;
+
+    const nombre=cl(pickupDetails.name);
+    const calle=cl(pickupDetails.address?.address);
+    const numero=firstNum(pickupDetails.address?.number);
+    const localidad=cl(pickupDetails.address?.locality);
+    const esHop=nombre.includes("HOP");
+    const sucs=locs.sucursales;
+
+    // 1. Calle + número exacto
+    if(calle&&numero){
+      const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.includes(numero);});
+      if(m) return m;
     }
-    return null; // no match — mostrar modal
+
+    // 2. Palabras de calle (>=3 chars para cubrir "13", "AV", etc)
+    if(calle){
+      const words=calle.split(' ').filter(w=>w.length>=3);
+      for(const w of words){
+        const matches=sucs.filter(s=>cl(s).includes(w));
+        if(matches.length===1) return matches[0];
+        if(matches.length>1&&numero){
+          const wn=matches.find(s=>cl(s).includes(numero));
+          if(wn) return wn;
+        }
+        if(matches.length>1&&localidad){
+          const locWords=localidad.split(' ').filter(w=>w.length>=3);
+          for(const lw of locWords){
+            const wl=matches.find(s=>cl(s).includes(lw));
+            if(wl) return wl;
+          }
+        }
+      }
+    }
+
+    // 3. Localidad en sucursales
+    if(localidad){
+      const locWords=localidad.split(' ').filter(w=>w.length>=3);
+      for(const lw of locWords){
+        const matches=sucs.filter(s=>cl(s).includes(lw)&&(esHop||!cl(s).includes('HOP')));
+        if(matches.length===1) return matches[0];
+        if(matches.length>1&&calle){
+          const calWords=calle.split(' ').filter(w=>w.length>=3);
+          for(const cw of calWords){
+            const wc=matches.find(s=>cl(s).includes(cw));
+            if(wc) return wc;
+          }
+        }
+      }
+    }
+
+    // 4. Número único en lista
+    if(numero&&numero.length>=3){
+      const byNum=sucs.filter(s=>cl(s).split(' ').includes(numero));
+      if(byNum.length===1) return byNum[0];
+    }
+
+    return null;
   }
 
   function searchSucursales(locs, query) {
@@ -2022,7 +2075,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       ords.forEach(function(o,i){
         const rn=startRow+i;
         const {nombre,apellido,telCod,telNum}=getPersonData(o);
-        const sucursal=sucursalOverridesRef.current[o.numero]||findAndreaniSucursal(locs,o.direccion)||"";
+        const sucursal=sucursalOverridesRef.current[o.numero]||findAndreaniSucursal(locs,o.direccion,o.pickupDetails)||"";
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -2133,7 +2186,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       // Check unresolved sucursales
       const unresolvedSuc=sucursalOrders.filter(o=>{
         if(sucursalOverridesRef.current[o.numero]) return false;
-        return !findAndreaniSucursal(locs,o.direccion);
+        return !findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
       });
 
       if(unresolvedDom.length>0||unresolvedSuc.length>0){
@@ -2167,6 +2220,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       });
       if(chosen===null) return;
       sucursalOverridesRef.current[o.numero]=chosen;
+      // Mostrar confirmación visual
+      setSucursalConfirmed({numero:o.numero,nombre:chosen});
+      await new Promise(r=>setTimeout(r,1200));
+      setSucursalConfirmed(null);
     }
     setExportModal(true);
     setTimeout(()=>exportAndreani(),100);
@@ -2534,6 +2591,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           </div>
         )}
       </div>
+
+      {/* Sucursal confirmed toast */}
+      {sucursalConfirmed&&(
+        <div style={{position:"fixed",bottom:32,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.greenBg,border:`1.5px solid ${T.green}`,borderRadius:12,padding:"14px 24px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 8px 32px rgba(0,0,0,0.4)",animation:"fadeIn 0.3s ease"}}>
+          <span style={{fontSize:20}}>✅</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:T.green}}>Sucursal confirmada — Pedido #{sucursalConfirmed.numero}</div>
+            <div style={{fontSize:12,color:T.green,marginTop:2,opacity:0.8}}>{sucursalConfirmed.nombre}</div>
+          </div>
+        </div>
+      )}
 
       {/* Location / Sucursal Resolution Modal */}
       <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);}}} title={locationModal?.type==="sucursal"?"Confirmar sucursal Andreani":"Confirmar localidad Andreani"} width={560}>
