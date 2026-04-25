@@ -16,16 +16,18 @@ export default async function handler(req, res) {
   const { storeId, accessToken } = tnStore;
   const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
 
-  // Get order 1847 which is a sucursal order - see full shipping_address
   const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=1847&per_page=3`, { headers });
   const data = await r.json();
   const o = Array.isArray(data) ? data.find(o => o.number === 1847) : null;
 
+  // Show ALL fields that might contain sucursal info
   res.json({
-    shipping_address: o?.shipping_address,
     shipping_option: o?.shipping_option,
     shipping_option_reference: o?.shipping_option_reference,
-    gateway_name: o?.gateway_name,
-    fulfillments: o?.fulfillments,
+    shipping_pickup_details: o?.shipping_pickup_details,
+    shipping_store_branch_name: o?.shipping_store_branch_name,
+    shipping_address: o?.shipping_address,
+    fulfillments_full: o?.fulfillments,
+    extra_field: o?.extra,
   });
 }
