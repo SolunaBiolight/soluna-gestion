@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs } from "firebase/firestore";
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs, orderBy } from "firebase/firestore";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "firebase/auth";
 
 const firebaseConfig = {
@@ -2808,17 +2808,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
               </div>
             ):(
               <>
-                {(()=>{
-                  const cols=["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" ");
-                  return (
-                    <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
-                      <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
-                      {!hiddenCols.has("estado")&&<span>Estado</span>}
-                      {!hiddenCols.has("envio")&&<span>Envío</span>}
-                      {!hiddenCols.has("total")&&<span>Total</span>}
-                    </div>
-                  );
-                })()}
+                <div style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                  <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
+                  {!hiddenCols.has("estado")&&<span>Estado</span>}
+                  {!hiddenCols.has("envio")&&<span>Envío</span>}
+                  {!hiddenCols.has("total")&&<span>Total</span>}
+                </div>
                 {exportables.map((o,idx)=>{
                   const sel=selected.has(o.numero);
                   const ec=getEstadoEnvioC(T,o.estadoEnvio);
