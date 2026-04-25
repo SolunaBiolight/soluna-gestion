@@ -46,102 +46,93 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Primero buscar el ID interno de TN a partir del número de pedido
+    const tnHeaders = {
+      'Authentication': `bearer ${accessToken}`,
+      'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
+      'Content-Type': 'application/json',
+    };
+
+    // 1. Buscar el pedido por número
     const searchRes = await fetch(
       `https://api.tiendanube.com/v1/${storeId}/orders?q=${orderId}&per_page=5`,
-      {
-        headers: {
-          'Authentication': `bearer ${accessToken}`,
-          'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
-        }
-      }
+      { headers: tnHeaders }
     );
     const orders = await searchRes.json();
     if (!Array.isArray(orders) || orders.length === 0) {
       return res.status(404).json({ error: `Pedido #${orderId} no encontrado en TN` });
     }
-
-    // Buscar el pedido exacto por número
     const order = orders.find(o => String(o.number) === String(orderId));
     if (!order) {
       return res.status(404).json({ error: `Pedido #${orderId} no encontrado` });
     }
 
     const tnOrderId = order.id;
+    const shippingStatus = order.shipping_status; // unpacked | ready_to_ship | shipped | delivered
 
-    // Log para debug
-    console.log(`[update-shipping] pedido #${orderId} | tn_id=${tnOrderId} | shipping_status=${order.shipping_status} | tracking=${tracking}`);
+    // Solo permitir pedidos en "Por empaquetar" (unpacked) o "Por enviar" (ready_to_ship)
+    const estadosPermitidos = ['unpacked', 'ready_to_ship', 'partially_shipped'];
+    if (!estadosPermitidos.includes(shippingStatus)) {
+      return res.status(400).json({
+        error: `El pedido #${orderId} está en estado "${shippingStatus}" y no se puede actualizar el tracking. Solo se permite en pedidos Por empaquetar o Por enviar.`,
+        shipping_status: shippingStatus,
+      });
+    }
 
-    // Intento 1: /fulfill (funciona cuando shipping_status=ready_to_ship)
-    let updateRes = await fetch(
-      `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`,
-      {
-        method: 'POST',
-        headers: {
-          'Authentication': `bearer ${accessToken}`,
-          'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ shipping_tracking_number: tracking, notify_customer: true })
+    // 2. Estrategia según estado del pedido:
+    // - ready_to_ship → /fulfill (marca como enviado + agrega tracking)
+    // - unpacked → PUT /orders/{id} (solo agrega tracking, sin cambiar estado)
+    let updateRes, updateData;
+
+    if (shippingStatus === 'ready_to_ship') {
+      // Pedido "Por enviar" → usar /fulfill que notifica al cliente
+      updateRes = await fetch(
+        `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`,
+        {
+          method: 'POST',
+          headers: tnHeaders,
+          body: JSON.stringify({ shipping_tracking_number: tracking, notify_customer: true })
+        }
+      );
+      updateData = await updateRes.json();
+
+      // Si /fulfill falla, fallback a PUT directo
+      if (!updateRes.ok) {
+        updateRes = await fetch(
+          `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}`,
+          {
+            method: 'PUT',
+            headers: tnHeaders,
+            body: JSON.stringify({ shipping_tracking_number: tracking })
+          }
+        );
+        updateData = await updateRes.json();
       }
-    );
-    let updateData = await updateRes.json();
-    console.log(`[update-shipping] fulfill → ${updateRes.status}:`, JSON.stringify(updateData).slice(0,200));
-
-    // Intento 2: PUT /orders/{id} — actualiza el campo tracking directamente
-    if (!updateRes.ok) {
-      console.log(`[update-shipping] fulfill falló (${updateRes.status}), intentando PUT...`);
+    } else {
+      // Pedido "Por empaquetar" → PUT directo, solo guarda el tracking sin cambiar estado
       updateRes = await fetch(
         `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}`,
         {
           method: 'PUT',
-          headers: {
-            'Authentication': `bearer ${accessToken}`,
-            'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
-            'Content-Type': 'application/json',
-          },
+          headers: tnHeaders,
           body: JSON.stringify({ shipping_tracking_number: tracking })
         }
       );
       updateData = await updateRes.json();
-      console.log(`[update-shipping] PUT → ${updateRes.status}:`, JSON.stringify(updateData).slice(0,200));
-    }
-
-    // Intento 3: POST /fulfillments (API v2 style)
-    if (!updateRes.ok) {
-      console.log(`[update-shipping] PUT falló (${updateRes.status}), intentando fulfillments...`);
-      updateRes = await fetch(
-        `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfillments`,
-        {
-          method: 'POST',
-          headers: {
-            'Authentication': `bearer ${accessToken}`,
-            'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            notify_customer: true,
-            fulfillment: {
-              shipping_tracking_number: tracking,
-              shipping_tracking_url: `https://www.andreani.com/#!/informacionEnvio/${tracking}`,
-            }
-          })
-        }
-      );
-      updateData = await updateRes.json();
-      console.log(`[update-shipping] fulfillments → ${updateRes.status}:`, JSON.stringify(updateData).slice(0,200));
     }
 
     if (!updateRes.ok) {
       return res.status(updateRes.status).json({
         error: updateData.message || updateData.description || `TN respondió ${updateRes.status}`,
-        detail: updateData,
-        shippingStatus: order.shipping_status,
-        hint: order.shipping_status === 'shipped' ? 'El pedido ya fue enviado. Tracking ya cargado.' : 'Verificá que el pedido esté empaquetado en TN.'
+        shipping_status: shippingStatus,
       });
     }
 
-    res.status(200).json({ ok: true, order: orderId, tracking, method: updateRes.url.includes('fulfillments') ? 'fulfillments' : updateRes.url.includes('fulfill') ? 'fulfill' : 'PUT' });
+    res.status(200).json({
+      ok: true,
+      order: orderId,
+      tracking,
+      shipping_status: shippingStatus,
+    });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }

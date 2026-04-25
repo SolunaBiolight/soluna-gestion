@@ -1875,7 +1875,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
       </Modal>
 
       {/* Canje Detail Modal */}
-      <Modal T={T} open={!!detailC} onClose={()=>setDetail(null)} title={detailC?`${detailC.influencer}`:""} width={560}>
+      <Modal T={T} open={!!detailC} onClose={()=>setDetail(null)} title={detailC?`${detailC.influencer}`:""} width={580}>
         {detailC&&(()=>{
           const c=detailC; const sc=getEstadoCC(T,c.estado);
           const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
@@ -1883,136 +1883,139 @@ function AppCanjes({T, fbStatus, user, onHome}) {
           const progreso=totalAcordados>0?Math.round((totalEntregados/totalAcordados)*100):0;
           const hoy=new Date().toISOString().split('T')[0];
           const recordatorioVencido=c.recordatorio&&c.recordatorio<=hoy;
+          const productosActuales=Array.isArray(c.productos)&&c.productos.length>0?c.productos:(c.producto?[c.producto]:[]);
+
+          async function updateContenidoField(idx,field,value){
+            const arr=[...(c.contenido||ACTIVIDADES.map(t=>({tipo:t,acordados:0,entregados:0})))];
+            arr[idx]={...arr[idx],[field]:parseInt(value)||0};
+            await updateDoc(doc(db,"canjes",c._docId),{contenido:arr,updatedAt:serverTimestamp()});
+          }
+          async function addProducto(){
+            const nuevos=[...productosActuales,""];
+            await updateDoc(doc(db,"canjes",c._docId),{productos:nuevos,producto:nuevos[0]||"",updatedAt:serverTimestamp()});
+          }
+          async function updateProductoAt(idx,value){
+            const nuevos=[...productosActuales];nuevos[idx]=value;
+            await updateDoc(doc(db,"canjes",c._docId),{productos:nuevos,producto:nuevos[0]||"",updatedAt:serverTimestamp()});
+          }
+          async function removeProductoAt(idx){
+            const nuevos=productosActuales.filter((_,i)=>i!==idx);
+            await updateDoc(doc(db,"canjes",c._docId),{productos:nuevos,producto:nuevos[0]||"",updatedAt:serverTimestamp()});
+          }
+
           return (
             <div>
-              {/* Status banner */}
-              <div style={{background:sc.bg,border:`1px solid ${sc.dot}44`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{width:12,height:12,borderRadius:"50%",background:sc.dot,boxShadow:`0 0 8px ${sc.dot}`}}/><span style={{fontSize:16,fontWeight:700,color:sc.text}}>{c.estado}</span></div>
-                <span style={{fontSize:12,color:T.textMd,fontWeight:500}}>{c.red}</span>
+              {/* Header: estado + red + links */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,background:sc.bg,border:`1px solid ${sc.dot}33`,borderRadius:8,padding:"6px 12px"}}>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
+                  <span style={{fontSize:13,fontWeight:700,color:sc.text}}>{c.estado}</span>
+                  <span style={{fontSize:12,color:T.textSm,marginLeft:4}}>{c.red}</span>
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {c.usuario&&<a href={`https://${c.red.toLowerCase().includes('tiktok')?'tiktok.com/@':'instagram.com/'}${c.usuario.replace('@','')}`} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:12,color:T.accent,textDecoration:"none",background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}33`,borderRadius:7,padding:"4px 10px"}}>{c.red.toLowerCase().includes('tiktok')?'🎵':'📸'} @{c.usuario.replace('@','')}</a>}
+                  {c.telefono&&<a href={`https://wa.me/${c.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:12,color:T.green,textDecoration:"none",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:7,padding:"4px 10px"}}>💬 WA</a>}
+                  {c.tracking&&<a href={`https://www.andreani.com/#!/informacionEnvio/${c.tracking}`} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:12,color:T.purple,textDecoration:"none",background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:7,padding:"4px 10px"}}>📦 Track</a>}
+                  {c.linkContenido&&<a href={c.linkContenido} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:12,color:T.orange,textDecoration:"none",background:T.orangeBg,border:`1px solid ${T.orange}33`,borderRadius:7,padding:"4px 10px"}}>🎬 Ver</a>}
+                </div>
               </div>
 
-              {/* Recordatorio vencido */}
               {recordatorioVencido&&(
-                <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:16}}>⏰</span>
-                  <span style={{fontSize:13,fontWeight:600,color:T.yellow}}>Recordatorio de seguimiento: {c.recordatorio}</span>
+                <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+                  <span>⏰</span><span style={{fontSize:12,fontWeight:600,color:T.yellow}}>Recordatorio: {c.recordatorio}</span>
                 </div>
               )}
 
-              {/* Info principal con acciones rápidas */}
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:14}}>
-                <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:10}}>
-                  {c.foto?<img src={c.foto} style={{width:48,height:48,borderRadius:12,objectFit:"cover",border:`1px solid ${T.border}`,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:48,height:48,borderRadius:12,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>👤</div>}
-                  <div>
-                    <div style={{fontSize:20,fontWeight:800,color:T.text}}>{c.influencer}</div>
-                    <div style={{display:"flex",gap:8,marginTop:3,flexWrap:"wrap",alignItems:"center"}}>
-                      {c.nicho&&<span style={{fontSize:11,background:T.purpleBg,color:T.purple,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{c.nicho}</span>}
-                      {c.seguidores&&<span style={{fontSize:12,color:T.textSm}}>👥 {Number(c.seguidores).toLocaleString()}</span>}
-                      {c.email&&<span style={{fontSize:12,color:T.textSm}}>✉️ {c.email}</span>}
-                    </div>
+              {/* Info influencer compacta */}
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+                {c.foto?<img src={c.foto} style={{width:40,height:40,borderRadius:10,objectFit:"cover",border:`1px solid ${T.border}`,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:40,height:40,borderRadius:10,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>👤</div>}
+                <div>
+                  <div style={{fontSize:16,fontWeight:800,color:T.text}}>{c.influencer}</div>
+                  <div style={{display:"flex",gap:6,marginTop:2,flexWrap:"wrap",alignItems:"center"}}>
+                    {c.nicho&&<span style={{fontSize:10,background:T.purpleBg,color:T.purple,borderRadius:4,padding:"1px 7px",fontWeight:600}}>{c.nicho}</span>}
+                    {c.seguidores&&<span style={{fontSize:11,color:T.textSm}}>👥 {Number(c.seguidores).toLocaleString()}</span>}
+                    {c.email&&<span style={{fontSize:11,color:T.textSm}}>✉️ {c.email}</span>}
                   </div>
-                </div>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                  {c.usuario&&(
-                    <a href={`https://${c.red.toLowerCase().includes('tiktok')?'tiktok.com/@':'instagram.com/'}${c.usuario.replace('@','')}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:13,color:T.accent,textDecoration:"none",background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}33`,borderRadius:8,padding:"5px 12px",fontWeight:500}}>
-                      {c.red.toLowerCase().includes('tiktok')?'🎵':'📸'} @{c.usuario.replace('@','')}
-                    </a>
-                  )}
-                  {c.telefono&&(
-                    <a href={`https://wa.me/${c.telefono.replace(/\D/g,'')}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:13,color:T.green,textDecoration:"none",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:8,padding:"5px 12px",fontWeight:500}}>
-                      💬 WhatsApp
-                    </a>
-                  )}
-                  {c.tracking&&(
-                    <a href={`https://www.andreani.com/#!/informacionEnvio/${c.tracking}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:13,color:T.purple,textDecoration:"none",background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:8,padding:"5px 12px",fontWeight:500}}>
-                      📦 Seguimiento
-                    </a>
-                  )}
-                  {c.linkContenido&&(
-                    <a href={c.linkContenido} target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:13,color:T.orange,textDecoration:"none",background:T.orangeBg,border:`1px solid ${T.orange}33`,borderRadius:8,padding:"5px 12px",fontWeight:500}}>
-                      🎬 Ver contenido
-                    </a>
-                  )}
-                  {c.producto&&<span style={{fontSize:12,color:T.textSm,marginLeft:4}}>📦 {c.producto}</span>}
                 </div>
               </div>
 
-              {/* Progreso de contenido */}
-              {totalAcordados>0&&(
-                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                    <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Progreso de contenido</div>
-                    <span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>
-                  </div>
-                  {/* Barra de progreso */}
-                  <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:12}}>
-                    <div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.5s ease"}}/>
-                  </div>
-                  {/* Tabla por tipo */}
-                  {(c.contenido||[]).filter(item=>item.acordados>0).map((item,i)=>{
-                    const p=item.acordados>0?Math.round((item.entregados/item.acordados)*100):0;
-                    return (
-                      <div key={item.tipo} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-                        <span style={{fontSize:13,color:T.text,fontWeight:500,minWidth:100}}>{item.tipo}</span>
-                        <div style={{flex:1,height:5,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
-                          <div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accent,borderRadius:20}}/>
-                        </div>
-                        <span style={{fontSize:12,color:p===100?T.green:T.textSm,fontWeight:600,minWidth:50,textAlign:"right"}}>{item.entregados}/{item.acordados}</span>
-                      </div>
-                    );
-                  })}
+              {/* Productos enviados — editable inline, múltiples */}
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>📦 Productos enviados</span>
+                  <button onClick={addProducto} style={{...BtnSecondary(T),fontSize:11,padding:"3px 9px"}}>+ Agregar</button>
                 </div>
-              )}
+                {productosActuales.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin especificar — presioná + Agregar</div>}
+                {productosActuales.map((prod,idx)=>(
+                  <div key={idx} style={{display:"flex",gap:6,marginBottom:idx<productosActuales.length-1?6:0,alignItems:"center"}}>
+                    <select defaultValue={prod} onChange={e=>updateProductoAt(idx,e.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 10px",flex:1}}>
+                      <option value="">— Sin especificar —</option>
+                      {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
+                    </select>
+                    {productosActuales.length>1&&<button onClick={()=>removeProductoAt(idx)} style={{...BtnDanger(T),padding:"5px 8px",fontSize:12,flexShrink:0}}>✕</button>}
+                  </div>
+                ))}
+              </div>
 
-              {/* Métricas */}
+              {/* Contenido comprometido — editable inline, compacto */}
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>🎬 Contenido</span>
+                  <span style={{fontSize:12,fontWeight:700,color:progreso===100?T.green:progreso>0?T.accent:T.textSm}}>{totalAcordados>0?`${totalEntregados}/${totalAcordados} · ${progreso}%`:"Sin acordar"}</span>
+                </div>
+                {totalAcordados>0&&<div style={{height:4,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}><div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s ease"}}/></div>}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 58px 58px",gap:"0 6px",marginBottom:4}}>
+                  <span style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Tipo</span>
+                  <span style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,textAlign:"center"}}>Acord.</span>
+                  <span style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,textAlign:"center"}}>Entreg.</span>
+                </div>
+                {(c.contenido||ACTIVIDADES.map(t=>({tipo:t,acordados:0,entregados:0}))).map((item,i)=>{
+                  const done=item.acordados>0&&item.entregados>=item.acordados;
+                  const activo=item.acordados>0;
+                  return (
+                    <div key={item.tipo} style={{display:"grid",gridTemplateColumns:"1fr 58px 58px",gap:"0 6px",alignItems:"center",padding:"3px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+                      <span style={{fontSize:12,color:done?T.green:activo?T.text:T.textSm,fontWeight:activo?500:400,display:"flex",alignItems:"center",gap:5}}>
+                        {activo&&<span style={{width:5,height:5,borderRadius:"50%",background:done?T.green:T.accent,flexShrink:0}}/>}
+                        {item.tipo}
+                      </span>
+                      <input type="number" min={0} defaultValue={item.acordados}
+                        onBlur={e=>{if((parseInt(e.target.value)||0)!==item.acordados)updateContenidoField(i,"acordados",e.target.value);}}
+                        style={{...InputStyle(T),textAlign:"center",padding:"4px 2px",fontSize:12,width:"100%"}}/>
+                      <input type="number" min={0} defaultValue={item.entregados}
+                        onBlur={e=>{if((parseInt(e.target.value)||0)!==item.entregados)updateContenidoField(i,"entregados",e.target.value);}}
+                        style={{...InputStyle(T),textAlign:"center",padding:"4px 2px",fontSize:12,width:"100%",background:done?T.greenBg:T.input,borderColor:done?T.green+"55":T.inputBorder}}/>
+                    </div>
+                  );
+                })}
+                <div style={{fontSize:10,color:T.textSm,marginTop:6}}>💡 Tab para guardar</div>
+              </div>
+
               {(c.alcance||c.reproducciones||c.likes||c.guardados)&&(
-                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                  <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:12}}>Métricas</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    {[["👁️ Alcance",c.alcance],["▶️ Repros.",c.reproducciones],["❤️ Likes",c.likes],["🔖 Guardados",c.guardados]].map(([l,v])=>v?(
-                      <div key={l} style={{background:T.surface,borderRadius:8,padding:"10px 12px",border:`1px solid ${T.borderL}`}}>
-                        <div style={{fontSize:11,color:T.textSm,marginBottom:3}}>{l}</div>
-                        <div style={{fontSize:18,fontWeight:700,color:T.text,letterSpacing:-0.5}}>{Number(v).toLocaleString('es-AR')}</div>
-                      </div>
-                    ):null)}
-                  </div>
-                  {c.alcance&&c.seguidores&&(
-                    <div style={{marginTop:10,fontSize:12,color:T.textSm,padding:"8px 10px",background:T.surface,borderRadius:8,border:`1px solid ${T.borderL}`}}>
-                      📊 Tasa de alcance: <span style={{fontWeight:600,color:T.text}}>{((Number(c.alcance)/Number(c.seguidores))*100).toFixed(1)}%</span>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+                  {[["👁️",c.alcance,"Alcance"],["▶️",c.reproducciones,"Repros."],["❤️",c.likes,"Likes"],["🔖",c.guardados,"Guard."]].map(([icon,val,label])=>val?(
+                    <div key={label} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",flex:"1 1 70px",textAlign:"center"}}>
+                      <div style={{fontSize:10,color:T.textSm,marginBottom:2}}>{icon} {label}</div>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>{Number(val).toLocaleString('es-AR')}</div>
                     </div>
-                  )}
+                  ):null)}
                 </div>
               )}
 
-              {/* Info adicional */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px",fontSize:13,marginBottom:14}}>
-                {[["Fecha envío",c.fechaEnvio],["Fecha publicación",c.fechaPublicacion],["Recordatorio",c.recordatorio]].map(([l,v])=>v?(
-                  <div key={l} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                    <span style={{color:T.textSm,minWidth:110,flexShrink:0,fontSize:12}}>{l}</span>
-                    <span style={{fontSize:12,fontWeight:500,color:recordatorioVencido&&l==="Recordatorio"?T.yellow:T.text}}>{v}</span>
-                  </div>
-                ):null)}
+              <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:12,color:T.textSm,marginBottom:12}}>
+                {c.fechaEnvio&&<span>📅 Envío: <strong style={{color:T.text}}>{c.fechaEnvio}</strong></span>}
+                {c.fechaPublicacion&&<span>📅 Pub: <strong style={{color:T.text}}>{c.fechaPublicacion}</strong></span>}
+                {c.recordatorio&&<span style={{color:recordatorioVencido?T.yellow:T.textSm}}>⏰ <strong>{c.recordatorio}</strong></span>}
               </div>
 
-              {c.notas&&<div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:12,padding:14,marginBottom:12}}><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:5}}>Notas</div><div style={{fontSize:14,lineHeight:1.6,color:T.text}}>{c.notas}</div></div>}
-
-              {/* Historial de notas rápidas */}
+              {c.notas&&<div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:13,color:T.text,lineHeight:1.5}}>{c.notas}</div>}
               <NotasRapidas T={T} canje={c} onAdd={addNota}/>
-
-              <div style={{fontSize:12,color:T.textSm}}>Creado: {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?` · Finalizado: ${fmtTs(c.finalizadoAt)}`:''}</div>
+              <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Creado: {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?` · Finalizado: ${fmtTs(c.finalizadoAt)}`:''}</div>
               <Divider T={T}/>
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                 {deleteConfirm===c._docId?(
-                  <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:14,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"8px 16px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:13}}>No</button></div>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:13,color:T.red}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"7px 14px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"7px 14px",fontSize:13}}>No</button></div>
                 ):(
-                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button></>
+                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar completo</button></>
                 )}
               </div>
             </div>
@@ -2570,16 +2573,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       for(let i=0;i<pages.length;i++) {
         const pageText=pages[i];
 
-        // TRACKING: 15 dígitos que empiezan con 36
-        // Testeado 14/14 con pdfjs-dist 3.11.174 real
+        // TRACKING: 15 dígitos que empiezan con 36 — testeado 14/14 con pdfjs real
         const trackingMatch=pageText.match(/\b(36\d{13})\b/);
 
-        // N° INTERNO — 3 intentos en cascada (testeado con pdfjs real)
-        // pdfjs parte el span en "N° Interno:" + "#1865" → join da "N° Interno: #1865"
+        // N° INTERNO — 3 intentos en cascada (pdfjs parte "N° Interno:" y "#1865" en items distintos)
         let internoMatch=pageText.match(/N[°º\u00b0\u00ba]?\s*Interno[^0-9#]{0,8}#?\s*(\d{3,6})/i);
-        // Fallback 2: solo buscar "Interno: #NNNN"
         if(!internoMatch) internoMatch=pageText.match(/Interno[:\s]{1,6}#?\s*(\d{3,6})/i);
-        // Fallback 3: buscar "#NNNN" — Andreani siempre pone # antes del número interno
         if(!internoMatch) internoMatch=pageText.match(/#(\d{3,6})\b/);
 
         // DESTINATARIO
@@ -2602,7 +2601,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       if(results.length===0) alert("No se encontraron rótulos válidos en el PDF. Verificá que sea un archivo de etiquetas de Andreani con N° Interno y N° de seguimiento.");
     } catch(e){ alert("Error al procesar el PDF: "+e.message); }
     setter(false);
-  }  async function extractPdfText(file) {
+  }
+
+  async function extractPdfText(file) {
     if(!window.pdfjsLib) {
       await new Promise((resolve,reject)=>{
         const s=document.createElement('script');
@@ -2618,13 +2619,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     for(let i=1;i<=pdf.numPages;i++) {
       const page=await pdf.getPage(i);
       const content=await page.getTextContent();
-      // pdfjs-dist 3.11 separa spans: "N° Interno:" y "#1865" como items distintos
-      // join con espacio + colapsar múltiples espacios para que los regex funcionen
+      // pdfjs-dist 3.11 separa spans — colapsar múltiples espacios para que los regex funcionen
       const raw=content.items.map(item=>item.str).join(' ');
       pages.push(raw.replace(/\s{2,}/g,' '));
     }
     return pages.join('---PAGE---');
   }
+
   async function sendTracking(result) {
     if(!result.pedidoNum||!result.tracking) return;
     setSendingTracking(p=>({...p,[result.pedidoNum]:true}));
