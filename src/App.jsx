@@ -2227,7 +2227,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     }
     const newSsItems=newSS.map(function(s){
       const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const sp=(s!==s.trim()||s.indexOf('\n')>=0)?' xml:space="preserve"':'';
+      const sp=(s!==s.trim()||s.indexOf(String.fromCharCode(10))>=0)?' xml:space="preserve"':'';
       return '<si><t'+sp+'>'+esc+'</t></si>';
     }).join('');
     const total=newSS.length;
