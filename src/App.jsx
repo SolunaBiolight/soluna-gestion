@@ -2661,14 +2661,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     // Popup de resumen
     const exitosos=resultados.filter(r=>r.ok);
     const errores=resultados.filter(r=>!r.ok);
-    let msg=`✅ ${exitosos.length} seguimiento${exitosos.length!==1?"s":""} enviado${exitosos.length!==1?"s":""} con éxito.`;
-    if(errores.length>0){
-      msg+=`
-❌ ${errores.length} con error:
-`;
-      msg+=errores.map(r=>`• #${r.pedidoNum}: ${r.err}`).join("
-");
-    }
     setSummaryModal({show:true, exitosos:exitosos.length, errores});
   }
 
