@@ -1795,10 +1795,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null); // {numero, nombre}
   const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null});
-  const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos"); // todos|domicilio|sucursal
-  const [tabOrders,setTabOrders]=useState([]); // pedidos del tab activo
+  const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
+  const [tabOrders,setTabOrders]=useState([]);
   const [tabLoading,setTabLoading]=useState(false);
   const tabCacheRef=useRef({});
+  const [buscarQuery,setBuscarQuery]=useState("");
+  const [buscarLoading,setBuscarLoading]=useState(false);
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
@@ -2374,7 +2376,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         {/* ── PANEL DE ENVIOS ── */}
         {tab==="panel"&&(
           <div>
-            {/* Tabs + Buscador */}
+            {/* Tabs */}
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
               {[
                 {id:"cobrar",    label:"Por cobrar",     color:T.orange},
@@ -2386,57 +2388,70 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   fetchTabOrders(t.id);
                   if(!tabCounts[t.id]) fetchTabCounts(user?.uid);
                 }}
-                  style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id&&!searchEnvios?700:500,border:`1.5px solid ${tabEnvio===t.id&&!searchEnvios?t.color:T.border}`,background:tabEnvio===t.id&&!searchEnvios?t.color+"18":T.card,color:tabEnvio===t.id&&!searchEnvios?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
+                  style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id?700:500,border:`1.5px solid ${tabEnvio===t.id?t.color:T.border}`,background:tabEnvio===t.id?t.color+"18":T.card,color:tabEnvio===t.id?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:t.color,flexShrink:0}}/>
                   {t.label}
-                  <span style={{background:tabEnvio===t.id&&!searchEnvios?t.color:T.surface,color:tabEnvio===t.id&&!searchEnvios?"#fff":T.textSm,fontSize:12,fontWeight:700,borderRadius:20,padding:"1px 8px",minWidth:22,textAlign:"center"}}>
+                  <span style={{background:tabEnvio===t.id?t.color:T.surface,color:tabEnvio===t.id?"#fff":T.textSm,fontSize:12,fontWeight:700,borderRadius:20,padding:"1px 8px",minWidth:22,textAlign:"center"}}>
                     {counts[t.id]===null?"•":counts[t.id]}
                   </span>
                 </button>
               ))}
-              {/* Buscador global - busca en TODOS los pedidos */}
-              <div style={{position:"relative",flex:"1 1 220px",minWidth:180}}>
-                <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:searchEnvios?T.accent:T.textSm,fontSize:13}}>🔍</span>
-                <input
-                  placeholder="Buscar pedido por número o nombre..."
-                  value={searchEnvios}
-                  onChange={async e=>{
-                    const val=e.target.value;
-                    setSearchEnvios(val);
-                    if(val.trim().length>=2){
-                      try{
-                        const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(val.trim())}`);
-                        const data=await r.json();
-                        if(Array.isArray(data)){
-                          const built=buildOrdersFromAPI(data);
-                          setTabOrders(built);
-                        }
-                      }catch(e){}
-                    } else if(val.trim().length===0){
-                      // Volver al cache del tab activo
-                      if(tabCacheRef.current[tabEnvio]) setTabOrders(tabCacheRef.current[tabEnvio]);
-                      else fetchTabOrders(tabEnvio);
-                    }
-                  }}
-                  style={{...iS,paddingLeft:32,fontSize:13,borderColor:searchEnvios?T.accent:T.inputBorder}}
-                  onFocus={e=>e.target.style.borderColor=T.accent}
-                  onBlur={e=>e.target.style.borderColor=searchEnvios?T.accent:T.inputBorder}
-                />
-              </div>
-              {searchEnvios&&(
-                <button onClick={()=>{setSearchEnvios("");setSelected(new Set());fetchOrders(user?.uid,tabEnvio);}} style={{...BtnSecondary(T),fontSize:13,color:T.red,borderColor:T.red+"44",flexShrink:0}}>
-                  ✕ Limpiar
-                </button>
-              )}
+              {/* Tab Buscar */}
+              <button onClick={()=>{setTabEnvio("buscar");setSelected(new Set());setBuscarQuery("");setTabOrders([]);}}
+                style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio==="buscar"?700:500,border:`1.5px solid ${tabEnvio==="buscar"?T.accent:T.border}`,background:tabEnvio==="buscar"?T.accentSolid+"18":T.card,color:tabEnvio==="buscar"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
+                🔍 Buscar pedido
+              </button>
             </div>
 
-            {/* Acciones */}
+            {/* Panel buscar */}
+            {tabEnvio==="buscar"&&(
+              <div style={{marginBottom:16}}>
+                <div style={{display:"flex",gap:8,marginBottom:12}}>
+                  <div style={{position:"relative",flex:1}}>
+                    <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:16,color:T.textSm}}>🔍</span>
+                    <input
+                      autoFocus
+                      placeholder="Número de pedido, nombre o email..."
+                      value={buscarQuery}
+                      onChange={e=>setBuscarQuery(e.target.value)}
+                      onKeyDown={async e=>{
+                        if(e.key==="Enter"&&buscarQuery.trim().length>=2){
+                          setBuscarLoading(true);
+                          try{
+                            const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
+                            const data=await r.json();
+                            if(Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
+                          }catch(ex){}
+                          setBuscarLoading(false);
+                        }
+                      }}
+                      style={{...iS,paddingLeft:40,fontSize:14}}
+                    />
+                  </div>
+                  <button onClick={async()=>{
+                    if(!buscarQuery.trim()) return;
+                    setBuscarLoading(true);
+                    try{
+                      const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
+                      const data=await r.json();
+                      if(Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
+                    }catch(ex){}
+                    setBuscarLoading(false);
+                  }} disabled={buscarLoading} style={{...BtnPrimary(T),fontSize:13,opacity:buscarLoading?0.6:1}}>
+                    {buscarLoading?"Buscando...":"Buscar"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Acciones (solo cuando no es buscar o hay resultados) */}
+            {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
-              <select value={filterTipoEnvio} onChange={e=>{setFilterTipoEnvio(e.target.value);setSelected(new Set());}} style={{...iS,width:"auto",fontSize:13,padding:"8px 12px",color:filterTipoEnvio!=="todos"?T.accent:T.textMd,borderColor:filterTipoEnvio!=="todos"?T.accent:T.inputBorder}}>
+              {tabEnvio!=="buscar"&&<select value={filterTipoEnvio} onChange={e=>{setFilterTipoEnvio(e.target.value);setSelected(new Set());}} style={{...iS,width:"auto",fontSize:13,padding:"8px 12px",color:filterTipoEnvio!=="todos"?T.accent:T.textMd,borderColor:filterTipoEnvio!=="todos"?T.accent:T.inputBorder}}>
                 <option value="todos">🚚 Todos</option>
                 <option value="domicilio">🏠 A domicilio</option>
                 <option value="sucursal">🏪 A sucursal</option>
-              </select>
+              </select>}
               <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
                 {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
               </button>
@@ -2446,19 +2461,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                 </button>
               )}
               <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>
-                {searchEnvios?`${exportables.length} resultados`:`${exportables.length} pedidos`}
+                {exportables.length} pedidos
               </span>
             </div>
+            )}
 
-            {tabLoading?(
+            {tabLoading||buscarLoading?(
               <div style={{textAlign:"center",padding:"80px 20px"}}>
                 <div style={{fontSize:32,marginBottom:12}}>⏳</div>
                 <div style={{fontSize:16,fontWeight:600,color:T.textMd}}>Cargando pedidos...</div>
               </div>
             ):exportables.length===0?(
               <div style={{textAlign:"center",padding:"80px 20px"}}>
-                <div style={{fontSize:48,marginBottom:16}}>📦</div>
-                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>Sin pedidos en esta categoría</div>
+                <div style={{fontSize:48,marginBottom:16}}>{tabEnvio==="buscar"?"🔍":"📦"}</div>
+                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>
+                  {tabEnvio==="buscar"?"Buscá por número, nombre o email y presioná Enter":"Sin pedidos en esta categoría"}
+                </div>
               </div>
             ):(
               <>
