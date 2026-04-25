@@ -16,18 +16,25 @@ export default async function handler(req, res) {
   const { storeId, accessToken } = tnStore;
   const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
 
-  const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=1847&per_page=3`, { headers });
-  const data = await r.json();
-  const o = Array.isArray(data) ? data.find(o => o.number === 1847) : null;
+  // Get all paid+open orders and find sucursal ones
+  const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&status=open&per_page=200`, { headers });
+  const orders = await r.json();
+  
+  if(!Array.isArray(orders)) return res.json({ error: orders });
 
-  // Show ALL fields that might contain sucursal info
+  // Find sucursal orders (Punto de retiro)
+  const sucursalOrders = orders.filter(o => o.shipping_option === "Punto de retiro");
+  
   res.json({
-    shipping_option: o?.shipping_option,
-    shipping_option_reference: o?.shipping_option_reference,
-    shipping_pickup_details: o?.shipping_pickup_details,
-    shipping_store_branch_name: o?.shipping_store_branch_name,
-    shipping_address: o?.shipping_address,
-    fulfillments_full: o?.fulfillments,
-    extra_field: o?.extra,
+    total_paid_open: orders.length,
+    sucursal_count: sucursalOrders.length,
+    sucursales: sucursalOrders.map(o => ({
+      number: o.number,
+      pickup_name: o.shipping_pickup_details?.name,
+      pickup_address: o.shipping_pickup_details?.address?.address,
+      pickup_number: o.shipping_pickup_details?.address?.number,
+      pickup_locality: o.shipping_pickup_details?.address?.locality,
+      fulfillment_option: o.fulfillments?.[0]?.shipping?.option?.name,
+    }))
   });
 }
