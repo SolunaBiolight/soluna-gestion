@@ -2009,37 +2009,71 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                 {c.tracking&&<div style={{fontSize:10,color:T.textSm,marginTop:4,fontFamily:"monospace"}}>{c.tracking}</div>}
               </div>
 
-              {/* Contenido comprometido — editable inline, todos los tipos */}
+              {/* Contenido comprometido — solo activos, compacto, con agregar/quitar */}
               <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>🎬 Contenido comprometido</span>
-                  <span style={{fontSize:12,fontWeight:700,color:progreso===100?T.green:progreso>0?T.accent:T.textSm}}>{totalAcordados>0?`${totalEntregados}/${totalAcordados} · ${progreso}%`:"Sin acordar"}</span>
+                {/* Header */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:totalAcordados>0?8:0}}>
+                  <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>🎬 Contenido</span>
+                  {totalAcordados>0&&<span style={{fontSize:12,fontWeight:700,color:progreso===100?T.green:progreso>0?T.accent:T.textSm}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
                 </div>
-                {totalAcordados>0&&<div style={{height:4,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}><div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s ease"}}/></div>}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"0 8px",marginBottom:4,padding:"0 2px"}}>
-                  <span style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Tipo</span>
-                  <span style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,textAlign:"center"}}>Acordados</span>
-                  <span style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,textAlign:"center"}}>Entregados</span>
-                </div>
-                {(c.contenido||ACTIVIDADES.map(t=>({tipo:t,acordados:0,entregados:0}))).map((item,i)=>{
-                  const done=item.acordados>0&&item.entregados>=item.acordados;
-                  const activo=item.acordados>0;
+                {totalAcordados>0&&<div style={{height:3,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}><div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s ease"}}/></div>}
+
+                {/* Solo filas con acordados > 0 */}
+                {(()=>{
+                  const contenidoBase=c.contenido||ACTIVIDADES.map(t=>({tipo:t,acordados:0,entregados:0}));
+                  const activos=contenidoBase.filter(x=>x.acordados>0);
+                  const inactivos=contenidoBase.filter(x=>x.acordados===0);
                   return (
-                    <div key={item.tipo} style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"0 8px",alignItems:"center",padding:"4px 2px",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-                      <span style={{fontSize:12,color:done?T.green:activo?T.text:T.textSm,fontWeight:activo?500:400,display:"flex",alignItems:"center",gap:5}}>
-                        {activo&&<span style={{width:5,height:5,borderRadius:"50%",background:done?T.green:T.accent,flexShrink:0}}/>}
-                        {item.tipo}
-                      </span>
-                      <input type="number" min={0} defaultValue={item.acordados}
-                        onBlur={e=>{if((parseInt(e.target.value)||0)!==item.acordados)updateContenidoField(i,"acordados",e.target.value);}}
-                        style={{...InputStyle(T),textAlign:"center",padding:"4px 2px",fontSize:12,width:"100%"}}/>
-                      <input type="number" min={0} defaultValue={item.entregados}
-                        onBlur={e=>{if((parseInt(e.target.value)||0)!==item.entregados)updateContenidoField(i,"entregados",e.target.value);}}
-                        style={{...InputStyle(T),textAlign:"center",padding:"4px 2px",fontSize:12,width:"100%",background:done?T.greenBg:InputStyle(T).background,borderColor:done?T.green+"55":InputStyle(T).borderColor}}/>
+                    <div>
+                      {activos.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic",marginBottom:8}}>Sin contenido acordado</div>}
+                      {activos.map((item,i)=>{
+                        const idx=contenidoBase.findIndex(x=>x.tipo===item.tipo);
+                        const done=item.entregados>=item.acordados;
+                        return (
+                          <div key={item.tipo} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+                            {/* Quitar tipo */}
+                            <button onClick={()=>updateContenidoField(idx,"acordados",0)} style={{width:18,height:18,borderRadius:4,border:"none",background:T.surface,color:T.textSm,fontSize:10,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>
+                            {/* Nombre */}
+                            <span style={{flex:1,fontSize:13,fontWeight:500,color:done?T.green:T.text,display:"flex",alignItems:"center",gap:5}}>
+                              <span style={{width:6,height:6,borderRadius:"50%",background:done?T.green:T.accent,flexShrink:0}}/>
+                              {item.tipo}
+                            </span>
+                            {/* Acordados — con - / + */}
+                            <div style={{display:"flex",alignItems:"center",gap:4}}>
+                              <button onClick={()=>updateContenidoField(idx,"acordados",Math.max(item.entregados,item.acordados-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>−</button>
+                              <span style={{fontSize:13,fontWeight:700,color:T.text,minWidth:18,textAlign:"center"}}>{item.acordados}</span>
+                              <button onClick={()=>updateContenidoField(idx,"acordados",item.acordados+1)} style={{width:22,height:22,borderRadius:5,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>+</button>
+                            </div>
+                            <span style={{fontSize:11,color:T.textSm,width:14,textAlign:"center"}}>/</span>
+                            {/* Entregados — con - / + */}
+                            <div style={{display:"flex",alignItems:"center",gap:4}}>
+                              <button onClick={()=>updateContenidoField(idx,"entregados",Math.max(0,item.entregados-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${done?T.green+"66":T.border}`,background:done?T.greenBg:T.surface,color:done?T.green:T.text,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>−</button>
+                              <span style={{fontSize:13,fontWeight:700,color:done?T.green:T.text,minWidth:18,textAlign:"center"}}>{item.entregados}</span>
+                              <button onClick={()=>updateContenidoField(idx,"entregados",Math.min(item.acordados,item.entregados+1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${done?T.green+"66":T.border}`,background:done?T.greenBg:T.surface,color:done?T.green:T.text,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>+</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Agregar tipo */}
+                      {inactivos.length>0&&(
+                        <div style={{marginTop:activos.length>0?8:0,display:"flex",gap:6,flexWrap:"wrap"}}>
+                          {inactivos.map(item=>{
+                            const idx=contenidoBase.findIndex(x=>x.tipo===item.tipo);
+                            return (
+                              <button key={item.tipo} onClick={()=>updateContenidoField(idx,"acordados",1)}
+                                style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:`1px solid ${T.border}`,background:T.surface,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}
+                                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.color=T.accent;}}
+                                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.textSm;}}>
+                                + {item.tipo}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
-                })}
-                <div style={{fontSize:10,color:T.textSm,marginTop:6}}>💡 Enter o Tab para guardar</div>
+                })()}
               </div>
 
               {/* Métricas */}
