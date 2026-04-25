@@ -80,6 +80,17 @@ export default async function handler(req, res) {
       return res.status(200).json(Array.isArray(data) ? data : []);
     }
 
+    // TOTAL: count de todos los pedidos pagados para Home/Reclamos
+    if (tab === 'total') {
+      let total = 0;
+      for (let p = 1; p <= 20; p++) {
+        const page = await fetchPage(storeId, accessToken, "payment_status=paid,partially_paid,partially_refunded", p, 200);
+        total += page.length;
+        if (page.length < 200) break;
+      }
+      return res.status(200).json(Array.from({length: total}, (_,i) => ({id:i})));
+    }
+
     // POR COBRAR: pending/partially_paid + open (todos, son pocos)
     if (tab === 'cobrar') {
       const orders = await fetchAllPages(storeId, accessToken, "payment_status=pending,partially_paid&status=open");

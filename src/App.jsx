@@ -183,6 +183,9 @@ function buildOrdersFromAPI(data) {
   }).sort((a,b)=>parseInt(b.numero)-parseInt(a.numero));
 }
 
+// ─── Andreani shared cache (module level) ───
+const _andreaniLocsCache = { current: null };
+
 // ─── UI Components ───
 function Badge({T, colors, children, small}) {
   return (
@@ -210,10 +213,10 @@ function LensDots({productos}) {
   );
 }
 
-function Modal({T, open, onClose, title, width, children}) {
+function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
   if(!open) return null;
   return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16}}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"92vh",overflow:"visible",boxShadow:"0 24px 64px rgba(0,0,0,0.4)",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:`1px solid ${T.borderL}`,flexShrink:0}}>
           <h2 style={{margin:0,fontSize:17,fontWeight:700,color:T.text}}>{title}</h2>
@@ -466,7 +469,97 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   },[searchGlobal,orders,reclamos]);
 
   const activeR=reclamos.find(r=>r._docId===activeReclamo);
-  const activeOrder=activeR?orders.find(o=>o.numero===activeR.orderNum):null;
+  const [activeOrderCache,setActiveOrderCache]=useState({});
+
+  // Andreani functions (using shared module-level cache)
+  async function loadAndreaniLocations() {
+    if(_andreaniLocsCache.current) return _andreaniLocsCache.current;
+    if(!window.JSZip){await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});}
+    const res=await fetch('/andreani_template.xlsx?v='+Date.now());
+    if(!res.ok) throw new Error("No se pudo cargar el template");
+    const buf=await res.arrayBuffer();
+    const zip=await window.JSZip.loadAsync(buf);
+    const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
+    const strings=[];const rx=/<t[^>]*>([\s\S]*?)<\/t>/g;let m;while((m=rx.exec(ssXml))!==null)strings.push(m[1]);
+    const locPattern=/^[A-ZÁÉÍÓÚÑÜ\s]+ \/ [A-ZÁÉÍÓÚÑÜ\s0-9]+ \/ \d+$/;
+    const list=strings.filter(s=>locPattern.test(s.trim()));
+    const cpIndex={};list.forEach(loc=>{const parts=loc.split(' / ');if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}});
+    const provIndex={};list.forEach(loc=>{const prov=loc.split(' / ')[0].trim();if(!provIndex[prov])provIndex[prov]=[];provIndex[prov].push(loc);});
+    const sheet4Xml=await zip.file('xl/worksheets/sheet4.xml').async('string');
+    const aCells=[...sheet4Xml.matchAll(/<c r="A(\d+)"[^>]*t="s"[^>]*><v>(\d+)<\/v>/g)];
+    const sucursales=aCells.map(([,row,idx])=>strings[parseInt(idx)]||"").filter(s=>s.trim()&&s!=="Sucursal");
+    _andreaniLocsCache.current={list,cpIndex,provIndex,sucursales};
+    return _andreaniLocsCache.current;
+  }
+
+  async function generarEtiquetaAndreani(o) {
+    if(!o) return alert("No se encontró el pedido");
+    try {
+      const locs=await loadAndreaniLocations();
+      // Use the same xlsx generation from AppEnvios - simplified version
+      if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+      const tRes=await fetch('/andreani_template.xlsx?v='+Date.now());
+      if(!tRes.ok) throw new Error("No se pudo cargar el template");
+      const tBuf=await tRes.arrayBuffer();
+      const zip=await window.JSZip.loadAsync(tBuf);
+      const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
+      const existSS=[];const ssRx=/<t[^>]*>([\s\S]*?)<\/t>/g;let mx;while((mx=ssRx.exec(ssXml))!==null)existSS.push(mx[1]);
+      const ssMap=new Map();existSS.forEach((s,i)=>ssMap.set(s,i));const newSS=[...existSS];
+      function idx(s){const k=String(s==null?"":s);if(ssMap.has(k))return ssMap.get(k);const i=newSS.length;newSS.push(k);ssMap.set(k,i);return i;}
+      function sC(ref,val){return '<c r="'+ref+'" t="s"><v>'+idx(val)+'</v></c>';}
+      function nC(ref,val){return (val===''||val===null||val===undefined)?sC(ref,''):'<c r="'+ref+'"><v>'+val+'</v></c>';}
+      function cl(s){return String(s||"").replace(/[-\/\|#*]+/g,' ').replace(/\s{2,}/g,' ').trim();}
+      const partes=o.comprador.trim().split(' ');
+      const nombre=cl(partes[0]||"");const apellido=cl(partes.slice(1).join(' ')||"");
+      const tel=(o.telefono||"").replace(/[^0-9]/g,'');
+      const clean=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
+      let telCod='',telNum='';
+      if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
+      else if(clean.length>0){telNum=clean;}
+      // Localidad
+      const cpIndex=locs.cpIndex;const provIndex=locs.provIndex;
+      const cpStr=String(o.cp||"").trim();
+      const provU=(o.provincia||"").toUpperCase().replace(/^CIUDAD AUTONOMA.*/,"CAPITAL FEDERAL");
+      const locU=(o.localidad||o.ciudad||"").toUpperCase();
+      let ubicacion="";
+      const byCp=cpIndex[cpStr]||[];
+      if(byCp.length>=1){const byProv=byCp.find(l=>l.startsWith(provU));ubicacion=byProv||byCp[0];}
+      if(!ubicacion){const provList=provIndex[provU]||[];if(provList.length>0)ubicacion=provList[0];}
+      if(!ubicacion)ubicacion=locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
+      const dirNum=String(o.dirNumero||"");
+      const direccion=cl(o.direccion||"");
+      const rn=3;
+      const cells=[sC('A'+rn,""),nC('B'+rn,200),nC('C'+rn,5),nC('D'+rn,5),nC('E'+rn,5),nC('F'+rn,6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
+      const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
+      const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
+      const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>');
+      zip.file('xl/worksheets/sheet1.xml',newSheet1);
+      const newSsItems=newSS.map(s=>{const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const sp=(s!==s.trim()||s.indexOf('
+')>=0)?' xml:space="preserve"':'';return '<si><t'+sp+'>'+esc+'</t></si>';}).join('');
+      zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+newSS.length+'" uniqueCount="'+newSS.length+'">'+newSsItems+'</sst>');
+      const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`EnvioMasivoExcelPaquetes-${o.numero}.xlsx`;a.click();
+    } catch(e){ alert("Error al generar etiqueta: "+e.message); }
+  }
+  const activeOrder=activeR?(orders.find(o=>o.numero===activeR.orderNum)||activeOrderCache[activeR.orderNum]||null):null;
+
+  // Cuando cambia activeR y no tenemos el pedido, buscarlo en la API
+  useEffect(()=>{
+    if(!activeR) return;
+    if(orders.find(o=>o.numero===activeR.orderNum)||activeOrderCache[activeR.orderNum]) return;
+    // Buscar el pedido en TN
+    fetch(`/api/orders?uid=${user?.uid}&q=${activeR.orderNum}`)
+      .then(r=>r.json())
+      .then(data=>{
+        if(Array.isArray(data)){
+          const built=buildOrdersFromAPI(data);
+          const found=built.find(o=>o.numero===activeR.orderNum);
+          if(found) setActiveOrderCache(prev=>({...prev,[activeR.orderNum]:found}));
+        }
+      })
+      .catch(()=>{});
+  },[activeR?._docId]);
 
   // ── Render ──
   return (
@@ -858,13 +951,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             </div>
 
             {/* Panel unificado */}
-            {activeR&&activeOrder&&(
+            {activeR&&(
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",position:"sticky",top:76}}>
                 {/* Header panel */}
                 <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"16px 18px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
-                    <div style={{fontSize:16,fontWeight:800,color:T.text}}>{activeOrder.comprador}</div>
+                    <div style={{fontSize:16,fontWeight:800,color:T.text}}>{activeOrder?.comprador||`Pedido #${activeR.orderNum}`}</div>
                     <div style={{fontSize:12,color:T.accent,marginTop:2}}>Pedido #{activeR.orderNum} · {activeR.tipo}</div>
+                    {!activeOrder&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>⏳ Cargando datos del pedido...</div>}
                   </div>
                   <button onClick={()=>setActiveReclamo(null)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:14}}>✕</button>
                 </div>
@@ -890,16 +984,16 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   <div style={{marginBottom:14}}>
                     <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Cliente</div>
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {activeOrder.telefono&&<a href={`https://wa.me/${activeOrder.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",textDecoration:"none",color:T.green}}>💬 {activeOrder.telefono}</a>}
-                      {activeOrder.email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4}}>✉️ {activeOrder.email}</span>}
+                      {activeOrder?.telefono&&<a href={`https://wa.me/${activeOrder.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",textDecoration:"none",color:T.green}}>💬 {activeOrder.telefono}</a>}
+                      {activeOrder?.email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4}}>✉️ {activeOrder.email}</span>}
                     </div>
                   </div>
 
                   {/* Productos del pedido */}
                   <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
                     <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Productos comprados</div>
-                    {activeOrder.productos.map((p,i)=>(
-                      <div key={i} style={{fontSize:13,color:T.text,padding:"4px 0",borderBottom:i<activeOrder.productos.length-1?`1px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between"}}>
+                    {(activeOrder?.productos||[]).map((p,i)=>(
+                      <div key={i} style={{fontSize:13,color:T.text,padding:"4px 0",borderBottom:i<(activeOrder?.productos?.length||0)-1?`1px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between"}}>
                         <span>{p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'')}</span>
                         <span style={{color:T.textSm}}>x{p.cantidad}</span>
                       </div>
@@ -925,7 +1019,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                       <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Tracking del nuevo envío</div>
                       <div style={{display:"flex",gap:8}}>
                         <input style={{...iS,flex:1,fontSize:13,padding:"8px 12px"}} value={activeR.trackingCambio||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:e.target.value,updatedAt:serverTimestamp()});}} />
-                        {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",textDecoration:"none",color:T.purple,flexShrink:0}}>📦 Ver</a>}
+                        {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnPurple(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0}}>📦 Ver seguimiento</a>}
                       </div>
                     </div>
                   )}
@@ -999,20 +1093,12 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   {/* Acciones */}
                   <div style={{display:"flex",gap:8,paddingTop:12,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
                     {/* Generar etiqueta Andreani */}
-                    <button onClick={async()=>{
-                      try {
-                        const o=activeOrder;
-                        if(!o) return alert("No se encontró el pedido");
-                        const locs=await loadAndreaniLocations();
-                        const b=await generateAndreaniXlsx([o],locs,{peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"});
-                        const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`EnvioMasivoExcelPaquetes-${o.numero}.xlsx`;a.click();
-                      } catch(e){alert("Error: "+e.message);}
-                    }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue}}>📦 Andreani</button>
+                    <button onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue,opacity:activeOrder?1:0.4}}>📦 Etiqueta Andreani</button>
                     {deleteConfirm===activeR._docId?(
                       <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><button onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
                     ):(
                       <><button onClick={()=>setDeleteConfirm(activeR._docId)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>Eliminar</button><button onClick={()=>{setReclamoForm({...activeR,productosRecibe:activeR.productosRecibe||[{producto:"",cantidad:1}],productosEnvia:activeR.productosEnvia||[{producto:"",cantidad:1}],historial:activeR.historial||[],trackingCambio:activeR.trackingCambio||"",estadoRecepcion:activeR.estadoRecepcion||"",estadoReembolso:activeR.estadoReembolso||""});}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Editar todo</button>
-                      {activeOrder.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.purple}}>🔗 TN</a>}</>
+                      {activeOrder?.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.purple}}>🔗 TN</a>}</>
                     )}
                   </div>
                 </div>
@@ -1847,7 +1933,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
 
   // Andreani locations cache — lee del template xlsx directamente
-  const andreaniLocsRef=useRef(null);
+  const andreaniLocsRef=_andreaniLocsCache;
   async function loadAndreaniLocations() {
     if(andreaniLocsRef.current) return andreaniLocsRef.current;
     const res=await fetch('/andreani_template.xlsx');
@@ -2651,7 +2737,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       )}
 
       {/* Location / Sucursal Resolution Modal */}
-      <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);}}} title={locationModal?.type==="sucursal"?"Confirmar sucursal Andreani":"Confirmar localidad Andreani"} width={560}>
+      <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);}}} title={locationModal?.type==="sucursal"?"Confirmar sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
         {locationModal&&(()=>{
           const {order,locs,resolve,type}=locationModal;
           const isSuc=type==="sucursal";
@@ -3198,6 +3284,7 @@ export default function App() {
   const [page,setPage]=useState("home");
   const [orders,setOrders]=useState([]);
   const [ordersStatus,setOrdersStatus]=useState("idle");
+  const [totalOrdersCount,setTotalOrdersCount]=useState(null);
   const [fbStatus,setFbStatus]=useState("connecting");
   const [reclamosCount,setReclamosCount]=useState(0);
   const [canjesCount,setCanjesCount]=useState(0);
@@ -3297,12 +3384,16 @@ export default function App() {
     } catch(e){setOrdersStatus("error");}
   }
 
-  // Fetch orders on login — fetch empaquetar tab por defecto
+  // Fetch orders on login — fetch empaquetar tab por defecto + total count
   useEffect(()=>{
     if(!user) return;
-    // Limpiar cache viejo para que no interfiera con los nuevos filtros por tab
     try{ localStorage.removeItem(`soluna_orders_${user.uid}`); localStorage.removeItem("soluna_orders_v3"); }catch(e){}
     fetchOrders(user.uid, "empaquetar");
+    // Traer total de pedidos pagados para mostrar en Home y Reclamos
+    fetch(`/api/orders?uid=${user.uid}&tab=total`)
+      .then(r=>r.json())
+      .then(d=>{ if(Array.isArray(d)) setTotalOrdersCount(d.length); })
+      .catch(()=>{});
   },[user?.uid]);
 
   // Re-fetch when store connects/disconnects
@@ -3380,5 +3471,5 @@ export default function App() {
   if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
   if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
   if(page==="envios") return <><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
-  return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user}/>{themeBtn}</>;
+  return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user}/>{themeBtn}</>;
 }
