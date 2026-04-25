@@ -2062,7 +2062,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [buscarQuery,setBuscarQuery]=useState("");
   const [buscarLoading,setBuscarLoading]=useState(false);
   const [compactMode,setCompactMode]=useState(false);
-  const [hiddenCols,setHiddenCols]=useState(new Set()); // columnas ocultas
+  const [hiddenCols,setHiddenCols]=useState(new Set());
+  const [showColMenu,setShowColMenu]=useState(false);
   function toggleCol(col){setHiddenCols(s=>{const n=new Set(s);n.has(col)?n.delete(col):n.add(col);return n;});}
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
@@ -2562,32 +2563,34 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     resultSetter([]);
 
     try {
-      // Use FileReader to get base64, then parse text client-side
       const text=await extractPdfText(file);
       const pages=text.split("---PAGE---");
       const results=[];
 
       for(let i=0;i<pages.length;i++) {
         const pageText=pages[i];
-        // Match tracking number (18+ digits starting with 36)
-        const trackingMatch=pageText.match(/(?:N[°º]?\s*de\s*seguimiento[:\s]*)?(\b36\d{16,}\b)/i);
-        // Match internal order number
-        const internoMatch=pageText.match(/N[°º]?\s*Interno[:\s]*#?(\d{3,6})/i);
+        // N° seguimiento Andreani: empieza con 36, 15 dígitos totales
+        const trackingMatch=pageText.match(/(36\d{13})/);
+        // N° Interno: "#1786" o "N° Interno: #1786" o "N° Interno: 1786"
+        const internoMatch=pageText.match(/N[°º]\s*Interno[:\s]*#?\s*(\d{3,6})/i);
+        // Destinatario para verificación
+        const destMatch=pageText.match(/Destinatario:\s*([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ\s]+)/i);
 
-        if(trackingMatch||internoMatch) {
-          const tracking=trackingMatch?trackingMatch[1].trim():"";
-          const pedidoNum=internoMatch?internoMatch[1].trim():"";
+        if(trackingMatch&&internoMatch) {
+          const tracking=trackingMatch[1].trim();
+          const pedidoNum=internoMatch[1].trim();
+          const destinatario=destMatch?destMatch[1].trim():"";
           if(type==="sku") {
             const order=orders.find(o=>o.numero===pedidoNum);
             const skus=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`).join(', '):"No encontrado en TN";
-            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order});
+            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario});
           } else {
-            results.push({pagina:i+1,tracking,pedidoNum,status:"pending"});
+            results.push({pagina:i+1,tracking,pedidoNum,destinatario,status:"pending"});
           }
         }
       }
       resultSetter(results);
-      if(results.length===0) alert("No se encontraron rótulos con N° de seguimiento o N° Interno en el PDF. Verificá que sea un PDF de Andreani.");
+      if(results.length===0) alert("No se encontraron rótulos válidos en el PDF. Verificá que sea un archivo de etiquetas de Andreani con N° Interno y N° de seguimiento.");
     } catch(e){ alert("Error al procesar el PDF: "+e.message); }
     setter(false);
   }
@@ -2618,13 +2621,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     if(!result.pedidoNum||!result.tracking) return;
     setSendingTracking(p=>({...p,[result.pedidoNum]:true}));
     try {
-      const order=orders.find(o=>o.numero===result.pedidoNum);
-      if(!order) throw new Error("Pedido no encontrado en TN");
+      // update-shipping busca el ID interno de TN por número de pedido directamente
       const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
       const data=await res.json();
-      if(res.ok) setTrackingSent(p=>({...p,[result.pedidoNum]:true}));
-      else throw new Error(data.error||"Error al enviar");
-    } catch(e){ alert("Error: "+e.message); }
+      if(res.ok&&!data.error) {
+        setTrackingSent(p=>({...p,[result.pedidoNum]:true}));
+      } else {
+        throw new Error(data.error||"Error al actualizar tracking en TN");
+      }
+    } catch(e){
+      alert("❌ Error pedido #"+result.pedidoNum+": "+e.message);
+    }
     setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
   }
 
@@ -2750,15 +2757,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
               </button>
               {/* Columnas configurables */}
               <div style={{position:"relative"}}>
-                <button onClick={e=>{e.stopPropagation();setHiddenCols(s=>s);const el=document.getElementById("col-menu");if(el)el.style.display=el.style.display==="none"?"block":"none";}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px"}}>⚙ Columnas</button>
-                <div id="col-menu" style={{display:"none",position:"absolute",top:"110%",right:0,background:T.card,border:`0.5px solid ${T.border}`,borderRadius:10,padding:"8px",zIndex:100,minWidth:160,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
-                  {[["estado","Estado"],["envio","Envío"],["total","Total"]].map(([col,label])=>(
-                    <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",fontSize:13,color:T.text,borderRadius:6}}>
-                      <input type="checkbox" checked={!hiddenCols.has(col)} onChange={()=>toggleCol(col)} style={{cursor:"pointer"}}/>
-                      {label}
-                    </label>
-                  ))}
-                </div>
+                <button onClick={e=>{e.stopPropagation();setShowColMenu(v=>!v);}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:hiddenCols.size>0?T.accent:T.textMd}}>⚙ Columnas</button>
+                {showColMenu&&(
+                  <>
+                    <div onClick={()=>setShowColMenu(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
+                    <div style={{position:"absolute",top:"110%",right:0,background:T.card,border:`0.5px solid ${T.border}`,borderRadius:10,padding:"8px",zIndex:100,minWidth:160,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
+                      {[["estado","Estado"],["envio","Envío"],["total","Total"]].map(([col,label])=>(
+                        <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",fontSize:13,color:T.text,borderRadius:6}}>
+                          <input type="checkbox" checked={!hiddenCols.has(col)} onChange={()=>toggleCol(col)} style={{cursor:"pointer"}}/>
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
               {selected.size>0&&(
                 <button onClick={()=>setExportModal(true)} style={{...BtnPrimary(T),fontSize:13}}>
@@ -2958,33 +2970,34 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             )}
 
             {pdfResults.length>0&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                  <span style={{fontSize:14,fontWeight:700,color:T.text}}>✅ {pdfResults.length} seguimientos detectados</span>
-                  <button onClick={sendAllTracking} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>
-                    🚀 Enviar todos a Tienda Nube
-                  </button>
+              <div style={{background:T.card,border:`0.5px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                <div style={{padding:"14px 18px",borderBottom:`0.5px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <div>
+                    <span style={{fontSize:14,fontWeight:700,color:T.text}}>{pdfResults.length} etiquetas detectadas</span>
+                    {Object.keys(trackingSent).length>0&&<span style={{fontSize:12,color:T.green,marginLeft:10}}>· {Object.keys(trackingSent).length} enviados ✓</span>}
+                  </div>
+                  <AsyncButton onClick={sendAllTracking} style={{...BtnPrimary(T),fontSize:13,padding:"8px 18px"}}>
+                    ↑ Enviar seguimientos ({pdfResults.filter(r=>!trackingSent[r.pedidoNum]).length} pendientes)
+                  </AsyncButton>
                 </div>
                 {pdfResults.map((r,i)=>{
-                  const order=orders.find(o=>o.numero===r.pedidoNum);
                   const sent=trackingSent[r.pedidoNum];
                   const sending=sendingTracking[r.pedidoNum];
                   return (
-                    <div key={i} style={{padding:"14px 18px",borderBottom:i<pdfResults.length-1?`1px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,background:sent?T.greenBg:"transparent",transition:"background 0.3s"}}>
+                    <div key={i} style={{padding:"12px 18px",borderBottom:i<pdfResults.length-1?`0.5px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,background:sent?T.greenBg:"transparent",transition:"background 0.3s"}}>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
+                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
                           <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"—"}</span>
-                          {order&&<span style={{fontSize:13,color:T.text}}>{order.comprador}</span>}
-                          {!order&&r.pedidoNum&&<span style={{fontSize:12,color:T.red}}>⚠ Pedido no encontrado</span>}
+                          {r.destinatario&&<span style={{fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.destinatario}</span>}
                         </div>
-                        <div style={{fontSize:12,color:T.textSm,fontFamily:"monospace",wordBreak:"break-all"}}>{r.tracking||"Sin tracking detectado"}</div>
+                        <div style={{fontSize:11,color:T.textSm,fontFamily:"monospace",letterSpacing:"0.03em"}}>{r.tracking||"Sin tracking"}</div>
                       </div>
                       <div style={{flexShrink:0}}>
-                        {sent?<span style={{fontSize:13,color:T.green,fontWeight:600}}>✓ Enviado</span>
-                        :sending?<span style={{fontSize:13,color:T.yellow}}>⏳ Enviando...</span>
+                        {sent?<span style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Enviado</span>
+                        :sending?<span style={{fontSize:12,color:T.yellow}}>⏳...</span>
                         :r.tracking&&r.pedidoNum?
-                          <AsyncButton onClick={()=>sendTracking(r)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>↑ Enviar a TN</AsyncButton>
-                        :<span style={{fontSize:12,color:T.red}}>Sin datos</span>}
+                          <AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>↑ Enviar</AsyncButton>
+                        :<span style={{fontSize:11,color:T.red}}>Sin datos</span>}
                       </div>
                     </div>
                   );
