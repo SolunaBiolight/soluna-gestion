@@ -68,13 +68,12 @@ export default async function handler(req, res) {
     }
 
     const tnOrderId = order.id;
-    const currentShippingStatus = order.shipping_status;
 
-    // Estrategia: intentar fulfill primero, si da 403/422 caer en PATCH directo del tracking
-    let updateRes, updateData;
+    // Log para debug
+    console.log(`[update-shipping] pedido #${orderId} | tn_id=${tnOrderId} | shipping_status=${order.shipping_status} | tracking=${tracking}`);
 
-    // Intento 1: /fulfill (requiere ready_to_ship)
-    updateRes = await fetch(
+    // Intento 1: /fulfill (funciona cuando shipping_status=ready_to_ship)
+    let updateRes = await fetch(
       `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`,
       {
         method: 'POST',
@@ -83,17 +82,15 @@ export default async function handler(req, res) {
           'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          shipping_tracking_number: tracking,
-          notify_customer: true,
-        })
+        body: JSON.stringify({ shipping_tracking_number: tracking, notify_customer: true })
       }
     );
-    updateData = await updateRes.json();
+    let updateData = await updateRes.json();
+    console.log(`[update-shipping] fulfill → ${updateRes.status}:`, JSON.stringify(updateData).slice(0,200));
 
-    // Si fulfill falla (403/422/400), intentar PATCH directo al pedido
+    // Intento 2: PUT /orders/{id} — actualiza el campo tracking directamente
     if (!updateRes.ok) {
-      console.log(`fulfill falló con ${updateRes.status}, intentando PATCH directo...`);
+      console.log(`[update-shipping] fulfill falló (${updateRes.status}), intentando PUT...`);
       updateRes = await fetch(
         `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}`,
         {
@@ -103,23 +100,48 @@ export default async function handler(req, res) {
             'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({ shipping_tracking_number: tracking })
+        }
+      );
+      updateData = await updateRes.json();
+      console.log(`[update-shipping] PUT → ${updateRes.status}:`, JSON.stringify(updateData).slice(0,200));
+    }
+
+    // Intento 3: POST /fulfillments (API v2 style)
+    if (!updateRes.ok) {
+      console.log(`[update-shipping] PUT falló (${updateRes.status}), intentando fulfillments...`);
+      updateRes = await fetch(
+        `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfillments`,
+        {
+          method: 'POST',
+          headers: {
+            'Authentication': `bearer ${accessToken}`,
+            'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
-            shipping_tracking_number: tracking,
+            notify_customer: true,
+            fulfillment: {
+              shipping_tracking_number: tracking,
+              shipping_tracking_url: `https://www.andreani.com/#!/informacionEnvio/${tracking}`,
+            }
           })
         }
       );
       updateData = await updateRes.json();
+      console.log(`[update-shipping] fulfillments → ${updateRes.status}:`, JSON.stringify(updateData).slice(0,200));
     }
 
     if (!updateRes.ok) {
       return res.status(updateRes.status).json({
         error: updateData.message || updateData.description || `TN respondió ${updateRes.status}`,
-        tnStatus: updateRes.status,
-        shippingStatus: currentShippingStatus,
+        detail: updateData,
+        shippingStatus: order.shipping_status,
+        hint: order.shipping_status === 'shipped' ? 'El pedido ya fue enviado. Tracking ya cargado.' : 'Verificá que el pedido esté empaquetado en TN.'
       });
     }
 
-    res.status(200).json({ ok: true, order: orderId, tracking, tnResponse: updateData });
+    res.status(200).json({ ok: true, order: orderId, tracking, method: updateRes.url.includes('fulfillments') ? 'fulfillments' : updateRes.url.includes('fulfill') ? 'fulfill' : 'PUT' });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
