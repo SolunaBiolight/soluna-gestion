@@ -16,34 +16,16 @@ export default async function handler(req, res) {
   const { storeId, accessToken } = tnStore;
   const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
 
-  // The 3 PACKED orders have shipping_status=unshipped
-  // Try: paid + open, exclude unpacked shipping_status
-  // Options to try:
-  const tests = {
-    // Option A: paid+open without shipping filter - page 1 only, filter PACKED
-    "paid_open_p1_packed": null,
-    // Option B: paid+open+unshipped (maybe unshipped IS filterable without status=open?)  
-    "paid_unshipped": "payment_status=paid&shipping_status=unshipped",
-    // Option C: paid+open, not unpacked
-    "paid_open_not_unpacked": null,
-  };
-
-  // Test B
-  const rB = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&shipping_status=unshipped&per_page=10`, { headers });
-  const dB = await rB.json();
-
-  // Test C: paid+open page 1, filter by PACKED fulfillment  
-  const rC = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&status=open&per_page=200`, { headers });
-  const dC = await rC.json();
-  const packedC = Array.isArray(dC) ? dC.filter(o => o.fulfillments?.some(f => f.status === 'PACKED')) : [];
-
-  // Test D: no status filter, just payment=paid and shipping=unshipped
-  const rD = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&shipping_status=unshipped&status=open&per_page=10`, { headers });
-  const dD = await rD.json();
+  // Get order 1847 which is a sucursal order - see full shipping_address
+  const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=1847&per_page=3`, { headers });
+  const data = await r.json();
+  const o = Array.isArray(data) ? data.find(o => o.number === 1847) : null;
 
   res.json({
-    "paid+unshipped (no status)": Array.isArray(dB) ? { count: dB.length, numbers: dB.map(o=>o.number) } : dB,
-    "paid+open page1 filter PACKED": { count: packedC.length, numbers: packedC.map(o=>o.number), total_paid_open_p1: Array.isArray(dC) ? dC.length : 0 },
-    "paid+unshipped+open": Array.isArray(dD) ? { count: dD.length } : dD,
+    shipping_address: o?.shipping_address,
+    shipping_option: o?.shipping_option,
+    shipping_option_reference: o?.shipping_option_reference,
+    gateway_name: o?.gateway_name,
+    fulfillments: o?.fulfillments,
   });
 }
