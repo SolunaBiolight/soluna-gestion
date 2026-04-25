@@ -205,14 +205,13 @@ function Spinner({size=14,color="#fff",style={}}) {
 function Badge({T, colors, children, small}) {
   return (
     <span style={{
-      display:"inline-flex", alignItems:"center", gap:6,
-      padding: small ? "3px 8px" : "4px 10px",
-      borderRadius:20, fontSize: small ? 11 : 12, fontWeight:600,
-      background:colors.bg, color:colors.text,
-      border:`1px solid ${colors.dot}33`,
-      whiteSpace:"nowrap",
+      display:"inline-flex", alignItems:"center", gap:4,
+      padding: small ? "2px 6px" : "2px 8px",
+      borderRadius:5, fontSize:11, fontWeight:500,
+      background:colors.bg, color:colors.text||colors.dot,
+      border:`0.5px solid ${colors.dot}33`,
+      whiteSpace:"nowrap", letterSpacing:"0.02em",
     }}>
-      <span style={{width:6,height:6,borderRadius:"50%",background:colors.dot,flexShrink:0}}/>
       {children}
     </span>
   );
@@ -232,7 +231,7 @@ function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
   if(!open) return null;
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"92vh",overflow:"visible",boxShadow:"0 24px 64px rgba(0,0,0,0.4)",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"92vh",overflow:"visible",boxShadow:"0 32px 80px rgba(0,0,0,0.35)",border:`0.5px solid ${T.border}`,display:"flex",flexDirection:"column"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:`1px solid ${T.borderL}`,flexShrink:0}}>
           <h2 style={{margin:0,fontSize:17,fontWeight:700,color:T.text}}>{title}</h2>
           <button onClick={onClose} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textMd}}>✕</button>
@@ -258,29 +257,30 @@ function Divider({T}) { return <div style={{height:1,background:T.borderL,margin
 
 function StatCard({T, label, value, color, sub}) {
   return (
-    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",flex:"1 1 120px",minWidth:120}}>
-      <div style={{fontSize:32,fontWeight:800,color,letterSpacing:-1,lineHeight:1}}>{value}</div>
-      <div style={{fontSize:13,color:T.textMd,marginTop:6,fontWeight:500}}>{label}</div>
-      {sub&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{sub}</div>}
+    <div style={{background:T.card,border:`0.5px solid ${T.border}`,borderRadius:14,padding:"18px 20px",flex:"1 1 120px",minWidth:120,position:"relative",overflow:"hidden"}}>
+      {color&&color!==T.textMd&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:color,borderRadius:"3px 0 0 3px"}}/>}
+      <div style={{fontSize:28,fontWeight:700,color,letterSpacing:-0.5,lineHeight:1}}>{value}</div>
+      <div style={{fontSize:12,color:T.textSm,marginTop:6,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.04em"}}>{label}</div>
+      {sub&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>{sub}</div>}
     </div>
   );
 }
 
 function InputStyle(T) {
   return {
-    width:"100%", padding:"11px 14px", borderRadius:10,
-    border:`1.5px solid ${T.inputBorder}`, fontSize:14,
+    width:"100%", padding:"10px 14px", borderRadius:8,
+    border:`0.5px solid ${T.inputBorder}`, fontSize:13,
     fontFamily:"'Inter',system-ui,sans-serif",
     outline:"none", boxSizing:"border-box",
     background:T.input, color:T.text,
-    transition:"border-color 0.15s",
+    transition:"border-color 0.12s",
   };
 }
 
-function BtnPrimary(T) { return {border:"none",borderRadius:10,padding:"11px 20px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:7,background:T.accentSolid,color:"#fff"}; }
-function BtnSecondary(T) { return {border:`1.5px solid ${T.border}`,borderRadius:10,padding:"10px 18px",fontSize:14,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:7,background:T.card,color:T.text}; }
-function BtnDanger(T) { return {border:`1.5px solid ${T.red}44`,borderRadius:10,padding:"10px 18px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:7,background:T.redBg,color:T.red}; }
-function BtnPurple(T) { return {border:`1.5px solid ${T.purple}44`,borderRadius:10,padding:"10px 18px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:7,background:T.purpleBg,color:T.purple}; }
+function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid,color:"#fff",letterSpacing:"0.01em"}; }
+function BtnSecondary(T) { return {border:`0.5px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.surface,color:T.text}; }
+function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
+function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
 
 function OrderSearchField({T, orders, onSelect}) {
   const [q,setQ]=useState(""); const inputRef=useRef(null);
@@ -294,7 +294,7 @@ function OrderSearchField({T, orders, onSelect}) {
         <input ref={inputRef} style={{...iS,paddingLeft:36}} placeholder="Nro de pedido, nombre o email..." value={q} onChange={e=>setQ(e.target.value)}/>
       </div>
       {q.length>0&&results.length>0&&(
-        <div style={{marginTop:6,background:T.bg,border:`1.5px solid ${T.border}`,borderRadius:12,maxHeight:280,overflow:"auto"}}>
+        <div style={{marginTop:6,background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:12,maxHeight:280,overflow:"auto"}}>
           {results.map((o,i)=>(
             <div key={o.numero} onClick={()=>onSelect(o.numero)} style={{padding:"12px 16px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
@@ -309,7 +309,7 @@ function OrderSearchField({T, orders, onSelect}) {
           ))}
         </div>
       )}
-      {q.length>0&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:14,border:`1.5px solid ${T.border}`,borderRadius:12}}>Sin resultados para "{q}"</div>}
+      {q.length>0&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:14,border:`0.5px solid ${T.border}`,borderRadius:12}}>Sin resultados para "{q}"</div>}
     </div>
   );
 }
@@ -615,7 +615,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             {["dashboard","buscar","reclamos","config"].map(v=>{
               const labels={dashboard:"📊 Dashboard",buscar:"🔍 Buscar",reclamos:"📋 Reclamos",config:"⚙️ Plantillas"};
               const isCurrent=view===v;
-              return <button key={v} onClick={()=>{setView(v);setActiveReclamo(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",background:isCurrent?T.accentSolid:T.card,color:isCurrent?"#fff":T.textMd,borderColor:isCurrent?T.accentSolid:T.border}}>{labels[v]}{v==="reclamos"&&stats.urgentes>0&&<span style={{background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"1px 6px",marginLeft:4}}>{stats.urgentes}</span>}</button>;
+              return <button key={v} onClick={()=>{setView(v);setActiveReclamo(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:isCurrent?600:400,border:"none",borderRadius:7,background:isCurrent?T.accentSolid:"transparent",color:isCurrent?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>{labels[v]}{v==="reclamos"&&stats.urgentes>0&&<span style={{background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:4,padding:"1px 5px",marginLeft:2}}>{stats.urgentes}</span>}</button>;
             })}
             <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>+ Nuevo</button>
             <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
@@ -668,7 +668,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                             </div>
                             {/* Detalle expandido */}
                             {isOpen&&(
-                              <div style={{padding:"0 16px 16px",borderTop:`1px solid ${T.borderL}`}} onClick={e=>e.stopPropagation()}>
+                              <div style={{padding:"0 16px 16px",borderTop:`0.5px solid ${T.borderL}`}} onClick={e=>e.stopPropagation()}>
                                 {/* Info cliente */}
                                 <div style={{display:"flex",gap:16,flexWrap:"wrap",paddingTop:12,marginBottom:12}}>
                                   <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Email</div><div style={{fontSize:13,color:T.text}}>{o.email||"—"}</div></div>
@@ -921,7 +921,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                             </div>
                           </div>
                           {isOpen&&(
-                            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.borderL}`}} onClick={e=>e.stopPropagation()}>
+                            <div style={{padding:"0 18px 18px",borderTop:`0.5px solid ${T.borderL}`}} onClick={e=>e.stopPropagation()}>
                               <div style={{display:"flex",gap:16,flexWrap:"wrap",paddingTop:12,marginBottom:12}}>
                                 <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Email</div><div style={{fontSize:13,color:T.text}}>{o.email||"—"}</div></div>
                                 <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Teléfono</div><div style={{fontSize:13,color:T.text}}>{o.telefono||"—"}</div></div>
@@ -1030,7 +1030,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     const isActive=activeReclamo===r._docId;
                     return (
                       <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
-                        style={{background:isActive?T.surface:T.card,border:`1.5px solid ${isActive?T.accentSolid:urgente?T.red+"44":T.border}`,borderLeft:`4px solid ${sc.dot}`,borderRadius:10,padding:"14px 16px",cursor:"pointer",transition:"all 0.12s"}}
+                        style={{background:isActive?T.surface:T.card,border:`0.5px solid ${isActive?T.accentSolid:urgente?T.red+"44":T.border}`,borderLeft:`3px solid ${sc.dot}`,borderRadius:10,padding:"15px 16px",cursor:"pointer",transition:"all 0.1s"}}
                         onMouseEnter={e=>{if(!isActive)e.currentTarget.style.background=T.surface;}}
                         onMouseLeave={e=>{if(!isActive)e.currentTarget.style.background=T.card;}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
@@ -1197,7 +1197,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
                   {/* Acciones */}
                   {/* Acciones */}
-                  <div style={{display:"flex",gap:8,paddingTop:12,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",gap:8,paddingTop:12,borderTop:`0.5px solid ${T.borderL}`,flexWrap:"wrap"}}>
                     {/* Generar etiqueta Andreani */}
                     <button onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue,opacity:activeOrder?1:0.4,display:"inline-flex",alignItems:"center",gap:6}}>📦 Etiqueta Andreani</button>
                     {deleteConfirm===activeR._docId?(
@@ -2571,29 +2571,29 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           <div>
             {/* Tabs */}
             <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-              {[
-                {id:"cobrar",    label:"Por cobrar",     color:T.orange},
-                {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
-                {id:"enviar",    label:"Por enviar",     color:T.blue},
-              ].map(t=>(
-                <button key={t.id} onClick={()=>{
-                  setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");
-                  fetchTabOrders(t.id);
-                  if(!tabCounts[t.id]) fetchTabCounts(user?.uid);
-                }}
-                  style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio===t.id?700:500,border:`1.5px solid ${tabEnvio===t.id?t.color:T.border}`,background:tabEnvio===t.id?t.color+"18":T.card,color:tabEnvio===t.id?t.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
-                  <span style={{width:8,height:8,borderRadius:"50%",background:t.color,flexShrink:0}}/>
-                  {t.label}
-                  <span style={{background:tabEnvio===t.id?t.color:T.surface,color:tabEnvio===t.id?"#fff":T.textSm,fontSize:12,fontWeight:700,borderRadius:20,padding:"1px 8px",minWidth:22,textAlign:"center"}}>
-                    {counts[t.id]===null?"•":counts[t.id]}
-                  </span>
-                </button>
-              ))}
-              {/* Tab Buscar */}
-              <button onClick={()=>{setTabEnvio("buscar");setSelected(new Set());setBuscarQuery("");setTabOrders([]);}}
-                style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:10,fontSize:14,fontWeight:tabEnvio==="buscar"?700:500,border:`1.5px solid ${tabEnvio==="buscar"?T.accent:T.border}`,background:tabEnvio==="buscar"?T.accentSolid+"18":T.card,color:tabEnvio==="buscar"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
-                🔍 Buscar pedido
-              </button>
+              {/* Segmented control */}
+              <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:0}}>
+                {[
+                  {id:"cobrar",    label:"Por cobrar",     color:T.orange},
+                  {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
+                  {id:"enviar",    label:"Por enviar",     color:T.blue},
+                  {id:"buscar",    label:"🔍 Buscar",      color:T.accent},
+                ].map(t=>{
+                  const isActive=tabEnvio===t.id;
+                  return (
+                    <button key={t.id} onClick={()=>{
+                      setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");
+                      if(t.id==="buscar"){setBuscarQuery("");setTabOrders([]);}
+                      else{fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);}
+                    }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:isActive?600:400,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
+                      {t.label}
+                      {t.id!=="buscar"&&<span style={{background:isActive?t.color:"transparent",color:isActive?"#fff":T.textSm,fontSize:11,fontWeight:700,borderRadius:5,padding:"1px 6px",minWidth:18,textAlign:"center",border:isActive?"none":`1px solid ${T.border}`}}>
+                        {counts[t.id]===null?"·":counts[t.id]}
+                      </span>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Panel buscar */}
@@ -2640,11 +2640,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             {/* Acciones (solo cuando no es buscar o hay resultados) */}
             {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
-              {tabEnvio!=="buscar"&&<select value={filterTipoEnvio} onChange={e=>{setFilterTipoEnvio(e.target.value);setSelected(new Set());}} style={{...iS,width:"auto",fontSize:13,padding:"8px 12px",color:filterTipoEnvio!=="todos"?T.accent:T.textMd,borderColor:filterTipoEnvio!=="todos"?T.accent:T.inputBorder}}>
-                <option value="todos">🚚 Todos</option>
-                <option value="domicilio">🏠 A domicilio</option>
-                <option value="sucursal">🏪 A sucursal</option>
-              </select>}
+              {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:8,padding:2}}>
+                {[["todos","Todos"],["domicilio","🏠 Domicilio"],["sucursal","🏪 Sucursal"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Set());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
+                ))}
+              </div>}
               <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
                 {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
               </button>
@@ -2654,7 +2654,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                 </button>
               )}
               <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>
-                {exportables.length} pedidos
+                {exportables.length} {exportables.length===1?"pedido":"pedidos"}
               </span>
             </div>
             )}
@@ -2682,10 +2682,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   const isSuc=o.medioEnvio&&(o.medioEnvio.toLowerCase().includes('sucursal')||o.medioEnvio.toLowerCase().includes('hop')||o.medioEnvio.toLowerCase().includes('punto'));
                   return (
                     <div key={o.numero} onClick={()=>toggleSelect(o.numero)}
-                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"13px 14px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center"}}
+                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center"}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
-                      <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <div style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                         {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
                       </div>
                       <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
@@ -2833,11 +2833,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 
       {/* Sucursal confirmed toast */}
       {sucursalConfirmed&&(
-        <div style={{position:"fixed",bottom:32,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.greenBg,border:`1.5px solid ${T.green}`,borderRadius:12,padding:"14px 24px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 8px 32px rgba(0,0,0,0.4)",animation:"fadeIn 0.3s ease"}}>
-          <span style={{fontSize:20}}>✅</span>
+        <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`0.5px solid ${T.green}44`,borderLeft:`3px solid ${T.green}`,borderRadius:10,padding:"12px 20px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 8px 40px rgba(0,0,0,0.3)",animation:"fadeIn 0.2s ease",minWidth:280}}>
+          <span style={{fontSize:16}}>✅</span>
           <div>
-            <div style={{fontSize:13,fontWeight:700,color:T.green}}>Sucursal confirmada — Pedido #{sucursalConfirmed.numero}</div>
-            <div style={{fontSize:12,color:T.green,marginTop:2,opacity:0.8}}>{sucursalConfirmed.nombre}</div>
+            <div style={{fontSize:13,fontWeight:600,color:T.green}}>Sucursal confirmada · #{sucursalConfirmed.numero}</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{sucursalConfirmed.nombre}</div>
           </div>
         </div>
       )}
@@ -2919,7 +2919,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   </div>
                 )}
               </div>
-              <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:12,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:12,borderTop:`0.5px solid ${T.borderL}`,flexWrap:"wrap"}}>
                 <button onClick={()=>{resolve(null);setLocationModal(null);}} style={{...BtnSecondary(T),fontSize:13}}>Cancelar exportación</button>
                 <button onClick={()=>{resolve("EXCLUIR");setLocationModal(null);}} style={{...BtnDanger(T),fontSize:13}}>Excluir este pedido</button>
                 {!isSuc&&<button onClick={()=>{
@@ -3003,14 +3003,14 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,width:"100%",maxWidth:760,marginBottom:32}}>
           {/* Reclamos */}
           <button onClick={()=>onNavigate("reclamos")}
-            style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:32,textAlign:"left",cursor:"pointer",transition:"all 0.2s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=T.red;e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 12px 32px rgba(0,0,0,0.25)`;}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
-            <div style={{width:52,height:52,borderRadius:14,background:T.redBg,border:`1px solid ${T.red}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,marginBottom:20}}>📋</div>
-            <div style={{fontSize:20,fontWeight:800,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Reclamos</div>
+            style={{background:T.card,border:`0.5px solid ${T.border}`,borderLeft:`3px solid ${T.red}`,borderRadius:14,padding:28,textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
+            onMouseEnter={e=>{e.currentTarget.style.background=T.surface;}}
+            onMouseLeave={e=>{e.currentTarget.style.background=T.card;}}>
+            <div style={{width:44,height:44,borderRadius:10,background:T.redBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,marginBottom:18}}>📋</div>
+            <div style={{fontSize:18,fontWeight:700,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Reclamos</div>
             <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:20}}>Administrá cambios y devoluciones de productos vinculados a tus pedidos de Tienda Nube.</div>
-            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`1px solid ${T.borderL}`}}>
-              <div><div style={{fontSize:26,fontWeight:800,color:T.accent,letterSpacing:-1}}>{ordersCount}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>pedidos</div></div>
+            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`0.5px solid ${T.borderL}`}}>
+              <div><div style={{fontSize:26,fontWeight:700,color:T.accent,letterSpacing:-0.5}}>{ordersCount??<Spinner size={16} color={T.accent}/>}</div><div style={{fontSize:11,color:T.textSm,marginTop:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>pedidos totales</div></div>
               <div style={{width:1,background:T.borderL}}/>
               <div><div style={{fontSize:26,fontWeight:800,color:T.red,letterSpacing:-1}}>{reclamosCount}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>reclamos</div></div>
             </div>
@@ -3018,27 +3018,27 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 
           {/* Canjes */}
           <button onClick={()=>onNavigate("canjes")}
-            style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:32,textAlign:"left",cursor:"pointer",transition:"all 0.2s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=T.purple;e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 12px 32px rgba(0,0,0,0.25)`;}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+            style={{background:T.card,border:`0.5px solid ${T.border}`,borderLeft:`3px solid ${T.purple}`,borderRadius:14,padding:28,textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
+            onMouseEnter={e=>{e.currentTarget.style.background=T.surface;}}
+            onMouseLeave={e=>{e.currentTarget.style.background=T.card;}}>
             <div style={{width:52,height:52,borderRadius:14,background:T.purpleBg,border:`1px solid ${T.purple}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,marginBottom:20}}>🤝</div>
             <div style={{fontSize:20,fontWeight:800,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Canjes</div>
             <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:20}}>Seguimiento de influencers, productos enviados, actividades comprometidas y contenido publicado.</div>
-            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`1px solid ${T.borderL}`}}>
+            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`0.5px solid ${T.borderL}`}}>
               <div><div style={{fontSize:26,fontWeight:800,color:T.purple,letterSpacing:-1}}>{canjesCount}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>canjes</div></div>
             </div>
           </button>
 
           {/* Envios */}
           <button onClick={()=>onNavigate("envios")}
-            style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:32,textAlign:"left",cursor:"pointer",transition:"all 0.2s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=T.blue;e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 12px 32px rgba(0,0,0,0.25)`;}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
-            <div style={{width:52,height:52,borderRadius:14,background:T.blueBg,border:`1px solid ${T.blue}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,marginBottom:20}}>🚚</div>
-            <div style={{fontSize:20,fontWeight:800,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Envíos</div>
+            style={{background:T.card,border:`0.5px solid ${T.border}`,borderLeft:`3px solid ${T.blue}`,borderRadius:14,padding:28,textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
+            onMouseEnter={e=>{e.currentTarget.style.background=T.surface;}}
+            onMouseLeave={e=>{e.currentTarget.style.background=T.card;}}>
+            <div style={{width:44,height:44,borderRadius:10,background:T.blueBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,marginBottom:18}}>🚚</div>
+            <div style={{fontSize:18,fontWeight:700,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Envíos</div>
             <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:20}}>Exportá pedidos para Andreani, insertá SKUs en rótulos y enviá seguimientos a Tienda Nube automáticamente.</div>
-            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`1px solid ${T.borderL}`}}>
-              <div><div style={{fontSize:26,fontWeight:800,color:T.blue,letterSpacing:-1}}>{ordersCount}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>pedidos</div></div>
+            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`0.5px solid ${T.borderL}`}}>
+              <div><div style={{fontSize:26,fontWeight:700,color:T.blue,letterSpacing:-0.5}}>{ordersCount??<Spinner size={16} color={T.blue}/>}</div><div style={{fontSize:11,color:T.textSm,marginTop:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>pedidos totales</div></div>
             </div>
           </button>
         </div>
