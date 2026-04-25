@@ -192,13 +192,33 @@ const _andreaniLocsCache = { current: null };
 if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
   const s=document.createElement("style");
   s.id="growith-spin";
-  s.textContent=`@keyframes growith-spin{to{transform:rotate(360deg)}}`;
+  s.textContent=`@keyframes growith-spin{to{transform:rotate(360deg)}} @keyframes growith-fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} @keyframes growith-skeleton{0%,100%{opacity:0.4}50%{opacity:0.8}}`;
   document.head.appendChild(s);
 }
 
 function Spinner({size=14,color="#fff",style={}}) {
   return (
     <span style={{display:"inline-block",width:size,height:size,border:`2px solid ${color}44`,borderTop:`2px solid ${color}`,borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",flexShrink:0,...style}}/>
+  );
+}
+
+// AsyncButton — muestra spinner automáticamente mientras el onClick async procesa
+function AsyncButton({onClick, children, style, disabled, ...props}) {
+  const [loading, setLoading] = React.useState(false);
+  const handleClick = async (e) => {
+    if(loading || disabled) return;
+    setLoading(true);
+    try { await onClick(e); } catch(err) { console.error(err); }
+    finally { setLoading(false); }
+  };
+  const spinnerColor = style?.color || "#fff";
+  return (
+    <button {...props} onClick={handleClick} disabled={loading || disabled}
+      style={{...style, opacity: loading ? 0.75 : (disabled ? 0.4 : 1), cursor: loading ? "wait" : (disabled ? "not-allowed" : "pointer")}}>
+      {loading
+        ? <><Spinner size={13} color={spinnerColor}/>{typeof children === "string" ? " " + children : children}</>
+        : children}
+    </button>
   );
 }
 
@@ -337,7 +357,17 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [searchGlobal,setSearchGlobal]=useState("");
   const [searchApiResults,setSearchApiResults]=useState([]);
   const [searchApiLoading,setSearchApiLoading]=useState(false);
-  const [pedidoDetalle,setPedidoDetalle]=useState(null); // pedido seleccionado para ver detalle
+  const [pedidoDetalle,setPedidoDetalle]=useState(null);
+
+  // Atajos de teclado en reclamos
+  useEffect(()=>{
+    function handleKey(e) {
+      if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA") return;
+      if(e.key==="Escape") { setActiveReclamo(null); setSearchGlobal(""); setPedidoDetalle(null); }
+    }
+    window.addEventListener("keydown", handleKey);
+    return ()=>window.removeEventListener("keydown", handleKey);
+  },[]);
   const iS=InputStyle(T);
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
 
@@ -467,9 +497,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       if(!r.createdAt?.seconds||new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]>hace3) return false;
     }
     if(search){
-      const s=search.toLowerCase();
+      const s=search.toLowerCase().trim();
+      if(r.orderNum===s) return true; // exacto primero
+      if(r.orderNum.includes(s)) return true;
+      if((r.motivo||"").toLowerCase().includes(s)) return true;
+      if((r.tipo||"").toLowerCase().includes(s)) return true;
       const o=orders.find(o=>o.numero===r.orderNum);
-      return r.orderNum.includes(s)||(o&&(o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s)||o.telefono.includes(s)));
+      if(o&&(o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s)||o.telefono.includes(s))) return true;
+      return false;
     }
     return true;
   }),[reclamos,search,filterEstado,filterTipo,filterUrgentes,hace3]);
@@ -478,14 +513,16 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const globalResults=useMemo(()=>{
     if(!searchGlobal||searchGlobal.length<1) return {pedidos:[],reclamos:[]};
     const s=searchGlobal.toLowerCase().trim();
-    // Pedidos vienen de la API (searchApiResults)
     const pedidos=searchApiResults.slice(0,8);
-    // Reclamos filtrados por número o nombre
+    // Reclamos: match por número exacto, parcial, nombre o motivo
     const recls=reclamos.filter(r=>{
+      if(r.orderNum===s) return true; // exacto primero
       if(r.orderNum.includes(s)) return true;
+      if((r.motivo||"").toLowerCase().includes(s)) return true;
+      if((r.tipo||"").toLowerCase().includes(s)) return true;
       const o=searchApiResults.find(o=>o.numero===r.orderNum);
       return o&&(o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
-    }).slice(0,5);
+    }).slice(0,8);
     return {pedidos,recls};
   },[searchGlobal,searchApiResults,reclamos]);
 
@@ -713,7 +750,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                                 {/* Acciones */}
                                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                                   <button onClick={()=>{setReclamoForm(emptyForm(o.numero));setSearchGlobal("");setPedidoDetalle(null);}} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px"}}>+ Crear Reclamo</button>
-                                  <button onClick={()=>generarEtiquetaAndreani(o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.blue}}>📦 Etiqueta Andreani</button>
+                                  <AsyncButton onClick={()=>generarEtiquetaAndreani(o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.blue}}>📦 Etiqueta Andreani</AsyncButton>
                                   {o.telefono&&<a href={`https://wa.me/${o.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.green}}>💬 WhatsApp</a>}
                                   {o.linkOrden&&<a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.purple}}>🔗 Ver en TN</a>}
                                 </div>
@@ -1021,7 +1058,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 </div>
               ):(
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {filteredReclamos.map(r=>{
+                  {filteredReclamos.map((r,rIdx)=>{
                     const o=orders.find(o=>o.numero===r.orderNum);
                     const sc=getEstadoRC(T,r.estado);
                     const tc=getTipoRC(T,r.tipo);
@@ -1030,7 +1067,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     const isActive=activeReclamo===r._docId;
                     return (
                       <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
-                        style={{background:isActive?T.surface:T.card,border:`0.5px solid ${isActive?T.accentSolid:urgente?T.red+"44":T.border}`,borderLeft:`3px solid ${sc.dot}`,borderRadius:10,padding:"15px 16px",cursor:"pointer",transition:"all 0.1s"}}
+                        style={{background:isActive?T.surface:T.card,border:`0.5px solid ${isActive?T.accentSolid:urgente?T.red+"44":T.border}`,borderLeft:`3px solid ${sc.dot}`,borderRadius:10,padding:"15px 16px",cursor:"pointer",transition:"all 0.1s",animation:"growith-fadeIn 0.2s ease both",animationDelay:`${Math.min(rIdx*25,200)}ms`}}
                         onMouseEnter={e=>{if(!isActive)e.currentTarget.style.background=T.surface;}}
                         onMouseLeave={e=>{if(!isActive)e.currentTarget.style.background=T.card;}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
@@ -1038,7 +1075,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                               <span style={{fontWeight:700,fontSize:14,color:T.accent}}>#{r.orderNum}</span>
                               <span style={{fontSize:14,fontWeight:600,color:T.text}}>{o?.comprador||"—"}</span>
-                              {urgente&&<span style={{fontSize:10,background:T.redBg,color:T.red,border:`1px solid ${T.red}44`,borderRadius:4,padding:"2px 6px",fontWeight:700}}>+{dias}d</span>}
+                              {dias>0&&<span style={{fontSize:10,background:urgente?T.redBg:T.surface,color:urgente?T.red:T.textSm,border:`0.5px solid ${urgente?T.red+"44":T.border}`,borderRadius:4,padding:"2px 6px",fontWeight:urgente?700:400}}>{dias}d</span>}
                             </div>
                             <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>{r.motivo}</div>
                             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -1063,7 +1100,11 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"16px 18px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
                     <div style={{fontSize:16,fontWeight:800,color:T.text}}>{activeOrder?.comprador||`Pedido #${activeR.orderNum}`}</div>
-                    <div style={{fontSize:12,color:T.accent,marginTop:2}}>Pedido #{activeR.orderNum} · {activeR.tipo}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4,flexWrap:"wrap"}}>
+                      <span style={{fontSize:12,color:T.accent}}>Pedido #{activeR.orderNum} · {activeR.tipo}</span>
+                      {activeOrder?.estadoEnvio&&(()=>{const ec=getEstadoEnvioC(T,activeOrder.estadoEnvio);return <span style={{fontSize:11,background:ec.bg,color:ec.text,border:`0.5px solid ${ec.dot}33`,borderRadius:5,padding:"1px 7px",fontWeight:500}}>{activeOrder.estadoEnvio}</span>;})()}
+                      {activeOrder?.medioPago&&<span style={{fontSize:11,color:T.textSm}}>{activeOrder.medioPago}</span>}
+                    </div>
                     {!activeOrder&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>⏳ Cargando datos del pedido...</div>}
                   </div>
                   <button onClick={()=>setActiveReclamo(null)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:14}}>✕</button>
@@ -1123,9 +1164,21 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                       </div>
                       {/* Tracking del cambio */}
                       <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Tracking del nuevo envío</div>
-                      <div style={{display:"flex",gap:8}}>
-                        <input style={{...iS,flex:1,fontSize:13,padding:"8px 12px"}} value={activeR.trackingCambio||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:e.target.value,updatedAt:serverTimestamp()});}} />
-                        {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnPurple(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0}}>📦 Ver seguimiento</a>}
+                      <div style={{display:"flex",gap:8,flexDirection:"column"}}>
+                        <div style={{display:"flex",gap:8}}>
+                          <input style={{...iS,flex:1,fontSize:13,padding:"8px 12px"}} value={activeR.trackingCambio||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:e.target.value,updatedAt:serverTimestamp()});}} />
+                          {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnPurple(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0}}>📦 Seguimiento</a>}
+                        </div>
+                        {activeR.trackingCambio&&(
+                          <AsyncButton onClick={async()=>{
+                            const r=await fetch(`/api/update-shipping?uid=${user?.uid}&orderId=${activeR.orderNum}&tracking=${activeR.trackingCambio}`);
+                            const d=await r.json();
+                            if(r.ok) alert("✅ Tracking actualizado en Tienda Nube");
+                            else alert("Error: "+(d.error||"no se pudo actualizar"));
+                          }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,alignSelf:"flex-start"}}>
+                            ↑ Subir tracking a Tienda Nube
+                          </AsyncButton>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1199,9 +1252,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   {/* Acciones */}
                   <div style={{display:"flex",gap:8,paddingTop:12,borderTop:`0.5px solid ${T.borderL}`,flexWrap:"wrap"}}>
                     {/* Generar etiqueta Andreani */}
-                    <button onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue,opacity:activeOrder?1:0.4,display:"inline-flex",alignItems:"center",gap:6}}>📦 Etiqueta Andreani</button>
+                    <AsyncButton onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue}}>📦 Etiqueta Andreani</AsyncButton>
                     {deleteConfirm===activeR._docId?(
-                      <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><button onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
+                      <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><AsyncButton onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</AsyncButton><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
                     ):(
                       <><button onClick={()=>setDeleteConfirm(activeR._docId)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>Eliminar</button><button onClick={()=>{setReclamoForm({...activeR,productosRecibe:activeR.productosRecibe||[{producto:"",cantidad:1}],productosEnvia:activeR.productosEnvia||[{producto:"",cantidad:1}],historial:activeR.historial||[],trackingCambio:activeR.trackingCambio||"",estadoRecepcion:activeR.estadoRecepcion||"",estadoReembolso:activeR.estadoReembolso||""});}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Editar todo</button>
                       {activeOrder?.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.purple}}>🔗 TN</a>}</>
@@ -1305,7 +1358,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               <Field T={T} label="Notas internas"><textarea style={{...iS,minHeight:50,resize:"vertical"}} value={reclamoForm.notas||""} onChange={e=>setReclamoForm(f=>({...f,notas:e.target.value}))} placeholder="Notas para el equipo..."/></Field>
               <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}>
                 <button onClick={()=>setReclamoForm(null)} style={BtnSecondary(T)}>Cancelar</button>
-                <button onClick={saveReclamo} disabled={saving||!reclamoForm.motivo} style={{...BtnPrimary(T),opacity:saving||!reclamoForm.motivo?0.5:1}}>{saving?"Guardando...":(reclamoForm._docId?"Guardar":"Crear Reclamo")}</button>
+                <AsyncButton onClick={saveReclamo} disabled={!reclamoForm.motivo} style={{...BtnPrimary(T)}}>{reclamoForm._docId?"Guardar":"Crear Reclamo"}</AsyncButton>
               </div>
             </>)}
           </div>
@@ -1581,7 +1634,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
               <div style={{display:"grid",gridTemplateColumns:"1fr 90px 160px 190px 1fr 80px",gap:8,padding:"8px 16px",fontSize:12,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
                 <span>Influencer</span><span>Red</span><span>Producto</span><span>Estado</span><span>Contenido</span><span>Fecha</span>
               </div>
-              {filtered.map(c=>{
+              {filtered.map((c,ci)=>{
                 const sc=getEstadoCC(T,c.estado);
                 return (
                   <div key={c._docId} onClick={()=>setDetail(c._docId)}
@@ -1815,7 +1868,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
             <Field T={T} label="Notas"><textarea style={{...iS,minHeight:60,resize:"vertical"}} value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))} placeholder="Notas sobre el canje..."/></Field>
             <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:10}}>
               <button onClick={()=>setForm(null)} style={BtnSecondary(T)}>Cancelar</button>
-              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPrimary(T),opacity:saving||!form.influencer?0.5:1}}>{saving?"Guardando...":(form._docId?"Guardar":"Crear Canje")}</button>
+              <AsyncButton onClick={saveCanje} disabled={!form.influencer} style={{...BtnPrimary(T)}}>{form._docId?"Guardar":"Crear Canje"}</AsyncButton>
             </div>
           </div>
         )}
@@ -1978,14 +2031,29 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [selected,setSelected]=useState(new Set());
   const [exportModal,setExportModal]=useState(false);
   const [exporting,setExporting]=useState(false);
-  const [exportCfg,setExportCfg]=useState({peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000",separar:false});
+  const [exportCfg,setExportCfg]=useState(()=>{
+    try {
+      const saved=localStorage.getItem("growith_exportCfg");
+      if(saved) return {...{peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000",separar:false},...JSON.parse(saved)};
+    } catch(e) {}
+    return {peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000",separar:false};
+  });
+  // Guardar config cuando cambia
+  useEffect(()=>{ try{localStorage.setItem("growith_exportCfg",JSON.stringify(exportCfg));}catch(e){} },[exportCfg]);
   const [tabEnvio,setTabEnvio]=useState("empaquetar");
   const [searchEnvios,setSearchEnvios]=useState("");
   const [searchLibre,setSearchLibre]=useState(false);
   const [locationModal,setLocationModal]=useState(null);
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
-  const [sucursalConfirmed,setSucursalConfirmed]=useState(null); // {numero, nombre}
+  const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
+  const [copiedToast,setCopiedToast]=useState(null);
+  function copyToClipboard(text, label) {
+    navigator.clipboard.writeText(text).then(()=>{
+      setCopiedToast(label||"Copiado");
+      setTimeout(()=>setCopiedToast(null), 1500);
+    }).catch(()=>{});
+  }
   const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null});
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
   const [tabOrders,setTabOrders]=useState([]);
@@ -1993,6 +2061,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const tabCacheRef=useRef({});
   const [buscarQuery,setBuscarQuery]=useState("");
   const [buscarLoading,setBuscarLoading]=useState(false);
+  const [compactMode,setCompactMode]=useState(false);
+  const [hiddenCols,setHiddenCols]=useState(new Set()); // columnas ocultas
+  function toggleCol(col){setHiddenCols(s=>{const n=new Set(s);n.has(col)?n.delete(col):n.add(col);return n;});}
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
@@ -2035,7 +2106,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 
   const counts=tabCounts;
 
-  function toggleSelect(num){setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});}
+  const lastSelectedRef=useRef(null);
+  function toggleSelect(num,e){
+    if(e?.shiftKey&&lastSelectedRef.current){
+      const nums=exportables.map(o=>o.numero);
+      const a=nums.indexOf(lastSelectedRef.current),b=nums.indexOf(num);
+      if(a>=0&&b>=0){
+        const [from,to]=[Math.min(a,b),Math.max(a,b)];
+        setSelected(s=>{const n=new Set(s);nums.slice(from,to+1).forEach(x=>n.add(x));return n;});
+        return;
+      }
+    }
+    lastSelectedRef.current=num;
+    setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});
+  }
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
 
   // Andreani locations cache — lee del template xlsx directamente
@@ -2344,6 +2428,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const locationOverridesRef=useRef({});
   const sucursalOverridesRef=useRef({});
 
+  // Atajos de teclado
+  useEffect(()=>{
+    function handleKey(e) {
+      if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.tagName==="SELECT") return;
+      if((e.ctrlKey||e.metaKey)&&e.key==="a"&&tab==="panel") { e.preventDefault(); toggleAll(); }
+      if(e.key==="Escape") { setSelected(new Set()); setSearchEnvios(""); setBuscarQuery(""); }
+      if(e.key==="Enter"&&selected.size>0&&!exportModal) { setExportModal(true); }
+    }
+    window.addEventListener("keydown", handleKey);
+    return ()=>window.removeEventListener("keydown", handleKey);
+  },[selected, tab, exportModal, tabOrders]);
+
   // Fetch local tab orders — independiente del estado global de orders
   async function fetchTabOrders(tab) {
     if(!user?.uid) return;
@@ -2417,6 +2513,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       if(!finalOrders.length){ alert("Todos los pedidos fueron excluidos."); setExporting(false); return; }
       const b=await generateAndreaniXlsx(finalOrders,locs);
       const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';a.click();
+      // Guardar historial de exportaciones
+      try{
+        const hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");
+        hist.unshift({fecha:new Date().toISOString(),cantidad:finalOrders.length,pedidos:finalOrders.map(o=>o.numero)});
+        localStorage.setItem("growith_exportHistory",JSON.stringify(hist.slice(0,50)));
+      }catch(e){}
       setExportModal(false);setSelected(new Set());
       locationOverridesRef.current={};sucursalOverridesRef.current={};
     } catch(e){alert("Error al exportar: "+e.message);}
@@ -2542,14 +2644,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             <span style={{color:T.textSm,fontSize:15}}>/</span>
             <span style={{fontWeight:700,fontSize:15,color:T.text}}>🚚 Envíos</span>
           </div>
-          <button onClick={()=>{
+          <AsyncButton onClick={async()=>{
             tabCacheRef.current={};
             setTabOrders([]);
-            fetchTabOrders(tabEnvio);
-            fetchTabCounts(user?.uid);
-          }} disabled={tabLoading} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:tabLoading?0.5:1}}>
-            {tabLoading?<><Spinner size={13} color={T.textMd}/> Sincronizando...</>:"⟳ Sincronizar"}
-          </button>
+            await Promise.all([fetchTabOrders(tabEnvio), fetchTabCounts(user?.uid)]);
+          }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.textMd}}>
+            ⟳ Sincronizar
+          </AsyncButton>
         </div>
       </div>
 
@@ -2621,18 +2722,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                       style={{...iS,paddingLeft:40,fontSize:14}}
                     />
                   </div>
-                  <button onClick={async()=>{
+                  <AsyncButton onClick={async()=>{
                     if(!buscarQuery.trim()) return;
-                    setBuscarLoading(true);
-                    try{
-                      const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
-                      const data=await r.json();
-                      if(Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
-                    }catch(ex){}
-                    setBuscarLoading(false);
-                  }} disabled={buscarLoading} style={{...BtnPrimary(T),fontSize:13,opacity:buscarLoading?0.6:1}}>
-                    {buscarLoading?<><Spinner size={13}/> Buscando...</>:"Buscar"}
-                  </button>
+                    const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
+                    const data=await r.json();
+                    if(Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
+                  }} style={{...BtnPrimary(T),fontSize:13}}>
+                    Buscar
+                  </AsyncButton>
                 </div>
               </div>
             )}
@@ -2648,61 +2745,99 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
               <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
                 {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
               </button>
+              <button onClick={()=>setCompactMode(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:compactMode?T.accent:T.textMd,borderColor:compactMode?T.accent:T.border}} title={compactMode?"Vista normal":"Vista compacta"}>
+                {compactMode?"⊟":"⊞"} Compacto
+              </button>
+              {/* Columnas configurables */}
+              <div style={{position:"relative"}}>
+                <button onClick={e=>{e.stopPropagation();setHiddenCols(s=>s);const el=document.getElementById("col-menu");if(el)el.style.display=el.style.display==="none"?"block":"none";}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px"}}>⚙ Columnas</button>
+                <div id="col-menu" style={{display:"none",position:"absolute",top:"110%",right:0,background:T.card,border:`0.5px solid ${T.border}`,borderRadius:10,padding:"8px",zIndex:100,minWidth:160,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
+                  {[["estado","Estado"],["envio","Envío"],["total","Total"]].map(([col,label])=>(
+                    <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",fontSize:13,color:T.text,borderRadius:6}}>
+                      <input type="checkbox" checked={!hiddenCols.has(col)} onChange={()=>toggleCol(col)} style={{cursor:"pointer"}}/>
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
               {selected.size>0&&(
                 <button onClick={()=>setExportModal(true)} style={{...BtnPrimary(T),fontSize:13}}>
-                  ⬇️ Exportar {selected.size} pedido{selected.size!==1?"s":""}
+                  ⬇️ Generar {selected.size} etiqueta{selected.size!==1?"s":""}
                 </button>
               )}
-              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>
-                {exportables.length} {exportables.length===1?"pedido":"pedidos"}
+              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center"}}>
+                <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}</span>
+                <span style={{opacity:0.5}}>· Ctrl+A todos · Shift+click rango · Esc limpiar · Enter exportar</span>
               </span>
             </div>
             )}
 
             {tabLoading||buscarLoading?(
-              <div style={{textAlign:"center",padding:"80px 20px",display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
-                <Spinner size={36} color={T.accent}/>
-                <div style={{fontSize:15,fontWeight:600,color:T.textMd}}>Cargando pedidos...</div>
+              <div>
+                {[...Array(6)].map((_,i)=>(
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:1-i*0.12}}>
+                    {[40,70,120,100,140,100,70].map((w,j)=>(
+                      <div key={j} style={{height:12,borderRadius:6,background:T.surface,animation:"growith-skeleton 1.4s ease infinite",animationDelay:`${i*80+j*40}ms`,width:w,maxWidth:"100%"}}/>
+                    ))}
+                  </div>
+                ))}
               </div>
             ):exportables.length===0?(
-              <div style={{textAlign:"center",padding:"80px 20px"}}>
-                <div style={{fontSize:48,marginBottom:16}}>{tabEnvio==="buscar"?"🔍":"📦"}</div>
-                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>
-                  {tabEnvio==="buscar"?"Buscá por número, nombre o email y presioná Enter":"Sin pedidos en esta categoría"}
+              <div style={{textAlign:"center",padding:"72px 20px"}}>
+                <div style={{width:60,height:60,borderRadius:14,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 18px"}}>
+                  {tabEnvio==="buscar"?"🔍":tabEnvio==="cobrar"?"💰":tabEnvio==="empaquetar"?"📦":"🚀"}
+                </div>
+                <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>
+                  {tabEnvio==="buscar"?"Buscá por número, nombre o email":tabEnvio==="cobrar"?"Sin pedidos pendientes de cobro":tabEnvio==="empaquetar"?"Todo empaquetado 🎉":"Sin pedidos para enviar"}
+                </div>
+                <div style={{fontSize:12,color:T.textSm,maxWidth:300,margin:"0 auto"}}>
+                  {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar":tabEnvio==="cobrar"?"Los pedidos pagados pasan a Por empaquetar":tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados en Tienda Nube"}
                 </div>
               </div>
             ):(
               <>
-                <div style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span/><span>Pedido</span><span>Cliente</span><span>Productos</span><span>Estado</span><span>Envío</span><span>Total</span>
-                </div>
-                {exportables.map(o=>{
+                {(()=>{
+                  const cols=["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" ");
+                  return (
+                    <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                      <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
+                      {!hiddenCols.has("estado")&&<span>Estado</span>}
+                      {!hiddenCols.has("envio")&&<span>Envío</span>}
+                      {!hiddenCols.has("total")&&<span>Total</span>}
+                    </div>
+                  );
+                })()}
+                {exportables.map((o,idx)=>{
                   const sel=selected.has(o.numero);
                   const ec=getEstadoEnvioC(T,o.estadoEnvio);
                   const isSuc=o.medioEnvio&&(o.medioEnvio.toLowerCase().includes('sucursal')||o.medioEnvio.toLowerCase().includes('hop')||o.medioEnvio.toLowerCase().includes('punto'));
                   return (
-                    <div key={o.numero} onClick={()=>toggleSelect(o.numero)}
-                      style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center"}}
+                    <div key={o.numero} onClick={e=>toggleSelect(o.numero,e)}
+                      style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
                       <div style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                         {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
                       </div>
-                      <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
+                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                        <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
+                        <button onClick={e=>{e.stopPropagation();const txt=`#${o.numero} · ${o.comprador} · ${o.esSucursal?(o.pickupDetails?.name+" "+o.pickupDetails?.address?.address+" "+o.pickupDetails?.address?.number):(o.direccion+" "+o.dirNumero+", "+o.cp)}`; copyToClipboard(txt, `#${o.numero} copiado`);}} style={{fontSize:10,color:T.textSm,background:"none",border:"none",cursor:"pointer",padding:0,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}} title="Copiar datos">📋</button>
+                      </div>
                       <div>
-                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{o.comprador}</div>
-                        <div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.localidad||o.ciudad}{o.provincia?`, ${o.provincia}`:""}</div>
+                        <div style={{fontSize:compactMode?12:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
+                        {!compactMode&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.localidad||o.ciudad}{o.provincia?`, ${o.provincia}`:""}</div>}
                       </div>
                       <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                         <LensDots productos={o.productos}/>
-                        <span style={{marginLeft:6}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</span>
+                        {!compactMode&&<span style={{marginLeft:6}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</span>}
                       </div>
-                      <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
-                      <div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
+                      {!hiddenCols.has("estado")&&<Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>}
+                      {!hiddenCols.has("envio")&&<div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
                         <span>{o.esSucursal?"🏪":"🏠"}</span>
-                        <span>{o.medioEnvio||"—"}</span>
-                      </div>
-                      <span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>
+                        <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"—"}</span>
+                        {o.esSucursal&&o.pickupDetails&&<span title="Puede requerir confirmar sucursal al exportar" style={{fontSize:10,color:T.yellow,flexShrink:0}}>⚠</span>}
+                      </div>}
+                      {!hiddenCols.has("total")&&<span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>}
                     </div>
                   );
                 })}
@@ -2710,6 +2845,35 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
             )}
           </div>
         )}
+
+        {/* ── HISTORIAL DE EXPORTACIONES ── */}
+        {tab==="panel"&&(()=>{
+          let hist=[];
+          try{hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]").slice(0,5);}catch(e){}
+          if(!hist.length) return null;
+          return (
+            <div style={{marginTop:24,borderTop:`0.5px solid ${T.borderL}`,paddingTop:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em"}}>Últimas exportaciones</div>
+                <button onClick={()=>{localStorage.removeItem("growith_exportHistory");}} style={{fontSize:11,color:T.textSm,background:"none",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {hist.map((h,i)=>{
+                  const d=new Date(h.fecha);
+                  const f=d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})+" "+d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+                  const nums=h.pedidos.slice(0,3).join(", ")+(h.pedidos.length>3?` y ${h.pedidos.length-3} más`:"");
+                  return (
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",background:T.surface,borderRadius:8,fontSize:12}}>
+                      <span style={{color:T.textSm,minWidth:100}}>{f}</span>
+                      <span style={{color:T.accent,fontWeight:600}}>{h.cantidad} etiqueta{h.cantidad!==1?"s":""}</span>
+                      <span style={{color:T.textSm,flex:1}}>#{nums}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── SKU EN ROTULOS ── */}
         {tab==="sku"&&(
@@ -2819,7 +2983,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                         {sent?<span style={{fontSize:13,color:T.green,fontWeight:600}}>✓ Enviado</span>
                         :sending?<span style={{fontSize:13,color:T.yellow}}>⏳ Enviando...</span>
                         :r.tracking&&r.pedidoNum?
-                          <button onClick={()=>sendTracking(r)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Enviar a TN</button>
+                          <AsyncButton onClick={()=>sendTracking(r)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>↑ Enviar a TN</AsyncButton>
                         :<span style={{fontSize:12,color:T.red}}>Sin datos</span>}
                       </div>
                     </div>
@@ -2832,6 +2996,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       </div>
 
       {/* Sucursal confirmed toast */}
+      {copiedToast&&(
+        <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`0.5px solid ${T.border}`,borderRadius:8,padding:"8px 16px",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",animation:"growith-fadeIn 0.15s ease",fontSize:13,color:T.text}}>
+          <span style={{fontSize:14}}>📋</span> {copiedToast}
+        </div>
+      )}
       {sucursalConfirmed&&(
         <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`0.5px solid ${T.green}44`,borderLeft:`3px solid ${T.green}`,borderRadius:10,padding:"12px 20px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 8px 40px rgba(0,0,0,0.3)",animation:"fadeIn 0.2s ease",minWidth:280}}>
           <span style={{fontSize:16}}>✅</span>
@@ -2933,7 +3102,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       </Modal>
 
       {/* Export Modal */}
-      <Modal T={T} open={exportModal} onClose={()=>!exporting&&setExportModal(false)} title={`Exportar ${selected.size} pedido${selected.size!==1?"s":""} para Andreani`} width={480}>
+      <Modal T={T} open={exportModal} onClose={()=>!exporting&&setExportModal(false)} title={`Generar ${selected.size} etiqueta${selected.size!==1?"s":""} para Andreani`} width={480}>
         <div>
           <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,fontSize:13,color:T.textMd}}>
             <span style={{fontWeight:700,color:T.text}}>{selected.size}</span> pedido{selected.size!==1?"s":""} seleccionado{selected.size!==1?"s":""}. Se exportarán solo los marcados.
@@ -2957,9 +3126,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           </div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <button onClick={()=>setExportModal(false)} disabled={exporting} style={{...BtnSecondary(T),opacity:exporting?0.5:1}}>Cancelar</button>
-            <button onClick={exportAndreani} disabled={exporting} style={{...BtnPrimary(T),opacity:exporting?0.7:1,minWidth:160,justifyContent:"center"}}>
-              {exporting?<><Spinner size={14}/> Generando...</>:<>⬇️ Descargar XLSX</>}
-            </button>
+            <AsyncButton onClick={exportAndreani} style={{...BtnPrimary(T),minWidth:160,justifyContent:"center"}}>
+              ⬇️ Generar etiquetas
+            </AsyncButton>
           </div>
         </div>
       </Modal>
@@ -2970,7 +3139,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 // ═══════════════════════════════════════════
 // HOME SCREEN
 // ═══════════════════════════════════════════
-function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user}) {
+function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false}) {
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column"}}>
@@ -2989,6 +3158,11 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               <span style={{width:7,height:7,borderRadius:"50%",background:fbDot,boxShadow:`0 0 6px ${fbDot}`}}/>
               <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
             </div>
+            {/* Plan badge */}
+            <button onClick={()=>onNavigate("planes")} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:8,background:userPlan==="free"?T.surface:userPlan==="starter"?"#1c1400":userPlan==="pro"?"#0a1628":"#1a0a2e",border:`0.5px solid ${userPlan==="free"?T.border:userPlan==="starter"?"#fbbf24":userPlan==="pro"?"#60a5fa":"#a78bfa"}`,fontSize:12,fontWeight:600,color:userPlan==="free"?T.textSm:userPlan==="starter"?"#fbbf24":userPlan==="pro"?"#60a5fa":"#a78bfa",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              {userPlan==="free"?"Free":userPlan==="starter"?"Starter":userPlan==="pro"?"Pro":"Total"}
+            </button>
+            {isAdmin&&<button onClick={()=>onNavigate("admin")} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,color:T.yellow,borderColor:T.yellow+"44"}} title="Panel de administrador">👑</button>}
             <button onClick={()=>onNavigate("config")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>⚙️</button>
           </div>
         </div>
@@ -3370,7 +3544,7 @@ function ConfigScreen({T, user, onBack}) {
                 ))}
               </div>
               {userDoc?.plan==="total"
-                ?<button onClick={async()=>{if(window.confirm("¿Cancelar suscripción Total?"))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:13}}>Cancelar suscripción</button>
+                ?<AsyncButton onClick={async()=>{if(window.confirm("¿Cancelar suscripción Total?"))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:13}}>Cancelar suscripción</AsyncButton>
                 :<button onClick={()=>{setMsg("Próximamente podrás suscribirte al plan Total. Te avisaremos cuando esté disponible! 🚀");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>Quiero el plan Total</button>
               }
             </div>
@@ -3383,6 +3557,330 @@ function ConfigScreen({T, user, onBack}) {
 }
 
 // ═══════════════════════════════════════════
+
+// ═══════════════════════════════════════════
+// APP PLANES — Página de suscripción
+// ═══════════════════════════════════════════
+function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT_EMAIL}) {
+  const iS=InputStyle(T);
+  const [step,setStep]=useState("planes"); // planes | pago | enviado
+  const [planSel,setPlanSel]=useState(null);
+  const [comprobante,setComprobante]=useState("");
+  const [txHash,setTxHash]=useState("");
+  const [sending,setSending]=useState(false);
+
+  const PLANES=[
+    {id:"starter",nombre:"Starter",precio:9,color:T.yellow,icon:"⭐",desc:"Para empezar",features:["Gestión de Reclamos","Buscador de pedidos","Hasta 100 pedidos/mes"]},
+    {id:"pro",nombre:"Pro",precio:19,color:T.blue,icon:"🚀",desc:"El más popular",popular:true,features:["Todo lo de Starter","Gestión de Envíos completa","Exportar etiquetas Andreani","Canjes e influencers","Sin límite de pedidos"]},
+    {id:"total",nombre:"Total",precio:39,color:T.purple,icon:"💎",desc:"Máximo poder",features:["Todo lo de Pro","Soporte prioritario","Acceso anticipado a nuevas funciones","Multi-tienda (próximamente)"]},
+  ];
+
+  const planActual=PLANES.find(p=>p.id===userPlan);
+  const planSelecc=PLANES.find(p=>p.id===planSel);
+
+  async function enviarComprobante() {
+    if(!txHash&&!comprobante) return alert("Completá el hash de transacción o adjuntá comprobante");
+    setSending(true);
+    try {
+      // Guardar solicitud en Firestore
+      await addDoc(collection(db,"pagos"),{
+        uid: user.uid,
+        email: user.email,
+        plan: planSel,
+        txHash,
+        comprobante,
+        estado: "pendiente",
+        createdAt: serverTimestamp(),
+      });
+      setStep("enviado");
+    } catch(e){ alert("Error: "+e.message); }
+    setSending(false);
+  }
+
+  if(step==="enviado") return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{textAlign:"center",maxWidth:420}}>
+        <div style={{fontSize:64,marginBottom:20}}>✅</div>
+        <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>¡Comprobante enviado!</div>
+        <div style={{fontSize:14,color:T.textMd,marginBottom:24,lineHeight:1.6}}>Revisaremos tu pago y activaremos tu plan <strong>{planSelecc?.nombre}</strong> en las próximas horas. Te notificaremos por email a {user?.email}.</div>
+        <button onClick={onBack} style={{...BtnPrimary(T),justifyContent:"center",width:"100%"}}>Volver al inicio</button>
+      </div>
+    </div>
+  );
+
+  if(step==="pago") return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
+      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12}}>
+        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
+        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pagar plan {planSelecc?.nombre}</span>
+      </div>
+      <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
+        {/* Resumen */}
+        <div style={{background:T.card,border:`0.5px solid ${planSelecc?.color}44`,borderLeft:`3px solid ${planSelecc?.color}`,borderRadius:12,padding:"18px 20px",marginBottom:24}}>
+          <div style={{fontSize:13,color:T.textSm,marginBottom:4}}>Plan seleccionado</div>
+          <div style={{fontSize:20,fontWeight:700,color:planSelecc?.color}}>{planSelecc?.icon} {planSelecc?.nombre} — ${planSelecc?.precio} USDT/mes</div>
+        </div>
+
+        {/* Dirección USDT */}
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Enviá exactamente ${planSelecc?.precio} USDT (TRC20) a esta dirección:</div>
+          <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
+            <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"monospace"}}>{USDT_ADDRESS}</code>
+            <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>📋 Copiar</button>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8,padding:"8px 12px",background:T.yellowBg,border:`0.5px solid ${T.yellow}44`,borderRadius:8}}>
+            <span style={{fontSize:14}}>⚠️</span>
+            <span style={{fontSize:12,color:T.yellow}}>Solo enviar USDT en la red TRC20. Otras redes no son compatibles.</span>
+          </div>
+        </div>
+
+        {/* Comprobante */}
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Hash de transacción (TxID)</div>
+          <input style={{...iS,fontSize:13,fontFamily:"monospace"}} placeholder="Pegá el hash de la transacción aquí..." value={txHash} onChange={e=>setTxHash(e.target.value)}/>
+          <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Lo encontrás en tu wallet después de enviar. Ejemplo: abc123def456...</div>
+        </div>
+        <div style={{marginBottom:28}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Nota adicional (opcional)</div>
+          <textarea style={{...iS,minHeight:80,resize:"vertical",fontSize:13}} placeholder="Algún dato adicional, screenshot URL, etc..." value={comprobante} onChange={e=>setComprobante(e.target.value)}/>
+        </div>
+
+        <AsyncButton onClick={enviarComprobante} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>
+          Enviar comprobante para activar plan
+        </AsyncButton>
+        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:12}}>Tu plan se activa en menos de 24hs hábiles una vez confirmado el pago.</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
+      {/* Topbar */}
+      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+        <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
+        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Planes y suscripción</span>
+      </div>
+
+      <div style={{maxWidth:860,margin:"0 auto",padding:"40px 20px"}}>
+        {/* Plan actual */}
+        {userPlan!=="free"&&planActual&&(
+          <div style={{background:T.card,border:`0.5px solid ${planActual.color}44`,borderLeft:`3px solid ${planActual.color}`,borderRadius:12,padding:"16px 20px",marginBottom:32,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+            <div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan activo</div>
+              <div style={{fontSize:18,fontWeight:700,color:planActual.color}}>{planActual.icon} {planActual.nombre}</div>
+              {planExpiry&&<div style={{fontSize:12,color:T.textSm,marginTop:2}}>Vence: {planExpiry.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>}
+            </div>
+            <div style={{fontSize:13,color:T.textSm}}>¿Querés cambiar de plan? Seleccioná uno abajo.</div>
+          </div>
+        )}
+
+        <div style={{textAlign:"center",marginBottom:40}}>
+          <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:-0.5,marginBottom:8}}>Elegí tu plan</div>
+          <div style={{fontSize:15,color:T.textMd}}>Pagos en USDT (TRC20) · Sin suscripción automática · Se activa en 24hs</div>
+        </div>
+
+        {/* Cards de planes */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16,marginBottom:40}}>
+          {PLANES.map(p=>(
+            <div key={p.id} style={{background:T.card,border:`0.5px solid ${planSel===p.id?p.color:p.popular?p.color+"44":T.border}`,borderTop:p.popular?`3px solid ${p.color}`:"none",borderRadius:14,padding:"24px 20px",position:"relative",cursor:"pointer",transition:"all 0.15s",boxShadow:planSel===p.id?`0 0 0 2px ${p.color}33`:""}}
+              onClick={()=>setPlanSel(p.id)}>
+              {p.popular&&<div style={{position:"absolute",top:-1,left:"50%",transform:"translateX(-50%) translateY(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>MÁS POPULAR</div>}
+              <div style={{fontSize:28,marginBottom:12}}>{p.icon}</div>
+              <div style={{fontSize:18,fontWeight:700,color:p.color,marginBottom:2}}>{p.nombre}</div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:16}}>{p.desc}</div>
+              <div style={{fontSize:32,fontWeight:800,color:T.text,letterSpacing:-1,marginBottom:4}}>${p.precio}</div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:20}}>USDT / mes</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {p.features.map((f,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.textMd}}>
+                    <span style={{color:p.color,flexShrink:0,marginTop:1}}>✓</span>{f}
+                  </div>
+                ))}
+              </div>
+              {planSel===p.id&&<div style={{marginTop:16,padding:"6px 0",textAlign:"center",fontSize:12,fontWeight:600,color:p.color}}>✓ Seleccionado</div>}
+            </div>
+          ))}
+        </div>
+
+        {planSel&&(
+          <div style={{textAlign:"center"}}>
+            <button onClick={()=>setStep("pago")} style={{...BtnPrimary(T),fontSize:15,padding:"13px 32px",justifyContent:"center"}}>
+              Continuar con plan {planSelecc?.nombre} →
+            </button>
+          </div>
+        )}
+
+        <div style={{marginTop:40,padding:"20px",background:T.surface,borderRadius:12,textAlign:"center"}}>
+          <div style={{fontSize:13,color:T.textSm}}>¿Dudas? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent}}>{SUPPORT_EMAIL}</a></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// APP ADMIN — Panel de administrador
+// ═══════════════════════════════════════════
+function AppAdmin({T, user, onBack}) {
+  const iS=InputStyle(T);
+  const [usuarios,setUsuarios]=useState([]);
+  const [pagos,setPagos]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [tab,setTab]=useState("pagos"); // pagos | usuarios
+
+  useEffect(()=>{
+    loadData();
+  },[]);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      // Load pending payments
+      const pagSnap=await getDocs(query(collection(db,"pagos"),orderBy("createdAt","desc")));
+      setPagos(pagSnap.docs.map(d=>({_id:d.id,...d.data()})));
+      // Load all users
+      const usSnap=await getDocs(collection(db,"users"));
+      setUsuarios(usSnap.docs.map(d=>({_id:d.id,...d.data()})));
+    } catch(e){ alert("Error: "+e.message); }
+    setLoading(false);
+  }
+
+  async function activarPlan(uid, plan, meses=1) {
+    const expiry=new Date();
+    expiry.setMonth(expiry.getMonth()+meses);
+    await updateDoc(doc(db,"users",uid),{
+      plan,
+      planExpiry: expiry,
+      planActivadoBy: user.uid,
+      planActivadoAt: serverTimestamp(),
+    });
+    setUsuarios(u=>u.map(u2=>u2._id===uid?{...u2,plan,planExpiry:expiry}:u2));
+    alert(`✅ Plan ${plan} activado para ${meses} mes${meses>1?"es":""}`);
+  }
+
+  async function desactivarPlan(uid) {
+    if(!window.confirm("¿Desactivar plan?")) return;
+    await updateDoc(doc(db,"users",uid),{plan:"free",planExpiry:null});
+    setUsuarios(u=>u.map(u2=>u2._id===uid?{...u2,plan:"free",planExpiry:null}:u2));
+  }
+
+  async function confirmarPago(pagoId, uid, plan) {
+    await activarPlan(uid, plan, 1);
+    await updateDoc(doc(db,"pagos",pagoId),{estado:"confirmado",confirmadoBy:user.uid,confirmadoAt:serverTimestamp()});
+    setPagos(p=>p.map(p2=>p2._id===pagoId?{...p2,estado:"confirmado"}:p2));
+  }
+
+  async function rechazarPago(pagoId) {
+    if(!window.confirm("¿Rechazar pago?")) return;
+    await updateDoc(doc(db,"pagos",pagoId),{estado:"rechazado"});
+    setPagos(p=>p.map(p2=>p2._id===pagoId?{...p2,estado:"rechazado"}:p2));
+  }
+
+  const PLAN_C={free:T.textSm,starter:T.yellow,pro:T.blue,total:T.purple};
+  const filteredUsers=usuarios.filter(u=>!search||(u.email||"").toLowerCase().includes(search.toLowerCase())||(u.nombre||"").toLowerCase().includes(search.toLowerCase()));
+  const pagosPendientes=pagos.filter(p=>p.estado==="pendiente");
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
+      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
+          <span style={{fontWeight:700,fontSize:15,color:T.yellow}}>👑 Panel Admin</span>
+        </div>
+        <AsyncButton onClick={loadData} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>⟳ Recargar</AsyncButton>
+      </div>
+
+      <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
+        {/* Stats */}
+        <div style={{display:"flex",gap:12,marginBottom:24,flexWrap:"wrap"}}>
+          {[
+            {label:"Pagos pendientes",value:pagosPendientes.length,color:T.yellow},
+            {label:"Usuarios Pro",value:usuarios.filter(u=>u.plan==="pro").length,color:T.blue},
+            {label:"Usuarios Total",value:usuarios.filter(u=>u.plan==="total").length,color:T.purple},
+            {label:"Total usuarios",value:usuarios.length,color:T.textMd},
+          ].map((s,i)=>(
+            <div key={i} style={{background:T.card,border:`0.5px solid ${T.border}`,borderLeft:`3px solid ${s.color}`,borderRadius:10,padding:"14px 18px",flex:"1 1 120px",minWidth:110}}>
+              <div style={{fontSize:24,fontWeight:700,color:s.color}}>{s.value}</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:0,marginBottom:20,width:"fit-content"}}>
+          {[["pagos",`Pagos${pagosPendientes.length>0?` (${pagosPendientes.length})`:""}`],["usuarios","Usuarios"]].map(([id,label])=>(
+            <button key={id} onClick={()=>setTab(id)} style={{padding:"7px 16px",borderRadius:8,fontSize:13,border:"none",background:tab===id?T.card:"transparent",color:tab===id?T.text:T.textMd,fontWeight:tab===id?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===id?"0 1px 3px rgba(0,0,0,0.2)":"none"}}>{label}</button>
+          ))}
+        </div>
+
+        {loading&&<div style={{textAlign:"center",padding:40}}><Spinner size={32} color={T.accent}/></div>}
+
+        {/* PAGOS */}
+        {!loading&&tab==="pagos"&&(
+          <div>
+            {pagos.length===0&&<div style={{textAlign:"center",padding:40,color:T.textSm}}>No hay pagos registrados</div>}
+            {pagos.map(p=>{
+              const u=usuarios.find(u=>u._id===p.uid);
+              const fecha=p.createdAt?.toDate?.()?.toLocaleDateString("es-AR")||"—";
+              return (
+                <div key={p._id} style={{background:T.card,border:`0.5px solid ${p.estado==="pendiente"?T.yellow+"44":p.estado==="confirmado"?T.green+"44":T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
+                    <div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                        <span style={{fontWeight:700,fontSize:14,color:T.text}}>{u?.email||p.email}</span>
+                        <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:p.estado==="pendiente"?T.yellowBg:p.estado==="confirmado"?T.greenBg:T.redBg,color:p.estado==="pendiente"?T.yellow:p.estado==="confirmado"?T.green:T.red}}>{p.estado}</span>
+                      </div>
+                      <div style={{fontSize:13,color:T.textMd}}>Plan solicitado: <strong style={{color:PLAN_C[p.plan]||T.text}}>{p.plan}</strong> · {fecha}</div>
+                      {p.txHash&&<div style={{fontSize:12,color:T.textSm,fontFamily:"monospace",marginTop:4,wordBreak:"break-all"}}>TxID: {p.txHash}</div>}
+                      {p.comprobante&&<div style={{fontSize:12,color:T.textSm,marginTop:4}}>Nota: {p.comprobante}</div>}
+                    </div>
+                    {p.estado==="pendiente"&&(
+                      <div style={{display:"flex",gap:8,flexShrink:0}}>
+                        <AsyncButton onClick={()=>confirmarPago(p._id,p.uid,p.plan)} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>✓ Confirmar y activar</AsyncButton>
+                        <AsyncButton onClick={()=>rechazarPago(p._id)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>✕ Rechazar</AsyncButton>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* USUARIOS */}
+        {!loading&&tab==="usuarios"&&(
+          <div>
+            <input style={{...iS,marginBottom:16,fontSize:13}} placeholder="Buscar por email o nombre..." value={search} onChange={e=>setSearch(e.target.value)}/>
+            {filteredUsers.map(u=>{
+              const expiry=u.planExpiry?.toDate?.()?.toLocaleDateString("es-AR")||null;
+              return (
+                <div key={u._id} style={{background:T.card,border:`0.5px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{u.email||u.nombre}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginTop:3}}>
+                      <span style={{fontSize:11,padding:"2px 7px",borderRadius:5,fontWeight:600,background:u.plan==="free"?T.surface:u.plan==="pro"?T.blueBg:u.plan==="total"?T.purpleBg:T.yellowBg,color:PLAN_C[u.plan]||T.textSm}}>{u.plan||"free"}</span>
+                      {expiry&&<span style={{fontSize:11,color:T.textSm}}>Vence: {expiry}</span>}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {["starter","pro","total"].map(plan=>(
+                      <AsyncButton key={plan} onClick={()=>activarPlan(u._id,plan,1)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:plan==="starter"?T.yellow:plan==="pro"?T.blue:T.purple}}>
+                        +1m {plan}
+                      </AsyncButton>
+                    ))}
+                    {u.plan!=="free"&&<AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Free</AsyncButton>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ROOT APP
 // ═══════════════════════════════════════════
 export default function App() {
@@ -3397,6 +3895,13 @@ export default function App() {
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("soluna_theme")!=="light"; } catch(e){ return true; } });
   const [migrated,setMigrated]=useState(false);
+  const [userPlan,setUserPlan]=useState("free"); // free | starter | pro | total
+  const [planExpiry,setPlanExpiry]=useState(null); // Date or null
+  const [isAdmin,setIsAdmin]=useState(false);
+
+  const ADMIN_UIDS=["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"]; // ADMIN_UID_2: completar cuando tengas el segundo
+  const USDT_ADDRESS="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; // Dirección TRC20
+  const SUPPORT_EMAIL="xxxxxx@gmail.com";
 
   const T = darkMode ? DARK : LIGHT;
 
@@ -3445,6 +3950,21 @@ export default function App() {
           await migrateLegacyData(u.uid);
           setMigrated(true);
         }
+        // Load plan from Firestore
+        try {
+          const userRef=doc(db,"users",u.uid);
+          const userSnap=await getDoc(userRef);
+          if(userSnap.exists()){
+            const d=userSnap.data();
+            setUserPlan(d.plan||"free");
+            setPlanExpiry(d.planExpiry?.toDate?.()||null);
+          }
+          // Check admin
+          setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"].includes(u.uid));
+        } catch(e){}
+      } else {
+        setUserPlan("free");
+        setIsAdmin(false);
       }
     });
     return ()=>unsub();
@@ -3571,11 +4091,13 @@ export default function App() {
   if(!user) return <>{themeBtn}<AuthScreen T={T}/></>;
 
   // Config
+  if(page==="planes") return <><AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>{themeBtn}</>;
+  if(page==="admin"&&isAdmin) return <><AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>{themeBtn}</>;
   if(page==="config") return <>{themeBtn}<ConfigScreen T={T} user={user} onBack={()=>setPage("home")}/></>;
 
   // App
   if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount}/>{themeBtn}</>;
   if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
   if(page==="envios") return <><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
-  return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user}/>{themeBtn}</>;
+  return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin}/>{themeBtn}</>;
 }
