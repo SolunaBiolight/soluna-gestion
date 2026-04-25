@@ -45,7 +45,7 @@ export default async function handler(req, res) {
     if (!tokenRes.ok) {
       const err = await tokenRes.text();
       console.error("TN token error:", err);
-      return res.redirect(`https://growith.vercel.app?tn_error=token_failed`);
+      return res.redirect(`https://www.growithapp.com?tn_error=token_failed`);
     }
 
     const tokenData = await tokenRes.json();
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     const userSnap = await userRef.get();
 
     if (!userSnap.exists) {
-      return res.redirect(`https://growith.vercel.app?tn_error=user_not_found`);
+      return res.redirect(`https://www.growithapp.com?tn_error=user_not_found`);
     }
 
     const stores = userSnap.data().stores || [];
@@ -91,10 +91,10 @@ export default async function handler(req, res) {
     });
 
     // Redirigir de vuelta a la app con éxito
-    return res.redirect(`https://growith.vercel.app?tn_success=1`);
+    return res.redirect(`https://www.growithapp.com?tn_success=1`);
 
   } catch (e) {
     console.error("TN callback error:", e);
-    return res.redirect(`https://growith.vercel.app?tn_error=server_error`);
+    return res.redirect(`https://www.growithapp.com?tn_error=server_error`);
   }
 }
