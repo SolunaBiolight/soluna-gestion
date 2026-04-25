@@ -173,6 +173,7 @@ function buildOrdersFromAPI(data) {
       piso:sh.floor||'', localidad:sh.locality||'', ciudad:sh.city||'',
       cp:sh.zipcode||'', provincia:sh.province||'',
       medioEnvio:o.shipping_option||'', medioPago:o.payment_details?.method||o.gateway_name||'',
+      esSucursal:o.fulfillments?.some(f=>f.shipping?.option?.name?.toLowerCase().includes('sucursal'))||o.shipping_option==="Punto de retiro"||false,
       canal:o.storefront||'', tracking:o.shipping_tracking_number||'',
       linkOrden:`https://solunabiolight2.mitiendanube.com/admin/orders/${o.id}`,
       fechaPago:o.paid_at||'', fechaEnvio:o.shipped_at||'',
@@ -1792,6 +1793,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null});
+  const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos"); // todos|domicilio|sucursal
   const [tabOrders,setTabOrders]=useState([]); // pedidos del tab activo
   const [tabLoading,setTabLoading]=useState(false);
   const tabCacheRef=useRef({});
@@ -1811,12 +1813,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 
   // Pedidos exportables — usar tabOrders (local) no orders (global)
   const exportables=useMemo(()=>{
+    let base=tabOrders;
+    if(filterTipoEnvio==="domicilio") base=base.filter(o=>!isSucursalOrder(o));
+    if(filterTipoEnvio==="sucursal") base=base.filter(o=>isSucursalOrder(o));
     if(searchEnvios){
       const s=searchEnvios.toLowerCase();
-      return tabOrders.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
+      return base.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
     }
-    return tabOrders;
-  },[tabOrders,searchEnvios]);
+    return base;
+  },[tabOrders,searchEnvios,filterTipoEnvio]);
 
   // Fetch contadores de los 3 tabs activos en paralelo
   async function fetchTabCounts(uid) {
@@ -1957,8 +1962,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 
     // Separate domicilio vs sucursal
     function isSucursal(o){
+      if(o.esSucursal!==undefined) return o.esSucursal;
       const dir=(o.direccion||"").toUpperCase();
-      return dir.includes('PUNTO ANDREANI')||dir.includes('HOP ')||dir.includes('SUCURSAL ')||dir.includes('ANDREANI ');
+      return dir.includes('PUNTO ANDREANI')||dir.includes('HOP ')||dir.includes('SUCURSAL ')||dir==="NO INFORMADO";
     }
     const domicilioOrders=ordersData.filter(o=>!isSucursal(o));
     const sucursalOrders=ordersData.filter(o=>isSucursal(o));
@@ -2101,8 +2107,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   },[]);
 
   function isSucursalOrder(o) {
+    // Usar el campo esSucursal calculado en buildOrdersFromAPI
+    if(o.esSucursal!==undefined) return o.esSucursal;
+    // Fallback para compatibilidad
     const dir=(o.direccion||"").toUpperCase();
-    return dir.includes('PUNTO ANDREANI')||dir.includes('HOP ')||dir.includes('SUCURSAL ')||dir.includes('ANDREANI ');
+    return dir.includes('PUNTO ANDREANI')||dir.includes('HOP ')||dir.includes('SUCURSAL ')||dir==="NO INFORMADO";
   }
 
   async function exportAndreani() {
@@ -2338,6 +2347,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 
             {/* Acciones */}
             <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
+              <select value={filterTipoEnvio} onChange={e=>{setFilterTipoEnvio(e.target.value);setSelected(new Set());}} style={{...iS,width:"auto",fontSize:13,padding:"8px 12px",color:filterTipoEnvio!=="todos"?T.accent:T.textMd,borderColor:filterTipoEnvio!=="todos"?T.accent:T.inputBorder}}>
+                <option value="todos">🚚 Todos</option>
+                <option value="domicilio">🏠 A domicilio</option>
+                <option value="sucursal">🏪 A sucursal</option>
+              </select>
               <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
                 {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
               </button>
@@ -2388,8 +2402,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                         <span style={{marginLeft:6}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</span>
                       </div>
                       <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
-                      <div style={{fontSize:11,color:isSuc?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
-                        <span>{isSuc?"🏪":"🏠"}</span>
+                      <div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
+                        <span>{o.esSucursal?"🏪":"🏠"}</span>
                         <span>{o.medioEnvio||"—"}</span>
                       </div>
                       <span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>
