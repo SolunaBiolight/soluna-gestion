@@ -1963,10 +1963,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           }
         }
       }
-      // Si no matchea en la lista (lista desactualizada), construir el nombre
-      // Andreani acepta el formato "PUNTO ANDREANI HOP CALLE NUMERO"
-      const nombreConstruido=`PUNTO ANDREANI HOP ${calle} ${numero}`;
-      return nombreConstruido;
+      // No matchea — devolver null para mostrar modal
+      return null;
     }
 
     // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
@@ -2245,8 +2243,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     }
     for(const o of unresolvedSuc){
       const chosen=await new Promise(resolve=>{
+        // Pre-fill search with calle+numero from pickupDetails for easier finding
+        const pd=o.pickupDetails;
+        const prefill=pd?`${pd.address?.address||""} ${(pd.address?.number||"").replace(/\D.*/,"").trim()}`.trim():"";
         setLocationModal({order:o,locs,resolve,type:"sucursal"});
-        setLocSearch("");setLocSearchType("ciudad");
+        setLocSearch(prefill);setLocSearchType("ciudad");
       });
       if(chosen===null) return; // cancelar todo
       if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[o.numero]="EXCLUIR"; continue; }
@@ -2662,9 +2663,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   ⚠ {isSuc?"No se encontró la sucursal exacta":"No se encontró la localidad exacta"}
                 </div>
                 <div style={{fontSize:13,color:T.text}}>Pedido <strong>#{order.numero}</strong> — {order.comprador}</div>
-                <div style={{fontSize:12,color:T.textSm,marginTop:3}}>
-                  {isSuc?order.direccion:`${order.direccion} ${order.dirNumero}, ${order.localidad||order.ciudad}, ${order.provincia} — CP ${order.cp}`}
-                </div>
+                {isSuc&&order.pickupDetails&&(
+                  <div style={{fontSize:12,color:T.text,marginTop:6,background:T.surface,borderRadius:8,padding:"8px 10px"}}>
+                    <div style={{fontWeight:600,color:T.accent,marginBottom:2}}>{order.pickupDetails.name}</div>
+                    <div>{order.pickupDetails.address?.address} {order.pickupDetails.address?.number}</div>
+                    <div style={{color:T.textSm}}>{order.pickupDetails.address?.locality}, {order.pickupDetails.address?.province}</div>
+                  </div>
+                )}
+                {!isSuc&&<div style={{fontSize:12,color:T.textSm,marginTop:3}}>
+                  {order.direccion} {order.dirNumero}, {order.localidad||order.ciudad}, {order.provincia} — CP {order.cp}
+                </div>}
               </div>
               <div style={{marginBottom:14}}>
                 <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
