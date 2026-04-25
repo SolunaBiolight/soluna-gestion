@@ -19,13 +19,47 @@ function initAdmin() {
 }
 
 export default async function handler(req, res) {
-  const { code, state } = req.query;
+  // TN envía code y state como query params en el redirect
+  // Vercel a veces los pone en req.query, a veces hay que parsear la URL manualmente
+  let code = req.query?.code;
+  let state = req.query?.state;
 
+  // Fallback: parsear la URL manualmente
+  if (!code || !state) {
+    const rawUrl = req.url || "";
+    const qIdx = rawUrl.indexOf("?");
+    if (qIdx !== -1) {
+      const qs = rawUrl.slice(qIdx + 1);
+      const params = new URLSearchParams(qs);
+      code = code || params.get("code");
+      state = state || params.get("state");
+    }
+  }
+
+  // Fallback: leer del body si vino como POST
+  if (!code || !state) {
+    try {
+      const body = req.body || {};
+      code = code || body.code;
+      state = state || body.state;
+    } catch(e) {}
+  }
+
+  console.log("[tn-callback] method:", req.method);
+  console.log("[tn-callback] url:", req.url);
   console.log("[tn-callback] code:", code ? code.slice(0,8)+"..." : "MISSING");
-  console.log("[tn-callback] state:", state || "MISSING");
+  console.log("[tn-callback] state:", state ? state.slice(0,12)+"..." : "MISSING");
 
   if (!code || !state) {
-    return res.status(400).send("Faltan parámetros.");
+    // Devolver info de debug en vez de solo "Faltan parámetros"
+    return res.status(400).json({
+      error: "Faltan parámetros",
+      received: {
+        query: req.query,
+        url: req.url,
+        method: req.method,
+      }
+    });
   }
 
   const uid = decodeURIComponent(state);
@@ -44,7 +78,7 @@ export default async function handler(req, res) {
     });
 
     const tokenText = await tokenRes.text();
-    console.log("[tn-callback] token status:", tokenRes.status, "body:", tokenText.slice(0,200));
+    console.log("[tn-callback] token status:", tokenRes.status, "body:", tokenText.slice(0,300));
 
     if (!tokenRes.ok) {
       return res.redirect(`${APP_URL}?tn_error=token_failed&status=${tokenRes.status}`);
@@ -54,13 +88,10 @@ export default async function handler(req, res) {
     const { access_token, user_id } = tokenData;
 
     if (!access_token || !user_id) {
-      console.error("[tn-callback] missing access_token or user_id:", tokenData);
       return res.redirect(`${APP_URL}?tn_error=token_invalid`);
     }
 
-    console.log("[tn-callback] got token for user_id:", user_id);
-
-    // 2. Obtener nombre de la tienda
+    // 2. Nombre de la tienda
     let storeName = String(user_id);
     try {
       const storeRes = await fetch(`https://api.tiendanube.com/v1/${user_id}/store`, {
@@ -73,9 +104,7 @@ export default async function handler(req, res) {
         const storeData = await storeRes.json();
         storeName = storeData.name?.es || storeData.name?.en || String(user_id);
       }
-    } catch (e) {
-      console.error("[tn-callback] store name error:", e.message);
-    }
+    } catch(e) {}
 
     // 3. Guardar en Firestore
     const db = initAdmin();
@@ -83,7 +112,6 @@ export default async function handler(req, res) {
     const userSnap = await userRef.get();
 
     if (!userSnap.exists) {
-      console.error("[tn-callback] user not found:", uid);
       return res.redirect(`${APP_URL}?tn_error=user_not_found`);
     }
 
@@ -101,11 +129,11 @@ export default async function handler(req, res) {
       ],
     });
 
-    console.log("[tn-callback] tienda conectada OK:", storeName);
+    console.log("[tn-callback] ✓ conectada:", storeName);
     return res.redirect(`${APP_URL}?tn_success=1`);
 
-  } catch (e) {
-    console.error("[tn-callback] error:", e.message, e.stack);
+  } catch(e) {
+    console.error("[tn-callback] error:", e.message);
     return res.redirect(`${APP_URL}?tn_error=server_error`);
   }
 }
