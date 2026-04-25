@@ -2569,12 +2569,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 
       for(let i=0;i<pages.length;i++) {
         const pageText=pages[i];
-        // N° seguimiento Andreani: empieza con 36, 15 dígitos totales
-        const trackingMatch=pageText.match(/(36\d{13})/);
-        // N° Interno: "#1786" o "N° Interno: #1786" o "N° Interno: 1786"
-        const internoMatch=pageText.match(/N[°º]\s*Interno[:\s]*#?\s*(\d{3,6})/i);
-        // Destinatario para verificación
-        const destMatch=pageText.match(/Destinatario:\s*([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ\s]+)/i);
+
+        // ── TRACKING: 15 dígitos que empiezan con 36 ──────────────────────
+        const trackingMatch=pageText.match(/\b(36\d{13})\b/);
+
+        // ── N° INTERNO: 3 intentos en cascada ────────────────────────────
+        // Intento 1: regex principal — cubre "N° Interno: #1865", "Nº Interno: #1865"
+        let internoMatch=pageText.match(/N[°º\.\u00b0\u00ba]?\s*[Ii]nterno[^0-9#]{0,8}#?\s*(\d{3,6})/);
+        // Intento 2: buscar "Interno:" sin depender del N°
+        if(!internoMatch) internoMatch=pageText.match(/[Ii]nterno[:\s]{1,5}#?\s*(\d{3,6})/);
+        // Intento 3 (fallback): "#NNNN" — Andreani SIEMPRE usa # antes del número interno
+        if(!internoMatch) internoMatch=pageText.match(/#(\d{3,6})\b/);
+
+        // ── DESTINATARIO ──────────────────────────────────────────────────
+        const destMatch=pageText.match(/[Dd]estinatario:\s*([A-ZÁÉÍÓÚÑÜ][^\n]+?)(?=\s*N[°º]|\s*Peso:|$)/);
 
         if(trackingMatch&&internoMatch) {
           const tracking=trackingMatch[1].trim();
@@ -2596,7 +2604,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   }
 
   async function extractPdfText(file) {
-    // Load pdf.js from CDN via script tag
     if(!window.pdfjsLib) {
       await new Promise((resolve,reject)=>{
         const s=document.createElement('script');
@@ -2612,7 +2619,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     for(let i=1;i<=pdf.numPages;i++) {
       const page=await pdf.getPage(i);
       const content=await page.getTextContent();
-      pages.push(content.items.map(item=>item.str).join(' '));
+      // Unir con espacio y normalizar variantes del símbolo ° que Andreani/pdf.js pueden producir
+      const rawText=content.items.map(item=>item.str).join(' ');
+      const normalizedText=rawText.replace(/\u00ba/g,'\u00b0').replace(/N\u00ba/g,'N\u00b0');
+      pages.push(normalizedText);
     }
     return pages.join('---PAGE---');
   }
