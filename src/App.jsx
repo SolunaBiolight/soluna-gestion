@@ -2045,8 +2045,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
     const totalRows1=2+domicilioOrders.length;
     // Eliminar cualquier fila de datos existente (fila 3 en adelante) del template
-    const cleanSheet1=sheet1.replace(/<row r="([3-9]|[1-9][0-9]+)"[^>]*>[\s\S]*?<\/row>/g,"");
-    const newSheet1=cleanSheet1
+    const newSheet1=sheet1
       .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows1+'"/>')
       .replace('</sheetData>',domRowsXml+'</sheetData>');
     zip.file('xl/worksheets/sheet1.xml',newSheet1);
@@ -2056,8 +2055,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     if(sheet2file&&sucursalOrders.length>0){
       const sheet2=await sheet2file.async('string');
       const totalRows2=2+sucursalOrders.length;
-      const cleanSheet2=sheet2.replace(/<row r="([3-9]|[1-9][0-9]+)"[^>]*>[\s\S]*?<\/row>/g,"");
-      const newSheet2=cleanSheet2
+      const newSheet2=sheet2
         .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows2+'"/>')
         .replace('</sheetData>',sucRowsXml+'</sheetData>');
       zip.file('xl/worksheets/sheet2.xml',newSheet2);
