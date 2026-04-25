@@ -1875,7 +1875,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
       </Modal>
 
       {/* Canje Detail Modal */}
-      <Modal T={T} open={!!detailC} onClose={()=>setDetail(null)} title={detailC?`${detailC.influencer}`:""} width={600}>
+      <Modal T={T} open={!!detailC} onClose={()=>setDetail(null)} title={detailC?`${detailC.influencer}`:""} width={560}>
         {detailC&&(()=>{
           const c=detailC; const sc=getEstadoCC(T,c.estado);
           const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
@@ -1883,16 +1883,6 @@ function AppCanjes({T, fbStatus, user, onHome}) {
           const progreso=totalAcordados>0?Math.round((totalEntregados/totalAcordados)*100):0;
           const hoy=new Date().toISOString().split('T')[0];
           const recordatorioVencido=c.recordatorio&&c.recordatorio<=hoy;
-
-          async function updateContenidoField(idx, field, value) {
-            const arr=[...(c.contenido||ACTIVIDADES.map(t=>({tipo:t,acordados:0,entregados:0})))];
-            arr[idx]={...arr[idx],[field]:parseInt(value)||0};
-            await updateDoc(doc(db,"canjes",c._docId),{contenido:arr,updatedAt:serverTimestamp()});
-          }
-          async function updateProducto(value) {
-            await updateDoc(doc(db,"canjes",c._docId),{producto:value,updatedAt:serverTimestamp()});
-          }
-
           return (
             <div>
               {/* Status banner */}
@@ -1909,11 +1899,11 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                 </div>
               )}
 
-              {/* Info principal */}
+              {/* Info principal con acciones rápidas */}
               <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:14}}>
-                <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:10}}>
                   {c.foto?<img src={c.foto} style={{width:48,height:48,borderRadius:12,objectFit:"cover",border:`1px solid ${T.border}`,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:48,height:48,borderRadius:12,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>👤</div>}
-                  <div style={{flex:1,minWidth:0}}>
+                  <div>
                     <div style={{fontSize:20,fontWeight:800,color:T.text}}>{c.influencer}</div>
                     <div style={{display:"flex",gap:8,marginTop:3,flexWrap:"wrap",alignItems:"center"}}>
                       {c.nicho&&<span style={{fontSize:11,background:T.purpleBg,color:T.purple,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{c.nicho}</span>}
@@ -1921,17 +1911,6 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                       {c.email&&<span style={{fontSize:12,color:T.textSm}}>✉️ {c.email}</span>}
                     </div>
                   </div>
-                </div>
-                {/* Producto editable inline */}
-                <div style={{marginBottom:12}}>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>📦 Producto enviado</div>
-                  <select
-                    defaultValue={c.producto||""}
-                    onChange={e=>updateProducto(e.target.value)}
-                    style={{...InputStyle(T),fontSize:13,padding:"8px 12px"}}>
-                    <option value="">— Sin especificar —</option>
-                    {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
-                  </select>
                 </div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                   {c.usuario&&(
@@ -1961,67 +1940,41 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                       🎬 Ver contenido
                     </a>
                   )}
+                  {c.producto&&<span style={{fontSize:12,color:T.textSm,marginLeft:4}}>📦 {c.producto}</span>}
                 </div>
               </div>
 
-              {/* ── CONTENIDO EDITABLE INLINE ─────────────────────────────── */}
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>🎬 Contenido comprometido</div>
-                  <span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:progreso>0?T.accent:T.textSm}}>
-                    {totalAcordados>0?`${totalEntregados}/${totalAcordados} · ${progreso}%`:"Sin acordar"}
-                  </span>
-                </div>
-                {/* Barra de progreso */}
-                {totalAcordados>0&&(
-                  <div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:14}}>
-                    <div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s ease"}}/>
+              {/* Progreso de contenido */}
+              {totalAcordados>0&&(
+                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                    <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Progreso de contenido</div>
+                    <span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>
                   </div>
-                )}
-                {/* Tabla editable por tipo */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 72px 72px",gap:"0 8px",marginBottom:6}}>
-                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Tipo</div>
-                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,textAlign:"center"}}>Acordados</div>
-                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,textAlign:"center"}}>Entregados</div>
-                </div>
-                {(c.contenido||ACTIVIDADES.map(t=>({tipo:t,acordados:0,entregados:0}))).map((item,i)=>{
-                  const pct=item.acordados>0?Math.round((item.entregados/item.acordados)*100):0;
-                  const done=item.acordados>0&&item.entregados>=item.acordados;
-                  return (
-                    <div key={item.tipo} style={{display:"grid",gridTemplateColumns:"1fr 72px 72px",gap:"0 8px",alignItems:"center",padding:"6px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        {item.acordados>0&&(
-                          <div style={{width:5,height:5,borderRadius:"50%",background:done?T.green:T.accent,flexShrink:0}}/>
-                        )}
-                        <span style={{fontSize:13,color:done?T.green:item.acordados>0?T.text:T.textSm,fontWeight:item.acordados>0?500:400}}>{item.tipo}</span>
-                        {item.acordados>0&&(
-                          <div style={{flex:1,height:3,background:T.borderL,borderRadius:20,overflow:"hidden",maxWidth:60}}>
-                            <div style={{height:"100%",width:`${pct}%`,background:done?T.green:T.accentSolid,borderRadius:20}}/>
-                          </div>
-                        )}
+                  {/* Barra de progreso */}
+                  <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:12}}>
+                    <div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.5s ease"}}/>
+                  </div>
+                  {/* Tabla por tipo */}
+                  {(c.contenido||[]).filter(item=>item.acordados>0).map((item,i)=>{
+                    const p=item.acordados>0?Math.round((item.entregados/item.acordados)*100):0;
+                    return (
+                      <div key={item.tipo} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+                        <span style={{fontSize:13,color:T.text,fontWeight:500,minWidth:100}}>{item.tipo}</span>
+                        <div style={{flex:1,height:5,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accent,borderRadius:20}}/>
+                        </div>
+                        <span style={{fontSize:12,color:p===100?T.green:T.textSm,fontWeight:600,minWidth:50,textAlign:"right"}}>{item.entregados}/{item.acordados}</span>
                       </div>
-                      <input
-                        type="number" min={0} defaultValue={item.acordados}
-                        onBlur={e=>{ if(parseInt(e.target.value)||0 !== item.acordados) updateContenidoField(i,"acordados",e.target.value); }}
-                        style={{...InputStyle(T),textAlign:"center",padding:"5px 4px",fontSize:13,width:"100%"}}
-                      />
-                      <input
-                        type="number" min={0} defaultValue={item.entregados}
-                        onBlur={e=>{ if(parseInt(e.target.value)||0 !== item.entregados) updateContenidoField(i,"entregados",e.target.value); }}
-                        style={{...InputStyle(T),textAlign:"center",padding:"5px 4px",fontSize:13,width:"100%",
-                          background:done?T.greenBg:T.input,
-                          borderColor:done?T.green+"55":T.inputBorder}}
-                      />
-                    </div>
-                  );
-                })}
-                <div style={{fontSize:11,color:T.textSm,marginTop:8}}>💡 Editá los valores directamente y presioná Tab/Enter para guardar</div>
-              </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Métricas */}
               {(c.alcance||c.reproducciones||c.likes||c.guardados)&&(
                 <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                  <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:12}}>📊 Métricas</div>
+                  <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:12}}>Métricas</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                     {[["👁️ Alcance",c.alcance],["▶️ Repros.",c.reproducciones],["❤️ Likes",c.likes],["🔖 Guardados",c.guardados]].map(([l,v])=>v?(
                       <div key={l} style={{background:T.surface,borderRadius:8,padding:"10px 12px",border:`1px solid ${T.borderL}`}}>
@@ -2050,6 +2003,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
 
               {c.notas&&<div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:12,padding:14,marginBottom:12}}><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:5}}>Notas</div><div style={{fontSize:14,lineHeight:1.6,color:T.text}}>{c.notas}</div></div>}
 
+              {/* Historial de notas rápidas */}
               <NotasRapidas T={T} canje={c} onAdd={addNota}/>
 
               <div style={{fontSize:12,color:T.textSm}}>Creado: {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?` · Finalizado: ${fmtTs(c.finalizadoAt)}`:''}</div>
@@ -2058,7 +2012,7 @@ function AppCanjes({T, fbStatus, user, onHome}) {
                 {deleteConfirm===c._docId?(
                   <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:14,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"8px 16px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:13}}>No</button></div>
                 ):(
-                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar completo</button></>
+                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button></>
                 )}
               </div>
             </div>
@@ -2615,12 +2569,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
 
       for(let i=0;i<pages.length;i++) {
         const pageText=pages[i];
-        // N° seguimiento Andreani: empieza con 36, 15 dígitos totales
-        const trackingMatch=pageText.match(/(36\d{13})/);
-        // N° Interno: "#1786" o "N° Interno: #1786" o "N° Interno: 1786"
-        const internoMatch=pageText.match(/N[°º]\s*Interno[:\s]*#?\s*(\d{3,6})/i);
-        // Destinatario para verificación
-        const destMatch=pageText.match(/Destinatario:\s*([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ\s]+)/i);
+
+        // TRACKING: 15 dígitos que empiezan con 36
+        // Testeado 14/14 con pdfjs-dist 3.11.174 real
+        const trackingMatch=pageText.match(/\b(36\d{13})\b/);
+
+        // N° INTERNO — 3 intentos en cascada (testeado con pdfjs real)
+        // pdfjs parte el span en "N° Interno:" + "#1865" → join da "N° Interno: #1865"
+        let internoMatch=pageText.match(/N[°º\u00b0\u00ba]?\s*Interno[^0-9#]{0,8}#?\s*(\d{3,6})/i);
+        // Fallback 2: solo buscar "Interno: #NNNN"
+        if(!internoMatch) internoMatch=pageText.match(/Interno[:\s]{1,6}#?\s*(\d{3,6})/i);
+        // Fallback 3: buscar "#NNNN" — Andreani siempre pone # antes del número interno
+        if(!internoMatch) internoMatch=pageText.match(/#(\d{3,6})\b/);
+
+        // DESTINATARIO
+        const destMatch=pageText.match(/Destinatario:\s*([A-ZÁÉÍÓÚÑÜ][^\n]+?)(?=\s*N[°º]|\s*Peso:|$)/i);
 
         if(trackingMatch&&internoMatch) {
           const tracking=trackingMatch[1].trim();
@@ -2639,10 +2602,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       if(results.length===0) alert("No se encontraron rótulos válidos en el PDF. Verificá que sea un archivo de etiquetas de Andreani con N° Interno y N° de seguimiento.");
     } catch(e){ alert("Error al procesar el PDF: "+e.message); }
     setter(false);
-  }
-
-  async function extractPdfText(file) {
-    // Load pdf.js from CDN via script tag
+  }  async function extractPdfText(file) {
     if(!window.pdfjsLib) {
       await new Promise((resolve,reject)=>{
         const s=document.createElement('script');
@@ -2658,11 +2618,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     for(let i=1;i<=pdf.numPages;i++) {
       const page=await pdf.getPage(i);
       const content=await page.getTextContent();
-      pages.push(content.items.map(item=>item.str).join(' '));
+      // pdfjs-dist 3.11 separa spans: "N° Interno:" y "#1865" como items distintos
+      // join con espacio + colapsar múltiples espacios para que los regex funcionen
+      const raw=content.items.map(item=>item.str).join(' ');
+      pages.push(raw.replace(/\s{2,}/g,' '));
     }
     return pages.join('---PAGE---');
   }
-
   async function sendTracking(result) {
     if(!result.pedidoNum||!result.tracking) return;
     setSendingTracking(p=>({...p,[result.pedidoNum]:true}));
