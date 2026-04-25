@@ -1937,19 +1937,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     const esHop=nombre.includes("HOP");
     const sucs=locs.sucursales;
 
-    // 1. Calle + número exacto
-    if(calle&&numero){
+    // ESTRATEGIA 1: Para PUNTO ANDREANI HOP, construir el nombre directo
+    // Andreani lista los HOP como "PUNTO ANDREANI HOP CALLE NUMERO"
+    // Si no matchea en la lista, devolver el nombre construido directamente
+    // (la lista del template puede estar desactualizada)
+    if(esHop&&calle&&numero){
+      // Buscar match exacto primero
       const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.includes(numero);});
       if(m) return m;
-    }
-
-    // 2. Palabras de calle (>=3 chars para cubrir "13", "AV", etc)
-    if(calle){
+      // Buscar por palabras de calle + número
       const words=calle.split(' ').filter(w=>w.length>=3);
       for(const w of words){
         const matches=sucs.filter(s=>cl(s).includes(w));
-        if(matches.length===1) return matches[0];
-        if(matches.length>1&&numero){
+        if(matches.length>=1&&numero){
           const wn=matches.find(s=>cl(s).includes(numero));
           if(wn) return wn;
         }
@@ -1961,20 +1961,41 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           }
         }
       }
+      // Si no matchea en la lista (lista desactualizada), construir el nombre
+      // Andreani acepta el formato "PUNTO ANDREANI HOP CALLE NUMERO"
+      const nombreConstruido=`PUNTO ANDREANI HOP ${calle} ${numero}`;
+      return nombreConstruido;
     }
 
-    // 3. Localidad en sucursales
-    if(localidad){
-      const locWords=localidad.split(' ').filter(w=>w.length>=3);
-      for(const lw of locWords){
-        const matches=sucs.filter(s=>cl(s).includes(lw)&&(esHop||!cl(s).includes('HOP')));
-        if(matches.length===1) return matches[0];
-        if(matches.length>1&&calle){
-          const calWords=calle.split(' ').filter(w=>w.length>=3);
-          for(const cw of calWords){
-            const wc=matches.find(s=>cl(s).includes(cw));
-            if(wc) return wc;
+    // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
+    // Las sucursales clásicas tienen nombres propios que no podemos construir
+    if(!esHop){
+      // Calle + número
+      if(calle&&numero){
+        const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.includes(numero);});
+        if(m) return m;
+      }
+      // Localidad sola
+      if(localidad){
+        const locWords=localidad.split(' ').filter(w=>w.length>=3);
+        for(const lw of locWords){
+          const matches=sucs.filter(s=>cl(s).includes(lw)&&!cl(s).includes('HOP'));
+          if(matches.length===1) return matches[0];
+          if(matches.length>1&&calle){
+            const calWords=calle.split(' ').filter(w=>w.length>=3);
+            for(const cw of calWords){
+              const wc=matches.find(s=>cl(s).includes(cw));
+              if(wc) return wc;
+            }
           }
+        }
+      }
+      // Palabras de calle
+      if(calle){
+        const words=calle.split(' ').filter(w=>w.length>=4);
+        for(const w of words){
+          const matches=sucs.filter(s=>cl(s).includes(w)&&!cl(s).includes('HOP'));
+          if(matches.length===1) return matches[0];
         }
       }
     }
@@ -1985,7 +2006,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       if(byNum.length===1) return byNum[0];
     }
 
-    return null;
+    return null; // Mostrar modal solo para SUCURSAL ANDREANI sin match
   }
 
   function searchSucursales(locs, query) {
@@ -2196,7 +2217,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       }
 
       const date=new Date().toISOString().split('T')[0];
-      const b=await generateAndreaniXlsx(selOrders,locs);
+      // Filtrar pedidos excluidos manualmente
+      const finalOrders=selOrders.filter(o=>
+        locationOverridesRef.current[o.numero]!=="EXCLUIR" &&
+        sucursalOverridesRef.current[o.numero]!=="EXCLUIR"
+      );
+      if(!finalOrders.length){ alert("Todos los pedidos fueron excluidos."); setExporting(false); return; }
+      const b=await generateAndreaniXlsx(finalOrders,locs);
       const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';a.click();
       setExportModal(false);setSelected(new Set());
       locationOverridesRef.current={};sucursalOverridesRef.current={};
@@ -2210,7 +2237,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         setLocationModal({order:o,locs,resolve,type:"domicilio"});
         setLocSearch("");setLocSearchType("ciudad");
       });
-      if(chosen===null) return;
+      if(chosen===null) return; // cancelar todo
+      if(chosen==="EXCLUIR"){ locationOverridesRef.current[o.numero]="EXCLUIR"; continue; }
       locationOverridesRef.current[o.numero]=chosen;
     }
     for(const o of unresolvedSuc){
@@ -2218,9 +2246,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         setLocationModal({order:o,locs,resolve,type:"sucursal"});
         setLocSearch("");setLocSearchType("ciudad");
       });
-      if(chosen===null) return;
+      if(chosen===null) return; // cancelar todo
+      if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[o.numero]="EXCLUIR"; continue; }
       sucursalOverridesRef.current[o.numero]=chosen;
-      // Mostrar confirmación visual
       setSucursalConfirmed({numero:o.numero,nombre:chosen});
       await new Promise(r=>setTimeout(r,1200));
       setSucursalConfirmed(null);
@@ -2673,12 +2701,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   </div>
                 )}
               </div>
-              <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:12,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
                 <button onClick={()=>{resolve(null);setLocationModal(null);}} style={{...BtnSecondary(T),fontSize:13}}>Cancelar exportación</button>
-                <button onClick={()=>{
-                  const fallback=isSuc?(locs.sucursales[0]||""):(locs.list.find(l=>l.startsWith((order.provincia||"BUENOS AIRES").toUpperCase()))||locs.list[0]||"");
+                <button onClick={()=>{resolve("EXCLUIR");setLocationModal(null);}} style={{...BtnDanger(T),fontSize:13}}>Excluir este pedido</button>
+                {!isSuc&&<button onClick={()=>{
+                  const fallback=locs.list.find(l=>l.startsWith((order.provincia||"BUENOS AIRES").toUpperCase()))||locs.list[0]||"";
                   resolve(fallback);setLocationModal(null);
-                }} style={{...BtnDanger(T),fontSize:13}}>Usar primera disponible</button>
+                }} style={{...BtnSecondary(T),fontSize:13,color:T.orange}}>Usar primera disponible</button>}
               </div>
             </div>
           );
