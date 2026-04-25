@@ -68,9 +68,13 @@ export default async function handler(req, res) {
     }
 
     const tnOrderId = order.id;
+    const currentShippingStatus = order.shipping_status;
 
-    // Enviar el tracking a TN
-    const updateRes = await fetch(
+    // Estrategia: intentar fulfill primero, si da 403/422 caer en PATCH directo del tracking
+    let updateRes, updateData;
+
+    // Intento 1: /fulfill (requiere ready_to_ship)
+    updateRes = await fetch(
       `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`,
       {
         method: 'POST',
@@ -85,12 +89,33 @@ export default async function handler(req, res) {
         })
       }
     );
+    updateData = await updateRes.json();
 
-    const updateData = await updateRes.json();
+    // Si fulfill falla (403/422/400), intentar PATCH directo al pedido
+    if (!updateRes.ok) {
+      console.log(`fulfill falló con ${updateRes.status}, intentando PATCH directo...`);
+      updateRes = await fetch(
+        `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authentication': `bearer ${accessToken}`,
+            'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            shipping_tracking_number: tracking,
+          })
+        }
+      );
+      updateData = await updateRes.json();
+    }
 
     if (!updateRes.ok) {
       return res.status(updateRes.status).json({
-        error: updateData.message || updateData.description || "Error al actualizar en TN"
+        error: updateData.message || updateData.description || `TN respondió ${updateRes.status}`,
+        tnStatus: updateRes.status,
+        shippingStatus: currentShippingStatus,
       });
     }
 
