@@ -2079,9 +2079,18 @@ function TabSKU({T, orders, extractPdfText}) {
       const skuMapObj = {};
       results.forEach(r=>{ skuMapObj[r.pedidoNum]={page:r.pagina, skus:r.skus, found:r.found}; });
 
-      // Ordenar según opción elegida
-      if(skuOrden==="sku") results.sort((a,b)=>(a.skus[0]||"").localeCompare(b.skus[0]||""));
-      else if(skuOrden==="cantidad") results.sort((a,b)=>b.skus.length-a.skus.length);
+      // Calcular pageOrder ANTES de ordenar (índices originales del PDF)
+      // El ordenamiento determina el orden final de las páginas en el PDF descargado
+      let pageOrder;
+      if(skuOrden==="sku") {
+        const sorted=[...results].sort((a,b)=>(a.skus[0]||"").localeCompare(b.skus[0]||""));
+        pageOrder = sorted.map(r=>r.pagina-1);
+      } else if(skuOrden==="cantidad") {
+        const sorted=[...results].sort((a,b)=>b.skus.length-a.skus.length);
+        pageOrder = sorted.map(r=>r.pagina-1);
+      } else {
+        pageOrder = results.map(r=>r.pagina-1);
+      }
 
       const cfg = TIPOS[skuImpresion];
       const formData = new FormData();
@@ -2092,7 +2101,7 @@ function TabSKU({T, orders, extractPdfText}) {
         y: skuImpresion==='custom'?skuY:cfg.y,
         fontSize: skuImpresion==='custom'?skuFontSize:cfg.size,
         sortBy: skuOrden,
-        pageOrder: results.map(r=>r.pagina-1),
+        pageOrder,
       }));
 
       const res = await fetch('/api/process-sku', {method:'POST', body:formData});
