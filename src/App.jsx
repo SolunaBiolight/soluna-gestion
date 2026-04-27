@@ -3089,7 +3089,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         })()}
 
         {/* ── SKU EN ROTULOS ── */}
-        {tab==="sku"&&<TabSKU T={T} orders={orders} extractPdfText={extractPdfText}/>
+        {tab==="sku"&&<TabSKU T={T} orders={orders} extractPdfText={extractPdfText}/>}
         {tab==="seguimientos"&&(
           <div style={{maxWidth:700}}>
             <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
