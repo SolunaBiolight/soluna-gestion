@@ -86,7 +86,7 @@ const LENTE_DOT = { Amarillo:"#fbbf24",Naranja:"#fb923c",Rojo:"#f87171",Negro:"#
 const ESTADOS_C = ["Pendiente envío","Enviado","Contenido pendiente","Contenido publicado","Finalizado","Cancelado"];
 const REDES = ["Instagram","TikTok","YouTube","Twitter/X","Otro"];
 const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
-const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Otro"];
+const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Futbolista","Streamer","Otro"];
 const PRODUCTOS_CANJE = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Kit Completo","A elección"];
 
 // ─── Helpers ───
@@ -1488,7 +1488,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   },[pendingCanje]);
 
   const emptyForm=()=>({
-    _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"",
+    _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"", linkInstagram:"",
     producto:"", productosCanje:[], estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
     fechaEnvio:"", fechaPublicacion:"",
     foto:"", nicho:"",
@@ -1503,7 +1503,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     setSaving(true);
     try {
       const p={
-        influencer:form.influencer, usuario:form.usuario||"", red:form.red,
+        influencer:form.influencer, usuario:form.usuario||"", red:form.red, linkInstagram:form.linkInstagram||"",
         seguidores:form.seguidores||"", email:form.email||"", telefono:form.telefono||"",
         producto:form.producto||((form.productosCanje||[])[0]?.nombre||""),
         productosCanje:form.productosCanje||[],
@@ -1834,6 +1834,18 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <Field T={T} label="Nicho"><select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}><option value="">—</option>{NICHOS.map(n=><option key={n}>{n}</option>)}</select></Field>
               <Field T={T} label="Seguidores"><input style={iS} type="number" value={form.seguidores} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></Field>
             </div>
+            <Field T={T} label="Link de Instagram">
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <input style={{...iS,flex:1}} value={form.linkInstagram||""} onChange={e=>setForm(f=>({...f,linkInstagram:e.target.value}))} placeholder="https://instagram.com/usuario"/>
+                <button onClick={()=>{
+                  const link=form.linkInstagram||"";
+                  const match=link.match(/instagram\.com\/([^/?#]+)/);
+                  if(!match){alert("URL de Instagram invalida");return;}
+                  const usuario=match[1].replace("@","");
+                  setForm(f=>({...f,usuario}));
+                }} style={{...BtnSecondary(T),fontSize:12,whiteSpace:"nowrap",flexShrink:0}}>🔄 Sync usuario</button>
+              </div>
+            </Field>
             {/* Productos enviados */}
             <Field T={T} label="Productos enviados">
               <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
@@ -1868,16 +1880,35 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             <Field T={T} label="Contenido comprometido">
               <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
                 {(form.contenido||[]).length===0&&<div style={{padding:"10px 14px",fontSize:13,color:T.textSm}}>Sin contenido acordado</div>}
-                {(form.contenido||[]).map((item,ci)=>(
-                  <div key={ci} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`}}>
-                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{item.tipo}</span>
-                    <span style={{fontSize:12,color:T.textSm,whiteSpace:"nowrap"}}>acordados:</span>
-                    <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                    <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:18,textAlign:"center"}}>{item.acordados||1}</span>
-                    <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                    <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.filter((_,j)=>j!==ci)}))} style={{width:26,height:26,border:`1px solid ${T.red}44`,borderRadius:5,background:T.redBg,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-                  </div>
-                ))}
+                {(form.contenido||[]).map((item,ci)=>{
+                  const ac=item.acordados||1; const en=item.entregados||0;
+                  const pct=Math.min(100,Math.round((en/ac)*100));
+                  return (
+                  <div key={ci} style={{padding:"10px 12px",borderBottom:`1px solid ${T.borderL}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <span style={{flex:1,fontSize:13,color:T.text,fontWeight:600}}>{item.tipo}</span>
+                      <span style={{fontSize:11,color:T.textSm}}>{en}/{ac}</span>
+                      <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.filter((_,j)=>j!==ci)}))} style={{width:22,height:22,border:`1px solid ${T.red}44`,borderRadius:4,background:T.redBg,color:T.red,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                    </div>
+                    <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,color:T.textSm}}>Acordados</span>
+                      <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                        <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x)}))} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                        <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:20,textAlign:"center"}}>{ac}</span>
+                        <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x)}))} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                      </div>
+                      <span style={{fontSize:11,color:T.textSm}}>Entregados</span>
+                      <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                        <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x)}))} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                        <span style={{fontSize:13,fontWeight:600,color:T.green,minWidth:20,textAlign:"center"}}>{en}</span>
+                        <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x)}))} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                      </div>
+                    </div>
+                    <div style={{marginTop:6,height:4,borderRadius:2,background:T.borderL,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${pct}%`,background:pct>=100?T.green:T.accentSolid,borderRadius:2,transition:"width 0.3s"}}></div>
+                    </div>
+                  </div>);
+                })}
                 <div style={{padding:"8px 12px"}}>
                   <select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.contenido||[];const ex=lista.findIndex(x=>x.tipo===val);if(ex>=0)return{...f,contenido:lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||1)+1}:x)};return{...f,contenido:[...lista,{tipo:val,acordados:1,entregados:0}]};});}} style={{...iS,fontSize:13,color:T.textSm}}>
                     <option value="">+ Agregar tipo de contenido...</option>
@@ -2057,7 +2088,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {deleteConfirm===c._docId?(
                   <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:14,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"8px 16px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:13}}>No</button></div>
                 ):(
-                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button></>
+                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button><button onClick={()=>{const prods=(c.productosCanje||[]).map(p=>`${p.nombre} x${p.cantidad}`).join("\n")||(c.producto||"Sin productos");const html=`<html><body style="font-family:Arial,sans-serif;padding:20px;max-width:400px"><h2 style="margin:0 0 8px">🤝 CANJE SOLUNA</h2><hr/><p><b>Influencer:</b> ${c.influencer||""}</p><p><b>Instagram:</b> @${c.usuario||""}</p>${c.tracking?`<p><b>Tracking:</b> ${c.tracking}</p>`:""}<p><b>Productos:</b></p><pre style="background:#f5f5f5;padding:10px;border-radius:6px">${prods}</pre><p style="font-size:11px;color:#888">Generado por Growith • ${new Date().toLocaleDateString("es-AR")}</p></body></html>`;const w=window.open("","_blank");w.document.write(html);w.document.close();w.print();}} style={{...BtnSecondary(T),fontSize:13}}>🏷️ Generar Etiqueta</button></>
                 )}
               </div>
             </div>
@@ -2621,9 +2652,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const pedidoNum=internoMatch[1].trim();
           const destinatario=destMatch?destMatch[1].trim():"";
           if(type==="sku") {
-            const order=orders.find(o=>o.numero===pedidoNum);
-            const skus=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`).join(', '):"No encontrado en TN";
-            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario});
+            let order=orders.find(o=>String(o.numero)===String(pedidoNum));
+            if(!order) {
+              try {
+                const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(pedidoNum)}`);
+                const data=await r.json();
+                if(Array.isArray(data)&&data.length>0) {
+                  const built=buildOrdersFromAPI(data);
+                  order=built.find(o=>String(o.numero)===String(pedidoNum))||built[0];
+                }
+              } catch(_){}
+            }
+            const skuLines=order?order.productos.map(p=>`${p.sku||p.nombre} (x${p.cantidad})`):[]; 
+            const skus=skuLines.length?skuLines.join(', '):"No encontrado en TN";
+            results.push({pagina:i+1,pedidoNum,tracking,skus,skuLines,found:!!order,destinatario});
           } else {
             results.push({pagina:i+1,tracking,pedidoNum,destinatario,status:"pending"});
           }
