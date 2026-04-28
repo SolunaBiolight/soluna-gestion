@@ -111,31 +111,39 @@ export default async function handler(req, res) {
       const [pedidoNum, info] = entry;
       const skuLines = info.skus;
 
-      // Calcular cuántas líneas entran en columna izquierda
-      const lineHeight = fontSize + 1.5;
-      const maxLinesPerCol = Math.floor((height * 0.22) / lineHeight); // usar ~22% inferior de la página
-      const col2X = width * 0.52; // columna derecha: mitad derecha de la etiqueta
-
-      let currentY = yFromBottom;
-      let col2Y = yFromBottom;
-      let useCol2 = false;
-
-      for (let li = 0; li < skuLines.length; li++) {
-        const line = skuLines[li];
-        // Si la línea no entra en col 1, pasar a col 2
-        if (!useCol2 && li >= maxLinesPerCol) useCol2 = true;
-        const drawX = useCol2 ? col2X : x;
-        const drawY = useCol2 ? col2Y : currentY;
-        page.drawText(line, {
-          x: drawX,
-          y: drawY,
-          size: fontSize,
-          font,
-          color: rgb(0, 0, 0),
-        });
-        if (useCol2) col2Y += lineHeight;
-        else currentY += lineHeight;
+      // Insertar SKUs en columnas si no entran todos verticalmente
+      // Col 1: desde x, yFromBottom hacia arriba
+      // Col 2: desde x + mitad del ancho de la pagina, yFromBottom hacia arriba
+      // Col 3: si sigue sin entrar, continuar a la derecha
+      const lineHeight = fontSize + 2;
+      // Zona segura: desde yFromBottom hasta ~40% de la altura (evitar QR y texto superior)
+      const safeHeight = height * 0.38;
+      const maxLinesPerCol = Math.max(1, Math.floor(safeHeight / lineHeight));
+      // Dividir en columnas de maxLinesPerCol lineas
+      const cols = [];
+      for (let ci = 0; ci < skuLines.length; ci += maxLinesPerCol) {
+        cols.push(skuLines.slice(ci, ci + maxLinesPerCol));
       }
+      // Ancho disponible por columna (distribuir el ancho de la pagina entre columnas)
+      const numCols = Math.min(cols.length, 3); // max 3 columnas
+      const colWidth = (width - x - 5) / numCols;
+      cols.slice(0, numCols).forEach((colLines, colIdx) => {
+        const colX = x + colIdx * colWidth;
+        let currentY = yFromBottom;
+        for (const line of colLines) {
+          // Truncar si el texto es muy largo para la columna
+          const maxChars = Math.floor(colWidth / (fontSize * 0.55));
+          const safeLine = line.length > maxChars ? line.slice(0, maxChars - 1) + "…" : line;
+          page.drawText(safeLine, {
+            x: colX,
+            y: currentY,
+            size: fontSize,
+            font,
+            color: rgb(0, 0, 0),
+          });
+          currentY += lineHeight;
+        }
+      });
 
       pageResults.push({ pageIdx: i, pageNum, pedido: pedidoNum, hasSkus: true, skus: skuLines });
     }
