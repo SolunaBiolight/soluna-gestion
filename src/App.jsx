@@ -2057,6 +2057,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [copiedToast,setCopiedToast]=useState(null);
+  const [orderDetail,setOrderDetail]=useState(null);
   function copyToClipboard(text, label) {
     navigator.clipboard.writeText(text).then(()=>{
       setCopiedToast(label||"Copiado");
