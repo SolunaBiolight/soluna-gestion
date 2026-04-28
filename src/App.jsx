@@ -750,6 +750,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                                 {/* Acciones */}
                                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                                   <button onClick={()=>{setReclamoForm(emptyForm(o.numero));setSearchGlobal("");setPedidoDetalle(null);}} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px"}}>+ Crear Reclamo</button>
+                                  {onGenerarCanje&&<button onClick={()=>{const prods=o.productos?.map(p=>p.nombre?.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()||p.sku).filter(Boolean)||[];onGenerarCanje({influencer:o.comprador,email:o.email||"",telefono:o.telefono||"",productos:prods,producto:prods[0]||"",notas:`Pedido #${o.numero} · ${new Date().toLocaleDateString('es-AR')}`,estado:"Pendiente envío",red:"Instagram",usuario:"",seguidores:"",foto:"",nicho:"",tracking:"",linkContenido:"",fechaEnvio:"",fechaPublicacion:"",contenido:[],alcance:"",reproducciones:"",likes:"",guardados:"",historial:[],recordatorio:""});setPedidoDetalle(null);setSearchGlobal("");}} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.purple}}>🤝 Generar Canje</button>}
                                   <AsyncButton onClick={()=>generarEtiquetaAndreani(o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.blue}}>📦 Etiqueta Andreani</AsyncButton>
                                   {o.telefono&&<a href={`https://wa.me/${o.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.green}}>💬 WhatsApp</a>}
                                   {o.linkOrden&&<a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.purple}}>🔗 Ver en TN</a>}
@@ -994,6 +995,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                               )}
                               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                                 <button onClick={()=>{setReclamoForm(emptyForm(o.numero));setPedidoDetalle(null);}} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px"}}>+ Crear Reclamo</button>
+                                {onGenerarCanje&&<button onClick={()=>{const prods=o.productos?.map(p=>p.nombre?.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()||p.sku).filter(Boolean)||[];onGenerarCanje({influencer:o.comprador,email:o.email||"",telefono:o.telefono||"",productos:prods,producto:prods[0]||"",notas:`Pedido #${o.numero} · ${new Date().toLocaleDateString('es-AR')}`,estado:"Pendiente envío",red:"Instagram",usuario:"",seguidores:"",foto:"",nicho:"",tracking:"",linkContenido:"",fechaEnvio:"",fechaPublicacion:"",contenido:[],alcance:"",reproducciones:"",likes:"",guardados:"",historial:[],recordatorio:""});setPedidoDetalle(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.purple}}>🤝 Generar Canje</button>}
                                 <button onClick={()=>generarEtiquetaAndreani(o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.blue}}>📦 Etiqueta Andreani</button>
                                 {o.telefono&&<a href={`https://wa.me/${o.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.green}}>💬 WhatsApp</a>}
                                 {o.linkOrden&&<a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.purple}}>🔗 Ver en TN</a>}
@@ -1446,7 +1448,7 @@ function NotasRapidas({T, canje, onAdd}) {
 // ═══════════════════════════════════════════
 // APP CANJES
 // ═══════════════════════════════════════════
-function AppCanjes({T, fbStatus, user, onHome}) {
+function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje}) {
   const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
@@ -1470,6 +1472,13 @@ function AppCanjes({T, fbStatus, user, onHome}) {
     },()=>{});
     return ()=>unsub();
   },[]);
+
+  useEffect(()=>{
+    if(pendingCanje) {
+      setForm({...emptyForm(),...pendingCanje,_docId:null,contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],productos:pendingCanje.productos?.length?pendingCanje.productos:(pendingCanje.producto?[pendingCanje.producto]:[])});
+      if(onClearPendingCanje) onClearPendingCanje();
+    }
+  },[pendingCanje]);
 
   const emptyForm=()=>({
     _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"",
@@ -2025,221 +2034,6 @@ function AppCanjes({T, fbStatus, user, onHome}) {
 
 // ═══════════════════════════════════════════
 // APP ENVIOS
-
-// ═══════════════════════════════════════════
-// TAB SKU — componente propio para usar hooks correctamente
-// ═══════════════════════════════════════════
-function TabSKU({T, orders, extractPdfText}) {
-  const iS = InputStyle(T);
-  const [skuFile, setSkuFile] = useState(null);
-  const [skuResults, setSkuResults] = useState([]);
-  const [skuProcessing, setSkuProcessingLocal] = useState(false);
-  const [skuError, setSkuError] = useState(null);
-  const [skuImpresion, setSkuImpresion] = useState("rotulos");
-  const [skuOrden, setSkuOrden] = useState("sku");
-  const [skuX, setSkuX] = useState("10");
-  const [skuY, setSkuY] = useState("10");
-  const [skuFontSize, setSkuFontSize] = useState("4");
-
-  const TIPOS = {
-    rotulos: { label:"Impresora de Rótulos", x:"10", y:"10", size:"4", desc:"x=10, y=10, tamaño 4pt" },
-    a4:      { label:"Hojas A4",             x:"20", y:"706", size:"4", desc:"x=20, y=706, tamaño 4pt" },
-    correo:  { label:"Correo Argentino",     x:"60", y:"100", size:"7", desc:"x=60, y=100, tamaño 7pt" },
-    custom:  { label:"Personalizado",        x:skuX, y:skuY, size:skuFontSize, desc:"Ingresá tus propios valores" },
-  };
-
-  async function procesarPDF() {
-    if(!skuFile) return;
-    setSkuProcessingLocal(true);
-    setSkuError(null);
-    setSkuResults([]);
-    try {
-      const text = await extractPdfText(skuFile);
-      const pages = text.split("---PAGE---");
-      const results = [];
-      for(let i=0;i<pages.length;i++) {
-        const pageText = pages[i];
-        const trackingMatch = pageText.match(/\b(36\d{13})\b/);
-        let internoMatch = pageText.match(/N[°º\u00b0\u00ba]?\s*Interno[^0-9#]{0,8}#?\s*(\d{3,6})/i);
-        if(!internoMatch) internoMatch = pageText.match(/Interno[:\s]{1,6}#?\s*(\d{3,6})/i);
-        if(!internoMatch) internoMatch = pageText.match(/#(\d{3,6})\b/);
-        if(!internoMatch || !trackingMatch) continue;
-        const pedidoNum = internoMatch[1].trim();
-        const tracking = trackingMatch[1].trim();
-        const order = orders.find(o=>o.numero===pedidoNum);
-        const skus = order ? order.productos.map(p=>`${p.sku} (x${p.cantidad})`).filter(Boolean) : [];
-        results.push({pagina:i+1, pedidoNum, tracking, skus, found:!!order,
-          comprador: order?.comprador||"", destinatario: (pageText.match(/Destinatario:\s*([^\n]+)/i)||[])[1]?.trim()||""
-        });
-      }
-
-      if(results.length===0){setSkuError("No se encontraron rótulos válidos.");setSkuProcessingLocal(false);return;}
-
-      // Construir skuMap para enviar al backend
-      const skuMapObj = {};
-      results.forEach(r=>{ skuMapObj[r.pedidoNum]={page:r.pagina, skus:r.skus, found:r.found}; });
-
-      // Calcular pageOrder ANTES de ordenar (índices originales del PDF)
-      // El ordenamiento determina el orden final de las páginas en el PDF descargado
-      let pageOrder;
-      if(skuOrden==="sku") {
-        const sorted=[...results].sort((a,b)=>(a.skus[0]||"").localeCompare(b.skus[0]||""));
-        pageOrder = sorted.map(r=>r.pagina-1);
-      } else if(skuOrden==="cantidad") {
-        const sorted=[...results].sort((a,b)=>b.skus.length-a.skus.length);
-        pageOrder = sorted.map(r=>r.pagina-1);
-      } else {
-        pageOrder = results.map(r=>r.pagina-1);
-      }
-
-      const cfg = TIPOS[skuImpresion];
-      const formData = new FormData();
-      formData.append('pdf', skuFile, skuFile.name);
-      formData.append('skuMap', JSON.stringify(skuMapObj));
-      formData.append('config', JSON.stringify({
-        x: skuImpresion==='custom'?skuX:cfg.x,
-        y: skuImpresion==='custom'?skuY:cfg.y,
-        fontSize: skuImpresion==='custom'?skuFontSize:cfg.size,
-        sortBy: skuOrden,
-        pageOrder,
-      }));
-
-      const res = await fetch('/api/process-sku', {method:'POST', body:formData});
-      if(!res.ok){const err=await res.json();throw new Error(err.error||`Error ${res.status}`);}
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `rotulos-con-sku-${Date.now()}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setSkuResults(results);
-    } catch(e){ setSkuError(e.message); }
-    setSkuProcessingLocal(false);
-  }
-
-  const cfgActual = TIPOS[skuImpresion];
-
-  return (
-    <div style={{maxWidth:900,display:"grid",gridTemplateColumns:"1fr 340px",gap:20,alignItems:"start"}}>
-      {/* Panel principal */}
-      <div>
-        {/* PDF upload */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:14}}>
-          <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:12,textTransform:"uppercase",letterSpacing:0.5}}>📄 Subir PDF de Rótulos</div>
-          <div style={{fontSize:13,color:T.textMd,marginBottom:12,lineHeight:1.5}}>Seleccioná el PDF de rótulos Andreani o Correo Argentino para agregar los SKUs correspondientes</div>
-          <label style={{display:"flex",alignItems:"center",gap:10,background:T.surface,border:`1px dashed ${skuFile?T.accent:T.border}`,borderRadius:10,padding:"14px 16px",cursor:"pointer"}}>
-            <span style={{fontSize:20}}>{skuFile?"📄":"⬆️"}</span>
-            <div>
-              <div style={{fontSize:13,fontWeight:600,color:skuFile?T.accent:T.text}}>{skuFile?skuFile.name:"Seleccionar archivo PDF"}</div>
-              {skuFile&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>Archivo seleccionado: {skuFile.name}</div>}
-            </div>
-            <input type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuResults([]);setSkuError(null);}}}/>
-          </label>
-        </div>
-
-        {/* Tipo impresión */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:14}}>
-          <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:12,textTransform:"uppercase",letterSpacing:0.5}}>🖨️ Tipo de Impresión</div>
-          {Object.entries(TIPOS).map(([id,t])=>(
-            <label key={id} onClick={()=>setSkuImpresion(id)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:10,marginBottom:8,cursor:"pointer",background:skuImpresion===id?T.accentSolid+"15":T.surface,border:`1px solid ${skuImpresion===id?T.accentSolid:T.border}`}}>
-              <div style={{width:18,height:18,borderRadius:"50%",border:`2px solid ${skuImpresion===id?T.accentSolid:T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                {skuImpresion===id&&<div style={{width:8,height:8,borderRadius:"50%",background:T.accentSolid}}/>}
-              </div>
-              <div>
-                <div style={{fontSize:13,fontWeight:600,color:T.text}}>{t.label}</div>
-                <div style={{fontSize:11,color:T.textSm}}>{t.desc}</div>
-              </div>
-            </label>
-          ))}
-          {skuImpresion==="custom"&&(
-            <div style={{background:T.surface,borderRadius:10,padding:"14px 16px",border:`1px solid ${T.border}`}}>
-              <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>⚙️ Configuración Personalizada</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-                {[["Posición X",skuX,setSkuX],["Posición Y",skuY,setSkuY],["Tamaño Fuente (pt)",skuFontSize,setSkuFontSize]].map(([label,val,setter])=>(
-                  <div key={label}>
-                    <div style={{fontSize:11,color:T.textSm,marginBottom:4}}>{label}</div>
-                    <input value={val} onChange={e=>setter(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
-                  </div>
-                ))}
-              </div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:8}}>💡 La posición Y se mide desde abajo. Para A4, el máximo Y es ~842.</div>
-            </div>
-          )}
-        </div>
-
-        {/* Ordenar */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:14}}>
-          <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:12,textTransform:"uppercase",letterSpacing:0.5}}>🔀 Ordenar PDFs antes de descargar</div>
-          {[["sin","Sin ordenar","Mantener el orden original del PDF"],["sku","Por Producto (SKU)","Agrupa todos los rótulos del mismo producto juntos"],["cantidad","Por Cantidad","Ordena por cantidad (mayor a menor) dentro de cada producto"]].map(([id,label,desc])=>(
-            <label key={id} onClick={()=>setSkuOrden(id)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:10,marginBottom:8,cursor:"pointer",background:skuOrden===id?T.accentSolid+"15":T.surface,border:`1px solid ${skuOrden===id?T.accentSolid:T.border}`}}>
-              <div style={{width:18,height:18,borderRadius:"50%",border:`2px solid ${skuOrden===id?T.accentSolid:T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                {skuOrden===id&&<div style={{width:8,height:8,borderRadius:"50%",background:T.accentSolid}}/>}
-              </div>
-              <div>
-                <div style={{fontSize:13,fontWeight:600,color:T.text}}>{label}</div>
-                <div style={{fontSize:11,color:T.textSm}}>{desc}</div>
-              </div>
-            </label>
-          ))}
-        </div>
-
-        {/* Botón procesar */}
-        <AsyncButton onClick={procesarPDF} disabled={!skuFile||skuProcessing} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"14px 0",borderRadius:12,marginBottom:14,opacity:(!skuFile||skuProcessing)?0.5:1}}>
-          {skuProcessing?"⏳ Procesando...":"⚙️ Procesar PDF"}
-        </AsyncButton>
-
-        {skuError&&<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:13,color:T.red}}>❌ {skuError}</div>}
-
-        {/* Resultados */}
-        {skuResults.length>0&&(
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-            <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:14,fontWeight:700,color:T.green}}>✅ Procesamiento exitoso</span>
-              <span style={{fontSize:12,color:T.textSm}}>{skuResults.filter(r=>r.found).length} de {skuResults.length} páginas con SKU</span>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"55px 70px 1fr 1fr",gap:8,padding:"8px 18px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`}}>
-              <span>Pág.</span><span>Pedido</span><span>Destinatario</span><span>SKUs</span>
-            </div>
-            {skuResults.map((r,i)=>(
-              <div key={i} style={{display:"grid",gridTemplateColumns:"55px 70px 1fr 1fr",gap:8,padding:"10px 18px",borderBottom:i<skuResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:!r.found?T.redBg+"55":"transparent"}}>
-                <span style={{fontSize:12,color:T.textSm}}>{r.pagina}</span>
-                <span style={{fontWeight:700,color:r.found?T.accent:T.red,fontSize:13}}>#{r.pedidoNum}</span>
-                <span style={{fontSize:12,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.destinatario||r.comprador||"—"}</span>
-                <div>
-                  {r.found?r.skus.map((s,j)=><div key={j} style={{fontSize:12,color:T.text}}>{s}</div>):<span style={{fontSize:12,color:T.red}}>⚠ No encontrado</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Panel lateral informativo */}
-      <div style={{position:"sticky",top:80}}>
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>🔍 Cómo funciona</div>
-          {["Subí un PDF de rótulos Andreani o Correo Argentino","El sistema detecta automáticamente el N° de pedido de cada página","Busca el SKU del producto en Tienda Nube","Inserta el SKU en la posición correcta según el tipo de impresión","Descarga el PDF modificado con todos los SKUs insertados"].map((s,i)=>(
-            <div key={i} style={{display:"flex",gap:8,marginBottom:8,fontSize:12,color:T.textMd,lineHeight:1.5}}>
-              <span style={{color:T.accent,fontWeight:700,flexShrink:0}}>{i+1}.</span>{s}
-            </div>
-          ))}
-        </div>
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>🖨️ Tipos de Impresión</div>
-          {[["Impresora de rótulos:","Posición: x=10, y=10, Tamaño: 4pt"],["Hojas A4:","Posición: x=20, y=706, Tamaño: 4pt"],["Correo Argentino:","Posición: x=60, y=100, Tamaño: 7pt"],["Personalizado:","Ingresá tus propios valores de posición (x, y) y tamaño de fuente"]].map(([title,desc])=>(
-            <div key={title} style={{background:T.surface,borderRadius:8,padding:"10px 12px",marginBottom:8,border:`1px solid ${T.borderL}`}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3}}>{title}</div>
-              <div style={{fontSize:11,color:T.textSm}}>{desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ═══════════════════════════════════════════
 function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [tab,setTab]=useState("panel");
@@ -3098,7 +2892,63 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
         })()}
 
         {/* ── SKU EN ROTULOS ── */}
-        {tab==="sku"&&<TabSKU T={T} orders={orders} extractPdfText={extractPdfText}/>}
+        {tab==="sku"&&(
+          <div style={{maxWidth:700}}>
+            <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
+              Subí el PDF de rótulos de Andreani. La app detecta el N° de pedido, busca los SKUs en tus pedidos de Tienda Nube y genera un resumen de lo despachado.
+            </div>
+
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>1. Seleccioná el PDF de rótulos</div>
+              <input type="file" accept=".pdf" onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(true);setSkuResults([]);}}} style={{...iS,cursor:"pointer",fontSize:13,marginBottom:skuPending?12:0}}/>
+              {skuPending&&!skuProcessing&&(
+                <button onClick={()=>{setSkuPending(false);parsePdf(skuFile,"sku");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,marginTop:12}}>
+                  🔍 Analizar PDF
+                </button>
+              )}
+            </div>
+
+            {skuProcessing&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:32,textAlign:"center",marginBottom:16}}>
+                <div style={{fontSize:28,marginBottom:10}}>⏳</div>
+                <div style={{fontSize:15,fontWeight:600,color:T.text}}>Analizando PDF...</div>
+                <div style={{fontSize:13,color:T.textSm,marginTop:6}}>Extrayendo SKUs de cada rótulo</div>
+                <div style={{width:60,height:4,background:T.accentSolid,borderRadius:20,margin:"16px auto 0",animation:"pulse 1s infinite"}}/>
+              </div>
+            )}
+
+            {skuResults.length>0&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontSize:14,fontWeight:700,color:T.text}}>✅ {skuResults.length} rótulos analizados</span>
+                  <button onClick={()=>{
+                    const lines=["RESUMEN DE SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString('es-AR'),"Total de páginas: "+skuResults.length,"","DETALLE DE SKU DESPACHADOS:",""];
+                    const skuMap={};
+                    skuResults.forEach(r=>{const order=orders.find(o=>o.numero===r.pedidoNum);if(order)order.productos.forEach(p=>{skuMap[p.sku]=(skuMap[p.sku]||0)+(parseInt(p.cantidad)||1);});});
+                    Object.entries(skuMap).sort().forEach(([sku,qty])=>lines.push(`${sku}: CANTIDAD TOTAL: ${qty}`));
+                    const blob=new Blob([lines.join('\n')],{type:"text/plain"});
+                    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="resumen-sku.txt";a.click();
+                  }} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>⬇️ Exportar resumen</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"60px 80px 1fr",gap:8,padding:"8px 18px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`}}>
+                  <span>Página</span><span>Pedido</span><span>SKUs</span>
+                </div>
+                {skuResults.map((r,i)=>(
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"60px 80px 1fr",gap:8,padding:"12px 18px",borderBottom:i<skuResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
+                    <span style={{fontSize:12,color:T.textSm}}>Pág. {r.pagina}</span>
+                    <span style={{fontWeight:700,color:r.found?T.accent:T.red,fontSize:13}}>#{r.pedidoNum||"—"}</span>
+                    <div>
+                      <div style={{fontSize:13,color:r.found?T.text:T.red}}>{r.skus}</div>
+                      {!r.found&&<div style={{fontSize:11,color:T.red,marginTop:2}}>⚠ Pedido no encontrado</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── SEGUIMIENTOS ── */}
         {tab==="seguimientos"&&(
           <div style={{maxWidth:700}}>
             <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
@@ -4053,6 +3903,7 @@ function AppAdmin({T, user, onBack}) {
 export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   const [page,setPage]=useState("home");
+  const [pendingCanje,setPendingCanje]=useState(null); // datos pre-cargados desde un pedido
   const [orders,setOrders]=useState([]);
   const [ordersStatus,setOrdersStatus]=useState("idle");
   const [totalOrdersCount,setTotalOrdersCount]=useState(null);
@@ -4263,8 +4114,8 @@ export default function App() {
   if(page==="config") return <>{themeBtn}<ConfigScreen T={T} user={user} onBack={()=>setPage("home")}/></>;
 
   // App
-  if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount}/>{themeBtn}</>;
-  if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
-  if(page==="envios") return <><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")}/>{themeBtn}</>;
+  if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/>{themeBtn}</>;
+  if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)}/>{themeBtn}</>;
+  if(page==="envios") return <><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/>{themeBtn}</>;
   return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin}/>{themeBtn}</>;
 }
