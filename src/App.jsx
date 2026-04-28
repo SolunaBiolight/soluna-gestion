@@ -2506,7 +2506,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       // Check unresolved sucursales
       const unresolvedSuc=sucursalOrders.filter(o=>{
         if(sucursalOverridesRef.current[o.numero]) return false;
-        return !findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+        const found=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+        return !found||found.trim()==="";
       });
 
       if(unresolvedDom.length>0||unresolvedSuc.length>0){
