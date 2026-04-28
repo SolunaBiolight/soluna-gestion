@@ -86,7 +86,7 @@ const LENTE_DOT = { Amarillo:"#fbbf24",Naranja:"#fb923c",Rojo:"#f87171",Negro:"#
 const ESTADOS_C = ["Pendiente envío","Enviado","Contenido pendiente","Contenido publicado","Finalizado","Cancelado"];
 const REDES = ["Instagram","TikTok","YouTube","Twitter/X","Otro"];
 const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
-const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Otro"];
+const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Jugador de Fútbol","Otro"];
 const PRODUCTOS_CANJE = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Kit Completo","A elección"];
 
 // ─── Helpers ───
@@ -1475,17 +1475,18 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   useEffect(()=>{
     if(pendingCanje) {
-      setForm({...emptyForm(),...pendingCanje,_docId:null,contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],productos:pendingCanje.productos?.length?pendingCanje.productos:(pendingCanje.producto?[pendingCanje.producto]:[])});
+      const prodsCanje=pendingCanje.productosCanje||(pendingCanje.productos||[]).map(p=>({nombre:typeof p==="string"?p:p.nombre,cantidad:1})).filter(p=>p.nombre);
+      setForm({...emptyForm(),...pendingCanje,influencer:pendingCanje.nombre||pendingCanje.influencer||"",_docId:null,productosCanje:prodsCanje,contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[]});
       if(onClearPendingCanje) onClearPendingCanje();
     }
   },[pendingCanje]);
 
   const emptyForm=()=>({
     _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"",
-    producto:"", estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
+    producto:"", productosCanje:[], estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
     fechaEnvio:"", fechaPublicacion:"",
     foto:"", nicho:"",
-    contenido: ACTIVIDADES.map(tipo=>({tipo, acordados:0, entregados:0})),
+    contenido:[],
     alcance:"", reproducciones:"", likes:"", guardados:"",
     historial:[],
     recordatorio:"",
@@ -1498,11 +1499,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const p={
         influencer:form.influencer, usuario:form.usuario||"", red:form.red,
         seguidores:form.seguidores||"", email:form.email||"", telefono:form.telefono||"",
-        producto:form.producto||"", estado:form.estado, tracking:form.tracking||"",
+        producto:form.producto||((form.productosCanje||[])[0]?.nombre||""),
+        productosCanje:form.productosCanje||[],
+        estado:form.estado, tracking:form.tracking||"",
         notas:form.notas||"", linkContenido:form.linkContenido||"",
         fechaEnvio:form.fechaEnvio||"", fechaPublicacion:form.fechaPublicacion||"",
         foto:form.foto||"", nicho:form.nicho||"",
-        contenido:form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),
+        contenido:form.contenido||[],
         alcance:form.alcance||"", reproducciones:form.reproducciones||"",
         likes:form.likes||"", guardados:form.guardados||"",
         historial:form.historial||[],
@@ -1820,12 +1823,31 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <Field T={T} label="Nombre" required><input style={iS} value={form.influencer} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Nombre del influencer"/></Field>
               <Field T={T} label="Usuario (@)"><input style={iS} value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="@usuario"/></Field>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 14px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
               <Field T={T} label="Red social"><select style={iS} value={form.red} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>{REDES.map(r=><option key={r}>{r}</option>)}</select></Field>
               <Field T={T} label="Nicho"><select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}><option value="">—</option>{NICHOS.map(n=><option key={n}>{n}</option>)}</select></Field>
               <Field T={T} label="Seguidores"><input style={iS} type="number" value={form.seguidores} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></Field>
-              <Field T={T} label="Producto"><select style={iS} value={form.producto} onChange={e=>setForm(f=>({...f,producto:e.target.value}))}><option value="">—</option>{PRODUCTOS_CANJE.map(p=><option key={p}>{p}</option>)}</select></Field>
             </div>
+            <Field T={T} label="Productos enviados">
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
+                {(form.productosCanje||[]).length===0&&<div style={{padding:"10px 14px",fontSize:13,color:T.textSm}}>Sin productos agregados</div>}
+                {(form.productosCanje||[]).map((p,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`}}>
+                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
+                    <span style={{fontSize:12,color:T.textSm,background:T.surface,borderRadius:6,padding:"2px 8px",fontWeight:600,minWidth:28,textAlign:"center"}}>x{p.cantidad}</span>
+                    <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.map((x,j)=>j===i?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>−</button>
+                    <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.map((x,j)=>j===i?{...x,cantidad:(x.cantidad||1)+1}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>+</button>
+                    <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.filter((_,j)=>j!==i)}))} style={{width:26,height:26,border:`1px solid ${T.red}44`,borderRadius:5,background:T.redBg,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+                  </div>
+                ))}
+                <div style={{padding:"8px 12px"}}>
+                  <select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.productosCanje||[];const existe=lista.findIndex(x=>x.nombre===val);if(existe>=0)return{...f,productosCanje:lista.map((x,i)=>i===existe?{...x,cantidad:(x.cantidad||1)+1}:x)};return{...f,productosCanje:[...lista,{nombre:val,cantidad:1}]};});}} style={{...iS,fontSize:13,color:T.textSm}}>
+                    <option value="">+ Agregar producto...</option>
+                    {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+            </Field>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
               <Field T={T} label="Email"><input style={iS} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@ejemplo.com"/></Field>
               <Field T={T} label="Teléfono / WhatsApp"><input style={iS} value={form.telefono} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="+54 11..."/></Field>
@@ -1834,23 +1856,28 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <Field T={T} label="Fecha de envío"><input style={iS} type="date" value={form.fechaEnvio} onChange={e=>setForm(f=>({...f,fechaEnvio:e.target.value}))}/></Field>
               <Field T={T} label="Tracking Andreani"><input style={iS} value={form.tracking} onChange={e=>setForm(f=>({...f,tracking:e.target.value}))} placeholder="Código de seguimiento"/></Field>
             </div>
-
             {/* Contenido comprometido */}
             <Field T={T} label="Contenido comprometido">
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",gap:0,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span>Tipo</span><span style={{textAlign:"center"}}>Acordados</span><span style={{textAlign:"center"}}>Entregados</span>
-                </div>
-                {(form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0}))).map((item,i)=>(
-                  <div key={item.tipo} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",padding:"8px 14px",borderBottom:i<ACTIVIDADES.length-1?`1px solid ${T.borderL}`:"none"}}>
-                    <span style={{fontSize:13,fontWeight:500,color:T.text}}>{item.tipo}</span>
-                    <input type="number" min={0} value={item.acordados} onChange={e=>{const arr=[...form.contenido];arr[i]={...arr[i],acordados:parseInt(e.target.value)||0};setForm(f=>({...f,contenido:arr}));}} style={{...iS,textAlign:"center",padding:"6px 4px",fontSize:13,width:"60px",margin:"0 auto"}}/>
-                    <input type="number" min={0} value={item.entregados} onChange={e=>{const arr=[...form.contenido];arr[i]={...arr[i],entregados:parseInt(e.target.value)||0};setForm(f=>({...f,contenido:arr}));}} style={{...iS,textAlign:"center",padding:"6px 4px",fontSize:13,width:"60px",margin:"0 auto"}}/>
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
+                {(form.contenido||[]).length===0&&<div style={{padding:"10px 14px",fontSize:13,color:T.textSm}}>Sin contenido acordado</div>}
+                {(form.contenido||[]).map((item,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`}}>
+                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{item.tipo}</span>
+                    <span style={{fontSize:12,color:T.textSm,whiteSpace:"nowrap"}}>acordados:</span>
+                    <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===i?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>−</button>
+                    <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:18,textAlign:"center"}}>{item.acordados||1}</span>
+                    <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===i?{...x,acordados:(x.acordados||1)+1}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>+</button>
+                    <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.filter((_,j)=>j!==i)}))} style={{width:26,height:26,border:`1px solid ${T.red}44`,borderRadius:5,background:T.redBg,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
                   </div>
                 ))}
+                <div style={{padding:"8px 12px"}}>
+                  <select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.contenido||[];const existe=lista.findIndex(x=>x.tipo===val);if(existe>=0)return{...f,contenido:lista.map((x,i)=>i===existe?{...x,acordados:(x.acordados||1)+1}:x)};return{...f,contenido:[...lista,{tipo:val,acordados:1,entregados:0}]};});}} style={{...iS,fontSize:13,color:T.textSm}}>
+                    <option value="">+ Agregar tipo de contenido...</option>
+                    {ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
               </div>
             </Field>
-
             {form._docId&&(
               <>
                 <Field T={T} label="Estado">
@@ -2035,7 +2062,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 // ═══════════════════════════════════════════
 // APP ENVIOS
 // ═══════════════════════════════════════════
-function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
+function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenerarCanje}) {
   const [tab,setTab]=useState("panel");
   const [selected,setSelected]=useState(new Set());
   const [exportModal,setExportModal]=useState(false);
@@ -2057,6 +2084,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [copiedToast,setCopiedToast]=useState(null);
+  const [orderDetail,setOrderDetail]=useState(null);
   function copyToClipboard(text, label) {
     navigator.clipboard.writeText(text).then(()=>{
       setCopiedToast(label||"Copiado");
@@ -2590,7 +2618,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           const pedidoNum=internoMatch[1].trim();
           const destinatario=destMatch?destMatch[1].trim():"";
           if(type==="sku") {
-            const order=orders.find(o=>o.numero===pedidoNum);
+            // Buscar en orders local primero, luego en API de TN
+            let order=orders.find(o=>o.numero===pedidoNum);
+            if(!order) {
+              try {
+                const r=await fetch(`/api/orders?uid=${user?.uid}&q=${pedidoNum}`);
+                const data=await r.json();
+                if(Array.isArray(data)&&data.length>0) {
+                  const built=buildOrdersFromAPI(data);
+                  order=built.find(o=>o.numero===pedidoNum)||built[0];
+                }
+              } catch(_) {}
+            }
             const skus=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`).join(', '):"No encontrado en TN";
             results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario});
           } else {
@@ -2840,16 +2879,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
                   const ec=getEstadoEnvioC(T,o.estadoEnvio);
                   const isSuc=o.medioEnvio&&(o.medioEnvio.toLowerCase().includes('sucursal')||o.medioEnvio.toLowerCase().includes('hop')||o.medioEnvio.toLowerCase().includes('punto'));
                   return (
-                    <div key={o.numero} onClick={e=>toggleSelect(o.numero,e)}
+                    <div key={o.numero}
+                      onClick={()=>setOrderDetail(o)}
                       style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
-                      <div style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e);}} style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1}}>
                         {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:3}}>
                         <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
-                        <button onClick={e=>{e.stopPropagation();const txt=`#${o.numero} · ${o.comprador} · ${o.esSucursal?(o.pickupDetails?.name+" "+o.pickupDetails?.address?.address+" "+o.pickupDetails?.address?.number):(o.direccion+" "+o.dirNumero+", "+o.cp)}`; copyToClipboard(txt, `#${o.numero} copiado`);}} style={{fontSize:10,color:T.textSm,background:"none",border:"none",cursor:"pointer",padding:0,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}} title="Copiar datos">📋</button>
                       </div>
                       <div>
                         <div style={{fontSize:compactMode?12:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
@@ -3039,6 +3078,104 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           </div>
         </div>
       )}
+
+      {/* Order Detail Modal */}
+      <Modal T={T} open={!!orderDetail} onClose={()=>setOrderDetail(null)} title={orderDetail?`Pedido #${orderDetail.numero}`:""} width={580}>
+        {orderDetail&&(()=>{
+          const o=orderDetail;
+          const ec=getEstadoEnvioC(T,o.estadoEnvio);
+          return (
+            <div>
+              <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:18,flexWrap:"wrap"}}>
+                <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
+                <span style={{fontSize:20,fontWeight:700,color:T.text,marginLeft:"auto"}}>{fmtMoney(o.total)}</span>
+              </div>
+              <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Cliente</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px",fontSize:13}}>
+                  {[["Nombre",o.comprador],["Email",o.email],["Teléfono",o.telefono],["DNI",o.dni],["Fecha",o.fecha],["Pago",o.estadoPago],["Medio de pago",o.medioPago]].map(([l,v])=>v?(
+                    <div key={l} style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                      <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{l}</span>
+                      <span style={{fontWeight:500,color:T.text}}>{v}</span>
+                    </div>
+                  ):null)}
+                </div>
+              </div>
+              <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Envío</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px",fontSize:13}}>
+                  {o.esSucursal?(
+                    <>
+                      <div style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`,gridColumn:"1/-1"}}>
+                        <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>Punto de retiro</span>
+                        <span style={{fontWeight:500,color:T.purple}}>{o.pickupDetails?.name}</span>
+                      </div>
+                      {o.pickupDetails?.address&&(
+                        <div style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`,gridColumn:"1/-1"}}>
+                          <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>Dirección sucursal</span>
+                          <span style={{color:T.text}}>{o.pickupDetails.address.address} {o.pickupDetails.address.number}, {o.pickupDetails.address.locality}</span>
+                        </div>
+                      )}
+                    </>
+                  ):(
+                    [["Dirección",`${o.direccion||""} ${o.dirNumero||""}${o.piso?`, Piso ${o.piso}`:""}`],["Localidad",o.localidad||o.ciudad],["Provincia",o.provincia],["CP",o.cp]].map(([l,v])=>v&&v.trim()?(
+                      <div key={l} style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                        <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{l}</span>
+                        <span style={{fontWeight:500,color:T.text}}>{v}</span>
+                      </div>
+                    ):null)
+                  )}
+                  {[["Modalidad",o.medioEnvio],["Costo envío",o.costoEnvio&&parseFloat(o.costoEnvio)>0?fmtMoney(o.costoEnvio):null],["Tracking",o.tracking]].map(([l,v])=>v?(
+                    <div key={l} style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                      <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{l}</span>
+                      <span style={{fontWeight:500,color:T.text}}>{v}</span>
+                    </div>
+                  ):null)}
+                </div>
+              </div>
+              <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:18}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Productos</div>
+                {o.productos.map((p,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<o.productos.length-1?`1px solid ${T.borderL}`:"none",fontSize:13}}>
+                    <div>
+                      <div style={{fontWeight:500,color:T.text}}>{p.nombre}</div>
+                      {p.sku&&<div style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>{p.sku}</div>}
+                    </div>
+                    <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                      <span style={{fontSize:12,color:T.textSm}}>x{p.cantidad}</span>
+                      <span style={{fontWeight:600,color:T.text}}>{fmtMoney(p.precio)}</span>
+                    </div>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`,fontSize:13}}>
+                  <span style={{color:T.textSm}}>Subtotal</span><span style={{fontWeight:500}}>{fmtMoney(o.subtotal)}</span>
+                </div>
+                {parseFloat(o.descuento)>0&&(
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+                    <span style={{color:T.green}}>Descuento</span><span style={{color:T.green}}>−{fmtMoney(o.descuento)}</span>
+                  </div>
+                )}
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700,marginTop:6}}>
+                  <span>Total</span><span style={{color:T.text}}>{fmtMoney(o.total)}</span>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}>
+                <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13}}>🔗 Ver en Tienda Nube</a>
+                {onGenerarCanje&&(
+                  <button onClick={()=>{
+                    setOrderDetail(null);
+                    const prodsCanje=o.productos.map(p=>({
+                      nombre:p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,"").replace(/[()]/g,"").trim()||p.sku||p.nombre,
+                      cantidad:parseInt(p.cantidad)||1,
+                    })).filter(p=>p.nombre);
+                    onGenerarCanje({nombre:o.comprador,email:o.email,telefono:o.telefono,productosCanje:prodsCanje,pedidoRef:o.numero});
+                  }} style={{...BtnPrimary(T),fontSize:13}}>🤝 Generar Canje</button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
 
       {/* Location / Sucursal Resolution Modal */}
       <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);}}} title={locationModal?.type==="sucursal"?"Confirmar sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
