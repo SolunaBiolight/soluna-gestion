@@ -2225,33 +2225,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     const esHop=nombre.includes("HOP");
     const sucs=locs.sucursales;
 
-    // ESTRATEGIA 1: Para PUNTO ANDREANI HOP, construir el nombre directo
-    // Andreani lista los HOP como "PUNTO ANDREANI HOP CALLE NUMERO"
-    // Si no matchea en la lista, devolver el nombre construido directamente
-    // (la lista del template puede estar desactualizada)
-    if(esHop&&calle&&numero){
-      // Buscar match exacto primero
-      const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.includes(numero);});
-      if(m) return m;
-      // Buscar por palabras de calle + número
-      const words=calle.split(' ').filter(w=>w.length>=3);
-      for(const w of words){
-        const matches=sucs.filter(s=>cl(s).includes(w));
-        if(matches.length>=1&&numero){
-          const wn=matches.find(s=>cl(s).includes(numero));
-          if(wn) return wn;
-        }
-        if(matches.length>1&&localidad){
-          const locWords=localidad.split(' ').filter(w=>w.length>=3);
-          for(const lw of locWords){
-            const wl=matches.find(s=>cl(s).includes(lw));
-            if(wl) return wl;
-          }
-        }
-      }
-      // No matchea — devolver null para mostrar modal
-      return null;
-    }
+    // ESTRATEGIA 1: Para PUNTO ANDREANI HOP, siempre pedir confirmación manual
+    // El validador de Andreani es estricto con HOP y rechaza matches automáticos
+    // El usuario elige de la lista oficial en el modal o excluye el pedido
+    if(esHop) return null;
 
     // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
     // Las sucursales clásicas tienen nombres propios que no podemos construir
@@ -2506,8 +2483,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       // Check unresolved sucursales
       const unresolvedSuc=sucursalOrders.filter(o=>{
         if(sucursalOverridesRef.current[o.numero]) return false;
-        const found=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
-        return !found||found.trim()==="";
+        const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+        return !_sf||_sf.trim()==="";
       });
 
       if(unresolvedDom.length>0||unresolvedSuc.length>0){
