@@ -1475,14 +1475,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   useEffect(()=>{
     if(pendingCanje) {
-      setForm({...emptyForm(),...pendingCanje,_docId:null,contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],productos:pendingCanje.productos?.length?pendingCanje.productos:(pendingCanje.producto?[pendingCanje.producto]:[])});
+      const prodsCanje=pendingCanje.productosCanje||
+        (pendingCanje.productos||[]).map(p=>({nombre:typeof p==="string"?p:p.nombre,cantidad:1})).filter(p=>p.nombre);
+      setForm({...emptyForm(),...pendingCanje,_docId:null,productosCanje:prodsCanje,contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[]});
       if(onClearPendingCanje) onClearPendingCanje();
     }
   },[pendingCanje]);
 
   const emptyForm=()=>({
     _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"",
-    producto:"", estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
+    producto:"", productosCanje:[], estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
     fechaEnvio:"", fechaPublicacion:"",
     foto:"", nicho:"",
     contenido: ACTIVIDADES.map(tipo=>({tipo, acordados:0, entregados:0})),
@@ -1498,7 +1500,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const p={
         influencer:form.influencer, usuario:form.usuario||"", red:form.red,
         seguidores:form.seguidores||"", email:form.email||"", telefono:form.telefono||"",
-        producto:form.producto||"", estado:form.estado, tracking:form.tracking||"",
+        producto:form.producto||((form.productosCanje||[])[0]?.nombre||""),
+        productosCanje:form.productosCanje||[],
+        estado:form.estado, tracking:form.tracking||"",
         notas:form.notas||"", linkContenido:form.linkContenido||"",
         fechaEnvio:form.fechaEnvio||"", fechaPublicacion:form.fechaPublicacion||"",
         foto:form.foto||"", nicho:form.nicho||"",
@@ -1820,12 +1824,47 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <Field T={T} label="Nombre" required><input style={iS} value={form.influencer} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Nombre del influencer"/></Field>
               <Field T={T} label="Usuario (@)"><input style={iS} value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="@usuario"/></Field>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 14px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
               <Field T={T} label="Red social"><select style={iS} value={form.red} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>{REDES.map(r=><option key={r}>{r}</option>)}</select></Field>
               <Field T={T} label="Nicho"><select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}><option value="">—</option>{NICHOS.map(n=><option key={n}>{n}</option>)}</select></Field>
               <Field T={T} label="Seguidores"><input style={iS} type="number" value={form.seguidores} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></Field>
-              <Field T={T} label="Producto"><select style={iS} value={form.producto} onChange={e=>setForm(f=>({...f,producto:e.target.value}))}><option value="">—</option>{PRODUCTOS_CANJE.map(p=><option key={p}>{p}</option>)}</select></Field>
             </div>
+            {/* Productos enviados en el canje */}
+            <Field T={T} label="Productos enviados">
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
+                {(form.productosCanje||[]).map((p,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`}}>
+                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
+                    <span style={{fontSize:12,color:T.textSm,background:T.surface,borderRadius:6,padding:"2px 8px",fontWeight:600}}>x{p.cantidad}</span>
+                    <div style={{display:"flex",gap:4}}>
+                      <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.map((x,j)=>j===i?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x)}))} style={{width:24,height:24,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>−</button>
+                      <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.map((x,j)=>j===i?{...x,cantidad:(x.cantidad||1)+1}:x)}))} style={{width:24,height:24,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>+</button>
+                      <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.filter((_,j)=>j!==i)}))} style={{width:24,height:24,border:`1px solid ${T.red}44`,borderRadius:5,background:T.redBg,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                    </div>
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:8,padding:"8px 12px",alignItems:"center"}}>
+                  <select
+                    defaultValue=""
+                    onChange={e=>{
+                      const val=e.target.value;
+                      if(!val) return;
+                      e.target.value="";
+                      setForm(f=>{
+                        const lista=f.productosCanje||[];
+                        const existe=lista.findIndex(x=>x.nombre===val);
+                        if(existe>=0) return {...f,productosCanje:lista.map((x,i)=>i===existe?{...x,cantidad:(x.cantidad||1)+1}:x)};
+                        return {...f,productosCanje:[...lista,{nombre:val,cantidad:1}]};
+                      });
+                    }}
+                    style={{...iS,flex:1,fontSize:13,color:T.textSm}}>
+                    <option value="">+ Agregar producto...</option>
+                    {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+              {(form.productosCanje||[]).length===0&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>Ningún producto agregado todavía</div>}
+            </Field>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
               <Field T={T} label="Email"><input style={iS} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@ejemplo.com"/></Field>
               <Field T={T} label="Teléfono / WhatsApp"><input style={iS} value={form.telefono} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="+54 11..."/></Field>
@@ -3036,25 +3075,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const ec=getEstadoEnvioC(T,o.estadoEnvio);
           return (
             <div>
-              {/* Estado + Total */}
               <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:18,flexWrap:"wrap"}}>
                 <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
                 <span style={{fontSize:20,fontWeight:700,color:T.text,marginLeft:"auto"}}>{fmtMoney(o.total)}</span>
               </div>
-
-              {/* Cliente */}
               <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Cliente</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px",fontSize:13}}>
-                  {[
-                    ["Nombre",o.comprador],
-                    ["Email",o.email],
-                    ["Teléfono",o.telefono],
-                    ["DNI",o.dni],
-                    ["Fecha",o.fecha],
-                    ["Pago",o.estadoPago],
-                    ["Medio de pago",o.medioPago],
-                  ].map(([l,v])=>v?(
+                  {[["Nombre",o.comprador],["Email",o.email],["Teléfono",o.telefono],["DNI",o.dni],["Fecha",o.fecha],["Pago",o.estadoPago],["Medio de pago",o.medioPago]].map(([l,v])=>v?(
                     <div key={l} style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
                       <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{l}</span>
                       <span style={{fontWeight:500,color:T.text}}>{v}</span>
@@ -3062,8 +3090,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   ):null)}
                 </div>
               </div>
-
-              {/* Envío */}
               <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Envío</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px",fontSize:13}}>
@@ -3081,23 +3107,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       )}
                     </>
                   ):(
-                    [
-                      ["Dirección",`${o.direccion||""} ${o.dirNumero||""}${o.piso?`, Piso ${o.piso}`:""}`],
-                      ["Localidad",o.localidad||o.ciudad],
-                      ["Provincia",o.provincia],
-                      ["CP",o.cp],
-                    ].map(([l,v])=>v&&v.trim()?(
+                    [["Dirección",`${o.direccion||""} ${o.dirNumero||""}${o.piso?`, Piso ${o.piso}`:""}`],["Localidad",o.localidad||o.ciudad],["Provincia",o.provincia],["CP",o.cp]].map(([l,v])=>v&&v.trim()?(
                       <div key={l} style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
                         <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{l}</span>
                         <span style={{fontWeight:500,color:T.text}}>{v}</span>
                       </div>
                     ):null)
                   )}
-                  {[
-                    ["Modalidad",o.medioEnvio],
-                    ["Costo envío",o.costoEnvio&&parseFloat(o.costoEnvio)>0?fmtMoney(o.costoEnvio):null],
-                    ["Tracking",o.tracking],
-                  ].map(([l,v])=>v?(
+                  {[["Modalidad",o.medioEnvio],["Costo envío",o.costoEnvio&&parseFloat(o.costoEnvio)>0?fmtMoney(o.costoEnvio):null],["Tracking",o.tracking]].map(([l,v])=>v?(
                     <div key={l} style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
                       <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{l}</span>
                       <span style={{fontWeight:500,color:T.text}}>{v}</span>
@@ -3105,8 +3122,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   ):null)}
                 </div>
               </div>
-
-              {/* Productos */}
               <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:18}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Productos</div>
                 {o.productos.map((p,i)=>(
@@ -3122,39 +3137,32 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 ))}
                 <div style={{display:"flex",justifyContent:"space-between",marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`,fontSize:13}}>
-                  <span style={{color:T.textSm}}>Subtotal</span>
-                  <span style={{fontWeight:500}}>{fmtMoney(o.subtotal)}</span>
+                  <span style={{color:T.textSm}}>Subtotal</span><span style={{fontWeight:500}}>{fmtMoney(o.subtotal)}</span>
                 </div>
                 {parseFloat(o.descuento)>0&&(
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
-                    <span style={{color:T.green}}>Descuento</span>
-                    <span style={{color:T.green}}>−{fmtMoney(o.descuento)}</span>
+                    <span style={{color:T.green}}>Descuento</span><span style={{color:T.green}}>−{fmtMoney(o.descuento)}</span>
                   </div>
                 )}
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700,marginTop:6}}>
-                  <span>Total</span>
-                  <span style={{color:T.text}}>{fmtMoney(o.total)}</span>
+                  <span>Total</span><span style={{color:T.text}}>{fmtMoney(o.total)}</span>
                 </div>
               </div>
-
-              {/* Acciones */}
               <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}>
-                <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13}}>
-                  🔗 Ver en Tienda Nube
-                </a>
+                <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13}}>🔗 Ver en Tienda Nube</a>
                 {onGenerarCanje&&(
                   <button onClick={()=>{
                     setOrderDetail(null);
+                    const prodsCanje=o.productos.map(p=>{
+                      const nombre=p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,'').replace(/[()]/g,'').trim()||p.sku||p.nombre;
+                      return {nombre,cantidad:parseInt(p.cantidad)||1};
+                    }).filter(p=>p.nombre);
                     onGenerarCanje({
-                      nombre: o.comprador,
-                      email: o.email,
-                      telefono: o.telefono,
-                      productos: o.productos.map(p=>p.nombre).filter(Boolean),
-                      pedidoRef: o.numero,
+                      nombre:o.comprador, email:o.email, telefono:o.telefono,
+                      productosCanje:prodsCanje,
+                      pedidoRef:o.numero,
                     });
-                  }} style={{...BtnPrimary(T),fontSize:13}}>
-                    🤝 Generar Canje
-                  </button>
+                  }} style={{...BtnPrimary(T),fontSize:13}}>🤝 Generar Canje</button>
                 )}
               </div>
             </div>
