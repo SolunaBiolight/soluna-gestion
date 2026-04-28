@@ -2319,6 +2319,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     let rowsXml='';
     // Clean invalid chars for Andreani (-, /, etc → space)
     function cleanField(s){return String(s||"").replace(/["']/g,"").replace(/[-\/\\|#*]+/g,' ').replace(/\s{2,}/g,' ').trim();}
+    function cleanAndreani(s){return cleanField(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^\x00-\x7F]/g,"");}
 
     // Separate domicilio vs sucursal
     function isSucursal(o){
@@ -2358,8 +2359,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           nC('E'+rn,parseInt(cfg&&cfg.prof)||5),
           nC('F'+rn,parseInt(cfg&&cfg.valor)||6000),
           sC('G'+rn,'#'+o.numero),
-          sC('H'+rn,nombre),
-          sC('I'+rn,apellido),
+          sC('H'+rn,cleanAndreani(nombre)),
+          sC('I'+rn,cleanAndreani(apellido)),
           (o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),
           sC('K'+rn,cleanField(o.email||"")),
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
@@ -2397,7 +2398,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
           sC('K'+rn,cleanField(o.email||"")),
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
-          sC('N'+rn,sucursal),
+          sC('N'+rn,cleanAndreani(sucursal)),
         ].join('');
         xml+='<row r="'+rn+'" spans="1:14" x14ac:dyDescent="0.25">'+cells+'</row>';
       });
