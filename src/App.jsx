@@ -1475,17 +1475,24 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   useEffect(()=>{
     if(pendingCanje) {
-      setForm({...emptyForm(),...pendingCanje,_docId:null,contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],productos:pendingCanje.productos?.length?pendingCanje.productos:(pendingCanje.producto?[pendingCanje.producto]:[])});
+      const prodsCanje=pendingCanje.productosCanje||(pendingCanje.productos||[]).map(p=>({nombre:typeof p==="string"?p:p.nombre,cantidad:1})).filter(p=>p.nombre);
+      setForm({...emptyForm(),...pendingCanje,
+        influencer:pendingCanje.nombre||pendingCanje.influencer||"",
+        usuario:pendingCanje.usuario||pendingCanje.nombre||"",
+        _docId:null,
+        productosCanje:prodsCanje,
+        contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],
+      });
       if(onClearPendingCanje) onClearPendingCanje();
     }
   },[pendingCanje]);
 
   const emptyForm=()=>({
     _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"",
-    producto:"", estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
+    producto:"", productosCanje:[], estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
     fechaEnvio:"", fechaPublicacion:"",
     foto:"", nicho:"",
-    contenido: ACTIVIDADES.map(tipo=>({tipo, acordados:0, entregados:0})),
+    contenido:[],
     alcance:"", reproducciones:"", likes:"", guardados:"",
     historial:[],
     recordatorio:"",
@@ -1498,11 +1505,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const p={
         influencer:form.influencer, usuario:form.usuario||"", red:form.red,
         seguidores:form.seguidores||"", email:form.email||"", telefono:form.telefono||"",
-        producto:form.producto||"", estado:form.estado, tracking:form.tracking||"",
+        producto:form.producto||((form.productosCanje||[])[0]?.nombre||""),
+        productosCanje:form.productosCanje||[],
+        estado:form.estado, tracking:form.tracking||"",
         notas:form.notas||"", linkContenido:form.linkContenido||"",
         fechaEnvio:form.fechaEnvio||"", fechaPublicacion:form.fechaPublicacion||"",
         foto:form.foto||"", nicho:form.nicho||"",
-        contenido:form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),
+        contenido:form.contenido||[],
         alcance:form.alcance||"", reproducciones:form.reproducciones||"",
         likes:form.likes||"", guardados:form.guardados||"",
         historial:form.historial||[],
@@ -1820,12 +1829,32 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <Field T={T} label="Nombre" required><input style={iS} value={form.influencer} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Nombre del influencer"/></Field>
               <Field T={T} label="Usuario (@)"><input style={iS} value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="@usuario"/></Field>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 14px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
               <Field T={T} label="Red social"><select style={iS} value={form.red} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>{REDES.map(r=><option key={r}>{r}</option>)}</select></Field>
               <Field T={T} label="Nicho"><select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}><option value="">—</option>{NICHOS.map(n=><option key={n}>{n}</option>)}</select></Field>
               <Field T={T} label="Seguidores"><input style={iS} type="number" value={form.seguidores} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></Field>
-              <Field T={T} label="Producto"><select style={iS} value={form.producto} onChange={e=>setForm(f=>({...f,producto:e.target.value}))}><option value="">—</option>{PRODUCTOS_CANJE.map(p=><option key={p}>{p}</option>)}</select></Field>
             </div>
+            {/* Productos enviados */}
+            <Field T={T} label="Productos enviados">
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
+                {(form.productosCanje||[]).length===0&&<div style={{padding:"10px 14px",fontSize:13,color:T.textSm}}>Sin productos agregados</div>}
+                {(form.productosCanje||[]).map((p,pi)=>(
+                  <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`}}>
+                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
+                    <span style={{fontSize:12,color:T.textSm,background:T.surface,borderRadius:6,padding:"2px 8px",fontWeight:600,minWidth:28,textAlign:"center"}}>x{p.cantidad}</span>
+                    <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                    <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.filter((_,j)=>j!==pi)}))} style={{width:26,height:26,border:`1px solid ${T.red}44`,borderRadius:5,background:T.redBg,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                  </div>
+                ))}
+                <div style={{padding:"8px 12px"}}>
+                  <select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.productosCanje||[];const ex=lista.findIndex(x=>x.nombre===val);if(ex>=0)return{...f,productosCanje:lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x)};return{...f,productosCanje:[...lista,{nombre:val,cantidad:1}]};});}} style={{...iS,fontSize:13,color:T.textSm}}>
+                    <option value="">+ Agregar producto...</option>
+                    {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+            </Field>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
               <Field T={T} label="Email"><input style={iS} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@ejemplo.com"/></Field>
               <Field T={T} label="Teléfono / WhatsApp"><input style={iS} value={form.telefono} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="+54 11..."/></Field>
@@ -1837,17 +1866,24 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
             {/* Contenido comprometido */}
             <Field T={T} label="Contenido comprometido">
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",gap:0,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span>Tipo</span><span style={{textAlign:"center"}}>Acordados</span><span style={{textAlign:"center"}}>Entregados</span>
-                </div>
-                {(form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0}))).map((item,i)=>(
-                  <div key={item.tipo} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",padding:"8px 14px",borderBottom:i<ACTIVIDADES.length-1?`1px solid ${T.borderL}`:"none"}}>
-                    <span style={{fontSize:13,fontWeight:500,color:T.text}}>{item.tipo}</span>
-                    <input type="number" min={0} value={item.acordados} onChange={e=>{const arr=[...form.contenido];arr[i]={...arr[i],acordados:parseInt(e.target.value)||0};setForm(f=>({...f,contenido:arr}));}} style={{...iS,textAlign:"center",padding:"6px 4px",fontSize:13,width:"60px",margin:"0 auto"}}/>
-                    <input type="number" min={0} value={item.entregados} onChange={e=>{const arr=[...form.contenido];arr[i]={...arr[i],entregados:parseInt(e.target.value)||0};setForm(f=>({...f,contenido:arr}));}} style={{...iS,textAlign:"center",padding:"6px 4px",fontSize:13,width:"60px",margin:"0 auto"}}/>
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
+                {(form.contenido||[]).length===0&&<div style={{padding:"10px 14px",fontSize:13,color:T.textSm}}>Sin contenido acordado</div>}
+                {(form.contenido||[]).map((item,ci)=>(
+                  <div key={ci} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`}}>
+                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{item.tipo}</span>
+                    <span style={{fontSize:12,color:T.textSm,whiteSpace:"nowrap"}}>acordados:</span>
+                    <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:18,textAlign:"center"}}>{item.acordados||1}</span>
+                    <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                    <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.filter((_,j)=>j!==ci)}))} style={{width:26,height:26,border:`1px solid ${T.red}44`,borderRadius:5,background:T.redBg,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
                   </div>
                 ))}
+                <div style={{padding:"8px 12px"}}>
+                  <select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.contenido||[];const ex=lista.findIndex(x=>x.tipo===val);if(ex>=0)return{...f,contenido:lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||1)+1}:x)};return{...f,contenido:[...lista,{tipo:val,acordados:1,entregados:0}]};});}} style={{...iS,fontSize:13,color:T.textSm}}>
+                    <option value="">+ Agregar tipo de contenido...</option>
+                    {ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
               </div>
             </Field>
 
