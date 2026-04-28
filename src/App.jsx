@@ -1840,12 +1840,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.filter((_,j)=>j!==i)}))} style={{width:26,height:26,border:`1px solid ${T.red}44`,borderRadius:5,background:T.redBg,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
                   </div>
                 ))}
-                <div style={{padding:"8px 12px"}}>
-                  <select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.productosCanje||[];const existe=lista.findIndex(x=>x.nombre===val);if(existe>=0)return{...f,productosCanje:lista.map((x,i)=>i===existe?{...x,cantidad:(x.cantidad||1)+1}:x)};return{...f,productosCanje:[...lista,{nombre:val,cantidad:1}]};});}} style={{...iS,fontSize:13,color:T.textSm}}>
-                    <option value="">+ Agregar producto...</option>
-                    {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
+                <div style={{padding:"8px 12px"}}><select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.productosCanje||[];const existe=lista.findIndex(x=>x.nombre===val);if(existe>=0)return{...f,productosCanje:lista.map((x,i)=>i===existe?{...x,cantidad:(x.cantidad||1)+1}:x)};return{...f,productosCanje:[...lista,{nombre:val,cantidad:1}]};});}} style={{...iS,fontSize:13,color:T.textSm}}><option value="">+ Agregar producto...</option>{PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
               </div>
             </Field>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
@@ -1870,12 +1865,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.filter((_,j)=>j!==i)}))} style={{width:26,height:26,border:`1px solid ${T.red}44`,borderRadius:5,background:T.redBg,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
                   </div>
                 ))}
-                <div style={{padding:"8px 12px"}}>
-                  <select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.contenido||[];const existe=lista.findIndex(x=>x.tipo===val);if(existe>=0)return{...f,contenido:lista.map((x,i)=>i===existe?{...x,acordados:(x.acordados||1)+1}:x)};return{...f,contenido:[...lista,{tipo:val,acordados:1,entregados:0}]};});}} style={{...iS,fontSize:13,color:T.textSm}}>
-                    <option value="">+ Agregar tipo de contenido...</option>
-                    {ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}
-                  </select>
-                </div>
+                <div style={{padding:"8px 12px"}}><select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.contenido||[];const existe=lista.findIndex(x=>x.tipo===val);if(existe>=0)return{...f,contenido:lista.map((x,i)=>i===existe?{...x,acordados:(x.acordados||1)+1}:x)};return{...f,contenido:[...lista,{tipo:val,acordados:1,entregados:0}]};});}} style={{...iS,fontSize:13,color:T.textSm}}><option value="">+ Agregar tipo de contenido...</option>{ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}</select></div>
               </div>
             </Field>
             {form._docId&&(
@@ -2618,7 +2608,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const pedidoNum=internoMatch[1].trim();
           const destinatario=destMatch?destMatch[1].trim():"";
           if(type==="sku") {
-            // Buscar en orders local primero, luego en API de TN
+            // Buscar en cache local primero, luego en API
             let order=orders.find(o=>o.numero===pedidoNum);
             if(!order) {
               try {
@@ -2628,17 +2618,43 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   const built=buildOrdersFromAPI(data);
                   order=built.find(o=>o.numero===pedidoNum)||built[0];
                 }
-              } catch(_) {}
+              } catch(_){}
             }
-            const skus=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`).join(', '):"No encontrado en TN";
-            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario});
+            const skuLines=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`):[]
+            results.push({pagina:i+1,pedidoNum,tracking,skus:skuLines.join(', ')||"No encontrado en TN",skuLines,found:!!order,destinatario});
           } else {
             results.push({pagina:i+1,tracking,pedidoNum,destinatario,status:"pending"});
           }
         }
       }
+      if(results.length===0) {
+        alert("No se encontraron rótulos válidos en el PDF. Verificá que sea un archivo de etiquetas de Andreani con N° Interno y N° de seguimiento.");
+        setter(false); return;
+      }
       resultSetter(results);
-      if(results.length===0) alert("No se encontraron rótulos válidos en el PDF. Verificá que sea un archivo de etiquetas de Andreani con N° Interno y N° de seguimiento.");
+      if(type==="sku") {
+        // Construir skuMap para process-sku
+        const skuMap={};
+        results.forEach(r=>{
+          if(r.found&&r.skuLines?.length) skuMap[r.pedidoNum]={page:r.pagina,skus:r.skuLines,found:true};
+          else skuMap[r.pedidoNum]={page:r.pagina,skus:[],found:false};
+        });
+        // Leer el skuCfg actual del localStorage
+        let skuCfg={x:10,y:10,fontSize:4,sortBy:"sin"};
+        try{const saved=localStorage.getItem("growith_skuCfg");if(saved)skuCfg={...skuCfg,...JSON.parse(saved)};}catch(_){}
+        // Armar FormData y llamar a /api/process-sku
+        const formData=new FormData();
+        formData.append("pdf", file, file.name);
+        formData.append("skuMap", JSON.stringify(skuMap));
+        formData.append("config", JSON.stringify(skuCfg));
+        const resp=await fetch("/api/process-sku", {method:"POST", body:formData});
+        if(!resp.ok) throw new Error("Error al generar PDF: "+resp.status);
+        const blob=await resp.blob();
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement("a");
+        a.href=url; a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`; a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch(e){ alert("Error al procesar el PDF: "+e.message); }
     setter(false);
   }
@@ -2946,7 +2962,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {tab==="sku"&&(
           <div style={{maxWidth:700}}>
             <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
-              Subí el PDF de rótulos de Andreani. La app detecta el N° de pedido, busca los SKUs en tus pedidos de Tienda Nube y genera un resumen de lo despachado.
+              Subí el PDF de rótulos de Andreani. La app detecta el N° de pedido, busca los SKUs en Tienda Nube y descarga el mismo PDF con los SKUs escritos en cada rótulo.
             </div>
 
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:16}}>
@@ -2954,7 +2970,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <input type="file" accept=".pdf" onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(true);setSkuResults([]);}}} style={{...iS,cursor:"pointer",fontSize:13,marginBottom:skuPending?12:0}}/>
               {skuPending&&!skuProcessing&&(
                 <button onClick={()=>{setSkuPending(false);parsePdf(skuFile,"sku");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,marginTop:12}}>
-                  🔍 Analizar PDF
+                  🔍 Analizar y descargar PDF con SKUs
                 </button>
               )}
             </div>
@@ -2963,7 +2979,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:32,textAlign:"center",marginBottom:16}}>
                 <div style={{fontSize:28,marginBottom:10}}>⏳</div>
                 <div style={{fontSize:15,fontWeight:600,color:T.text}}>Analizando PDF...</div>
-                <div style={{fontSize:13,color:T.textSm,marginTop:6}}>Extrayendo SKUs de cada rótulo</div>
+                <div style={{fontSize:13,color:T.textSm,marginTop:6}}>Extrayendo SKUs y generando PDF con rótulos...</div>
                 <div style={{width:60,height:4,background:T.accentSolid,borderRadius:20,margin:"16px auto 0",animation:"pulse 1s infinite"}}/>
               </div>
             )}
@@ -3137,39 +3153,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Productos</div>
                 {o.productos.map((p,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<o.productos.length-1?`1px solid ${T.borderL}`:"none",fontSize:13}}>
-                    <div>
-                      <div style={{fontWeight:500,color:T.text}}>{p.nombre}</div>
-                      {p.sku&&<div style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>{p.sku}</div>}
-                    </div>
-                    <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                      <span style={{fontSize:12,color:T.textSm}}>x{p.cantidad}</span>
-                      <span style={{fontWeight:600,color:T.text}}>{fmtMoney(p.precio)}</span>
-                    </div>
+                    <div><div style={{fontWeight:500,color:T.text}}>{p.nombre}</div>{p.sku&&<div style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>{p.sku}</div>}</div>
+                    <div style={{display:"flex",gap:12,alignItems:"center"}}><span style={{fontSize:12,color:T.textSm}}>x{p.cantidad}</span><span style={{fontWeight:600,color:T.text}}>{fmtMoney(p.precio)}</span></div>
                   </div>
                 ))}
-                <div style={{display:"flex",justifyContent:"space-between",marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`,fontSize:13}}>
-                  <span style={{color:T.textSm}}>Subtotal</span><span style={{fontWeight:500}}>{fmtMoney(o.subtotal)}</span>
-                </div>
-                {parseFloat(o.descuento)>0&&(
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
-                    <span style={{color:T.green}}>Descuento</span><span style={{color:T.green}}>−{fmtMoney(o.descuento)}</span>
-                  </div>
-                )}
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700,marginTop:6}}>
-                  <span>Total</span><span style={{color:T.text}}>{fmtMoney(o.total)}</span>
-                </div>
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`,fontSize:13}}><span style={{color:T.textSm}}>Subtotal</span><span style={{fontWeight:500}}>{fmtMoney(o.subtotal)}</span></div>
+                {parseFloat(o.descuento)>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13}}><span style={{color:T.green}}>Descuento</span><span style={{color:T.green}}>−{fmtMoney(o.descuento)}</span></div>}
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700,marginTop:6}}><span>Total</span><span style={{color:T.text}}>{fmtMoney(o.total)}</span></div>
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}>
                 <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13}}>🔗 Ver en Tienda Nube</a>
                 {onGenerarCanje&&(
-                  <button onClick={()=>{
-                    setOrderDetail(null);
-                    const prodsCanje=o.productos.map(p=>({
-                      nombre:p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,"").replace(/[()]/g,"").trim()||p.sku||p.nombre,
-                      cantidad:parseInt(p.cantidad)||1,
-                    })).filter(p=>p.nombre);
-                    onGenerarCanje({nombre:o.comprador,email:o.email,telefono:o.telefono,productosCanje:prodsCanje,pedidoRef:o.numero});
-                  }} style={{...BtnPrimary(T),fontSize:13}}>🤝 Generar Canje</button>
+                  <button onClick={()=>{setOrderDetail(null);const prodsCanje=o.productos.map(p=>({nombre:p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,"").replace(/[()]/g,"").trim()||p.sku||p.nombre,cantidad:parseInt(p.cantidad)||1})).filter(p=>p.nombre);onGenerarCanje({nombre:o.comprador,email:o.email,telefono:o.telefono,productosCanje:prodsCanje,pedidoRef:o.numero});}} style={{...BtnPrimary(T),fontSize:13}}>🤝 Generar Canje</button>
                 )}
               </div>
             </div>
