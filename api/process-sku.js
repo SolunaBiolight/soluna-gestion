@@ -111,17 +111,30 @@ export default async function handler(req, res) {
       const [pedidoNum, info] = entry;
       const skuLines = info.skus;
 
-      // Insertar cada línea de SKU desde yFromBottom hacia arriba
+      // Calcular cuántas líneas entran en columna izquierda
+      const lineHeight = fontSize + 1.5;
+      const maxLinesPerCol = Math.floor((height * 0.22) / lineHeight); // usar ~22% inferior de la página
+      const col2X = width * 0.52; // columna derecha: mitad derecha de la etiqueta
+
       let currentY = yFromBottom;
-      for (const line of skuLines) {
+      let col2Y = yFromBottom;
+      let useCol2 = false;
+
+      for (let li = 0; li < skuLines.length; li++) {
+        const line = skuLines[li];
+        // Si la línea no entra en col 1, pasar a col 2
+        if (!useCol2 && li >= maxLinesPerCol) useCol2 = true;
+        const drawX = useCol2 ? col2X : x;
+        const drawY = useCol2 ? col2Y : currentY;
         page.drawText(line, {
-          x,
-          y: currentY,
+          x: drawX,
+          y: drawY,
           size: fontSize,
           font,
           color: rgb(0, 0, 0),
         });
-        currentY += fontSize + 1.5;
+        if (useCol2) col2Y += lineHeight;
+        else currentY += lineHeight;
       }
 
       pageResults.push({ pageIdx: i, pageNum, pedido: pedidoNum, hasSkus: true, skus: skuLines });
