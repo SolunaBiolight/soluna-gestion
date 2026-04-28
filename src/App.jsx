@@ -2225,10 +2225,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
     const esHop=nombre.includes("HOP");
     const sucs=locs.sucursales;
 
-    // ESTRATEGIA 1: Para PUNTO ANDREANI HOP, siempre pedir confirmación manual
-    // El validador de Andreani es estricto con HOP y rechaza matches automáticos
-    // El usuario elige de la lista oficial en el modal o excluye el pedido
-    if(esHop) return null;
+    // ESTRATEGIA 1: PUNTO ANDREANI HOP
+    // Buscar en la lista oficial normalizando acentos para el match,
+    // pero retornar el string ORIGINAL con acentos para que Excel valide
+    if(esHop){
+      function norm(s){return (s||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();}
+      const calleN=norm(pickupDetails.address?.address||"");
+      const numN=numero;
+      // Match exacto: normalizar ambos lados para ignorar tildes
+      if(calleN&&numN){
+        const exactMatch=sucs.find(s=>{
+          const sn=norm(s);
+          return sn.includes(calleN)&&(sn.endsWith(" "+numN)||sn.includes(" "+numN+" "));
+        });
+        if(exactMatch) return exactMatch;
+      }
+      // No matchea — mostrar modal
+      return null;
+    }
 
     // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
     // Las sucursales clásicas tienen nombres propios que no podemos construir
@@ -2401,7 +2415,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome}) {
       const totalRows2=2+sucursalOrders.length;
       const newSheet2=sheet2
         .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows2+'"/>')
-        .replace('</sheetData>',sucRowsXml+'</sheetData>');
+        .replace('</sheetData>',sucRowsXml+'</sheetData>')
+        .replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
       zip.file('xl/worksheets/sheet2.xml',newSheet2);
     }
     const newSsItems=newSS.map(function(s){
