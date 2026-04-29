@@ -1820,30 +1820,75 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         <div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:12}}>
                           <div style={{height:"100%",width:`${pct}%`,background:idx===0?T.yellow:idx===1?T.textSm:T.accentSolid,borderRadius:20}}/>
                         </div>
-          
-              {/* Info adicional */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px",fontSize:13,marginBottom:14}}>
-                {[["Fecha envío",c.fechaEnvio],["Fecha publicación",c.fechaPublicacion],["Recordatorio",c.recordatorio]].map(([l,v])=>v?(
-                  <div key={l} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                    <span style={{color:T.textSm,minWidth:110,flexShrink:0,fontSize:12}}>{l}</span>
-                    <span style={{fontSize:12,fontWeight:500,color:recordatorioVencido&&l==="Recordatorio"?T.yellow:T.text}}>{v}</span>
-                  </div>
-                ):null)}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+      <Modal T={T} open={!!detail} onClose={()=>{setDetail(null);setDeleteConfirm(null);}} title={detailC?detailC.influencer:""} width={540}>
+        {detailC&&(()=>{
+          const c=canjes.find(x=>x._docId===detailC._docId)||detailC;
+          const sc=getEstadoCC(T,c.estado);
+          const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
+          const totalEntregados=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0);
+          const progreso=totalAcordados>0?Math.round((totalEntregados/totalAcordados)*100):0;
+          const hoy=new Date().toISOString().split("T")[0];
+          const recordatorioVencido=c.recordatorio&&c.recordatorio<=hoy;
+          return (
+            <div>
+              <div style={{background:sc.bg,border:`1px solid ${sc.dot}44`,borderRadius:12,padding:"12px 16px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{width:10,height:10,borderRadius:"50%",background:sc.dot}}/><span style={{fontSize:15,fontWeight:700,color:sc.text}}>{c.estado}</span></div>
+                {c.nicho&&<span style={{fontSize:11,background:T.purpleBg+"44",color:T.purple,borderRadius:6,padding:"2px 8px",fontWeight:600}}>{c.nicho}</span>}
               </div>
-
-              {c.notas&&<div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:12,padding:14,marginBottom:12}}><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:5}}>Notas</div><div style={{fontSize:14,lineHeight:1.6,color:T.text}}>{c.notas}</div></div>}
-
-              {/* Historial de notas rápidas */}
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+                  {c.foto?<img src={c.foto} style={{width:40,height:40,borderRadius:8,objectFit:"cover",border:`1px solid ${T.border}`,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:40,height:40,borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>👤</div>}
+                  <div>
+                    <div style={{fontSize:17,fontWeight:800,color:T.text}}>{c.influencer}</div>
+                    {c.usuario&&<div style={{fontSize:13,color:T.accent}}>@{c.usuario}</div>}
+                    <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
+                      {c.linkInstagram&&<a href={c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:6,padding:"2px 8px",fontWeight:600}}>📸 Instagram</a>}
+                      {c.telefono&&<a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,padding:"2px 8px",fontWeight:600}}>💬 WhatsApp</a>}
+                    </div>
+                  </div>
+                </div>
+                {c.email&&<div style={{fontSize:12,color:T.textSm,marginBottom:4}}>✉️ {c.email}</div>}
+                {c.seguidores&&<div style={{fontSize:12,color:T.textSm}}>👥 {Number(c.seguidores).toLocaleString()} seguidores</div>}
+              </div>
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+                <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Productos enviados</div>
+                {(c.productosCanje||[]).map((p,pi)=>(
+                  <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:22,textAlign:"center"}}>{p.cantidad}</span>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.red}44`,borderRadius:4,background:T.redBg,color:T.red,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                  </div>
+                ))}
+                {(c.productosCanje||[]).length===0&&<div style={{fontSize:13,color:T.textSm}}>Sin productos</div>}
+                <select defaultValue="" onChange={async e=>{const val=e.target.value;if(!val)return;e.target.value="";const lista=c.productosCanje||[];const ex=lista.findIndex(x=>x.nombre===val);const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:val,cantidad:1}];await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{...iS,fontSize:12,color:T.textSm,marginTop:8}}><option value="">+ Agregar producto...</option>{PRODUCTOS_CANJE.map(pr=><option key={pr} value={pr}>{pr}</option>)}</select>
+              </div>
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Contenido comprometido</div>
+                  {totalAcordados>0&&<span style={{fontSize:12,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
+                </div>
+                {totalAcordados>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}><div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s"}}/></div>}
+                <select defaultValue="" onChange={async e=>{const val=e.target.value;if(!val)return;e.target.value="";const lista=c.contenido||[];const ex=lista.findIndex(x=>x.tipo===val);const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||1)+1}:x):[...lista,{tipo:val,acordados:1,entregados:0}];await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{...iS,fontSize:12,color:T.textSm,marginBottom:8}}><option value="">+ Agregar tipo de contenido...</option>{ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}</select>
+                {(c.contenido||[]).map((item,ci)=>{const ac=item.acordados||1;const en=item.entregados||0;const p=Math.min(100,Math.round((en/ac)*100));return(<div key={ci} style={{padding:"8px 0",borderTop:ci>0?`1px solid ${T.borderL}`:"none"}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{flex:1,fontSize:13,color:T.text,fontWeight:600}}>{item.tipo}</span><span style={{fontSize:11,color:p===100?T.green:T.textSm}}>{en}/{ac} ({p}%)</span></div><div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:4}}><span style={{fontSize:11,color:T.textSm}}>Acordados</span><div style={{display:"flex",gap:3,alignItems:"center"}}><button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:20,height:20,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button><span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:18,textAlign:"center"}}>{ac}</span><button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:20,height:20,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button></div><span style={{fontSize:11,color:T.textSm}}>Entregados</span><div style={{display:"flex",gap:3,alignItems:"center"}}><button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:20,height:20,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button><span style={{fontSize:13,fontWeight:600,color:T.green,minWidth:18,textAlign:"center"}}>{en}</span><button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:20,height:20,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button></div></div><div style={{height:4,background:T.borderL,borderRadius:20,overflow:"hidden"}}><div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.3s"}}/></div></div>);})}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 14px",fontSize:12,marginBottom:12}}>{[["Fecha envío",c.fechaEnvio],["Tracking",c.tracking],["Recordatorio",c.recordatorio]].map(([l,v])=>v?(<div key={l} style={{display:"flex",gap:6,padding:"4px 0",borderBottom:`1px solid ${T.borderL}`}}><span style={{color:T.textSm,flexShrink:0,minWidth:80}}>{l}</span><span style={{fontWeight:500,color:recordatorioVencido&&l==="Recordatorio"?T.yellow:T.text,overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>):null)}</div>
+              {c.notas&&<div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"10px 12px",marginBottom:10}}><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:3}}>Notas</div><div style={{fontSize:13,lineHeight:1.5,color:T.text}}>{c.notas}</div></div>}
               <NotasRapidas T={T} canje={c} onAdd={addNota}/>
-
-              <div style={{fontSize:12,color:T.textSm}}>Creado: {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?` · Finalizado: ${fmtTs(c.finalizadoAt)}`:''}</div>
+              <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Creado: {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?` · Finalizado: ${fmtTs(c.finalizadoAt)}`:""}</div>
               <Divider T={T}/>
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-                {deleteConfirm===c._docId?(
-                  <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:14,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"8px 16px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:13}}>No</button></div>
-                ):(
-                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button></>
-                )}
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                {deleteConfirm===c._docId?(<div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:13,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"7px 14px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"7px 14px",fontSize:13}}>No</button></div>):(<><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||[],alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button></>)}
               </div>
             </div>
           );
