@@ -1480,6 +1480,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         influencer:pendingCanje.nombre||pendingCanje.influencer||"",
         usuario:pendingCanje.usuario||pendingCanje.nombre||"",
         _docId:null,
+        pedidoRef:pendingCanje.pedidoRef||"",
         productosCanje:prodsCanje,
         contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],
       });
@@ -1488,7 +1489,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   },[pendingCanje]);
 
   const emptyForm=()=>({
-    _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"", linkInstagram:"",
+    _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"", linkInstagram:"", pedidoRef:"",
     producto:"", productosCanje:[], estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
     fechaEnvio:"", fechaPublicacion:"",
     foto:"", nicho:"",
@@ -1508,6 +1509,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         producto:form.producto||((form.productosCanje||[])[0]?.nombre||""),
         productosCanje:form.productosCanje||[],
         estado:form.estado, tracking:form.tracking||"",
+        pedidoRef:form.pedidoRef||"",
         notas:form.notas||"", linkContenido:form.linkContenido||"",
         fechaEnvio:form.fechaEnvio||"", fechaPublicacion:form.fechaPublicacion||"",
         foto:form.foto||"", nicho:form.nicho||"",
@@ -1960,7 +1962,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {/* Status banner */}
               <div style={{background:sc.bg,border:`1px solid ${sc.dot}44`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{width:12,height:12,borderRadius:"50%",background:sc.dot,boxShadow:`0 0 8px ${sc.dot}`}}/><span style={{fontSize:16,fontWeight:700,color:sc.text}}>{c.estado}</span></div>
-                <span style={{fontSize:12,color:T.textMd,fontWeight:500}}>{c.red}</span>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  {c.nicho&&<span style={{fontSize:11,background:T.purpleBg,color:T.purple,borderRadius:6,padding:"3px 8px",fontWeight:600}}>{c.nicho}</span>}
+                  <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>{c.red}</span>
+                </div>
               </div>
 
               {/* Recordatorio vencido */}
@@ -2012,36 +2017,58 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       🎬 Ver contenido
                     </a>
                   )}
-                  {c.producto&&<span style={{fontSize:12,color:T.textSm,marginLeft:4}}>📦 {c.producto}</span>}
+                  {(c.productosCanje?.length>0?c.productosCanje.map(p=>p.nombre):[c.producto]).filter(Boolean).map((pn,i)=>(
+                    <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"4px 10px",fontWeight:500}}>
+                      👓 {pn}{c.productosCanje?.[i]?.cantidad>1?` x${c.productosCanje[i].cantidad}`:""}
+                    </span>
+                  ))}
                 </div>
               </div>
 
               {/* Progreso de contenido */}
-              {totalAcordados>0&&(
-                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                    <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Progreso de contenido</div>
-                    <span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>
-                  </div>
-                  {/* Barra de progreso */}
-                  <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:12}}>
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Contenido comprometido</div>
+                  {totalAcordados>0&&<span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
+                </div>
+                {totalAcordados>0&&(
+                  <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:14}}>
                     <div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.5s ease"}}/>
                   </div>
-                  {/* Tabla por tipo */}
-                  {(c.contenido||[]).filter(item=>item.acordados>0).map((item,i)=>{
-                    const p=item.acordados>0?Math.round((item.entregados/item.acordados)*100):0;
-                    return (
-                      <div key={item.tipo} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-                        <span style={{fontSize:13,color:T.text,fontWeight:500,minWidth:100}}>{item.tipo}</span>
-                        <div style={{flex:1,height:5,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
-                          <div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accent,borderRadius:20}}/>
-                        </div>
-                        <span style={{fontSize:12,color:p===100?T.green:T.textSm,fontWeight:600,minWidth:50,textAlign:"right"}}>{item.entregados}/{item.acordados}</span>
+                )}
+                {(c.contenido||[]).length===0&&(
+                  <div style={{fontSize:13,color:T.textSm,textAlign:"center",padding:"8px 0"}}>Sin contenido acordado</div>
+                )}
+                {(c.contenido||[]).map((item,ci)=>{
+                  const ac=item.acordados||1; const en=item.entregados||0;
+                  const p=ac>0?Math.round((en/ac)*100):0;
+                  return (
+                    <div key={ci} style={{padding:"10px 0",borderTop:ci>0?`1px solid ${T.borderL}`:"none"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                        <span style={{flex:1,fontSize:13,color:T.text,fontWeight:600}}>{item.tipo}</span>
+                        <span style={{fontSize:11,color:p===100?T.green:T.textSm,fontWeight:600}}>{en}/{ac} ({p}%)</span>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                      <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
+                        <span style={{fontSize:11,color:T.textSm}}>Acordados</span>
+                        <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                          <button onClick={()=>{const updated={...c,contenido:c.contenido.map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x)};updateDoc(doc(db,"canjes",c._docId),{contenido:updated.contenido});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                          <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:20,textAlign:"center"}}>{ac}</span>
+                          <button onClick={()=>{const updated=c.contenido.map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x);updateDoc(doc(db,"canjes",c._docId),{contenido:updated});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                        </div>
+                        <span style={{fontSize:11,color:T.textSm}}>Entregados</span>
+                        <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                          <button onClick={()=>{const updated=c.contenido.map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x);updateDoc(doc(db,"canjes",c._docId),{contenido:updated});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                          <span style={{fontSize:13,fontWeight:600,color:T.green,minWidth:20,textAlign:"center"}}>{en}</span>
+                          <button onClick={()=>{const updated=c.contenido.map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x);updateDoc(doc(db,"canjes",c._docId),{contenido:updated});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                        </div>
+                      </div>
+                      <div style={{height:5,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.3s"}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
               {/* Métricas */}
               {(c.alcance||c.reproducciones||c.likes||c.guardados)&&(
@@ -2085,9 +2112,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:14,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"8px 16px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:13}}>No</button></div>
                 ):(
                   <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button><button onClick={()=>{
-                    const ref=c.pedidoRef||(c.notas||"").match(/#(\d+)/)?.[1];
-                    if(ref)alert("Andá a Gestión de Envíos, buscá el pedido #"+ref+" y exportá la etiqueta desde ahí.");
-                    else alert("Este canje no tiene pedido de TN asociado. Generalo desde un pedido en Gestión de Envíos.");
+                    const ref=c.pedidoRef||(c.notas||"").match(/#(\d+)/)?.[1]||(c.notas||"").match(/(\d{4,})/)?.[1];
+                    if(ref)alert("Pedido asociado: #"+ref+"\n\nAndá a Gestión de Envíos \u2192 Panel de Envíos, seleccióná ese pedido y exportá la etiqueta de Andreani desde ahí.");
+                    else alert("Este canje no tiene pedido de TN asociado.\nPara generar la etiqueta, priméro hacé el pedido en TN y usá el botón Generar Canje desde Gestión de Envíos.");
                   }} style={{...BtnSecondary(T),fontSize:13}}>🏷️ Etiqueta Andreani</button></>
                 )}
               </div>
