@@ -86,7 +86,7 @@ const LENTE_DOT = { Amarillo:"#fbbf24",Naranja:"#fb923c",Rojo:"#f87171",Negro:"#
 const ESTADOS_C = ["Pendiente envío","Enviado","Contenido pendiente","Contenido publicado","Finalizado","Cancelado"];
 const REDES = ["Instagram","TikTok","YouTube","Twitter/X","Otro"];
 const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
-const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Otro"];
+const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Futbolista","Streamer","Otro"];
 const PRODUCTOS_CANJE = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Kit Completo","A elección"];
 
 // ─── Helpers ───
@@ -1475,14 +1475,21 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   useEffect(()=>{
     if(pendingCanje) {
-      setForm({...emptyForm(),...pendingCanje,_docId:null,contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],productos:pendingCanje.productos?.length?pendingCanje.productos:(pendingCanje.producto?[pendingCanje.producto]:[])});
+      const prodsCanje=pendingCanje.productosCanje||(pendingCanje.productos||[]).map(p=>({nombre:typeof p==="string"?p:p.nombre,cantidad:1})).filter(p=>p.nombre);
+      setForm({...emptyForm(),...pendingCanje,_docId:null,
+        influencer:pendingCanje.nombre||pendingCanje.influencer||"",
+        usuario:pendingCanje.usuario||pendingCanje.nombre||"",
+        pedidoRef:pendingCanje.pedidoRef||"",
+        productosCanje:prodsCanje,
+        contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],
+      });
       if(onClearPendingCanje) onClearPendingCanje();
     }
   },[pendingCanje]);
 
   const emptyForm=()=>({
-    _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"",
-    producto:"", estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
+    _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"", linkInstagram:"", pedidoRef:"",
+    producto:"", productosCanje:[], estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
     fechaEnvio:"", fechaPublicacion:"",
     foto:"", nicho:"",
     contenido: ACTIVIDADES.map(tipo=>({tipo, acordados:0, entregados:0})),
@@ -1496,9 +1503,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     setSaving(true);
     try {
       const p={
-        influencer:form.influencer, usuario:form.usuario||"", red:form.red,
+        influencer:form.influencer, usuario:form.usuario||"", red:form.red, linkInstagram:form.linkInstagram||"", pedidoRef:form.pedidoRef||"",
         seguidores:form.seguidores||"", email:form.email||"", telefono:form.telefono||"",
-        producto:form.producto||"", estado:form.estado, tracking:form.tracking||"",
+        producto:form.producto||((form.productosCanje||[])[0]?.nombre||""),
+        productosCanje:form.productosCanje||[],
+        estado:form.estado, tracking:form.tracking||"",
         notas:form.notas||"", linkContenido:form.linkContenido||"",
         fechaEnvio:form.fechaEnvio||"", fechaPublicacion:form.fechaPublicacion||"",
         foto:form.foto||"", nicho:form.nicho||"",
@@ -1886,7 +1895,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       {/* Canje Detail Modal */}
       <Modal T={T} open={!!detailC} onClose={()=>setDetail(null)} title={detailC?`${detailC.influencer}`:""} width={560}>
         {detailC&&(()=>{
-          const c=detailC; const sc=getEstadoCC(T,c.estado);
+          const c=canjes.find(x=>x._docId===detailC._docId)||detailC; const sc=getEstadoCC(T,c.estado);
           const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
           const totalEntregados=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0);
           const progreso=totalAcordados>0?Math.round((totalEntregados/totalAcordados)*100):0;
@@ -1951,6 +1960,25 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   )}
                   {c.producto&&<span style={{fontSize:12,color:T.textSm,marginLeft:4}}>📦 {c.producto}</span>}
                 </div>
+              </div>
+
+              {/* Productos del canje */}
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+                <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>Productos enviados</div>
+                {(c.productosCanje||[]).map((p,pi)=>(
+                  <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:24,textAlign:"center"}}>{p.cantidad}</span>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.red}44`,borderRadius:4,background:T.redBg,color:T.red,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                  </div>
+                ))}
+                {(c.productosCanje||[]).length===0&&<div style={{fontSize:13,color:T.textSm,padding:"6px 0"}}>Sin productos cargados</div>}
+                <select defaultValue="" onChange={async e=>{const val=e.target.value;if(!val)return;e.target.value="";const lista=c.productosCanje||[];const ex=lista.findIndex(x=>x.nombre===val);const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:val,cantidad:1}];await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{...iS,fontSize:12,color:T.textSm,marginTop:8}}>
+                  <option value="">+ Agregar producto...</option>
+                  {PRODUCTOS_CANJE.map(pr=><option key={pr} value={pr}>{pr}</option>)}
+                </select>
               </div>
 
               {/* Progreso de contenido */}
@@ -2057,6 +2085,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [copiedToast,setCopiedToast]=useState(null);
+  const [orderDetail,setOrderDetail]=useState(null);
+  const [skuGenerating,setSkuGenerating]=useState(false);
+  const [skuProgress,setSkuProgress]=useState(0);
   function copyToClipboard(text, label) {
     navigator.clipboard.writeText(text).then(()=>{
       setCopiedToast(label||"Copiado");
@@ -2226,21 +2257,23 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const sucs=locs.sucursales;
 
     // ESTRATEGIA 1: PUNTO ANDREANI HOP
-    // Buscar en la lista oficial normalizando acentos para el match,
-    // pero retornar el string ORIGINAL con acentos para que Excel valide
+    // Usa cl() existente para normalizar (elimina chars no ASCII incluyendo tildes)
     if(esHop){
-      function norm(s){return (s||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();}
-      const calleN=norm(pickupDetails.address?.address||"");
-      const numN=numero;
-      // Match exacto: normalizar ambos lados para ignorar tildes
-      if(calleN&&numN){
+      const calleN=cl(pickupDetails.address?.address||"");
+      if(calleN&&numero){
+        // Buscar match normalizando tildes en ambos lados via cl()
         const exactMatch=sucs.find(s=>{
-          const sn=norm(s);
-          return sn.includes(calleN)&&(sn.endsWith(" "+numN)||sn.includes(" "+numN+" "));
+          const sn=cl(s);
+          return sn.includes(calleN)&&(sn.endsWith(" "+numero)||sn.includes(" "+numero+" ")||sn===calleN+" "+numero);
         });
         if(exactMatch) return exactMatch;
+        // Buscar por palabras de calle + numero
+        const words=calleN.split(" ").filter(w=>w.length>=4);
+        for(const w of words){
+          const wm=sucs.find(s=>cl(s).includes(w)&&cl(s).includes(numero));
+          if(wm) return wm;
+        }
       }
-      // No matchea — mostrar modal
       return null;
     }
 
@@ -2948,6 +2981,54 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {skuResults.length>0&&skuResults.some(r=>r.found)&&(
+              <div style={{marginTop:16}}>
+                {!skuGenerating&&(
+                  <button onClick={async()=>{
+                    setSkuGenerating(true);setSkuProgress(10);
+                    try{
+                      const skuMap={};
+                      skuResults.forEach(r=>{
+                        if(r.found&&r.skuLines?.length)skuMap[r.pedidoNum]={page:r.pagina,skus:r.skuLines,found:true};
+                        else skuMap[r.pedidoNum||r.pagina]={page:r.pagina,skus:[],found:false};
+                      });
+                      setSkuProgress(35);
+                      let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
+                      try{const s=localStorage.getItem("growith_skuCfg");if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
+                      const fd=new FormData();
+                      fd.append("pdf",skuFile,skuFile.name);
+                      fd.append("skuMap",JSON.stringify(skuMap));
+                      fd.append("config",JSON.stringify(cfg));
+                      setSkuProgress(55);
+                      const resp=await fetch("/api/process-sku",{method:"POST",body:fd});
+                      if(!resp.ok)throw new Error("Error al generar PDF: "+resp.status);
+                      setSkuProgress(80);
+                      const blob=await resp.blob();
+                      const url=URL.createObjectURL(blob);
+                      const a=document.createElement("a");
+                      a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
+                      URL.revokeObjectURL(url);
+                      setSkuProgress(100);
+                      setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},1800);
+                    }catch(e){alert("Error al generar PDF: "+e.message);setSkuGenerating(false);setSkuProgress(0);}
+                  }} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"14px 20px"}}>
+                    📥 Generar PDF con SKUs y descargar
+                  </button>
+                )}
+                {skuGenerating&&(
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:24,textAlign:"center"}}>
+                    <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:8}}>
+                      {skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":skuProgress<100?"Descargando PDF...":"✅ ¡PDF listo!"}
+                    </div>
+                    <div style={{height:8,background:T.borderL,borderRadius:4,overflow:"hidden",margin:"12px 0 6px"}}>
+                      <div style={{height:"100%",width:`${skuProgress}%`,background:skuProgress===100?T.green:T.accentSolid,borderRadius:4,transition:"width 0.4s ease"}}></div>
+                    </div>
+                    <div style={{fontSize:13,color:T.textSm}}>{skuProgress}%</div>
+                  </div>
+                )}
               </div>
             )}
           </div>
