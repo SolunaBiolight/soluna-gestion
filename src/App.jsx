@@ -2258,25 +2258,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
     // ESTRATEGIA 1: PUNTO ANDREANI HOP
     // Usa cl() existente para normalizar (elimina chars no ASCII incluyendo tildes)
-    if(esHop){
-      const calleN=cl(pickupDetails.address?.address||"");
-      if(calleN&&numero){
-        // Buscar match normalizando tildes en ambos lados via cl()
-        const exactMatch=sucs.find(s=>{
-          const sn=cl(s);
-          return sn.includes(calleN)&&(sn.endsWith(" "+numero)||sn.includes(" "+numero+" ")||sn===calleN+" "+numero);
-        });
-        if(exactMatch) return exactMatch;
-        // Buscar por palabras de calle + numero
-        const words=calleN.split(" ").filter(w=>w.length>=4);
-        for(const w of words){
-          const wm=sucs.find(s=>cl(s).includes(w)&&cl(s).includes(numero));
-          if(wm) return wm;
-        }
-      }
-      return null;
-    }
-
+    if(esHop) return null; // Siempre modal para HOP - Andreani rechaza tildes
     // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
     // Las sucursales clásicas tienen nombres propios que no podemos construir
     if(!esHop){
