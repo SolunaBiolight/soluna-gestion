@@ -1895,7 +1895,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
                         <span style={{fontSize:11,color:T.textSm}}>Acord.</span>
                         <div style={{display:"flex",gap:3,alignItems:"center"}}>
-                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={bS}>−</button>
+                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:Math.max(0,(x.acordados||1)-1)}:x).filter(x=>x.acordados>0);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{...bS,borderColor:T.red+"88",color:T.red}}>−</button>
                           <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:18,textAlign:"center"}}>{ac}</span>
                           <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={bS}>+</button>
                         </div>
