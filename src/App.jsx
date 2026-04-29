@@ -1523,7 +1523,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       } else {
         await addDoc(collection(db,"canjes"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
       }
+      const editedId=form._docId;
       setForm(null);
+      if(editedId) setTimeout(()=>setDetail(editedId),50);
     } catch(e){alert("Error al guardar.");}
     setSaving(false);
   }
@@ -1850,10 +1852,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   {c.foto?<img src={c.foto} style={{width:40,height:40,borderRadius:8,objectFit:"cover",border:`1px solid ${T.border}`,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:40,height:40,borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>👤</div>}
                   <div>
                     <div style={{fontSize:17,fontWeight:800,color:T.text}}>{c.influencer}</div>
-                    {c.usuario&&<div style={{fontSize:13,color:T.accent}}>@{c.usuario}</div>}
                     <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
-                      {c.linkInstagram&&<a href={c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:6,padding:"2px 8px",fontWeight:600}}>📸 Instagram</a>}
-                      {c.telefono&&<a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,padding:"2px 8px",fontWeight:600}}>💬 WhatsApp</a>}
+                      {(c.linkInstagram||c.usuario)&&<a href={c.linkInstagram?(c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")):"https://instagram.com/"+(c.usuario||"").replace("@","")} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:6,padding:"3px 9px",fontWeight:600,display:"flex",alignItems:"center",gap:4}}>📸 {c.usuario?"@"+(c.usuario).replace("@",""):"Instagram"}</a>}
+                      {c.telefono&&<a href={"https://wa.me/"+c.telefono.replace(/\D/g,"")} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.green,textDecoration:"none",background:T.greenBg,border:"1px solid "+T.green+"33",borderRadius:6,padding:"3px 9px",fontWeight:600,display:"flex",alignItems:"center",gap:4}}>💬 WhatsApp</a>}
                     </div>
                   </div>
                 </div>
@@ -1918,11 +1919,83 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Creado: {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?` · Finalizado: ${fmtTs(c.finalizadoAt)}`:""}</div>
               <Divider T={T}/>
               <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                {deleteConfirm===c._docId?(<div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:13,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"7px 14px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"7px 14px",fontSize:13}}>No</button></div>):(<><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||[],alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button></>)}
+                {deleteConfirm===c._docId?(<div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:13,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"7px 14px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"7px 14px",fontSize:13}}>No</button></div>):(<><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setForm({...c,contenido:c.contenido||[],alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});setDetail(null);}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button></>)}
               </div>
             </div>
           );
         })()}
+      </Modal>
+
+      {/* Modal form crear/editar canje */}
+      <Modal T={T} open={!!form} onClose={()=>setForm(null)} title={form?._docId?"Editar canje":"Nuevo canje"} width={520}>
+        {form&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <Field T={T} label="Nombre / Influencer">
+                <input style={iS} value={form.influencer} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Nombre del influencer"/>
+              </Field>
+              <Field T={T} label="@Usuario">
+                <input style={iS} value={form.usuario||""} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="@usuario"/>
+              </Field>
+            </div>
+            <Field T={T} label="Link de Instagram">
+              <input style={iS} value={form.linkInstagram||""} onChange={e=>{
+                const link=e.target.value;
+                const match=link.match(/instagram\.com\/([^/?#\s]+)/);
+                const usuario=match?match[1].replace("@",""):"";
+                setForm(f=>({...f,linkInstagram:link,...(usuario?{usuario}:{})}));
+              }} placeholder="https://instagram.com/usuario"/>
+            </Field>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <Field T={T} label="Red">
+                <select style={iS} value={form.red} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>
+                  {REDES.map(r=><option key={r}>{r}</option>)}
+                </select>
+              </Field>
+              <Field T={T} label="Nicho">
+                <select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}>
+                  <option value="">Sin nicho</option>
+                  {NICHOS.map(n=><option key={n}>{n}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <Field T={T} label="Email">
+                <input style={iS} value={form.email||""} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@ejemplo.com"/>
+              </Field>
+              <Field T={T} label="Teléfono (WhatsApp)">
+                <input style={iS} value={form.telefono||""} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="5491155555555"/>
+              </Field>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <Field T={T} label="Seguidores">
+                <input style={iS} type="number" value={form.seguidores||""} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/>
+              </Field>
+              <Field T={T} label="Estado">
+                <select style={iS} value={form.estado} onChange={e=>setForm(f=>({...f,estado:e.target.value}))}>
+                  {ESTADOS_C.filter(e=>e!=="Cancelado").map(e=><option key={e}>{e}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <Field T={T} label="Fecha envío">
+                <input style={iS} type="date" value={form.fechaEnvio||""} onChange={e=>setForm(f=>({...f,fechaEnvio:e.target.value}))}/>
+              </Field>
+              <Field T={T} label="Tracking Andreani">
+                <input style={iS} value={form.tracking||""} onChange={e=>setForm(f=>({...f,tracking:e.target.value}))} placeholder="3600029..."/>
+              </Field>
+            </div>
+            <Field T={T} label="Notas">
+              <textarea style={{...iS,minHeight:64,resize:"vertical"}} value={form.notas||""} onChange={e=>setForm(f=>({...f,notas:e.target.value}))} placeholder="Notas internas sobre el canje..."/>
+            </Field>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:4}}>
+              <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
+              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,opacity:saving?0.6:1}}>
+                {saving?"Guardando...":"Guardar canje"}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
