@@ -1,8 +1,32 @@
 // api/process-sku.js
-// Zonas medidas del PDF real Andreani (196x298pt):
-// Z1: y=43..64 desde abajo, x=27..145 (entre IMPORTANTE y QR inferiores)
-// Z2: y=108..140 desde abajo, x=27..145 (entre Sucursal Rendicion y barcode)
-// Z3: y=43..140 desde abajo, x=147..188 (franja derecha libre)
+// Zona medida del PDF real Andreani (196x298pt):
+//
+// La UNICA zona libre entre los dos QR codes inferiores:
+//   - QR izq: x=9.7-26.1,  y_from_bot=25.6-41.9
+//   - QR der: x=169.7-186, y_from_bot=25.6-41.9
+//   - Texto N° seguimiento: x=44.7-151.3, y_from_bot=30.2-37.4
+//   - ZONA LIBRE: x=26..170, y_from_bot=0..25 (debajo de los QR)
+//     pero ahi esta "vacio" - es el margen inferior
+//
+// Mirando las fotos del cliente: los SKU van en el espacio
+// entre los dos QR codes a la altura de ellos:
+//   x=26..169, y_from_bot=26..42
+// Ese espacio tiene el texto "N° de seguimiento" en el centro
+// pero los extremos (x=26..44 y x=151..169) estan libres.
+//
+// En la foto correcta del cliente, los SKU aparecen
+// ENTRE los QR codes a esa altura. Ancho disponible: x=26..169
+// Sin el texto de seguimiento (x=44..151) quedan dos franjas:
+//   Franja izq: x=26..43, y=26..42 (muy angosta, 17pt)
+//   Franja der: x=152..169, y=26..42 (muy angosta, 17pt)
+//   Centro sobre el texto: los SKU VAN ENCIMA del texto de seguimiento
+//     pero en la foto del cliente se ve que si van ahi — el texto
+//     de seguimiento es solo una referencia, los SKU van sobre el
+//
+// SOLUCION FINAL: colocar los SKU en la franja central
+// y_from_bot=26..42, x=26..170, ENCIMA del texto de seguimiento
+// (que es redundante con el QR). Si no entran en horizontal,
+// usar multiples columnas.
 
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
@@ -98,58 +122,102 @@ export default async function handler(req, res) {
       const [pedidoNum, info] = entry;
       const skuLines = info.skus;
 
-      // Escalar si la pagina no es exactamente 196x298
+      // Escalar si el PDF tiene diferente tamano
       const sx = W / 196;
       const sy = H / 298;
 
-      // Definir las 3 zonas libres (en coordenadas y-desde-abajo del PDF real)
-      // Convertir a y-desde-arriba para pdf-lib: y_pdflib = H - y_desde_abajo
-      // pdf-lib dibuja con y=0 en la parte INFERIOR, asi que:
-      // y_pdflib = y_desde_abajo (ya es desde abajo!)
+      // ── ZONA PRINCIPAL ──────────────────────────────────────────────
+      // Espacio entre los dos QR codes inferiores
+      // QR izq termina en x=26, QR der empieza en x=170
+      // Altura de los QR: y_from_bot=26..42
+      // El texto "N° de seguimiento" esta en y=30..37 pero lo pisamos
+      // porque es informacion redundante con el QR code
+      //
+      // Esta es la zona que el cliente muestra en su ejemplo correcto:
+      // x=26..170 (144pt de ancho), y_from_bot=26..42 (16pt de alto)
+      //
+      // Con fontSize=4pt y lineHeight=5.5pt caben ~2 filas
+      // Si hay mas SKU, agregar columnas verticales encima de esta zona
+      // usando el espacio entre elementos (los gaps de ~5pt son chicos
+      // pero multiples columnas pueden funcionar)
+
+      // Zona 1: entre QR inferiores (la zona correcta del cliente)
+      // y_from_bot 26..42, x=26..170
+      const z1x = 26 * sx;
+      const z1w = (170 - 26) * sx;  // 144pt
+      const z1yBot = 26 * sy;
+      const z1yTop = 42 * sy;        // 16pt altura
+
+      // Zona 2: si no entran todos, usar columna izquierda desde z1 hacia arriba
+      // Entre Rendicion (y=88-106) y barcode (y=142) hay 5.5pt libre
+      // Entre barcode (y=180) y Peso/dim (y=186) hay 5.4pt
+      // Vamos a usar multiples filas apiladas encima del espacio del QR
+      // en el lado izquierdo (x=26..80) donde no hay texto debajo del barcode
+      // Espacio izq bajo el barcode: x=26..80, y=26..140 (pero con texto entre medio)
       
-      const zones = [
-        // Z1: entre IMPORTANTE y QR inferiores
-        { x: 27*sx, w: (145-27)*sx, yBot: 43*sy, yTop: 64*sy },
-        // Z2: entre Sucursal Rendicion y barcode
-        { x: 27*sx, w: (145-27)*sx, yBot: 108*sy, yTop: 140*sy },
-        // Z3: franja derecha libre (ningún texto impreso ahi)
-        { x: 147*sx, w: (188-147)*sx, yBot: 43*sy, yTop: 140*sy },
-      ];
+      // En realidad, la mejor segunda zona es usar mas columnas en la franja
+      // de los QR codes pero hacia arriba: y_from_bot=42..82 en el lado
+      // izquierdo donde hay el texto "IMPORTANTE" (x=9..187, y=47..61) 
+      // y "Sucursal Distribucion" (x=9..186, y=67..82) -- ocupan todo el ancho
+      
+      // Para mas de 2 filas: dividir la zona 1 en columnas
+      // Col A: x=26..95, y=26..42 (70pt ancho)
+      // Col B: x=96..170, y=26..42 (75pt ancho)
+      // Y si aun sobran: col C mas arriba a la izq (x=26..95, y=42..55) 
+      //   pero ahi esta el IMPORTANTE a y=47 -- riesgo
+      // Mejor: reducir fontSize hasta que entren en z1
 
-      // Calcular cuantas lineas caben en cada zona con un fontSize dado
-      const linesInZone = (zone, fs) => {
-        const lh = fs + 1.5;
-        return Math.max(0, Math.floor((zone.yTop - zone.yBot) / lh));
-      };
-
-      // Ajustar fontSize si no entran todos (minimo 2.5pt)
+      const lh = (fs) => fs + 1.5;
+      
+      // Calcular fontSize optimo para que quepan en z1 con multiples columnas
+      // Columnas en z1: cuantas caben?
+      // Con col de 70pt y fontSize 4pt: ~70/(4*0.58) = ~30 chars, 2-3 palabras
+      // Filas en z1 altura 16pt: floor(16/5.5) = 2 filas
+      // Col A (70pt) * 2 filas + Col B (75pt) * 2 filas = 4 lineas totales
+      
+      // Si hay mas de 4 lineas: reducir font
       let fs = baseFontSize;
-      const totalCap = (f) => zones.reduce((s, z) => s + linesInZone(z, f), 0);
       
-      // Reducir font hasta que entren, pero no menos de 2.5
-      if (totalCap(fs) < skuLines.length) {
-        for (let tryFs = fs - 0.5; tryFs >= 2.5; tryFs -= 0.5) {
-          if (totalCap(tryFs) >= skuLines.length) {
-            fs = tryFs;
-            break;
-          }
-          fs = tryFs; // usar el mas pequeno disponible si nada alcanza
+      // Calcular capacidad total con el font actual
+      // Dividimos z1 en columnas de ~70pt cada una
+      const colWidth = 70 * sx;
+      const numCols = Math.floor(z1w / colWidth);
+      const rowsPerCol = (f) => Math.max(1, Math.floor((z1yTop - z1yBot) / lh(f)));
+      const totalCap = (f) => numCols * rowsPerCol(f);
+      
+      // Reducir fs si es necesario (max 5 intentos)
+      for (let attempt = 0; attempt < 10 && totalCap(fs) < skuLines.length && fs > 2.5; attempt++) {
+        fs -= 0.3;
+      }
+      fs = Math.max(2.5, fs);
+
+      // Dibujar columnas en z1
+      const rows = rowsPerCol(fs);
+      let lineIdx = 0;
+      
+      for (let col = 0; col < numCols && lineIdx < skuLines.length; col++) {
+        const xCol = z1x + col * colWidth;
+        const maxCh = Math.max(4, Math.floor(colWidth / (fs * 0.58)));
+        
+        for (let row = 0; row < rows && lineIdx < skuLines.length; row++) {
+          const line = skuLines[lineIdx];
+          const safe = line.length > maxCh ? line.slice(0, maxCh - 1) + '\u2026' : line;
+          const y = z1yBot + row * lh(fs);
+          page.drawText(safe, { x: xCol, y, size: fs, font, color: rgb(0, 0, 0) });
+          lineIdx++;
         }
       }
 
-      // Distribuir y dibujar
-      let lineIdx = 0;
-      for (const zone of zones) {
-        if (lineIdx >= skuLines.length) break;
-        const cap = linesInZone(zone, fs);
-        const lh = fs + 1.5;
-        const maxCh = Math.max(4, Math.floor(zone.w / (fs * 0.58)));
-        
-        for (let li = 0; li < cap && lineIdx < skuLines.length; li++) {
+      // Si aun sobran (raro): escribir encima en zona superior izq
+      // usando un font pequeño en x=26..80, y=42..47 (justo encima de los QR)
+      if (lineIdx < skuLines.length) {
+        const tinyFs = 2.5;
+        const y2 = z1yTop + 1 * sy;
+        const maxCh2 = Math.max(4, Math.floor((80 * sx) / (tinyFs * 0.58)));
+        while (lineIdx < skuLines.length) {
           const line = skuLines[lineIdx];
-          const safe = line.length > maxCh ? line.slice(0, maxCh - 1) + '\u2026' : line;
-          const y = zone.yBot + li * lh;
-          page.drawText(safe, { x: zone.x, y, size: fs, font, color: rgb(0, 0, 0) });
+          const safe = line.length > maxCh2 ? line.slice(0, maxCh2 - 1) + '\u2026' : line;
+          page.drawText(safe, { x: z1x, y: y2 + (lineIdx - (numCols * rows)) * (tinyFs + 1), size: tinyFs, font, color: rgb(0.3, 0, 0) });
           lineIdx++;
         }
       }
@@ -157,7 +225,7 @@ export default async function handler(req, res) {
       pageResults.push({ pageIdx: i, pageNum, pedido: pedidoNum, hasSkus: true, skus: skuLines });
     }
 
-    // Reordenar paginas si se pidio
+    // Reordenar paginas
     let finalDoc = pdfDoc;
     if (cfg.sortBy !== 'sin' && cfg.pageOrder && Array.isArray(cfg.pageOrder)) {
       const newDoc = await PDFDocument.create();
@@ -171,7 +239,7 @@ export default async function handler(req, res) {
       finalDoc = newDoc;
     }
 
-    // Pagina de resumen
+    // Pagina resumen
     const skuTotals = {};
     pageResults.filter(r => r.hasSkus).forEach(r => {
       r.skus.forEach(s => {
