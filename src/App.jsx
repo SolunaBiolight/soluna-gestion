@@ -2436,9 +2436,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
     const totalRows1=2+domicilioOrders.length;
     // Eliminar cualquier fila de datos existente (fila 3 en adelante) del template
-    const newSheet1=sheet1
+    let newSheet1=sheet1
       .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows1+'"/>')
       .replace('</sheetData>',domRowsXml+'</sheetData>');
+    {const _i=newSheet1.indexOf('<dataValidations');if(_i>=0){const _j=newSheet1.indexOf('</dataValidations>');if(_j>=0)newSheet1=newSheet1.slice(0,_i)+newSheet1.slice(_j+18);}}
     zip.file('xl/worksheets/sheet1.xml',newSheet1);
 
     // Update sheet2 (sucursal) if exists
@@ -2446,11 +2447,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     if(sheet2file&&sucursalOrders.length>0){
       const sheet2=await sheet2file.async('string');
       const totalRows2=2+sucursalOrders.length;
-      const newSheet2=sheet2
-        .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows2+'"/>')
-        .replace('</sheetData>',sucRowsXml+'</sheetData>')
-        .replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
-      zip.file('xl/worksheets/sheet2.xml',newSheet2);
+      let newSheet2=sheet2
+        .replace(/<dimension ref="[^"]+"\/>/,\'<dimension ref="A1:S\'+totalRows2+\'"/>\')
+        .replace(\'</sheetData>\',sucRowsXml+\'</sheetData>\');
+      {const _i=newSheet2.indexOf(\'<dataValidations\');if(_i>=0){const _j=newSheet2.indexOf(\'</dataValidations>\');if(_j>=0)newSheet2=newSheet2.slice(0,_i)+newSheet2.slice(_j+18);}}
+      zip.file(\'xl/worksheets/sheet2.xml\',newSheet2);
     }
     const newSsItems=newSS.map(function(s){
       const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
