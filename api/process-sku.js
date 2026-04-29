@@ -81,26 +81,22 @@ export default async function handler(req, res) {
 
     if (!pdfBuffer) return res.status(400).json({ error: 'No PDF recibido' });
 
-    // skuMap: { "pedidoNum": { page: N (1-based), skus: [...], found: bool } }
     const skuMap = skuMapRaw ? JSON.parse(skuMapRaw) : {};
 
     const pdfDoc = await PDFDocument.load(pdfBuffer);
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const pages = pdfDoc.getPages();
 
-    const x = parseFloat(cfg.x) || 10;
-    const yFromBottom = parseFloat(cfg.y) || 10;
     const fontSize = parseFloat(cfg.fontSize) || 4;
+    const lineHeight = fontSize + 2;
 
-    // Paso 1: insertar SKUs en cada página según su número original
     const pageResults = [];
 
     for (let i = 0; i < pages.length; i++) {
-      const pageNum = i + 1; // número de página 1-based
+      const pageNum = i + 1;
       const page = pages[i];
       const { width, height } = page.getSize();
 
-      // Buscar en el skuMap la entrada que corresponde a esta página
       const entry = Object.entries(skuMap).find(([, v]) => v.page === pageNum);
 
       if (!entry || !entry[1].found || !entry[1].skus?.length) {
@@ -111,39 +107,102 @@ export default async function handler(req, res) {
       const [pedidoNum, info] = entry;
       const skuLines = info.skus;
 
-      // Insertar SKUs en columnas si no entran todos verticalmente
-      // Col 1: desde x, yFromBottom hacia arriba
-      // Col 2: desde x + mitad del ancho de la pagina, yFromBottom hacia arriba
-      // Col 3: si sigue sin entrar, continuar a la derecha
-      const lineHeight = fontSize + 2;
-      // Zona segura: desde yFromBottom hasta ~40% de la altura (evitar QR y texto superior)
-      const safeHeight = height * 0.38;
-      const maxLinesPerCol = Math.max(1, Math.floor(safeHeight / lineHeight));
-      // Dividir en columnas de maxLinesPerCol lineas
-      const cols = [];
-      for (let ci = 0; ci < skuLines.length; ci += maxLinesPerCol) {
-        cols.push(skuLines.slice(ci, ci + maxLinesPerCol));
-      }
-      // Ancho disponible por columna (distribuir el ancho de la pagina entre columnas)
-      const numCols = Math.min(cols.length, 3); // max 3 columnas
-      const colWidth = (width - x - 5) / numCols;
-      cols.slice(0, numCols).forEach((colLines, colIdx) => {
-        const colX = x + colIdx * colWidth;
-        let currentY = yFromBottom;
-        for (const line of colLines) {
-          // Truncar si el texto es muy largo para la columna
-          const maxChars = Math.floor(colWidth / (fontSize * 0.55));
-          const safeLine = line.length > maxChars ? line.slice(0, maxChars - 1) + "…" : line;
+      // ── Zonas seguras ──────────────────────────────────────────────
+      // Las etiquetas Andreani tienen QR codes en las esquinas inferiores
+      // (izquierda y derecha) y texto "N° de seguimiento" al pie.
+      // Zona segura: franja central inferior, entre los dos QR.
+      //
+      // Andreani label dimensions aprox:
+      //   - QR inferior izquierdo: x=0..~55pt, y=0..~55pt
+      //   - QR inferior derecho:   x=width-55..width, y=0..~55pt
+      //   - Texto "N° de seguimiento": y~10pt
+      //
+      // Estrategia de columnas:
+      //   Col A: zona central inferior  (entre los dos QR, y=15..55, x=60..width-60)
+      //   Col B: zona media izquierda   (y=55..120, x=5..width/2-5)
+      //   Col C: zona media derecha     (y=55..120, x=width/2+5..width-5)
+      //
+      // Todas las zonas garantizan que el texto sea visible.
+
+      const QR_SIZE = 58;        // tamaño estimado del QR en puntos
+      const MARGIN = 5;
+
+      // Zona A: franja entre los dos QR codes (abajo, centro)
+      const zoneA = {
+        xStart: QR_SIZE + MARGIN,
+        xEnd:   width - QR_SIZE - MARGIN,
+        yStart: MARGIN + 12,     // sobre el texto "N° seguimiento"
+        yEnd:   QR_SIZE - MARGIN,
+      };
+
+      // Zona B: mitad izquierda media (sobre el QR izquierdo)
+      const zoneB = {
+        xStart: MARGIN,
+        xEnd:   width / 2 - MARGIN,
+        yStart: MARGIN,
+        yEnd:   height * 0.32,   // hasta ~32% inferior (zona segura sin texto impreso)
+      };
+
+      // Zona C: mitad derecha media (sobre el QR derecho)
+      const zoneC = {
+        xStart: width / 2 + MARGIN,
+        xEnd:   width - MARGIN,
+        yStart: MARGIN,
+        yEnd:   height * 0.32,
+      };
+
+      // Calcular cuántas líneas caben en cada zona
+      const linesInZone = (zone) => {
+        const zoneHeight = zone.yEnd - zone.yStart;
+        return Math.max(1, Math.floor(zoneHeight / lineHeight));
+      };
+
+      const capsA = linesInZone(zoneA);
+      const capsB = linesInZone(zoneB);
+      const capsC = linesInZone(zoneC);
+
+      // Distribuir líneas en zonas
+      const colA = skuLines.slice(0, capsA);
+      const colB = skuLines.slice(capsA, capsA + capsB);
+      const colC = skuLines.slice(capsA + capsB, capsA + capsB + capsC);
+      // Si todavía sobran, agregarlos a col B/C con font más chico (fallback)
+      const overflow = skuLines.slice(capsA + capsB + capsC);
+
+      // Función para dibujar una columna
+      const drawCol = (lines, zone, fSize) => {
+        if (!lines.length) return;
+        const colWidth = zone.xEnd - zone.xStart;
+        const maxChars = Math.max(5, Math.floor(colWidth / (fSize * 0.55)));
+        let y = zone.yStart;
+        for (const line of lines) {
+          const safeLine = line.length > maxChars
+            ? line.slice(0, maxChars - 1) + '\u2026'
+            : line;
           page.drawText(safeLine, {
-            x: colX,
-            y: currentY,
-            size: fontSize,
+            x: zone.xStart,
+            y,
+            size: fSize,
             font,
             color: rgb(0, 0, 0),
           });
-          currentY += lineHeight;
+          y += fSize + 2;
         }
-      });
+      };
+
+      drawCol(colA, zoneA, fontSize);
+      drawCol(colB, zoneB, fontSize);
+      drawCol(colC, zoneC, fontSize);
+
+      // Overflow: reducir font y reintentar en zona B
+      if (overflow.length > 0) {
+        const smallFont = Math.max(2.5, fontSize - 1);
+        drawCol(overflow, {
+          xStart: zoneB.xStart,
+          xEnd: zoneC.xEnd,
+          yStart: zoneB.yEnd + 2,
+          yEnd: zoneB.yEnd + 2 + overflow.length * (smallFont + 2),
+        }, smallFont);
+      }
 
       pageResults.push({ pageIdx: i, pageNum, pedido: pedidoNum, hasSkus: true, skus: skuLines });
     }
@@ -152,15 +211,11 @@ export default async function handler(req, res) {
     let finalDoc = pdfDoc;
 
     if (cfg.sortBy !== 'sin' && cfg.pageOrder && Array.isArray(cfg.pageOrder)) {
-      // El frontend ya calculó el orden correcto — solo necesitamos reordenar
       const newDoc = await PDFDocument.create();
       const validOrder = cfg.pageOrder.filter(idx => idx >= 0 && idx < pages.length);
-
-      // Páginas con SKU ordenadas + páginas sin SKU al final
       const withSku = validOrder.filter(idx => pageResults.find(r => r.pageIdx === idx)?.hasSkus);
       const withoutSku = validOrder.filter(idx => !withSku.includes(idx));
       const finalOrder = [...withSku, ...withoutSku];
-
       for (const idx of finalOrder) {
         const [copied] = await newDoc.copyPages(pdfDoc, [idx]);
         newDoc.addPage(copied);
@@ -168,11 +223,10 @@ export default async function handler(req, res) {
       finalDoc = newDoc;
     }
 
-    // Paso 3: agregar página de resumen final
+    // Paso 3: página de resumen
     const skuTotals = {};
     pageResults.filter(r => r.hasSkus).forEach(r => {
       r.skus.forEach(s => {
-        // Parsear "AMARILLO-NN (x4)" → key: "AMARILLO-NN", qty: 4
         const match = s.match(/^(.+?)\s*\(x(\d+)\)$/);
         if (match) {
           const key = match[1].trim();
@@ -185,23 +239,22 @@ export default async function handler(req, res) {
     });
 
     if (Object.keys(skuTotals).length > 0) {
-      const summaryPage = finalDoc.addPage([595, 842]); // A4
+      const summaryPage = finalDoc.addPage([595, 842]);
       const { width: sw, height: sh } = summaryPage.getSize();
       const titleFont = await finalDoc.embedFont(StandardFonts.HelveticaBold);
-      const bodyFont = await finalDoc.embedFont(StandardFonts.Helvetica);
+      const bodyFont  = await finalDoc.embedFont(StandardFonts.Helvetica);
 
       const now = new Date().toLocaleString('es-AR');
       summaryPage.drawText('RESUMEN DE SKU DESPACHADOS', { x: 50, y: sh - 60, size: 16, font: titleFont, color: rgb(0,0,0) });
       summaryPage.drawText(`Fecha: ${now}`, { x: 50, y: sh - 85, size: 10, font: bodyFont, color: rgb(0.3,0.3,0.3) });
       summaryPage.drawText(`Total de páginas: ${pages.length}`, { x: 50, y: sh - 100, size: 10, font: bodyFont, color: rgb(0.3,0.3,0.3) });
-      summaryPage.drawText(`Procesadas exitosamente: ${pageResults.filter(r=>r.hasSkus).length}`, { x: 50, y: sh - 115, size: 10, font: bodyFont, color: rgb(0.3,0.3,0.3) });
-
-      summaryPage.drawText('DETALLE DE SKU DESPACHADOS:', { x: 50, y: sh - 150, size: 12, font: titleFont, color: rgb(0,0,0) });
+      summaryPage.drawText(`Procesadas: ${pageResults.filter(r=>r.hasSkus).length}`, { x: 50, y: sh - 115, size: 10, font: bodyFont, color: rgb(0.3,0.3,0.3) });
+      summaryPage.drawText('DETALLE:', { x: 50, y: sh - 150, size: 12, font: titleFont, color: rgb(0,0,0) });
 
       let lineY = sh - 175;
       const sorted = Object.entries(skuTotals).sort((a,b) => a[0].localeCompare(b[0]));
       for (const [sku, qty] of sorted) {
-        summaryPage.drawText(`${sku}: CANTIDAD TOTAL: ${qty}`, { x: 60, y: lineY, size: 10, font: bodyFont, color: rgb(0,0,0) });
+        summaryPage.drawText(`${sku}: ${qty}u`, { x: 60, y: lineY, size: 10, font: bodyFont, color: rgb(0,0,0) });
         lineY -= 18;
         if (lineY < 60) break;
       }
