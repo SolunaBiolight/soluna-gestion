@@ -1587,7 +1587,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const detailC=canjes.find(c=>c._docId===detail);
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
+    <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:62,gap:16,maxWidth:1280,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -1636,7 +1636,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginTop:20}}>
           {[{id:"lista",label:"Lista",icon:"☰"},{id:"kanban",label:"Kanban",icon:"⬜"},{id:"ranking",label:"Ranking",icon:"🏆"}].map(t=>(
             <button key={t.id} onClick={()=>setViewTab(t.id)}
-              style={{padding:"13px 20px",fontSize:14,fontWeight:viewTab===t.id?700:400,color:viewTab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:viewTab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,marginBottom:-1,transition:"color 0.15s"}}>
+              style={{padding:"13px 20px",fontSize:14,fontWeight:viewTab===t.id?700:400,color:viewTab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:viewTab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"Inter,system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,marginBottom:-1,transition:"color 0.15s"}}>
               {t.icon} {t.label}
             </button>
           ))}
@@ -1829,6 +1829,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           </div>
         )}
 
+      </div>
       <Modal T={T} open={!!detail} onClose={()=>{setDetail(null);setDeleteConfirm(null);}} title={detailC?detailC.influencer:""} width={540}>
         {detailC&&(()=>{
           const c=canjes.find(x=>x._docId===detailC._docId)||detailC;
@@ -1878,10 +1879,39 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Contenido comprometido</div>
                   {totalAcordados>0&&<span style={{fontSize:12,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
                 </div>
-                {totalAcordados>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}><div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s"}}/></div>}
+                {totalAcordados>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}><div style={{height:"100%",width:progreso+"%",background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s"}}/></div>}
                 <select defaultValue="" onChange={async e=>{const val=e.target.value;if(!val)return;e.target.value="";const lista=c.contenido||[];const ex=lista.findIndex(x=>x.tipo===val);const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||1)+1}:x):[...lista,{tipo:val,acordados:1,entregados:0}];await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{...iS,fontSize:12,color:T.textSm,marginBottom:8}}><option value="">+ Agregar tipo de contenido...</option>{ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}</select>
-                {(c.contenido||[]).map((item,ci)=>{const ac=item.acordados||1;const en=item.entregados||0;const p=Math.min(100,Math.round((en/ac)*100));return(<div key={ci} style={{padding:"8px 0",borderTop:ci>0?`1px solid ${T.borderL}`:"none"}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{flex:1,fontSize:13,color:T.text,fontWeight:600}}>{item.tipo}</span><span style={{fontSize:11,color:p===100?T.green:T.textSm}}>{en}/{ac} ({p}%)</span></div><div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:4}}><span style={{fontSize:11,color:T.textSm}}>Acordados</span><div style={{display:"flex",gap:3,alignItems:"center"}}><button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:20,height:20,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button><span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:18,textAlign:"center"}}>{ac}</span><button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:20,height:20,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button></div><span style={{fontSize:11,color:T.textSm}}>Entregados</span><div style={{display:"flex",gap:3,alignItems:"center"}}><button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:20,height:20,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button><span style={{fontSize:13,fontWeight:600,color:T.green,minWidth:18,textAlign:"center"}}>{en}</span><button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:20,height:20,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button></div></div><div style={{height:4,background:T.borderL,borderRadius:20,overflow:"hidden"}}><div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.3s"}}/></div></div>);})}
-              </div>
+                {(c.contenido||[]).map((item,ci)=>{
+                  const ac=item.acordados||1;
+                  const en=item.entregados||0;
+                  const p=Math.min(100,Math.round((en/ac)*100));
+                  const bS={width:20,height:20,border:"1px solid "+T.border,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"};
+                  return (
+                    <div key={ci} style={{padding:"8px 0",borderTop:ci>0?"1px solid "+T.borderL:"none"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                        <span style={{flex:1,fontSize:13,color:T.text,fontWeight:600}}>{item.tipo}</span>
+                        <span style={{fontSize:11,color:p===100?T.green:T.textSm}}>{en}/{ac} ({p}%)</span>
+                      </div>
+                      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
+                        <span style={{fontSize:11,color:T.textSm}}>Acord.</span>
+                        <div style={{display:"flex",gap:3,alignItems:"center"}}>
+                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={bS}>−</button>
+                          <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:18,textAlign:"center"}}>{ac}</span>
+                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={bS}>+</button>
+                        </div>
+                        <span style={{fontSize:11,color:T.textSm}}>Entregados</span>
+                        <div style={{display:"flex",gap:3,alignItems:"center"}}>
+                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={bS}>−</button>
+                          <span style={{fontSize:13,fontWeight:600,color:T.green,minWidth:18,textAlign:"center"}}>{en}</span>
+                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={bS}>+</button>
+                        </div>
+                      </div>
+                      <div style={{height:4,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:p+"%",background:p===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.3s"}}/>
+                      </div>
+                    </div>
+                  );
+                })}              </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 14px",fontSize:12,marginBottom:12}}>{[["Fecha envío",c.fechaEnvio],["Tracking",c.tracking],["Recordatorio",c.recordatorio]].map(([l,v])=>v?(<div key={l} style={{display:"flex",gap:6,padding:"4px 0",borderBottom:`1px solid ${T.borderL}`}}><span style={{color:T.textSm,flexShrink:0,minWidth:80}}>{l}</span><span style={{fontWeight:500,color:recordatorioVencido&&l==="Recordatorio"?T.yellow:T.text,overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>):null)}</div>
               {c.notas&&<div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"10px 12px",marginBottom:10}}><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:3}}>Notas</div><div style={{fontSize:13,lineHeight:1.5,color:T.text}}>{c.notas}</div></div>}
               <NotasRapidas T={T} canje={c} onAdd={addNota}/>
