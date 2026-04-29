@@ -86,7 +86,7 @@ const LENTE_DOT = { Amarillo:"#fbbf24",Naranja:"#fb923c",Rojo:"#f87171",Negro:"#
 const ESTADOS_C = ["Pendiente envío","Enviado","Contenido pendiente","Contenido publicado","Finalizado","Cancelado"];
 const REDES = ["Instagram","TikTok","YouTube","Twitter/X","Otro"];
 const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
-const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Futbolista","Streamer","Otro"];
+const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Otro"];
 const PRODUCTOS_CANJE = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Kit Completo","A elección"];
 
 // ─── Helpers ───
@@ -605,7 +605,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       const cells=[sC('A'+rn,""),nC('B'+rn,200),nC('C'+rn,5),nC('D'+rn,5),nC('E'+rn,5),nC('F'+rn,6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
       const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
       const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
-      const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>');
+      const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
       zip.file('xl/worksheets/sheet1.xml',newSheet1);
       const newSsItems=newSS.map(s=>{const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const sp=(s!==s.trim()||s.indexOf(String.fromCharCode(10))>=0)?' xml:space="preserve"':'';return '<si><t'+sp+'>'+esc+'</t></si>';}).join('');
       zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+newSS.length+'" uniqueCount="'+newSS.length+'">'+newSsItems+'</sst>');
@@ -1475,25 +1475,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   useEffect(()=>{
     if(pendingCanje) {
-      const prodsCanje=pendingCanje.productosCanje||(pendingCanje.productos||[]).map(p=>({nombre:typeof p==="string"?p:p.nombre,cantidad:1})).filter(p=>p.nombre);
-      setForm({...emptyForm(),...pendingCanje,
-        influencer:pendingCanje.nombre||pendingCanje.influencer||"",
-        usuario:pendingCanje.usuario||pendingCanje.nombre||"",
-        _docId:null,
-        pedidoRef:pendingCanje.pedidoRef||"",
-        productosCanje:prodsCanje,
-        contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],
-      });
+      setForm({...emptyForm(),...pendingCanje,_docId:null,contenido:pendingCanje.contenido?.length?pendingCanje.contenido:[],productos:pendingCanje.productos?.length?pendingCanje.productos:(pendingCanje.producto?[pendingCanje.producto]:[])});
       if(onClearPendingCanje) onClearPendingCanje();
     }
   },[pendingCanje]);
 
   const emptyForm=()=>({
-    _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"", linkInstagram:"", pedidoRef:"",
-    producto:"", productosCanje:[], estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
+    _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"",
+    producto:"", estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
     fechaEnvio:"", fechaPublicacion:"",
     foto:"", nicho:"",
-    contenido:[],
+    contenido: ACTIVIDADES.map(tipo=>({tipo, acordados:0, entregados:0})),
     alcance:"", reproducciones:"", likes:"", guardados:"",
     historial:[],
     recordatorio:"",
@@ -1504,16 +1496,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     setSaving(true);
     try {
       const p={
-        influencer:form.influencer, usuario:form.usuario||"", red:form.red, linkInstagram:form.linkInstagram||"",
+        influencer:form.influencer, usuario:form.usuario||"", red:form.red,
         seguidores:form.seguidores||"", email:form.email||"", telefono:form.telefono||"",
-        producto:form.producto||((form.productosCanje||[])[0]?.nombre||""),
-        productosCanje:form.productosCanje||[],
-        estado:form.estado, tracking:form.tracking||"",
-        pedidoRef:form.pedidoRef||"",
+        producto:form.producto||"", estado:form.estado, tracking:form.tracking||"",
         notas:form.notas||"", linkContenido:form.linkContenido||"",
         fechaEnvio:form.fechaEnvio||"", fechaPublicacion:form.fechaPublicacion||"",
         foto:form.foto||"", nicho:form.nicho||"",
-        contenido:form.contenido||[],
+        contenido:form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),
         alcance:form.alcance||"", reproducciones:form.reproducciones||"",
         likes:form.likes||"", guardados:form.guardados||"",
         historial:form.historial||[],
@@ -1831,40 +1820,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <Field T={T} label="Nombre" required><input style={iS} value={form.influencer} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Nombre del influencer"/></Field>
               <Field T={T} label="Usuario (@)"><input style={iS} value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="@usuario"/></Field>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 14px"}}>
               <Field T={T} label="Red social"><select style={iS} value={form.red} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>{REDES.map(r=><option key={r}>{r}</option>)}</select></Field>
               <Field T={T} label="Nicho"><select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}><option value="">—</option>{NICHOS.map(n=><option key={n}>{n}</option>)}</select></Field>
               <Field T={T} label="Seguidores"><input style={iS} type="number" value={form.seguidores} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></Field>
+              <Field T={T} label="Producto"><select style={iS} value={form.producto} onChange={e=>setForm(f=>({...f,producto:e.target.value}))}><option value="">—</option>{PRODUCTOS_CANJE.map(p=><option key={p}>{p}</option>)}</select></Field>
             </div>
-            <Field T={T} label="Link de Instagram">
-              <input style={iS} value={form.linkInstagram||""} onChange={e=>{
-                const link=e.target.value;
-                const match=link.match(/instagram\.com\/([^/?#\s]+)/);
-                const usuario=match?match[1].replace("@",""):"";
-                setForm(f=>({...f,linkInstagram:link,...(usuario?{usuario}:{})}));
-              }} placeholder="https://instagram.com/usuario"/>
-            </Field>
-            {/* Productos enviados */}
-            <Field T={T} label="Productos enviados">
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
-                {(form.productosCanje||[]).length===0&&<div style={{padding:"10px 14px",fontSize:13,color:T.textSm}}>Sin productos agregados</div>}
-                {(form.productosCanje||[]).map((p,pi)=>(
-                  <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`}}>
-                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
-                    <span style={{fontSize:12,color:T.textSm,background:T.surface,borderRadius:6,padding:"2px 8px",fontWeight:600,minWidth:28,textAlign:"center"}}>x{p.cantidad}</span>
-                    <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                    <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x)}))} style={{width:26,height:26,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                    <button onClick={()=>setForm(f=>({...f,productosCanje:f.productosCanje.filter((_,j)=>j!==pi)}))} style={{width:26,height:26,border:`1px solid ${T.red}44`,borderRadius:5,background:T.redBg,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-                  </div>
-                ))}
-                <div style={{padding:"8px 12px"}}>
-                  <select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.productosCanje||[];const ex=lista.findIndex(x=>x.nombre===val);if(ex>=0)return{...f,productosCanje:lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x)};return{...f,productosCanje:[...lista,{nombre:val,cantidad:1}]};});}} style={{...iS,fontSize:13,color:T.textSm}}>
-                    <option value="">+ Agregar producto...</option>
-                    {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
-              </div>
-            </Field>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
               <Field T={T} label="Email"><input style={iS} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@ejemplo.com"/></Field>
               <Field T={T} label="Teléfono / WhatsApp"><input style={iS} value={form.telefono} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="+54 11..."/></Field>
@@ -1876,43 +1837,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
             {/* Contenido comprometido */}
             <Field T={T} label="Contenido comprometido">
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",marginBottom:4}}>
-                {(form.contenido||[]).length===0&&<div style={{padding:"10px 14px",fontSize:13,color:T.textSm}}>Sin contenido acordado</div>}
-                {(form.contenido||[]).map((item,ci)=>{
-                  const ac=item.acordados||1; const en=item.entregados||0;
-                  const pct=Math.min(100,Math.round((en/ac)*100));
-                  return (
-                  <div key={ci} style={{padding:"10px 12px",borderBottom:`1px solid ${T.borderL}`}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                      <span style={{flex:1,fontSize:13,color:T.text,fontWeight:600}}>{item.tipo}</span>
-                      <span style={{fontSize:11,color:T.textSm}}>{en}/{ac}</span>
-                      <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.filter((_,j)=>j!==ci)}))} style={{width:22,height:22,border:`1px solid ${T.red}44`,borderRadius:4,background:T.redBg,color:T.red,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-                    </div>
-                    <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,color:T.textSm}}>Acordados</span>
-                      <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                        <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x)}))} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                        <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:20,textAlign:"center"}}>{ac}</span>
-                        <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x)}))} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                      </div>
-                      <span style={{fontSize:11,color:T.textSm}}>Entregados</span>
-                      <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                        <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x)}))} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                        <span style={{fontSize:13,fontWeight:600,color:T.green,minWidth:20,textAlign:"center"}}>{en}</span>
-                        <button onClick={()=>setForm(f=>({...f,contenido:f.contenido.map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x)}))} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                      </div>
-                    </div>
-                    <div style={{marginTop:6,height:4,borderRadius:2,background:T.borderL,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${pct}%`,background:pct>=100?T.green:T.accentSolid,borderRadius:2,transition:"width 0.3s"}}></div>
-                    </div>
-                  </div>);
-                })}
-                <div style={{padding:"8px 12px"}}>
-                  <select defaultValue="" onChange={e=>{const val=e.target.value;if(!val)return;e.target.value="";setForm(f=>{const lista=f.contenido||[];const ex=lista.findIndex(x=>x.tipo===val);if(ex>=0)return{...f,contenido:lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||1)+1}:x)};return{...f,contenido:[...lista,{tipo:val,acordados:1,entregados:0}]};});}} style={{...iS,fontSize:13,color:T.textSm}}>
-                    <option value="">+ Agregar tipo de contenido...</option>
-                    {ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}
-                  </select>
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",gap:0,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`}}>
+                  <span>Tipo</span><span style={{textAlign:"center"}}>Acordados</span><span style={{textAlign:"center"}}>Entregados</span>
                 </div>
+                {(form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0}))).map((item,i)=>(
+                  <div key={item.tipo} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",padding:"8px 14px",borderBottom:i<ACTIVIDADES.length-1?`1px solid ${T.borderL}`:"none"}}>
+                    <span style={{fontSize:13,fontWeight:500,color:T.text}}>{item.tipo}</span>
+                    <input type="number" min={0} value={item.acordados} onChange={e=>{const arr=[...form.contenido];arr[i]={...arr[i],acordados:parseInt(e.target.value)||0};setForm(f=>({...f,contenido:arr}));}} style={{...iS,textAlign:"center",padding:"6px 4px",fontSize:13,width:"60px",margin:"0 auto"}}/>
+                    <input type="number" min={0} value={item.entregados} onChange={e=>{const arr=[...form.contenido];arr[i]={...arr[i],entregados:parseInt(e.target.value)||0};setForm(f=>({...f,contenido:arr}));}} style={{...iS,textAlign:"center",padding:"6px 4px",fontSize:13,width:"60px",margin:"0 auto"}}/>
+                  </div>
+                ))}
               </div>
             </Field>
 
@@ -1951,7 +1886,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       {/* Canje Detail Modal */}
       <Modal T={T} open={!!detailC} onClose={()=>setDetail(null)} title={detailC?`${detailC.influencer}`:""} width={560}>
         {detailC&&(()=>{
-          const c=canjes.find(x=>x._docId===detailC._docId)||detailC; const sc=getEstadoCC(T,c.estado);
+          const c=detailC; const sc=getEstadoCC(T,c.estado);
           const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
           const totalEntregados=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0);
           const progreso=totalAcordados>0?Math.round((totalEntregados/totalAcordados)*100):0;
@@ -1962,10 +1897,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {/* Status banner */}
               <div style={{background:sc.bg,border:`1px solid ${sc.dot}44`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{width:12,height:12,borderRadius:"50%",background:sc.dot,boxShadow:`0 0 8px ${sc.dot}`}}/><span style={{fontSize:16,fontWeight:700,color:sc.text}}>{c.estado}</span></div>
-                <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  {c.nicho&&<span style={{fontSize:11,background:T.purpleBg,color:T.purple,borderRadius:6,padding:"3px 8px",fontWeight:600}}>{c.nicho}</span>}
-                  <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>{c.red}</span>
-                </div>
+                <span style={{fontSize:12,color:T.textMd,fontWeight:500}}>{c.red}</span>
               </div>
 
               {/* Recordatorio vencido */}
@@ -2017,93 +1949,36 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       🎬 Ver contenido
                     </a>
                   )}
-                  {(c.productosCanje?.length>0?c.productosCanje.map(p=>p.nombre):[c.producto]).filter(Boolean).map((pn,i)=>(
-                    <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"4px 10px",fontWeight:500}}>
-                      👓 {pn}{c.productosCanje?.[i]?.cantidad>1?` x${c.productosCanje[i].cantidad}`:""}
-                    </span>
-                  ))}
+                  {c.producto&&<span style={{fontSize:12,color:T.textSm,marginLeft:4}}>📦 {c.producto}</span>}
                 </div>
-              </div>
-
-              {/* Productos del canje */}
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>Productos enviados</div>
-                {(c.productosCanje||[]).map((p,pi)=>(
-                  <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                    <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:24,textAlign:"center"}}>{p.cantidad}</span>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.red}44`,borderRadius:4,background:T.redBg,color:T.red,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-                  </div>
-                ))}
-                {(c.productosCanje||[]).length===0&&<div style={{fontSize:13,color:T.textSm,padding:"6px 0"}}>Sin productos cargados</div>}
-                <select defaultValue="" onChange={async e=>{
-                  const val=e.target.value;if(!val)return;e.target.value="";
-                  const lista=c.productosCanje||[];
-                  const ex=lista.findIndex(x=>x.nombre===val);
-                  const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:val,cantidad:1}];
-                  await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});
-                }} style={{...iS,fontSize:12,color:T.textSm,marginTop:8}}>
-                  <option value="">+ Agregar producto...</option>
-                  {PRODUCTOS_CANJE.map(pr=><option key={pr} value={pr}>{pr}</option>)}
-                </select>
               </div>
 
               {/* Progreso de contenido */}
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Contenido comprometido</div>
-                  {totalAcordados>0&&<span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
-                </div>
-                {totalAcordados>0&&(
-                  <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:14}}>
+              {totalAcordados>0&&(
+                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                    <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Progreso de contenido</div>
+                    <span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>
+                  </div>
+                  {/* Barra de progreso */}
+                  <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:12}}>
                     <div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.5s ease"}}/>
                   </div>
-                )}
-                {(c.contenido||[]).length===0&&(
-                  <div style={{fontSize:13,color:T.textSm,textAlign:"center",padding:"8px 0"}}>Sin contenido acordado</div>
-                )}
-                <select defaultValue="" onChange={async e=>{
-                  const val=e.target.value;if(!val)return;e.target.value="";
-                  const lista=c.contenido||[];
-                  const ex=lista.findIndex(x=>x.tipo===val);
-                  const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||1)+1}:x):[...lista,{tipo:val,acordados:1,entregados:0}];
-                  await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});
-                }} style={{...iS,fontSize:12,color:T.textSm,marginBottom:10}}>
-                  <option value="">+ Agregar tipo de contenido...</option>
-                  {ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}
-                </select>
-                {(c.contenido||[]).map((item,ci)=>{
-                  const ac=item.acordados||1; const en=item.entregados||0;
-                  const p=ac>0?Math.round((en/ac)*100):0;
-                  return (
-                    <div key={ci} style={{padding:"10px 0",borderTop:ci>0?`1px solid ${T.borderL}`:"none"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                        <span style={{flex:1,fontSize:13,color:T.text,fontWeight:600}}>{item.tipo}</span>
-                        <span style={{fontSize:11,color:p===100?T.green:T.textSm,fontWeight:600}}>{en}/{ac} ({p}%)</span>
-                      </div>
-                      <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
-                        <span style={{fontSize:11,color:T.textSm}}>Acordados</span>
-                        <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                          <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:20,textAlign:"center"}}>{ac}</span>
-                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                  {/* Tabla por tipo */}
+                  {(c.contenido||[]).filter(item=>item.acordados>0).map((item,i)=>{
+                    const p=item.acordados>0?Math.round((item.entregados/item.acordados)*100):0;
+                    return (
+                      <div key={item.tipo} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+                        <span style={{fontSize:13,color:T.text,fontWeight:500,minWidth:100}}>{item.tipo}</span>
+                        <div style={{flex:1,height:5,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accent,borderRadius:20}}/>
                         </div>
-                        <span style={{fontSize:11,color:T.textSm}}>Entregados</span>
-                        <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                          <span style={{fontSize:13,fontWeight:600,color:T.green,minWidth:20,textAlign:"center"}}>{en}</span>
-                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                        </div>
+                        <span style={{fontSize:12,color:p===100?T.green:T.textSm,fontWeight:600,minWidth:50,textAlign:"right"}}>{item.entregados}/{item.acordados}</span>
                       </div>
-                      <div style={{height:5,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
-                        <div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.3s"}}/>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Métricas */}
               {(c.alcance||c.reproducciones||c.likes||c.guardados)&&(
@@ -2146,11 +2021,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {deleteConfirm===c._docId?(
                   <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:14,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"8px 16px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:13}}>No</button></div>
                 ):(
-                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button><button onClick={()=>{
-                    const ref=c.pedidoRef||(c.notas||"").match(/#(\d+)/)?.[1]||(c.notas||"").match(/(\d{4,})/)?.[1];
-                    if(ref)alert("Pedido asociado: #"+ref+"\n\nAndá a Gestión de Envíos \u2192 Panel de Envíos, seleccióná ese pedido y exportá la etiqueta de Andreani desde ahí.");
-                    else alert("Este canje no tiene pedido de TN asociado.\nPara generar la etiqueta, priméro hacé el pedido en TN y usá el botón Generar Canje desde Gestión de Envíos.");
-                  }} style={{...BtnSecondary(T),fontSize:13}}>🏷️ Etiqueta Andreani</button></>
+                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button></>
                 )}
               </div>
             </div>
@@ -2186,7 +2057,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [copiedToast,setCopiedToast]=useState(null);
-  const [orderDetail,setOrderDetail]=useState(null);
   function copyToClipboard(text, label) {
     navigator.clipboard.writeText(text).then(()=>{
       setCopiedToast(label||"Copiado");
@@ -2209,8 +2079,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
   const [skuResults,setSkuResults]=useState([]);
   const [skuProcessing,setSkuProcessing]=useState(false);
-  const [skuGenerating,setSkuGenerating]=useState(false);
-  const [skuProgress,setSkuProgress]=useState(0);
   // Seguimientos tab
   const [pdfFile,setPdfFile]=useState(null);
   const [pdfPending,setPdfPending]=useState(false);
@@ -2716,20 +2584,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const pedidoNum=internoMatch[1].trim();
           const destinatario=destMatch?destMatch[1].trim():"";
           if(type==="sku") {
-            let order=orders.find(o=>String(o.numero)===String(pedidoNum));
-            if(!order) {
-              try {
-                const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(pedidoNum)}`);
-                const data=await r.json();
-                if(Array.isArray(data)&&data.length>0) {
-                  const built=buildOrdersFromAPI(data);
-                  order=built.find(o=>String(o.numero)===String(pedidoNum))||built[0];
-                }
-              } catch(_){}
-            }
-            const skuLines=order?order.productos.map(p=>`${p.sku||p.nombre} (x${p.cantidad})`):[]; 
-            const skus=skuLines.length?skuLines.join(', '):"No encontrado en TN";
-            results.push({pagina:i+1,pedidoNum,tracking,skus,skuLines,found:!!order,destinatario});
+            const order=orders.find(o=>o.numero===pedidoNum);
+            const skus=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`).join(', '):"No encontrado en TN";
+            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario});
           } else {
             results.push({pagina:i+1,tracking,pedidoNum,destinatario,status:"pending"});
           }
@@ -3091,54 +2948,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
-
-            {skuResults.length>0&&skuResults.some(r=>r.found)&&(
-              <div style={{marginTop:16}}>
-                {!skuGenerating&&(
-                  <button onClick={async()=>{
-                    setSkuGenerating(true);setSkuProgress(10);
-                    try{
-                      const skuMap={};
-                      skuResults.forEach(r=>{
-                        if(r.found&&r.skuLines?.length)skuMap[r.pedidoNum]={page:r.pagina,skus:r.skuLines,found:true};
-                        else skuMap[r.pedidoNum||r.pagina]={page:r.pagina,skus:[],found:false};
-                      });
-                      setSkuProgress(35);
-                      let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
-                      try{const s=localStorage.getItem("growith_skuCfg");if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
-                      const fd=new FormData();
-                      fd.append("pdf",skuFile,skuFile.name);
-                      fd.append("skuMap",JSON.stringify(skuMap));
-                      fd.append("config",JSON.stringify(cfg));
-                      setSkuProgress(55);
-                      const resp=await fetch("/api/process-sku",{method:"POST",body:fd});
-                      if(!resp.ok)throw new Error("Error al generar PDF: "+resp.status);
-                      setSkuProgress(80);
-                      const blob=await resp.blob();
-                      const url=URL.createObjectURL(blob);
-                      const a=document.createElement("a");
-                      a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
-                      URL.revokeObjectURL(url);
-                      setSkuProgress(100);
-                      setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},1800);
-                    }catch(e){alert("Error al generar PDF: "+e.message);setSkuGenerating(false);setSkuProgress(0);}
-                  }} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"14px 20px"}}>
-                    📥 Generar PDF con SKUs y descargar
-                  </button>
-                )}
-                {skuGenerating&&(
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:24,textAlign:"center"}}>
-                    <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:8}}>
-                      {skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":skuProgress<100?"Descargando PDF...":"✅ ¡PDF listo!"}
-                    </div>
-                    <div style={{height:8,background:T.borderL,borderRadius:4,overflow:"hidden",margin:"12px 0 6px"}}>
-                      <div style={{height:"100%",width:`${skuProgress}%`,background:skuProgress===100?T.green:T.accentSolid,borderRadius:4,transition:"width 0.4s ease"}}></div>
-                    </div>
-                    <div style={{fontSize:13,color:T.textSm}}>{skuProgress}%</div>
-                  </div>
-                )}
               </div>
             )}
           </div>
