@@ -1835,16 +1835,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <Field T={T} label="Seguidores"><input style={iS} type="number" value={form.seguidores} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></Field>
             </div>
             <Field T={T} label="Link de Instagram">
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <input style={{...iS,flex:1}} value={form.linkInstagram||""} onChange={e=>setForm(f=>({...f,linkInstagram:e.target.value}))} placeholder="https://instagram.com/usuario"/>
-                <button onClick={()=>{
-                  const link=form.linkInstagram||"";
-                  const match=link.match(/instagram\.com\/([^/?#]+)/);
-                  if(!match){alert("URL de Instagram invalida");return;}
-                  const usuario=match[1].replace("@","");
-                  setForm(f=>({...f,usuario}));
-                }} style={{...BtnSecondary(T),fontSize:12,whiteSpace:"nowrap",flexShrink:0}}>🔄 Sync usuario</button>
-              </div>
+              <input style={iS} value={form.linkInstagram||""} onChange={e=>{
+                const link=e.target.value;
+                const match=link.match(/instagram\.com\/([^/?#\s]+)/);
+                const usuario=match?match[1].replace("@",""):"";
+                setForm(f=>({...f,linkInstagram:link,...(usuario?{usuario}:{})}));
+              }} placeholder="https://instagram.com/usuario"/>
             </Field>
             {/* Productos enviados */}
             <Field T={T} label="Productos enviados">
@@ -2088,7 +2084,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {deleteConfirm===c._docId?(
                   <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:14,color:T.red,fontWeight:500}}>¿Eliminar?</span><button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"8px 16px",fontSize:13}}>Sí</button><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:13}}>No</button></div>
                 ):(
-                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button><button onClick={()=>{const prods=(c.productosCanje||[]).map(p=>`${p.nombre} x${p.cantidad}`).join("\n")||(c.producto||"Sin productos");const html=`<html><body style="font-family:Arial,sans-serif;padding:20px;max-width:400px"><h2 style="margin:0 0 8px">🤝 CANJE SOLUNA</h2><hr/><p><b>Influencer:</b> ${c.influencer||""}</p><p><b>Instagram:</b> @${c.usuario||""}</p>${c.tracking?`<p><b>Tracking:</b> ${c.tracking}</p>`:""}<p><b>Productos:</b></p><pre style="background:#f5f5f5;padding:10px;border-radius:6px">${prods}</pre><p style="font-size:11px;color:#888">Generado por Growith • ${new Date().toLocaleDateString("es-AR")}</p></body></html>`;const w=window.open("","_blank");w.document.write(html);w.document.close();w.print();}} style={{...BtnSecondary(T),fontSize:13}}>🏷️ Generar Etiqueta</button></>
+                  <><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:13}}>Eliminar</button><button onClick={()=>{setDetail(null);setForm({...c,contenido:c.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});}} style={{...BtnSecondary(T),fontSize:13}}>Editar</button><button onClick={()=>{
+                    const ref=c.pedidoRef||(c.notas||"").match(/#(\d+)/)?.[1];
+                    if(ref)alert("Andá a Gestión de Envíos, buscá el pedido #"+ref+" y exportá la etiqueta desde ahí.");
+                    else alert("Este canje no tiene pedido de TN asociado. Generalo desde un pedido en Gestión de Envíos.");
+                  }} style={{...BtnSecondary(T),fontSize:13}}>🏷️ Etiqueta Andreani</button></>
                 )}
               </div>
             </div>
@@ -2147,6 +2147,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
   const [skuResults,setSkuResults]=useState([]);
   const [skuProcessing,setSkuProcessing]=useState(false);
+  const [skuGenerating,setSkuGenerating]=useState(false);
+  const [skuProgress,setSkuProgress]=useState(0);
   // Seguimientos tab
   const [pdfFile,setPdfFile]=useState(null);
   const [pdfPending,setPdfPending]=useState(false);
@@ -3027,6 +3029,54 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {skuResults.length>0&&skuResults.some(r=>r.found)&&(
+              <div style={{marginTop:16}}>
+                {!skuGenerating&&(
+                  <button onClick={async()=>{
+                    setSkuGenerating(true);setSkuProgress(10);
+                    try{
+                      const skuMap={};
+                      skuResults.forEach(r=>{
+                        if(r.found&&r.skuLines?.length)skuMap[r.pedidoNum]={page:r.pagina,skus:r.skuLines,found:true};
+                        else skuMap[r.pedidoNum||r.pagina]={page:r.pagina,skus:[],found:false};
+                      });
+                      setSkuProgress(35);
+                      let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
+                      try{const s=localStorage.getItem("growith_skuCfg");if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
+                      const fd=new FormData();
+                      fd.append("pdf",skuFile,skuFile.name);
+                      fd.append("skuMap",JSON.stringify(skuMap));
+                      fd.append("config",JSON.stringify(cfg));
+                      setSkuProgress(55);
+                      const resp=await fetch("/api/process-sku",{method:"POST",body:fd});
+                      if(!resp.ok)throw new Error("Error al generar PDF: "+resp.status);
+                      setSkuProgress(80);
+                      const blob=await resp.blob();
+                      const url=URL.createObjectURL(blob);
+                      const a=document.createElement("a");
+                      a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
+                      URL.revokeObjectURL(url);
+                      setSkuProgress(100);
+                      setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},1800);
+                    }catch(e){alert("Error al generar PDF: "+e.message);setSkuGenerating(false);setSkuProgress(0);}
+                  }} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"14px 20px"}}>
+                    📥 Generar PDF con SKUs y descargar
+                  </button>
+                )}
+                {skuGenerating&&(
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:24,textAlign:"center"}}>
+                    <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:8}}>
+                      {skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":skuProgress<100?"Descargando PDF...":"✅ ¡PDF listo!"}
+                    </div>
+                    <div style={{height:8,background:T.borderL,borderRadius:4,overflow:"hidden",margin:"12px 0 6px"}}>
+                      <div style={{height:"100%",width:`${skuProgress}%`,background:skuProgress===100?T.green:T.accentSolid,borderRadius:4,transition:"width 0.4s ease"}}></div>
+                    </div>
+                    <div style={{fontSize:13,color:T.textSm}}>{skuProgress}%</div>
+                  </div>
+                )}
               </div>
             )}
           </div>
