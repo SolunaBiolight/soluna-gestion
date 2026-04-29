@@ -2422,7 +2422,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           sC('K'+rn,cleanField(o.email||"")),
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
-          sC('N'+rn,cleanAndreani(sucursal)),
+          sC('N'+rn,sucursal),
         ].join('');
         xml+='<row r="'+rn+'" spans="1:14" x14ac:dyDescent="0.25">'+cells+'</row>';
       });
