@@ -2448,10 +2448,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const sheet2=await sheet2file.async('string');
       const totalRows2=2+sucursalOrders.length;
       let newSheet2=sheet2
-        .replace(/<dimension ref="[^"]+"\/>/,\'<dimension ref="A1:S\'+totalRows2+\'"/>\')
-        .replace(\'</sheetData>\',sucRowsXml+\'</sheetData>\');
-      {const _i=newSheet2.indexOf(\'<dataValidations\');if(_i>=0){const _j=newSheet2.indexOf(\'</dataValidations>\');if(_j>=0)newSheet2=newSheet2.slice(0,_i)+newSheet2.slice(_j+18);}}
-      zip.file(\'xl/worksheets/sheet2.xml\',newSheet2);
+        .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows2+'"/>')
+        .replace('</sheetData>',sucRowsXml+'</sheetData>');
+      {const _i=newSheet2.indexOf('<dataValidations');if(_i>=0){const _j=newSheet2.indexOf('</dataValidations>');if(_j>=0)newSheet2=newSheet2.slice(0,_i)+newSheet2.slice(_j+18);}}
+      zip.file('xl/worksheets/sheet2.xml',newSheet2);
     }
     const newSsItems=newSS.map(function(s){
       const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
