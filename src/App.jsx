@@ -83,7 +83,7 @@ const TIPOS_R = ["Cambio","Devolución"];
 const PRODUCTOS = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Líquido Limpia Cristales"];
 const SKU_LENTE = { "AMARILLO-NN":"Amarillo","AMARILLO-TT":"Amarillo","NARAN-NN":"Naranja","NARAN-TT":"Naranja","ROJ-NN":"Rojo","ROJ-TT":"Rojo","N-N":"Negro","N-R":"Negro/Rojo","R-R":"Rojo/Rojo","CLIP-ON":"Clip-On","LIQ":"Líquido" };
 const LENTE_DOT = { Amarillo:"#fbbf24",Naranja:"#fb923c",Rojo:"#f87171",Negro:"#a1a1aa","Clip-On":"#c084fc",Líquido:"#60a5fa" };
-const ESTADOS_C = ["Pendiente envío","Enviado","Contenido pendiente","Contenido publicado","Finalizado","Cancelado"];
+const ESTADOS_C = ["Pendiente envío","Enviado","Contenido pendiente","Contenido entregado","Finalizado","Cancelado"];
 const REDES = ["Instagram","TikTok","YouTube","Twitter/X","Otro"];
 const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
 const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Futbolista","Streamer","Otro"];
@@ -128,7 +128,7 @@ function getEstadoCC(T, estado) {
     "Pendiente envío":     { dot:T.yellow, bg:T.yellowBg, text:T.yellow },
     "Enviado":             { dot:T.blue,   bg:T.blueBg,   text:T.blue   },
     "Contenido pendiente": { dot:T.orange, bg:T.orangeBg, text:T.orange },
-    "Contenido publicado": { dot:T.purple, bg:T.purpleBg, text:T.purple },
+    "Contenido entregado": { dot:T.purple, bg:T.purpleBg, text:T.purple },
     "Finalizado":          { dot:T.green,  bg:T.greenBg,  text:T.green  },
     "Cancelado":           { dot:T.red,    bg:T.redBg,    text:T.red    },
   };
@@ -1583,7 +1583,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     const a=document.createElement("a");a.href=url;a.download="canjes-growith.csv";a.click();URL.revokeObjectURL(url);
   }
 
-  const stats={total:canjes.length,pendientes:canjes.filter(c=>c.estado==="Pendiente envío").length,enviados:canjes.filter(c=>c.estado==="Enviado").length,contPend:canjes.filter(c=>c.estado==="Contenido pendiente").length,publicados:canjes.filter(c=>c.estado==="Contenido publicado").length,finalizados:canjes.filter(c=>c.estado==="Finalizado").length};
+  const stats={total:canjes.length,pendientes:canjes.filter(c=>c.estado==="Pendiente envío").length,enviados:canjes.filter(c=>c.estado==="Enviado").length,contPend:canjes.filter(c=>c.estado==="Contenido pendiente").length,publicados:canjes.filter(c=>c.estado==="Contenido entregado").length,finalizados:canjes.filter(c=>c.estado==="Finalizado").length};
   const detailC=canjes.find(c=>c._docId===detail);
 
   return (
@@ -1614,6 +1614,22 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           <StatCard T={T} label="Cont. pendiente" value={stats.contPend} color={T.orange}/>
           <StatCard T={T} label="Publicados" value={stats.publicados} color={T.purple}/>
           <StatCard T={T} label="Finalizados" value={stats.finalizados} color={T.green}/>
+        </div>
+
+        {/* Filtros rapidos de estado */}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",padding:"12px 0 4px"}}>
+          {["",..."Pendiente envío,Enviado,Contenido pendiente,Contenido entregado,Finalizado".split(",")].map(est=>{
+            const sc2=est?getEstadoCC(T,est):null;
+            const count=est?canjes.filter(c=>c.estado===est).length:canjes.length;
+            const active=filterEstado===est;
+            return (
+              <button key={est||"all"} onClick={()=>setFilterEstado(est)}
+                style={{fontSize:12,fontWeight:active?700:500,padding:"5px 12px",borderRadius:20,border:`1.5px solid ${active?(sc2?sc2.dot:T.accent):T.border}`,background:active?(sc2?sc2.bg:T.accentSolid+"22"):"transparent",color:active?(sc2?sc2.text:T.accent):T.textMd,cursor:"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
+                {sc2&&<span style={{width:7,height:7,borderRadius:"50%",background:sc2.dot,flexShrink:0}}/>}
+                {est||"Todos"} <span style={{fontSize:11,opacity:0.7}}>({count})</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Tabs */}
@@ -1667,11 +1683,18 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           {c.usuario&&<span style={{fontSize:12,color:T.accent}}>@{c.usuario}</span>}
                           {c.nicho&&<span style={{fontSize:10,background:T.purpleBg,color:T.purple,borderRadius:4,padding:"1px 6px",fontWeight:500}}>{c.nicho}</span>}
                         </div>
+                        <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                          {c.linkInstagram&&<a href={c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:6,padding:"3px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}>📸 Instagram</a>}
+                          {c.telefono&&<a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,padding:"3px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}>💬 WA</a>}
+                        </div>
                       </div>
                     </div>
                     <span style={{fontSize:13,color:T.textMd}}>{c.red}</span>
                     <span style={{fontSize:13,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.producto||"—"}</span>
-                    <Badge T={T} colors={sc}>{c.estado}</Badge>
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      <Badge T={T} colors={sc}>{c.estado}</Badge>
+                      {(()=>{const diasEnviado=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24)):null;const sinContenido=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0)===0;return (c.estado==="Enviado"||c.estado==="Contenido pendiente")&&diasEnviado>=7&&sinContenido?<span style={{fontSize:10,background:T.orangeBg,color:T.orange,borderRadius:4,padding:"2px 6px",fontWeight:700,whiteSpace:"nowrap"}}>⚠ {diasEnviado}d sin contenido</span>:null;})()}
+                    </div>
                     <div style={{display:"flex",flexDirection:"column",gap:3}}>
                       {(()=>{
                         const cont=c.contenido||[];
@@ -1722,6 +1745,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px",cursor:"pointer",transition:"all 0.15s"}}
                           onMouseEnter={e=>{e.currentTarget.style.borderColor=sc.dot;e.currentTarget.style.transform="translateY(-1px)";}}
                           onMouseLeave={e=>{e.currentTarget.style.borderColor=T.borderL;e.currentTarget.style.transform="none";}}>
+                          {(()=>{const dias=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24)):null;const sinC=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0)===0;return (c.estado==="Enviado"||c.estado==="Contenido pendiente")&&dias>=7&&sinC?<div style={{background:T.orangeBg,border:`1px solid ${T.orange}44`,borderRadius:5,padding:"2px 7px",fontSize:10,fontWeight:700,color:T.orange,marginBottom:6}}>⚠ {dias}d sin contenido</div>:null;})()}
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                             {c.foto?<img src={c.foto} style={{width:28,height:28,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:28,height:28,borderRadius:"50%",background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:T.textSm}}>👤</div>}
                             <div>
@@ -1796,238 +1820,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         <div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:12}}>
                           <div style={{height:"100%",width:`${pct}%`,background:idx===0?T.yellow:idx===1?T.textSm:T.accentSolid,borderRadius:20}}/>
                         </div>
-                        {/* Métricas */}
-                        <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-                          {c.alcance&&<div style={{textAlign:"center"}}><div style={{fontSize:15,fontWeight:700,color:T.text}}>{Number(c.alcance).toLocaleString('es-AR')}</div><div style={{fontSize:11,color:T.textSm}}>Alcance</div></div>}
-                          {c.reproducciones&&<div style={{textAlign:"center"}}><div style={{fontSize:15,fontWeight:700,color:T.text}}>{Number(c.reproducciones).toLocaleString('es-AR')}</div><div style={{fontSize:11,color:T.textSm}}>Repros.</div></div>}
-                          {c.likes&&<div style={{textAlign:"center"}}><div style={{fontSize:15,fontWeight:700,color:T.text}}>{Number(c.likes).toLocaleString('es-AR')}</div><div style={{fontSize:11,color:T.textSm}}>Likes</div></div>}
-                          {c.guardados&&<div style={{textAlign:"center"}}><div style={{fontSize:15,fontWeight:700,color:T.text}}>{Number(c.guardados).toLocaleString('es-AR')}</div><div style={{fontSize:11,color:T.textSm}}>Guardados</div></div>}
-                          {c.seguidores&&c.alcance&&<div style={{textAlign:"center"}}><div style={{fontSize:15,fontWeight:700,color:T.green}}>{((Number(c.alcance)/Number(c.seguidores))*100).toFixed(1)}%</div><div style={{fontSize:11,color:T.textSm}}>Tasa alcance</div></div>}
-                          {c.totalAcordado>0&&<div style={{textAlign:"center"}}><div style={{fontSize:15,fontWeight:700,color:c.totalContenido===c.totalAcordado?T.green:T.orange}}>{c.totalContenido}/{c.totalAcordado}</div><div style={{fontSize:11,color:T.textSm}}>Contenidos</div></div>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>
-        )}
-      </div>
-
-      {/* Canje Form Modal */}
-      <Modal T={T} open={!!form} onClose={()=>setForm(null)} title={form?._docId?"Editar Canje":"Nuevo Canje"} width={600}>
-        {form&&(
-          <div>
-            {/* Datos básicos */}
-            <div style={{display:"grid",gridTemplateColumns:"60px 1fr 1fr",gap:"0 14px",alignItems:"start"}}>
-              <Field T={T} label="Foto">
-                <div style={{width:52,height:52,borderRadius:10,border:`1.5px solid ${T.inputBorder}`,overflow:"hidden",background:T.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{const url=prompt("URL de la foto de perfil:");if(url)setForm(f=>({...f,foto:url}));}}>
-                  {form.foto?<img src={form.foto} style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>e.target.style.display="none"} alt=""/>:<span style={{fontSize:22,color:T.textSm}}>👤</span>}
-                </div>
-              </Field>
-              <Field T={T} label="Nombre" required><input style={iS} value={form.influencer} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Nombre del influencer"/></Field>
-              <Field T={T} label="Usuario (@)"><input style={iS} value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="@usuario"/></Field>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 14px"}}>
-              <Field T={T} label="Red social"><select style={iS} value={form.red} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>{REDES.map(r=><option key={r}>{r}</option>)}</select></Field>
-              <Field T={T} label="Nicho"><select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}><option value="">—</option>{NICHOS.map(n=><option key={n}>{n}</option>)}</select></Field>
-              <Field T={T} label="Seguidores"><input style={iS} type="number" value={form.seguidores} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></Field>
-              <Field T={T} label="Producto"><select style={iS} value={form.producto} onChange={e=>setForm(f=>({...f,producto:e.target.value}))}><option value="">—</option>{PRODUCTOS_CANJE.map(p=><option key={p}>{p}</option>)}</select></Field>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-              <Field T={T} label="Email"><input style={iS} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@ejemplo.com"/></Field>
-              <Field T={T} label="Teléfono / WhatsApp"><input style={iS} value={form.telefono} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="+54 11..."/></Field>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-              <Field T={T} label="Fecha de envío"><input style={iS} type="date" value={form.fechaEnvio} onChange={e=>setForm(f=>({...f,fechaEnvio:e.target.value}))}/></Field>
-              <Field T={T} label="Tracking Andreani"><input style={iS} value={form.tracking} onChange={e=>setForm(f=>({...f,tracking:e.target.value}))} placeholder="Código de seguimiento"/></Field>
-            </div>
-
-            {/* Contenido comprometido */}
-            <Field T={T} label="Contenido comprometido">
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",gap:0,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span>Tipo</span><span style={{textAlign:"center"}}>Acordados</span><span style={{textAlign:"center"}}>Entregados</span>
-                </div>
-                {(form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0}))).map((item,i)=>(
-                  <div key={item.tipo} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",padding:"8px 14px",borderBottom:i<ACTIVIDADES.length-1?`1px solid ${T.borderL}`:"none"}}>
-                    <span style={{fontSize:13,fontWeight:500,color:T.text}}>{item.tipo}</span>
-                    <input type="number" min={0} value={item.acordados} onChange={e=>{const arr=[...form.contenido];arr[i]={...arr[i],acordados:parseInt(e.target.value)||0};setForm(f=>({...f,contenido:arr}));}} style={{...iS,textAlign:"center",padding:"6px 4px",fontSize:13,width:"60px",margin:"0 auto"}}/>
-                    <input type="number" min={0} value={item.entregados} onChange={e=>{const arr=[...form.contenido];arr[i]={...arr[i],entregados:parseInt(e.target.value)||0};setForm(f=>({...f,contenido:arr}));}} style={{...iS,textAlign:"center",padding:"6px 4px",fontSize:13,width:"60px",margin:"0 auto"}}/>
-                  </div>
-                ))}
-              </div>
-            </Field>
-
-            {form._docId&&(
-              <>
-                <Field T={T} label="Estado">
-                  <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                    {ESTADOS_C.map(e=>{const c=getEstadoCC(T,e);const sel=form.estado===e;return <button key={e} onClick={()=>setForm(f=>({...f,estado:e}))} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 14px",borderRadius:8,fontSize:13,fontWeight:sel?600:400,background:sel?c.bg:T.card,color:sel?c.text:T.textMd,border:`1.5px solid ${sel?c.dot:T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}><span style={{width:7,height:7,borderRadius:"50%",background:sel?c.dot:T.textSm}}/>{e}</button>;})}
-                  </div>
-                </Field>
-                <Field T={T} label="Link del contenido publicado"><input style={iS} value={form.linkContenido} onChange={e=>setForm(f=>({...f,linkContenido:e.target.value}))} placeholder="https://instagram.com/p/..."/></Field>
-                <Field T={T} label="Fecha de publicación"><input style={iS} type="date" value={form.fechaPublicacion} onChange={e=>setForm(f=>({...f,fechaPublicacion:e.target.value}))}/></Field>
-
-                {/* Métricas */}
-                <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8,marginTop:4}}>Métricas del contenido</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-                  <Field T={T} label="Alcance"><input style={iS} type="number" value={form.alcance} onChange={e=>setForm(f=>({...f,alcance:e.target.value}))} placeholder="0"/></Field>
-                  <Field T={T} label="Reproducciones"><input style={iS} type="number" value={form.reproducciones} onChange={e=>setForm(f=>({...f,reproducciones:e.target.value}))} placeholder="0"/></Field>
-                  <Field T={T} label="Likes"><input style={iS} type="number" value={form.likes} onChange={e=>setForm(f=>({...f,likes:e.target.value}))} placeholder="0"/></Field>
-                  <Field T={T} label="Guardados"><input style={iS} type="number" value={form.guardados} onChange={e=>setForm(f=>({...f,guardados:e.target.value}))} placeholder="0"/></Field>
-                </div>
-
-                {/* Recordatorio */}
-                <Field T={T} label="Recordatorio de seguimiento"><input style={iS} type="date" value={form.recordatorio} onChange={e=>setForm(f=>({...f,recordatorio:e.target.value}))}/></Field>
-              </>
-            )}
-            <Field T={T} label="Notas"><textarea style={{...iS,minHeight:60,resize:"vertical"}} value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))} placeholder="Notas sobre el canje..."/></Field>
-            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:10}}>
-              <button onClick={()=>setForm(null)} style={BtnSecondary(T)}>Cancelar</button>
-              <AsyncButton onClick={saveCanje} disabled={!form.influencer} style={{...BtnPrimary(T)}}>{form._docId?"Guardar":"Crear Canje"}</AsyncButton>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* Canje Detail Modal */}
-      <Modal T={T} open={!!detailC} onClose={()=>setDetail(null)} title={detailC?`${detailC.influencer}`:""} width={560}>
-        {detailC&&(()=>{
-          const c=canjes.find(x=>x._docId===detailC._docId)||detailC; const sc=getEstadoCC(T,c.estado);
-          const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
-          const totalEntregados=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0);
-          const progreso=totalAcordados>0?Math.round((totalEntregados/totalAcordados)*100):0;
-          const hoy=new Date().toISOString().split('T')[0];
-          const recordatorioVencido=c.recordatorio&&c.recordatorio<=hoy;
-          return (
-            <div>
-              {/* Status banner */}
-              <div style={{background:sc.bg,border:`1px solid ${sc.dot}44`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{width:12,height:12,borderRadius:"50%",background:sc.dot,boxShadow:`0 0 8px ${sc.dot}`}}/><span style={{fontSize:16,fontWeight:700,color:sc.text}}>{c.estado}</span></div>
-                <span style={{fontSize:12,color:T.textMd,fontWeight:500}}>{c.red}</span>
-              </div>
-
-              {/* Recordatorio vencido */}
-              {recordatorioVencido&&(
-                <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:16}}>⏰</span>
-                  <span style={{fontSize:13,fontWeight:600,color:T.yellow}}>Recordatorio de seguimiento: {c.recordatorio}</span>
-                </div>
-              )}
-
-              {/* Info principal con acciones rápidas */}
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:14}}>
-                <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:10}}>
-                  {c.foto?<img src={c.foto} style={{width:48,height:48,borderRadius:12,objectFit:"cover",border:`1px solid ${T.border}`,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:48,height:48,borderRadius:12,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>👤</div>}
-                  <div>
-                    <div style={{fontSize:20,fontWeight:800,color:T.text}}>{c.influencer}</div>
-                    <div style={{display:"flex",gap:8,marginTop:3,flexWrap:"wrap",alignItems:"center"}}>
-                      {c.nicho&&<span style={{fontSize:11,background:T.purpleBg,color:T.purple,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{c.nicho}</span>}
-                      {c.seguidores&&<span style={{fontSize:12,color:T.textSm}}>👥 {Number(c.seguidores).toLocaleString()}</span>}
-                      {c.email&&<span style={{fontSize:12,color:T.textSm}}>✉️ {c.email}</span>}
-                    </div>
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                  {c.usuario&&(
-                    <a href={`https://${c.red.toLowerCase().includes('tiktok')?'tiktok.com/@':'instagram.com/'}${c.usuario.replace('@','')}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:13,color:T.accent,textDecoration:"none",background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}33`,borderRadius:8,padding:"5px 12px",fontWeight:500}}>
-                      {c.red.toLowerCase().includes('tiktok')?'🎵':'📸'} @{c.usuario.replace('@','')}
-                    </a>
-                  )}
-                  {c.telefono&&(
-                    <a href={`https://wa.me/${c.telefono.replace(/\D/g,'')}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:13,color:T.green,textDecoration:"none",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:8,padding:"5px 12px",fontWeight:500}}>
-                      💬 WhatsApp
-                    </a>
-                  )}
-                  {c.tracking&&(
-                    <a href={`https://www.andreani.com/#!/informacionEnvio/${c.tracking}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:13,color:T.purple,textDecoration:"none",background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:8,padding:"5px 12px",fontWeight:500}}>
-                      📦 Seguimiento
-                    </a>
-                  )}
-                  {c.linkContenido&&(
-                    <a href={c.linkContenido} target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:13,color:T.orange,textDecoration:"none",background:T.orangeBg,border:`1px solid ${T.orange}33`,borderRadius:8,padding:"5px 12px",fontWeight:500}}>
-                      🎬 Ver contenido
-                    </a>
-                  )}
-                  {c.producto&&<span style={{fontSize:12,color:T.textSm,marginLeft:4}}>📦 {c.producto}</span>}
-                </div>
-              </div>
-
-              {/* Productos del canje */}
-              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>Productos enviados</div>
-                {(c.productosCanje||[]).map((p,pi)=>(
-                  <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                    <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:24,textAlign:"center"}}>{p.cantidad}</span>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.red}44`,borderRadius:4,background:T.redBg,color:T.red,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-                  </div>
-                ))}
-                {(c.productosCanje||[]).length===0&&<div style={{fontSize:13,color:T.textSm,padding:"6px 0"}}>Sin productos cargados</div>}
-                <select defaultValue="" onChange={async e=>{const val=e.target.value;if(!val)return;e.target.value="";const lista=c.productosCanje||[];const ex=lista.findIndex(x=>x.nombre===val);const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:val,cantidad:1}];await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{...iS,fontSize:12,color:T.textSm,marginTop:8}}>
-                  <option value="">+ Agregar producto...</option>
-                  {PRODUCTOS_CANJE.map(pr=><option key={pr} value={pr}>{pr}</option>)}
-                </select>
-              </div>
-
-              {/* Progreso de contenido */}
-              {totalAcordados>0&&(
-                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                    <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Progreso de contenido</div>
-                    <span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>
-                  </div>
-                  {/* Barra de progreso */}
-                  <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:12}}>
-                    <div style={{height:"100%",width:`${progreso}%`,background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.5s ease"}}/>
-                  </div>
-                  {/* Tabla por tipo */}
-                  {(c.contenido||[]).filter(item=>item.acordados>0).map((item,i)=>{
-                    const p=item.acordados>0?Math.round((item.entregados/item.acordados)*100):0;
-                    return (
-                      <div key={item.tipo} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-                        <span style={{fontSize:13,color:T.text,fontWeight:500,minWidth:100}}>{item.tipo}</span>
-                        <div style={{flex:1,height:5,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
-                          <div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accent,borderRadius:20}}/>
-                        </div>
-                        <span style={{fontSize:12,color:p===100?T.green:T.textSm,fontWeight:600,minWidth:50,textAlign:"right"}}>{item.entregados}/{item.acordados}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Métricas */}
-              {(c.alcance||c.reproducciones||c.likes||c.guardados)&&(
-                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                  <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:12}}>Métricas</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    {[["👁️ Alcance",c.alcance],["▶️ Repros.",c.reproducciones],["❤️ Likes",c.likes],["🔖 Guardados",c.guardados]].map(([l,v])=>v?(
-                      <div key={l} style={{background:T.surface,borderRadius:8,padding:"10px 12px",border:`1px solid ${T.borderL}`}}>
-                        <div style={{fontSize:11,color:T.textSm,marginBottom:3}}>{l}</div>
-                        <div style={{fontSize:18,fontWeight:700,color:T.text,letterSpacing:-0.5}}>{Number(v).toLocaleString('es-AR')}</div>
-                      </div>
-                    ):null)}
-                  </div>
-                  {c.alcance&&c.seguidores&&(
-                    <div style={{marginTop:10,fontSize:12,color:T.textSm,padding:"8px 10px",background:T.surface,borderRadius:8,border:`1px solid ${T.borderL}`}}>
-                      📊 Tasa de alcance: <span style={{fontWeight:600,color:T.text}}>{((Number(c.alcance)/Number(c.seguidores))*100).toFixed(1)}%</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
+          
               {/* Info adicional */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px",fontSize:13,marginBottom:14}}>
                 {[["Fecha envío",c.fechaEnvio],["Fecha publicación",c.fechaPublicacion],["Recordatorio",c.recordatorio]].map(([l,v])=>v?(
