@@ -1951,7 +1951,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       {/* Canje Detail Modal */}
       <Modal T={T} open={!!detailC} onClose={()=>setDetail(null)} title={detailC?`${detailC.influencer}`:""} width={560}>
         {detailC&&(()=>{
-          const c=detailC; const sc=getEstadoCC(T,c.estado);
+          const c=canjes.find(x=>x._docId===detailC._docId)||detailC; const sc=getEstadoCC(T,c.estado);
           const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
           const totalEntregados=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0);
           const progreso=totalAcordados>0?Math.round((totalEntregados/totalAcordados)*100):0;
@@ -2025,6 +2025,31 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 </div>
               </div>
 
+              {/* Productos del canje */}
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+                <div style={{fontSize:12,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>Productos enviados</div>
+                {(c.productosCanje||[]).map((p,pi)=>(
+                  <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:24,textAlign:"center"}}>{p.cantidad}</span>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.red}44`,borderRadius:4,background:T.redBg,color:T.red,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                  </div>
+                ))}
+                {(c.productosCanje||[]).length===0&&<div style={{fontSize:13,color:T.textSm,padding:"6px 0"}}>Sin productos cargados</div>}
+                <select defaultValue="" onChange={async e=>{
+                  const val=e.target.value;if(!val)return;e.target.value="";
+                  const lista=c.productosCanje||[];
+                  const ex=lista.findIndex(x=>x.nombre===val);
+                  const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:val,cantidad:1}];
+                  await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});
+                }} style={{...iS,fontSize:12,color:T.textSm,marginTop:8}}>
+                  <option value="">+ Agregar producto...</option>
+                  {PRODUCTOS_CANJE.map(pr=><option key={pr} value={pr}>{pr}</option>)}
+                </select>
+              </div>
+
               {/* Progreso de contenido */}
               <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -2039,6 +2064,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {(c.contenido||[]).length===0&&(
                   <div style={{fontSize:13,color:T.textSm,textAlign:"center",padding:"8px 0"}}>Sin contenido acordado</div>
                 )}
+                <select defaultValue="" onChange={async e=>{
+                  const val=e.target.value;if(!val)return;e.target.value="";
+                  const lista=c.contenido||[];
+                  const ex=lista.findIndex(x=>x.tipo===val);
+                  const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||1)+1}:x):[...lista,{tipo:val,acordados:1,entregados:0}];
+                  await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});
+                }} style={{...iS,fontSize:12,color:T.textSm,marginBottom:10}}>
+                  <option value="">+ Agregar tipo de contenido...</option>
+                  {ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}
+                </select>
                 {(c.contenido||[]).map((item,ci)=>{
                   const ac=item.acordados||1; const en=item.entregados||0;
                   const p=ac>0?Math.round((en/ac)*100):0;
@@ -2051,15 +2086,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
                         <span style={{fontSize:11,color:T.textSm}}>Acordados</span>
                         <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                          <button onClick={()=>{const updated={...c,contenido:c.contenido.map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x)};updateDoc(doc(db,"canjes",c._docId),{contenido:updated.contenido});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:Math.max(1,(x.acordados||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
                           <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:20,textAlign:"center"}}>{ac}</span>
-                          <button onClick={()=>{const updated=c.contenido.map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x);updateDoc(doc(db,"canjes",c._docId),{contenido:updated});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                         </div>
                         <span style={{fontSize:11,color:T.textSm}}>Entregados</span>
                         <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                          <button onClick={()=>{const updated=c.contenido.map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x);updateDoc(doc(db,"canjes",c._docId),{contenido:updated});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
                           <span style={{fontSize:13,fontWeight:600,color:T.green,minWidth:20,textAlign:"center"}}>{en}</span>
-                          <button onClick={()=>{const updated=c.contenido.map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x);updateDoc(doc(db,"canjes",c._docId),{contenido:updated});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                          <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:4,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                         </div>
                       </div>
                       <div style={{height:5,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
