@@ -1507,6 +1507,73 @@ function DropdownChips({value, options, onSelect, placeholder, T, colorActive, b
   );
 }
 
+// Click = copia al portapapeles, doble click = edita inline
+function CopyEditField({label, value, onSave, placeholder, icon, T, iS, readOnly=false, href=null, hrefLabel=null}) {
+  const [editing, setEditing] = React.useState(false);
+  const [val, setVal] = React.useState(value||"");
+  const [copied, setCopied] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(()=>{ setVal(value||""); }, [value]);
+  React.useEffect(()=>{ if(editing && ref.current) ref.current.focus(); }, [editing]);
+
+  function handleClick() {
+    if(!value) return;
+    navigator.clipboard.writeText(value).then(()=>{
+      setCopied(true);
+      setTimeout(()=>setCopied(false), 1500);
+    }).catch(()=>{});
+  }
+  function handleDoubleClick() {
+    if(readOnly || !onSave) return;
+    setEditing(true);
+  }
+  function handleSave() {
+    setEditing(false);
+    if(val !== (value||"") && onSave) onSave(val);
+  }
+
+  const hasValue = !!(value && value.trim());
+  const labelColor = T.textSm;
+  const valueColor = hasValue ? T.text : T.textSm;
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:3,padding:"8px 0",borderBottom:"1px solid "+T.borderL}}>
+      <div style={{fontSize:10,fontWeight:700,color:labelColor,textTransform:"uppercase",letterSpacing:0.5,display:"flex",alignItems:"center",gap:4}}>
+        {icon&&<span>{icon}</span>}
+        {label}
+        {!readOnly&&onSave&&hasValue&&<span style={{fontSize:9,color:T.textSm,fontWeight:400,marginLeft:2}}>· 2× editar</span>}
+      </div>
+      {editing
+        ? <input ref={ref} value={val} style={{...iS,fontSize:13,padding:"4px 8px"}}
+            onChange={e=>setVal(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={e=>{ if(e.key==="Enter") handleSave(); if(e.key==="Escape"){setEditing(false);setVal(value||"");} }}
+          />
+        : <div style={{display:"flex",alignItems:"center",gap:6,cursor:hasValue?"pointer":"default"}}
+            onClick={handleClick}
+            onDoubleClick={handleDoubleClick}
+            title={hasValue?(readOnly?"Click para copiar":"Click para copiar · Doble click para editar"):""}
+          >
+            <span style={{fontSize:13,color:hasValue?valueColor:T.textSm,fontWeight:hasValue?500:400,flex:1,wordBreak:"break-all"}}>
+              {hasValue ? (
+                href
+                  ? <a href={href} target="_blank" rel="noopener noreferrer"
+                      onClick={e=>e.stopPropagation()}
+                      style={{color:T.accent,textDecoration:"none",fontWeight:600}}>
+                      {hrefLabel||value}
+                    </a>
+                  : value
+              ) : <span style={{color:T.textSm,fontStyle:"italic"}}>{onSave&&!readOnly?"Click 2× para agregar...":"—"}</span>}
+            </span>
+            {hasValue&&<span style={{fontSize:10,color:copied?T.green:T.textSm,fontWeight:copied?700:400,flexShrink:0,transition:"color 0.2s"}}>
+              {copied?"✓ copiado":"⎘"}
+            </span>}
+          </div>
+      }
+    </div>
+  );
+}
+
 function NotasInline({value, onSave, T, iS}) {
   const [editing, setEditing] = React.useState(false);
   const [val, setVal] = React.useState(value||"");
@@ -1983,20 +2050,38 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   </a>}
                 </div>
 
-                {/* Campos editables inline */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px 16px",fontSize:12}}>
-                  {[
-                    ["📸 Instagram","linkInstagram",c.linkInstagram,"https://instagram.com/...","text"],
-                    ["💬 Teléfono","telefono",c.telefono,"5491155...","text"],
-                    ["✉️ Email","email",c.email,"email@...","text"],
-                    ["🔗 Pedido ref.","pedidoRef",c.pedidoRef,"#1234","text"],
-                    ["📦 Fecha envío","fechaEnvio",c.fechaEnvio,"","date"],
-                    ["🔍 Tracking","tracking",c.tracking,"3600029...","text"],
-                    [recordatorioVencido?"⏰ Recordatorio":"📅 Recordatorio","recordatorio",c.recordatorio,"","date"],
-                  ].map(([label,field,val,ph,type])=>(
-                    <div key={field} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 0",borderBottom:"1px solid "+T.borderL}}>
-                      <span style={{color:field==="recordatorio"&&recordatorioVencido?T.yellow:T.textSm,flexShrink:0,minWidth:95,fontSize:11}}>{label}</span>
-                      <InlineField value={val} onSave={v=>save({[field]:v,...(field==="linkInstagram"?(()=>{const m=(v||"").match(/instagram\.com\/([^/?#\s]+)/);return m?{usuario:m[1].replace("@","")}:{}})():{})})} placeholder={ph} type={type} T={T} iS={iS}/>
+                {/* Campos de contacto y envío */}
+                <div style={{marginTop:4}}>
+                  <CopyEditField label="Instagram" icon="📸" value={c.linkInstagram||c.usuario&&("@"+c.usuario)||""}
+                    onSave={v=>{const m=(v||"").match(/instagram\.com\/([^/?#\s]+)/);save({linkInstagram:v,...(m?{usuario:m[1].replace("@","")}:{})});}}
+                    href={igHref} hrefLabel={c.usuario?"@"+c.usuario.replace("@",""):(c.linkInstagram||null)}
+                    T={T} iS={iS} placeholder="https://instagram.com/..."/>
+                  <CopyEditField label="Teléfono WA" icon="💬" value={c.telefono}
+                    onSave={v=>save({telefono:v})}
+                    href={c.telefono?"https://wa.me/"+c.telefono.replace(/\D/g,""):null} hrefLabel={c.telefono}
+                    T={T} iS={iS} placeholder="5491155..."/>
+                  <CopyEditField label="Email" icon="✉️" value={c.email}
+                    onSave={v=>save({email:v})}
+                    href={c.email?"mailto:"+c.email:null} hrefLabel={c.email}
+                    T={T} iS={iS} placeholder="email@..."/>
+                  <CopyEditField label="Pedido ref." icon="🔗" value={c.pedidoRef}
+                    onSave={v=>save({pedidoRef:v})} T={T} iS={iS} placeholder="#1234"/>
+                  <CopyEditField label="Tracking Andreani" icon="🔍" value={c.tracking}
+                    onSave={v=>save({tracking:v})}
+                    href={c.tracking?"https://www.andreani.com/#!/informacionEnvio/"+c.tracking:null} hrefLabel={c.tracking}
+                    T={T} iS={iS} placeholder="3600029..."/>
+                  <CopyEditField label="Fecha de envío" icon="📦" value={c.fechaEnvio}
+                    T={T} iS={iS} readOnly={true}/>
+                  <CopyEditField label={recordatorioVencido?"⏰ Recordatorio (vencido)":"Recordatorio"} icon={recordatorioVencido?"":"📅"} value={c.recordatorio}
+                    T={T} iS={iS} readOnly={true}/>
+                </div>
+                {/* Fecha envío y recordatorio: date pickers independientes */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+                  {[["📦 Fecha envío","fechaEnvio",c.fechaEnvio],["📅 Recordatorio","recordatorio",c.recordatorio]].map(([label,field,val])=>(
+                    <div key={field}>
+                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{label}</div>
+                      <input type="date" value={val||""} style={{...iS,fontSize:12,padding:"6px 8px"}}
+                        onChange={async e=>save({[field]:e.target.value})}/>
                     </div>
                   ))}
                 </div>
