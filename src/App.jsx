@@ -1843,44 +1843,105 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           const recordatorioVencido=c.recordatorio&&c.recordatorio<=hoy;
           const igHref=c.linkInstagram?(c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")):(c.usuario?"https://instagram.com/"+c.usuario.replace("@",""):null);
           const bS={width:22,height:22,border:"1px solid "+T.border,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0};
+
+          // Helper: guardar un campo directo en Firestore
+          const save=async(fields)=>{ try{await updateDoc(doc(db,"canjes",c._docId),{...fields,updatedAt:serverTimestamp()});}catch(e){} };
+
+          // Helper: input inline editable (se activa al click)
+          const InlineField=({value,onSave,placeholder,type="text",style={}})=>{
+            const [editing,setEditing]=useState(false);
+            const [val,setVal]=useState(value||"");
+            const ref=useRef(null);
+            useEffect(()=>{setVal(value||"");},[value]);
+            useEffect(()=>{if(editing&&ref.current)ref.current.focus();},[editing]);
+            if(!editing) return (
+              <span onClick={()=>setEditing(true)} title="Click para editar"
+                style={{cursor:"text",color:val?T.text:T.textSm,fontSize:13,borderBottom:"1px dashed "+(val?T.border:T.borderL),paddingBottom:1,minWidth:60,display:"inline-block",...style}}>
+                {val||placeholder||"—"}
+              </span>
+            );
+            return <input ref={ref} type={type} value={val} style={{...iS,fontSize:13,padding:"3px 8px",width:"auto",minWidth:80,...style}}
+              onChange={e=>setVal(e.target.value)}
+              onBlur={()=>{setEditing(false);if(val!==(value||""))onSave(val);}}
+              onKeyDown={e=>{if(e.key==="Enter"){setEditing(false);if(val!==(value||""))onSave(val);}if(e.key==="Escape"){setEditing(false);setVal(value||"");}}}
+            />;
+          };
+
           return (
             <div>
 
-              {/* ── HEADER: estado + cambio rápido ── */}
+              {/* ── ESTADO: chips clickeables ── */}
               <div style={{marginBottom:14}}>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                   {ESTADOS_C.filter(e=>e!=="Cancelado").map(est=>{
                     const s2=getEstadoCC(T,est);
                     const active=c.estado===est;
-                    return (
-                      <button key={est} onClick={async()=>{if(active)return;await updateDoc(doc(db,"canjes",c._docId),{estado:est,updatedAt:serverTimestamp(),...(est==="Finalizado"?{finalizadoAt:serverTimestamp()}:{})});}}
-                        style={{fontSize:11,fontWeight:active?700:500,padding:"5px 11px",borderRadius:20,border:"2px solid "+(active?s2.dot:T.border),background:active?s2.bg:"transparent",color:active?s2.text:T.textMd,cursor:active?"default":"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
-                        <span style={{width:7,height:7,borderRadius:"50%",background:s2.dot,flexShrink:0}}/>
-                        {est}
-                      </button>
-                    );
+                    return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Finalizado"?{finalizadoAt:serverTimestamp()}:{})});}}
+                      style={{fontSize:11,fontWeight:active?700:500,padding:"5px 12px",borderRadius:20,border:"2px solid "+(active?s2.dot:T.border),background:active?s2.bg:"transparent",color:active?s2.text:T.textMd,cursor:active?"default":"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:s2.dot,flexShrink:0}}/>
+                      {est}
+                    </button>;
                   })}
                 </div>
               </div>
 
-              {/* ── INFLUENCER: info + acciones ── */}
+              {/* ── INFO INFLUENCER: todo inline editable ── */}
               <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
-                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
                   {c.foto
                     ?<img src={c.foto} style={{width:48,height:48,borderRadius:10,objectFit:"cover",border:"1px solid "+T.border,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>
                     :<div style={{width:48,height:48,borderRadius:10,background:T.surface,border:"1px solid "+T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>👤</div>
                   }
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:2}}>{c.influencer}</div>
-                    <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
-                      {c.nicho&&<span style={{fontSize:10,background:T.purpleBg,color:T.purple,borderRadius:4,padding:"2px 7px",fontWeight:600}}>{c.nicho}</span>}
-                      {c.seguidores&&<span style={{fontSize:11,color:T.textSm}}>👥 {Number(c.seguidores).toLocaleString()}</span>}
-                      {c.red&&<span style={{fontSize:11,color:T.textSm}}>· {c.red}</span>}
+                    {/* Nombre editable */}
+                    <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:4}}>
+                      <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" style={{fontSize:17,fontWeight:800}}/>
+                    </div>
+                    {/* Nicho + seguidores + red — chips editables */}
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                      {/* Nicho: chips de selección directa */}
+                      <div style={{position:"relative"}}>
+                        {(()=>{
+                          const [open,setOpen]=useState(false);
+                          return <>
+                            <span onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",fontSize:10,background:c.nicho?T.purpleBg:T.surface,color:c.nicho?T.purple:T.textSm,borderRadius:4,padding:"2px 8px",fontWeight:600,border:"1px solid "+(c.nicho?T.purple+"44":T.border)}}>
+                              {c.nicho||"+ Nicho"}
+                            </span>
+                            {open&&<div style={{position:"absolute",top:"110%",left:0,zIndex:50,background:T.card,border:"1px solid "+T.border,borderRadius:10,padding:8,display:"flex",flexWrap:"wrap",gap:5,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
+                              {NICHOS.map(n=><button key={n} onClick={()=>{save({nicho:n});setOpen(false);}}
+                                style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(c.nicho===n?T.purple:T.border),background:c.nicho===n?T.purpleBg:"transparent",color:c.nicho===n?T.purple:T.textMd,cursor:"pointer"}}>
+                                {n}
+                              </button>)}
+                              <button onClick={()=>{save({nicho:""});setOpen(false);}} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+T.border,background:"transparent",color:T.red,cursor:"pointer"}}>✕ Quitar</button>
+                            </div>}
+                          </>;
+                        })()}
+                      </div>
+                      {/* Seguidores inline */}
+                      <span style={{fontSize:11,color:T.textSm,display:"flex",alignItems:"center",gap:3}}>
+                        👥 <InlineField value={c.seguidores?Number(c.seguidores).toLocaleString():""} onSave={v=>save({seguidores:v.replace(/\./g,"")})} placeholder="seguidores" style={{fontSize:11}}/>
+                      </span>
+                      {/* Red: chips */}
+                      {(()=>{
+                        const [open,setOpen]=useState(false);
+                        return <div style={{position:"relative"}}>
+                          <span onClick={()=>setOpen(o=>!o)} style={{fontSize:11,color:T.textSm,cursor:"pointer",borderBottom:"1px dashed "+T.borderL}}>
+                            {c.red||"Red"}
+                          </span>
+                          {open&&<div style={{position:"absolute",top:"110%",left:0,zIndex:50,background:T.card,border:"1px solid "+T.border,borderRadius:8,padding:6,display:"flex",gap:5,flexWrap:"wrap",boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
+                            {REDES.map(r=><button key={r} onClick={()=>{save({red:r});setOpen(false);}}
+                              style={{fontSize:11,padding:"3px 9px",borderRadius:20,border:"1px solid "+(c.red===r?T.accent:T.border),background:c.red===r?T.accentSolid+"18":"transparent",color:c.red===r?T.accent:T.textMd,cursor:"pointer"}}>
+                              {r}
+                            </button>)}
+                          </div>}
+                        </div>;
+                      })()}
                     </div>
                   </div>
                 </div>
+
                 {/* Links de contacto */}
-                <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
                   {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer"
                     style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:8,padding:"6px 14px"}}>
                     📸 {c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}
@@ -1894,14 +1955,41 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     ✉️ {c.email}
                   </a>}
                 </div>
-                {/* Info extra */}
-                <div style={{display:"flex",gap:16,marginTop:10,flexWrap:"wrap"}}>
-                  {c.fechaEnvio&&<div style={{fontSize:12,color:T.textSm}}>📦 Enviado: <span style={{color:T.text,fontWeight:500}}>{c.fechaEnvio}</span></div>}
-                  {c.tracking&&<a href={"https://www.andreani.com/#!/informacionEnvio/"+c.tracking} target="_blank" rel="noopener noreferrer"
-                    style={{fontSize:12,color:T.purple,textDecoration:"none",fontWeight:500}}>🔍 {c.tracking}</a>}
-                  {c.recordatorio&&<div style={{fontSize:12,color:recordatorioVencido?T.yellow:T.textSm}}>
-                    {recordatorioVencido?"⏰":"📅"} Rec: <span style={{fontWeight:500}}>{c.recordatorio}</span>
-                  </div>}
+
+                {/* Campos de contacto inline */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 16px",fontSize:12}}>
+                  {[
+                    ["📸 Instagram","linkInstagram",c.linkInstagram,"https://instagram.com/..."],
+                    ["💬 Teléfono","telefono",c.telefono,"5491155..."],
+                    ["✉️ Email","email",c.email,"email@..."],
+                    ["🔗 Pedido ref.","pedidoRef",c.pedidoRef,"#1234"],
+                  ].map(([label,field,val,ph])=>(
+                    <div key={field} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 0",borderBottom:"1px solid "+T.borderL}}>
+                      <span style={{color:T.textSm,flexShrink:0,minWidth:90}}>{label}</span>
+                      <InlineField value={val} onSave={v=>save({[field]:v,...(field==="linkInstagram"?(()=>{const m=(v||"").match(/instagram\.com\/([^/?#\s]+)/);return m?{usuario:m[1].replace("@","")}:{}})():{})})} placeholder={ph}/>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Envío: fecha, tracking, recordatorio */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 16px",fontSize:12,marginTop:6}}>
+                  {[
+                    ["📦 Fecha envío","fechaEnvio",c.fechaEnvio,"date"],
+                    ["🔍 Tracking","tracking",c.tracking,"text"],
+                    ["📅 Recordatorio","recordatorio",c.recordatorio,"date"],
+                  ].map(([label,field,val,type])=>(
+                    <div key={field} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 0",borderBottom:"1px solid "+T.borderL}}>
+                      <span style={{color:field==="recordatorio"&&recordatorioVencido?T.yellow:T.textSm,flexShrink:0,minWidth:90}}>
+                        {field==="recordatorio"&&recordatorioVencido?"⏰ Recordatorio":label}
+                      </span>
+                      {field==="tracking"&&c.tracking
+                        ?<a href={"https://www.andreani.com/#!/informacionEnvio/"+c.tracking} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.purple,textDecoration:"none",fontWeight:500}}>
+                           <InlineField value={val} onSave={v=>save({[field]:v})} placeholder="3600029..." type={type}/>
+                         </a>
+                        :<InlineField value={val} onSave={v=>save({[field]:v})} placeholder={type==="date"?"yyyy-mm-dd":field==="tracking"?"3600029...":""} type={type}/>
+                      }
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -1911,57 +1999,75 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {(c.productosCanje||[]).map((p,pi)=>(
                   <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:"1px solid "+T.borderL}}>
                     <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={bS}>−</button>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await save({productosCanje:upd});}} style={bS}>−</button>
                     <span style={{fontSize:13,fontWeight:700,color:T.text,minWidth:20,textAlign:"center"}}>{p.cantidad}</span>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={bS}>+</button>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}} style={{...bS,border:"1px solid "+T.red+"44",color:T.red}}>✕</button>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await save({productosCanje:upd});}} style={bS}>+</button>
+                    <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await save({productosCanje:upd});}} style={{...bS,border:"1px solid "+T.red+"44",color:T.red}}>✕</button>
                   </div>
                 ))}
-                {(c.productosCanje||[]).length===0&&<div style={{fontSize:13,color:T.textSm,padding:"4px 0"}}>Sin productos cargados</div>}
-                <select defaultValue="" onChange={async e=>{const val=e.target.value;if(!val)return;e.target.value="";const lista=c.productosCanje||[];const ex=lista.findIndex(x=>x.nombre===val);const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:val,cantidad:1}];await updateDoc(doc(db,"canjes",c._docId),{productosCanje:upd,updatedAt:serverTimestamp()});}}
-                  style={{...iS,fontSize:12,color:T.textSm,marginTop:8}}>
-                  <option value="">+ Agregar producto...</option>
-                  {PRODUCTOS_CANJE.map(pr=><option key={pr} value={pr}>{pr}</option>)}
-                </select>
+                {(c.productosCanje||[]).length===0&&<div style={{fontSize:13,color:T.textSm,padding:"4px 0"}}>Sin productos — seleccioná uno abajo</div>}
+                {/* Chips de producto para agregar rápido */}
+                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
+                  {PRODUCTOS_CANJE.map(pr=>{
+                    const tiene=(c.productosCanje||[]).some(x=>x.nombre===pr);
+                    return <button key={pr} onClick={async()=>{
+                      const lista=c.productosCanje||[];
+                      const ex=lista.findIndex(x=>x.nombre===pr);
+                      const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:pr,cantidad:1}];
+                      await save({productosCanje:upd});
+                    }} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(tiene?T.purple:T.border),background:tiene?T.purpleBg:"transparent",color:tiene?T.purple:T.textMd,cursor:"pointer",fontWeight:tiene?600:400}}>
+                      {tiene?"✓ ":"+  "}{pr}
+                    </button>;
+                  })}
+                </div>
               </div>
 
               {/* ── CONTENIDO COMPROMETIDO ── */}
               <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6}}>🎬 Contenido comprometido</div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6}}>🎬 Contenido</div>
                   {totalAcordados>0&&<span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
                 </div>
                 {totalAcordados>0&&(
-                  <div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
+                  <div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}>
                     <div style={{height:"100%",width:progreso+"%",background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s"}}/>
                   </div>
                 )}
-                <select defaultValue="" onChange={async e=>{const val=e.target.value;if(!val)return;e.target.value="";const lista=c.contenido||[];const ex=lista.findIndex(x=>x.tipo===val);const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||1)+1}:x):[...lista,{tipo:val,acordados:1,entregados:0}];await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}}
-                  style={{...iS,fontSize:12,color:T.textSm,marginBottom:8}}>
-                  <option value="">+ Agregar tipo de contenido...</option>
-                  {ACTIVIDADES.map(a=><option key={a} value={a}>{a}</option>)}
-                </select>
-                {(c.contenido||[]).map((item,ci)=>{
+                {/* Chips de actividades para agregar */}
+                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8}}>
+                  {ACTIVIDADES.map(a=>{
+                    const tiene=(c.contenido||[]).find(x=>x.tipo===a&&(x.acordados||0)>0);
+                    return <button key={a} onClick={async()=>{
+                      const lista=c.contenido||[];
+                      const ex=lista.findIndex(x=>x.tipo===a);
+                      const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo:a,acordados:1,entregados:0}];
+                      await save({contenido:upd});
+                    }} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(tiene?T.accentSolid:T.border),background:tiene?T.accentSolid+"18":"transparent",color:tiene?T.accent:T.textMd,cursor:"pointer",fontWeight:tiene?600:400}}>
+                      {tiene?"✓ ":"+  "}{a}{tiene?` (${tiene.acordados})`:""}
+                    </button>;
+                  })}
+                </div>
+                {/* Lista de contenidos acordados */}
+                {(c.contenido||[]).filter(item=>(item.acordados||0)>0).map((item,ci)=>{
                   const ac=item.acordados||1;
                   const en=item.entregados||0;
                   const p=Math.min(100,Math.round((en/ac)*100));
+                  const ciReal=(c.contenido||[]).findIndex(x=>x.tipo===item.tipo);
                   return (
-                    <div key={ci} style={{padding:"10px 0",borderTop:ci>0?"1px solid "+T.borderL:"none"}}>
+                    <div key={ci} style={{padding:"8px 0",borderTop:"1px solid "+T.borderL}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                         <span style={{flex:1,fontSize:14,color:T.text,fontWeight:700}}>{item.tipo}</span>
-                        <span style={{fontSize:12,color:p===100?T.green:T.textSm,fontWeight:600,background:p===100?T.greenBg:T.surface,borderRadius:6,padding:"2px 8px"}}>
-                          {p===100?"✅ ":""}{en}/{ac}
-                        </span>
+                        <span style={{fontSize:12,color:p===100?T.green:T.textSm,fontWeight:600,background:p===100?T.greenBg:T.surface,borderRadius:6,padding:"2px 8px"}}>{p===100?"✅ ":""}{en}/{ac}</span>
                       </div>
-                      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
-                        <span style={{fontSize:11,color:T.textSm,minWidth:50}}>Acordados</span>
-                        <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:Math.max(0,(x.acordados||1)-1)}:x).filter(x=>x.acordados>0);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={{...bS,borderColor:T.red+"88",color:T.red}}>−</button>
-                        <span style={{fontSize:14,fontWeight:700,color:T.text,minWidth:20,textAlign:"center"}}>{ac}</span>
-                        <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,acordados:(x.acordados||1)+1}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={bS}>+</button>
-                        <span style={{fontSize:11,color:T.textSm,minWidth:60,marginLeft:8}}>Entregados</span>
-                        <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={bS}>−</button>
-                        <span style={{fontSize:14,fontWeight:700,color:T.green,minWidth:20,textAlign:"center"}}>{en}</span>
-                        <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ci?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x);await updateDoc(doc(db,"canjes",c._docId),{contenido:upd,updatedAt:serverTimestamp()});}} style={bS}>+</button>
+                      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
+                        <span style={{fontSize:11,color:T.textSm,minWidth:52}}>Acordados</span>
+                        <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ciReal?{...x,acordados:Math.max(0,(x.acordados||1)-1)}:x).filter(x=>x.acordados>0);await save({contenido:upd});}} style={{...bS,borderColor:T.red+"88",color:T.red}}>−</button>
+                        <span style={{fontSize:14,fontWeight:700,color:T.text,minWidth:18,textAlign:"center"}}>{ac}</span>
+                        <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ciReal?{...x,acordados:(x.acordados||1)+1}:x);await save({contenido:upd});}} style={bS}>+</button>
+                        <span style={{fontSize:11,color:T.textSm,minWidth:60,marginLeft:4}}>Entregados</span>
+                        <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ciReal?{...x,entregados:Math.max(0,(x.entregados||0)-1)}:x);await save({contenido:upd});}} style={bS}>−</button>
+                        <span style={{fontSize:14,fontWeight:700,color:T.green,minWidth:18,textAlign:"center"}}>{en}</span>
+                        <button onClick={async()=>{const upd=(c.contenido||[]).map((x,j)=>j===ciReal?{...x,entregados:Math.min((x.acordados||1),(x.entregados||0)+1)}:x);await save({contenido:upd});}} style={bS}>+</button>
                       </div>
                       <div style={{height:4,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
                         <div style={{height:"100%",width:p+"%",background:p===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.3s"}}/>
@@ -1971,11 +2077,32 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 })}
               </div>
 
-              {/* ── NOTAS + HISTORIAL ── */}
-              {c.notas&&<div style={{background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:3}}>📝 Notas</div>
-                <div style={{fontSize:13,lineHeight:1.6,color:T.text}}>{c.notas}</div>
-              </div>}
+              {/* ── NOTAS inline editable ── */}
+              {(()=>{
+                const [editingNotas,setEditingNotas]=useState(false);
+                const [notasVal,setNotasVal]=useState(c.notas||"");
+                useEffect(()=>{setNotasVal(c.notas||"");},[c.notas]);
+                return <div style={{marginBottom:10}}>
+                  {!editingNotas
+                    ?<div onClick={()=>setEditingNotas(true)} style={{background:c.notas?T.yellowBg:T.bg,border:"1px dashed "+(c.notas?T.yellow+"44":T.border),borderRadius:10,padding:"10px 14px",cursor:"text",minHeight:40}}>
+                       {c.notas
+                         ?<><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:3}}>📝 Notas</div>
+                            <div style={{fontSize:13,lineHeight:1.6,color:T.text}}>{c.notas}</div></>
+                         :<div style={{fontSize:13,color:T.textSm}}>📝 Click para agregar notas...</div>
+                       }
+                     </div>
+                    :<div>
+                       <div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:4}}>📝 Notas</div>
+                       <textarea autoFocus rows={3} value={notasVal} onChange={e=>setNotasVal(e.target.value)}
+                         style={{...iS,resize:"vertical",minHeight:70,fontSize:13,lineHeight:1.5,borderColor:T.yellow+"88"}}
+                         onBlur={async()=>{setEditingNotas(false);if(notasVal!==(c.notas||""))await save({notas:notasVal});}}
+                         onKeyDown={e=>{if(e.key==="Escape"){setEditingNotas(false);setNotasVal(c.notas||"");}}}
+                       />
+                     </div>
+                  }
+                </div>;
+              })()}
+
               <NotasRapidas T={T} canje={c} onAdd={addNota}/>
 
               {/* ── FOOTER ── */}
@@ -1989,10 +2116,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                        <button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</button>
                        <button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button>
                      </>
-                    :<><button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>Eliminar</button>
-                       <button onClick={()=>{setForm({...c,contenido:c.contenido||[],alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});setDetail(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>✏️ Editar datos</button>
-                     </>
+                    :<button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>Eliminar</button>
                   }
+                  {!deleteConfirm&&<button onClick={()=>{setForm({...c,contenido:c.contenido||[],alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});setDetail(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>✏️ Editar datos</button>}
                 </div>
               </div>
 
@@ -2001,77 +2127,110 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         })()}
       </Modal>
 
-      {/* Modal form crear/editar canje */}
-      <Modal T={T} open={!!form} onClose={()=>setForm(null)} title={form?._docId?"Editar canje":"Nuevo canje"} width={520}>
-        {form&&(
+      {/* Modal NUEVO canje — form mínimo */}
+      <Modal T={T} open={!!form&&!form._docId} onClose={()=>setForm(null)} title="Nuevo canje 🤝" width={460}>
+        {form&&!form._docId&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {/* Link Instagram — campo principal, auto-extrae @usuario */}
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Link de Instagram <span style={{color:T.red}}>*</span></label>
+              <input autoFocus style={{...iS,fontSize:15,borderColor:form.linkInstagram?T.green:T.inputBorder}}
+                value={form.linkInstagram||""}
+                onChange={e=>{
+                  const v=e.target.value;
+                  const m=v.match(/instagram\.com\/([^/?#\s]+)/);
+                  const u=m?m[1].replace("@",""):"";
+                  setForm(f=>({...f,linkInstagram:v,...(u?{usuario:u,influencer:f.influencer||u}:{})}));
+                }}
+                placeholder="https://instagram.com/usuario o @usuario"
+                onBlur={e=>{
+                  // si escribió solo @usuario o usuario, construir el link
+                  const v=e.target.value.trim();
+                  if(v&&!v.includes("instagram.com")){
+                    const u=v.replace("@","");
+                    setForm(f=>({...f,linkInstagram:"https://instagram.com/"+u,usuario:f.usuario||u,influencer:f.influencer||u}));
+                  }
+                }}
+              />
+              {form.usuario&&<div style={{fontSize:12,color:T.green,marginTop:4,display:"flex",alignItems:"center",gap:5}}>✓ @{form.usuario}</div>}
+            </div>
+            {/* Nombre (se autocompleta desde IG, editable) */}
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Nombre del influencer <span style={{color:T.red}}>*</span></label>
+              <input style={iS} value={form.influencer||""} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Ej: Ciro González"/>
+            </div>
+            {/* Teléfono WhatsApp */}
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Teléfono WhatsApp</label>
+              <input style={iS} value={form.telefono||""} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="5491155555555 (con código de país)"/>
+            </div>
+            {/* Producto — select rápido */}
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Producto a enviar</label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {PRODUCTOS_CANJE.map(p=>{
+                  const sel=(form.productosCanje||[]).some(x=>x.nombre===p);
+                  return <button key={p} type="button" onClick={()=>{
+                    const lista=form.productosCanje||[];
+                    const upd=sel?lista.filter(x=>x.nombre!==p):[...lista,{nombre:p,cantidad:1}];
+                    setForm(f=>({...f,productosCanje:upd,producto:upd[0]?.nombre||""}));
+                  }} style={{fontSize:12,padding:"6px 12px",borderRadius:20,border:"1.5px solid "+(sel?T.purple:T.border),background:sel?T.purpleBg:"transparent",color:sel?T.purple:T.textMd,cursor:"pointer",fontWeight:sel?600:400,transition:"all 0.12s"}}>
+                    {p}
+                  </button>;
+                })}
+              </div>
+            </div>
+            {/* Nicho rápido */}
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Nicho</label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {NICHOS.map(n=>{
+                  const sel=form.nicho===n;
+                  return <button key={n} type="button" onClick={()=>setForm(f=>({...f,nicho:sel?"":n}))}
+                    style={{fontSize:12,padding:"5px 11px",borderRadius:20,border:"1.5px solid "+(sel?T.accent:T.border),background:sel?T.accentSolid+"18":"transparent",color:sel?T.accent:T.textMd,cursor:"pointer",fontWeight:sel?600:400,transition:"all 0.12s"}}>
+                    {n}
+                  </button>;
+                })}
+              </div>
+            </div>
+            {/* Botones */}
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:6,borderTop:"1px solid "+T.borderL}}>
+              <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
+              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:14,padding:"10px 22px",opacity:saving||!form.influencer?0.5:1}}>
+                {saving?"Creando...":"Crear canje →"}
+              </button>
+            </div>
+            <div style={{fontSize:11,color:T.textSm,textAlign:"center"}}>El resto de los datos (tracking, fecha, notas, etc.) los completás desde la carta</div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal EDITAR canje existente */}
+      <Modal T={T} open={!!form&&!!form._docId} onClose={()=>setForm(null)} title={"Editar: "+((form&&form.influencer)||"")} width={480}>
+        {form&&form._docId&&(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <Field T={T} label="Nombre / Influencer">
-                <input style={iS} value={form.influencer} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Nombre del influencer"/>
-              </Field>
-              <Field T={T} label="@Usuario">
-                <input style={iS} value={form.usuario||""} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="@usuario"/>
-              </Field>
+              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nombre</label><input style={iS} value={form.influencer||""} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Nombre del influencer"/></div>
+              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>@Usuario IG</label><input style={iS} value={form.usuario||""} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="@usuario"/></div>
             </div>
-            <Field T={T} label="Link de Instagram">
-              <input style={iS} value={form.linkInstagram||""} onChange={e=>{
-                const link=e.target.value;
-                const match=link.match(/instagram\.com\/([^/?#\s]+)/);
-                const usuario=match?match[1].replace("@",""):"";
-                setForm(f=>({...f,linkInstagram:link,...(usuario?{usuario}:{})}));
-              }} placeholder="https://instagram.com/usuario"/>
-            </Field>
+            <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Link Instagram</label><input style={iS} value={form.linkInstagram||""} onChange={e=>{const v=e.target.value;const m=v.match(/instagram\.com\/([^/?#\s]+)/);const u=m?m[1].replace("@",""):"";setForm(f=>({...f,linkInstagram:v,...(u?{usuario:u}:{})}));}} placeholder="https://instagram.com/usuario"/></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <Field T={T} label="Red">
-                <select style={iS} value={form.red} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>
-                  {REDES.map(r=><option key={r}>{r}</option>)}
-                </select>
-              </Field>
-              <Field T={T} label="Nicho">
-                <select style={iS} value={form.nicho||""} onChange={e=>setForm(f=>({...f,nicho:e.target.value}))}>
-                  <option value="">Sin nicho</option>
-                  {NICHOS.map(n=><option key={n}>{n}</option>)}
-                </select>
-              </Field>
+              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Teléfono WA</label><input style={iS} value={form.telefono||""} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="5491155..."/></div>
+              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Email</label><input style={iS} value={form.email||""} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@..."/></div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <Field T={T} label="Email">
-                <input style={iS} value={form.email||""} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@ejemplo.com"/>
-              </Field>
-              <Field T={T} label="Teléfono (WhatsApp)">
-                <input style={iS} value={form.telefono||""} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="5491155555555"/>
-              </Field>
+              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Seguidores</label><input style={iS} type="number" value={form.seguidores||""} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></div>
+              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Red social</label><select style={iS} value={form.red||"Instagram"} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>{REDES.map(r=><option key={r}>{r}</option>)}</select></div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <Field T={T} label="Seguidores">
-                <input style={iS} type="number" value={form.seguidores||""} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/>
-              </Field>
-              <Field T={T} label="Estado">
-                <select style={iS} value={form.estado} onChange={e=>setForm(f=>({...f,estado:e.target.value}))}>
-                  {ESTADOS_C.filter(e=>e!=="Cancelado").map(e=><option key={e}>{e}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <Field T={T} label="Fecha envío">
-                <input style={iS} type="date" value={form.fechaEnvio||""} onChange={e=>setForm(f=>({...f,fechaEnvio:e.target.value}))}/>
-              </Field>
-              <Field T={T} label="Tracking Andreani">
-                <input style={iS} value={form.tracking||""} onChange={e=>setForm(f=>({...f,tracking:e.target.value}))} placeholder="3600029..."/>
-              </Field>
-            </div>
-            <Field T={T} label="Notas">
-              <textarea style={{...iS,minHeight:64,resize:"vertical"}} value={form.notas||""} onChange={e=>setForm(f=>({...f,notas:e.target.value}))} placeholder="Notas internas sobre el canje..."/>
-            </Field>
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:4}}>
+            <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Foto (URL)</label><input style={iS} value={form.foto||""} onChange={e=>setForm(f=>({...f,foto:e.target.value}))} placeholder="https://..."/></div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:6,borderTop:"1px solid "+T.borderL}}>
               <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
-              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,opacity:saving?0.6:1}}>
-                {saving?"Guardando...":"Guardar canje"}
-              </button>
+              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,opacity:saving||!form.influencer?0.5:1}}>{saving?"Guardando...":"Guardar cambios"}</button>
             </div>
           </div>
         )}
       </Modal>
+
     </div>
   );
 }
