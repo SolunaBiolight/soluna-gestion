@@ -1448,6 +1448,92 @@ function NotasRapidas({T, canje, onAdd}) {
 // ═══════════════════════════════════════════
 // APP CANJES
 // ═══════════════════════════════════════════
+// Componentes auxiliares para el detalle de canjes (deben ser top-level para que los hooks funcionen)
+function InlineField({value, onSave, placeholder, type="text", style={}, iS, T}) {
+  const [editing, setEditing] = React.useState(false);
+  const [val, setVal] = React.useState(value||"");
+  const ref = React.useRef(null);
+  React.useEffect(()=>{ setVal(value||""); }, [value]);
+  React.useEffect(()=>{ if(editing&&ref.current) ref.current.focus(); }, [editing]);
+  if(!editing) return (
+    <span onClick={()=>setEditing(true)} title="Click para editar"
+      style={{cursor:"text",color:val?T.text:T.textSm,fontSize:13,borderBottom:"1px dashed "+(val?T.border:T.borderL),paddingBottom:1,minWidth:40,display:"inline-block",...style}}>
+      {val||placeholder||"\u2014"}
+    </span>
+  );
+  return <input ref={ref} type={type} value={val}
+    style={{...iS,fontSize:13,padding:"3px 8px",width:"auto",minWidth:80,...style}}
+    onChange={e=>setVal(e.target.value)}
+    onBlur={()=>{ setEditing(false); if(val!==(value||"")) onSave(val); }}
+    onKeyDown={e=>{ if(e.key==="Enter"){setEditing(false);if(val!==(value||""))onSave(val);} if(e.key==="Escape"){setEditing(false);setVal(value||"");} }}
+  />;
+}
+
+function DropdownChips({value, options, onSelect, placeholder, T, colorActive, bgActive}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(()=>{
+    if(!open) return;
+    const handler = e=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return ()=>document.removeEventListener("mousedown", handler);
+  }, [open]);
+  const ca = colorActive||T.accent;
+  const ba = bgActive||(T.accentSolid+"18");
+  return (
+    <div ref={ref} style={{position:"relative",display:"inline-block"}}>
+      <span onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",fontSize:value?11:11,
+        background:value?ba:T.surface, color:value?ca:T.textSm,
+        borderRadius:4, padding:"2px 8px", fontWeight:value?600:400,
+        border:"1px solid "+(value?ca+"44":T.border), display:"inline-block"}}>
+        {value||placeholder||"+ Agregar"}
+      </span>
+      {open&&(
+        <div style={{position:"absolute",top:"110%",left:0,zIndex:200,background:T.card,border:"1px solid "+T.border,borderRadius:10,padding:8,display:"flex",flexWrap:"wrap",gap:5,minWidth:180,boxShadow:"0 8px 24px rgba(0,0,0,0.35)"}}>
+          {options.map(opt=>(
+            <button key={opt} onClick={()=>{ onSelect(value===opt?"":opt); setOpen(false); }}
+              style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(value===opt?ca:T.border),
+                background:value===opt?ba:"transparent",color:value===opt?ca:T.textMd,cursor:"pointer",fontWeight:value===opt?600:400}}>
+              {opt}
+            </button>
+          ))}
+          {value&&<button onClick={()=>{ onSelect(""); setOpen(false); }}
+            style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+T.border,background:"transparent",color:T.red,cursor:"pointer"}}>
+            \u2715 Quitar
+          </button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotasInline({value, onSave, T, iS}) {
+  const [editing, setEditing] = React.useState(false);
+  const [val, setVal] = React.useState(value||"");
+  React.useEffect(()=>{ setVal(value||""); }, [value]);
+  if(!editing) return (
+    <div onClick={()=>setEditing(true)}
+      style={{background:value?T.yellowBg:T.bg,border:"1px dashed "+(value?T.yellow+"44":T.border),borderRadius:10,padding:"10px 14px",cursor:"text",minHeight:40,marginBottom:10}}>
+      {value
+        ?<><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:3}}>\ud83d\udcdd Notas</div>
+           <div style={{fontSize:13,lineHeight:1.6,color:T.text}}>{value}</div></>
+        :<div style={{fontSize:13,color:T.textSm}}>\ud83d\udcdd Click para agregar notas...</div>
+      }
+    </div>
+  );
+  return (
+    <div style={{marginBottom:10}}>
+      <div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:4}}>\ud83d\udcdd Notas</div>
+      <textarea autoFocus rows={3} value={val} onChange={e=>setVal(e.target.value)}
+        style={{...iS,resize:"vertical",minHeight:70,fontSize:13,lineHeight:1.5,borderColor:T.yellow+"88",width:"100%"}}
+        onBlur={async()=>{ setEditing(false); if(val!==(value||"")) await onSave(val); }}
+        onKeyDown={e=>{ if(e.key==="Escape"){setEditing(false);setVal(value||"");} }}
+      />
+    </div>
+  );
+}
+
+
 function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje}) {
   const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
@@ -1835,7 +1921,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       <Modal T={T} open={!!detail} onClose={()=>{setDetail(null);setDeleteConfirm(null);}} title={detailC?detailC.influencer:""} width={560}>
         {detailC&&(()=>{
           const c=canjes.find(x=>x._docId===detailC._docId)||detailC;
-          const sc=getEstadoCC(T,c.estado);
           const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
           const totalEntregados=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0);
           const progreso=totalAcordados>0?Math.round((totalEntregados/totalAcordados)*100):0;
@@ -1843,34 +1928,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           const recordatorioVencido=c.recordatorio&&c.recordatorio<=hoy;
           const igHref=c.linkInstagram?(c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")):(c.usuario?"https://instagram.com/"+c.usuario.replace("@",""):null);
           const bS={width:22,height:22,border:"1px solid "+T.border,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0};
-
-          // Helper: guardar un campo directo en Firestore
-          const save=async(fields)=>{ try{await updateDoc(doc(db,"canjes",c._docId),{...fields,updatedAt:serverTimestamp()});}catch(e){} };
-
-          // Helper: input inline editable (se activa al click)
-          const InlineField=({value,onSave,placeholder,type="text",style={}})=>{
-            const [editing,setEditing]=useState(false);
-            const [val,setVal]=useState(value||"");
-            const ref=useRef(null);
-            useEffect(()=>{setVal(value||"");},[value]);
-            useEffect(()=>{if(editing&&ref.current)ref.current.focus();},[editing]);
-            if(!editing) return (
-              <span onClick={()=>setEditing(true)} title="Click para editar"
-                style={{cursor:"text",color:val?T.text:T.textSm,fontSize:13,borderBottom:"1px dashed "+(val?T.border:T.borderL),paddingBottom:1,minWidth:60,display:"inline-block",...style}}>
-                {val||placeholder||"—"}
-              </span>
-            );
-            return <input ref={ref} type={type} value={val} style={{...iS,fontSize:13,padding:"3px 8px",width:"auto",minWidth:80,...style}}
-              onChange={e=>setVal(e.target.value)}
-              onBlur={()=>{setEditing(false);if(val!==(value||""))onSave(val);}}
-              onKeyDown={e=>{if(e.key==="Enter"){setEditing(false);if(val!==(value||""))onSave(val);}if(e.key==="Escape"){setEditing(false);setVal(value||"");}}}
-            />;
-          };
-
+          const save=async(fields)=>{try{await updateDoc(doc(db,"canjes",c._docId),{...fields,updatedAt:serverTimestamp()});}catch(e){}};
           return (
             <div>
 
-              {/* ── ESTADO: chips clickeables ── */}
+              {/* Estado: chips clickeables */}
               <div style={{marginBottom:14}}>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                   {ESTADOS_C.filter(e=>e!=="Cancelado").map(est=>{
@@ -1878,14 +1940,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     const active=c.estado===est;
                     return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Finalizado"?{finalizadoAt:serverTimestamp()}:{})});}}
                       style={{fontSize:11,fontWeight:active?700:500,padding:"5px 12px",borderRadius:20,border:"2px solid "+(active?s2.dot:T.border),background:active?s2.bg:"transparent",color:active?s2.text:T.textMd,cursor:active?"default":"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
-                      <span style={{width:7,height:7,borderRadius:"50%",background:s2.dot,flexShrink:0}}/>
-                      {est}
+                      <span style={{width:7,height:7,borderRadius:"50%",background:s2.dot,flexShrink:0}}/>{est}
                     </button>;
                   })}
                 </div>
               </div>
 
-              {/* ── INFO INFLUENCER: todo inline editable ── */}
+              {/* Info influencer */}
               <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
                   {c.foto
@@ -1893,55 +1954,21 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     :<div style={{width:48,height:48,borderRadius:10,background:T.surface,border:"1px solid "+T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>👤</div>
                   }
                   <div style={{flex:1,minWidth:0}}>
-                    {/* Nombre editable */}
-                    <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:4}}>
-                      <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" style={{fontSize:17,fontWeight:800}}/>
+                    <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:6}}>
+                      <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" T={T} iS={iS} style={{fontSize:17,fontWeight:800}}/>
                     </div>
-                    {/* Nicho + seguidores + red — chips editables */}
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                      {/* Nicho: chips de selección directa */}
-                      <div style={{position:"relative"}}>
-                        {(()=>{
-                          const [open,setOpen]=useState(false);
-                          return <>
-                            <span onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",fontSize:10,background:c.nicho?T.purpleBg:T.surface,color:c.nicho?T.purple:T.textSm,borderRadius:4,padding:"2px 8px",fontWeight:600,border:"1px solid "+(c.nicho?T.purple+"44":T.border)}}>
-                              {c.nicho||"+ Nicho"}
-                            </span>
-                            {open&&<div style={{position:"absolute",top:"110%",left:0,zIndex:50,background:T.card,border:"1px solid "+T.border,borderRadius:10,padding:8,display:"flex",flexWrap:"wrap",gap:5,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
-                              {NICHOS.map(n=><button key={n} onClick={()=>{save({nicho:n});setOpen(false);}}
-                                style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(c.nicho===n?T.purple:T.border),background:c.nicho===n?T.purpleBg:"transparent",color:c.nicho===n?T.purple:T.textMd,cursor:"pointer"}}>
-                                {n}
-                              </button>)}
-                              <button onClick={()=>{save({nicho:""});setOpen(false);}} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+T.border,background:"transparent",color:T.red,cursor:"pointer"}}>✕ Quitar</button>
-                            </div>}
-                          </>;
-                        })()}
-                      </div>
-                      {/* Seguidores inline */}
+                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                      <DropdownChips value={c.nicho} options={NICHOS} onSelect={v=>save({nicho:v})} placeholder="+ Nicho" T={T} colorActive={T.purple} bgActive={T.purpleBg}/>
                       <span style={{fontSize:11,color:T.textSm,display:"flex",alignItems:"center",gap:3}}>
-                        👥 <InlineField value={c.seguidores?Number(c.seguidores).toLocaleString():""} onSave={v=>save({seguidores:v.replace(/\./g,"")})} placeholder="seguidores" style={{fontSize:11}}/>
+                        👥​<InlineField value={c.seguidores?""+Number(c.seguidores).toLocaleString():""} onSave={v=>save({seguidores:v.replace(/\./g,"")})} placeholder="seguidores" T={T} iS={iS} style={{fontSize:11}}/>
                       </span>
-                      {/* Red: chips */}
-                      {(()=>{
-                        const [open,setOpen]=useState(false);
-                        return <div style={{position:"relative"}}>
-                          <span onClick={()=>setOpen(o=>!o)} style={{fontSize:11,color:T.textSm,cursor:"pointer",borderBottom:"1px dashed "+T.borderL}}>
-                            {c.red||"Red"}
-                          </span>
-                          {open&&<div style={{position:"absolute",top:"110%",left:0,zIndex:50,background:T.card,border:"1px solid "+T.border,borderRadius:8,padding:6,display:"flex",gap:5,flexWrap:"wrap",boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
-                            {REDES.map(r=><button key={r} onClick={()=>{save({red:r});setOpen(false);}}
-                              style={{fontSize:11,padding:"3px 9px",borderRadius:20,border:"1px solid "+(c.red===r?T.accent:T.border),background:c.red===r?T.accentSolid+"18":"transparent",color:c.red===r?T.accent:T.textMd,cursor:"pointer"}}>
-                              {r}
-                            </button>)}
-                          </div>}
-                        </div>;
-                      })()}
+                      <DropdownChips value={c.red} options={REDES} onSelect={v=>save({red:v})} placeholder="Red" T={T}/>
                     </div>
                   </div>
                 </div>
 
                 {/* Links de contacto */}
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
                   {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer"
                     style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:8,padding:"6px 14px"}}>
                     📸 {c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}
@@ -1956,44 +1983,26 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   </a>}
                 </div>
 
-                {/* Campos de contacto inline */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 16px",fontSize:12}}>
+                {/* Campos editables inline */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px 16px",fontSize:12}}>
                   {[
-                    ["📸 Instagram","linkInstagram",c.linkInstagram,"https://instagram.com/..."],
-                    ["💬 Teléfono","telefono",c.telefono,"5491155..."],
-                    ["✉️ Email","email",c.email,"email@..."],
-                    ["🔗 Pedido ref.","pedidoRef",c.pedidoRef,"#1234"],
-                  ].map(([label,field,val,ph])=>(
+                    ["📸 Instagram","linkInstagram",c.linkInstagram,"https://instagram.com/...","text"],
+                    ["💬 Teléfono","telefono",c.telefono,"5491155...","text"],
+                    ["✉️ Email","email",c.email,"email@...","text"],
+                    ["🔗 Pedido ref.","pedidoRef",c.pedidoRef,"#1234","text"],
+                    ["📦 Fecha envío","fechaEnvio",c.fechaEnvio,"","date"],
+                    ["🔍 Tracking","tracking",c.tracking,"3600029...","text"],
+                    [recordatorioVencido?"⏰ Recordatorio":"📅 Recordatorio","recordatorio",c.recordatorio,"","date"],
+                  ].map(([label,field,val,ph,type])=>(
                     <div key={field} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 0",borderBottom:"1px solid "+T.borderL}}>
-                      <span style={{color:T.textSm,flexShrink:0,minWidth:90}}>{label}</span>
-                      <InlineField value={val} onSave={v=>save({[field]:v,...(field==="linkInstagram"?(()=>{const m=(v||"").match(/instagram\.com\/([^/?#\s]+)/);return m?{usuario:m[1].replace("@","")}:{}})():{})})} placeholder={ph}/>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Envío: fecha, tracking, recordatorio */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 16px",fontSize:12,marginTop:6}}>
-                  {[
-                    ["📦 Fecha envío","fechaEnvio",c.fechaEnvio,"date"],
-                    ["🔍 Tracking","tracking",c.tracking,"text"],
-                    ["📅 Recordatorio","recordatorio",c.recordatorio,"date"],
-                  ].map(([label,field,val,type])=>(
-                    <div key={field} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 0",borderBottom:"1px solid "+T.borderL}}>
-                      <span style={{color:field==="recordatorio"&&recordatorioVencido?T.yellow:T.textSm,flexShrink:0,minWidth:90}}>
-                        {field==="recordatorio"&&recordatorioVencido?"⏰ Recordatorio":label}
-                      </span>
-                      {field==="tracking"&&c.tracking
-                        ?<a href={"https://www.andreani.com/#!/informacionEnvio/"+c.tracking} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.purple,textDecoration:"none",fontWeight:500}}>
-                           <InlineField value={val} onSave={v=>save({[field]:v})} placeholder="3600029..." type={type}/>
-                         </a>
-                        :<InlineField value={val} onSave={v=>save({[field]:v})} placeholder={type==="date"?"yyyy-mm-dd":field==="tracking"?"3600029...":""} type={type}/>
-                      }
+                      <span style={{color:field==="recordatorio"&&recordatorioVencido?T.yellow:T.textSm,flexShrink:0,minWidth:95,fontSize:11}}>{label}</span>
+                      <InlineField value={val} onSave={v=>save({[field]:v,...(field==="linkInstagram"?(()=>{const m=(v||"").match(/instagram\.com\/([^/?#\s]+)/);return m?{usuario:m[1].replace("@","")}:{}})():{})})} placeholder={ph} type={type} T={T} iS={iS}/>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* ── PRODUCTOS ── */}
+              {/* Productos */}
               <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>📦 Productos enviados</div>
                 {(c.productosCanje||[]).map((p,pi)=>(
@@ -2005,8 +2014,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await save({productosCanje:upd});}} style={{...bS,border:"1px solid "+T.red+"44",color:T.red}}>✕</button>
                   </div>
                 ))}
-                {(c.productosCanje||[]).length===0&&<div style={{fontSize:13,color:T.textSm,padding:"4px 0"}}>Sin productos — seleccioná uno abajo</div>}
-                {/* Chips de producto para agregar rápido */}
+                {(c.productosCanje||[]).length===0&&<div style={{fontSize:12,color:T.textSm,padding:"4px 0"}}>Tap un producto para agregar</div>}
                 <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
                   {PRODUCTOS_CANJE.map(pr=>{
                     const tiene=(c.productosCanje||[]).some(x=>x.nombre===pr);
@@ -2014,40 +2022,36 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       const lista=c.productosCanje||[];
                       const ex=lista.findIndex(x=>x.nombre===pr);
                       const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:pr,cantidad:1}];
-                      await save({productosCanje:upd});
+                      await save({productosCanje:upd,producto:upd[0]?.nombre||""});
                     }} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(tiene?T.purple:T.border),background:tiene?T.purpleBg:"transparent",color:tiene?T.purple:T.textMd,cursor:"pointer",fontWeight:tiene?600:400}}>
-                      {tiene?"✓ ":"+  "}{pr}
+                      {tiene?"✓ ":"+ "}{pr}
                     </button>;
                   })}
                 </div>
               </div>
 
-              {/* ── CONTENIDO COMPROMETIDO ── */}
+              {/* Contenido comprometido */}
               <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6}}>🎬 Contenido</div>
                   {totalAcordados>0&&<span style={{fontSize:13,fontWeight:700,color:progreso===100?T.green:T.textMd}}>{totalEntregados}/{totalAcordados} · {progreso}%</span>}
                 </div>
-                {totalAcordados>0&&(
-                  <div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}>
-                    <div style={{height:"100%",width:progreso+"%",background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s"}}/>
-                  </div>
-                )}
-                {/* Chips de actividades para agregar */}
+                {totalAcordados>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}>
+                  <div style={{height:"100%",width:progreso+"%",background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s"}}/>
+                </div>}
                 <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8}}>
                   {ACTIVIDADES.map(a=>{
-                    const tiene=(c.contenido||[]).find(x=>x.tipo===a&&(x.acordados||0)>0);
+                    const item=(c.contenido||[]).find(x=>x.tipo===a&&(x.acordados||0)>0);
                     return <button key={a} onClick={async()=>{
                       const lista=c.contenido||[];
                       const ex=lista.findIndex(x=>x.tipo===a);
                       const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo:a,acordados:1,entregados:0}];
                       await save({contenido:upd});
-                    }} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(tiene?T.accentSolid:T.border),background:tiene?T.accentSolid+"18":"transparent",color:tiene?T.accent:T.textMd,cursor:"pointer",fontWeight:tiene?600:400}}>
-                      {tiene?"✓ ":"+  "}{a}{tiene?` (${tiene.acordados})`:""}
+                    }} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(item?T.accentSolid:T.border),background:item?T.accentSolid+"18":"transparent",color:item?T.accent:T.textMd,cursor:"pointer",fontWeight:item?600:400}}>
+                      {item?"✓ ":"+ "}{a}{item?` (${item.acordados})`:""}
                     </button>;
                   })}
                 </div>
-                {/* Lista de contenidos acordados */}
                 {(c.contenido||[]).filter(item=>(item.acordados||0)>0).map((item,ci)=>{
                   const ac=item.acordados||1;
                   const en=item.entregados||0;
@@ -2077,35 +2081,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 })}
               </div>
 
-              {/* ── NOTAS inline editable ── */}
-              {(()=>{
-                const [editingNotas,setEditingNotas]=useState(false);
-                const [notasVal,setNotasVal]=useState(c.notas||"");
-                useEffect(()=>{setNotasVal(c.notas||"");},[c.notas]);
-                return <div style={{marginBottom:10}}>
-                  {!editingNotas
-                    ?<div onClick={()=>setEditingNotas(true)} style={{background:c.notas?T.yellowBg:T.bg,border:"1px dashed "+(c.notas?T.yellow+"44":T.border),borderRadius:10,padding:"10px 14px",cursor:"text",minHeight:40}}>
-                       {c.notas
-                         ?<><div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:3}}>📝 Notas</div>
-                            <div style={{fontSize:13,lineHeight:1.6,color:T.text}}>{c.notas}</div></>
-                         :<div style={{fontSize:13,color:T.textSm}}>📝 Click para agregar notas...</div>
-                       }
-                     </div>
-                    :<div>
-                       <div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:700,marginBottom:4}}>📝 Notas</div>
-                       <textarea autoFocus rows={3} value={notasVal} onChange={e=>setNotasVal(e.target.value)}
-                         style={{...iS,resize:"vertical",minHeight:70,fontSize:13,lineHeight:1.5,borderColor:T.yellow+"88"}}
-                         onBlur={async()=>{setEditingNotas(false);if(notasVal!==(c.notas||""))await save({notas:notasVal});}}
-                         onKeyDown={e=>{if(e.key==="Escape"){setEditingNotas(false);setNotasVal(c.notas||"");}}}
-                       />
-                     </div>
-                  }
-                </div>;
-              })()}
+              {/* Notas inline */}
+              <NotasInline value={c.notas} onSave={v=>save({notas:v})} T={T} iS={iS}/>
 
               <NotasRapidas T={T} canje={c} onAdd={addNota}/>
 
-              {/* ── FOOTER ── */}
+              {/* Footer */}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4,paddingTop:10,borderTop:"1px solid "+T.borderL}}>
                 <div style={{fontSize:11,color:T.textSm}}>
                   Creado {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?" · Finalizado "+fmtTs(c.finalizadoAt):""}
