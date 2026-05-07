@@ -3911,36 +3911,26 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           </div>
 
           {/* ── CARDS ── */}
+          {(()=>{
+            const CARD_ICONS = {
+              reclamos: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+              canjes:   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+              envios:   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
+            };
+            return (
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:28}}>
             {[
-              {
-                id:"reclamos", label:"Reclamos", desc:"Cambios y devoluciones",
-                stat:reclamosCount, statLabel:"activos",
-                accent:"#f87171", accentBg:"rgba(248,113,113,0.08)",
-                icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
-              },
-              {
-                id:"canjes", label:"Canjes", desc:"Influencers y contenido",
-                stat:canjesCount, statLabel:"canjes",
-                accent:"#c084fc", accentBg:"rgba(192,132,252,0.08)",
-                icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
-              },
-              {
-                id:"envios", label:"Envíos", desc:"Despachos y seguimientos",
-                stat:ordersCount, statLabel:"pedidos",
-                accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)",
-                icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
-              },
+              {id:"reclamos", label:"Reclamos", desc:"Cambios y devoluciones",   stat:reclamosCount, statLabel:"activos",  accent:"#f87171", accentBg:"rgba(248,113,113,0.08)"},
+              {id:"canjes",   label:"Canjes",   desc:"Influencers y contenido",  stat:canjesCount,   statLabel:"canjes",   accent:"#c084fc", accentBg:"rgba(192,132,252,0.08)"},
+              {id:"envios",   label:"Envíos",   desc:"Despachos y seguimientos", stat:ordersCount,   statLabel:"pedidos",  accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
             ].map(item=>(
               <button key={item.id} onClick={()=>onNavigate(item.id)}
                 style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 24px 20px",textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column",position:"relative",overflow:"hidden"}}
                 onMouseEnter={e=>{e.currentTarget.style.borderColor=item.accent+"88";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 24px ${item.accent}18`;}}
                 onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
-                {/* Barra de color top */}
                 <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:item.accent,borderRadius:"14px 14px 0 0"}}/>
-                {/* Icono */}
                 <div style={{width:40,height:40,borderRadius:10,background:item.accentBg,border:`1px solid ${item.accent}33`,display:"flex",alignItems:"center",justifyContent:"center",color:item.accent,marginBottom:14,marginTop:6}}>
-                  {item.icon}
+                  {CARD_ICONS[item.id]}
                 </div>
                 <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>{item.label}</div>
                 <div style={{fontSize:12,color:T.textSm,marginBottom:20,lineHeight:1.5}}>{item.desc}</div>
@@ -3951,6 +3941,8 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               </button>
             ))}
           </div>
+            );
+          })()}
 
           {/* ── NOTIFICACIONES DE CANJES ── */}
           {notificacionesCanjes.length>0&&(
