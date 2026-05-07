@@ -779,25 +779,21 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
 
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px",position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1400,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onHome} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
-            <span style={{color:T.textSm,fontSize:15}}>/</span>
-            <span style={{fontWeight:700,fontSize:15,color:T.text}}>📋 Reclamos</span>
-            <div style={{display:"flex",alignItems:"center",gap:4,background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"3px 10px"}}>
-              <span style={{width:6,height:6,borderRadius:"50%",background:fbDot,boxShadow:`0 0 5px ${fbDot}`}}/>
-              <span style={{fontSize:11,color:T.textSm}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
-            </div>
+            <button onClick={onHome} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
+            <span style={{color:T.borderL,fontSize:15}}>/</span>
+            <span style={{fontWeight:700,fontSize:14,color:T.text}}>Reclamos</span>
           </div>
           <div style={{display:"flex",gap:6}}>
             {["dashboard","buscar","reclamos","config"].map(v=>{
-              const labels={dashboard:"📊 Dashboard",buscar:"🔍 Buscar",reclamos:"📋 Reclamos",config:"⚙️ Plantillas"};
+              const labels={dashboard:"Dashboard",buscar:"Buscar",reclamos:"Lista",config:"Plantillas"};
               const isCurrent=view===v;
-              return <button key={v} onClick={()=>{setView(v);setActiveReclamo(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:isCurrent?600:400,border:"none",borderRadius:7,background:isCurrent?T.accentSolid:"transparent",color:isCurrent?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>{labels[v]}{v==="reclamos"&&stats.urgentes>0&&<span style={{background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:4,padding:"1px 5px",marginLeft:2}}>{stats.urgentes}</span>}</button>;
+              return <button key={v} onClick={()=>{setView(v);setActiveReclamo(null);}} style={{padding:"6px 13px",fontSize:12,fontWeight:isCurrent?600:400,border:"none",borderRadius:7,background:isCurrent?T.accentSolid:"transparent",color:isCurrent?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>{labels[v]}{v==="reclamos"&&stats.urgentes>0&&<span style={{background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:4,padding:"1px 5px",marginLeft:2}}>{stats.urgentes}</span>}</button>;
             })}
             <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>+ Nuevo</button>
-            <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:ordersStatus==="loading"?0.5:1}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
+            <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",opacity:ordersStatus==="loading"?0.5:1}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
           </div>
         </div>
       </div>
@@ -1432,7 +1428,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
                   {/* Notas internas */}
                   <div style={{marginBottom:14}}>
-                    <div style={{fontSize:11,textTransform:"uppercase",color:T.yellow,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>🔒 Notas internas</div>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Notas internas</div>
                     <textarea
                       rows={3}
                       placeholder="Notas privadas (no visibles para el cliente)..."
@@ -2051,20 +2047,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   return (
     <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:62,gap:16,maxWidth:1280,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <button onClick={onHome} style={{...BtnSecondary(T),padding:"8px 14px",fontSize:13}}>← Inicio</button>
-            <span style={{color:T.textSm,fontSize:16}}>/</span>
-            <span style={{fontWeight:700,fontSize:16,color:T.text}}>🤝 Canjes</span>
-            <div style={{display:"flex",alignItems:"center",gap:5,background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"4px 10px"}}>
-              <span style={{width:7,height:7,borderRadius:"50%",background:fbDot,boxShadow:`0 0 5px ${fbDot}`}}/>
-              <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
-            </div>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1280,margin:"0 auto"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={onHome} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
+            <span style={{color:T.borderL,fontSize:15}}>/</span>
+            <span style={{fontWeight:700,fontSize:14,color:T.text}}>Canjes</span>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={exportCSV} style={{...BtnSecondary(T),fontSize:13}}>⬇️ Exportar CSV</button>
-            <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13}}>+ Nuevo Canje</button>
+            <button onClick={exportCSV} style={{...BtnSecondary(T),fontSize:12,color:T.textMd}}>Exportar CSV</button>
+            <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13}}>+ Nuevo</button>
           </div>
         </div>
       </div>
@@ -2097,7 +2089,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
         {/* Tabs */}
         <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginTop:20}}>
-          {[{id:"lista",label:"Lista",icon:"☰"},{id:"kanban",label:"Kanban",icon:"⬜"},{id:"ranking",label:"Ranking",icon:"🏆"}].map(t=>(
+          {[{id:"lista",label:"Lista",icon:"☰"},{id:"kanban",label:"Kanban",icon:"⬜"},{id:"ranking",label:"Ranking",icon:"★"}].map(t=>(
             <button key={t.id} onClick={()=>setViewTab(t.id)}
               style={{padding:"13px 20px",fontSize:14,fontWeight:viewTab===t.id?700:400,color:viewTab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:viewTab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"Inter,system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,marginBottom:-1,transition:"color 0.15s"}}>
               {t.icon} {t.label}
@@ -3224,18 +3216,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px",position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:1280,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onHome} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
-            <span style={{color:T.textSm,fontSize:15}}>/</span>
-            <span style={{fontWeight:700,fontSize:15,color:T.text}}>🚚 Envíos</span>
+            <button onClick={onHome} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
+            <span style={{color:T.borderL,fontSize:15}}>/</span>
+            <span style={{fontWeight:700,fontSize:14,color:T.text}}>Envíos</span>
           </div>
           <AsyncButton onClick={async()=>{
             tabCacheRef.current={};
             setTabOrders([]);
             await Promise.all([fetchTabOrders(tabEnvio), fetchTabCounts(user?.uid)]);
-          }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.textMd}}>
+          }} style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px",color:T.textMd}}>
             ⟳ Sincronizar
           </AsyncButton>
         </div>
@@ -3244,7 +3236,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Tabs */}
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px"}}>
         <div style={{display:"flex",maxWidth:1280,margin:"0 auto"}}>
-          {[{id:"panel",label:"📦 Panel de Envíos"},{id:"sku",label:"🏷️ SKU en Rótulos"},{id:"seguimientos",label:"📍 Seguimientos"}].map(t=>(
+          {[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}].map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"13px 18px",fontSize:14,fontWeight:tab===t.id?700:400,color:tab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:tab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:-1,transition:"color 0.15s"}}>
               {t.label}
             </button>
@@ -3843,116 +3835,102 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 // ═══════════════════════════════════════════
 // HOME SCREEN
 // ═══════════════════════════════════════════
-function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false}) {
+function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark}) {
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
+  const nombre = user?.displayName?.split(" ")[0] || "ahí";
+  const hora = new Date().getHours();
+  const saludo = hora < 13 ? "Buenos días" : hora < 20 ? "Buenas tardes" : "Buenas noches";
+  const urgentes = alertas?.length || 0;
+
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column"}}>
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:64,maxWidth:1000,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${T.accent},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🌙</div>
-            <div>
-              <div style={{fontWeight:800,fontSize:16,color:T.text,letterSpacing:-0.3}}>Growith</div>
-              <div style={{fontSize:12,color:T.textSm}}>Gestión de tu negocio</div>
+
+      {/* Topbar */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:1000,margin:"0 auto"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:28,height:28,borderRadius:7,background:T.accentSolid,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🌙</div>
+            <span style={{fontWeight:800,fontSize:15,color:T.text,letterSpacing:-0.3}}>Growith</span>
+            <div style={{display:"flex",alignItems:"center",gap:5,marginLeft:4}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:fbDot}}/>
+              <span style={{fontSize:11,color:T.textSm}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            {user?.photoURL&&<img src={user.photoURL} style={{width:32,height:32,borderRadius:"50%",border:`2px solid ${T.border}`}} alt=""/>}
-            <div style={{display:"flex",alignItems:"center",gap:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 12px"}}>
-              <span style={{width:7,height:7,borderRadius:"50%",background:fbDot,boxShadow:`0 0 6px ${fbDot}`}}/>
-              <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
-            </div>
-            {/* Plan badge */}
-            <button onClick={()=>onNavigate("planes")} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:8,background:userPlan==="free"?T.surface:userPlan==="starter"?"#1c1400":userPlan==="pro"?"#0a1628":"#1a0a2e",border:`0.5px solid ${userPlan==="free"?T.border:userPlan==="starter"?"#fbbf24":userPlan==="pro"?"#60a5fa":"#a78bfa"}`,fontSize:12,fontWeight:600,color:userPlan==="free"?T.textSm:userPlan==="starter"?"#fbbf24":userPlan==="pro"?"#60a5fa":"#a78bfa",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {user?.photoURL&&<img src={user.photoURL} style={{width:28,height:28,borderRadius:"50%",border:`1.5px solid ${T.border}`}} alt=""/>}
+            <button onClick={()=>onNavigate("planes")} style={{fontSize:11,fontWeight:600,padding:"4px 9px",borderRadius:6,background:"transparent",border:`1px solid ${T.border}`,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
               {userPlan==="free"?"Free":userPlan==="starter"?"Starter":userPlan==="pro"?"Pro":"Total"}
             </button>
-            {isAdmin&&<button onClick={()=>onNavigate("admin")} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,color:T.yellow,borderColor:T.yellow+"44"}} title="Panel de administrador">👑</button>}
-            <button onClick={()=>onNavigate("config")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>⚙️</button>
+            {isAdmin&&<button onClick={()=>onNavigate("admin")} style={{...BtnSecondary(T),padding:"5px 9px",fontSize:12,color:T.yellow,borderColor:T.yellow+"44"}}>👑</button>}
+            <button onClick={onToggleDark} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.textSm}} title={darkMode?"Modo claro":"Modo oscuro"}>{darkMode?"☀︎":"◑"}</button>
+            <button onClick={()=>onNavigate("config")} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:12,color:T.textMd}}>Config</button>
           </div>
         </div>
       </div>
 
-      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"32px 16px"}}>
-        <div style={{textAlign:"center",marginBottom:48,maxWidth:520}}>
-          <h1 style={{fontSize:36,fontWeight:800,margin:"0 0 12px",letterSpacing:-1,color:T.text}}>Bienvenida 👋</h1>
-          <p style={{fontSize:17,color:T.textMd,margin:0,lineHeight:1.7}}>Seleccioná una sección para gestionar tu negocio.</p>
-        </div>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"48px 24px 64px"}}>
 
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,width:"100%",maxWidth:760,marginBottom:32}}>
-          {/* Reclamos */}
-          <button onClick={()=>onNavigate("reclamos")}
-            style={{background:T.card,border:`0.5px solid ${T.border}`,borderLeft:`3px solid ${T.red}`,borderRadius:14,padding:28,textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
-            onMouseEnter={e=>{e.currentTarget.style.background=T.surface;}}
-            onMouseLeave={e=>{e.currentTarget.style.background=T.card;}}>
-            <div style={{width:44,height:44,borderRadius:10,background:T.redBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,marginBottom:18}}>📋</div>
-            <div style={{fontSize:18,fontWeight:700,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Reclamos</div>
-            <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:20}}>Administrá cambios y devoluciones de productos vinculados a tus pedidos de Tienda Nube.</div>
-            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`0.5px solid ${T.borderL}`}}>
-              <div><div style={{fontSize:26,fontWeight:700,color:T.accent,letterSpacing:-0.5}}>{ordersCount??<Spinner size={16} color={T.accent}/>}</div><div style={{fontSize:11,color:T.textSm,marginTop:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>pedidos totales</div></div>
-              <div style={{width:1,background:T.borderL}}/>
-              <div><div style={{fontSize:26,fontWeight:800,color:T.red,letterSpacing:-1}}>{reclamosCount}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>reclamos</div></div>
-            </div>
-          </button>
+        {/* Daily briefing */}
+        <div style={{width:"100%",maxWidth:760,marginBottom:48}}>
+          <h1 style={{fontSize:30,fontWeight:800,margin:"0 0 6px",letterSpacing:-0.8,color:T.text}}>{saludo}, {nombre}</h1>
+          <p style={{fontSize:15,color:T.textSm,margin:"0 0 28px",lineHeight:1.6}}>
+            {urgentes > 0
+              ? <><span style={{color:T.red,fontWeight:600}}>{urgentes} alerta{urgentes>1?"s":""} pendiente{urgentes>1?"s":""}</span> en canjes · {reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}</>
+              : <>Todo en orden · {reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}</>
+            }
+          </p>
 
-          {/* Canjes */}
-          <button onClick={()=>onNavigate("canjes")}
-            style={{background:T.card,border:`0.5px solid ${T.border}`,borderLeft:`3px solid ${T.purple}`,borderRadius:14,padding:28,textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
-            onMouseEnter={e=>{e.currentTarget.style.background=T.surface;}}
-            onMouseLeave={e=>{e.currentTarget.style.background=T.card;}}>
-            <div style={{width:52,height:52,borderRadius:14,background:T.purpleBg,border:`1px solid ${T.purple}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,marginBottom:20}}>🤝</div>
-            <div style={{fontSize:20,fontWeight:800,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Canjes</div>
-            <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:20}}>Seguimiento de influencers, productos enviados, actividades comprometidas y contenido publicado.</div>
-            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`0.5px solid ${T.borderL}`}}>
-              <div><div style={{fontSize:26,fontWeight:800,color:T.purple,letterSpacing:-1}}>{canjesCount}</div><div style={{fontSize:12,color:T.textSm,marginTop:2}}>canjes</div></div>
-            </div>
-          </button>
-
-          {/* Envios */}
-          <button onClick={()=>onNavigate("envios")}
-            style={{background:T.card,border:`0.5px solid ${T.border}`,borderLeft:`3px solid ${T.blue}`,borderRadius:14,padding:28,textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}
-            onMouseEnter={e=>{e.currentTarget.style.background=T.surface;}}
-            onMouseLeave={e=>{e.currentTarget.style.background=T.card;}}>
-            <div style={{width:44,height:44,borderRadius:10,background:T.blueBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,marginBottom:18}}>🚚</div>
-            <div style={{fontSize:18,fontWeight:700,marginBottom:8,color:T.text,letterSpacing:-0.3}}>Gestión de Envíos</div>
-            <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:20}}>Exportá pedidos para Andreani, insertá SKUs en rótulos y enviá seguimientos a Tienda Nube automáticamente.</div>
-            <div style={{display:"flex",gap:16,paddingTop:16,borderTop:`0.5px solid ${T.borderL}`}}>
-              <div><div style={{fontSize:26,fontWeight:700,color:T.blue,letterSpacing:-0.5}}>{ordersCount??<Spinner size={16} color={T.blue}/>}</div><div style={{fontSize:11,color:T.textSm,marginTop:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>pedidos totales</div></div>
-            </div>
-          </button>
-        </div>
-
-        {/* Alertas */}
-        {alertas&&alertas.length>0&&(
-          <div style={{width:"100%",maxWidth:760}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-              <span style={{fontSize:16}}>⚠️</span>
-              <span style={{fontSize:14,fontWeight:700,color:T.text}}>Alertas pendientes</span>
-              <span style={{background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>{alertas.length}</span>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {/* Alertas */}
+          {alertas&&alertas.length>0&&(
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:32}}>
+              <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:T.red,boxShadow:`0 0 6px ${T.red}`}}/>
+                <span style={{fontSize:12,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:0.5}}>Alertas</span>
+                <span style={{fontSize:11,background:T.redBg,color:T.red,borderRadius:4,padding:"1px 7px",fontWeight:700,border:`1px solid ${T.red}33`}}>{alertas.length}</span>
+              </div>
               {alertas.map((a,i)=>{
                 const colorMap={recordatorio:T.yellow,sinrespuesta:T.orange,contenido:T.blue};
-                const iconMap={recordatorio:"⏰",sinrespuesta:"📦",contenido:"🎬"};
                 const col=colorMap[a.tipo]||T.yellow;
                 return (
                   <div key={i} onClick={()=>onNavigate("canjes")}
-                    style={{background:T.card,border:`1px solid ${col}44`,borderLeft:`4px solid ${col}`,borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",transition:"all 0.15s"}}
+                    style={{padding:"13px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<alertas.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
                     onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-                    onMouseLeave={e=>e.currentTarget.style.background=T.card}>
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <span style={{fontSize:16}}>{iconMap[a.tipo]}</span>
+                      <span style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0}}/>
                       <div>
-                        <div style={{fontSize:13,fontWeight:700,color:T.text}}>{a.canje.influencer}</div>
-                        <div style={{fontSize:12,color:col,fontWeight:500,marginTop:1}}>{a.msg}</div>
+                        <span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.canje.influencer}</span>
+                        <span style={{fontSize:12,color:T.textSm,marginLeft:8}}>{a.msg}</span>
                       </div>
                     </div>
-                    <span style={{fontSize:12,color:T.textSm}}>→ Ver canjes</span>
+                    <span style={{fontSize:11,color:T.textSm}}>Ver →</span>
                   </div>
                 );
               })}
             </div>
+          )}
+
+          {/* Nav cards */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12}}>
+            {[
+              {id:"reclamos", label:"Reclamos", desc:"Cambios y devoluciones", stat:reclamosCount, statLabel:"activos"},
+              {id:"canjes",   label:"Canjes",   desc:"Influencers y contenido",  stat:canjesCount,   statLabel:"canjes"},
+              {id:"envios",   label:"Envíos",   desc:"Despachos y seguimientos", stat:ordersCount,   statLabel:"pedidos"},
+            ].map(item=>(
+              <button key={item.id} onClick={()=>onNavigate(item.id)}
+                style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"22px 22px 20px",textAlign:"left",cursor:"pointer",transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column",gap:0}}
+                onMouseEnter={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.borderColor=T.accent+"55";}}
+                onMouseLeave={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.borderColor=T.border;}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4,letterSpacing:-0.2}}>{item.label}</div>
+                <div style={{fontSize:12,color:T.textSm,marginBottom:18,lineHeight:1.5}}>{item.desc}</div>
+                <div style={{marginTop:"auto",paddingTop:16,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"baseline",gap:5}}>
+                  <span style={{fontSize:24,fontWeight:800,color:T.text,letterSpacing:-1}}>{item.stat??<Spinner size={14} color={T.textSm}/>}</span>
+                  <span style={{fontSize:11,color:T.textSm}}>{item.statLabel}</span>
+                </div>
+              </button>
+            ))}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -3961,7 +3939,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 // ═══════════════════════════════════════════
 // AUTH SCREEN
 // ═══════════════════════════════════════════
-function AuthScreen({T}) {
+function AuthScreen({T, darkMode, onToggleDark}) {
   const [mode,setMode]=useState("login"); // login | register
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
@@ -4026,12 +4004,13 @@ function AuthScreen({T}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{width:"100%",maxWidth:420}}>
+      <button onClick={onToggleDark} style={{position:"fixed",top:20,right:20,background:"transparent",border:`1px solid ${T.border}`,borderRadius:7,padding:"5px 10px",fontSize:11,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{darkMode?"☀︎ Claro":"◑ Oscuro"}</button>
+      <div style={{width:"100%",maxWidth:400}}>
         {/* Logo */}
-        <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{width:56,height:56,borderRadius:16,background:`linear-gradient(135deg,${T.accentSolid},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 14px"}}>🌙</div>
-          <div style={{fontSize:24,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Growith</div>
-          <div style={{fontSize:14,color:T.textMd,marginTop:4}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
+        <div style={{textAlign:"center",marginBottom:36}}>
+          <div style={{width:40,height:40,borderRadius:10,background:T.accentSolid,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,margin:"0 auto 12px"}}>🌙</div>
+          <div style={{fontSize:22,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Growith</div>
+          <div style={{fontSize:13,color:T.textSm,marginTop:3}}>{mode==="login"?"Iniciá sesión":"Creá tu cuenta"}</div>
         </div>
 
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:28}}>
@@ -4081,7 +4060,7 @@ function AuthScreen({T}) {
 // ═══════════════════════════════════════════
 // CONFIG SCREEN
 // ═══════════════════════════════════════════
-function ConfigScreen({T, user, onBack}) {
+function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   const [userDoc,setUserDoc]=useState(null);
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
@@ -4135,12 +4114,14 @@ function ConfigScreen({T, user, onBack}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:56,maxWidth:800,margin:"0 auto"}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:800,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
-            <span style={{fontWeight:700,fontSize:15,color:T.text}}>⚙️ Configuración</span>
+            <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
+            <span style={{color:T.borderL,fontSize:15}}>/</span>
+            <span style={{fontWeight:700,fontSize:14,color:T.text}}>Configuración</span>
           </div>
+          <button onClick={onToggleDark} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.textSm}}>{darkMode?"☀︎ Modo claro":"◑ Modo oscuro"}</button>
         </div>
       </div>
 
@@ -4774,35 +4755,27 @@ export default function App() {
     return ()=>{u1();u2();};
   },[user]);
 
-  const themeBtn = (
-    <button onClick={()=>setDarkMode(d=>!d)}
-      style={{position:"fixed",bottom:24,right:24,zIndex:999,width:48,height:48,borderRadius:"50%",background:T.card,border:`1px solid ${T.border}`,fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 16px rgba(0,0,0,0.2)",transition:"all 0.2s"}}
-      title={darkMode?"Modo claro":"Modo oscuro"}>
-      {darkMode?"☀️":"🌙"}
-    </button>
-  );
-
   // Loading
   if(user===undefined) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{textAlign:"center"}}>
-        <div style={{fontSize:40,marginBottom:16}}>🌙</div>
-        <div style={{fontSize:16,color:T.textMd}}>Cargando...</div>
+        <div style={{width:32,height:32,borderRadius:8,background:T.accentSolid,margin:"0 auto 16px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🌙</div>
+        <div style={{fontSize:14,color:T.textSm}}>Cargando...</div>
       </div>
     </div>
   );
 
   // Not logged in
-  if(!user) return <>{themeBtn}<AuthScreen T={T}/></>;
+  if(!user) return <AuthScreen T={T} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 
   // Config
-  if(page==="planes") return <><AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>{themeBtn}</>;
-  if(page==="admin"&&isAdmin) return <><AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>{themeBtn}</>;
-  if(page==="config") return <>{themeBtn}<ConfigScreen T={T} user={user} onBack={()=>setPage("home")}/></>;
+  if(page==="planes") return <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
+  if(page==="admin"&&isAdmin) return <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
+  if(page==="config") return <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 
   // App
-  if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/>{themeBtn}</>;
-  if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)}/>{themeBtn}</>;
-  if(page==="envios") return <><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/>{themeBtn}</>;
-  return <><HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin}/>{themeBtn}</>;
+  if(page==="reclamos") return <AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/>;
+  if(page==="canjes") return <AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)}/>;
+  if(page==="envios") return <AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/>;
+  return <HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 }
