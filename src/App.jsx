@@ -400,6 +400,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [searchApiLoading,setSearchApiLoading]=useState(false);
   const [pedidoDetalle,setPedidoDetalle]=useState(null);
   const [slaConfig,setSlaConfig]=useState({dias:3}); // SLA configurable
+  const [andreaniAlertas,setAndreaniAlertas]=useState([]); // [{docId, orderNum, tracking, estado}]
+  const [andreaniChecked,setAndreaniChecked]=useState(false);
 
   // Atajos de teclado en reclamos
   useEffect(()=>{
@@ -443,7 +445,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
   const emptyForm=(orderNum="", clienteData={})=>({
     _docId:null, orderNum, tipo:"Cambio", motivo:"", descripcion:"", estado:"Nuevo",
-    resolucion:"", notas:"", trackingCambio:"",
+    resolucion:"", notas:"", trackingCambio:"", trackingDevolucion:"",
     productosRecibe:[{producto:"",cantidad:1}],
     productosEnvia:[{producto:"",cantidad:1}],
     historial:[],
@@ -468,6 +470,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         descripcion:reclamoForm.descripcion||"", estado:reclamoForm.estado,
         resolucion:reclamoForm.resolucion||"", notas:reclamoForm.notas||"",
         trackingCambio:reclamoForm.trackingCambio||"",
+        trackingDevolucion:reclamoForm.trackingDevolucion||"",
         productosRecibe:reclamoForm.productosRecibe||[],
         productosEnvia:reclamoForm.productosEnvia||[],
         historial:histEntry,
@@ -510,7 +513,78 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     setDeleteConfirm(null);setActiveReclamo(null);
   }
 
-  async function savePlantillas(lista, sla) {
+  // ── Andreani polling: chequear trackings de devolución pendientes ──
+  useEffect(()=>{
+    if(!reclamos.length) return;
+    // Solo monitorear reclamos con trackingDevolucion y estado no resuelto
+    const pendientes = reclamos.filter(r =>
+      r.trackingDevolucion &&
+      r.trackingDevolucion.trim() &&
+      !["Resuelto","Rechazado"].includes(r.estado)
+    );
+    if(!pendientes.length) { setAndreaniChecked(true); return; }
+
+    async function checkAndreani() {
+      const alertas = [];
+      await Promise.all(pendientes.map(async (r) => {
+        const tracking = r.trackingDevolucion.trim();
+        try {
+          const res = await fetch(
+            `https://api.andreani.com/v2/ordenes/${tracking}`,
+            { headers: { "Accept": "application/json" } }
+          );
+          // Andreani pública no requiere auth para consultas básicas
+          if(!res.ok) {
+            // Fallback: intentar endpoint de seguimiento
+            const res2 = await fetch(
+              `https://tracking.andreani.com/api/v1/seguimiento?tracking=${tracking}`,
+              { headers: { "Accept": "application/json" } }
+            );
+            if(!res2.ok) return;
+            const d2 = await res2.json();
+            const estadoAndreani = d2?.estado || d2?.ultimoEvento?.estado || "";
+            if(esEnSucursal(estadoAndreani)) alertas.push({docId:r._docId, orderNum:r.orderNum, tracking, estado:estadoAndreani, nombre:r.clienteNombre});
+            return;
+          }
+          const d = await res.json();
+          const estadoAndreani = d?.estado || d?.estadoActual || "";
+          if(esEnSucursal(estadoAndreani)) alertas.push({docId:r._docId, orderNum:r.orderNum, tracking, estado:estadoAndreani, nombre:r.clienteNombre});
+        } catch(_) {}
+      }));
+      setAndreaniAlertas(alertas);
+      setAndreaniChecked(true);
+      // Notificación del browser si hay paquetes listos
+      if(alertas.length > 0) {
+        dispararNotificacionBrowser(alertas);
+      }
+    }
+
+    checkAndreani();
+    // Re-chequear cada 30 minutos mientras la app está abierta
+    const interval = setInterval(checkAndreani, 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [reclamos.length]);
+
+  function esEnSucursal(estado) {
+    if(!estado) return false;
+    const e = estado.toLowerCase();
+    return e.includes("sucursal") || e.includes("retiro") || e.includes("disponible") || e.includes("listo") || e.includes("en agencia");
+  }
+
+  function dispararNotificacionBrowser(alertas) {
+    if(!("Notification" in window)) return;
+    const msg = alertas.length === 1
+      ? `📦 Paquete listo para retirar — Tracking ${alertas[0].tracking} (Pedido #${alertas[0].orderNum})`
+      : `📦 ${alertas.length} paquetes listos para retirar en sucursal`;
+    if(Notification.permission === "granted") {
+      new Notification("Growith — Andreani 📦", { body: msg, icon: "/favicon.ico" });
+    } else if(Notification.permission !== "denied") {
+      Notification.requestPermission().then(p => {
+        if(p === "granted") new Notification("Growith — Andreani 📦", { body: msg, icon: "/favicon.ico" });
+      });
+    }
+  }
+
     const newSla=sla||slaConfig;
     try{ await setDoc(doc(db,"config","plantillas"),{lista,sla:newSla}); }catch(e){}
     setPlantillas(lista);
@@ -729,7 +803,53 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
       <div style={{maxWidth:1400,margin:"0 auto",padding:"0 16px"}}>
 
-        {/* ── DASHBOARD ── */}
+        {/* ── BANNER ANDREANI — Paquetes listos para retirar ── */}
+        {andreaniAlertas.length > 0 && (
+          <div style={{
+            background: "linear-gradient(135deg, #052e16 0%, #0a2a1a 100%)",
+            border: `1.5px solid ${T.green}55`,
+            borderRadius: 12,
+            padding: "14px 18px",
+            margin: "16px 0 4px",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 14,
+            animation: "growith-fadeIn 0.4s ease",
+            boxShadow: `0 0 24px ${T.green}22`,
+          }}>
+            <div style={{fontSize:28,flexShrink:0}}>📦</div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,fontSize:14,color:T.green,marginBottom:4}}>
+                {andreaniAlertas.length === 1
+                  ? "¡Paquete listo para retirar en sucursal!"
+                  : `¡${andreaniAlertas.length} paquetes listos para retirar!`}
+              </div>
+              {andreaniAlertas.map((a,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+                  <span style={{fontSize:12,color:T.textMd}}>
+                    Pedido <span style={{color:T.accent,fontWeight:600}}>#{a.orderNum}</span>
+                    {a.nombre ? ` · ${a.nombre}` : ""}
+                    {" · "}<span style={{color:T.green,fontWeight:600}}>{a.tracking}</span>
+                  </span>
+                  <a
+                    href={`https://www.andreani.com/#!/informacionEnvio/${a.tracking}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{fontSize:11,color:T.blue,borderBottom:`1px solid ${T.blue}44`,textDecoration:"none"}}
+                  >Ver en Andreani →</a>
+                  <button
+                    onClick={()=>{ setActiveReclamo(a.docId); setView("reclamos"); }}
+                    style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.surface,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer"}}
+                  >Ver reclamo</button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={()=>setAndreaniAlertas([])}
+              style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:18,padding:0,flexShrink:0}}
+              title="Cerrar"
+            >✕</button>
+          </div>
+        )}
         {view==="dashboard"&&(
           <div style={{padding:"24px 0 48px"}}>
 
@@ -1151,6 +1271,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                               <Badge T={T} colors={sc}>{r.estado}</Badge>
                               <Badge T={T} colors={tc}>{r.tipo}</Badge>
                               {r.trackingCambio&&<span style={{fontSize:11,color:T.purple,background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:4,padding:"2px 6px"}}>📦 {r.trackingCambio.slice(0,12)}...</span>}
+                              {r.trackingDevolucion&&<span style={{fontSize:11,color:T.green,background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:4,padding:"2px 6px"}}>📥 {r.trackingDevolucion.slice(0,12)}...</span>}
                             </div>
                           </div>
                           <div style={{fontSize:11,color:T.textSm,whiteSpace:"nowrap"}}>{fmtTs(r.createdAt)}</div>
@@ -1246,7 +1367,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         </div>
                       </div>
                       {/* Tracking del cambio */}
-                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Tracking del nuevo envío</div>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Tracking del nuevo envío (a cliente)</div>
                       <div style={{display:"flex",gap:8,flexDirection:"column"}}>
                         <div style={{display:"flex",gap:8}}>
                           <input style={{...iS,flex:1,fontSize:13,padding:"8px 12px"}} value={activeR.trackingCambio||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:e.target.value,updatedAt:serverTimestamp()});}} />
@@ -1263,6 +1384,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                           </AsyncButton>
                         )}
                       </div>
+                      {/* Tracking devolución (viene del cliente) */}
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginTop:12,marginBottom:6}}>📥 Tracking devolución (viene a nosotros)</div>
+                      <div style={{display:"flex",gap:8}}>
+                        <input style={{...iS,flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":iS.borderColor}} value={activeR.trackingDevolucion||""} placeholder="Código Andreani del cliente..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:e.target.value,updatedAt:serverTimestamp()});}} />
+                        {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green}}>🔍 Ver</a>}
+                      </div>
+                      {!activeR.trackingDevolucion&&<div style={{fontSize:11,color:T.textSm,marginTop:4}}>📢 Cuando lo cargues te avisamos cuando llegue a sucursal</div>}
                     </div>
                   )}
 
@@ -1291,6 +1419,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                           </select>
                         </div>
                       </div>
+                      {/* Tracking devolución */}
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginTop:10,marginBottom:6}}>📥 Tracking devolución (viene a nosotros)</div>
+                      <div style={{display:"flex",gap:8}}>
+                        <input style={{...iS,flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":iS.borderColor}} value={activeR.trackingDevolucion||""} placeholder="Código Andreani del cliente..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:e.target.value,updatedAt:serverTimestamp()});}} />
+                        {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green}}>🔍 Ver</a>}
+                      </div>
+                      {!activeR.trackingDevolucion&&<div style={{fontSize:11,color:T.textSm,marginTop:4}}>📢 Cuando lo cargues te avisamos cuando llegue a sucursal</div>}
                     </div>
                   )}
 
@@ -1339,7 +1474,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     {deleteConfirm===activeR._docId?(
                       <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><AsyncButton onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</AsyncButton><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
                     ):(
-                      <><button onClick={()=>setDeleteConfirm(activeR._docId)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>Eliminar</button><button onClick={()=>{setReclamoForm({...activeR,productosRecibe:activeR.productosRecibe||[{producto:"",cantidad:1}],productosEnvia:activeR.productosEnvia||[{producto:"",cantidad:1}],historial:activeR.historial||[],trackingCambio:activeR.trackingCambio||"",estadoRecepcion:activeR.estadoRecepcion||"",estadoReembolso:activeR.estadoReembolso||""});}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Editar todo</button>
+                      <><button onClick={()=>setDeleteConfirm(activeR._docId)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>Eliminar</button><button onClick={()=>{setReclamoForm({...activeR,productosRecibe:activeR.productosRecibe||[{producto:"",cantidad:1}],productosEnvia:activeR.productosEnvia||[{producto:"",cantidad:1}],historial:activeR.historial||[],trackingCambio:activeR.trackingCambio||"",trackingDevolucion:activeR.trackingDevolucion||"",estadoRecepcion:activeR.estadoRecepcion||"",estadoReembolso:activeR.estadoReembolso||""});}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Editar todo</button>
                       {activeOrder?.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.purple}}>🔗 TN</a>}</>
                     )}
                   </div>
@@ -1493,13 +1628,35 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     ))}
                   </div>
                   <div style={{marginTop:12}}>
-                  <Field T={T} label="Tracking del nuevo envío">
-                    <input style={iS} value={reclamoForm.trackingCambio||""} onChange={e=>setReclamoForm(f=>({...f,trackingCambio:e.target.value}))} placeholder="Código Andreani"/>
+                  <Field T={T} label="Tracking del nuevo envío (a cliente)">
+                    <input style={iS} value={reclamoForm.trackingCambio||""} onChange={e=>setReclamoForm(f=>({...f,trackingCambio:e.target.value}))} placeholder="Código Andreani del envío al cliente"/>
+                  </Field>
+                  </div>
+                  <div style={{marginTop:4}}>
+                  <Field T={T} label="📥 Tracking devolución (viene a nosotros)">
+                    <div style={{position:"relative"}}>
+                      <input style={{...iS, borderColor: reclamoForm.trackingDevolucion ? T.green+"88" : iS.borderColor}} value={reclamoForm.trackingDevolucion||""} onChange={e=>setReclamoForm(f=>({...f,trackingDevolucion:e.target.value}))} placeholder="Código Andreani que nos manda el cliente"/>
+                      {reclamoForm.trackingDevolucion&&(
+                        <a href={`https://www.andreani.com/#!/informacionEnvio/${reclamoForm.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:T.blue,textDecoration:"none",background:T.card,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.blue}33`}}>Ver →</a>
+                      )}
+                    </div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:4}}>📢 Te notificamos cuando llegue a sucursal</div>
                   </Field>
                   </div>
                 </div>
               )}
               <Field T={T} label="Descripción"><textarea style={{...iS,minHeight:60,resize:"vertical"}} value={reclamoForm.descripcion} onChange={e=>setReclamoForm(f=>({...f,descripcion:e.target.value}))} placeholder="Detalle del reclamo..."/></Field>
+              {reclamoForm.tipo==="Devolución"&&(
+                <Field T={T} label="📥 Tracking devolución (viene a nosotros)">
+                  <div style={{position:"relative"}}>
+                    <input style={{...iS, borderColor: reclamoForm.trackingDevolucion ? T.green+"88" : iS.borderColor}} value={reclamoForm.trackingDevolucion||""} onChange={e=>setReclamoForm(f=>({...f,trackingDevolucion:e.target.value}))} placeholder="Código Andreani que nos manda el cliente"/>
+                    {reclamoForm.trackingDevolucion&&(
+                      <a href={`https://www.andreani.com/#!/informacionEnvio/${reclamoForm.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:T.blue,textDecoration:"none",background:T.card,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.blue}33`}}>Ver →</a>
+                    )}
+                  </div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:4}}>📢 Te notificamos cuando llegue a sucursal</div>
+                </Field>
+              )}
               {reclamoForm._docId&&(
                 <Field T={T} label="Estado">
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
