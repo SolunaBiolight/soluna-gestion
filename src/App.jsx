@@ -144,10 +144,9 @@ function buildOrdersFromAPI(data) {
   if(!Array.isArray(data)) return [];
   return data.map(o=>{
     const sh=o.shipping_address||{};
-    // Determinar tab de TN exacto según combinación pago+envío
     let estadoEnvio;
-    const ps=o.payment_status; // pending|paid|partially_paid|partially_refunded|voided|refunded|abandoned
-    const ss=o.shipping_status; // unpacked|ready_to_ship|shipped|delivered|partially_shipped
+    const ps=o.payment_status;
+    const ss=o.shipping_status;
     if(ps==="pending"||ps==="partially_paid") {
       estadoEnvio="Por cobrar";
     } else if((ps==="paid"||ps==="partially_paid"||ps==="partially_refunded")&&(ss==="unpacked"||ss==="partially_shipped"||!ss)) {
@@ -160,11 +159,13 @@ function buildOrdersFromAPI(data) {
       estadoEnvio=mapEstadoEnvio(ss);
     }
     return {
-      numero:String(o.number||o.id),
+      numero:String(o.number||o.id||""),
       fecha:o.created_at?new Date(o.created_at).toLocaleDateString('es-AR'):'',
-      comprador:`${sh.name||''} ${sh.last_name||''}`.trim()||o.contact_name||'',
-      email:o.contact_email||'', telefono:o.contact_phone||'', dni:o.contact_identification||'',
-      estadoOrden:o.status||'', estadoPago:mapEstadoPago(o.payment_status),
+      comprador:(`${sh.name||''} ${sh.last_name||''}`.trim()||o.contact_name||o.billing_address?.name||'').trim(),
+      email:o.contact_email||o.billing_address?.email||'',
+      telefono:o.contact_phone||o.billing_address?.phone||'',
+      dni:o.contact_identification||'',
+      estadoOrden:o.status||'', estadoPago:mapEstadoPago(o.payment_status||''),
       estadoEnvio,
       total:String(o.total||''), subtotal:String(o.subtotal||''), descuento:String(o.discount||'0'),
       costoEnvio:String(o.shipping_cost_customer||'0'),
@@ -178,9 +179,14 @@ function buildOrdersFromAPI(data) {
       canal:o.storefront||'', tracking:o.shipping_tracking_number||'',
       linkOrden:`https://solunabiolight2.mitiendanube.com/admin/orders/${o.id}`,
       fechaPago:o.paid_at||'', fechaEnvio:o.shipped_at||'',
-      productos:(o.products||[]).map(p=>({nombre:p.name||'',precio:String(p.price||''),cantidad:String(p.quantity||'1'),sku:p.sku||''})),
+      productos:Array.isArray(o.products)?o.products.map(p=>({
+        nombre:p.name||p.product_name||'',
+        precio:String(p.price||p.unit_price||''),
+        cantidad:String(p.quantity||'1'),
+        sku:p.sku||''
+      })):[],
     };
-  }).sort((a,b)=>parseInt(b.numero)-parseInt(a.numero));
+  }).sort((a,b)=>parseInt(b.numero||0)-parseInt(a.numero||0));
 }
 
 // ─── Andreani shared cache (module level) ───
@@ -302,34 +308,69 @@ function BtnSecondary(T) { return {border:`0.5px solid ${T.border}`,borderRadius
 function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
 function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
 
-function OrderSearchField({T, orders, onSelect}) {
-  const [q,setQ]=useState(""); const inputRef=useRef(null);
+function OrderSearchField({T, orders, onSelect, uid}) {
+  const [q,setQ]=useState("");
+  const [apiResults,setApiResults]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const inputRef=useRef(null);
   const iS = InputStyle(T);
-  const results=useMemo(()=>{ if(!q) return []; const s=q.toLowerCase(); return orders.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s)).slice(0,10); },[q,orders]);
+  // Primero buscar en órdenes locales
+  const localResults=useMemo(()=>{
+    if(!q||q.length<2) return [];
+    const s=q.toLowerCase().trim();
+    return orders.filter(o=>
+      o.numero.includes(s)||
+      (o.comprador||"").toLowerCase().includes(s)||
+      (o.email||"").toLowerCase().includes(s)||
+      (o.telefono||"").includes(s)
+    ).slice(0,8);
+  },[q,orders]);
+  // Si no hay resultados locales, buscar en API
+  useEffect(()=>{
+    if(!q||q.length<2){ setApiResults([]); return; }
+    if(localResults.length>0){ setApiResults([]); return; } // hay locales, no buscar API
+    const t=setTimeout(async()=>{
+      setLoading(true);
+      try{
+        const r=await fetch(`/api/orders?uid=${uid||""}&q=${encodeURIComponent(q.trim())}`);
+        const data=await r.json();
+        if(Array.isArray(data)) setApiResults(buildOrdersFromAPI(data).slice(0,8));
+      }catch(e){}
+      setLoading(false);
+    },400);
+    return ()=>clearTimeout(t);
+  },[q,localResults.length,uid]);
+
+  const results=localResults.length>0?localResults:apiResults;
   useEffect(()=>{ if(inputRef.current) inputRef.current.focus(); },[]);
+
   return (
     <div>
       <div style={{position:"relative"}}>
         <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:15}}>🔍</span>
         <input ref={inputRef} style={{...iS,paddingLeft:36}} placeholder="Nro de pedido, nombre o email..." value={q} onChange={e=>setQ(e.target.value)}/>
+        {loading&&<span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></span>}
       </div>
-      {q.length>0&&results.length>0&&(
-        <div style={{marginTop:6,background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:12,maxHeight:280,overflow:"auto"}}>
+      {q.length>=2&&results.length>0&&(
+        <div style={{marginTop:6,background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:12,maxHeight:300,overflow:"auto"}}>
+          {localResults.length===0&&apiResults.length>0&&<div style={{padding:"6px 14px",fontSize:10,color:T.textSm,borderBottom:`1px solid ${T.borderL}`,textTransform:"uppercase",letterSpacing:0.5}}>Resultados de TN</div>}
           {results.map((o,i)=>(
             <div key={o.numero} onClick={()=>onSelect(o.numero)} style={{padding:"12px 16px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
                 <div style={{display:"flex",gap:10,alignItems:"center"}}>
                   <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
-                  <span style={{color:T.text,fontSize:14,fontWeight:500}}>{o.comprador}</span>
+                  <span style={{color:T.text,fontSize:14,fontWeight:500}}>{o.comprador||"—"}</span>
                 </div>
-                <span style={{fontSize:12,color:T.textSm}}>{fmtDate(o.fecha)}</span>
+                <span style={{fontSize:12,color:T.textSm,flexShrink:0}}>{fmtDate(o.fecha)}</span>
               </div>
-              <div style={{fontSize:12,color:T.textSm,marginTop:3}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div>
+              {o.productos?.length>0&&<div style={{fontSize:12,color:T.textSm,marginTop:3}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div>}
+              {o.email&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>✉️ {o.email}</div>}
             </div>
           ))}
         </div>
       )}
-      {q.length>0&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:14,border:`0.5px solid ${T.border}`,borderRadius:12}}>Sin resultados para "{q}"</div>}
+      {q.length>=2&&!loading&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:14,border:`0.5px solid ${T.border}`,borderRadius:12}}>Sin resultados para "{q}"</div>}
+      {q.length>=2&&loading&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:13,border:`0.5px solid ${T.border}`,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/>Buscando en Tienda Nube...</div>}
     </div>
   );
 }
@@ -338,7 +379,7 @@ function OrderSearchField({T, orders, onSelect}) {
 // ═══════════════════════════════════════════
 // APP RECLAMOS
 // ═══════════════════════════════════════════
-function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount}) {
+function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje}) {
   const [reclamos,setReclamos]=useState([]);
   const [plantillas,setPlantillas]=useState([]);
   const [view,setView]=useState("dashboard"); // dashboard | buscar | reclamos | config
@@ -696,7 +737,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                             <div style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                               <div>
                                 <div style={{fontSize:14,fontWeight:700,color:T.text}}>{o.comprador} <span style={{color:T.accent,fontWeight:500}}>#{o.numero}</span></div>
-                                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(' · ')}</div>
+                                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(' · ')}</div>
                               </div>
                               <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
                                 <span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>
@@ -729,7 +770,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                                 {/* Productos */}
                                 <div style={{marginBottom:12}}>
                                   <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6}}>Productos</div>
-                                  {o.productos.map((p,i)=>(
+                                  {(o.productos||[]).map((p,i)=>(
                                     <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0",borderBottom:i<o.productos.length-1?`1px solid ${T.borderL}`:"none"}}>
                                       <span>{p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')}</span>
                                       <span style={{color:T.textSm,flexShrink:0,marginLeft:8}}>{p.cantidad>1?`${p.cantidad}x `:""}${fmtMoney(p.precio)}</span>
@@ -951,7 +992,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                           <div style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                             <div>
                               <div style={{fontSize:15,fontWeight:800,color:T.text}}>{o.comprador} <span style={{color:T.accent,fontWeight:500,fontSize:13}}>#{o.numero}</span></div>
-                              <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(' · ')}</div>
+                              <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(' · ')}</div>
                             </div>
                             <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                               <span style={{fontSize:14,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>
@@ -976,7 +1017,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                               </div>
                               <div style={{marginBottom:12}}>
                                 <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6}}>Productos</div>
-                                {o.productos.map((p,i)=>(
+                                {(o.productos||[]).map((p,i)=>(
                                   <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0",borderBottom:i<o.productos.length-1?`1px solid ${T.borderL}`:"none"}}>
                                     <span>{p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')}</span>
                                     <span style={{color:T.textSm,flexShrink:0,marginLeft:8}}>{p.cantidad>1?`${p.cantidad}x`:""} {fmtMoney(p.precio)}</span>
@@ -1317,8 +1358,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       <Modal T={T} open={!!reclamoForm} onClose={()=>setReclamoForm(null)} title={reclamoForm?._docId?"Editar Reclamo":reclamoForm?.orderNum?`Nuevo Reclamo — #${reclamoForm.orderNum}`:"Nuevo Reclamo"} width={580}>
         {reclamoForm&&(
           <div>
-            {!reclamoForm._docId&&!reclamoForm.orderNum&&<Field T={T} label="Pedido" required><OrderSearchField T={T} orders={orders} onSelect={num=>setReclamoForm(f=>({...f,orderNum:num}))}/></Field>}
-            {(()=>{const o=orders.find(o=>o.numero===reclamoForm.orderNum);return o?(<div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><span style={{fontWeight:700,fontSize:14,color:T.text}}>#{o.numero} — {o.comprador}</span><div style={{color:T.textSm,fontSize:12,marginTop:2}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div></div>{!reclamoForm._docId&&<button onClick={()=>setReclamoForm(f=>({...f,orderNum:""}))} style={{...BtnDanger(T),padding:"4px 8px",fontSize:11}}>Cambiar</button>}</div>):null;})()}
+            {!reclamoForm._docId&&!reclamoForm.orderNum&&<Field T={T} label="Pedido" required><OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={num=>setReclamoForm(f=>({...f,orderNum:num}))}/></Field>}
+            {(()=>{const o=orders.find(o=>o.numero===reclamoForm.orderNum);return o?(<div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><span style={{fontWeight:700,fontSize:14,color:T.text}}>#{o.numero} — {o.comprador}</span><div style={{color:T.textSm,fontSize:12,marginTop:2}}>{(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div></div>{!reclamoForm._docId&&<button onClick={()=>setReclamoForm(f=>({...f,orderNum:""}))} style={{...BtnDanger(T),padding:"4px 8px",fontSize:11}}>Cambiar</button>}</div>):null;})()}
             {reclamoForm.orderNum&&(<>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
                 <Field T={T} label="Tipo"><select style={iS} value={reclamoForm.tipo} onChange={e=>setReclamoForm(f=>({...f,tipo:e.target.value}))}>{TIPOS_R.map(t=><option key={t}>{t}</option>)}</select></Field>
