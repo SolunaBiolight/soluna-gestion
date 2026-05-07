@@ -399,6 +399,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [searchApiResults,setSearchApiResults]=useState([]);
   const [searchApiLoading,setSearchApiLoading]=useState(false);
   const [pedidoDetalle,setPedidoDetalle]=useState(null);
+  const [slaConfig,setSlaConfig]=useState({dias:3}); // SLA configurable
 
   // Atajos de teclado en reclamos
   useEffect(()=>{
@@ -414,14 +415,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
   // Default plantillas
   const DEFAULT_PLANTILLAS=[
-    {id:"p1",estado:"Nuevo",tipo:"Cambio",nombre:"Confirmar reclamo",mensaje:"Hola [nombre]! Te contactamos desde Soluna Biolight. Recibimos tu solicitud de cambio para el pedido #[pedido]. ¿Podés confirmarnos el problema con tu producto? 🙏"},
-    {id:"p2",estado:"Contactado",tipo:"Cambio",nombre:"Instrucciones de devolución",mensaje:"Hola [nombre]! Para procesar tu cambio necesitamos que nos devuelvas el producto. Te compartimos la dirección de envío: [dirección]. Por favor avisanos el tracking cuando lo envíes 📦"},
-    {id:"p3",estado:"Esperando producto",tipo:"Cambio",nombre:"Seguimiento envío",mensaje:"Hola [nombre]! ¿Pudiste enviar el producto? Quedamos esperando el código de seguimiento para coordinar tu cambio 😊"},
-    {id:"p4",estado:"Producto recibido",tipo:"Cambio",nombre:"Producto recibido",mensaje:"Hola [nombre]! Recibimos el producto. Estamos preparando tu cambio y te avisamos cuando esté en camino 🎉"},
+    {id:"p1",estado:"Nuevo",tipo:"Cambio",nombre:"Confirmar reclamo",mensaje:"Hola [nombre]! Te contactamos desde Soluna Biolight. Recibimos tu solicitud de cambio para el pedido #[pedido] ([producto]). ¿Podés confirmarnos el problema con tu producto? 🙏"},
+    {id:"p2",estado:"Contactado",tipo:"Cambio",nombre:"Instrucciones de devolución",mensaje:"Hola [nombre]! Para procesar tu cambio del pedido #[pedido] necesitamos que nos devuelvas el producto. Te compartimos la dirección de envío: [dirección]. Por favor avisanos el tracking cuando lo envíes 📦"},
+    {id:"p3",estado:"Esperando producto",tipo:"Cambio",nombre:"Seguimiento envío",mensaje:"Hola [nombre]! ¿Pudiste enviar el producto del pedido #[pedido]? Quedamos esperando el código de seguimiento para coordinar tu cambio 😊"},
+    {id:"p4",estado:"Producto recibido",tipo:"Cambio",nombre:"Producto recibido",mensaje:"Hola [nombre]! Recibimos el producto del pedido #[pedido]. Estamos preparando tu cambio y te avisamos cuando esté en camino 🎉"},
     {id:"p5",estado:"Envío en camino",tipo:"Cambio",nombre:"Cambio enviado",mensaje:"Hola [nombre]! Tu nuevo producto ya está en camino 🚀 Tracking: [tracking]. Podés seguirlo en andreani.com. Cualquier consulta estamos acá!"},
     {id:"p6",estado:"Resuelto",tipo:"Cambio",nombre:"Cierre cambio",mensaje:"Hola [nombre]! Esperamos que hayas recibido tu producto y estés conforme ✨ Gracias por elegirnos! Cualquier consulta no dudes en escribirnos."},
-    {id:"p7",estado:"Nuevo",tipo:"Devolución",nombre:"Confirmar devolución",mensaje:"Hola [nombre]! Recibimos tu solicitud de devolución del pedido #[pedido]. ¿Podés contarnos el motivo? Así agilizamos el proceso 🙏"},
-    {id:"p8",estado:"Envío en camino",tipo:"Devolución",nombre:"Reembolso procesado",mensaje:"Hola [nombre]! Ya procesamos tu reembolso. En 3-5 días hábiles debería verse reflejado en tu cuenta. Gracias por tu paciencia 💜"},
+    {id:"p7",estado:"Nuevo",tipo:"Devolución",nombre:"Confirmar devolución",mensaje:"Hola [nombre]! Recibimos tu solicitud de devolución del pedido #[pedido] por $[monto]. ¿Podés contarnos el motivo? Así agilizamos el proceso 🙏"},
+    {id:"p8",estado:"Envío en camino",tipo:"Devolución",nombre:"Reembolso procesado",mensaje:"Hola [nombre]! Ya procesamos tu reembolso de $[monto] del pedido #[pedido]. En 3-5 días hábiles debería verse reflejado en tu cuenta. Gracias por tu paciencia 💜"},
   ];
 
   useEffect(()=>{
@@ -432,20 +433,27 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       setReclamos(data);
     },()=>{});
     const unsub2=onSnapshot(doc(db,"config","plantillas"),snap=>{
-      if(snap.exists()) setPlantillas(snap.data().lista||DEFAULT_PLANTILLAS);
-      else setPlantillas(DEFAULT_PLANTILLAS);
+      if(snap.exists()) {
+        setPlantillas(snap.data().lista||DEFAULT_PLANTILLAS);
+        if(snap.data().sla) setSlaConfig(snap.data().sla);
+      } else setPlantillas(DEFAULT_PLANTILLAS);
     },()=>setPlantillas(DEFAULT_PLANTILLAS));
     return ()=>{unsub1();unsub2();};
   },[]);
 
-  const emptyForm=(orderNum="")=>({
+  const emptyForm=(orderNum="", clienteData={})=>({
     _docId:null, orderNum, tipo:"Cambio", motivo:"", descripcion:"", estado:"Nuevo",
     resolucion:"", notas:"", trackingCambio:"",
     productosRecibe:[{producto:"",cantidad:1}],
     productosEnvia:[{producto:"",cantidad:1}],
     historial:[],
-    // devolución
     estadoRecepcion:"", estadoReembolso:"",
+    // Datos del cliente — se guardan para no depender del pedido en memoria
+    clienteNombre: clienteData.nombre||"",
+    clienteEmail:  clienteData.email||"",
+    clienteTelefono: clienteData.telefono||"",
+    clienteProductos: clienteData.productos||[],   // array de strings cortos
+    clienteTotal: clienteData.total||"",
   });
 
   async function saveReclamo() {
@@ -465,6 +473,12 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         historial:histEntry,
         estadoRecepcion:reclamoForm.estadoRecepcion||"",
         estadoReembolso:reclamoForm.estadoReembolso||"",
+        // Datos del cliente siempre guardados en el reclamo
+        clienteNombre:reclamoForm.clienteNombre||"",
+        clienteEmail:reclamoForm.clienteEmail||"",
+        clienteTelefono:reclamoForm.clienteTelefono||"",
+        clienteProductos:reclamoForm.clienteProductos||[],
+        clienteTotal:reclamoForm.clienteTotal||"",
       };
       if(reclamoForm._docId) {
         await updateDoc(doc(db,"reclamos",reclamoForm._docId),{...p,updatedAt:serverTimestamp(),...(reclamoForm.estado==="Resuelto"&&prev?.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
@@ -496,17 +510,29 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     setDeleteConfirm(null);setActiveReclamo(null);
   }
 
-  async function savePlantillas(lista) {
-    try{ await setDoc(doc(db,"config","plantillas"),{lista}); }catch(e){}
+  async function savePlantillas(lista, sla) {
+    const newSla=sla||slaConfig;
+    try{ await setDoc(doc(db,"config","plantillas"),{lista,sla:newSla}); }catch(e){}
     setPlantillas(lista);
+    setSlaConfig(newSla);
   }
 
   function copyMensaje(plantilla,reclamo) {
+    // Priorizar datos guardados en el reclamo; fallback a pedido en memoria
     const o=orders.find(o=>o.numero===reclamo.orderNum);
+    const nombre=reclamo.clienteNombre||o?.comprador||reclamo.orderNum;
+    const email=reclamo.clienteEmail||o?.email||"—";
+    const telefono=reclamo.clienteTelefono||o?.telefono||"—";
+    const productos=(reclamo.clienteProductos||o?.productos?.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim())||[]).join(', ')||"—";
+    const monto=reclamo.clienteTotal||o?.total||"—";
     let msg=plantilla.mensaje
-      .replace(/\[nombre\]/g, o?.comprador||reclamo.orderNum)
+      .replace(/\[nombre\]/g, nombre)
       .replace(/\[pedido\]/g, reclamo.orderNum)
       .replace(/\[tracking\]/g, reclamo.trackingCambio||"—")
+      .replace(/\[email\]/g, email)
+      .replace(/\[telefono\]/g, telefono)
+      .replace(/\[producto\]/g, productos)
+      .replace(/\[monto\]/g, monto)
       .replace(/\[dirección\]/g, "Av. Ejemplo 1234, Buenos Aires");
     navigator.clipboard.writeText(msg);
     setCopiedMsg(plantilla.id);
@@ -515,7 +541,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
   // Stats
   const hoy=new Date().toISOString().split('T')[0];
-  const hace3=new Date(Date.now()-3*86400000).toISOString().split('T')[0];
+  const hace3=new Date(Date.now()-slaConfig.dias*86400000).toISOString().split('T')[0];
   const _baseCount=totalOrdersCount||orders.length;
   const pctCambios=_baseCount>0?((reclamos.filter(r=>r.tipo==="Cambio").length/_baseCount)*100).toFixed(1):null;
   const pctDevoluciones=_baseCount>0?((reclamos.filter(r=>r.tipo==="Devolución").length/_baseCount)*100).toFixed(1):null;
@@ -790,7 +816,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                                 )}
                                 {/* Acciones */}
                                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                                  <button onClick={()=>{setReclamoForm(emptyForm(o.numero));setSearchGlobal("");setPedidoDetalle(null);}} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px"}}>+ Crear Reclamo</button>
+                                  <button onClick={()=>{setReclamoForm(emptyForm(o.numero,{nombre:o.comprador,email:o.email,telefono:o.telefono,productos:(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,"").replace(/[()]/g,"").trim()).filter(Boolean),total:o.total}));setSearchGlobal("");setPedidoDetalle(null);}} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px"}}>+ Crear Reclamo</button>
                                   {onGenerarCanje&&<button onClick={()=>{const prods=o.productos?.map(p=>p.nombre?.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()||p.sku).filter(Boolean)||[];onGenerarCanje({influencer:o.comprador,email:o.email||"",telefono:o.telefono||"",productos:prods,producto:prods[0]||"",notas:`Pedido #${o.numero} · ${new Date().toLocaleDateString('es-AR')}`,estado:"Pendiente envío",red:"Instagram",usuario:"",seguidores:"",foto:"",nicho:"",tracking:"",linkContenido:"",fechaEnvio:"",fechaPublicacion:"",contenido:[],alcance:"",reproducciones:"",likes:"",guardados:"",historial:[],recordatorio:""});setPedidoDetalle(null);setSearchGlobal("");}} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.purple}}>🤝 Generar Canje</button>}
                                   <AsyncButton onClick={()=>generarEtiquetaAndreani(o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.blue}}>📦 Etiqueta Andreani</AsyncButton>
                                   {o.telefono&&<a href={`https://wa.me/${o.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.green}}>💬 WhatsApp</a>}
@@ -913,7 +939,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                       {items.map(r=>{
                         const o=orders.find(o=>o.numero===r.orderNum);
                         const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):null;
-                        const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=3;
+                        const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=slaConfig.dias;
                         const tieneNota=!!r.notasInternas;
                         return (
                           <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");}}
@@ -1035,7 +1061,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                                 </div>
                               )}
                               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                                <button onClick={()=>{setReclamoForm(emptyForm(o.numero));setPedidoDetalle(null);}} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px"}}>+ Crear Reclamo</button>
+                                <button onClick={()=>{setReclamoForm(emptyForm(o.numero,{nombre:o.comprador,email:o.email,telefono:o.telefono,productos:(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,"").replace(/[()]/g,"").trim()).filter(Boolean),total:o.total}));setPedidoDetalle(null);}} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px"}}>+ Crear Reclamo</button>
                                 {onGenerarCanje&&<button onClick={()=>{const prods=o.productos?.map(p=>p.nombre?.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()||p.sku).filter(Boolean)||[];onGenerarCanje({influencer:o.comprador,email:o.email||"",telefono:o.telefono||"",productos:prods,producto:prods[0]||"",notas:`Pedido #${o.numero} · ${new Date().toLocaleDateString('es-AR')}`,estado:"Pendiente envío",red:"Instagram",usuario:"",seguidores:"",foto:"",nicho:"",tracking:"",linkContenido:"",fechaEnvio:"",fechaPublicacion:"",contenido:[],alcance:"",reproducciones:"",likes:"",guardados:"",historial:[],recordatorio:""});setPedidoDetalle(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.purple}}>🤝 Generar Canje</button>}
                                 <button onClick={()=>generarEtiquetaAndreani(o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.blue}}>📦 Etiqueta Andreani</button>
                                 {o.telefono&&<a href={`https://wa.me/${o.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.green}}>💬 WhatsApp</a>}
@@ -1106,7 +1132,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     const sc=getEstadoRC(T,r.estado);
                     const tc=getTipoRC(T,r.tipo);
                     const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):0;
-                    const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=3;
+                    const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=slaConfig.dias;
                     const isActive=activeReclamo===r._docId;
                     return (
                       <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
@@ -1173,10 +1199,24 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   {/* Datos del cliente */}
                   <div style={{marginBottom:14}}>
                     <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Cliente</div>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {activeOrder?.telefono&&<a href={`https://wa.me/${activeOrder.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",textDecoration:"none",color:T.green}}>💬 {activeOrder.telefono}</a>}
-                      {activeOrder?.email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4}}>✉️ {activeOrder.email}</span>}
-                    </div>
+                    {/* Priorizar datos guardados en el reclamo, fallback al pedido en memoria */}
+                    {(()=>{
+                      const nombre=activeR.clienteNombre||activeOrder?.comprador||"—";
+                      const email=activeR.clienteEmail||activeOrder?.email||"";
+                      const tel=activeR.clienteTelefono||activeOrder?.telefono||"";
+                      const prods=activeR.clienteProductos?.length>0?activeR.clienteProductos:(activeOrder?.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim());
+                      const total=activeR.clienteTotal||activeOrder?.total||"";
+                      return (
+                        <div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>{nombre}</div>
+                          {prods.length>0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>{prods.join(' · ')}{total&&<span style={{color:T.accent,fontWeight:600,marginLeft:8}}>${total}</span>}</div>}
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                            {tel&&<a href={`https://wa.me/${tel.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",textDecoration:"none",color:T.green}}>💬 {tel}</a>}
+                            {email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4,padding:"6px 0"}}>✉️ {email}</span>}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Productos del pedido */}
@@ -1312,8 +1352,34 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         {/* ── CONFIGURACION PLANTILLAS ── */}
         {view==="config"&&(
           <div style={{padding:"24px 0 48px",maxWidth:720}}>
-            <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:-0.5}}>⚙️ Plantillas de mensajes</div>
-            <div style={{fontSize:14,color:T.textMd,marginBottom:24}}>Editá los mensajes pre-armados. Usá [nombre], [pedido], [tracking] como variables que se reemplazan automáticamente.</div>
+            <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:-0.5}}>⚙️ Configuración de Reclamos</div>
+
+            {/* SLA */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:24}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>⏱ SLA — Umbral de urgencia</div>
+              <div style={{fontSize:13,color:T.textMd,marginBottom:14}}>Un reclamo se marca como urgente (⚠) cuando lleva más de este tiempo sin resolverse.</div>
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                {[1,2,3,5,7,10].map(d=>(
+                  <button key={d} onClick={async()=>{await savePlantillas(plantillas,{dias:d});}} style={{padding:"8px 18px",fontSize:14,fontWeight:slaConfig.dias===d?700:400,borderRadius:20,border:`2px solid ${slaConfig.dias===d?T.red:T.border}`,background:slaConfig.dias===d?T.redBg:"transparent",color:slaConfig.dias===d?T.red:T.textMd,cursor:"pointer",transition:"all 0.15s"}}>
+                    {d}d
+                  </button>
+                ))}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:8}}>
+                  <span style={{fontSize:13,color:T.textSm}}>o escribí:</span>
+                  <input type="number" min={1} max={30} value={slaConfig.dias} onChange={async e=>{const v=Math.max(1,Math.min(30,parseInt(e.target.value)||1));await savePlantillas(plantillas,{dias:v});}} style={{...InputStyle(T),width:60,fontSize:14,padding:"6px 10px",textAlign:"center"}}/>
+                  <span style={{fontSize:13,color:T.textSm}}>días</span>
+                </div>
+              </div>
+              <div style={{marginTop:12,fontSize:12,color:T.textSm,background:T.bg,borderRadius:8,padding:"8px 12px"}}>
+                Actualmente: reclamos activos sin resolver por más de <strong style={{color:T.red}}>{slaConfig.dias} día{slaConfig.dias!==1?"s":""}</strong> se marcan como urgentes.
+              </div>
+            </div>
+
+            {/* Plantillas */}
+            <div style={{fontSize:18,fontWeight:700,color:T.text,marginBottom:4}}>📋 Plantillas de mensajes</div>
+            <div style={{fontSize:13,color:T.textMd,marginBottom:16}}>
+              Variables disponibles: <code style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontSize:12}}>[nombre]</code> <code style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontSize:12}}>[pedido]</code> <code style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontSize:12}}>[tracking]</code> <code style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontSize:12}}>[email]</code> <code style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontSize:12}}>[telefono]</code> <code style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontSize:12}}>[producto]</code> <code style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontSize:12}}>[monto]</code> <code style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontSize:12}}>[dirección]</code>
+            </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {plantillas.map((p,i)=>(
                 <div key={p.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
@@ -1358,8 +1424,51 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       <Modal T={T} open={!!reclamoForm} onClose={()=>setReclamoForm(null)} title={reclamoForm?._docId?"Editar Reclamo":reclamoForm?.orderNum?`Nuevo Reclamo — #${reclamoForm.orderNum}`:"Nuevo Reclamo"} width={580}>
         {reclamoForm&&(
           <div>
-            {!reclamoForm._docId&&!reclamoForm.orderNum&&<Field T={T} label="Pedido" required><OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={num=>setReclamoForm(f=>({...f,orderNum:num}))}/></Field>}
-            {(()=>{const o=orders.find(o=>o.numero===reclamoForm.orderNum);return o?(<div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><span style={{fontWeight:700,fontSize:14,color:T.text}}>#{o.numero} — {o.comprador}</span><div style={{color:T.textSm,fontSize:12,marginTop:2}}>{(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div></div>{!reclamoForm._docId&&<button onClick={()=>setReclamoForm(f=>({...f,orderNum:""}))} style={{...BtnDanger(T),padding:"4px 8px",fontSize:11}}>Cambiar</button>}</div>):null;})()}
+            {/* Buscar pedido — solo cuando es nuevo y sin número */}
+            {!reclamoForm._docId&&!reclamoForm.orderNum&&(
+              <Field T={T} label="Pedido" required>
+                <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={num=>{
+                  // Buscar el pedido y poblar datos del cliente automáticamente
+                  const o=orders.find(o=>o.numero===num)||searchApiResults.find(o=>o.numero===num);
+                  setReclamoForm(f=>({...f,
+                    orderNum:num,
+                    clienteNombre:o?.comprador||f.clienteNombre||"",
+                    clienteEmail:o?.email||f.clienteEmail||"",
+                    clienteTelefono:o?.telefono||f.clienteTelefono||"",
+                    clienteProductos:o?(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()).filter(Boolean):f.clienteProductos||[],
+                    clienteTotal:o?.total||f.clienteTotal||"",
+                  }));
+                }}/>
+              </Field>
+            )}
+            {/* Info del pedido + datos del cliente */}
+            {reclamoForm.orderNum&&(()=>{
+              const o=orders.find(o=>o.numero===reclamoForm.orderNum);
+              const nombre=reclamoForm.clienteNombre||o?.comprador||"";
+              const email=reclamoForm.clienteEmail||o?.email||"";
+              const tel=reclamoForm.clienteTelefono||o?.telefono||"";
+              const prods=(reclamoForm.clienteProductos||[]).length>0?reclamoForm.clienteProductos:(o?.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()).filter(Boolean);
+              const total=reclamoForm.clienteTotal||o?.total||"";
+              return (
+                <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                        <span style={{fontWeight:700,fontSize:14,color:T.accent}}>#{reclamoForm.orderNum}</span>
+                        {nombre&&<span style={{fontWeight:700,fontSize:14,color:T.text}}>{nombre}</span>}
+                        {total&&<span style={{fontSize:13,color:T.text,fontWeight:600,marginLeft:"auto"}}>${total}</span>}
+                      </div>
+                      {prods.length>0&&<div style={{fontSize:12,color:T.textSm,marginBottom:6}}>{prods.join(' · ')}</div>}
+                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                        {email&&<span style={{fontSize:12,color:T.textSm}}>✉️ {email}</span>}
+                        {tel&&<span style={{fontSize:12,color:T.green}}>💬 {tel}</span>}
+                      </div>
+                    </div>
+                    {!reclamoForm._docId&&<button onClick={()=>setReclamoForm(f=>({...f,orderNum:"",clienteNombre:"",clienteEmail:"",clienteTelefono:"",clienteProductos:[],clienteTotal:""}))} style={{...BtnDanger(T),padding:"4px 8px",fontSize:11,flexShrink:0,marginLeft:8}}>Cambiar</button>}
+                  </div>
+                </div>
+              );
+            })()}
             {reclamoForm.orderNum&&(<>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
                 <Field T={T} label="Tipo"><select style={iS} value={reclamoForm.tipo} onChange={e=>setReclamoForm(f=>({...f,tipo:e.target.value}))}>{TIPOS_R.map(t=><option key={t}>{t}</option>)}</select></Field>
