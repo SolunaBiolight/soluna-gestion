@@ -3952,32 +3952,34 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
               <div
                 onClick={()=>setNotifCollapsed(c=>!c)}
-                style={{padding:"10px 18px",borderBottom:notifCollapsed?'none':`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}
+                style={{padding:"10px 18px",borderBottom:notifCollapsed?'none':`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none",transition:"border-color 0.2s ease"}}
                 onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                 <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
                 <span style={{fontSize:11,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Notificaciones · Canjes</span>
                 <span style={{fontSize:11,background:T.orangeBg,color:T.orange,borderRadius:4,padding:"1px 7px",fontWeight:600,border:`1px solid ${T.orange}33`,marginLeft:2}}>{notificacionesCanjes.length}</span>
-                <span style={{marginLeft:"auto",fontSize:11,color:T.textSm}}>{notifCollapsed?"▸":"▾"}</span>
+                <span style={{marginLeft:"auto",fontSize:11,color:T.textSm,transition:"transform 0.2s ease",display:"inline-block",transform:notifCollapsed?"rotate(-90deg)":"rotate(0deg)"}}>▾</span>
               </div>
-              {!notifCollapsed&&notificacionesCanjes.map((a,i)=>{
-                const colorMap={recordatorio:T.yellow,sinrespuesta:T.orange,contenido:T.blue};
-                const col=colorMap[a.tipo]||T.orange;
-                return (
-                  <div key={i}
-                    onClick={()=>onNavigate("canjes", a.canje._docId)}
-                    style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<notificacionesCanjes.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s ease"}}
-                    onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                    <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <span style={{width:5,height:5,borderRadius:"50%",background:col,flexShrink:0}}/>
-                      <span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.canje.influencer}</span>
-                      <span style={{fontSize:12,color:T.textSm}}>{a.msg}</span>
+              <div style={{maxHeight:notifCollapsed?"0px":`${notificacionesCanjes.length*52}px`,overflow:"hidden",transition:"max-height 0.28s cubic-bezier(0.4,0,0.2,1)"}}>
+                {notificacionesCanjes.map((a,i)=>{
+                  const colorMap={recordatorio:T.yellow,sinrespuesta:T.orange,contenido:T.blue};
+                  const col=colorMap[a.tipo]||T.orange;
+                  return (
+                    <div key={i}
+                      onClick={()=>onNavigate("canjes", a.canje._docId)}
+                      style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<notificacionesCanjes.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s ease"}}
+                      onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{width:5,height:5,borderRadius:"50%",background:col,flexShrink:0}}/>
+                        <span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.canje.influencer}</span>
+                        <span style={{fontSize:12,color:T.textSm}}>{a.msg}</span>
+                      </div>
+                      <span style={{fontSize:11,color:T.textSm}}>Ver →</span>
                     </div>
-                    <span style={{fontSize:11,color:T.textSm}}>Ver →</span>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
 
