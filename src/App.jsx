@@ -934,7 +934,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                                 {/* Acciones */}
                                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                                   <button onClick={()=>{setReclamoForm(emptyForm(o.numero,{nombre:o.comprador,email:o.email,telefono:o.telefono,productos:(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,"").replace(/[()]/g,"").trim()).filter(Boolean),total:o.total}));setSearchGlobal("");setPedidoDetalle(null);}} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px"}}>+ Crear Reclamo</button>
-                                  {onGenerarCanje&&<button onClick={()=>{const prods=o.productos?.map(p=>p.nombre?.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()||p.sku).filter(Boolean)||[];onGenerarCanje({influencer:o.comprador,email:o.email||"",telefono:o.telefono||"",productos:prods,producto:prods[0]||"",notas:`Pedido #${o.numero} · ${new Date().toLocaleDateString('es-AR')}`,estado:"Pendiente envío",red:"Instagram",usuario:"",seguidores:"",foto:"",nicho:"",tracking:"",linkContenido:"",fechaEnvio:"",fechaPublicacion:"",contenido:[],alcance:"",reproducciones:"",likes:"",guardados:"",historial:[],recordatorio:""});setPedidoDetalle(null);setSearchGlobal("");}} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.purple}}>🤝 Generar Canje</button>}
+                                  {onGenerarCanje&&<button onClick={()=>{const prodsCanje=(o.productos||[]).map(p=>({nombre:p.nombre?.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,'').replace(/[()]/g,'').trim()||p.sku,cantidad:parseInt(p.cantidad)||1})).filter(p=>p.nombre);onGenerarCanje({nombre:o.comprador,email:o.email||"",telefono:o.telefono||"",productosCanje:prodsCanje,pedidoRef:o.numero});setPedidoDetalle(null);setSearchGlobal("");}} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.purple}}>🤝 Generar Canje</button>}
                                   <AsyncButton onClick={()=>generarEtiquetaAndreani(o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.blue}}>📦 Etiqueta Andreani</AsyncButton>
                                   {o.telefono&&<a href={`https://wa.me/${o.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.green}}>💬 WhatsApp</a>}
                                   {o.linkOrden&&<a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.purple}}>🔗 Ver en TN</a>}
@@ -1179,7 +1179,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                               )}
                               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                                 <button onClick={()=>{setReclamoForm(emptyForm(o.numero,{nombre:o.comprador,email:o.email,telefono:o.telefono,productos:(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,"").replace(/[()]/g,"").trim()).filter(Boolean),total:o.total}));setPedidoDetalle(null);}} style={{...BtnDanger(T),fontSize:12,padding:"8px 14px"}}>+ Crear Reclamo</button>
-                                {onGenerarCanje&&<button onClick={()=>{const prods=o.productos?.map(p=>p.nombre?.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim()||p.sku).filter(Boolean)||[];onGenerarCanje({influencer:o.comprador,email:o.email||"",telefono:o.telefono||"",productos:prods,producto:prods[0]||"",notas:`Pedido #${o.numero} · ${new Date().toLocaleDateString('es-AR')}`,estado:"Pendiente envío",red:"Instagram",usuario:"",seguidores:"",foto:"",nicho:"",tracking:"",linkContenido:"",fechaEnvio:"",fechaPublicacion:"",contenido:[],alcance:"",reproducciones:"",likes:"",guardados:"",historial:[],recordatorio:""});setPedidoDetalle(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.purple}}>🤝 Generar Canje</button>}
+                                {onGenerarCanje&&<button onClick={()=>{const prodsCanje=(o.productos||[]).map(p=>({nombre:p.nombre?.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,'').replace(/[()]/g,'').trim()||p.sku,cantidad:parseInt(p.cantidad)||1})).filter(p=>p.nombre);onGenerarCanje({nombre:o.comprador,email:o.email||"",telefono:o.telefono||"",productosCanje:prodsCanje,pedidoRef:o.numero});setPedidoDetalle(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.purple}}>🤝 Generar Canje</button>}
                                 <button onClick={()=>generarEtiquetaAndreani(o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.blue}}>📦 Etiqueta Andreani</button>
                                 {o.telefono&&<a href={`https://wa.me/${o.telefono.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.green}}>💬 WhatsApp</a>}
                                 {o.linkOrden&&<a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",color:T.purple}}>🔗 Ver en TN</a>}
@@ -1932,7 +1932,31 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   useEffect(()=>{
     if(pendingCanje) {
-      const prodsCanje=pendingCanje.productosCanje||(pendingCanje.productos||[]).map(p=>({nombre:typeof p==="string"?p:p.nombre,cantidad:1})).filter(p=>p.nombre);
+      // Si ya viene con productosCanje formateados (desde Envíos), usarlos directo
+      // Si viene con productos como strings (desde Reclamos), hacer fuzzy match con PRODUCTOS_CANJE
+      let prodsCanje = pendingCanje.productosCanje || [];
+      if(!prodsCanje.length && (pendingCanje.productos||[]).length) {
+        prodsCanje = (pendingCanje.productos||[]).map(p => {
+          const nombre = typeof p === "string" ? p : (p.nombre||"");
+          // Fuzzy match: buscar el producto de PRODUCTOS_CANJE que más se parece
+          const normalizar = s => s.toLowerCase()
+            .replace(/anteojos soluna.*?blocker\s*/i,"")
+            .replace(/[()]/g,"")
+            .replace(/[-–—]/g," ")
+            .replace(/\s+/g," ")
+            .trim();
+          const n = normalizar(nombre);
+          const match = PRODUCTOS_CANJE.find(pc => {
+            const pcN = normalizar(pc);
+            // Coincidencia exacta normalizada
+            if(n === pcN) return true;
+            // Coincidencia por palabras clave (ej: "amarillo" + "negro")
+            const palabras = n.split(" ").filter(w=>w.length>3);
+            return palabras.every(w => pcN.includes(w));
+          });
+          return { nombre: match || nombre, cantidad: parseInt(p.cantidad)||1 };
+        }).filter(p=>p.nombre);
+      }
       setForm({...emptyForm(),...pendingCanje,_docId:null,
         influencer:pendingCanje.nombre||pendingCanje.influencer||"",
         usuario:pendingCanje.usuario||pendingCanje.nombre||"",
@@ -3841,6 +3865,8 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const hora = new Date().getHours();
   const saludo = hora < 13 ? "Buenos días" : hora < 20 ? "Buenas tardes" : "Buenas noches";
   const urgentes = alertas?.length || 0;
+  // Separar: canjes son notificaciones, reclamos serían urgentes (por ahora todas las alertas son de canjes)
+  const notificacionesCanjes = alertas||[];
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column"}}>
@@ -3868,40 +3894,59 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         </div>
       </div>
 
-      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"48px 24px 64px"}}>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"40px 24px 64px"}}>
+        <div style={{width:"100%",maxWidth:820}}>
 
-        {/* Daily briefing */}
-        <div style={{width:"100%",maxWidth:760,marginBottom:48}}>
-          <h1 style={{fontSize:30,fontWeight:800,margin:"0 0 6px",letterSpacing:-0.8,color:T.text}}>{saludo}, {nombre}</h1>
-          <p style={{fontSize:15,color:T.textSm,margin:"0 0 28px",lineHeight:1.6}}>
-            {urgentes > 0
-              ? <><span style={{color:T.red,fontWeight:600}}>{urgentes} alerta{urgentes>1?"s":""} pendiente{urgentes>1?"s":""}</span> en canjes · {reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}</>
-              : <>Todo en orden · {reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}</>
-            }
-          </p>
+          {/* Saludo */}
+          <div style={{marginBottom:28}}>
+            <h1 style={{fontSize:28,fontWeight:800,margin:"0 0 5px",letterSpacing:-0.8,color:T.text}}>{saludo}, {nombre}</h1>
+            <p style={{fontSize:14,color:T.textSm,margin:0}}>
+              {reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}
+              {notificacionesCanjes.length>0&&<> · <span style={{color:T.orange}}>{notificacionesCanjes.length} notificación{notificacionesCanjes.length>1?"es":""} en canjes</span></>}
+            </p>
+          </div>
 
-          {/* Alertas */}
-          {alertas&&alertas.length>0&&(
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:32}}>
-              <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
-                <span style={{width:7,height:7,borderRadius:"50%",background:T.red,boxShadow:`0 0 6px ${T.red}`}}/>
-                <span style={{fontSize:12,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:0.5}}>Alertas</span>
-                <span style={{fontSize:11,background:T.redBg,color:T.red,borderRadius:4,padding:"1px 7px",fontWeight:700,border:`1px solid ${T.red}33`}}>{alertas.length}</span>
+          {/* ── CARDS DE MÓDULOS — primero y más grandes ── */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:28}}>
+            {[
+              {id:"reclamos", label:"Reclamos",  desc:"Cambios y devoluciones",   stat:reclamosCount, statLabel:"activos",  accent:T.red},
+              {id:"canjes",   label:"Canjes",     desc:"Influencers y contenido",  stat:canjesCount,   statLabel:"canjes",   accent:T.purple},
+              {id:"envios",   label:"Envíos",     desc:"Despachos y seguimientos", stat:ordersCount,   statLabel:"pedidos",  accent:T.blue},
+            ].map(item=>(
+              <button key={item.id} onClick={()=>onNavigate(item.id)}
+                style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"28px 28px 24px",textAlign:"left",cursor:"pointer",transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column"}}
+                onMouseEnter={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.borderColor=item.accent+"55";e.currentTarget.style.transform="translateY(-2px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="translateY(0)";}}>
+                <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:5}}>{item.label}</div>
+                <div style={{fontSize:12,color:T.textSm,marginBottom:24,lineHeight:1.5}}>{item.desc}</div>
+                <div style={{marginTop:"auto",paddingTop:20,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontSize:34,fontWeight:800,color:T.text,letterSpacing:-1.5,lineHeight:1}}>{item.stat??<Spinner size={16} color={T.textSm}/>}</span>
+                  <span style={{fontSize:12,color:T.textSm}}>{item.statLabel}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* ── NOTIFICACIONES DE CANJES — naranja, tranquilo ── */}
+          {notificacionesCanjes.length>0&&(
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div style={{padding:"10px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:T.orange}}/>
+                <span style={{fontSize:11,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Notificaciones · Canjes</span>
+                <span style={{fontSize:11,background:T.orangeBg,color:T.orange,borderRadius:4,padding:"1px 7px",fontWeight:600,border:`1px solid ${T.orange}33`,marginLeft:2}}>{notificacionesCanjes.length}</span>
               </div>
-              {alertas.map((a,i)=>{
+              {notificacionesCanjes.map((a,i)=>{
                 const colorMap={recordatorio:T.yellow,sinrespuesta:T.orange,contenido:T.blue};
-                const col=colorMap[a.tipo]||T.yellow;
+                const col=colorMap[a.tipo]||T.orange;
                 return (
                   <div key={i} onClick={()=>onNavigate("canjes")}
-                    style={{padding:"13px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<alertas.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
+                    style={{padding:"10px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<notificacionesCanjes.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
                     onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <span style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0}}/>
-                      <div>
-                        <span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.canje.influencer}</span>
-                        <span style={{fontSize:12,color:T.textSm,marginLeft:8}}>{a.msg}</span>
-                      </div>
+                      <span style={{width:5,height:5,borderRadius:"50%",background:col,flexShrink:0}}/>
+                      <span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.canje.influencer}</span>
+                      <span style={{fontSize:12,color:T.textSm}}>{a.msg}</span>
                     </div>
                     <span style={{fontSize:11,color:T.textSm}}>Ver →</span>
                   </div>
@@ -3910,26 +3955,6 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
             </div>
           )}
 
-          {/* Nav cards */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12}}>
-            {[
-              {id:"reclamos", label:"Reclamos", desc:"Cambios y devoluciones", stat:reclamosCount, statLabel:"activos"},
-              {id:"canjes",   label:"Canjes",   desc:"Influencers y contenido",  stat:canjesCount,   statLabel:"canjes"},
-              {id:"envios",   label:"Envíos",   desc:"Despachos y seguimientos", stat:ordersCount,   statLabel:"pedidos"},
-            ].map(item=>(
-              <button key={item.id} onClick={()=>onNavigate(item.id)}
-                style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"22px 22px 20px",textAlign:"left",cursor:"pointer",transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column",gap:0}}
-                onMouseEnter={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.borderColor=T.accent+"55";}}
-                onMouseLeave={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.borderColor=T.border;}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4,letterSpacing:-0.2}}>{item.label}</div>
-                <div style={{fontSize:12,color:T.textSm,marginBottom:18,lineHeight:1.5}}>{item.desc}</div>
-                <div style={{marginTop:"auto",paddingTop:16,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"baseline",gap:5}}>
-                  <span style={{fontSize:24,fontWeight:800,color:T.text,letterSpacing:-1}}>{item.stat??<Spinner size={14} color={T.textSm}/>}</span>
-                  <span style={{fontSize:11,color:T.textSm}}>{item.statLabel}</span>
-                </div>
-              </button>
-            ))}
-          </div>
         </div>
       </div>
     </div>
