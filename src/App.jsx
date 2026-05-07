@@ -585,6 +585,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     }
   }
 
+  async function savePlantillas(lista, sla) {
     const newSla=sla||slaConfig;
     try{ await setDoc(doc(db,"config","plantillas"),{lista,sla:newSla}); }catch(e){}
     setPlantillas(lista);
