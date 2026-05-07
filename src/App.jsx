@@ -1919,6 +1919,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [filterSoloPendientes,setFilterSoloPendientes]=useState(false);
   const iS=InputStyle(T);
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
+  const qc=query(collection(db,"canjes"),where("ownerId","==",user?.uid||"__none__"));
 
   useEffect(()=>{
     if(initialDetail) {
