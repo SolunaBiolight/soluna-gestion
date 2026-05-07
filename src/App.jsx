@@ -203,9 +203,85 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     @keyframes growith-fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
     @keyframes growith-skeleton{0%,100%{opacity:0.4}50%{opacity:0.8}}
     @keyframes growith-toast-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-    .gh-row:hover{background:var(--gh-hover)!important}
-    .gh-card:hover{background:var(--gh-surface)!important}
-    .gh-btn:hover{opacity:0.82!important}
+
+    /* ── Global interaction feel ── */
+    *{box-sizing:border-box;}
+
+    /* Todos los botones */
+    button, a[role="button"] {
+      transition: opacity 0.15s ease, transform 0.12s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
+    }
+    button:not(:disabled):active {
+      transform: scale(0.97) !important;
+      opacity: 0.85 !important;
+    }
+    button:disabled { cursor: not-allowed !important; }
+
+    /* Links con estilo botón */
+    a { transition: opacity 0.15s ease, color 0.15s ease !important; }
+    a:active { opacity: 0.75 !important; }
+
+    /* Inputs y selects */
+    input, textarea, select {
+      transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+    }
+    input:focus, textarea:focus, select:focus {
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.12) !important;
+      outline: none !important;
+    }
+
+    /* Cards clickeables */
+    .gh-clickable {
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease !important;
+      cursor: pointer;
+    }
+    .gh-clickable:hover { background: var(--gh-surface) !important; }
+    .gh-clickable:active { transform: scale(0.995) !important; }
+
+    /* Filas de lista */
+    .gh-row {
+      transition: background 0.12s ease !important;
+      cursor: pointer;
+    }
+    .gh-row:hover { background: var(--gh-card) !important; }
+    .gh-row:active { background: var(--gh-surface) !important; }
+
+    /* Badges de estado — click feedback */
+    .gh-estado-btn {
+      transition: all 0.15s ease !important;
+    }
+    .gh-estado-btn:not([data-active="true"]):hover {
+      transform: translateY(-1px) !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+    }
+    .gh-estado-btn:active { transform: scale(0.96) !important; }
+
+    /* Modales — entrada suave */
+    .gh-modal-content {
+      animation: growith-fadeIn 0.2s ease !important;
+    }
+
+    /* Toggle switches */
+    .gh-toggle {
+      transition: background 0.2s ease !important;
+      cursor: pointer;
+    }
+    .gh-toggle-thumb {
+      transition: left 0.2s ease !important;
+    }
+
+    /* Chips de filtro */
+    .gh-chip {
+      transition: all 0.15s ease !important;
+    }
+    .gh-chip:hover { transform: translateY(-1px) !important; }
+    .gh-chip:active { transform: scale(0.96) !important; }
+
+    /* Filas hover en Envíos */
+    .gh-order-row {
+      transition: background 0.1s ease !important;
+    }
+    .gh-order-row:hover { background: var(--gh-card) !important; }
   `;
   document.head.appendChild(s);
 }
@@ -250,6 +326,7 @@ function Spinner({size=14,color="#fff",style={}}) {
 // AsyncButton — muestra spinner automáticamente mientras el onClick async procesa
 function AsyncButton({onClick, children, style, disabled, ...props}) {
   const [loading, setLoading] = React.useState(false);
+  const [pressed, setPressed] = React.useState(false);
   const handleClick = async (e) => {
     if(loading || disabled) return;
     setLoading(true);
@@ -259,7 +336,10 @@ function AsyncButton({onClick, children, style, disabled, ...props}) {
   const spinnerColor = style?.color || "#fff";
   return (
     <button {...props} onClick={handleClick} disabled={loading || disabled}
-      style={{...style, opacity: loading ? 0.75 : (disabled ? 0.4 : 1), cursor: loading ? "wait" : (disabled ? "not-allowed" : "pointer")}}>
+      onMouseDown={()=>setPressed(true)}
+      onMouseUp={()=>setPressed(false)}
+      onMouseLeave={()=>setPressed(false)}
+      style={{...style, opacity: loading ? 0.75 : (disabled ? 0.4 : 1), cursor: loading ? "wait" : (disabled ? "not-allowed" : "pointer"), transform: pressed&&!loading&&!disabled ? "scale(0.97)" : "scale(1)", transition:"all 0.15s ease"}}>
       {loading
         ? <><Spinner size={13} color={spinnerColor}/>{typeof children === "string" ? " " + children : children}</>
         : children}
@@ -293,10 +373,15 @@ function LensDots({productos}) {
 }
 
 function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
+  const [visible, setVisible] = React.useState(false);
+  React.useEffect(()=>{
+    if(open) requestAnimationFrame(()=>setVisible(true));
+    else setVisible(false);
+  },[open]);
   if(!open) return null;
   return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"92vh",overflow:"visible",boxShadow:"0 32px 80px rgba(0,0,0,0.35)",border:`0.5px solid ${T.border}`,display:"flex",flexDirection:"column"}}>
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.6:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16,transition:"background 0.2s ease"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"92vh",overflow:"visible",boxShadow:"0 32px 80px rgba(0,0,0,0.35)",border:`0.5px solid ${T.border}`,display:"flex",flexDirection:"column",transform:visible?"translateY(0) scale(1)":"translateY(12px) scale(0.98)",opacity:visible?1:0,transition:"transform 0.22s cubic-bezier(0.34,1.26,0.64,1), opacity 0.18s ease"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:`1px solid ${T.borderL}`,flexShrink:0}}>
           <h2 style={{margin:0,fontSize:17,fontWeight:700,color:T.text}}>{title}</h2>
           <button onClick={onClose} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textMd}}>✕</button>
@@ -342,10 +427,10 @@ function InputStyle(T) {
   };
 }
 
-function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid,color:"#fff",letterSpacing:"0.01em"}; }
-function BtnSecondary(T) { return {border:`0.5px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.surface,color:T.text}; }
-function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
-function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
+function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid,color:"#fff",letterSpacing:"0.01em"}; }
+function BtnSecondary(T) { return {border:`0.5px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",display:"inline-flex",alignItems:"center",gap:6,background:T.surface,color:T.text}; }
+function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
+function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
 
 function OrderSearchField({T, orders, onSelect, uid}) {
   const [q,setQ]=useState("");
@@ -394,7 +479,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
         <div style={{marginTop:6,background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:12,maxHeight:300,overflow:"auto"}}>
           {localResults.length===0&&apiResults.length>0&&<div style={{padding:"6px 14px",fontSize:10,color:T.textSm,borderBottom:`1px solid ${T.borderL}`,textTransform:"uppercase",letterSpacing:0.5}}>Resultados de TN</div>}
           {results.map((o,i)=>(
-            <div key={o.numero} onClick={()=>onSelect(o.numero)} style={{padding:"12px 16px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <div key={o.numero} onClick={()=>onSelect(o.numero)} style={{padding:"12px 16px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.15s ease"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
                 <div style={{display:"flex",gap:10,alignItems:"center"}}>
                   <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
@@ -826,7 +911,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             {["dashboard","reclamos","config"].map(v=>{
               const labels={dashboard:"Dashboard",reclamos:"Lista",config:"Plantillas"};
               const isCurrent=view===v;
-              return <button key={v} onClick={()=>{setView(v);setActiveReclamo(null);}} style={{padding:"6px 13px",fontSize:12,fontWeight:isCurrent?600:400,border:"none",borderRadius:7,background:isCurrent?T.accentSolid:"transparent",color:isCurrent?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>{labels[v]}{v==="reclamos"&&stats.urgentes>0&&<span style={{background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:4,padding:"1px 5px",marginLeft:2}}>{stats.urgentes}</span>}</button>;
+              return <button key={v} onClick={()=>{setView(v);setActiveReclamo(null);}} style={{padding:"6px 13px",fontSize:12,fontWeight:isCurrent?600:400,border:"none",borderRadius:7,background:isCurrent?T.accentSolid:"transparent",color:isCurrent?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",display:"inline-flex",alignItems:"center",gap:5}}>{labels[v]}{v==="reclamos"&&stats.urgentes>0&&<span style={{background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:4,padding:"1px 5px",marginLeft:2}}>{stats.urgentes}</span>}</button>;
             })}
             <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>+ Nuevo</button>
             <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",opacity:ordersStatus==="loading"?0.5:1}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
@@ -989,7 +1074,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         const o=orders.find(o=>o.numero===r.orderNum);
                         const sc=getEstadoRC(T,r.estado);
                         return (
-                          <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");setSearchGlobal("");}} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",marginBottom:6,cursor:"pointer",transition:"background 0.1s",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background=T.bg}>
+                          <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");setSearchGlobal("");}} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",marginBottom:6,cursor:"pointer",transition:"background 0.15s ease",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background=T.bg}>
                             <div>
                               <div style={{fontSize:13,fontWeight:600,color:T.text}}>#{r.orderNum} · {o?.comprador||"—"}</div>
                               <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{r.tipo} · {r.motivo}</div>
@@ -1039,7 +1124,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               {/* Filtro tipo */}
               <div style={{display:"flex",gap:6,marginBottom:14}}>
                 {["Todos","Cambio","Devolución","Consulta"].map(t=>(
-                  <button key={t} onClick={()=>setKanbanTipo(t)} style={{padding:"5px 14px",fontSize:12,fontWeight:kanbanTipo===t?700:400,borderRadius:20,border:`1px solid ${kanbanTipo===t?T.accentSolid:T.border}`,background:kanbanTipo===t?T.accentSolid:"transparent",color:kanbanTipo===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>{t}</button>
+                  <button key={t} onClick={()=>setKanbanTipo(t)} style={{padding:"5px 14px",fontSize:12,fontWeight:kanbanTipo===t?700:400,borderRadius:20,border:`1px solid ${kanbanTipo===t?T.accentSolid:T.border}`,background:kanbanTipo===t?T.accentSolid:"transparent",color:kanbanTipo===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s ease"}}>{t}</button>
                 ))}
               </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:28}}>
@@ -1066,7 +1151,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         const tieneNota=!!r.notasInternas;
                         return (
                           <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");}}
-                            style={{background:T.bg,border:`1px solid ${urgente?T.red+"44":T.borderL}`,borderRadius:8,padding:"10px 12px",cursor:"pointer",transition:"all 0.12s",borderLeft:urgente?`3px solid ${T.red}`:"3px solid transparent"}}
+                            style={{background:T.bg,border:`1px solid ${urgente?T.red+"44":T.borderL}`,borderRadius:8,padding:"10px 12px",cursor:"pointer",transition:"all 0.15s ease",borderLeft:urgente?`3px solid ${T.red}`:"3px solid transparent"}}
                             onMouseEnter={e=>e.currentTarget.style.borderColor=sc.dot}
                             onMouseLeave={e=>e.currentTarget.style.borderColor=urgente?T.red+"44":T.borderL}>
                             <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o?.comprador||`Pedido #${r.orderNum}`}</div>
@@ -1099,7 +1184,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):0;
                     const sc=getEstadoRC(T,r.estado);
                     return (
-                      <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");}} style={{background:T.card,border:`1.5px solid ${T.red}44`,borderLeft:`4px solid ${T.red}`,borderRadius:10,padding:"14px 18px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background=T.card}>
+                      <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");}} style={{background:T.card,border:`1.5px solid ${T.red}44`,borderLeft:`4px solid ${T.red}`,borderRadius:10,padding:"14px 18px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",transition:"background 0.15s ease"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background=T.card}>
                         <div style={{display:"flex",gap:12,alignItems:"center"}}>
                           <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"6px 10px",fontSize:13,fontWeight:700,color:T.red}}>{dias}d</div>
                           <div>
@@ -1154,7 +1239,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     const isActive=activeReclamo===r._docId;
                     return (
                       <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
-                        style={{background:isActive?T.surface:T.card,border:`0.5px solid ${isActive?T.accentSolid:urgente?T.red+"44":T.border}`,borderLeft:`3px solid ${sc.dot}`,borderRadius:10,padding:"15px 16px",cursor:"pointer",transition:"all 0.1s",animation:"growith-fadeIn 0.2s ease both",animationDelay:`${Math.min(rIdx*25,200)}ms`}}
+                        style={{background:isActive?T.surface:T.card,border:`0.5px solid ${isActive?T.accentSolid:urgente?T.red+"44":T.border}`,borderLeft:`3px solid ${sc.dot}`,borderRadius:10,padding:"15px 16px",cursor:"pointer",transition:"all 0.15s ease",animation:"growith-fadeIn 0.2s ease both",animationDelay:`${Math.min(rIdx*25,200)}ms`}}
                         onMouseEnter={e=>{if(!isActive)e.currentTarget.style.background=T.surface;}}
                         onMouseLeave={e=>{if(!isActive)e.currentTarget.style.background=T.card;}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
@@ -2061,7 +2146,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 const diasActivo=c.createdAt?.seconds?Math.floor((Date.now()-c.createdAt.seconds*1000)/86400000):null;
                 return (
                   <div key={c._docId} onClick={()=>setDetail(c._docId)}
-                    style={{display:"grid",gridTemplateColumns:"1fr 90px 160px 190px 1fr 60px 80px",gap:8,padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",alignItems:"center",borderLeft:`3px solid ${sc.dot}`,borderRadius:4}}
+                    style={{display:"grid",gridTemplateColumns:"1fr 90px 160px 190px 1fr 60px 80px",gap:8,padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.15s ease",alignItems:"center",borderLeft:`3px solid ${sc.dot}`,borderRadius:4}}
                     onMouseEnter={e=>e.currentTarget.style.background=T.card}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -2175,7 +2260,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {id:"guardados",label:"Guardados"},
               ].map(m=>(
                 <button key={m.id} onClick={()=>setRankMetric(m.id)}
-                  style={{fontSize:12,padding:"5px 14px",borderRadius:20,border:`1.5px solid ${rankMetric===m.id?T.accentSolid:T.border}`,background:rankMetric===m.id?T.accentSolid+"18":"transparent",color:rankMetric===m.id?T.accent:T.textMd,cursor:"pointer",fontWeight:rankMetric===m.id?600:400,transition:"all 0.12s"}}>
+                  style={{fontSize:12,padding:"5px 14px",borderRadius:20,border:`1.5px solid ${rankMetric===m.id?T.accentSolid:T.border}`,background:rankMetric===m.id?T.accentSolid+"18":"transparent",color:rankMetric===m.id?T.accent:T.textMd,cursor:"pointer",fontWeight:rankMetric===m.id?600:400,transition:"all 0.15s ease"}}>
                   {m.label}
                 </button>
               ))}
@@ -2254,7 +2339,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     const s2=getEstadoCC(T,est);
                     const active=c.estado===est;
                     return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Finalizado"?{finalizadoAt:serverTimestamp()}:{})});}}
-                      style={{fontSize:11,fontWeight:active?700:500,padding:"5px 12px",borderRadius:20,border:"2px solid "+(active?s2.dot:T.border),background:active?s2.bg:"transparent",color:active?s2.text:T.textMd,cursor:active?"default":"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
+                      style={{fontSize:11,fontWeight:active?700:500,padding:"5px 12px",borderRadius:20,border:"2px solid "+(active?s2.dot:T.border),background:active?s2.bg:"transparent",color:active?s2.text:T.textMd,cursor:active?"default":"pointer",transition:"all 0.18s ease",display:"flex",alignItems:"center",gap:5,transform:"translateY(0)"}}>
                       <span style={{width:7,height:7,borderRadius:"50%",background:s2.dot,flexShrink:0}}/>{est}
                     </button>;
                   })}
@@ -2487,7 +2572,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     const lista=form.productosCanje||[];
                     const upd=sel?lista.filter(x=>x.nombre!==p):[...lista,{nombre:p,cantidad:1}];
                     setForm(f=>({...f,productosCanje:upd,producto:upd[0]?.nombre||""}));
-                  }} style={{fontSize:12,padding:"6px 12px",borderRadius:20,border:"1.5px solid "+(sel?T.purple:T.border),background:sel?T.purpleBg:"transparent",color:sel?T.purple:T.textMd,cursor:"pointer",fontWeight:sel?600:400,transition:"all 0.12s"}}>
+                  }} style={{fontSize:12,padding:"6px 12px",borderRadius:20,border:"1.5px solid "+(sel?T.purple:T.border),background:sel?T.purpleBg:"transparent",color:sel?T.purple:T.textMd,cursor:"pointer",fontWeight:sel?600:400,transition:"all 0.15s ease"}}>
                     {p}
                   </button>;
                 })}
@@ -2500,7 +2585,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {NICHOS.map(n=>{
                   const sel=form.nicho===n;
                   return <button key={n} type="button" onClick={()=>setForm(f=>({...f,nicho:sel?"":n}))}
-                    style={{fontSize:12,padding:"5px 11px",borderRadius:20,border:"1.5px solid "+(sel?T.accent:T.border),background:sel?T.accentSolid+"18":"transparent",color:sel?T.accent:T.textMd,cursor:"pointer",fontWeight:sel?600:400,transition:"all 0.12s"}}>
+                    style={{fontSize:12,padding:"5px 11px",borderRadius:20,border:"1.5px solid "+(sel?T.accent:T.border),background:sel?T.accentSolid+"18":"transparent",color:sel?T.accent:T.textMd,cursor:"pointer",fontWeight:sel?600:400,transition:"all 0.15s ease"}}>
                     {n}
                   </button>;
                 })}
@@ -3212,7 +3297,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");
                       if(t.id==="buscar"){setBuscarQuery("");setTabOrders([]);}
                       else{fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);}
-                    }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:isActive?600:400,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
+                    }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:isActive?600:400,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
                       {t.label}
                       {t.id!=="buscar"&&<span style={{background:isActive?t.color:"transparent",color:isActive?"#fff":T.textSm,fontSize:11,fontWeight:700,borderRadius:5,padding:"1px 6px",minWidth:18,textAlign:"center",border:isActive?"none":`1px solid ${T.border}`}}>
                         {counts[t.id]===null?"·":counts[t.id]}
@@ -3265,7 +3350,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
               {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:8,padding:2}}>
                 {[["todos","Todos"],["domicilio","🏠 Domicilio"],["sucursal","🏪 Sucursal"]].map(([v,l])=>(
-                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Set());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
+                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Set());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.15s ease",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
                 ))}
               </div>}
               <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
@@ -3339,7 +3424,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   const isSuc=o.medioEnvio&&(o.medioEnvio.toLowerCase().includes('sucursal')||o.medioEnvio.toLowerCase().includes('hop')||o.medioEnvio.toLowerCase().includes('punto'));
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
+                      style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.15s ease",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
                       <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e);}} style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1}}>
@@ -3705,7 +3790,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       if(isSuc){
                         return (
                           <div key={i} onClick={()=>{resolve(item);setLocationModal(null);}}
-                            style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
+                            style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s ease"}}
                             onMouseEnter={e=>e.currentTarget.style.background=T.card}
                             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                             <div style={{fontSize:13,fontWeight:600,color:T.text}}>{item}</div>
@@ -3715,7 +3800,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       const parts=item.split(' / ');
                       return (
                         <div key={i} onClick={()=>{resolve(item);setLocationModal(null);}}
-                          style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
+                          style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s ease"}}
                           onMouseEnter={e=>e.currentTarget.style.background=T.card}
                           onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                           <div style={{fontSize:13,fontWeight:600,color:T.text}}>{parts[1]}</div>
@@ -3881,7 +3966,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
                 return (
                   <div key={i}
                     onClick={()=>onNavigate("canjes", a.canje._docId)}
-                    style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<notificacionesCanjes.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
+                    style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<notificacionesCanjes.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s ease"}}
                     onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -4075,8 +4160,8 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   const alertasCfg=userDoc?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
 
   const Toggle=({active,onToggle})=>(
-    <div onClick={onToggle} style={{width:44,height:24,borderRadius:20,background:active?T.accentSolid:T.border,cursor:"pointer",position:"relative",transition:"background 0.2s",flexShrink:0}}>
-      <div style={{position:"absolute",top:3,left:active?22:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.3)"}}/>
+    <div onClick={onToggle} style={{width:44,height:24,borderRadius:20,background:active?T.accentSolid:T.border,cursor:"pointer",position:"relative",transition:"background 0.22s ease",flexShrink:0}}>
+      <div style={{position:"absolute",top:3,left:active?22:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.22s cubic-bezier(0.34,1.26,0.64,1)",boxShadow:"0 1px 4px rgba(0,0,0,0.3)"}}/>
     </div>
   );
 
@@ -4595,6 +4680,7 @@ export default function App() {
   useEffect(()=>{
     document.body.style.margin="0";
     document.body.style.background=T.bg;
+    document.body.style.transition="background 0.2s ease";
   },[T.bg]);
 
   useEffect(()=>{
