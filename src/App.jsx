@@ -1905,7 +1905,7 @@ function NotasInline({value, onSave, T, iS}) {
 }
 
 
-function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje}) {
+function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail}) {
   const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
@@ -1921,7 +1921,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
 
   useEffect(()=>{
-    const qc=query(collection(db,"canjes"),where("ownerId","==",user?.uid||"__none__"));
+    if(initialDetail) {
+      setDetail(initialDetail);
+      if(onClearInitialDetail) onClearInitialDetail();
+    }
+  },[initialDetail]);
+
+  useEffect(()=>{
     const unsub=onSnapshot(qc,snap=>{
       const data=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
@@ -3864,9 +3870,122 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const nombre = user?.displayName?.split(" ")[0] || "ahí";
   const hora = new Date().getHours();
   const saludo = hora < 13 ? "Buenos días" : hora < 20 ? "Buenas tardes" : "Buenas noches";
-  const urgentes = alertas?.length || 0;
-  // Separar: canjes son notificaciones, reclamos serían urgentes (por ahora todas las alertas son de canjes)
   const notificacionesCanjes = alertas||[];
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column"}}>
+
+      {/* Topbar */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:1000,margin:"0 auto"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:28,height:28,borderRadius:7,background:T.accentSolid,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🌙</div>
+            <span style={{fontWeight:800,fontSize:15,color:T.text,letterSpacing:-0.3}}>Growith</span>
+            <div style={{display:"flex",alignItems:"center",gap:5,marginLeft:4}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:fbDot}}/>
+              <span style={{fontSize:11,color:T.textSm}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {user?.photoURL&&<img src={user.photoURL} style={{width:28,height:28,borderRadius:"50%",border:`1.5px solid ${T.border}`}} alt=""/>}
+            <button onClick={()=>onNavigate("planes")} style={{fontSize:11,fontWeight:600,padding:"4px 9px",borderRadius:6,background:"transparent",border:`1px solid ${T.border}`,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              {userPlan==="free"?"Free":userPlan==="starter"?"Starter":userPlan==="pro"?"Pro":"Total"}
+            </button>
+            {isAdmin&&<button onClick={()=>onNavigate("admin")} style={{...BtnSecondary(T),padding:"5px 9px",fontSize:12,color:T.yellow,borderColor:T.yellow+"44"}}>👑</button>}
+            <button onClick={onToggleDark} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.textSm}}>{darkMode?"☀︎":"◑"}</button>
+            <button onClick={()=>onNavigate("config")} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:12,color:T.textMd}}>Config</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"40px 24px 64px"}}>
+        <div style={{width:"100%",maxWidth:820}}>
+
+          {/* Saludo */}
+          <div style={{marginBottom:28}}>
+            <h1 style={{fontSize:28,fontWeight:800,margin:"0 0 5px",letterSpacing:-0.8,color:T.text}}>{saludo}, {nombre}</h1>
+            <p style={{fontSize:14,color:T.textSm,margin:0}}>
+              {reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}
+              {notificacionesCanjes.length>0&&<> · <span style={{color:T.orange}}>{notificacionesCanjes.length} notificación{notificacionesCanjes.length>1?"es":""} en canjes</span></>}
+            </p>
+          </div>
+
+          {/* ── CARDS ── */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:28}}>
+            {[
+              {
+                id:"reclamos", label:"Reclamos", desc:"Cambios y devoluciones",
+                stat:reclamosCount, statLabel:"activos",
+                accent:"#f87171", accentBg:"rgba(248,113,113,0.08)",
+                icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+              },
+              {
+                id:"canjes", label:"Canjes", desc:"Influencers y contenido",
+                stat:canjesCount, statLabel:"canjes",
+                accent:"#c084fc", accentBg:"rgba(192,132,252,0.08)",
+                icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+              },
+              {
+                id:"envios", label:"Envíos", desc:"Despachos y seguimientos",
+                stat:ordersCount, statLabel:"pedidos",
+                accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)",
+                icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
+              },
+            ].map(item=>(
+              <button key={item.id} onClick={()=>onNavigate(item.id)}
+                style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 24px 20px",textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column",position:"relative",overflow:"hidden"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=item.accent+"88";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 24px ${item.accent}18`;}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
+                {/* Barra de color top */}
+                <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:item.accent,borderRadius:"14px 14px 0 0"}}/>
+                {/* Icono */}
+                <div style={{width:40,height:40,borderRadius:10,background:item.accentBg,border:`1px solid ${item.accent}33`,display:"flex",alignItems:"center",justifyContent:"center",color:item.accent,marginBottom:14,marginTop:6}}>
+                  {item.icon}
+                </div>
+                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>{item.label}</div>
+                <div style={{fontSize:12,color:T.textSm,marginBottom:20,lineHeight:1.5}}>{item.desc}</div>
+                <div style={{marginTop:"auto",paddingTop:18,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontSize:34,fontWeight:800,color:item.accent,letterSpacing:-1.5,lineHeight:1}}>{item.stat??<Spinner size={16} color={item.accent}/>}</span>
+                  <span style={{fontSize:12,color:T.textSm}}>{item.statLabel}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* ── NOTIFICACIONES DE CANJES ── */}
+          {notificacionesCanjes.length>0&&(
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div style={{padding:"10px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:T.orange}}/>
+                <span style={{fontSize:11,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Notificaciones · Canjes</span>
+                <span style={{fontSize:11,background:T.orangeBg,color:T.orange,borderRadius:4,padding:"1px 7px",fontWeight:600,border:`1px solid ${T.orange}33`,marginLeft:2}}>{notificacionesCanjes.length}</span>
+              </div>
+              {notificacionesCanjes.map((a,i)=>{
+                const colorMap={recordatorio:T.yellow,sinrespuesta:T.orange,contenido:T.blue};
+                const col=colorMap[a.tipo]||T.orange;
+                return (
+                  <div key={i}
+                    onClick={()=>onNavigate("canjes", a.canje._docId)}
+                    style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<notificacionesCanjes.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <span style={{width:5,height:5,borderRadius:"50%",background:col,flexShrink:0}}/>
+                      <span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.canje.influencer}</span>
+                      <span style={{fontSize:12,color:T.textSm}}>{a.msg}</span>
+                    </div>
+                    <span style={{fontSize:11,color:T.textSm}}>Ver →</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column"}}>
@@ -4597,6 +4716,7 @@ export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   const [page,setPage]=useState("home");
   const [pendingCanje,setPendingCanje]=useState(null); // datos pre-cargados desde un pedido
+  const [pendingCanjeDetail,setPendingCanjeDetail]=useState(null); // _docId a abrir directo
   const [orders,setOrders]=useState([]);
   const [ordersStatus,setOrdersStatus]=useState("idle");
   const [totalOrdersCount,setTotalOrdersCount]=useState(null);
@@ -4800,7 +4920,10 @@ export default function App() {
 
   // App
   if(page==="reclamos") return <AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/>;
-  if(page==="canjes") return <AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)}/>;
+  if(page==="canjes") return <AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/>;
   if(page==="envios") return <AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/>;
-  return <HomeScreen T={T} onNavigate={setPage} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
+  return <HomeScreen T={T} onNavigate={(page, docId)=>{
+    if(page==="canjes"&&docId){ setPendingCanjeDetail(docId); }
+    setPage(page);
+  }} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 }
