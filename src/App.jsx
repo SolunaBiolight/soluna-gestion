@@ -5056,3 +5056,4 @@ export default function App() {
     setPage(page);
   }} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 }
+}
