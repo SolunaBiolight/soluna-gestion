@@ -2641,6 +2641,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [selected,setSelected]=useState(new Set());
   const [exportModal,setExportModal]=useState(false);
   const [exporting,setExporting]=useState(false);
+  const [exportProgress,setExportProgress]=useState({step:"",pct:0,current:0,total:0});
   const [exportCfg,setExportCfg]=useState(()=>{
     try {
       const saved=localStorage.getItem("growith_exportCfg");
@@ -2690,6 +2691,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [pdfProcessing,setPdfProcessing]=useState(false);
   const [sendingTracking,setSendingTracking]=useState({});
   const [trackingSent,setTrackingSent]=useState({});
+  const [seguimientoProgress,setSeguimientoProgress]=useState({active:false,current:0,total:0,last:""});
   const iS=InputStyle(T);
 
   // Pedidos exportables — usar tabOrders (local) no orders (global)
@@ -3096,19 +3098,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const selOrders=tabOrders.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
     setExporting(true);
+    setExportProgress({step:"Cargando ubicaciones Andreani...",pct:10,current:0,total:selOrders.length});
     await new Promise(r=>setTimeout(r,100));
     try {
       const locs=await loadAndreaniLocations();
+      setExportProgress({step:"Verificando direcciones...",pct:30,current:0,total:selOrders.length});
       const domicilioOrders=selOrders.filter(o=>!isSucursalOrder(o));
       const sucursalOrders=selOrders.filter(o=>isSucursalOrder(o));
 
-      // Check unresolved domicilios
       const unresolvedDom=domicilioOrders.filter(o=>{
         if(locationOverridesRef.current[o.numero]) return false;
         return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
       });
 
-      // Check unresolved sucursales
       const unresolvedSuc=sucursalOrders.filter(o=>{
         if(sucursalOverridesRef.current[o.numero]) return false;
         const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
@@ -3117,28 +3119,30 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       if(unresolvedDom.length>0||unresolvedSuc.length>0){
         setExporting(false);
+        setExportProgress({step:"",pct:0,current:0,total:0});
         await resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs);
         return;
       }
 
+      setExportProgress({step:"Generando planilla Excel...",pct:60,current:0,total:selOrders.length});
       const date=new Date().toISOString().split('T')[0];
-      // Filtrar pedidos excluidos manualmente
       const finalOrders=selOrders.filter(o=>
         locationOverridesRef.current[o.numero]!=="EXCLUIR" &&
         sucursalOverridesRef.current[o.numero]!=="EXCLUIR"
       );
-      if(!finalOrders.length){ toast("Todos los pedidos fueron excluidos","warning"); setExporting(false); return; }
+      if(!finalOrders.length){ toast("Todos los pedidos fueron excluidos","warning"); setExporting(false); setExportProgress({step:"",pct:0,current:0,total:0}); return; }
+      setExportProgress({step:`Procesando ${finalOrders.length} pedidos...`,pct:80,current:finalOrders.length,total:finalOrders.length});
       const b=await generateAndreaniXlsx(finalOrders,locs);
+      setExportProgress({step:"Descargando archivo...",pct:95,current:finalOrders.length,total:finalOrders.length});
       const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';a.click();
-      // Guardar historial de exportaciones
       try{
         const hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");
         hist.unshift({fecha:new Date().toISOString(),cantidad:finalOrders.length,pedidos:finalOrders.map(o=>o.numero)});
         localStorage.setItem("growith_exportHistory",JSON.stringify(hist.slice(0,50)));
       }catch(e){}
-      setExportModal(false);setSelected(new Set());
-      locationOverridesRef.current={};sucursalOverridesRef.current={};
-    } catch(e){toast("Error al exportar: "+e.message,"error");}
+      setExportProgress({step:"Listo",pct:100,current:finalOrders.length,total:finalOrders.length});
+      setTimeout(()=>{ setExportModal(false);setSelected(new Set()); locationOverridesRef.current={};sucursalOverridesRef.current={};setExportProgress({step:"",pct:0,current:0,total:0}); },800);
+    } catch(e){toast("Error al exportar: "+e.message,"error"); setExportProgress({step:"",pct:0,current:0,total:0});}
     setExporting(false);
   }
 
@@ -3289,14 +3293,80 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
 
   async function sendAllTracking() {
-    for(const r of pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum])) {
+    const pending=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
+    setSeguimientoProgress({active:true,current:0,total:pending.length,last:""});
+    for(let i=0;i<pending.length;i++){
+      const r=pending[i];
+      setSeguimientoProgress({active:true,current:i+1,total:pending.length,last:`Pedido #${r.pedidoNum}`});
       await sendTracking(r);
     }
+    setSeguimientoProgress({active:false,current:0,total:0,last:""});
   }
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      {/* Topbar */}
+
+      {/* ── PROGRESS OVERLAY ── */}
+      {(exporting||(skuGenerating&&skuProgress>0)||seguimientoProgress.active)&&(()=>{
+        // Determinar qué proceso está activo
+        const isExport=exporting;
+        const isSku=skuGenerating&&skuProgress>0&&!exporting;
+        const isSeg=seguimientoProgress.active&&!exporting&&!isSku;
+        const pct=isExport?exportProgress.pct:isSku?skuProgress:Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100);
+        const step=isExport?exportProgress.step:isSku?(skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":skuProgress<100?"Generando PDF...":"¡PDF listo!"):(`Enviando seguimientos... ${seguimientoProgress.current}/${seguimientoProgress.total}`);
+        const sub=isExport&&exportProgress.total>0?`${exportProgress.current||exportProgress.total} pedidos`:isSeg&&seguimientoProgress.last?seguimientoProgress.last:"";
+        const isDone=pct>=100;
+        const accentColor=isDone?T.green:isExport?T.blue:isSku?T.purple:T.green;
+        return (
+          <div style={{position:"fixed",bottom:28,right:28,zIndex:9998,width:320,background:T.card,border:`1px solid ${accentColor}44`,borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.3)",padding:"16px 18px",animation:"growith-toast-in 0.25s ease"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{width:28,height:28,borderRadius:8,background:accentColor+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                {isDone
+                  ? <span style={{color:T.green,fontSize:14}}>✓</span>
+                  : <div style={{width:14,height:14,border:`2px solid ${accentColor}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
+                }
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{step}</div>
+                {sub&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{sub}</div>}
+              </div>
+              <span style={{fontSize:12,fontWeight:700,color:accentColor,flexShrink:0}}>{pct}%</span>
+            </div>
+            {/* Barra de progreso */}
+            <div style={{height:5,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${pct}%`,background:accentColor,borderRadius:10,transition:"width 0.35s ease"}}/>
+            </div>
+            {/* Steps visuales para export */}
+            {isExport&&(
+              <div style={{display:"flex",gap:4,marginTop:10}}>
+                {[
+                  {label:"Ubicaciones",threshold:30},
+                  {label:"Verificar",threshold:60},
+                  {label:"Generar",threshold:90},
+                  {label:"Descargar",threshold:100},
+                ].map((s,i)=>{
+                  const done=pct>=s.threshold;
+                  const active=pct>=(i===0?0:[30,60,90][i-1])&&pct<s.threshold;
+                  return(
+                    <div key={i} style={{flex:1,textAlign:"center"}}>
+                      <div style={{width:6,height:6,borderRadius:"50%",background:done?T.green:active?T.blue:T.borderL,margin:"0 auto 3px",transition:"background 0.3s"}}/>
+                      <div style={{fontSize:9,color:done?T.green:active?T.blue:T.textSm,fontWeight:done||active?600:400}}>{s.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {/* Contador seguimientos */}
+            {isSeg&&seguimientoProgress.total>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:8}}>
+                {Array.from({length:seguimientoProgress.total},(_, i)=>(
+                  <div key={i} style={{flex:1,height:4,borderRadius:2,background:i<seguimientoProgress.current?T.green:T.borderL,margin:"0 1px",transition:"background 0.2s"}}/>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:1280,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -3593,14 +3663,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <div style={{marginTop:16}}>
                 {!skuGenerating&&(
                   <button onClick={async()=>{
-                    setSkuGenerating(true);setSkuProgress(10);
+                    setSkuGenerating(true);setSkuProgress(15);
                     try{
                       const skuMap={};
+                      setSkuProgress(30);
                       skuResults.forEach(r=>{
                         if(r.found&&r.skuLines?.length)skuMap[r.pedidoNum]={page:r.pagina,skus:r.skuLines,found:true};
                         else skuMap[r.pedidoNum||r.pagina]={page:r.pagina,skus:[],found:false};
                       });
-                      setSkuProgress(35);
+                      setSkuProgress(50);                      setSkuProgress(35);
                       let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
                       try{const s=localStorage.getItem("growith_skuCfg");if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
                       const fd=new FormData();
@@ -3624,14 +3695,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </button>
                 )}
                 {skuGenerating&&(
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:24,textAlign:"center"}}>
-                    <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:8}}>
-                      {skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":skuProgress<100?"Descargando PDF...":"✅ ¡PDF listo!"}
+                  <div style={{background:T.card,border:`1px solid ${T.purple}33`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:16,height:16,border:`2px solid ${T.purple}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",flexShrink:0}}/>
+                    <div style={{fontSize:13,color:T.textMd,fontWeight:500}}>
+                      {skuProgress<40?"Preparando datos...":skuProgress<65?"Procesando rótulos...":skuProgress<90?"Subiendo al servidor...":skuProgress<100?"Generando PDF...":"¡PDF listo!"}
                     </div>
-                    <div style={{height:8,background:T.borderL,borderRadius:4,overflow:"hidden",margin:"12px 0 6px"}}>
-                      <div style={{height:"100%",width:`${skuProgress}%`,background:skuProgress===100?T.green:T.accentSolid,borderRadius:4,transition:"width 0.4s ease"}}></div>
-                    </div>
-                    <div style={{fontSize:13,color:T.textSm}}>{skuProgress}%</div>
+                    <span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:T.purple}}>{skuProgress}%</span>
                   </div>
                 )}
               </div>
