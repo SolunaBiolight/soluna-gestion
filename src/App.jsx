@@ -2691,7 +2691,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [pdfProcessing,setPdfProcessing]=useState(false);
   const [sendingTracking,setSendingTracking]=useState({});
   const [trackingSent,setTrackingSent]=useState({});
-  const [seguimientoProgress,setSeguimientoProgress]=useState({active:false,current:0,total:0,last:""});
+  const [seguimientoProgress,setSeguimientoProgress]=useState({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0});
+  const [sendBatchActive,setSendBatchActive]=useState(false);
   const iS=InputStyle(T);
 
   // Pedidos exportables — usar tabOrders (local) no orders (global)
@@ -3236,9 +3237,46 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }
       resultSetter(results);
       if(results.length===0) toast("No se encontraron rótulos válidos en el PDF","warning");
+      // Para SKU: auto-generar el PDF con SKUs si hay resultados
+      if(type==="sku"&&results.length>0&&results.some(r=>r.found)) {
+        setter(false);
+        autoGenerateSkuPdf(results, file);
+        return;
+      }
     } catch(e){ toast("Error al procesar el PDF: "+e.message,"error"); }
     setter(false);
   }
+
+  async function autoGenerateSkuPdf(results, file) {
+    setSkuGenerating(true); setSkuProgress(20);
+    try {
+      const skuMap={};
+      results.forEach(r=>{
+        if(r.found&&r.skuLines?.length) skuMap[r.pedidoNum]={page:r.pagina,skus:r.skuLines,found:true};
+        else skuMap[r.pedidoNum||r.pagina]={page:r.pagina,skus:[],found:false};
+      });
+      setSkuProgress(40);
+      let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
+      try{const s=localStorage.getItem("growith_skuCfg");if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
+      const fd=new FormData();
+      fd.append("pdf",file,file.name);
+      fd.append("skuMap",JSON.stringify(skuMap));
+      fd.append("config",JSON.stringify(cfg));
+      setSkuProgress(60);
+      const resp=await fetch("/api/process-sku",{method:"POST",body:fd});
+      if(!resp.ok) throw new Error("Error al generar PDF: "+resp.status);
+      setSkuProgress(85);
+      const blob=await resp.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url; a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+      setSkuProgress(100);
+      const notFound=results.filter(r=>!r.found).length;
+      if(notFound>0) toast(`PDF generado · ${notFound} pedido${notFound>1?"s":""} no encontrado${notFound>1?"s":""}`, "warning");
+      else toast(`PDF con SKUs listo · ${results.length} rótulos procesados`, "success");
+      setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},1800);
+    } catch(e){ toast("Error al generar PDF: "+e.message,"error"); setSkuGenerating(false); setSkuProgress(0); }
 
   async function extractPdfText(file) {
     if(!window.pdfjsLib) {
@@ -3294,13 +3332,25 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
   async function sendAllTracking() {
     const pending=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
-    setSeguimientoProgress({active:true,current:0,total:pending.length,last:""});
+    setSendBatchActive(true);
+    setSeguimientoProgress({active:true,current:0,total:pending.length,last:"",done:false,ok:0,fail:0});
+    let ok=0,fail=0;
     for(let i=0;i<pending.length;i++){
       const r=pending[i];
-      setSeguimientoProgress({active:true,current:i+1,total:pending.length,last:`Pedido #${r.pedidoNum}`});
-      await sendTracking(r);
+      setSeguimientoProgress(p=>({...p,current:i+1,last:`Pedido #${r.pedidoNum}`}));
+      try {
+        await sendTracking(r);
+        ok++;
+        setSeguimientoProgress(p=>({...p,ok}));
+      } catch(_) {
+        fail++;
+        setSeguimientoProgress(p=>({...p,fail}));
+      }
     }
-    setSeguimientoProgress({active:false,current:0,total:0,last:""});
+    setSendBatchActive(false);
+    setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail});
+    // Limpiar resumen tras 6 segundos
+    setTimeout(()=>setSeguimientoProgress({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0}),6000);
   }
 
   return (
@@ -3312,6 +3362,29 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const isExport=exporting;
         const isSku=skuGenerating&&skuProgress>0&&!exporting;
         const isSeg=seguimientoProgress.active&&!exporting&&!isSku;
+        const isDoneSeg=seguimientoProgress.done&&!seguimientoProgress.active;
+        if(isDoneSeg) {
+          // Resumen final de seguimientos
+          const {ok,fail,total} = seguimientoProgress;
+          return (
+            <div style={{position:"fixed",bottom:28,right:28,zIndex:9998,width:320,background:T.card,border:`1px solid ${fail>0?T.orange:T.green}44`,borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.3)",padding:"16px 18px",animation:"growith-toast-in 0.25s ease"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{width:28,height:28,borderRadius:8,background:fail>0?T.orange+"22":T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <span style={{fontSize:14,color:fail>0?T.orange:T.green}}>{fail>0?"⚠":"✓"}</span>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text}}>Seguimientos enviados</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{ok} ok{fail>0?` · ${fail} con error`:""} · {total} total</div>
+                </div>
+                <button onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:16}}>✕</button>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <div style={{flex:ok,height:5,background:T.green,borderRadius:10,transition:"flex 0.4s ease"}}/>
+                {fail>0&&<div style={{flex:fail,height:5,background:T.red,borderRadius:10}}/>}
+              </div>
+            </div>
+          );
+        }
         const pct=isExport?exportProgress.pct:isSku?skuProgress:Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100);
         const step=isExport?exportProgress.step:isSku?(skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":skuProgress<100?"Generando PDF...":"¡PDF listo!"):(`Enviando seguimientos... ${seguimientoProgress.current}/${seguimientoProgress.total}`);
         const sub=isExport&&exportProgress.total>0?`${exportProgress.current||exportProgress.total} pedidos`:isSeg&&seguimientoProgress.last?seguimientoProgress.last:"";
@@ -3541,16 +3614,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   const sel=selected.has(o.numero);
                   const ec=getEstadoEnvioC(T,o.estadoEnvio);
                   const isSuc=o.medioEnvio&&(o.medioEnvio.toLowerCase().includes('sucursal')||o.medioEnvio.toLowerCase().includes('hop')||o.medioEnvio.toLowerCase().includes('punto'));
+                  // Check if this order was already exported
+                  let exportedOn=null;
+                  try{
+                    const hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");
+                    const found=hist.find(h=>h.pedidos?.includes(o.numero));
+                    if(found) exportedOn=new Date(found.fecha).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"});
+                  }catch(_){}
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.15s ease",background:sel?T.accentSolid+"0a":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
+                      style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.15s ease",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
-                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>
+                      onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
                       <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e);}} style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1}}>
                         {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:3}}>
                         <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
+                        {exportedOn&&<span style={{fontSize:9,fontWeight:600,color:T.green,background:T.green+"18",borderRadius:3,padding:"1px 4px",whiteSpace:"nowrap"}}>✓ {exportedOn}</span>}
                       </div>
                       <div>
                         <div style={{fontSize:compactMode?12:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</div>
@@ -3613,11 +3694,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:16}}>
               <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>1. Seleccioná el PDF de rótulos</div>
-              <input type="file" accept=".pdf" onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(true);setSkuResults([]);}}} style={{...iS,cursor:"pointer",fontSize:13,marginBottom:skuPending?12:0}}/>
-              {skuPending&&!skuProcessing&&(
-                <button onClick={()=>{setSkuPending(false);parsePdf(skuFile,"sku");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,marginTop:12}}>
-                  🔍 Analizar PDF
-                </button>
+              <input type="file" accept=".pdf" onChange={e=>{
+                const f=e.target.files[0];
+                if(f){
+                  setSkuFile(f);
+                  setSkuPending(false);
+                  setSkuResults([]);
+                  setSkuGenerating(false);
+                  setSkuProgress(0);
+                  // Auto-analizar inmediatamente
+                  parsePdf(f,"sku");
+                }
+              }} style={{...iS,cursor:"pointer",fontSize:13}}/>
+              {skuFile&&!skuProcessing&&!skuGenerating&&skuResults.length===0&&(
+                <div style={{fontSize:12,color:T.textSm,marginTop:8}}>Analizando automáticamente...</div>
               )}
             </div>
 
@@ -3659,50 +3749,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </div>
             )}
 
-            {skuResults.length>0&&skuResults.some(r=>r.found)&&(
-              <div style={{marginTop:16}}>
-                {!skuGenerating&&(
-                  <button onClick={async()=>{
-                    setSkuGenerating(true);setSkuProgress(15);
-                    try{
-                      const skuMap={};
-                      setSkuProgress(30);
-                      skuResults.forEach(r=>{
-                        if(r.found&&r.skuLines?.length)skuMap[r.pedidoNum]={page:r.pagina,skus:r.skuLines,found:true};
-                        else skuMap[r.pedidoNum||r.pagina]={page:r.pagina,skus:[],found:false};
-                      });
-                      setSkuProgress(50);                      setSkuProgress(35);
-                      let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
-                      try{const s=localStorage.getItem("growith_skuCfg");if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
-                      const fd=new FormData();
-                      fd.append("pdf",skuFile,skuFile.name);
-                      fd.append("skuMap",JSON.stringify(skuMap));
-                      fd.append("config",JSON.stringify(cfg));
-                      setSkuProgress(55);
-                      const resp=await fetch("/api/process-sku",{method:"POST",body:fd});
-                      if(!resp.ok)throw new Error("Error al generar PDF: "+resp.status);
-                      setSkuProgress(80);
-                      const blob=await resp.blob();
-                      const url=URL.createObjectURL(blob);
-                      const a=document.createElement("a");
-                      a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
-                      URL.revokeObjectURL(url);
-                      setSkuProgress(100);
-                      setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},1800);
-                    }catch(e){toast("Error al generar PDF: "+e.message,"error");setSkuGenerating(false);setSkuProgress(0);}
-                  }} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"14px 20px"}}>
-                    📥 Generar PDF con SKUs y descargar
-                  </button>
-                )}
-                {skuGenerating&&(
-                  <div style={{background:T.card,border:`1px solid ${T.purple}33`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:10}}>
-                    <div style={{width:16,height:16,border:`2px solid ${T.purple}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",flexShrink:0}}/>
-                    <div style={{fontSize:13,color:T.textMd,fontWeight:500}}>
-                      {skuProgress<40?"Preparando datos...":skuProgress<65?"Procesando rótulos...":skuProgress<90?"Subiendo al servidor...":skuProgress<100?"Generando PDF...":"¡PDF listo!"}
-                    </div>
-                    <span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:T.purple}}>{skuProgress}%</span>
-                  </div>
-                )}
+            {skuResults.length>0&&skuResults.some(r=>r.found)&&!skuGenerating&&(
+              <div style={{marginTop:12,padding:"10px 14px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:10,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{color:T.green,fontSize:13}}>✓</span>
+                <span style={{fontSize:13,color:T.green,fontWeight:500}}>PDF generado y descargado automáticamente</span>
+                <button onClick={()=>autoGenerateSkuPdf(skuResults,skuFile)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",marginLeft:"auto"}}>Regenerar</button>
               </div>
             )}
           </div>
@@ -3717,11 +3768,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:16}}>
               <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>1. Seleccioná el PDF de rótulos Andreani</div>
-              <input type="file" accept=".pdf" onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfPending(true);setPdfResults([]);setTrackingSent({});}}} style={{...iS,cursor:"pointer",fontSize:13}}/>
-              {pdfPending&&!pdfProcessing&&(
-                <button onClick={()=>{setPdfPending(false);parsePdf(pdfFile,"tracking");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,marginTop:12}}>
-                  🔍 Analizar PDF y extraer seguimientos
-                </button>
+              <input type="file" accept=".pdf" onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfPending(false);setPdfResults([]);setTrackingSent({});parsePdf(f,"tracking");}}} style={{...iS,cursor:"pointer",fontSize:13}}/>
+              {pdfFile&&!pdfProcessing&&pdfResults.length===0&&(
+                <div style={{fontSize:12,color:T.textSm,marginTop:8}}>Analizando automáticamente...</div>
               )}
             </div>
 
@@ -3758,7 +3807,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       </div>
                       <div style={{flexShrink:0}}>
                         {sent?<span style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Enviado</span>
-                        :sending?<span style={{fontSize:12,color:T.yellow}}>⏳...</span>
+                        :sending?<Spinner size={13} color={T.yellow}/>
+                        :sendBatchActive?<span style={{fontSize:11,color:T.textSm}}>En cola...</span>
                         :r.tracking&&r.pedidoNum?
                           <AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>↑ Enviar</AsyncButton>
                         :<span style={{fontSize:11,color:T.red}}>Sin datos</span>}
@@ -3955,11 +4005,45 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       </Modal>
 
       {/* Export Modal */}
-      <Modal T={T} open={exportModal} onClose={()=>!exporting&&setExportModal(false)} title={`Generar ${selected.size} etiqueta${selected.size!==1?"s":""} para Andreani`} width={480}>
+      <Modal T={T} open={exportModal} onClose={()=>!exporting&&setExportModal(false)} title={`Generar ${selected.size} etiqueta${selected.size!==1?"s":""} para Andreani`} width={500}>
+        {(()=>{
+          const selOrders=tabOrders.filter(o=>selected.has(o.numero));
+          const domCount=selOrders.filter(o=>!isSucursalOrder(o)).length;
+          const sucCount=selOrders.filter(o=>isSucursalOrder(o)).length;
+          // Check ya exportados
+          let hist=[];
+          try{hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");}catch(_){}
+          const yaExportados=selOrders.filter(o=>hist.some(h=>h.pedidos?.includes(o.numero)));
+          return (
         <div>
-          <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,fontSize:13,color:T.textMd}}>
-            <span style={{fontWeight:700,color:T.text}}>{selected.size}</span> pedido{selected.size!==1?"s":""} seleccionado{selected.size!==1?"s":""}. Se exportarán solo los marcados.
+          {/* Preview breakdown */}
+          <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Resumen</div>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}>
+                <span style={{fontSize:15}}>🏠</span>
+                <span style={{color:T.text,fontWeight:600}}>{domCount}</span>
+                <span style={{color:T.textSm}}>domicilio{domCount!==1?"s":""}</span>
+              </div>
+              <div style={{width:1,background:T.borderL}}/>
+              <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}>
+                <span style={{fontSize:15}}>🏪</span>
+                <span style={{color:T.text,fontWeight:600}}>{sucCount}</span>
+                <span style={{color:T.textSm}}>sucursal{sucCount!==1?"es":""}</span>
+              </div>
+              <div style={{width:1,background:T.borderL}}/>
+              <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}>
+                <span style={{color:T.accent,fontWeight:700}}>{selOrders.length}</span>
+                <span style={{color:T.textSm}}>total</span>
+              </div>
+            </div>
+            {yaExportados.length>0&&(
+              <div style={{marginTop:10,padding:"8px 10px",background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:8,fontSize:12,color:T.yellow}}>
+                ⚠ {yaExportados.length} pedido{yaExportados.length>1?"s":""} ya exportado{yaExportados.length>1?"s":""} anteriormente: {yaExportados.slice(0,3).map(o=>`#${o.numero}`).join(", ")}{yaExportados.length>3?` y ${yaExportados.length-3} más`:""}
+              </div>
+            )}
           </div>
+
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>📦 Paquete</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
             <Field T={T} label="Peso (g)"><input style={iS} type="number" value={exportCfg.peso} onChange={e=>setExportCfg(c=>({...c,peso:e.target.value}))} placeholder="200"/></Field>
@@ -3984,6 +4068,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             </AsyncButton>
           </div>
         </div>
+          );
+        })()}
       </Modal>
     </div>
   );
@@ -4766,7 +4852,7 @@ export default function App() {
   const [reclamosCount,setReclamosCount]=useState(0);
   const [canjesCount,setCanjesCount]=useState(0);
   const [alertas,setAlertas]=useState([]);
-  const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("soluna_theme")!=="light"; } catch(e){ return true; } });
+  const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("growith_theme")!=="light"; } catch(e){ return true; } });
   const [migrated,setMigrated]=useState(false);
   const [userPlan,setUserPlan]=useState("free"); // free | starter | pro | total
   const [planExpiry,setPlanExpiry]=useState(null); // Date or null
@@ -4811,7 +4897,7 @@ export default function App() {
   },[T.bg]);
 
   useEffect(()=>{
-    try { localStorage.setItem("soluna_theme", darkMode?"dark":"light"); } catch(e){}
+    try { localStorage.setItem("growith_theme", darkMode?"dark":"light"); } catch(e){}
   },[darkMode]);
 
   // Auth state listener
@@ -4887,7 +4973,7 @@ export default function App() {
   // Fetch orders on login — fetch empaquetar tab por defecto + total count
   useEffect(()=>{
     if(!user) return;
-    try{ localStorage.removeItem(`soluna_orders_${user.uid}`); localStorage.removeItem("soluna_orders_v3"); }catch(e){}
+    try{ localStorage.removeItem(`growith_orders_${user.uid}`); localStorage.removeItem("growith_orders_v3"); }catch(e){}
     fetchOrders(user.uid, "empaquetar");
     // Traer total de pedidos pagados para mostrar en Home y Reclamos
     fetch(`/api/orders?uid=${user.uid}&tab=total`)
@@ -4905,7 +4991,7 @@ export default function App() {
       const tn=snap.data().stores?.find(s=>s.type==="tiendanube");
       const newId=tn?.storeId||null;
       if(prevTnRef.current!==null && prevTnRef.current!==newId) {
-        try{ localStorage.removeItem(`soluna_orders_${user.uid}`); }catch(e){}
+        try{ localStorage.removeItem(`growith_orders_${user.uid}`); }catch(e){}
         setOrders([]);
         fetchOrders(user.uid, "empaquetar");
       }
