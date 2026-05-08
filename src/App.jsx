@@ -2826,21 +2826,46 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const calle=cl(pickupDetails.address?.address);
     const numero=firstNum(pickupDetails.address?.number);
     const localidad=cl(pickupDetails.address?.locality);
-    const esHop=nombre.includes("HOP");
+    const esHop=nombre.includes("HOP")||nombre.includes("PUNTO");
     const sucs=locs.sucursales;
 
-    // ESTRATEGIA 1: PUNTO ANDREANI HOP
-    // Usa cl() existente para normalizar (elimina chars no ASCII incluyendo tildes)
-    if(esHop) return null; // Siempre modal para HOP - Andreani rechaza tildes
-    // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
-    // Las sucursales clásicas tienen nombres propios que no podemos construir
-    if(!esHop){
-      // Calle + número
-      if(calle&&numero){
-        const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.includes(numero);});
-        if(m) return m;
+    // ESTRATEGIA UNIVERSAL: calle + número exacto (funciona para HOP y sucursales)
+    // Andreani nombra sus HOP como "PUNTO ANDREANI HOP [CALLE] [NUMERO]"
+    if(calle&&numero){
+      // Match exacto: la sucursal contiene la calle Y el número
+      const m=sucs.find(s=>{
+        const su=cl(s);
+        return su.includes(calle)&&su.split(' ').includes(numero);
+      });
+      if(m) return m;
+
+      // Match parcial: palabras de la calle (≥4 chars) + número
+      const calWords=calle.split(' ').filter(w=>w.length>=4);
+      for(const cw of calWords){
+        const candidates=sucs.filter(s=>{
+          const su=cl(s);
+          return su.includes(cw)&&su.includes(numero);
+        });
+        if(candidates.length===1) return candidates[0];
       }
-      // Localidad sola
+    }
+
+    // ESTRATEGIA HOP: si es HOP, buscar por "HOP" + palabras de calle
+    if(esHop&&calle){
+      const calWords=calle.split(' ').filter(w=>w.length>=4);
+      for(const cw of calWords){
+        const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(cw));
+        if(candidates.length===1) return candidates[0];
+      }
+      // Solo número
+      if(numero){
+        const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(numero));
+        if(candidates.length===1) return candidates[0];
+      }
+    }
+
+    // ESTRATEGIA SUCURSAL CLÁSICA: localidad + calle
+    if(!esHop){
       if(localidad){
         const locWords=localidad.split(' ').filter(w=>w.length>=3);
         for(const lw of locWords){
@@ -2855,7 +2880,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           }
         }
       }
-      // Palabras de calle
       if(calle){
         const words=calle.split(' ').filter(w=>w.length>=4);
         for(const w of words){
@@ -2865,13 +2889,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }
     }
 
-    // 4. Número único en lista
+    // Número único en lista
     if(numero&&numero.length>=3){
       const byNum=sucs.filter(s=>cl(s).split(' ').includes(numero));
       if(byNum.length===1) return byNum[0];
     }
 
-    return null; // Mostrar modal solo para SUCURSAL ANDREANI sin match
+    return null;
   }
 
   function searchSucursales(locs, query) {
@@ -3130,9 +3154,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     }
     for(const o of unresolvedSuc){
       const chosen=await new Promise(resolve=>{
-        // Pre-fill search with calle+numero from pickupDetails for easier finding
         const pd=o.pickupDetails;
         const prefill=pd?`${pd.address?.address||""} ${(pd.address?.number||"").replace(/\D.*/,"").trim()}`.trim():"";
+
+        // Intentar auto-match una vez más con el prefill antes de abrir modal
+        if(prefill) {
+          const autoResults=searchSucursales(locs, prefill);
+          if(autoResults.length===1) {
+            // Match único automático — no abrir modal
+            sucursalOverridesRef.current[o.numero]=autoResults[0];
+            setSucursalConfirmed({numero:o.numero,nombre:autoResults[0]});
+            setTimeout(()=>setSucursalConfirmed(null),1200);
+            resolve(autoResults[0]);
+            return;
+          }
+        }
+
         setLocationModal({order:o,locs,resolve,type:"sucursal"});
         setLocSearch(prefill);setLocSearchType("ciudad");
       });
@@ -3798,14 +3835,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 />
                 {results.length>0&&(
                   <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,maxHeight:280,overflow:"auto"}}>
+                    {/* Auto-select banner cuando hay exactamente 1 resultado */}
+                    {results.length===1&&isSuc&&(
+                      <div style={{padding:"8px 14px",background:T.greenBg,borderBottom:`1px solid ${T.green}33`,display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:11,color:T.green,fontWeight:600}}>✓ Match único encontrado — hacé click para confirmar</span>
+                      </div>
+                    )}
                     {results.map((item,i)=>{
+                      const isOnlyMatch=results.length===1&&isSuc;
                       if(isSuc){
                         return (
                           <div key={i} onClick={()=>{resolve(item);setLocationModal(null);}}
-                            style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s ease"}}
+                            style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s ease",background:isOnlyMatch?T.greenBg+"44":"transparent"}}
                             onMouseEnter={e=>e.currentTarget.style.background=T.card}
-                            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{item}</div>
+                            onMouseLeave={e=>e.currentTarget.style.background=isOnlyMatch?T.greenBg+"44":"transparent"}>
+                            <div style={{fontSize:13,fontWeight:600,color:isOnlyMatch?T.green:T.text}}>{item}</div>
                           </div>
                         );
                       }
