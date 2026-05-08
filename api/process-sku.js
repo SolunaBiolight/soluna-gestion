@@ -168,7 +168,7 @@ export default async function handler(req, res) {
           const line = skuLines[lineIdx];
           // Truncar si aun no entra (no deberia pasar con el layout correcto)
           const maxCh = Math.floor(layout.colW / (layout.fontSize * 0.62));
-          const safe = line.length > maxCh ? line.slice(0, maxCh - 1) + '\u2026' : line;
+          const safe = line.length > maxCh ? line.slice(0, maxCh - 1) + '...' : line;
 
           // y crece hacia arriba en pdf-lib
           // fila 0 = mas baja (zoneYStart), fila N = mas alta
@@ -218,7 +218,7 @@ export default async function handler(req, res) {
     const warnings = [];
     pageResults.filter(r => r.hasSkus).forEach(r => {
       if (!r.allWritten) {
-        warnings.push(`Pág. ${r.pageNum} (Pedido #${r.pedido}): ${r.skusMissed} SKU(s) no escritos`);
+        warnings.push(`Pag. ${r.pageNum} (Pedido #${r.pedido}): ${r.skusMissed} SKU(s) no escritos`);
       }
       r.skus.forEach(s => {
         const m = s.match(/^(.+?)\s*\(x(\d+)\)$/);
@@ -236,14 +236,14 @@ export default async function handler(req, res) {
       const { height: sh } = sp.getSize();
       const tf = await finalDoc.embedFont(StandardFonts.HelveticaBold);
       const bf = await finalDoc.embedFont(StandardFonts.Helvetica);
-      const now = new Date().toLocaleString('es-AR');
+      const now = new Date().toISOString().replace('T',' ').slice(0,19);
 
       sp.drawText('RESUMEN SKU DESPACHADOS', { x: 50, y: sh-60, size: 16, font: tf, color: rgb(0,0,0) });
-      sp.drawText(`Fecha: ${now}  |  ${pages.length} páginas  |  ${pageResults.filter(r=>r.hasSkus).length} procesadas`, { x: 50, y: sh-80, size: 9, font: bf, color: rgb(0.3,0.3,0.3) });
+      sp.drawText(`Fecha: ${now} | ${pages.length} pags | ${pageResults.filter(r=>r.hasSkus).length} procesadas`, { x: 50, y: sh-80, size: 9, font: bf, color: rgb(0.3,0.3,0.3) });
 
       // Advertencias si hubo SKUs que no entraron
       if (warnings.length > 0) {
-        sp.drawText('⚠ ADVERTENCIAS:', { x: 50, y: sh-105, size: 11, font: tf, color: rgb(0.8,0.2,0.2) });
+        sp.drawText('! ADVERTENCIAS:', { x: 50, y: sh-105, size: 11, font: tf, color: rgb(0.8,0.2,0.2) });
         let wy = sh-122;
         warnings.forEach(w => {
           sp.drawText(w, { x: 60, y: wy, size: 9, font: bf, color: rgb(0.8,0.2,0.2) });
@@ -255,7 +255,7 @@ export default async function handler(req, res) {
       let ly = sh - 150 - (warnings.length * 14);
       const sorted = Object.entries(skuTotals).sort((a,b) => a[0].localeCompare(b[0]));
       for (const [sku, qty] of sorted) {
-        sp.drawText(`${sku}  →  ${qty} u`, { x: 60, y: ly, size: 10, font: bf, color: rgb(0,0,0) });
+        sp.drawText(`${sku} -> ${qty} u`, { x: 60, y: ly, size: 10, font: bf, color: rgb(0,0,0) });
         ly -= 18;
         if (ly < 60) break;
       }
