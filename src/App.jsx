@@ -3173,9 +3173,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const pedidoNum=internoMatch[1].trim();
           const destinatario=destMatch?destMatch[1].trim():"";
           if(type==="sku") {
-            const order=orders.find(o=>o.numero===pedidoNum);
+            let order=orders.find(o=>o.numero===pedidoNum);
+            // Si no está en memoria, buscar en TN API directamente
+            if(!order) {
+              try {
+                const r=await fetch(`/api/orders?uid=${user?.uid||""}&q=${encodeURIComponent(pedidoNum)}`);
+                const data=await r.json();
+                if(Array.isArray(data)&&data.length>0) {
+                  const built=buildOrdersFromAPI(data);
+                  order=built.find(o=>o.numero===pedidoNum)||built[0]||null;
+                }
+              } catch(_) {}
+            }
             const skus=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`).join(', '):"No encontrado en TN";
-            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario});
+            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario,
+              skuLines:order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`):[]});
           } else {
             results.push({pagina:i+1,tracking,pedidoNum,destinatario,status:"pending"});
           }

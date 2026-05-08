@@ -1,10 +1,15 @@
 // api/process-sku.js
-// Los SKUs van al PIE de la pagina, debajo del contenido de la etiqueta,
-// como texto libre. Segun el PDF correcto del cliente:
-//   - y_from_bot = 8.8pt para el texto del SKU
-//   - x = 9.7pt (margen izquierdo)
-//   - Si hay multiples SKUs apilan hacia arriba (lineHeight ~6pt)
-//   - Si no entran en una columna, abren columna a la derecha
+// Escritura inteligente de SKUs en etiquetas Andreani.
+// 
+// Mediciones reales sobre PDF 196x298pt:
+//   QR inferior: top=256.1, height=16.4 → ocupa y_from_bot 25.6..41.9
+//   Texto "N° seguimiento" inferior: top=261.6 → y_from_bot=30.2
+//   Texto IMPORTANTE (ultima linea): top=246.8 → y_from_bot=47.1
+//   Margen inferior (bajo QR): y_from_bot 0..25.6 (25.6pt disponibles)
+//
+// Estrategia: escribir en el margen inferior (bajo los QR), escalando el
+// font size automaticamente para que quepan todos los SKUs sin superponerse.
+// Verificacion: si algun SKU no entra, escalar font o usar mas columnas.
 
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
@@ -52,6 +57,38 @@ function splitMultipart(body, boundary) {
   return parts;
 }
 
+// Calcula el layout optimo para N skus en una zona de W x H puntos
+// Devuelve { fontSize, cols, rows, fits, lh }
+function calcLayout(skuLines, zoneW, zoneH, maxFontSize = 6.5, minFontSize = 3.5) {
+  const MAX_COLS = 3;
+
+  for (let cols = 1; cols <= MAX_COLS; cols++) {
+    const colW = zoneW / cols;
+
+    for (let fs = maxFontSize; fs >= minFontSize; fs -= 0.25) {
+      const lh = fs + 1.5;
+      const rowsPerCol = Math.floor(zoneH / lh);
+      const totalSlots = rowsPerCol * cols;
+      const charWidth = fs * 0.62; // estimacion ancho caracter HelveticaBold
+
+      // Verificar que cada linea entra en el ancho de columna
+      const maxChars = Math.floor(colW / charWidth);
+      const allFit = skuLines.every(l => l.length <= maxChars);
+
+      if (allFit && totalSlots >= skuLines.length) {
+        return { fontSize: fs, cols, rowsPerCol, fits: true, lh, colW };
+      }
+    }
+  }
+
+  // Fallback: fuente minima, maximas columnas
+  const fs = minFontSize;
+  const lh = fs + 1.5;
+  const rowsPerCol = Math.max(1, Math.floor(zoneH / lh));
+  const colW = zoneW / MAX_COLS;
+  return { fontSize: fs, cols: MAX_COLS, rowsPerCol, fits: false, lh, colW };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -67,7 +104,7 @@ export default async function handler(req, res) {
 
     const parts = splitMultipart(body, '--' + boundaryMatch[1]);
     let pdfBuffer = null, skuMapRaw = null;
-    let cfg = { fontSize: 5, sortBy: 'sin', pageOrder: null };
+    let cfg = { sortBy: 'sin', pageOrder: null };
 
     for (const part of parts) {
       if (part.name === 'pdf' && part.filename) pdfBuffer = part.data;
@@ -84,17 +121,13 @@ export default async function handler(req, res) {
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const pages = pdfDoc.getPages();
 
-    // Segun el PDF correcto:
-    // - Pagina: 196x298pt
-    // - SKU mas bajo: y_from_bot = 8.8pt, x = 9.7pt
-    // - Cada linea adicional va 5.5pt mas arriba
-    // - Si no entran en una columna (limite: no pasar los QR inferiores en y=26pt),
-    //   abrir nueva columna a la derecha con x += colWidth
-    const BASE_FONT = Math.max(3, parseFloat(cfg.fontSize) || 5);
-    const MARGIN_X = 9.7;   // margen izquierdo (igual que el resto del texto)
-    const START_Y = 9;       // y desde abajo para la primera linea
-    const QR_Y = 26;         // los QR inferiores llegan hasta y=26 desde abajo
-    const COL_WIDTH = 62;    // ancho de cada columna (~1/3 del ancho util)
+    // Constantes medidas en PDF real Andreani 196x298pt
+    // Zona de escritura: margen inferior, debajo de los QR codes
+    // QR inferior: y_from_bot=25.6..41.9 → escribimos debajo en y_from_bot=0..24
+    const ZONE_Y_START = 1.5;   // pt desde abajo — base de la primera linea
+    const ZONE_HEIGHT = 23;     // pt disponibles (debajo del QR inferior)
+    const ZONE_X_START = 9.7;   // margen izquierdo
+    const ZONE_X_END_RATIO = 0.97; // usar hasta el 97% del ancho
 
     const pageResults = [];
 
@@ -112,45 +145,58 @@ export default async function handler(req, res) {
       const [pedidoNum, info] = entry;
       const skuLines = info.skus;
 
-      // Escalar si la pagina tiene diferente tamano
+      // Escalar coordenadas al tamaño real de la página
       const sx = W / 196;
       const sy = H / 298;
 
-      const startY = START_Y * sy;
-      const qrY = QR_Y * sy;
-      const marginX = MARGIN_X * sx;
-      const colWidth = COL_WIDTH * sx;
-      const fs = BASE_FONT;
-      const lh = fs + 1.5;
+      const zoneYStart = ZONE_Y_START * sy;
+      const zoneH = ZONE_HEIGHT * sy;
+      const zoneXStart = ZONE_X_START * sx;
+      const zoneW = (W * ZONE_X_END_RATIO) - zoneXStart;
 
-      // Calcular cuantas lineas caben en una columna
-      // desde startY hasta qrY (sin pisar los QR)
-      const maxRowsPerCol = Math.max(1, Math.floor((qrY - startY) / lh));
+      // Calcular layout óptimo automáticamente
+      const layout = calcLayout(skuLines, zoneW, zoneH);
 
-      // Distribuir en columnas
+      // Distribuir y escribir SKUs
       let lineIdx = 0;
-      let col = 0;
-      const maxCols = Math.floor((W - marginX) / colWidth);
+      let allWritten = true;
 
-      while (lineIdx < skuLines.length && col < maxCols) {
-        const colX = marginX + col * colWidth;
-        const maxCh = Math.max(4, Math.floor(colWidth / (fs * 0.58)));
+      for (let col = 0; col < layout.cols && lineIdx < skuLines.length; col++) {
+        const colX = zoneXStart + col * layout.colW;
 
-        for (let row = 0; row < maxRowsPerCol && lineIdx < skuLines.length; row++) {
+        for (let row = 0; row < layout.rowsPerCol && lineIdx < skuLines.length; row++) {
           const line = skuLines[lineIdx];
+          // Truncar si aun no entra (no deberia pasar con el layout correcto)
+          const maxCh = Math.floor(layout.colW / (layout.fontSize * 0.62));
           const safe = line.length > maxCh ? line.slice(0, maxCh - 1) + '\u2026' : line;
-          // y aumenta hacia arriba en pdf-lib (y=0 es abajo)
-          const y = startY + row * lh;
-          page.drawText(safe, { x: colX, y, size: fs, font, color: rgb(0, 0, 0) });
+
+          // y crece hacia arriba en pdf-lib
+          // fila 0 = mas baja (zoneYStart), fila N = mas alta
+          const y = zoneYStart + row * layout.lh;
+
+          page.drawText(safe, {
+            x: colX,
+            y,
+            size: layout.fontSize,
+            font,
+            color: rgb(0, 0, 0),
+          });
           lineIdx++;
         }
-        col++;
       }
 
-      pageResults.push({ pageIdx: i, pageNum, pedido: pedidoNum, hasSkus: true, skus: skuLines });
+      // Si no entraron todos, marcar para el reporte
+      if (lineIdx < skuLines.length) allWritten = false;
+
+      pageResults.push({
+        pageIdx: i, pageNum, pedido: pedidoNum, hasSkus: true, skus: skuLines,
+        layout: { cols: layout.cols, fontSize: Math.round(layout.fontSize * 10) / 10, fits: layout.fits },
+        allWritten,
+        skusMissed: allWritten ? 0 : skuLines.length - lineIdx,
+      });
     }
 
-    // Reordenar paginas
+    // Reordenar páginas si aplica
     let finalDoc = pdfDoc;
     if (cfg.sortBy !== 'sin' && cfg.pageOrder && Array.isArray(cfg.pageOrder)) {
       const newDoc = await PDFDocument.create();
@@ -167,9 +213,13 @@ export default async function handler(req, res) {
       finalDoc = newDoc;
     }
 
-    // Pagina de resumen
+    // Página de resumen
     const skuTotals = {};
+    const warnings = [];
     pageResults.filter(r => r.hasSkus).forEach(r => {
+      if (!r.allWritten) {
+        warnings.push(`Pág. ${r.pageNum} (Pedido #${r.pedido}): ${r.skusMissed} SKU(s) no escritos`);
+      }
       r.skus.forEach(s => {
         const m = s.match(/^(.+?)\s*\(x(\d+)\)$/);
         if (m) {
@@ -187,13 +237,25 @@ export default async function handler(req, res) {
       const tf = await finalDoc.embedFont(StandardFonts.HelveticaBold);
       const bf = await finalDoc.embedFont(StandardFonts.Helvetica);
       const now = new Date().toLocaleString('es-AR');
+
       sp.drawText('RESUMEN SKU DESPACHADOS', { x: 50, y: sh-60, size: 16, font: tf, color: rgb(0,0,0) });
-      sp.drawText('Fecha: ' + now + '  |  ' + pages.length + ' paginas  |  ' + pageResults.filter(r=>r.hasSkus).length + ' procesadas', { x: 50, y: sh-85, size: 10, font: bf, color: rgb(0.3,0.3,0.3) });
-      sp.drawText('DETALLE:', { x: 50, y: sh-120, size: 12, font: tf, color: rgb(0,0,0) });
-      let ly = sh - 145;
+      sp.drawText(`Fecha: ${now}  |  ${pages.length} páginas  |  ${pageResults.filter(r=>r.hasSkus).length} procesadas`, { x: 50, y: sh-80, size: 9, font: bf, color: rgb(0.3,0.3,0.3) });
+
+      // Advertencias si hubo SKUs que no entraron
+      if (warnings.length > 0) {
+        sp.drawText('⚠ ADVERTENCIAS:', { x: 50, y: sh-105, size: 11, font: tf, color: rgb(0.8,0.2,0.2) });
+        let wy = sh-122;
+        warnings.forEach(w => {
+          sp.drawText(w, { x: 60, y: wy, size: 9, font: bf, color: rgb(0.8,0.2,0.2) });
+          wy -= 14;
+        });
+      }
+
+      sp.drawText('DETALLE:', { x: 50, y: sh-130 - (warnings.length * 14), size: 12, font: tf, color: rgb(0,0,0) });
+      let ly = sh - 150 - (warnings.length * 14);
       const sorted = Object.entries(skuTotals).sort((a,b) => a[0].localeCompare(b[0]));
       for (const [sku, qty] of sorted) {
-        sp.drawText(sku + '  ->  ' + qty + ' u', { x: 60, y: ly, size: 10, font: bf, color: rgb(0,0,0) });
+        sp.drawText(`${sku}  →  ${qty} u`, { x: 60, y: ly, size: 10, font: bf, color: rgb(0,0,0) });
         ly -= 18;
         if (ly < 60) break;
       }
@@ -201,10 +263,19 @@ export default async function handler(req, res) {
 
     const pdfBytes = await finalDoc.save();
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="rotulos-con-sku-' + Date.now() + '.pdf"');
-    res.setHeader('X-Results', JSON.stringify(pageResults.map(r => ({
-      page: r.pageNum, pedido: r.pedido, status: r.hasSkus ? 'ok' : 'sin_sku'
-    }))));
+    res.setHeader('Content-Disposition', `attachment; filename="rotulos-con-sku-${Date.now()}.pdf"`);
+
+    // Header con resultados para la app
+    const resultsHeader = pageResults.map(r => ({
+      page: r.pageNum,
+      pedido: r.pedido,
+      status: r.hasSkus ? 'ok' : 'sin_sku',
+      fits: r.layout?.fits !== false,
+      allWritten: r.allWritten !== false,
+      skusMissed: r.skusMissed || 0,
+    }));
+    res.setHeader('X-Results', JSON.stringify(resultsHeader));
+
     res.send(Buffer.from(pdfBytes));
 
   } catch (e) {
