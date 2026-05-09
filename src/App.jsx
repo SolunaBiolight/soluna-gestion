@@ -2063,49 +2063,49 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   async function fetchComisiones() {
     setComLoading(true); setComError(""); setComData(null);
     try {
-      // Traer canjes que tienen código de descuento
-      const conCodigo = canjes.filter(c=>c.codigoDescuento&&c.codigoDescuento.trim());
-      if(!conCodigo.length){ setComError("No hay canjes con código de descuento cargado."); setComLoading(false); return; }
+      // 1. Traer todos los cupones de TN (ya vienen con `used`)
+      const rCoupons = await fetch(`/api/coupons?uid=${user?.uid||""}`);
+      if(!rCoupons.ok) throw new Error("Error al traer cupones de TN: "+rCoupons.status);
+      const coupons = await rCoupons.json();
+      if(!Array.isArray(coupons)||coupons.length===0){ setComError("No hay códigos de descuento en tu tienda."); setComLoading(false); return; }
 
-      // Buscar pedidos en TN con cada código — usamos la API de órdenes filtrando por coupon
-      // TN permite filtrar por coupon_code con q= o con el endpoint de cupones
-      const desde = new Date(comFechaDesde+"T00:00:00");
-      const hasta = new Date(comFechaHasta+"T23:59:59");
+      // 2. Traer ventas por código en el rango de fechas seleccionado
+      const rVentas = await fetch(`/api/coupons?uid=${user?.uid||""}&mode=ventas&desde=${comFechaDesde}&hasta=${comFechaHasta}`);
+      const ventasPorCodigo = rVentas.ok ? await rVentas.json() : {};
 
-      const result = {};
-      for(const c of conCodigo) {
-        const codigo = c.codigoDescuento.trim().toUpperCase();
-        const pct = parseFloat(c.comisionPct)||0;
-        result[codigo] = { influencer:c.influencer, usuario:c.usuario||"", pct, usos:0, ventas:0, comision:0, pedidos:[] };
-      }
+      // 3. Cruzar: para cada cupón buscar si hay canje relacionado (por código)
+      const canjesPorCodigo = {};
+      canjes.forEach(c=>{
+        if(c.codigoDescuento) canjesPorCodigo[c.codigoDescuento.toUpperCase()]={
+          influencer:c.influencer, usuario:c.usuario||"", comisionPct:parseFloat(c.comisionPct)||0
+        };
+      });
 
-      // Fetch pedidos pagados paginados — filtramos por fecha y coupon del lado cliente
-      // TN no permite filtrar por coupon en la API, así que traemos pagados y filtramos
-      let page=1, allOrders=[];
-      while(page<=15){
-        const r=await fetch(`/api/orders?uid=${user?.uid||""}&tab=total&page=${page}`);
-        const data=await r.json();
-        if(!Array.isArray(data)||data.length===0) break;
-        allOrders=[...allOrders,...data];
-        if(data.length<200) break;
-        page++;
-      }
+      // 4. Construir resultado final
+      const rows = coupons.map(coupon=>{
+        const code = (coupon.code||"").toUpperCase();
+        const ventasPeriodo = ventasPorCodigo[code] || {usos:0, ventas:0, descuentos:0};
+        const canje = canjesPorCodigo[code] || null;
+        const comisionPct = canje?.comisionPct || 0;
+        return {
+          code,
+          type: coupon.type, // percentage | absolute | free_shipping
+          value: coupon.value,
+          valid: coupon.valid,
+          usosTotal: coupon.used || 0,        // usos históricos totales
+          usosPeriodo: ventasPeriodo.usos,     // usos en el rango de fechas
+          ventasPeriodo: ventasPeriodo.ventas,
+          descuentosPeriodo: ventasPeriodo.descuentos,
+          comisionPct,
+          comisionPagar: ventasPeriodo.ventas * (comisionPct/100),
+          influencer: canje?.influencer||"",
+          usuario: canje?.usuario||"",
+          tieneCanje: !!canje,
+        };
+      });
 
-      // Filtrar por fecha y cupón
-      for(const o of allOrders){
-        const fechaCreacion=new Date(o.created_at||o.createdAt||0);
-        if(fechaCreacion<desde||fechaCreacion>hasta) continue;
-        const couponCode=(o.coupon?.code||o.discount_coupon||o.promotions?.[0]?.code||"").toUpperCase().trim();
-        if(!couponCode||!result[couponCode]) continue;
-        const total=parseFloat(o.total||0);
-        result[couponCode].usos++;
-        result[couponCode].ventas+=total;
-        result[couponCode].comision+=total*(result[couponCode].pct/100);
-        result[couponCode].pedidos.push({numero:o.number||o.numero,total,fecha:o.created_at||""});
-      }
-
-      setComData(result);
-    } catch(e){ setComError("Error al obtener datos: "+e.message); }
+      setComData(rows);
+    } catch(e){ setComError("Error: "+e.message); }
     setComLoading(false);
   }
 
@@ -2407,7 +2407,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
             {/* Filtros de fecha */}
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:20}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>Rango de fechas</div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Filtrar ventas por período</div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>Los usos totales vienen directamente de TN. Las ventas y comisiones se calculan en el rango de fechas que elegís.</div>
               <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
                 <div style={{flex:1,minWidth:140}}>
                   <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Desde</div>
@@ -2417,119 +2418,137 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Hasta</div>
                   <input type="date" value={comFechaHasta} onChange={e=>setComFechaHasta(e.target.value)} style={{...iS,fontSize:13}}/>
                 </div>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {[
-                    {label:"Este mes", fn:()=>{const d=new Date();d.setDate(1);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(new Date().toISOString().split("T")[0]);}},
-                    {label:"Mes anterior", fn:()=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);const h=new Date(d);h.setMonth(h.getMonth()+1);h.setDate(0);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(h.toISOString().split("T")[0]);}},
-                    {label:"Últimos 3 meses", fn:()=>{const d=new Date();d.setMonth(d.getMonth()-3);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(new Date().toISOString().split("T")[0]);}},
+                    {label:"Este mes",fn:()=>{const d=new Date();d.setDate(1);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(new Date().toISOString().split("T")[0]);}},
+                    {label:"Mes anterior",fn:()=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);const h=new Date(d);h.setMonth(h.getMonth()+1);h.setDate(0);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(h.toISOString().split("T")[0]);}},
+                    {label:"Últimos 3 meses",fn:()=>{const d=new Date();d.setMonth(d.getMonth()-3);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(new Date().toISOString().split("T")[0]);}},
                   ].map(s=>(
                     <button key={s.label} onClick={s.fn} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>{s.label}</button>
                   ))}
                 </div>
                 <AsyncButton onClick={fetchComisiones} style={{...BtnPrimary(T),fontSize:13,padding:"9px 20px",whiteSpace:"nowrap"}}>
-                  {comLoading?"Cargando...":"Ver comisiones"}
+                  {comLoading?"Cargando...":"Cargar códigos"}
                 </AsyncButton>
               </div>
             </div>
 
-            {/* Estado: sin códigos cargados */}
-            {!comLoading&&!comData&&!comError&&(()=>{
-              const sinCodigo=canjes.filter(c=>!c.codigoDescuento||!c.comisionPct);
-              return (
-                <div>
-                  {sinCodigo.length>0&&(
-                    <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:13,color:T.yellow}}>
-                      {sinCodigo.length} canje{sinCodigo.length>1?"s":""} sin código o comisión cargada: {sinCodigo.slice(0,4).map(c=>c.influencer).join(", ")}{sinCodigo.length>4?` y ${sinCodigo.length-4} más`:""}. Cargalos en el detalle de cada canje.
-                    </div>
-                  )}
-                  <div style={{textAlign:"center",padding:"48px 20px",color:T.textSm}}>
-                    <div style={{fontSize:40,marginBottom:12}}>$</div>
-                    <div style={{fontSize:15,fontWeight:600,color:T.textMd,marginBottom:6}}>Seleccioná el período y hacé click en "Ver comisiones"</div>
-                    <div style={{fontSize:13}}>Conecta con TN y calcula automáticamente las comisiones de cada creador</div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Error */}
-            {comError&&(
-              <div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"14px 16px",color:T.red,fontSize:13}}>{comError}</div>
+            {/* Estado inicial */}
+            {!comLoading&&!comData&&!comError&&(
+              <div style={{textAlign:"center",padding:"48px 20px",color:T.textSm}}>
+                <div style={{fontSize:40,marginBottom:12}}>%</div>
+                <div style={{fontSize:15,fontWeight:600,color:T.textMd,marginBottom:6}}>Hacé click en "Cargar códigos"</div>
+                <div style={{fontSize:13}}>Trae todos los cupones de tu TN ordenados por usos · Si algún código está vinculado a un canje en la app, calcula la comisión automáticamente</div>
+              </div>
             )}
 
-            {/* Resultados */}
+            {comError&&<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"14px 16px",color:T.red,fontSize:13}}>{comError}</div>}
+
             {comData&&(()=>{
-              const rows=Object.entries(comData).sort((a,b)=>b[1].ventas-a[1].ventas);
-              const totalVentas=rows.reduce((s,[,v])=>s+v.ventas,0);
-              const totalComision=rows.reduce((s,[,v])=>s+v.comision,0);
               const fmtARS=n=>"$"+Math.round(n).toLocaleString("es-AR");
+              const conVentas=comData.filter(r=>r.usosPeriodo>0);
+              const totalVentas=conVentas.reduce((s,r)=>s+r.ventasPeriodo,0);
+              const totalComision=comData.filter(r=>r.comisionPct>0).reduce((s,r)=>s+r.comisionPagar,0);
+              const conComision=comData.filter(r=>r.comisionPct>0&&r.comisionPagar>0);
 
               return (
                 <div>
                   {/* Resumen global */}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
                     {[
-                      {label:"Creadores con ventas",val:rows.filter(([,v])=>v.usos>0).length,color:T.accent},
-                      {label:"Ventas totales",val:fmtARS(totalVentas),color:T.green},
+                      {label:"Códigos totales",val:comData.length,color:T.textMd},
+                      {label:"Activos en período",val:conVentas.length,color:T.accent},
+                      {label:"Ventas con cupón",val:fmtARS(totalVentas),color:T.green},
                       {label:"Comisiones a pagar",val:fmtARS(totalComision),color:T.orange},
                     ].map(s=>(
-                      <div key={s.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                      <div key={s.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
                         <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{s.label}</div>
-                        <div style={{fontSize:22,fontWeight:800,color:s.color,letterSpacing:-0.5}}>{s.val}</div>
+                        <div style={{fontSize:20,fontWeight:800,color:s.color,letterSpacing:-0.5}}>{s.val}</div>
                       </div>
                     ))}
                   </div>
 
-                  {/* Tabla por influencer */}
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                    {/* Header */}
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 100px 80px 130px 130px 110px",gap:12,padding:"10px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
-                      <span>Influencer</span><span>Código</span><span>%</span><span>Usos</span><span>Ventas</span><span>Comisión</span>
+                  {/* Tabla principal — todos los códigos */}
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+                    <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:12,fontWeight:700,color:T.text}}>Todos los códigos · ordenados por usos totales</span>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{comData.length} códigos</span>
                     </div>
-
-                    {rows.length===0?(
-                      <div style={{padding:"32px 18px",textAlign:"center",color:T.textSm,fontSize:13}}>No hay pedidos con estos códigos en el período seleccionado</div>
-                    ):rows.map(([codigo,v],i)=>(
-                      <div key={codigo} style={{display:"grid",gridTemplateColumns:"1fr 100px 80px 130px 130px 110px",gap:12,padding:"14px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:v.usos===0?T.redBg+"33":"transparent"}}>
-                        <div>
-                          <div style={{fontSize:13,fontWeight:600,color:T.text}}>{v.influencer}</div>
-                          {v.usuario&&<div style={{fontSize:11,color:T.textSm}}>@{v.usuario}</div>}
+                    {/* Header */}
+                    <div style={{display:"grid",gridTemplateColumns:"130px 80px 70px 80px 80px 130px 120px 110px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
+                      <span>Código</span><span>Descuento</span><span>Usos tot.</span><span>Usos per.</span><span>Válido</span><span>Influencer</span><span>Ventas per.</span><span>Comisión</span>
+                    </div>
+                    {comData.map((r,i)=>{
+                      const descLabel=r.type==="percentage"?`${r.value}%`:r.type==="absolute"?`$${r.value}`:"Envío gratis";
+                      return (
+                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"130px 80px 70px 80px 80px 130px 120px 110px",gap:8,padding:"13px 18px",borderBottom:i<comData.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
+                          onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                          onMouseLeave={e=>e.currentTarget.style.background=r.usosPeriodo>0?T.green+"05":"transparent"}>
+                          <div style={{fontFamily:"monospace",fontSize:13,fontWeight:700,color:T.accent}}>{r.code}</div>
+                          <div style={{fontSize:12,color:T.textMd,fontWeight:500}}>{descLabel}</div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>{r.usosTotal}</div>
+                          <div style={{fontSize:14,fontWeight:r.usosPeriodo>0?700:400,color:r.usosPeriodo>0?T.green:T.textSm}}>{r.usosPeriodo||"—"}</div>
+                          <div>
+                            <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:r.valid?T.greenBg:T.redBg,color:r.valid?T.green:T.red}}>
+                              {r.valid?"Activo":"Inactivo"}
+                            </span>
+                          </div>
+                          <div>
+                            {r.tieneCanje
+                              ? <><div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.influencer}</div>{r.usuario&&<div style={{fontSize:11,color:T.textSm}}>@{r.usuario}</div>}</>
+                              : <span style={{fontSize:11,color:T.textSm,fontStyle:"italic"}}>Sin vincular</span>
+                            }
+                          </div>
+                          <div style={{fontSize:13,fontWeight:r.ventasPeriodo>0?700:400,color:r.ventasPeriodo>0?T.green:T.textSm}}>{r.ventasPeriodo>0?fmtARS(r.ventasPeriodo):"—"}</div>
+                          <div>
+                            {r.comisionPct>0
+                              ? <div>
+                                  <div style={{fontSize:13,fontWeight:800,color:T.orange}}>{r.comisionPagar>0?fmtARS(r.comisionPagar):"—"}</div>
+                                  <div style={{fontSize:10,color:T.textSm}}>{r.comisionPct}% comis.</div>
+                                </div>
+                              : <span style={{fontSize:11,color:T.textSm}}>Sin % cargado</span>
+                            }
+                          </div>
                         </div>
-                        <div style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:T.accent,background:T.accentSolid+"15",padding:"3px 8px",borderRadius:5,textAlign:"center"}}>{codigo}</div>
-                        <div style={{fontSize:13,fontWeight:600,color:T.textMd}}>{v.pct}%</div>
-                        <div>
-                          <span style={{fontSize:14,fontWeight:700,color:v.usos>0?T.text:T.textSm}}>{v.usos}</span>
-                          {v.usos>0&&<span style={{fontSize:11,color:T.textSm,marginLeft:4}}>uso{v.usos!==1?"s":""}</span>}
-                        </div>
-                        <div style={{fontSize:14,fontWeight:700,color:v.ventas>0?T.green:T.textSm}}>{v.ventas>0?fmtARS(v.ventas):"—"}</div>
-                        <div style={{fontSize:14,fontWeight:800,color:v.comision>0?T.orange:T.textSm}}>{v.comision>0?fmtARS(v.comision):"—"}</div>
-                      </div>
-                    ))}
-
-                    {/* Footer con totales */}
-                    {rows.length>0&&(
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 100px 80px 130px 130px 110px",gap:12,padding:"12px 18px",background:T.surface,borderTop:`1px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.text}}>
-                        <span>TOTAL</span><span/><span/><span>{rows.reduce((s,[,v])=>s+v.usos,0)} usos</span>
-                        <span style={{color:T.green}}>{fmtARS(totalVentas)}</span>
-                        <span style={{color:T.orange}}>{fmtARS(totalComision)}</span>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
+
+                  {/* Sección comisiones a pagar */}
+                  {conComision.length>0&&(
+                    <div style={{background:T.card,border:`1px solid ${T.orange}33`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+                      <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,background:T.orangeBg,display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{width:7,height:7,borderRadius:"50%",background:T.orange}}/>
+                        <span style={{fontSize:12,fontWeight:700,color:T.orange,textTransform:"uppercase",letterSpacing:0.5}}>Comisiones a pagar en el período</span>
+                      </div>
+                      {conComision.map((r,i)=>(
+                        <div key={r.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",borderBottom:i<conComision.length-1?`1px solid ${T.borderL}`:"none"}}>
+                          <div>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.influencer} <span style={{fontFamily:"monospace",fontSize:12,color:T.accent}}>({r.code})</span></div>
+                            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{r.usosPeriodo} uso{r.usosPeriodo!==1?"s":""} · {fmtARS(r.ventasPeriodo)} en ventas · {r.comisionPct}%</div>
+                          </div>
+                          <div style={{fontSize:18,fontWeight:800,color:T.orange}}>{fmtARS(r.comisionPagar)}</div>
+                        </div>
+                      ))}
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",background:T.surface,borderTop:`1px solid ${T.border}`}}>
+                        <span style={{fontSize:13,fontWeight:700,color:T.text}}>Total a pagar</span>
+                        <span style={{fontSize:20,fontWeight:800,color:T.orange}}>{fmtARS(totalComision)}</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Exportar CSV */}
-                  {rows.length>0&&(
-                    <button onClick={()=>{
-                      const desde=comFechaDesde, hasta=comFechaHasta;
-                      const header="Influencer,Usuario,Codigo,Comision %,Usos,Ventas ($),Comision a pagar ($)";
-                      const rowsCSV=rows.map(([cod,v])=>`${v.influencer},${v.usuario||""},${cod},${v.pct}%,${v.usos},${Math.round(v.ventas)},${Math.round(v.comision)}`);
-                      const csv=[header,...rowsCSV].join("\n");
-                      const a=document.createElement("a");
-                      a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
-                      a.download=`comisiones-ugc-${desde}-${hasta}.csv`;
-                      a.click();
-                    }} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",marginTop:14}}>
-                      Exportar CSV
-                    </button>
-                  )}
+                  <button onClick={()=>{
+                    const header="Codigo,Descuento,Usos totales,Usos en periodo,Valido,Influencer,Usuario,Ventas en periodo ($),Comision % ,Comision a pagar ($)";
+                    const rows=comData.map(r=>`${r.code},${r.type==="percentage"?r.value+"%":r.type==="absolute"?"$"+r.value:"Envio gratis"},${r.usosTotal},${r.usosPeriodo},${r.valid?"Si":"No"},${r.influencer||""},${r.usuario||""},${Math.round(r.ventasPeriodo)},${r.comisionPct||""},${Math.round(r.comisionPagar)||""}`);
+                    const csv=[header,...rows].join("\n");
+                    const a=document.createElement("a");
+                    a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
+                    a.download=`comisiones-ugc-${comFechaDesde}-${comFechaHasta}.csv`;
+                    a.click();
+                  }} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px"}}>
+                    Exportar CSV
+                  </button>
                 </div>
               );
             })()}
