@@ -1,7 +1,3 @@
-// api/coupons.js
-// Extrae cupones y sus ventas directamente desde los pedidos
-// No requiere scope read_marketing — funciona con read_orders que ya tenemos
-
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
@@ -39,32 +35,6 @@ async function getTNCredentials(uid) {
   return { storeId, accessToken };
 }
 
-async function fetchAllPaidOrders(storeId, accessToken, desde, hasta) {
-  const headers = {
-    'Authentication': `bearer ${accessToken}`,
-    'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
-  };
-
-  let allOrders = [];
-  let page = 1;
-
-  while (page <= 25) {
-    let url = `https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&per_page=200&page=${page}`;
-    if (desde) url += `&min_date=${encodeURIComponent(desde)}`;
-    if (hasta) url += `&max_date=${encodeURIComponent(hasta)}`;
-
-    const r = await fetch(url, { headers });
-    if (!r.ok) break;
-    const data = await r.json();
-    if (!Array.isArray(data) || data.length === 0) break;
-    allOrders = [...allOrders, ...data];
-    if (data.length < 200) break;
-    page++;
-  }
-
-  return allOrders;
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -72,27 +42,43 @@ export default async function handler(req, res) {
   const { uid, desde, hasta } = req.query;
   const { storeId, accessToken } = await getTNCredentials(uid);
 
+  const headers = {
+    'Authentication': `bearer ${accessToken}`,
+    'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)',
+  };
+
   try {
-    // Traer todos los pedidos pagados en el rango
-    const orders = await fetchAllPaidOrders(storeId, accessToken, desde, hasta);
+    // TN filtra por created_at_min / created_at_max en formato ISO 8601
+    // Ej: 2026-05-01T00:00:00-0300
+    const tzOffset = "-0300"; // Argentina
+    const desdeISO = desde ? `${desde}T00:00:00${tzOffset}` : null;
+    const hastaISO = hasta ? `${hasta}T23:59:59${tzOffset}` : null;
 
-    // También traer todos los pedidos históricos (sin filtro de fecha) para usos totales
-    // Pero eso es muy pesado — mejor usar los del período y marcar los usos totales
-    // como "en el período" para simplicidad. Los usos históricos no los podemos saber
-    // sin traer TODO el historial.
-    // Alternativa: traer los últimos 1000 pedidos para usos históricos aproximados.
-    let historicOrders = orders; // por ahora mismo conjunto
+    let allOrders = [];
+    let page = 1;
 
-    // Si no hay filtro de fechas, traer más histórico
-    if (!desde && !hasta) {
-      historicOrders = await fetchAllPaidOrders(storeId, accessToken, null, null);
+    while (page <= 25) {
+      let url = `https://api.tiendanube.com/v1/${storeId}/orders?payment_status=paid&per_page=200&page=${page}`;
+      if (desdeISO) url += `&created_at_min=${encodeURIComponent(desdeISO)}`;
+      if (hastaISO) url += `&created_at_max=${encodeURIComponent(hastaISO)}`;
+
+      const r = await fetch(url, { headers });
+      if (!r.ok) {
+        const errText = await r.text();
+        console.error('[coupons] TN error:', r.status, errText.slice(0,200));
+        break;
+      }
+      const data = await r.json();
+      if (!Array.isArray(data) || data.length === 0) break;
+      allOrders = [...allOrders, ...data];
+      if (data.length < 200) break;
+      page++;
     }
 
     // Agrupar por código de cupón
     const couponMap = {};
 
-    for (const o of orders) {
-      // El campo coupon en TN es un array de objetos o array vacío
+    for (const o of allOrders) {
       const coupons = Array.isArray(o.coupon) ? o.coupon : [];
       for (const c of coupons) {
         const code = (c.code || "").toUpperCase().trim();
@@ -106,31 +92,21 @@ export default async function handler(req, res) {
             usosPeriodo: 0,
             ventasPeriodo: 0,
             descuentoPeriodo: 0,
-            pedidos: [],
           };
         }
 
-        const total = parseFloat(o.total || 0);
-        const descuento = parseFloat(o.discount_coupon || 0);
-
         couponMap[code].usosPeriodo++;
-        couponMap[code].ventasPeriodo += total;
-        couponMap[code].descuentoPeriodo += descuento;
-        couponMap[code].pedidos.push({
-          numero: o.number,
-          total,
-          fecha: o.created_at,
-        });
+        couponMap[code].ventasPeriodo += parseFloat(o.total || 0);
+        couponMap[code].descuentoPeriodo += parseFloat(o.discount_coupon || 0);
       }
     }
 
-    // Convertir a array ordenado por usos descendente
     const result = Object.values(couponMap).sort((a, b) => b.usosPeriodo - a.usosPeriodo);
 
     res.status(200).json({
       coupons: result,
-      totalPedidosAnalizados: orders.length,
-      periodo: { desde: desde || null, hasta: hasta || null },
+      totalPedidosAnalizados: allOrders.length,
+      periodo: { desde: desdeISO, hasta: hastaISO },
     });
 
   } catch(e) {
