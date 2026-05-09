@@ -2591,9 +2591,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
                   {/* Exportar CSV */}
                   <button onClick={()=>{
-                    const header="Codigo,Descuento,Usos totales,Usos en periodo,Valido,Influencer,Usuario,Ventas en periodo ($),Comision % ,Comision a pagar ($)";
-                    const rows=rows.map(r=>`${r.code},${r.type==="percentage"?r.value+"%":r.type==="absolute"?"$"+r.value:"Envio gratis"},${r.usosPeriodo},${r.usosPeriodo},${r.valid?"Si":"No"},${r.influencer||""},${r.usuario||""},${Math.round(r.ventasPeriodo)},${r.comisionPct||""},${Math.round(r.comisionPagar)||""}`);
-                    const csv=[header,...rows].join("\n");
+                    const csvRows=rows.map(r=>`${r.code},${r.type==="percentage"?r.value+"%":r.type==="absolute"?"$"+r.value:"Envio gratis"},${r.usosPeriodo},${r.influencer||""},${r.usuario||""},${Math.round(r.ventasPeriodo)},${Math.round(r.descuentoPeriodo||0)},${Math.round(r.netoRecibido||0)},${r.comisionPct||""},${Math.round(r.comisionPagar)||""}`);
+                    const header="Codigo,Descuento TN,Usos,Influencer,Usuario,Bruto ($),Descuento cupon ($),Neto ($),Comision %,Comision a pagar ($)";
+                    const csv=[header,...csvRows].join("\n");
                     const a=document.createElement("a");
                     a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
                     a.download=`comisiones-ugc-${comFechaDesde}-${comFechaHasta}.csv`;
