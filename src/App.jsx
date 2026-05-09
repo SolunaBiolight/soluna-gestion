@@ -2520,13 +2520,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{rows.length} codigos · {comData.totalPedidos} pedidos analizados</span>
                     </div>
                     {/* Header */}
-                    <div style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 120px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
-                      <span>Codigo</span><span>Descuento TN</span><span>Usos</span><span>Influencer</span><span>Bruto</span><span style={{color:T.green}}>Neto (-MP {mpComision}%)</span><span>Comision %</span>
+                    <div style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
+                      <span>Codigo</span><span>Descuento TN</span><span>Usos</span><span>Influencer</span><span>Bruto</span><span style={{color:T.green}}>Neto (-MP {mpComision}%)</span><span>Comision %</span><span style={{color:T.orange}}>A pagar</span>
                     </div>
                     {rows.map((r,i)=>{
                       const descLabel=r.type==="percentage"?`${r.value}%`:r.type==="absolute"?`$${r.value}`:"Envio gratis";
                       return (
-                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 120px",gap:8,padding:"12px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
+                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px",gap:8,padding:"12px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
                           onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                           onMouseLeave={e=>e.currentTarget.style.background=r.usosPeriodo>0?T.green+"05":"transparent"}>
                           <div style={{fontFamily:"monospace",fontSize:13,fontWeight:700,color:T.accent}}>{r.code}</div>
@@ -2547,21 +2547,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           <div style={{fontSize:13,fontWeight:700,color:r.netoRecibido>0?T.green:T.textSm}}>
                             {r.netoRecibido>0?fmtARS(r.netoRecibido):"—"}
                           </div>
-                          {/* Comision editable */}
-                          <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                            <div style={{display:"flex",alignItems:"center",gap:4}}>
-                              <input
-                                type="number" min="0" max="100" step="0.5"
-                                value={r.comisionPct||""}
-                                placeholder="0"
-                                onChange={e=>saveComisionOverride(r.code,e.target.value)}
-                                style={{width:48,background:T.bg,border:`1px solid ${r.comisionPct>0?T.orange+"88":T.border}`,borderRadius:6,padding:"4px 6px",fontSize:12,color:r.comisionPct>0?T.orange:T.textMd,textAlign:"center",fontWeight:600,outline:"none"}}
-                              />
-                              <span style={{fontSize:11,color:T.textSm}}>%</span>
-                            </div>
-                            {r.comisionPct>0&&r.netoRecibido>0&&(
-                              <div style={{fontSize:12,fontWeight:800,color:T.orange}}>{fmtARS(r.comisionPagar)}</div>
-                            )}
+                          {/* Comision % — solo el input */}
+                          <div style={{display:"flex",alignItems:"center",gap:4}}>
+                            <input
+                              type="number" min="0" max="100" step="0.5"
+                              value={r.comisionPct||""}
+                              placeholder="0"
+                              onChange={e=>saveComisionOverride(r.code,e.target.value)}
+                              style={{width:48,background:T.bg,border:`1px solid ${r.comisionPct>0?T.orange+"88":T.border}`,borderRadius:6,padding:"4px 6px",fontSize:12,color:r.comisionPct>0?T.orange:T.textMd,textAlign:"center",fontWeight:600,outline:"none"}}
+                            />
+                            <span style={{fontSize:11,color:T.textSm}}>%</span>
+                          </div>
+                          {/* A pagar — columna separada */}
+                          <div style={{fontSize:13,fontWeight:800,color:r.comisionPct>0&&r.netoRecibido>0?T.orange:T.textSm}}>
+                            {r.comisionPct>0&&r.netoRecibido>0?fmtARS(r.comisionPagar):"—"}
                           </div>
                         </div>
                       );
