@@ -2063,48 +2063,41 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   async function fetchComisiones() {
     setComLoading(true); setComError(""); setComData(null);
     try {
-      // 1. Traer todos los cupones de TN (ya vienen con `used`)
-      const rCoupons = await fetch(`/api/coupons?uid=${user?.uid||""}`);
-      if(!rCoupons.ok) throw new Error("Error al traer cupones de TN: "+rCoupons.status);
-      const coupons = await rCoupons.json();
-      if(!Array.isArray(coupons)||coupons.length===0){ setComError("No hay códigos de descuento en tu tienda."); setComLoading(false); return; }
+      const url=`/api/coupons?uid=${user?.uid||""}&desde=${comFechaDesde}&hasta=${comFechaHasta}`;
+      const r = await fetch(url);
+      if(!r.ok) throw new Error("Error al conectar con TN: "+r.status);
+      const data = await r.json();
 
-      // 2. Traer ventas por código en el rango de fechas seleccionado
-      const rVentas = await fetch(`/api/coupons?uid=${user?.uid||""}&mode=ventas&desde=${comFechaDesde}&hasta=${comFechaHasta}`);
-      const ventasPorCodigo = rVentas.ok ? await rVentas.json() : {};
+      if(!data.coupons||data.coupons.length===0){
+        setComError(`No se encontraron pedidos con cupones en el período ${comFechaDesde} → ${comFechaHasta}. Probá con un rango más amplio.`);
+        setComLoading(false);
+        return;
+      }
 
-      // 3. Cruzar: para cada cupón buscar si hay canje relacionado (por código)
-      const canjesPorCodigo = {};
+      // Cruzar con canjes para agregar influencer y comisionPct
+      const canjesPorCodigo={};
       canjes.forEach(c=>{
-        if(c.codigoDescuento) canjesPorCodigo[c.codigoDescuento.toUpperCase()]={
-          influencer:c.influencer, usuario:c.usuario||"", comisionPct:parseFloat(c.comisionPct)||0
-        };
+        if(c.codigoDescuento){
+          canjesPorCodigo[c.codigoDescuento.toUpperCase()]={
+            influencer:c.influencer, usuario:c.usuario||"", comisionPct:parseFloat(c.comisionPct)||0
+          };
+        }
       });
 
-      // 4. Construir resultado final
-      const rows = coupons.map(coupon=>{
-        const code = (coupon.code||"").toUpperCase();
-        const ventasPeriodo = ventasPorCodigo[code] || {usos:0, ventas:0, descuentos:0};
-        const canje = canjesPorCodigo[code] || null;
+      const enriched = data.coupons.map(c=>{
+        const canje = canjesPorCodigo[c.code] || null;
         const comisionPct = canje?.comisionPct || 0;
         return {
-          code,
-          type: coupon.type, // percentage | absolute | free_shipping
-          value: coupon.value,
-          valid: coupon.valid,
-          usosTotal: coupon.used || 0,        // usos históricos totales
-          usosPeriodo: ventasPeriodo.usos,     // usos en el rango de fechas
-          ventasPeriodo: ventasPeriodo.ventas,
-          descuentosPeriodo: ventasPeriodo.descuentos,
+          ...c,
+          influencer: canje?.influencer || "",
+          usuario: canje?.usuario || "",
           comisionPct,
-          comisionPagar: ventasPeriodo.ventas * (comisionPct/100),
-          influencer: canje?.influencer||"",
-          usuario: canje?.usuario||"",
+          comisionPagar: c.ventasPeriodo * (comisionPct/100),
           tieneCanje: !!canje,
         };
       });
 
-      setComData(rows);
+      setComData({coupons: enriched, totalPedidos: data.totalPedidosAnalizados});
     } catch(e){ setComError("Error: "+e.message); }
     setComLoading(false);
   }
@@ -2206,7 +2199,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
         {/* Tabs */}
         <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginTop:20}}>
-          {[{id:"lista",label:"Lista",icon:"☰"},{id:"kanban",label:"Kanban",icon:"⬜"},{id:"ranking",label:"Ranking",icon:"★"},{id:"comisiones",label:"Comisiones UGC",icon:"$"}].map(t=>(
+          {[{id:"lista",label:"Lista",icon:"☰"},{id:"kanban",label:"Kanban",icon:"⬜"},{id:"ranking",label:"Ranking",icon:"★"},{id:"comisiones",label:"Pagos Cupones",icon:"$"}].map(t=>(
             <button key={t.id} onClick={()=>setViewTab(t.id)}
               style={{padding:"13px 20px",fontSize:14,fontWeight:viewTab===t.id?700:400,color:viewTab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:viewTab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"Inter,system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,marginBottom:-1,transition:"color 0.15s"}}>
               {t.icon} {t.label}
@@ -2445,20 +2438,23 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             {comError&&<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"14px 16px",color:T.red,fontSize:13}}>{comError}</div>}
 
             {comData&&(()=>{
+              const rows=comData.coupons;
               const fmtARS=n=>"$"+Math.round(n).toLocaleString("es-AR");
-              const conVentas=comData.filter(r=>r.usosPeriodo>0);
-              const totalVentas=conVentas.reduce((s,r)=>s+r.ventasPeriodo,0);
-              const totalComision=comData.filter(r=>r.comisionPct>0).reduce((s,r)=>s+r.comisionPagar,0);
-              const conComision=comData.filter(r=>r.comisionPct>0&&r.comisionPagar>0);
+              const conVentas=rows.filter(r=>r.usosPeriodo>0);
+              const totalVentas=rows.reduce((s,r)=>s+r.ventasPeriodo,0);
+              const totalDescuentos=rows.reduce((s,r)=>s+(r.descuentoPeriodo||0),0);
+              const totalComision=rows.filter(r=>r.comisionPct>0).reduce((s,r)=>s+r.comisionPagar,0);
+              const conComision=rows.filter(r=>r.comisionPct>0&&r.comisionPagar>0);
 
               return (
                 <div>
                   {/* Resumen global */}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:20}}>
                     {[
-                      {label:"Códigos totales",val:comData.length,color:T.textMd},
-                      {label:"Activos en período",val:conVentas.length,color:T.accent},
-                      {label:"Ventas con cupón",val:fmtARS(totalVentas),color:T.green},
+                      {label:"Codigos con uso",val:rows.length,color:T.textMd},
+                      {label:"Pedidos analizados",val:comData.totalPedidos,color:T.textMd},
+                      {label:"Ventas con cupon",val:fmtARS(totalVentas),color:T.green},
+                      {label:"Descuentos otorgados",val:fmtARS(totalDescuentos),color:T.red},
                       {label:"Comisiones a pagar",val:fmtARS(totalComision),color:T.orange},
                     ].map(s=>(
                       <div key={s.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
@@ -2468,31 +2464,25 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     ))}
                   </div>
 
-                  {/* Tabla principal — todos los códigos */}
+                  {/* Tabla principal */}
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
                     <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{fontSize:12,fontWeight:700,color:T.text}}>Todos los códigos · ordenados por usos totales</span>
-                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{comData.length} códigos</span>
+                      <span style={{fontSize:12,fontWeight:700,color:T.text}}>Codigos detectados en pedidos · mayor a menor usos</span>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{rows.length} codigos · {comData.totalPedidos} pedidos analizados</span>
                     </div>
                     {/* Header */}
-                    <div style={{display:"grid",gridTemplateColumns:"130px 80px 70px 80px 80px 130px 120px 110px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
-                      <span>Código</span><span>Descuento</span><span>Usos tot.</span><span>Usos per.</span><span>Válido</span><span>Influencer</span><span>Ventas per.</span><span>Comisión</span>
+                    <div style={{display:"grid",gridTemplateColumns:"130px 90px 80px 130px 130px 110px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
+                      <span>Codigo</span><span>Descuento</span><span>Usos</span><span>Influencer</span><span>Ventas</span><span>Comision</span>
                     </div>
-                    {comData.map((r,i)=>{
+                    {rows.map((r,i)=>{
                       const descLabel=r.type==="percentage"?`${r.value}%`:r.type==="absolute"?`$${r.value}`:"Envío gratis";
                       return (
-                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"130px 80px 70px 80px 80px 130px 120px 110px",gap:8,padding:"13px 18px",borderBottom:i<comData.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
+                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"130px 90px 80px 130px 130px 110px",gap:8,padding:"13px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
                           onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                           onMouseLeave={e=>e.currentTarget.style.background=r.usosPeriodo>0?T.green+"05":"transparent"}>
                           <div style={{fontFamily:"monospace",fontSize:13,fontWeight:700,color:T.accent}}>{r.code}</div>
                           <div style={{fontSize:12,color:T.textMd,fontWeight:500}}>{descLabel}</div>
-                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>{r.usosTotal}</div>
-                          <div style={{fontSize:14,fontWeight:r.usosPeriodo>0?700:400,color:r.usosPeriodo>0?T.green:T.textSm}}>{r.usosPeriodo||"—"}</div>
-                          <div>
-                            <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:r.valid?T.greenBg:T.redBg,color:r.valid?T.green:T.red}}>
-                              {r.valid?"Activo":"Inactivo"}
-                            </span>
-                          </div>
+                          <div style={{fontSize:14,fontWeight:700,color:r.usosPeriodo>0?T.text:T.textSm}}>{r.usosPeriodo||"—"}</div>
                           <div>
                             {r.tieneCanje
                               ? <><div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.influencer}</div>{r.usuario&&<div style={{fontSize:11,color:T.textSm}}>@{r.usuario}</div>}</>
@@ -2540,7 +2530,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   {/* Exportar CSV */}
                   <button onClick={()=>{
                     const header="Codigo,Descuento,Usos totales,Usos en periodo,Valido,Influencer,Usuario,Ventas en periodo ($),Comision % ,Comision a pagar ($)";
-                    const rows=comData.map(r=>`${r.code},${r.type==="percentage"?r.value+"%":r.type==="absolute"?"$"+r.value:"Envio gratis"},${r.usosTotal},${r.usosPeriodo},${r.valid?"Si":"No"},${r.influencer||""},${r.usuario||""},${Math.round(r.ventasPeriodo)},${r.comisionPct||""},${Math.round(r.comisionPagar)||""}`);
+                    const rows=rows.map(r=>`${r.code},${r.type==="percentage"?r.value+"%":r.type==="absolute"?"$"+r.value:"Envio gratis"},${r.usosPeriodo},${r.usosPeriodo},${r.valid?"Si":"No"},${r.influencer||""},${r.usuario||""},${Math.round(r.ventasPeriodo)},${r.comisionPct||""},${Math.round(r.comisionPagar)||""}`);
                     const csv=[header,...rows].join("\n");
                     const a=document.createElement("a");
                     a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
