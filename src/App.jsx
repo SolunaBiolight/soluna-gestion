@@ -2451,7 +2451,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 <div style={{minWidth:140}}>
                   <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Comisión MercadoPago %</div>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <input type="number" min="0" max="50" step="0.5" value={mpComision} onChange={e=>saveMpComision(e.target.value)}
+                    <input type="number" min="0" max="50" step="0.5" value={isNaN(mpComision)?12:mpComision} onChange={e=>saveMpComision(e.target.value)}
                       style={{...iS,fontSize:13,width:80,textAlign:"center",borderColor:T.blue+"88"}}/>
                     <span style={{fontSize:12,color:T.textSm}}>% sobre neto</span>
                   </div>
@@ -2484,7 +2484,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             {comError&&<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"14px 16px",color:T.red,fontSize:13}}>{comError}</div>}
 
             {comData&&(()=>{
-              const rows=comData.coupons;
+              try {
+              const rows=comData.coupons||[];
               const fmtARS=n=>"$"+Math.round(n).toLocaleString("es-AR");
               const conVentas=rows.filter(r=>r.usosPeriodo>0);
               const totalVentas=rows.reduce((s,r)=>s+r.ventasPeriodo,0);
@@ -2603,6 +2604,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   </button>
                 </div>
               );
+              } catch(err) {
+                return <div style={{padding:20,color:T.red,fontSize:13}}>Error al mostrar datos: {err?.message}</div>;
+              }
             })()}
           </div>
         )}
