@@ -1942,9 +1942,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [filterRed,setFilterRed]=useState("");
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [saving,setSaving]=useState(false);
-  const [viewTab,setViewTab]=useState("lista"); // lista | kanban | ranking
+  const [viewTab,setViewTab]=useState("lista"); // lista | kanban | ranking | comisiones
   const [filterNicho,setFilterNicho]=useState("");
   const [filterSoloPendientes,setFilterSoloPendientes]=useState(false);
+  // Comisiones UGC state
+  const [comFechaDesde,setComFechaDesde]=useState(()=>{const d=new Date();d.setDate(1);return d.toISOString().split("T")[0];});
+  const [comFechaHasta,setComFechaHasta]=useState(()=>new Date().toISOString().split("T")[0]);
+  const [comData,setComData]=useState(null); // {[codigo]: {usos, ventas, comision, influencer, pct}}
+  const [comLoading,setComLoading]=useState(false);
+  const [comError,setComError]=useState("");
   const iS=InputStyle(T);
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
   const qc=query(collection(db,"canjes"),where("ownerId","==",user?.uid||"__none__"));
@@ -2012,6 +2018,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     alcance:"", reproducciones:"", likes:"", guardados:"",
     historial:[],
     recordatorio:"",
+    codigoDescuento:"", comisionPct:"",
   });
 
   async function saveCanje() {
@@ -2032,6 +2039,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         likes:form.likes||"", guardados:form.guardados||"",
         historial:form.historial||[],
         recordatorio:form.recordatorio||"",
+        codigoDescuento:(form.codigoDescuento||"").toUpperCase().trim(),
+        comisionPct:form.comisionPct||"",
       };
       if(form._docId) {
         const prev=canjes.find(c=>c._docId===form._docId);
@@ -2049,6 +2058,55 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   async function deleteCanje(docId) {
     try{await deleteDoc(doc(db,"canjes",docId));}catch(e){}
     setDeleteConfirm(null);setDetail(null);
+  }
+
+  async function fetchComisiones() {
+    setComLoading(true); setComError(""); setComData(null);
+    try {
+      // Traer canjes que tienen código de descuento
+      const conCodigo = canjes.filter(c=>c.codigoDescuento&&c.codigoDescuento.trim());
+      if(!conCodigo.length){ setComError("No hay canjes con código de descuento cargado."); setComLoading(false); return; }
+
+      // Buscar pedidos en TN con cada código — usamos la API de órdenes filtrando por coupon
+      // TN permite filtrar por coupon_code con q= o con el endpoint de cupones
+      const desde = new Date(comFechaDesde+"T00:00:00");
+      const hasta = new Date(comFechaHasta+"T23:59:59");
+
+      const result = {};
+      for(const c of conCodigo) {
+        const codigo = c.codigoDescuento.trim().toUpperCase();
+        const pct = parseFloat(c.comisionPct)||0;
+        result[codigo] = { influencer:c.influencer, usuario:c.usuario||"", pct, usos:0, ventas:0, comision:0, pedidos:[] };
+      }
+
+      // Fetch pedidos pagados paginados — filtramos por fecha y coupon del lado cliente
+      // TN no permite filtrar por coupon en la API, así que traemos pagados y filtramos
+      let page=1, allOrders=[];
+      while(page<=15){
+        const r=await fetch(`/api/orders?uid=${user?.uid||""}&tab=total&page=${page}`);
+        const data=await r.json();
+        if(!Array.isArray(data)||data.length===0) break;
+        allOrders=[...allOrders,...data];
+        if(data.length<200) break;
+        page++;
+      }
+
+      // Filtrar por fecha y cupón
+      for(const o of allOrders){
+        const fechaCreacion=new Date(o.created_at||o.createdAt||0);
+        if(fechaCreacion<desde||fechaCreacion>hasta) continue;
+        const couponCode=(o.coupon?.code||o.discount_coupon||o.promotions?.[0]?.code||"").toUpperCase().trim();
+        if(!couponCode||!result[couponCode]) continue;
+        const total=parseFloat(o.total||0);
+        result[couponCode].usos++;
+        result[couponCode].ventas+=total;
+        result[couponCode].comision+=total*(result[couponCode].pct/100);
+        result[couponCode].pedidos.push({numero:o.number||o.numero,total,fecha:o.created_at||""});
+      }
+
+      setComData(result);
+    } catch(e){ setComError("Error al obtener datos: "+e.message); }
+    setComLoading(false);
   }
 
   const filtered=useMemo(()=>canjes.filter(c=>{
@@ -2148,7 +2206,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
         {/* Tabs */}
         <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginTop:20}}>
-          {[{id:"lista",label:"Lista",icon:"☰"},{id:"kanban",label:"Kanban",icon:"⬜"},{id:"ranking",label:"Ranking",icon:"★"}].map(t=>(
+          {[{id:"lista",label:"Lista",icon:"☰"},{id:"kanban",label:"Kanban",icon:"⬜"},{id:"ranking",label:"Ranking",icon:"★"},{id:"comisiones",label:"Comisiones UGC",icon:"$"}].map(t=>(
             <button key={t.id} onClick={()=>setViewTab(t.id)}
               style={{padding:"13px 20px",fontSize:14,fontWeight:viewTab===t.id?700:400,color:viewTab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:viewTab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"Inter,system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,marginBottom:-1,transition:"color 0.15s"}}>
               {t.icon} {t.label}
@@ -2157,7 +2215,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         </div>
 
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-          {viewTab!=="ranking"&&<>
+          {viewTab!=="ranking"&&viewTab!=="comisiones"&&<>
             <div style={{position:"relative",flex:"1 1 220px",minWidth:180}}>
               <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:14}}>🔍</span>
               <input placeholder="Buscar influencer..." value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,paddingLeft:36,fontSize:14}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
@@ -2343,6 +2401,141 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           </div>
         )}
 
+        {/* COMISIONES UGC */}
+        {viewTab==="comisiones"&&(
+          <div style={{paddingBottom:48}}>
+
+            {/* Filtros de fecha */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:20}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>Rango de fechas</div>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
+                <div style={{flex:1,minWidth:140}}>
+                  <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Desde</div>
+                  <input type="date" value={comFechaDesde} onChange={e=>setComFechaDesde(e.target.value)} style={{...iS,fontSize:13}}/>
+                </div>
+                <div style={{flex:1,minWidth:140}}>
+                  <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Hasta</div>
+                  <input type="date" value={comFechaHasta} onChange={e=>setComFechaHasta(e.target.value)} style={{...iS,fontSize:13}}/>
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {[
+                    {label:"Este mes", fn:()=>{const d=new Date();d.setDate(1);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(new Date().toISOString().split("T")[0]);}},
+                    {label:"Mes anterior", fn:()=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);const h=new Date(d);h.setMonth(h.getMonth()+1);h.setDate(0);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(h.toISOString().split("T")[0]);}},
+                    {label:"Últimos 3 meses", fn:()=>{const d=new Date();d.setMonth(d.getMonth()-3);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(new Date().toISOString().split("T")[0]);}},
+                  ].map(s=>(
+                    <button key={s.label} onClick={s.fn} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",whiteSpace:"nowrap"}}>{s.label}</button>
+                  ))}
+                </div>
+                <AsyncButton onClick={fetchComisiones} style={{...BtnPrimary(T),fontSize:13,padding:"9px 20px",whiteSpace:"nowrap"}}>
+                  {comLoading?"Cargando...":"Ver comisiones"}
+                </AsyncButton>
+              </div>
+            </div>
+
+            {/* Estado: sin códigos cargados */}
+            {!comLoading&&!comData&&!comError&&(()=>{
+              const sinCodigo=canjes.filter(c=>!c.codigoDescuento||!c.comisionPct);
+              return (
+                <div>
+                  {sinCodigo.length>0&&(
+                    <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:13,color:T.yellow}}>
+                      {sinCodigo.length} canje{sinCodigo.length>1?"s":""} sin código o comisión cargada: {sinCodigo.slice(0,4).map(c=>c.influencer).join(", ")}{sinCodigo.length>4?` y ${sinCodigo.length-4} más`:""}. Cargalos en el detalle de cada canje.
+                    </div>
+                  )}
+                  <div style={{textAlign:"center",padding:"48px 20px",color:T.textSm}}>
+                    <div style={{fontSize:40,marginBottom:12}}>$</div>
+                    <div style={{fontSize:15,fontWeight:600,color:T.textMd,marginBottom:6}}>Seleccioná el período y hacé click en "Ver comisiones"</div>
+                    <div style={{fontSize:13}}>Conecta con TN y calcula automáticamente las comisiones de cada creador</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Error */}
+            {comError&&(
+              <div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"14px 16px",color:T.red,fontSize:13}}>{comError}</div>
+            )}
+
+            {/* Resultados */}
+            {comData&&(()=>{
+              const rows=Object.entries(comData).sort((a,b)=>b[1].ventas-a[1].ventas);
+              const totalVentas=rows.reduce((s,[,v])=>s+v.ventas,0);
+              const totalComision=rows.reduce((s,[,v])=>s+v.comision,0);
+              const fmtARS=n=>"$"+Math.round(n).toLocaleString("es-AR");
+
+              return (
+                <div>
+                  {/* Resumen global */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+                    {[
+                      {label:"Creadores con ventas",val:rows.filter(([,v])=>v.usos>0).length,color:T.accent},
+                      {label:"Ventas totales",val:fmtARS(totalVentas),color:T.green},
+                      {label:"Comisiones a pagar",val:fmtARS(totalComision),color:T.orange},
+                    ].map(s=>(
+                      <div key={s.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                        <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{s.label}</div>
+                        <div style={{fontSize:22,fontWeight:800,color:s.color,letterSpacing:-0.5}}>{s.val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Tabla por influencer */}
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                    {/* Header */}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 100px 80px 130px 130px 110px",gap:12,padding:"10px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
+                      <span>Influencer</span><span>Código</span><span>%</span><span>Usos</span><span>Ventas</span><span>Comisión</span>
+                    </div>
+
+                    {rows.length===0?(
+                      <div style={{padding:"32px 18px",textAlign:"center",color:T.textSm,fontSize:13}}>No hay pedidos con estos códigos en el período seleccionado</div>
+                    ):rows.map(([codigo,v],i)=>(
+                      <div key={codigo} style={{display:"grid",gridTemplateColumns:"1fr 100px 80px 130px 130px 110px",gap:12,padding:"14px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:v.usos===0?T.redBg+"33":"transparent"}}>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:600,color:T.text}}>{v.influencer}</div>
+                          {v.usuario&&<div style={{fontSize:11,color:T.textSm}}>@{v.usuario}</div>}
+                        </div>
+                        <div style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:T.accent,background:T.accentSolid+"15",padding:"3px 8px",borderRadius:5,textAlign:"center"}}>{codigo}</div>
+                        <div style={{fontSize:13,fontWeight:600,color:T.textMd}}>{v.pct}%</div>
+                        <div>
+                          <span style={{fontSize:14,fontWeight:700,color:v.usos>0?T.text:T.textSm}}>{v.usos}</span>
+                          {v.usos>0&&<span style={{fontSize:11,color:T.textSm,marginLeft:4}}>uso{v.usos!==1?"s":""}</span>}
+                        </div>
+                        <div style={{fontSize:14,fontWeight:700,color:v.ventas>0?T.green:T.textSm}}>{v.ventas>0?fmtARS(v.ventas):"—"}</div>
+                        <div style={{fontSize:14,fontWeight:800,color:v.comision>0?T.orange:T.textSm}}>{v.comision>0?fmtARS(v.comision):"—"}</div>
+                      </div>
+                    ))}
+
+                    {/* Footer con totales */}
+                    {rows.length>0&&(
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 100px 80px 130px 130px 110px",gap:12,padding:"12px 18px",background:T.surface,borderTop:`1px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.text}}>
+                        <span>TOTAL</span><span/><span/><span>{rows.reduce((s,[,v])=>s+v.usos,0)} usos</span>
+                        <span style={{color:T.green}}>{fmtARS(totalVentas)}</span>
+                        <span style={{color:T.orange}}>{fmtARS(totalComision)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Exportar CSV */}
+                  {rows.length>0&&(
+                    <button onClick={()=>{
+                      const desde=comFechaDesde, hasta=comFechaHasta;
+                      const header="Influencer,Usuario,Codigo,Comision %,Usos,Ventas ($),Comision a pagar ($)";
+                      const rowsCSV=rows.map(([cod,v])=>`${v.influencer},${v.usuario||""},${cod},${v.pct}%,${v.usos},${Math.round(v.ventas)},${Math.round(v.comision)}`);
+                      const csv=[header,...rowsCSV].join("\n");
+                      const a=document.createElement("a");
+                      a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
+                      a.download=`comisiones-ugc-${desde}-${hasta}.csv`;
+                      a.click();
+                    }} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",marginTop:14}}>
+                      Exportar CSV
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
       </div>
       <Modal T={T} open={!!detail} onClose={()=>{setDetail(null);setDeleteConfirm(null);}} title={detailC?detailC.influencer:""} width={560}>
         {detailC&&(()=>{
@@ -2425,6 +2618,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     T={T} iS={iS} placeholder="email@..."/>
                   <CopyEditField label="Pedido ref." icon="🔗" value={c.pedidoRef}
                     onSave={v=>save({pedidoRef:v})} T={T} iS={iS} placeholder="#1234"/>
+                  <CopyEditField label="Codigo descuento" icon="%" value={c.codigoDescuento}
+                    onSave={async v=>{await save({codigoDescuento:(v||"").toUpperCase().trim()});}} T={T} iS={iS} placeholder="SOFIA10"/>
+                  <CopyEditField label="Comision %" icon="$" value={c.comisionPct?(c.comisionPct+"%"):""}
+                    onSave={v=>save({comisionPct:parseFloat((v||"").replace("%",""))||""})} T={T} iS={iS} placeholder="10"/>
                   <CopyEditField label="Tracking Andreani" icon="🔍" value={c.tracking}
                     onSave={v=>save({tracking:v})}
                     href={c.tracking?"https://www.andreani.com/#!/informacionEnvio/"+c.tracking:null} hrefLabel={c.tracking}
@@ -2616,6 +2813,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     {n}
                   </button>;
                 })}
+              </div>
+            </div>
+            {/* Código y comisión */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Código descuento</label>
+                <input style={iS} value={form.codigoDescuento||""} onChange={e=>setForm(f=>({...f,codigoDescuento:e.target.value.toUpperCase()}))} placeholder="SOFIA10"/>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Comisión %</label>
+                <input style={iS} type="number" min="0" max="100" value={form.comisionPct||""} onChange={e=>setForm(f=>({...f,comisionPct:e.target.value}))} placeholder="10"/>
               </div>
             </div>
             {/* Botones */}
