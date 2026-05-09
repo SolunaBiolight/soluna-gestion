@@ -1980,10 +1980,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       setComData({...comData,coupons:enriched});
     }
   }
-  const [comFechaHasta,setComFechaHasta]=useState(()=>new Date().toISOString().split("T")[0]);
-  const [comData,setComData]=useState(null); // {[codigo]: {usos, ventas, comision, influencer, pct}}
+  const [comData,setComData]=useState(null);
   const [comLoading,setComLoading]=useState(false);
   const [comError,setComError]=useState("");
+  const [comFechaDesde,setComFechaDesde]=useState(()=>{const d=new Date();d.setDate(1);return d.toISOString().split("T")[0];});
+  const [comFechaHasta,setComFechaHasta]=useState(()=>new Date().toISOString().split("T")[0]);
   const iS=InputStyle(T);
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
   const qc=query(collection(db,"canjes"),where("ownerId","==",user?.uid||"__none__"));
