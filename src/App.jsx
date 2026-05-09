@@ -1945,8 +1945,41 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [viewTab,setViewTab]=useState("lista"); // lista | kanban | ranking | comisiones
   const [filterNicho,setFilterNicho]=useState("");
   const [filterSoloPendientes,setFilterSoloPendientes]=useState(false);
-  // Comisiones UGC state
-  const [comFechaDesde,setComFechaDesde]=useState(()=>{const d=new Date();d.setDate(1);return d.toISOString().split("T")[0];});
+  // Comisiones UGC - overrides guardados localmente por código
+  const [comisionOverrides,setComisionOverrides]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem("growith_comisionOverrides")||"{}");}catch(_){return {};}
+  });
+  const [mpComision,setMpComision]=useState(()=>{
+    try{return parseFloat(localStorage.getItem("growith_mpComision")||"12");}catch(_){return 12;}
+  });
+  function saveMpComision(val){
+    const pct=parseFloat(val)||0;
+    setMpComision(pct);
+    try{localStorage.setItem("growith_mpComision",String(pct));}catch(_){}
+    // Recalcular comData si existe
+    if(comData){
+      const enriched=comData.coupons.map(c=>{
+        const neto=(c.ventasPeriodo-(c.descuentoPeriodo||0))*(1-pct/100);
+        return {...c,netoRecibido:neto,comisionPagar:neto*(c.comisionPct/100)};
+      });
+      setComData({...comData,coupons:enriched});
+    }
+  }
+  function saveComisionOverride(code,pct){
+    const updated={...comisionOverrides,[code]:pct};
+    setComisionOverrides(updated);
+    try{localStorage.setItem("growith_comisionOverrides",JSON.stringify(updated));}catch(_){}
+    // Re-calcular comData si existe
+    if(comData){
+      const enriched=comData.coupons.map(c=>{
+        if(c.code!==code) return c;
+        const newPct=parseFloat(pct)||0;
+        const neto=(c.ventasPeriodo-(c.descuentoPeriodo||0))*(1-mpComision/100);
+        return {...c,comisionPct:newPct,comisionPagar:neto*(newPct/100),tieneCanje:c.tieneCanje||newPct>0};
+      });
+      setComData({...comData,coupons:enriched});
+    }
+  }
   const [comFechaHasta,setComFechaHasta]=useState(()=>new Date().toISOString().split("T")[0]);
   const [comData,setComData]=useState(null); // {[codigo]: {usos, ventas, comision, influencer, pct}}
   const [comLoading,setComLoading]=useState(false);
@@ -2086,13 +2119,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
       const enriched = data.coupons.map(c=>{
         const canje = canjesPorCodigo[c.code] || null;
-        const comisionPct = canje?.comisionPct || 0;
+        // Prioridad: override manual > canje vinculado
+        const comisionPct = parseFloat(comisionOverrides[c.code]) || canje?.comisionPct || 0;
+        const netoRecibido = (c.ventasPeriodo - (c.descuentoPeriodo||0)) * (1 - mpComision/100);
         return {
           ...c,
           influencer: canje?.influencer || "",
           usuario: canje?.usuario || "",
           comisionPct,
-          comisionPagar: c.ventasPeriodo * (comisionPct/100),
+          netoRecibido,
+          comisionPagar: netoRecibido * (comisionPct/100),
           tieneCanje: !!canje,
         };
       });
@@ -2411,6 +2447,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Hasta</div>
                   <input type="date" value={comFechaHasta} onChange={e=>setComFechaHasta(e.target.value)} style={{...iS,fontSize:13}}/>
                 </div>
+                {/* Comisión MP configurable */}
+                <div style={{minWidth:140}}>
+                  <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Comisión MercadoPago %</div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <input type="number" min="0" max="50" step="0.5" value={mpComision} onChange={e=>saveMpComision(e.target.value)}
+                      style={{...iS,fontSize:13,width:80,textAlign:"center",borderColor:T.blue+"88"}}/>
+                    <span style={{fontSize:12,color:T.textSm}}>% sobre neto</span>
+                  </div>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Se descuenta del neto antes de calcular comisiones</div>
+                </div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {[
                     {label:"Este mes",fn:()=>{const d=new Date();d.setDate(1);setComFechaDesde(d.toISOString().split("T")[0]);setComFechaHasta(new Date().toISOString().split("T")[0]);}},
@@ -2443,6 +2489,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               const conVentas=rows.filter(r=>r.usosPeriodo>0);
               const totalVentas=rows.reduce((s,r)=>s+r.ventasPeriodo,0);
               const totalDescuentos=rows.reduce((s,r)=>s+(r.descuentoPeriodo||0),0);
+              const totalNeto=rows.reduce((s,r)=>s+(r.netoRecibido||0),0);
               const totalComision=rows.filter(r=>r.comisionPct>0).reduce((s,r)=>s+r.comisionPagar,0);
               const conComision=rows.filter(r=>r.comisionPct>0&&r.comisionPagar>0);
 
@@ -2452,12 +2499,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:20}}>
                     {[
                       {label:"Codigos con uso",val:rows.length,color:T.textMd},
-                      {label:"Pedidos analizados",val:comData.totalPedidos,color:T.textMd},
-                      {label:"Ventas con cupon",val:fmtARS(totalVentas),color:T.green},
-                      {label:"Descuentos otorgados",val:fmtARS(totalDescuentos),color:T.red},
+                      {label:"Ventas brutas",val:fmtARS(totalVentas),color:T.textMd},
+                      {label:"Descuentos otorgados",val:"-"+fmtARS(totalDescuentos),color:T.red},
+                      {label:`Neto (-MP ${mpComision}%)`,val:fmtARS(totalNeto),color:T.green},
                       {label:"Comisiones a pagar",val:fmtARS(totalComision),color:T.orange},
                     ].map(s=>(
-                      <div key={s.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+                      <div key={s.label} style={{background:T.card,border:`1px solid ${s.label==="Neto recibido"?T.green+"44":T.border}`,borderRadius:12,padding:"14px 16px"}}>
                         <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{s.label}</div>
                         <div style={{fontSize:20,fontWeight:800,color:s.color,letterSpacing:-0.5}}>{s.val}</div>
                       </div>
@@ -2471,13 +2518,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{rows.length} codigos · {comData.totalPedidos} pedidos analizados</span>
                     </div>
                     {/* Header */}
-                    <div style={{display:"grid",gridTemplateColumns:"130px 90px 80px 130px 130px 110px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
-                      <span>Codigo</span><span>Descuento</span><span>Usos</span><span>Influencer</span><span>Ventas</span><span>Comision</span>
+                    <div style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 120px",gap:8,padding:"9px 18px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>
+                      <span>Codigo</span><span>Descuento TN</span><span>Usos</span><span>Influencer</span><span>Bruto</span><span style={{color:T.green}}>Neto (-MP {mpComision}%)</span><span>Comision %</span>
                     </div>
                     {rows.map((r,i)=>{
-                      const descLabel=r.type==="percentage"?`${r.value}%`:r.type==="absolute"?`$${r.value}`:"Envío gratis";
+                      const descLabel=r.type==="percentage"?`${r.value}%`:r.type==="absolute"?`$${r.value}`:"Envio gratis";
                       return (
-                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"130px 90px 80px 130px 130px 110px",gap:8,padding:"13px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
+                        <div key={r.code} style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 120px",gap:8,padding:"12px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
                           onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                           onMouseLeave={e=>e.currentTarget.style.background=r.usosPeriodo>0?T.green+"05":"transparent"}>
                           <div style={{fontFamily:"monospace",fontSize:13,fontWeight:700,color:T.accent}}>{r.code}</div>
@@ -2489,15 +2536,30 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                               : <span style={{fontSize:11,color:T.textSm,fontStyle:"italic"}}>Sin vincular</span>
                             }
                           </div>
-                          <div style={{fontSize:13,fontWeight:r.ventasPeriodo>0?700:400,color:r.ventasPeriodo>0?T.green:T.textSm}}>{r.ventasPeriodo>0?fmtARS(r.ventasPeriodo):"—"}</div>
+                          {/* Bruto */}
                           <div>
-                            {r.comisionPct>0
-                              ? <div>
-                                  <div style={{fontSize:13,fontWeight:800,color:T.orange}}>{r.comisionPagar>0?fmtARS(r.comisionPagar):"—"}</div>
-                                  <div style={{fontSize:10,color:T.textSm}}>{r.comisionPct}% comis.</div>
-                                </div>
-                              : <span style={{fontSize:11,color:T.textSm}}>Sin % cargado</span>
-                            }
+                            <div style={{fontSize:12,color:T.textSm}}>{r.ventasPeriodo>0?fmtARS(r.ventasPeriodo):"—"}</div>
+                            {r.descuentoPeriodo>0&&<div style={{fontSize:10,color:T.red}}>-{fmtARS(r.descuentoPeriodo)}</div>}
+                          </div>
+                          {/* Neto */}
+                          <div style={{fontSize:13,fontWeight:700,color:r.netoRecibido>0?T.green:T.textSm}}>
+                            {r.netoRecibido>0?fmtARS(r.netoRecibido):"—"}
+                          </div>
+                          {/* Comision editable */}
+                          <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                            <div style={{display:"flex",alignItems:"center",gap:4}}>
+                              <input
+                                type="number" min="0" max="100" step="0.5"
+                                value={r.comisionPct||""}
+                                placeholder="0"
+                                onChange={e=>saveComisionOverride(r.code,e.target.value)}
+                                style={{width:48,background:T.bg,border:`1px solid ${r.comisionPct>0?T.orange+"88":T.border}`,borderRadius:6,padding:"4px 6px",fontSize:12,color:r.comisionPct>0?T.orange:T.textMd,textAlign:"center",fontWeight:600,outline:"none"}}
+                              />
+                              <span style={{fontSize:11,color:T.textSm}}>%</span>
+                            </div>
+                            {r.comisionPct>0&&r.netoRecibido>0&&(
+                              <div style={{fontSize:12,fontWeight:800,color:T.orange}}>{fmtARS(r.comisionPagar)}</div>
+                            )}
                           </div>
                         </div>
                       );
@@ -2515,7 +2577,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         <div key={r.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",borderBottom:i<conComision.length-1?`1px solid ${T.borderL}`:"none"}}>
                           <div>
                             <div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.influencer} <span style={{fontFamily:"monospace",fontSize:12,color:T.accent}}>({r.code})</span></div>
-                            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{r.usosPeriodo} uso{r.usosPeriodo!==1?"s":""} · {fmtARS(r.ventasPeriodo)} en ventas · {r.comisionPct}%</div>
+                            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{r.usosPeriodo} uso{r.usosPeriodo!==1?"s":""} · neto {fmtARS(r.netoRecibido||0)} (MP -{mpComision}%) · {r.comisionPct}% sobre neto</div>
                           </div>
                           <div style={{fontSize:18,fontWeight:800,color:T.orange}}>{fmtARS(r.comisionPagar)}</div>
                         </div>
