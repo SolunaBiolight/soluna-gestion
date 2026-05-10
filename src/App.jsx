@@ -2440,16 +2440,18 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         </div>
 
         {/* Tabs de vista */}
-        <div style={{display:"flex",gap:0,background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:3,marginBottom:16,alignSelf:"flex-start",display:"inline-flex"}}>
-          {[{id:"lista",label:"Lista"},{id:"kanban",label:"Kanban"},{id:"ranking",label:"Ranking"},{id:"comisiones",label:"Pagos Cupones"}].map(t=>{
-            const isActive=viewTab===t.id;
-            return (
-              <button key={t.id} onClick={()=>setViewTab(t.id)}
-                style={{padding:"7px 16px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",boxShadow:isActive?`0 1px 4px rgba(0,0,0,0.15)`:"none",whiteSpace:"nowrap"}}>
-                {t.label}
-              </button>
-            );
-          })}
+        <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center"}}>
+          <div style={{display:"inline-flex",background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:3,gap:2}}>
+            {[{id:"lista",label:"Lista"},{id:"kanban",label:"Kanban"},{id:"ranking",label:"Ranking"},{id:"comisiones",label:"Pagos Cupones"}].map(t=>{
+              const isActive=viewTab===t.id;
+              return (
+                <button key={t.id} onClick={()=>setViewTab(t.id)}
+                  style={{padding:"7px 16px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",boxShadow:isActive?"0 1px 4px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
