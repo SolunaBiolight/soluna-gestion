@@ -3685,9 +3685,25 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const pedidoNum=internoMatch[1].trim();
           const destinatario=destMatch?destMatch[1].trim():"";
           if(type==="sku") {
-            const order=orders.find(o=>o.numero===pedidoNum);
-            const skus=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`).join(', '):"No encontrado en TN";
-            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario});
+            // Buscar en tabOrders primero (pedidos del tab activo), luego en orders prop
+            let order = tabOrders.find(o=>o.numero===pedidoNum)
+                     || orders.find(o=>o.numero===pedidoNum);
+            // Si no está en memoria, buscar en TN API
+            if(!order) {
+              try {
+                const r=await fetch(`/api/orders?uid=${user?.uid||""}&q=${encodeURIComponent(pedidoNum)}&tab=total`);
+                if(r.ok){
+                  const data=await r.json();
+                  if(Array.isArray(data)&&data.length>0){
+                    const built=buildOrdersFromAPI(data);
+                    order=built.find(o=>o.numero===pedidoNum)||built[0]||null;
+                  }
+                }
+              } catch(_){}
+            }
+            const skuLines=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`):[];
+            const skus=order?skuLines.join(', '):"No encontrado en TN";
+            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario,skuLines});
           } else {
             results.push({pagina:i+1,tracking,pedidoNum,destinatario,status:"pending"});
           }
@@ -4140,104 +4156,124 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
         {/* ── SKU EN ROTULOS ── */}
         {tab==="sku"&&(
-          <div key="sku" className="gh-tab-content" style={{maxWidth:700}}>
-            <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
-              Subí el PDF de rótulos de Andreani. La app detecta el N° de pedido, busca los SKUs en tus pedidos de Tienda Nube y genera un resumen de lo despachado.
-            </div>
+          <div key="sku" className="gh-tab-content" style={{maxWidth:720,paddingBottom:48}}>
 
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:16}}>
-              <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>1. Seleccioná el PDF de rótulos</div>
-              <input type="file" accept=".pdf" onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(false);setSkuResults([]);setSkuGenerating(false);setSkuProgress(0);parsePdf(f,"sku");}}} style={{...iS,cursor:"pointer",fontSize:13}}/>
-              {skuFile&&!skuProcessing&&!skuGenerating&&skuResults.length===0&&(
-                <div style={{fontSize:12,color:T.textSm,marginTop:8}}>Analizando...</div>
-              )}
-            </div>
+            {/* Upload zone */}
+            <label htmlFor="sku-file-input" style={{display:"block",background:T.card,border:`2px dashed ${skuFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
+              <input id="sku-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(false);setSkuResults([]);setSkuGenerating(false);setSkuProgress(0);parsePdf(f,"sku");}}}/>
+              {skuProcessing
+                ? <div>
+                    <div style={{width:44,height:44,border:`3px solid ${T.accentSolid}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",margin:"0 auto 14px"}}/>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Buscando pedidos en TN...</div>
+                    <div style={{fontSize:13,color:T.textSm}}>Esto puede tardar unos segundos</div>
+                  </div>
+                : skuFile
+                  ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12}}>
+                      <span style={{fontSize:28}}>📄</span>
+                      <div style={{textAlign:"left"}}>
+                        <div style={{fontSize:14,fontWeight:600,color:T.text}}>{skuFile.name}</div>
+                        <div style={{fontSize:12,color:T.accent,marginTop:2}}>Click para cambiar</div>
+                      </div>
+                    </div>
+                  : <div>
+                      <div style={{fontSize:40,marginBottom:12}}>📦</div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Subí el PDF de rótulos de Andreani</div>
+                      <div style={{fontSize:13,color:T.textSm,marginBottom:16,lineHeight:1.6}}>Detecta el pedido, busca los SKUs en TN y escribe los productos en cada etiqueta</div>
+                      <div style={{display:"inline-block",background:T.accentSolid,color:"#fff",borderRadius:8,padding:"8px 22px",fontSize:13,fontWeight:600}}>Seleccionar PDF</div>
+                    </div>
+              }
+            </label>
 
-            {skuProcessing&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:32,textAlign:"center",marginBottom:16}}>
-                <div style={{fontSize:28,marginBottom:10}}>⏳</div>
-                <div style={{fontSize:15,fontWeight:600,color:T.text}}>Analizando PDF...</div>
-                <div style={{fontSize:13,color:T.textSm,marginTop:6}}>Extrayendo SKUs de cada rótulo</div>
-                <div style={{width:60,height:4,background:T.accentSolid,borderRadius:20,margin:"16px auto 0",animation:"pulse 1s infinite"}}/>
-              </div>
-            )}
+            {/* Resultados */}
+            {skuResults.length>0&&(()=>{
+              const found=skuResults.filter(r=>r.found);
+              const notFound=skuResults.filter(r=>!r.found);
+              const skuTotals={};
+              found.forEach(r=>(r.skuLines||[]).forEach(s=>{
+                const m=s.match(/^(.+?)\s*\(x(\d+)\)$/);
+                if(m){const k=m[1].trim();skuTotals[k]=(skuTotals[k]||0)+parseInt(m[2]);}
+              }));
 
-            {skuResults.length>0&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontSize:14,fontWeight:700,color:T.text}}>✅ {skuResults.length} rótulos analizados</span>
-                  <button onClick={()=>{
-                    const lines=["RESUMEN DE SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString('es-AR'),"Total de páginas: "+skuResults.length,"","DETALLE DE SKU DESPACHADOS:",""];
-                    const skuMap={};
-                    skuResults.forEach(r=>{const order=orders.find(o=>o.numero===r.pedidoNum);if(order)order.productos.forEach(p=>{skuMap[p.sku]=(skuMap[p.sku]||0)+(parseInt(p.cantidad)||1);});});
-                    Object.entries(skuMap).sort().forEach(([sku,qty])=>lines.push(`${sku}: CANTIDAD TOTAL: ${qty}`));
-                    const blob=new Blob([lines.join('\n')],{type:"text/plain"});
-                    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="resumen-sku.txt";a.click();
-                  }} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>⬇️ Exportar resumen</button>
+              return (<div>
+                {/* Cards resumen */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+                  <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Encontrados</div>
+                    <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{found.length}<span style={{fontSize:14,fontWeight:400,color:T.textSm,marginLeft:4}}>/ {skuResults.length}</span></div>
+                  </div>
+                  <div style={{background:T.card,border:`1px solid ${notFound.length>0?T.red+"44":T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>No encontrados</div>
+                    <div style={{fontSize:28,fontWeight:800,color:notFound.length>0?T.red:T.textSm,letterSpacing:-1}}>{notFound.length}</div>
+                  </div>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>SKUs distintos</div>
+                    <div style={{fontSize:28,fontWeight:800,color:T.accent,letterSpacing:-1}}>{Object.keys(skuTotals).length}</div>
+                  </div>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"60px 80px 1fr",gap:8,padding:"8px 18px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`}}>
-                  <span>Página</span><span>Pedido</span><span>SKUs</span>
-                </div>
-                {skuResults.map((r,i)=>(
-                  <div key={i} style={{display:"grid",gridTemplateColumns:"60px 80px 1fr",gap:8,padding:"12px 18px",borderBottom:i<skuResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center"}}>
-                    <span style={{fontSize:12,color:T.textSm}}>Pág. {r.pagina}</span>
-                    <span style={{fontWeight:700,color:r.found?T.accent:T.red,fontSize:13}}>#{r.pedidoNum||"—"}</span>
-                    <div>
-                      <div style={{fontSize:13,color:r.found?T.text:T.red}}>{r.skus}</div>
-                      {!r.found&&<div style={{fontSize:11,color:T.red,marginTop:2}}>⚠ Pedido no encontrado</div>}
+
+                {/* Chips de totales por SKU */}
+                {Object.keys(skuTotals).length>0&&(
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>Resumen despacho</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                      {Object.entries(skuTotals).sort((a,b)=>b[1]-a[1]).map(([sku,qty])=>(
+                        <div key={sku} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 12px",display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontFamily:"monospace",fontSize:13,fontWeight:700,color:T.accent}}>{sku}</span>
+                          <span style={{fontSize:12,fontWeight:700,color:"#fff",background:T.accentSolid,padding:"2px 7px",borderRadius:4}}>{qty}u</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                )}
 
-            {skuResults.length>0&&skuResults.some(r=>r.found)&&(
-              <div style={{marginTop:16}}>
-                {!skuGenerating&&(
-                  <button onClick={async()=>{
-                    setSkuGenerating(true);setSkuProgress(10);
-                    try{
-                      const skuMap={};
-                      skuResults.forEach(r=>{
-                        if(r.found&&r.skuLines?.length)skuMap[r.pedidoNum]={page:r.pagina,skus:r.skuLines,found:true};
-                        else skuMap[r.pedidoNum||r.pagina]={page:r.pagina,skus:[],found:false};
-                      });
-                      setSkuProgress(35);
-                      let cfg={x:10,y:10,fontSize:4,sortBy:"sin"};
-                      try{const s=localStorage.getItem("growith_skuCfg");if(s)cfg={...cfg,...JSON.parse(s)};}catch(_){}
-                      const fd=new FormData();
-                      fd.append("pdf",skuFile,skuFile.name);
-                      fd.append("skuMap",JSON.stringify(skuMap));
-                      fd.append("config",JSON.stringify(cfg));
-                      setSkuProgress(55);
-                      const resp=await fetch("/api/process-sku",{method:"POST",body:fd});
-                      if(!resp.ok)throw new Error("Error al generar PDF: "+resp.status);
-                      setSkuProgress(80);
-                      const blob=await resp.blob();
-                      const url=URL.createObjectURL(blob);
+                {/* Lista de rótulos */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+                  <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:13,fontWeight:700,color:T.text}}>Detalle por página</span>
+                    {notFound.length>0&&<span style={{marginLeft:"auto",fontSize:11,background:T.redBg,color:T.red,padding:"2px 8px",borderRadius:4,fontWeight:600}}>⚠ {notFound.length} sin match</span>}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"50px 80px 1fr",gap:8,padding:"8px 18px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                    <span>Pág.</span><span>Pedido</span><span>Productos</span>
+                  </div>
+                  {skuResults.map((r,i)=>(
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"50px 80px 1fr",gap:8,padding:"11px 18px",borderBottom:i<skuResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"start",background:r.found?"transparent":T.redBg+"22"}}>
+                      <span style={{fontSize:12,color:T.textSm,paddingTop:2}}>Pág.{r.pagina}</span>
+                      <span style={{fontWeight:700,color:r.found?T.accent:T.red,fontSize:13,paddingTop:2}}>#{r.pedidoNum}</span>
+                      <div>
+                        {r.found
+                          ? <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                              {(r.skuLines||[]).map((s,j)=>(
+                                <span key={j} style={{fontFamily:"monospace",fontSize:12,background:T.accentSolid+"18",color:T.accent,border:`1px solid ${T.accentSolid}33`,borderRadius:5,padding:"2px 7px"}}>{s}</span>
+                              ))}
+                            </div>
+                          : <span style={{fontSize:12,color:T.red}}>No encontrado en TN</span>
+                        }
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Botones acción */}
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  {found.length>0&&!skuGenerating&&(
+                    <AsyncButton onClick={()=>autoGenerateSkuPdf(skuResults,skuFile)} style={{...BtnPrimary(T),flex:1,justifyContent:"center",fontSize:14,padding:"12px 20px"}}>
+                      Regenerar PDF con SKUs
+                    </AsyncButton>
+                  )}
+                  {Object.keys(skuTotals).length>0&&(
+                    <button onClick={()=>{
+                      const lines=["RESUMEN SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString("es-AR"),"","DETALLE:",""];
+                      Object.entries(skuTotals).sort().forEach(([k,v])=>lines.push(`${k}: ${v}u`));
                       const a=document.createElement("a");
-                      a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
-                      URL.revokeObjectURL(url);
-                      setSkuProgress(100);
-                      setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},1800);
-                    }catch(e){alert("Error al generar PDF: "+e.message);setSkuGenerating(false);setSkuProgress(0);}
-                  }} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"14px 20px"}}>
-                    📥 Generar PDF con SKUs y descargar
-                  </button>
-                )}
-                {skuGenerating&&(
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:24,textAlign:"center"}}>
-                    <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:8}}>
-                      {skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":skuProgress<100?"Descargando PDF...":"✅ ¡PDF listo!"}
-                    </div>
-                    <div style={{height:8,background:T.borderL,borderRadius:4,overflow:"hidden",margin:"12px 0 6px"}}>
-                      <div style={{height:"100%",width:`${skuProgress}%`,background:skuProgress===100?T.green:T.accentSolid,borderRadius:4,transition:"width 0.4s ease"}}></div>
-                    </div>
-                    <div style={{fontSize:13,color:T.textSm}}>{skuProgress}%</div>
-                  </div>
-                )}
-              </div>
-            )}
+                      a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(lines.join("\n"));
+                      a.download="resumen-sku.txt";a.click();
+                    }} style={{...BtnSecondary(T),padding:"12px 18px",fontSize:13}}>
+                      Exportar resumen
+                    </button>
+                  )}
+                </div>
+              </div>);
+            })()}
           </div>
         )}
 
