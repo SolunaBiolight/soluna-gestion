@@ -3524,8 +3524,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   async function exportAndreani() {
     const selOrders=tabOrders.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
+    // Cerrar el modal INMEDIATAMENTE — el progreso se muestra en el overlay flotante
+    setExportModal(false);
     setExporting(true);
-    setExportProgress({step:"Cargando ubicaciones Andreani...",pct:10,current:0,total:selOrders.length});
+    setExportProgress({step:"Cargando ubicaciones...",pct:10,current:0,total:selOrders.length});
     await new Promise(r=>setTimeout(r,80));
     try {
       const locs=await loadAndreaniLocations();
@@ -3546,7 +3548,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(unresolvedDom.length>0||unresolvedSuc.length>0){
         setExporting(false);
         setExportProgress({step:"",pct:0,current:0,total:0});
-        setExportModal(false);
         await resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs);
         return;
       }
@@ -3557,13 +3558,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       );
       if(!finalOrders.length){
         toast("Todos los pedidos fueron excluidos","warning");
-        setExportModal(false);
         setExporting(false);
         setExportProgress({step:"",pct:0,current:0,total:0});
         return;
       }
 
-      setExportProgress({step:`Generando planilla para ${finalOrders.length} pedidos...`,pct:60,current:finalOrders.length,total:finalOrders.length});
+      setExportProgress({step:`Generando ${finalOrders.length} etiquetas...`,pct:60,current:finalOrders.length,total:finalOrders.length});
       const b=await generateAndreaniXlsx(finalOrders,locs);
       setExportProgress({step:"Descargando...",pct:90,current:finalOrders.length,total:finalOrders.length});
       const date=new Date().toISOString().split('T')[0];
@@ -3576,19 +3576,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         hist.unshift({fecha:new Date().toISOString(),cantidad:finalOrders.length,pedidos:finalOrders.map(o=>o.numero)});
         localStorage.setItem("growith_exportHistory",JSON.stringify(hist.slice(0,50)));
       }catch(_){}
-      setExportProgress({step:"Listo",pct:100,current:finalOrders.length,total:finalOrders.length});
-      toast(`${finalOrders.length} etiquetas generadas correctamente`,"success");
-      setTimeout(()=>{
-        setExportModal(false);
-        setSelected(new Set());
-        locationOverridesRef.current={};
-        sucursalOverridesRef.current={};
-        setExportProgress({step:"",pct:0,current:0,total:0});
-      },800);
+      setExportProgress({step:"¡Listo!",pct:100,current:finalOrders.length,total:finalOrders.length});
+      toast(`${finalOrders.length} etiquetas generadas`,"success");
+      setSelected(new Set());
+      locationOverridesRef.current={};
+      sucursalOverridesRef.current={};
+      setTimeout(()=>setExportProgress({step:"",pct:0,current:0,total:0}),2000);
     } catch(e){
-      console.error("exportAndreani error:", e);
+      console.error("exportAndreani:",e);
       toast("Error al exportar: "+e.message,"error");
-      setExportModal(false);
       setExportProgress({step:"",pct:0,current:0,total:0});
     } finally {
       setExporting(false);
