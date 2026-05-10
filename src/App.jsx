@@ -698,7 +698,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     try {
       const prev=reclamos.find(r=>r._docId===reclamoForm._docId);
       const estadoCambio=prev&&prev.estado!==reclamoForm.estado;
-      const histEntry=estadoCambio?[...(reclamoForm.historial||[]),{accion:`Estado -> ${reclamoForm.estado}`,fecha:new Date().toISOString()}]:reclamoForm.historial||[];
+      const histEntry=estadoCambio?[...(reclamoForm.historial||[]),{accion:`Estado > ${reclamoForm.estado}`,fecha:new Date().toISOString()}]:reclamoForm.historial||[];
       const p={
         orderNum:reclamoForm.orderNum, tipo:reclamoForm.tipo, motivo:reclamoForm.motivo,
         descripcion:reclamoForm.descripcion||"", estado:reclamoForm.estado,
@@ -738,7 +738,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   async function updateEstado(docId,nuevoEstado) {
     const r=reclamos.find(r=>r._docId===docId);
     if(!r) return;
-    const entry={accion:`Estado -> ${nuevoEstado}`,fecha:new Date().toISOString()};
+    const entry={accion:`Estado > ${nuevoEstado}`,fecha:new Date().toISOString()};
     await updateDoc(doc(db,"reclamos",docId),{estado:nuevoEstado,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(nuevoEstado==="Resuelto"&&r.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
   }
 
@@ -4898,7 +4898,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
                         <span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.canje.influencer}</span>
                         <span style={{fontSize:12,color:T.textSm}}>{a.msg}</span>
                       </div>
-                      <span style={{fontSize:11,color:T.textSm}}>Ver -></span>
+                      <span style={{fontSize:11,color:T.textSm}}>Ver →</span>
                     </div>
                   );
                 })}
