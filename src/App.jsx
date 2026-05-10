@@ -2407,7 +2407,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
       <div style={{padding:"24px 40px 64px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
         {/* Stats bar - clickeable para filtrar */}
-        <div style={{display:"flex",gap:0,background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+        <div style={{display:"flex",gap:0,background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:20}}>
           {[
             {label:"Total",value:stats.total,color:T.textMd,estado:""},
             {label:"Pend. envío",value:stats.pendientes,color:T.yellow,estado:"Pendiente envío"},
@@ -2419,12 +2419,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             const isActive=filterEstado===s.estado;
             return (
               <div key={s.label} onClick={()=>{setFilterEstado(s.estado);setViewTab("lista");}}
-                style={{flex:1,padding:"14px 16px",borderRight:i<arr.length-1?"1px solid "+T.borderL:"none",textAlign:"center",cursor:"pointer",background:isActive?s.color+"12":"transparent",transition:"background 0.15s ease",userSelect:"none"}}
+                style={{flex:1,padding:"20px 16px",borderRight:i<arr.length-1?"1px solid "+T.borderL:"none",textAlign:"center",cursor:"pointer",background:isActive?s.color+"12":"transparent",transition:"background 0.15s ease",userSelect:"none"}}
                 onMouseEnter={e=>!isActive&&(e.currentTarget.style.background=T.surface)}
                 onMouseLeave={e=>!isActive&&(e.currentTarget.style.background="transparent")}>
-                <div style={{fontSize:24,fontWeight:800,color:isActive?s.color:s.color,letterSpacing:-0.5,lineHeight:1}}>{s.value??<Spinner size={13} color={s.color}/>}</div>
-                <div style={{fontSize:11,color:isActive?s.color:T.textSm,marginTop:5,fontWeight:isActive?700:500,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
-                {isActive&&<div style={{width:24,height:2,background:s.color,borderRadius:2,margin:"6px auto 0"}}/>}
+                <div style={{fontSize:32,fontWeight:800,color:s.color,letterSpacing:-1,lineHeight:1}}>{s.value??<Spinner size={16} color={s.color}/>}</div>
+                <div style={{fontSize:11,color:isActive?s.color:T.textSm,marginTop:7,fontWeight:isActive?700:500,textTransform:"uppercase",letterSpacing:"0.05em"}}>{s.label}</div>
+                {isActive&&<div style={{width:28,height:2,background:s.color,borderRadius:2,margin:"7px auto 0"}}/>}
               </div>
             );
           })}
@@ -2530,13 +2530,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
         {/* KANBAN */}
         {viewTab==="kanban"&&(
-          <div key="kanban" className="gh-tab-content" style={{paddingBottom:48,overflowX:"auto"}}>
-            <div style={{display:"flex",gap:14,minWidth:900,paddingBottom:8}}>
+          <div key="kanban" className="gh-tab-content" style={{paddingBottom:48}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,paddingBottom:8}}>
               {ESTADOS_C.filter(e=>e!=="Cancelado").map(estado=>{
                 const sc=getEstadoCC(T,estado);
                 const cols=canjes.filter(c=>c.estado===estado);
                 return (
-                  <div key={estado} style={{flex:"0 0 200px",background:T.card,borderRadius:12,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+                  <div key={estado} style={{background:T.card,borderRadius:12,border:"1px solid "+T.border,overflow:"hidden"}}>
                     <div style={{padding:"12px 14px",borderBottom:`1px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div style={{display:"flex",alignItems:"center",gap:7}}>
                         <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot}}/>
