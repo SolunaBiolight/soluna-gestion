@@ -124,10 +124,10 @@ export default async function handler(req, res) {
     // Constantes medidas en PDF real Andreani 196x298pt
     // Zona de escritura: margen inferior, debajo de los QR codes
     // QR inferior: y_from_bot=25.6..41.9 → escribimos debajo en y_from_bot=0..24
-    const ZONE_Y_START = 1.5;   // pt desde abajo — base de la primera linea
-    const ZONE_HEIGHT = 23;     // pt disponibles (debajo del QR inferior)
-    const ZONE_X_START = 9.7;   // margen izquierdo
-    const ZONE_X_END_RATIO = 0.97; // usar hasta el 97% del ancho
+    const ZONE_Y_START = 4;      // pt desde abajo — margen inferior
+    const ZONE_HEIGHT = 20;      // pt disponibles
+    const ZONE_X_START = 9.7;   // margen izquierdo (original)
+    const ZONE_X_END_RATIO = 0.97; // margen derecho (original)
 
     const pageResults = [];
 
