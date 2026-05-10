@@ -2406,35 +2406,26 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       </AppTopbar>
 
       <div style={{padding:"24px 40px 64px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
-        {/* Stats bar */}
-        <div style={{display:"flex",gap:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+        {/* Stats bar - clickeable para filtrar */}
+        <div style={{display:"flex",gap:0,background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:16}}>
           {[
-            {label:"Total",value:stats.total,color:T.textMd},
-            {label:"Pend. envío",value:stats.pendientes,color:T.yellow},
-            {label:"Enviados",value:stats.enviados,color:T.blue},
-            {label:"Cont. pendiente",value:stats.contPend,color:T.orange},
-            {label:"Publicados",value:stats.publicados,color:T.purple},
-            {label:"Finalizados",value:stats.finalizados,color:T.green},
-          ].map((s,i,arr)=>(
-            <div key={s.label} style={{flex:1,padding:"14px 16px",borderRight:i<arr.length-1?`1px solid ${T.borderL}`:"none",textAlign:"center"}}>
-              <div style={{fontSize:24,fontWeight:800,color:s.color,letterSpacing:-0.5,lineHeight:1}}>{s.value??<Spinner size={13} color={s.color}/>}</div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:5,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Filtros rapidos de estado */}
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",padding:"12px 0 4px"}}>
-          {["",..."Pendiente envío,Enviado,Contenido pendiente,Contenido entregado,Finalizado".split(",")].map(est=>{
-            const sc2=est?getEstadoCC(T,est):null;
-            const count=est?canjes.filter(c=>c.estado===est).length:canjes.length;
-            const active=filterEstado===est;
+            {label:"Total",value:stats.total,color:T.textMd,estado:""},
+            {label:"Pend. envío",value:stats.pendientes,color:T.yellow,estado:"Pendiente envío"},
+            {label:"Enviados",value:stats.enviados,color:T.blue,estado:"Enviado"},
+            {label:"Cont. pendiente",value:stats.contPend,color:T.orange,estado:"Contenido pendiente"},
+            {label:"Publicados",value:stats.publicados,color:T.purple,estado:"Contenido entregado"},
+            {label:"Finalizados",value:stats.finalizados,color:T.green,estado:"Finalizado"},
+          ].map((s,i,arr)=>{
+            const isActive=filterEstado===s.estado;
             return (
-              <button key={est||"all"} onClick={()=>setFilterEstado(est)}
-                style={{fontSize:12,fontWeight:active?700:500,padding:"5px 12px",borderRadius:20,border:`1.5px solid ${active?(sc2?sc2.dot:T.accent):T.border}`,background:active?(sc2?sc2.bg:T.accentSolid+"22"):"transparent",color:active?(sc2?sc2.text:T.accent):T.textMd,cursor:"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
-                {sc2&&<span style={{width:7,height:7,borderRadius:"50%",background:sc2.dot,flexShrink:0}}/>}
-                {est||"Todos"} <span style={{fontSize:11,opacity:0.7}}>({count})</span>
-              </button>
+              <div key={s.label} onClick={()=>{setFilterEstado(s.estado);setViewTab("lista");}}
+                style={{flex:1,padding:"14px 16px",borderRight:i<arr.length-1?"1px solid "+T.borderL:"none",textAlign:"center",cursor:"pointer",background:isActive?s.color+"12":"transparent",transition:"background 0.15s ease",userSelect:"none"}}
+                onMouseEnter={e=>!isActive&&(e.currentTarget.style.background=T.surface)}
+                onMouseLeave={e=>!isActive&&(e.currentTarget.style.background="transparent")}>
+                <div style={{fontSize:24,fontWeight:800,color:isActive?s.color:s.color,letterSpacing:-0.5,lineHeight:1}}>{s.value??<Spinner size={13} color={s.color}/>}</div>
+                <div style={{fontSize:11,color:isActive?s.color:T.textSm,marginTop:5,fontWeight:isActive?700:500,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
+                {isActive&&<div style={{width:24,height:2,background:s.color,borderRadius:2,margin:"6px auto 0"}}/>}
+              </div>
             );
           })}
         </div>
