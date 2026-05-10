@@ -198,7 +198,112 @@ const _andreaniLocsCache = { current: null };
 if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
   const s=document.createElement("style");
   s.id="growith-spin";
-  s.textContent=`@keyframes growith-spin{to{transform:rotate(360deg)}} @keyframes growith-fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} @keyframes growith-skeleton{0%,100%{opacity:0.4}50%{opacity:0.8}}`;
+  s.textContent=`
+    /* ── Keyframes ── */
+    @keyframes growith-spin    { to { transform: rotate(360deg); } }
+    @keyframes growith-fadeIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes growith-fadeInFast { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes growith-skeleton{ 0%,100%{opacity:0.4} 50%{opacity:0.8} }
+    @keyframes growith-toast-in{ from{opacity:0;transform:translateY(16px) scale(0.95)} to{opacity:1;transform:translateY(0) scale(1)} }
+    @keyframes growith-slideIn { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes growith-scaleIn { from{opacity:0;transform:scale(0.97)} to{opacity:1;transform:scale(1)} }
+    @keyframes growith-popIn   { from{opacity:0;transform:scale(0.94) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
+
+    /* ── Page / section transitions ── */
+    .gh-page {
+      animation: growith-fadeIn 0.22s cubic-bezier(0.22,1,0.36,1) both;
+    }
+
+    /* ── Tab content ── */
+    .gh-tab-content {
+      animation: growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both;
+    }
+
+    /* ── Buttons ── */
+    button, a[role="button"] {
+      transition: opacity 0.15s ease, transform 0.12s ease,
+                  background 0.15s ease, border-color 0.15s ease,
+                  box-shadow 0.15s ease !important;
+    }
+    button:not(:disabled):hover  { filter: brightness(1.08); }
+    button:not(:disabled):active { transform: scale(0.95) !important; opacity: 0.82 !important; }
+    button:disabled { cursor: not-allowed !important; opacity: 0.4 !important; }
+
+    /* ── Links ── */
+    a { transition: opacity 0.15s ease, color 0.15s ease !important; }
+    a:active { opacity: 0.7 !important; }
+
+    /* ── Inputs ── */
+    input, textarea, select {
+      transition: border-color 0.15s ease, box-shadow 0.18s ease !important;
+    }
+    input:focus, textarea:focus, select:focus {
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.14) !important;
+      outline: none !important;
+    }
+
+    /* ── Clickable cards / rows ── */
+    .gh-clickable {
+      transition: background 0.15s ease, border-color 0.15s ease,
+                  transform 0.18s cubic-bezier(0.22,1,0.36,1),
+                  box-shadow 0.18s ease !important;
+      cursor: pointer;
+    }
+    .gh-clickable:hover  { transform: translateY(-1px) !important; }
+    .gh-clickable:active { transform: scale(0.98) !important; }
+
+    .gh-row {
+      transition: background 0.12s ease !important;
+      cursor: pointer;
+    }
+    .gh-row:hover  { background: var(--gh-surface) !important; }
+    .gh-row:active { background: var(--gh-card) !important; }
+
+    /* ── Kanban cards ── */
+    .gh-kanban-card {
+      transition: transform 0.18s cubic-bezier(0.22,1,0.36,1),
+                  box-shadow 0.18s ease, border-color 0.15s ease !important;
+    }
+    .gh-kanban-card:hover {
+      transform: translateY(-2px) !important;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.2) !important;
+    }
+
+    /* ── Tabs ── */
+    .gh-tab {
+      transition: background 0.15s ease, color 0.15s ease,
+                  border-color 0.15s ease, transform 0.12s ease !important;
+    }
+    .gh-tab:hover { transform: translateY(-1px) !important; }
+    .gh-tab:active{ transform: scale(0.96) !important; }
+
+    /* ── Chips / filters ── */
+    .gh-chip {
+      transition: all 0.16s cubic-bezier(0.22,1,0.36,1) !important;
+    }
+    .gh-chip:hover  { transform: translateY(-1px) !important; filter: brightness(1.1); }
+    .gh-chip:active { transform: scale(0.95) !important; }
+
+    /* ── Toggle switch ── */
+    .gh-toggle        { transition: background 0.22s ease !important; cursor: pointer; }
+    .gh-toggle-thumb  { transition: left 0.22s cubic-bezier(0.34,1.26,0.64,1) !important; }
+
+    /* ── Modal backdrop ── */
+    .gh-modal-backdrop {
+      animation: growith-fadeIn 0.18s ease both;
+    }
+
+    /* ── List items staggered ── */
+    .gh-list-item {
+      animation: growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both;
+    }
+
+    /* ── Body theme transition ── */
+    body { transition: background 0.22s ease !important; }
+
+    /* ── Dark mode toggle smooth ── */
+    * { transition: background-color 0s, color 0s; }
+  `;
   document.head.appendChild(s);
 }
 
@@ -233,6 +338,24 @@ function ToastContainer({T}){
 function Spinner({size=14,color="#fff",style={}}) {
   return (
     <span style={{display:"inline-block",width:size,height:size,border:`2px solid ${color}44`,borderTop:`2px solid ${color}`,borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",flexShrink:0,...style}}/>
+  );
+}
+
+// Animated page wrapper — triggers re-animation on key change
+function PageView({children, pageKey}) {
+  return (
+    <div key={pageKey} className="gh-page" style={{flex:1}}>
+      {children}
+    </div>
+  );
+}
+
+// Animated tab content wrapper
+function TabView({children, tabKey}) {
+  return (
+    <div key={tabKey} className="gh-tab-content">
+      {children}
+    </div>
   );
 }
 
@@ -876,7 +999,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           </div>
         )}
         {view==="dashboard"&&(
-          <div style={{padding:"24px 0 48px"}}>
+          <div key="dashboard" className="gh-tab-content" style={{padding:"24px 0 48px"}}>
 
             {/* Buscador prominente */}
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:24}}>
@@ -1250,7 +1373,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
         {/* ── RECLAMOS LIST + PANEL UNIFICADO ── */}
         {view==="reclamos"&&(
-          <div style={{display:"grid",gridTemplateColumns:activeR?"1fr 420px":"1fr",gap:20,padding:"20px 0 48px",alignItems:"start"}}>
+          <div key="reclamos" className="gh-tab-content" style={{display:"grid",gridTemplateColumns:activeR?"1fr 420px":"1fr",gap:20,padding:"20px 0 48px",alignItems:"start"}}>
             {/* Lista */}
             <div>
               {/* Filters */}
@@ -2259,7 +2382,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         </div>
 
         {/* LISTA */}
-        {viewTab==="lista"&&<div style={{paddingBottom:48}}>
+        {viewTab==="lista"&&<div key="lista" className="gh-tab-content" style={{paddingBottom:48}}>
           {filtered.length===0?(
             <div style={{textAlign:"center",padding:"80px 20px"}}>
               <div style={{fontSize:48,marginBottom:16}}>🤝</div>
@@ -2327,7 +2450,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
         {/* KANBAN */}
         {viewTab==="kanban"&&(
-          <div style={{paddingBottom:48,overflowX:"auto"}}>
+          <div key="kanban" className="gh-tab-content" style={{paddingBottom:48,overflowX:"auto"}}>
             <div style={{display:"flex",gap:14,minWidth:900,paddingBottom:8}}>
               {ESTADOS_C.filter(e=>e!=="Cancelado").map(estado=>{
                 const sc=getEstadoCC(T,estado);
@@ -2376,7 +2499,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
         {/* RANKING */}
         {viewTab==="ranking"&&(
-          <div style={{paddingBottom:48}}>
+          <div key="ranking" className="gh-tab-content" style={{paddingBottom:48}}>
             {canjes.filter(c=>c.alcance||c.reproducciones).length===0?(
               <div style={{textAlign:"center",padding:"80px 20px"}}>
                 <div style={{fontSize:48,marginBottom:16}}>🏆</div>
@@ -2433,7 +2556,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
         {/* COMISIONES UGC */}
         {viewTab==="comisiones"&&(
-          <div style={{paddingBottom:48}}>
+          <div key="comisiones" className="gh-tab-content" style={{paddingBottom:48}}>
 
             {/* Filtros de fecha */}
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:20}}>
@@ -3912,7 +4035,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
         {/* ── SKU EN ROTULOS ── */}
         {tab==="sku"&&(
-          <div style={{maxWidth:700}}>
+          <div key="sku" className="gh-tab-content" style={{maxWidth:700}}>
             <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
               Subí el PDF de rótulos de Andreani. La app detecta el N° de pedido, busca los SKUs en tus pedidos de Tienda Nube y genera un resumen de lo despachado.
             </div>
@@ -4015,7 +4138,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
         {/* ── SEGUIMIENTOS ── */}
         {tab==="seguimientos"&&(
-          <div style={{maxWidth:700}}>
+          <div key="seguimientos" className="gh-tab-content" style={{maxWidth:700}}>
             <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
               Subí el PDF de rótulos de Andreani ya impresos. La app extrae el N° de seguimiento y pedido, y los envía a Tienda Nube automáticamente.
             </div>
@@ -5267,9 +5390,9 @@ export default function App() {
   if(page==="config") return <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 
   // App
-  if(page==="reclamos") return <><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></>;
-  if(page==="canjes") return <><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/><ToastContainer T={T}/></>;
-  if(page==="envios") return <><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></>;
+  if(page==="reclamos") return <PageView pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
+  if(page==="canjes") return <PageView pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/><ToastContainer T={T}/></PageView>;
+  if(page==="envios") return <PageView pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
   return <HomeScreen T={T} onNavigate={(page, docId)=>{
     if(page==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     setPage(page);
