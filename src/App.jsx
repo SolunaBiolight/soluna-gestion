@@ -20,7 +20,7 @@ const googleProvider = new GoogleAuthProvider();
 // Owner email for existing data migration
 const OWNER_EMAIL = "soluna.biolight@gmail.com";
 
-// ─── Theme ───
+// --- Theme ---
 const DARK = {
   bg:       "#0d1117",
   surface:  "#13181f",
@@ -77,7 +77,7 @@ const LIGHT = {
   badge: (dot) => ({ bg: dot+"18", border: dot+"33" }),
 };
 
-// ─── Constants ───
+// --- Constants ---
 const MOTIVOS_R = ["Producto dañado","Color incorrecto","No cumple expectativas","Problema con el lente","Error en el pedido","Armazón roto","Otro"];
 const ESTADOS_R = ["Nuevo","Contactado","Esperando producto","Producto recibido","Envío en camino","Resuelto","Rechazado"];
 const TIPOS_R = ["Cambio","Devolución"];
@@ -90,14 +90,14 @@ const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
 const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Futbolista","Streamer","Otro"];
 const PRODUCTOS_CANJE = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Kit Completo","A elección"];
 
-// ─── Helpers ───
-function fmtMoney(v) { const n=parseFloat(v); if(isNaN(n)) return '—'; return '$'+n.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
-function fmtDate(d) { if(!d) return '—'; const p=d.split(' ')[0].split('/'); if(p.length===3) return `${p[0]}/${p[1]}/${p[2]}`; return d; }
-function fmtTs(ts) { if(!ts?.seconds) return '—'; return new Date(ts.seconds*1000).toLocaleDateString('es-AR'); }
+// --- Helpers ---
+function fmtMoney(v) { const n=parseFloat(v); if(isNaN(n)) return '--'; return '$'+n.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+function fmtDate(d) { if(!d) return '--'; const p=d.split(' ')[0].split('/'); if(p.length===3) return `${p[0]}/${p[1]}/${p[2]}`; return d; }
+function fmtTs(ts) { if(!ts?.seconds) return '--'; return new Date(ts.seconds*1000).toLocaleDateString('es-AR'); }
 function fullAddress(o) { let a=o.direccion||''; if(o.dirNumero) a+=' '+o.dirNumero; if(o.piso) a+=', Piso '+o.piso; return [a,o.localidad,o.ciudad,o.cp?`CP ${o.cp}`:'',o.provincia].filter(Boolean).join(', '); }
 function getLensColors(productos) { const s=new Set(); for(const p of productos){const c=SKU_LENTE[p.sku];if(c)s.add(c);} return [...s]; }
-function mapEstadoEnvio(s) { return {"unpacked":"Por empaquetar","ready_to_ship":"Por enviar","shipped":"Enviado","delivered":"Entregado","unshipped":"Por empaquetar"}[s]||s||'—'; }
-function mapEstadoPago(s) { return {"pending":"Pendiente","paid":"Pagado","voided":"Anulado","refunded":"Reembolsado","abandoned":"Abandonado"}[s]||s||'—'; }
+function mapEstadoEnvio(s) { return {"unpacked":"Por empaquetar","ready_to_ship":"Por enviar","shipped":"Enviado","delivered":"Entregado","unshipped":"Por empaquetar"}[s]||s||'--'; }
+function mapEstadoPago(s) { return {"pending":"Pendiente","paid":"Pagado","voided":"Anulado","refunded":"Reembolsado","abandoned":"Abandonado"}[s]||s||'--'; }
 
 function getEstadoEnvioC(T, estado) {
   const m = {
@@ -190,17 +190,17 @@ function buildOrdersFromAPI(data) {
   }).sort((a,b)=>parseInt(b.numero||0)-parseInt(a.numero||0));
 }
 
-// ─── Andreani shared cache (module level) ───
+// --- Andreani shared cache (module level) ---
 const _andreaniLocsCache = { current: null };
 
-// ─── UI Components ───
+// --- UI Components ---
 
 // Inject spinner keyframe CSS once
 if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
   const s=document.createElement("style");
   s.id="growith-spin";
   s.textContent=`
-    /* ── Keyframes ── */
+    /* -- Keyframes -- */
     @keyframes growith-spin    { to { transform: rotate(360deg); } }
     @keyframes growith-fadeIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
     @keyframes growith-fadeInFast { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
@@ -210,17 +210,17 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     @keyframes growith-scaleIn { from{opacity:0;transform:scale(0.97)} to{opacity:1;transform:scale(1)} }
     @keyframes growith-popIn   { from{opacity:0;transform:scale(0.94) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
 
-    /* ── Page / section transitions ── */
+    /* -- Page / section transitions -- */
     .gh-page {
       animation: growith-fadeIn 0.22s cubic-bezier(0.22,1,0.36,1) both;
     }
 
-    /* ── Tab content ── */
+    /* -- Tab content -- */
     .gh-tab-content {
       animation: growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both;
     }
 
-    /* ── Buttons ── */
+    /* -- Buttons -- */
     button, a[role="button"] {
       transition: opacity 0.15s ease, transform 0.12s ease,
                   background 0.15s ease, border-color 0.15s ease,
@@ -230,11 +230,11 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     button:not(:disabled):active { transform: scale(0.95) !important; opacity: 0.75 !important; }
     button:disabled { cursor: not-allowed !important; opacity: 0.4 !important; }
 
-    /* ── Links ── */
+    /* -- Links -- */
     a { transition: opacity 0.15s ease, color 0.15s ease !important; }
     a:active { opacity: 0.7 !important; }
 
-    /* ── Inputs ── */
+    /* -- Inputs -- */
     input, textarea, select {
       transition: border-color 0.15s ease, box-shadow 0.18s ease !important;
     }
@@ -243,7 +243,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
       outline: none !important;
     }
 
-    /* ── Clickable cards / rows ── */
+    /* -- Clickable cards / rows -- */
     .gh-clickable {
       transition: background 0.15s ease, border-color 0.15s ease,
                   transform 0.18s cubic-bezier(0.22,1,0.36,1),
@@ -260,7 +260,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     .gh-row:hover  { background: var(--gh-surface) !important; }
     .gh-row:active { background: var(--gh-card) !important; }
 
-    /* ── Kanban cards ── */
+    /* -- Kanban cards -- */
     .gh-kanban-card {
       transition: transform 0.18s cubic-bezier(0.22,1,0.36,1),
                   box-shadow 0.18s ease, border-color 0.15s ease !important;
@@ -270,7 +270,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
       box-shadow: 0 6px 24px rgba(0,0,0,0.2) !important;
     }
 
-    /* ── Tabs ── */
+    /* -- Tabs -- */
     .gh-tab {
       transition: background 0.15s ease, color 0.15s ease,
                   border-color 0.15s ease, transform 0.12s ease !important;
@@ -278,37 +278,37 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     .gh-tab:hover { transform: translateY(-1px) !important; }
     .gh-tab:active{ transform: scale(0.96) !important; }
 
-    /* ── Chips / filters ── */
+    /* -- Chips / filters -- */
     .gh-chip {
       transition: all 0.16s cubic-bezier(0.22,1,0.36,1) !important;
     }
     .gh-chip:hover  { transform: translateY(-1px) !important; opacity: 0.88; }
     .gh-chip:active { transform: scale(0.95) !important; }
 
-    /* ── Toggle switch ── */
+    /* -- Toggle switch -- */
     .gh-toggle        { transition: background 0.22s ease !important; cursor: pointer; }
     .gh-toggle-thumb  { transition: left 0.22s cubic-bezier(0.34,1.26,0.64,1) !important; }
 
-    /* ── Modal backdrop ── */
+    /* -- Modal backdrop -- */
     .gh-modal-backdrop {
       animation: growith-fadeIn 0.18s ease both;
     }
 
-    /* ── List items staggered ── */
+    /* -- List items staggered -- */
     .gh-list-item {
       animation: growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both;
     }
 
-    /* ── Body theme transition ── */
+    /* -- Body theme transition -- */
     body { transition: background 0.22s ease !important; }
 
-    /* ── Dark mode toggle smooth ── */
+    /* -- Dark mode toggle smooth -- */
     * { transition: background-color 0s, color 0s; }
   `;
   document.head.appendChild(s);
 }
 
-// ─── Toast system ───
+// --- Toast system ---
 let _toastSetters=[];
 function useToast(){
   const [toasts,setToasts]=React.useState([]);
@@ -342,7 +342,7 @@ function Spinner({size=14,color="#fff",style={}}) {
   );
 }
 
-// Animated page wrapper — triggers re-animation on key change
+// Animated page wrapper - triggers re-animation on key change
 function PageView({children, pageKey}) {
   return (
     <div key={pageKey} className="gh-page" style={{flex:1}}>
@@ -359,11 +359,11 @@ function TabView({children, tabKey}) {
     </div>
   );
 }
-// ─── Shared AppTopbar ───
+// --- Shared AppTopbar ---
 function AppTopbar({T, section, onHome, children}) {
   return (
     <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1600,margin:"0 auto"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1400,margin:"0 auto"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <button onClick={onHome} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",fontSize:13,fontWeight:500,borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease"}}
             onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
@@ -382,17 +382,17 @@ function AppTopbar({T, section, onHome, children}) {
   );
 }
 
-// ─── Shared AppTabs — pill style ───
+// --- Shared AppTabs - pill style ---
 function AppTabs({T, tabs, active, onChange, size="normal"}) {
   const isLarge = size==="large";
   return (
-    <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:60,zIndex:99}}>
-      <div style={{display:"inline-flex",background:T.bg,borderRadius:isLarge?12:10,padding:3,border:`1px solid ${T.border}`,gap:isLarge?3:2}}>
+    <div style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:60,zIndex:99}}>
+      <div style={{display:"inline-flex",background:T.bg,borderRadius:isLarge?12:10,padding:3,border:"1px solid "+T.border,gap:isLarge?3:2}}>
         {tabs.map(t=>{
           const isActive=active===t.id;
           return (
             <button key={t.id} onClick={()=>onChange(t.id)}
-              style={{padding:isLarge?"10px 24px":"7px 18px",fontSize:isLarge?14:13,fontWeight:isActive?700:500,borderRadius:isLarge?10:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"all 0.15s ease",boxShadow:isActive?`0 1px 4px rgba(0,0,0,0.15)`:"none",whiteSpace:"nowrap"}}>
+              style={{padding:isLarge?"10px 24px":"7px 18px",fontSize:isLarge?14:13,fontWeight:isActive?700:500,borderRadius:isLarge?10:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"all 0.15s ease",boxShadow:isActive?"0 1px 4px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
               {t.label}
               {t.badge!=null&&t.badge>0&&<span style={{fontSize:10,fontWeight:700,background:t.badgeColor||T.red,color:"#fff",borderRadius:4,padding:"1px 5px"}}>{t.badge}</span>}
             </button>
@@ -403,7 +403,25 @@ function AppTabs({T, tabs, active, onChange, size="normal"}) {
   );
 }
 
-// ─── Empty State ───
+
+// --- Avatar ---
+function Avatar({src, name, size=36, radius=10, T}) {
+  const [err, setErr] = React.useState(false);
+  const initials = (name||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+  const colors = ["#7c3aed","#2563eb","#059669","#d97706","#dc2626","#9333ea","#0891b2"];
+  const color = colors[(name||"").charCodeAt(0)%colors.length] || colors[0];
+  if(src&&!err) return (
+    <img src={src} alt={name||""} onError={()=>setErr(true)}
+      style={{width:size,height:size,borderRadius:radius,objectFit:"cover",border:`1.5px solid rgba(255,255,255,0.08)`,flexShrink:0,display:"block"}}/>
+  );
+  return (
+    <div style={{width:size,height:size,borderRadius:radius,background:color+"22",border:`1.5px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:size*0.35,fontWeight:700,color,letterSpacing:-0.5,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      {initials}
+    </div>
+  );
+}
+
+// --- Empty State ---
 function EmptyState({T, icon, title, description, action}) {
   return (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"80px 24px",textAlign:"center"}}>
@@ -417,7 +435,7 @@ function EmptyState({T, icon, title, description, action}) {
 
 
 
-// AsyncButton — muestra spinner automáticamente mientras el onClick async procesa
+// AsyncButton - muestra spinner automáticamente mientras el onClick async procesa
 function AsyncButton({onClick, children, style, disabled, ...props}) {
   const [loading, setLoading] = React.useState(false);
   const handleClick = async (e) => {
@@ -575,7 +593,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
                 <div style={{display:"flex",gap:10,alignItems:"center"}}>
                   <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
-                  <span style={{color:T.text,fontSize:14,fontWeight:500}}>{o.comprador||"—"}</span>
+                  <span style={{color:T.text,fontSize:14,fontWeight:500}}>{o.comprador||"--"}</span>
                 </div>
                 <span style={{fontSize:12,color:T.textSm,flexShrink:0}}>{fmtDate(o.fecha)}</span>
               </div>
@@ -592,9 +610,9 @@ function OrderSearchField({T, orders, onSelect, uid}) {
 }
 
 
-// ═══════════════════════════════════════════
+// ===========================================
 // APP RECLAMOS
-// ═══════════════════════════════════════════
+// ===========================================
 function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje}) {
   const [reclamos,setReclamos]=useState([]);
   const [plantillas,setPlantillas]=useState([]);
@@ -666,7 +684,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     productosEnvia:[{producto:"",cantidad:1}],
     historial:[],
     estadoRecepcion:"", estadoReembolso:"",
-    // Datos del cliente — se guardan para no depender del pedido en memoria
+    // Datos del cliente - se guardan para no depender del pedido en memoria
     clienteNombre: clienteData.nombre||"",
     clienteEmail:  clienteData.email||"",
     clienteTelefono: clienteData.telefono||"",
@@ -680,7 +698,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     try {
       const prev=reclamos.find(r=>r._docId===reclamoForm._docId);
       const estadoCambio=prev&&prev.estado!==reclamoForm.estado;
-      const histEntry=estadoCambio?[...(reclamoForm.historial||[]),{accion:`Estado → ${reclamoForm.estado}`,fecha:new Date().toISOString()}]:reclamoForm.historial||[];
+      const histEntry=estadoCambio?[...(reclamoForm.historial||[]),{accion:`Estado -> ${reclamoForm.estado}`,fecha:new Date().toISOString()}]:reclamoForm.historial||[];
       const p={
         orderNum:reclamoForm.orderNum, tipo:reclamoForm.tipo, motivo:reclamoForm.motivo,
         descripcion:reclamoForm.descripcion||"", estado:reclamoForm.estado,
@@ -720,7 +738,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   async function updateEstado(docId,nuevoEstado) {
     const r=reclamos.find(r=>r._docId===docId);
     if(!r) return;
-    const entry={accion:`Estado → ${nuevoEstado}`,fecha:new Date().toISOString()};
+    const entry={accion:`Estado -> ${nuevoEstado}`,fecha:new Date().toISOString()};
     await updateDoc(doc(db,"reclamos",docId),{estado:nuevoEstado,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(nuevoEstado==="Resuelto"&&r.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
   }
 
@@ -729,7 +747,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     setDeleteConfirm(null);setActiveReclamo(null);
   }
 
-  // ── Andreani polling: chequear trackings de devolución pendientes ──
+  // -- Andreani polling: chequear trackings de devolución pendientes --
   useEffect(()=>{
     if(!reclamos.length) return;
     // Solo monitorear reclamos con trackingDevolucion y estado no resuelto
@@ -790,13 +808,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   function dispararNotificacionBrowser(alertas) {
     if(!("Notification" in window)) return;
     const msg = alertas.length === 1
-      ? `📦 Paquete listo para retirar — Tracking ${alertas[0].tracking} (Pedido #${alertas[0].orderNum})`
+      ? `📦 Paquete listo para retirar - Tracking ${alertas[0].tracking} (Pedido #${alertas[0].orderNum})`
       : `📦 ${alertas.length} paquetes listos para retirar en sucursal`;
     if(Notification.permission === "granted") {
-      new Notification("Growith — Andreani 📦", { body: msg, icon: "/favicon.ico" });
+      new Notification("Growith - Andreani 📦", { body: msg, icon: "/favicon.ico" });
     } else if(Notification.permission !== "denied") {
       Notification.requestPermission().then(p => {
-        if(p === "granted") new Notification("Growith — Andreani 📦", { body: msg, icon: "/favicon.ico" });
+        if(p === "granted") new Notification("Growith - Andreani 📦", { body: msg, icon: "/favicon.ico" });
       });
     }
   }
@@ -812,14 +830,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     // Priorizar datos guardados en el reclamo; fallback a pedido en memoria
     const o=orders.find(o=>o.numero===reclamo.orderNum);
     const nombre=reclamo.clienteNombre||o?.comprador||reclamo.orderNum;
-    const email=reclamo.clienteEmail||o?.email||"—";
-    const telefono=reclamo.clienteTelefono||o?.telefono||"—";
-    const productos=(reclamo.clienteProductos||o?.productos?.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim())||[]).join(', ')||"—";
-    const monto=reclamo.clienteTotal||o?.total||"—";
+    const email=reclamo.clienteEmail||o?.email||"--";
+    const telefono=reclamo.clienteTelefono||o?.telefono||"--";
+    const productos=(reclamo.clienteProductos||o?.productos?.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim())||[]).join(', ')||"--";
+    const monto=reclamo.clienteTotal||o?.total||"--";
     let msg=plantilla.mensaje
       .replace(/\[nombre\]/g, nombre)
       .replace(/\[pedido\]/g, reclamo.orderNum)
-      .replace(/\[tracking\]/g, reclamo.trackingCambio||"—")
+      .replace(/\[tracking\]/g, reclamo.trackingCambio||"--")
       .replace(/\[email\]/g, email)
       .replace(/\[telefono\]/g, telefono)
       .replace(/\[producto\]/g, productos)
@@ -867,7 +885,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     return true;
   }),[reclamos,search,filterEstado,filterTipo,filterUrgentes,hace3]);
 
-  // Global search — usa API de TN directamente, no depende de orders local
+  // Global search - usa API de TN directamente, no depende de orders local
   const globalResults=useMemo(()=>{
     if(!searchGlobal||searchGlobal.length<1) return {pedidos:[],reclamos:[]};
     const s=searchGlobal.toLowerCase().trim();
@@ -990,7 +1008,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       .catch(()=>{});
   },[activeR?._docId]);
 
-  // ── Render ──
+  // -- Render --
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
 
@@ -1000,9 +1018,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
 
-      <div style={{padding:"16px 24px 64px"}}>
+      <div style={{padding:"24px 40px 64px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
 
-        {/* Tabs de navegación */}
+        {/* Tabs de navegación */
         <div style={{display:"inline-flex",background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:3,marginBottom:20,gap:2}}>
           {[{id:"dashboard",label:"Dashboard"},{id:"buscar",label:"Buscar pedido"},{id:"reclamos",label:"Lista"},{id:"config",label:"Plantillas"}].map(t=>{
             const isActive=view===t.id;
@@ -1016,7 +1034,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           })}
         </div>
 
-        {/* ── BANNER ANDREANI — Paquetes listos para retirar ── */}
+        {/* BANNER ANDREANI - Paquetes listos para retirar */}
         {andreaniAlertas.length > 0 && (
           <div style={{
             background: "linear-gradient(135deg, #052e16 0%, #0a2a1a 100%)",
@@ -1108,10 +1126,10 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                               <div style={{padding:"0 16px 16px",borderTop:`0.5px solid ${T.borderL}`}} onClick={e=>e.stopPropagation()}>
                                 {/* Info cliente */}
                                 <div style={{display:"flex",gap:16,flexWrap:"wrap",paddingTop:12,marginBottom:12}}>
-                                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Email</div><div style={{fontSize:13,color:T.text}}>{o.email||"—"}</div></div>
-                                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Teléfono</div><div style={{fontSize:13,color:T.text}}>{o.telefono||"—"}</div></div>
-                                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Pago</div><div style={{fontSize:13,color:T.text}}>{o.medioPago||"—"}</div></div>
-                                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Envío</div><div style={{fontSize:13,color:T.text}}>{o.esSucursal?"🏪 Sucursal":"🏠 Domicilio"} · {o.medioEnvio||"—"}</div></div>
+                                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Email</div><div style={{fontSize:13,color:T.text}}>{o.email||"--"}</div></div>
+                                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Teléfono</div><div style={{fontSize:13,color:T.text}}>{o.telefono||"--"}</div></div>
+                                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Pago</div><div style={{fontSize:13,color:T.text}}>{o.medioPago||"--"}</div></div>
+                                  <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Envío</div><div style={{fontSize:13,color:T.text}}>{o.esSucursal?"🏪 Sucursal":"🏠 Domicilio"} · {o.medioEnvio||"--"}</div></div>
                                 </div>
                                 {/* Dirección */}
                                 <div style={{background:T.bg,borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:12,color:T.text}}>
@@ -1171,7 +1189,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         return (
                           <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");setSearchGlobal("");}} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",marginBottom:6,cursor:"pointer",transition:"background 0.1s",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background=T.bg}>
                             <div>
-                              <div style={{fontSize:13,fontWeight:600,color:T.text}}>#{r.orderNum} · {o?.comprador||"—"}</div>
+                              <div style={{fontSize:13,fontWeight:600,color:T.text}}>#{r.orderNum} · {o?.comprador||"--"}</div>
                               <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{r.tipo} · {r.motivo}</div>
                             </div>
                             <Badge T={T} colors={sc}>{r.estado}</Badge>
@@ -1328,7 +1346,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           </div>
         )}
 
-        {/* ── BUSCAR ── */}
+        {/* -- BUSCAR -- */}
         {view==="buscar"&&(
           <div style={{padding:"28px 0 48px",maxWidth:700}}>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:-0.5}}>Buscar cliente o pedido</div>
@@ -1361,10 +1379,10 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                           {isOpen&&(
                             <div style={{padding:"0 18px 18px",borderTop:`0.5px solid ${T.borderL}`}} onClick={e=>e.stopPropagation()}>
                               <div style={{display:"flex",gap:16,flexWrap:"wrap",paddingTop:12,marginBottom:12}}>
-                                <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Email</div><div style={{fontSize:13,color:T.text}}>{o.email||"—"}</div></div>
-                                <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Teléfono</div><div style={{fontSize:13,color:T.text}}>{o.telefono||"—"}</div></div>
-                                <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Pago</div><div style={{fontSize:13,color:T.text}}>{o.medioPago||"—"}</div></div>
-                                <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Envío</div><div style={{fontSize:13,color:T.text}}>{o.esSucursal?"🏪 Sucursal":"🏠 Domicilio"} · {o.medioEnvio||"—"}</div></div>
+                                <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Email</div><div style={{fontSize:13,color:T.text}}>{o.email||"--"}</div></div>
+                                <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Teléfono</div><div style={{fontSize:13,color:T.text}}>{o.telefono||"--"}</div></div>
+                                <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Pago</div><div style={{fontSize:13,color:T.text}}>{o.medioPago||"--"}</div></div>
+                                <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600}}>Envío</div><div style={{fontSize:13,color:T.text}}>{o.esSucursal?"🏪 Sucursal":"🏠 Domicilio"} · {o.medioEnvio||"--"}</div></div>
                               </div>
                               <div style={{background:T.bg,borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:13,color:T.text}}>
                                 <div style={{fontWeight:600,color:T.textSm,fontSize:10,textTransform:"uppercase",marginBottom:4}}>Dirección</div>
@@ -1416,7 +1434,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                       return (
                         <div key={r._docId} onClick={()=>{setActiveReclamo(r._docId);setView("reclamos");}} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:8,cursor:"pointer",transition:"background 0.1s",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background=T.card}>
                           <div>
-                            <div style={{fontSize:14,fontWeight:600,color:T.text}}>#{r.orderNum} · {o?.comprador||"—"}</div>
+                            <div style={{fontSize:14,fontWeight:600,color:T.text}}>#{r.orderNum} · {o?.comprador||"--"}</div>
                             <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{r.tipo} · {r.motivo}</div>
                           </div>
                           <Badge T={T} colors={sc}>{r.estado}</Badge>
@@ -1436,7 +1454,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           </div>
         )}
 
-        {/* ── RECLAMOS LIST + PANEL UNIFICADO ── */}
+        {/* -- RECLAMOS LIST + PANEL UNIFICADO -- */}
         {view==="reclamos"&&(
           <div key="reclamos" className="gh-tab-content" style={{display:"grid",gridTemplateColumns:activeR?"1fr 420px":"1fr",gap:20,padding:"20px 0 48px",alignItems:"start"}}>
             {/* Lista */}
@@ -1476,7 +1494,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                           <div style={{flex:1}}>
                             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                               <span style={{fontWeight:700,fontSize:14,color:T.accent}}>#{r.orderNum}</span>
-                              <span style={{fontSize:14,fontWeight:600,color:T.text}}>{o?.comprador||"—"}</span>
+                              <span style={{fontSize:14,fontWeight:600,color:T.text}}>{o?.comprador||"--"}</span>
                               {dias>0&&<span style={{fontSize:10,background:urgente?T.redBg:T.surface,color:urgente?T.red:T.textSm,border:`0.5px solid ${urgente?T.red+"44":T.border}`,borderRadius:4,padding:"2px 6px",fontWeight:urgente?700:400}}>{dias}d</span>}
                             </div>
                             <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>{r.motivo}</div>
@@ -1535,7 +1553,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Cliente</div>
                     {/* Priorizar datos guardados en el reclamo, fallback al pedido en memoria */}
                     {(()=>{
-                      const nombre=activeR.clienteNombre||activeOrder?.comprador||"—";
+                      const nombre=activeR.clienteNombre||activeOrder?.comprador||"--";
                       const email=activeR.clienteEmail||activeOrder?.email||"";
                       const tel=activeR.clienteTelefono||activeOrder?.telefono||"";
                       const prods=activeR.clienteProductos?.length>0?activeR.clienteProductos:(activeOrder?.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim());
@@ -1615,7 +1633,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         <div style={{marginBottom:10}}>
                           <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:5}}>Recepción del producto</div>
                           <select style={{...iS,fontSize:12}} value={activeR.estadoRecepcion||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoRecepcion:e.target.value,updatedAt:serverTimestamp()});}}>
-                            <option value="">—</option>
+                            <option value="">-</option>
                             <option>Esperando envío</option>
                             <option>En tránsito</option>
                             <option>Recibido</option>
@@ -1625,7 +1643,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         <div>
                           <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:5}}>Estado del reembolso</div>
                           <select style={{...iS,fontSize:12}} value={activeR.estadoReembolso||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoReembolso:e.target.value,updatedAt:serverTimestamp()});}}>
-                            <option value="">—</option>
+                            <option value="">-</option>
                             <option>Pendiente</option>
                             <option>En proceso</option>
                             <option>Procesado</option>
@@ -1697,14 +1715,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           </div>
         )}
 
-        {/* ── CONFIGURACION PLANTILLAS ── */}
+        {/* -- CONFIGURACION PLANTILLAS -- */}
         {view==="config"&&(
           <div style={{padding:"24px 0 48px",maxWidth:720}}>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:-0.5}}>⚙️ Configuración de Reclamos</div>
 
             {/* SLA */}
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:24}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>⏱ SLA — Umbral de urgencia</div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>⏱ SLA - Umbral de urgencia</div>
               <div style={{fontSize:13,color:T.textMd,marginBottom:14}}>Un reclamo se marca como urgente (⚠) cuando lleva más de este tiempo sin resolverse.</div>
               <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                 {[1,2,3,5,7,10].map(d=>(
@@ -1769,10 +1787,10 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       </div>
 
       {/* Form Modal - Nuevo/Editar Reclamo */}
-      <Modal T={T} open={!!reclamoForm} onClose={()=>setReclamoForm(null)} title={reclamoForm?._docId?"Editar Reclamo":reclamoForm?.orderNum?`Nuevo Reclamo — #${reclamoForm.orderNum}`:"Nuevo Reclamo"} width={580}>
+      <Modal T={T} open={!!reclamoForm} onClose={()=>setReclamoForm(null)} title={reclamoForm?._docId?"Editar Reclamo":reclamoForm?.orderNum?`Nuevo Reclamo - #${reclamoForm.orderNum}`:"Nuevo Reclamo"} width={580}>
         {reclamoForm&&(
           <div>
-            {/* Buscar pedido — solo cuando es nuevo y sin número */}
+            {/* Buscar pedido - solo cuando es nuevo y sin número */}
             {!reclamoForm._docId&&!reclamoForm.orderNum&&(
               <Field T={T} label="Pedido" required>
                 <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={num=>{
@@ -1820,7 +1838,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             {reclamoForm.orderNum&&(<>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
                 <Field T={T} label="Tipo"><select style={iS} value={reclamoForm.tipo} onChange={e=>setReclamoForm(f=>({...f,tipo:e.target.value}))}>{TIPOS_R.map(t=><option key={t}>{t}</option>)}</select></Field>
-                <Field T={T} label="Motivo" required><select style={iS} value={reclamoForm.motivo} onChange={e=>setReclamoForm(f=>({...f,motivo:e.target.value}))}><option value="">—</option>{MOTIVOS_R.map(m=><option key={m}>{m}</option>)}</select></Field>
+                <Field T={T} label="Motivo" required><select style={iS} value={reclamoForm.motivo} onChange={e=>setReclamoForm(f=>({...f,motivo:e.target.value}))}><option value="">-</option>{MOTIVOS_R.map(m=><option key={m}>{m}</option>)}</select></Field>
               </div>
               {reclamoForm.tipo==="Cambio"&&(
                 <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:14,marginBottom:12}}>
@@ -1831,7 +1849,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase"}}>{side===0?"Nos devuelve":"Le enviamos"}</div>
                         {(reclamoForm[key]||[]).map((item,i)=>(
                           <div key={i} style={{display:"flex",gap:4,marginBottom:6,alignItems:"center"}}>
-                            <select style={{...iS,flex:1,fontSize:12,padding:"7px 8px"}} value={item.producto} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],producto:e.target.value};setReclamoForm(f=>({...f,[key]:arr}));}}><option value="">—</option>{PRODUCTOS.map(p=><option key={p}>{p}</option>)}</select>
+                            <select style={{...iS,flex:1,fontSize:12,padding:"7px 8px"}} value={item.producto} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],producto:e.target.value};setReclamoForm(f=>({...f,[key]:arr}));}}><option value="">-</option>{PRODUCTOS.map(p=><option key={p}>{p}</option>)}</select>
                             <input type="number" min={1} value={item.cantidad} onChange={e=>{const arr=[...reclamoForm[key]];arr[i]={...arr[i],cantidad:parseInt(e.target.value)||1};setReclamoForm(f=>({...f,[key]:arr}));}} style={{...iS,width:48,textAlign:"center",fontSize:12,padding:"7px 4px",flexShrink:0}}/>
                             {reclamoForm[key].length>1&&<button onClick={()=>setReclamoForm(f=>({...f,[key]:f[key].filter((_,j)=>j!==i)}))} style={{...BtnDanger(T),padding:"4px 6px",fontSize:12,flexShrink:0}}>✕</button>}
                           </div>
@@ -1890,7 +1908,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   );
 }
 
-// ─── Historial Reclamo Component ───
+// --- Historial Reclamo Component ---
 function HistorialReclamo({T, reclamo, onAdd}) {
   const [texto,setTexto]=useState("");
   const [guardando,setGuardando]=useState(false);
@@ -1926,7 +1944,7 @@ function HistorialReclamo({T, reclamo, onAdd}) {
 }
 
 
-// ─── Notas Rápidas Component ───
+// --- Notas Rápidas Component ---
 function NotasRapidas({T, canje, onAdd}) {
   const [texto,setTexto]=useState("");
   const [guardando,setGuardando]=useState(false);
@@ -1965,9 +1983,9 @@ function NotasRapidas({T, canje, onAdd}) {
   );
 }
 
-// ═══════════════════════════════════════════
+// ===========================================
 // APP CANJES
-// ═══════════════════════════════════════════
+// ===========================================
 // Componentes auxiliares para el detalle de canjes (deben ser top-level para que los hooks funcionen)
 function InlineField({value, onSave, placeholder, type="text", style={}, iS, T}) {
   const [editing, setEditing] = React.useState(false);
@@ -2083,7 +2101,7 @@ function CopyEditField({label, value, onSave, placeholder, icon, T, iS, readOnly
                       {hrefLabel||value}
                     </a>
                   : value
-              ) : <span style={{color:T.textSm,fontStyle:"italic"}}>{onSave&&!readOnly?"Click 2× para agregar...":"—"}</span>}
+              ) : <span style={{color:T.textSm,fontStyle:"italic"}}>{onSave&&!readOnly?"Click 2× para agregar...":"--"}</span>}
             </span>
             {hasValue&&<span style={{fontSize:10,color:copied?T.green:T.textSm,fontWeight:copied?700:400,flexShrink:0,transition:"color 0.2s"}}>
               {copied?"✓ copiado":"⎘"}
@@ -2205,7 +2223,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           const normalizar = s => s.toLowerCase()
             .replace(/anteojos soluna.*?blocker\s*/i,"")
             .replace(/[()]/g,"")
-            .replace(/[-–—]/g," ")
+            .replace(/[---]/g," ")
             .replace(/\s+/g," ")
             .trim();
           const n = normalizar(nombre);
@@ -2291,7 +2309,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const data = await r.json();
 
       if(!data.coupons||data.coupons.length===0){
-        setComError(`No se encontraron pedidos con cupones en el período ${comFechaDesde} → ${comFechaHasta}. Probá con un rango más amplio.`);
+        setComError(`No se encontraron pedidos con cupones en el período ${comFechaDesde} -> ${comFechaHasta}. Probá con un rango más amplio.`);
         setComLoading(false);
         return;
       }
@@ -2387,7 +2405,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo canje</button>
       </AppTopbar>
 
-      <div style={{padding:"16px 24px 64px"}}>
+      <div style={{padding:"24px 40px 64px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
         {/* Stats bar */}
         <div style={{display:"flex",gap:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
           {[
@@ -2470,7 +2488,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     onMouseEnter={e=>e.currentTarget.style.background=T.card}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      {c.foto?<img src={c.foto} style={{width:32,height:32,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:32,height:32,borderRadius:"50%",background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:T.textSm,flexShrink:0}}>👤</div>}
+                      <Avatar src={c.foto} name={c.influencer} size={36} radius={9} T={T}/>
                       <div>
                         <div style={{fontSize:14,fontWeight:700,color:T.text}}>{c.influencer}</div>
                         <div style={{display:"flex",gap:5,marginTop:2,alignItems:"center"}}>
@@ -2484,7 +2502,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       </div>
                     </div>
                     <span style={{fontSize:13,color:T.textMd}}>{c.red}</span>
-                    <span style={{fontSize:13,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.producto||"—"}</span>
+                    <span style={{fontSize:13,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.producto||"--"}</span>
                     <div style={{display:"flex",flexDirection:"column",gap:4}}>
                       <Badge T={T} colors={sc}>{c.estado}</Badge>
                       {(()=>{const diasEnviado=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24)):null;const sinContenido=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0)===0;return (c.estado==="Enviado"||c.estado==="Contenido pendiente")&&diasEnviado>=7&&sinContenido?<span style={{fontSize:10,background:T.orangeBg,color:T.orange,borderRadius:4,padding:"2px 6px",fontWeight:700,whiteSpace:"nowrap"}}>⚠ {diasEnviado}d sin contenido</span>:null;})()}
@@ -2541,7 +2559,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           onMouseLeave={e=>{e.currentTarget.style.borderColor=T.borderL;e.currentTarget.style.transform="none";}}>
                           {(()=>{const dias=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24)):null;const sinC=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0)===0;return (c.estado==="Enviado"||c.estado==="Contenido pendiente")&&dias>=7&&sinC?<div style={{background:T.orangeBg,border:`1px solid ${T.orange}44`,borderRadius:5,padding:"2px 7px",fontSize:10,fontWeight:700,color:T.orange,marginBottom:6}}>⚠ {dias}d sin contenido</div>:null;})()}
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                            {c.foto?<img src={c.foto} style={{width:28,height:28,borderRadius:"50%",objectFit:"cover",border:`1px solid ${T.border}`}} onError={e=>e.target.style.display="none"} alt=""/>:<div style={{width:28,height:28,borderRadius:"50%",background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:T.textSm}}>👤</div>}
+                            <Avatar src={c.foto} name={c.influencer} size={28} radius={7} T={T}/>
                             <div>
                               <div style={{fontSize:12,fontWeight:700,color:T.text,lineHeight:1.2}}>{c.influencer}</div>
                               {c.usuario&&<div style={{fontSize:11,color:T.accent}}>@{c.usuario}</div>}
@@ -2723,7 +2741,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           onMouseLeave={e=>e.currentTarget.style.background=r.usosPeriodo>0?T.green+"05":"transparent"}>
                           <div style={{fontFamily:"monospace",fontSize:13,fontWeight:700,color:T.accent}}>{r.code}</div>
                           <div style={{fontSize:12,color:T.textMd,fontWeight:500}}>{descLabel}</div>
-                          <div style={{fontSize:14,fontWeight:700,color:r.usosPeriodo>0?T.text:T.textSm}}>{r.usosPeriodo||"—"}</div>
+                          <div style={{fontSize:14,fontWeight:700,color:r.usosPeriodo>0?T.text:T.textSm}}>{r.usosPeriodo||"--"}</div>
                           <div>
                             {r.tieneCanje
                               ? <><div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.influencer}</div>{r.usuario&&<div style={{fontSize:11,color:T.textSm}}>@{r.usuario}</div>}</>
@@ -2732,14 +2750,14 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           </div>
                           {/* Bruto */}
                           <div>
-                            <div style={{fontSize:12,color:T.textSm}}>{r.ventasPeriodo>0?fmtARS(r.ventasPeriodo):"—"}</div>
+                            <div style={{fontSize:12,color:T.textSm}}>{r.ventasPeriodo>0?fmtARS(r.ventasPeriodo):"--"}</div>
                             {r.descuentoPeriodo>0&&<div style={{fontSize:10,color:T.red}}>-{fmtARS(r.descuentoPeriodo)}</div>}
                           </div>
                           {/* Neto */}
                           <div style={{fontSize:13,fontWeight:700,color:r.netoRecibido>0?T.green:T.textSm}}>
-                            {r.netoRecibido>0?fmtARS(r.netoRecibido):"—"}
+                            {r.netoRecibido>0?fmtARS(r.netoRecibido):"--"}
                           </div>
-                          {/* Comision % — solo el input */}
+                          {/* Comision % - solo el input */}
                           <div style={{display:"flex",alignItems:"center",gap:4}}>
                             <input
                               type="number" min="0" max="100" step="0.5"
@@ -2750,9 +2768,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                             />
                             <span style={{fontSize:11,color:T.textSm}}>%</span>
                           </div>
-                          {/* A pagar — columna separada */}
+                          {/* A pagar - columna separada */}
                           <div style={{fontSize:13,fontWeight:800,color:r.comisionPct>0&&r.netoRecibido>0?T.orange:T.textSm}}>
-                            {r.comisionPct>0&&r.netoRecibido>0?fmtARS(r.comisionPagar):"—"}
+                            {r.comisionPct>0&&r.netoRecibido>0?fmtARS(r.comisionPagar):"--"}
                           </div>
                         </div>
                       );
@@ -2835,10 +2853,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {/* Info influencer */}
               <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                  {c.foto
-                    ?<img src={c.foto} style={{width:48,height:48,borderRadius:10,objectFit:"cover",border:"1px solid "+T.border,flexShrink:0}} onError={e=>e.target.style.display="none"} alt=""/>
-                    :<div style={{width:48,height:48,borderRadius:10,background:T.surface,border:"1px solid "+T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>👤</div>
-                  }
+                  <Avatar src={c.foto} name={c.influencer} size={52} radius={12} T={T}/>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:6}}>
                       <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" T={T} iS={iS} style={{fontSize:17,fontWeight:800}}/>
@@ -3016,11 +3031,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         })()}
       </Modal>
 
-      {/* Modal NUEVO canje — form mínimo */}
+      {/* Modal NUEVO canje - form mínimo */}
       <Modal T={T} open={!!form&&!form._docId} onClose={()=>setForm(null)} title="Nuevo canje 🤝" width={460}>
         {form&&!form._docId&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            {/* Link Instagram — campo principal, auto-extrae @usuario */}
+            {/* Link Instagram - campo principal, auto-extrae @usuario */}
             <div>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Link de Instagram <span style={{color:T.red}}>*</span></label>
               <input autoFocus style={{...iS,fontSize:15,borderColor:form.linkInstagram?T.green:T.inputBorder}}
@@ -3053,7 +3068,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Teléfono WhatsApp</label>
               <input style={iS} value={form.telefono||""} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="5491155555555 (con código de país)"/>
             </div>
-            {/* Producto — select rápido */}
+            {/* Producto - select rápido */}
             <div>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Producto a enviar</label>
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
@@ -3135,9 +3150,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   );
 }
 
-// ═══════════════════════════════════════════
+// ===========================================
 // APP ENVIOS
-// ═══════════════════════════════════════════
+// ===========================================
 function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenerarCanje}) {
   const [tab,setTab]=useState("panel");
   const [selected,setSelected]=useState(new Set());
@@ -3198,7 +3213,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [sendBatchActive,setSendBatchActive]=useState(false);
   const iS=InputStyle(T);
 
-  // Pedidos exportables — usar tabOrders (local) no orders (global)
+  // Pedidos exportables - usar tabOrders (local) no orders (global)
   const exportables=useMemo(()=>{
     let base=tabOrders;
     if(filterTipoEnvio==="domicilio") base=base.filter(o=>!isSucursalOrder(o));
@@ -3242,7 +3257,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
 
-  // Andreani locations cache — lee del template xlsx directamente
+  // Andreani locations cache - lee del template xlsx directamente
   const andreaniLocsRef=_andreaniLocsCache;
   async function loadAndreaniLocations() {
     if(andreaniLocsRef.current) return andreaniLocsRef.current;
@@ -3307,7 +3322,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(byLoc) return byLoc;
     }
 
-    // 3. No encontrado — retornar null para mostrar modal
+    // 3. No encontrado - retornar null para mostrar modal
     return null;
   }
 
@@ -3510,7 +3525,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       return xml;
     }
 
-    // Sheet2: envíos a sucursal — col N = nombre sucursal (sin O,P,Q,R,S)
+    // Sheet2: envíos a sucursal - col N = nombre sucursal (sin O,P,Q,R,S)
     function buildSucursalRowsXml(ords, startRow){
       let xml='';
       ords.forEach(function(o,i){
@@ -3541,7 +3556,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const domRowsXml=buildDomicilioRowsXml(domicilioOrders,3);
     const sucRowsXml=buildSucursalRowsXml(sucursalOrders,3);
 
-    // Update sheet1 (domicilio) — limpiar filas de datos viejos antes de escribir
+    // Update sheet1 (domicilio) - limpiar filas de datos viejos antes de escribir
     const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
     const totalRows1=2+domicilioOrders.length;
     // Eliminar cualquier fila de datos existente (fila 3 en adelante) del template
@@ -3586,7 +3601,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     return ()=>window.removeEventListener("keydown", handleKey);
   },[selected, tab, exportModal, tabOrders]);
 
-  // Fetch local tab orders — independiente del estado global de orders
+  // Fetch local tab orders - independiente del estado global de orders
   async function fetchTabOrders(tab) {
     if(!user?.uid) return;
     if(tabCacheRef.current[tab]) {
@@ -3625,7 +3640,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   async function exportAndreani() {
     const selOrders=tabOrders.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
-    // Cerrar el modal INMEDIATAMENTE — el progreso se muestra en el overlay flotante
+    // Cerrar el modal INMEDIATAMENTE - el progreso se muestra en el overlay flotante
     setExportModal(false);
     setExporting(true);
     setExportProgress({step:"Cargando ubicaciones...",pct:10,current:0,total:selOrders.length});
@@ -3721,7 +3736,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     setTimeout(()=>exportAndreani(),100);
   }
 
-  // Parse PDF — shared logic using fetch+text extraction via server
+  // Parse PDF - shared logic using fetch+text extraction via server
   async function parsePdf(file, type) {
     const setter=type==="sku"?setSkuProcessing:setPdfProcessing;
     const resultSetter=type==="sku"?setSkuResults:setPdfResults;
@@ -3802,7 +3817,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(!resp.ok) throw new Error("Error al generar PDF: "+resp.status);
       setSkuProgress(85);
       const blob=await resp.blob();
-      setSkuBlob(blob);  // guardar — el usuario descarga cuando quiera
+      setSkuBlob(blob);  // guardar - el usuario descarga cuando quiera
       setSkuProgress(100);
       const notFound=results.filter(r=>!r.found).length;
       if(notFound>0) toast(`PDF listo - ${notFound} pedido${notFound>1?"s":""} no encontrado${notFound>1?"s":""}`, "warning");
@@ -3973,7 +3988,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         document.body
       )}
 
-      {/* Export progress — overlay prominente centrado via portal */}
+      {/* Export progress - overlay prominente centrado via portal */}
       {exporting&&ReactDOM.createPortal(
         <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)"}}>
           <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:340,maxWidth:420,boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.blue}44`,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -4019,7 +4034,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         document.body
       )}
 
-      {/* SKU + seguimientos progress — esquina inferior derecha */}
+      {/* SKU + seguimientos progress - esquina inferior derecha */}
       {((skuGenerating&&skuProgress>0)||seguimientoProgress.active)&&(()=>{
         const isSku=skuGenerating&&skuProgress>0;
         const isSeg=seguimientoProgress.active&&!isSku;
@@ -4059,9 +4074,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {id:"seguimientos",label:"📮  Seguimientos"},
       ]}/>
 
-      <div style={{padding:"20px 24px 64px"}}>
+      <div style={{padding:"24px 40px 64px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
 
-        {/* ── PANEL DE ENVIOS ── */}
+        {/* -- PANEL DE ENVIOS -- */}
         {tab==="panel"&&(
           <div>
             {/* Tabs */}
@@ -4230,7 +4245,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       {!hiddenCols.has("estado")&&<Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>}
                       {!hiddenCols.has("envio")&&<div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
                         <span>{o.esSucursal?"🏪":"🏠"}</span>
-                        <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"—"}</span>
+                        <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"--"}</span>
                         {o.esSucursal&&o.pickupDetails&&<span title="Puede requerir confirmar sucursal al exportar" style={{fontSize:10,color:T.yellow,flexShrink:0}}>⚠</span>}
                       </div>}
                       {!hiddenCols.has("total")&&<span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>}
@@ -4242,7 +4257,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           </div>
         )}
 
-        {/* ── HISTORIAL DE EXPORTACIONES ── */}
+        {/* -- HISTORIAL DE EXPORTACIONES -- */}
         {tab==="panel"&&(()=>{
           let hist=[];
           try{hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]").slice(0,5);}catch(e){}
@@ -4271,7 +4286,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           );
         })()}
 
-        {/* ── SKU EN ROTULOS ── */}
+        {/* -- SKU EN ROTULOS -- */}
         {tab==="sku"&&(
           <div key="sku" className="gh-tab-content" style={{maxWidth:720,margin:"0 auto",paddingBottom:48}}>
 
@@ -4413,7 +4428,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           </div>
         )}
 
-        {/* ── SEGUIMIENTOS ── */}
+        {/* -- SEGUIMIENTOS -- */}
         {tab==="seguimientos"&&(
           <div key="seguimientos" className="gh-tab-content" style={{maxWidth:720,margin:"0 auto",paddingBottom:48}}>
 
@@ -4506,7 +4521,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     const sending=sendingTracking[r.pedidoNum];
                     return (
                       <div key={i} style={{display:"grid",gridTemplateColumns:"80px 1fr 80px",gap:8,padding:"12px 18px",borderBottom:i<pdfResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:sentState==="ok"?T.green+"08":sentState==="error"?T.red+"08":"transparent",transition:"background 0.2s ease"}}>
-                        <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"—"}</span>
+                        <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"--"}</span>
                         <div>
                           {r.destinatario&&<div style={{fontSize:13,color:T.text,fontWeight:500,marginBottom:2}}>{r.destinatario}</div>}
                           <div style={{fontSize:11,color:T.textSm,fontFamily:"monospace",letterSpacing:"0.02em"}}>{r.tracking||"Sin tracking"}</div>
@@ -4632,7 +4647,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:4}}>
                   ⚠ {isSuc?"No se encontró la sucursal exacta":"No se encontró la localidad exacta"}
                 </div>
-                <div style={{fontSize:13,color:T.text}}>Pedido <strong>#{order.numero}</strong> — {order.comprador}</div>
+                <div style={{fontSize:13,color:T.text}}>Pedido <strong>#{order.numero}</strong> - {order.comprador}</div>
                 {isSuc&&order.pickupDetails&&(
                   <div style={{fontSize:12,color:T.text,marginTop:6,background:T.surface,borderRadius:8,padding:"8px 10px"}}>
                     <div style={{fontWeight:600,color:T.accent,marginBottom:2}}>{order.pickupDetails.name}</div>
@@ -4641,7 +4656,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 )}
                 {!isSuc&&<div style={{fontSize:12,color:T.textSm,marginTop:3}}>
-                  {order.direccion} {order.dirNumero}, {order.localidad||order.ciudad}, {order.provincia} — CP {order.cp}
+                  {order.direccion} {order.dirNumero}, {order.localidad||order.ciudad}, {order.provincia} - CP {order.cp}
                 </div>}
               </div>
               <div style={{marginBottom:14}}>
@@ -4766,9 +4781,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   );
 }
 
-// ═══════════════════════════════════════════
+// ===========================================
 // HOME SCREEN
-// ═══════════════════════════════════════════
+// ===========================================
 function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark}) {
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
   const nombre = user?.displayName?.split(" ")[0] || "ahí";
@@ -4815,7 +4830,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
             </p>
           </div>
 
-          {/* ── CARDS ── */}
+          {/* -- CARDS -- */}
           {(()=>{
             const CARD_ICONS = {
               reclamos: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
@@ -4849,7 +4864,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
             );
           })()}
 
-          {/* ── NOTIFICACIONES DE CANJES ── */}
+          {/* -- NOTIFICACIONES DE CANJES -- */}
           {notificacionesCanjes.length>0&&(
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
               <div
@@ -4862,7 +4877,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
                 <span style={{fontSize:11,background:T.orangeBg,color:T.orange,borderRadius:4,padding:"1px 7px",fontWeight:600,border:`1px solid ${T.orange}33`,marginLeft:2}}>{notificacionesCanjes.length}</span>
                 <span style={{marginLeft:"auto",fontSize:13,color:T.textSm,display:"inline-block",transition:"transform 0.25s cubic-bezier(0.4,0,0.2,1)",transform:notifCollapsed?"rotate(-90deg)":"rotate(0deg)"}}>▾</span>
               </div>
-              {/* maxHeight animation — no mount/unmount */}
+              {/* maxHeight animation - no mount/unmount */}
               <div style={{
                 maxHeight: notifCollapsed ? "0px" : `${notificacionesCanjes.length * 54}px`,
                 overflow: "hidden",
@@ -4883,7 +4898,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
                         <span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.canje.influencer}</span>
                         <span style={{fontSize:12,color:T.textSm}}>{a.msg}</span>
                       </div>
-                      <span style={{fontSize:11,color:T.textSm}}>Ver →</span>
+                      <span style={{fontSize:11,color:T.textSm}}>Ver -></span>
                     </div>
                   );
                 })}
@@ -4898,9 +4913,9 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 }
 
 
-// ═══════════════════════════════════════════
+// ===========================================
 // AUTH SCREEN
-// ═══════════════════════════════════════════
+// ===========================================
 function AuthScreen({T, darkMode, onToggleDark}) {
   const [mode,setMode]=useState("login"); // login | register
   const [email,setEmail]=useState("");
@@ -5019,9 +5034,9 @@ function AuthScreen({T, darkMode, onToggleDark}) {
   );
 }
 
-// ═══════════════════════════════════════════
+// ===========================================
 // CONFIG SCREEN
-// ═══════════════════════════════════════════
+// ===========================================
 function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   const [userDoc,setUserDoc]=useState(null);
   const [saving,setSaving]=useState(false);
@@ -5079,7 +5094,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:800,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
+            <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}><- Inicio</button>
             <span style={{color:T.borderL,fontSize:15}}>/</span>
             <span style={{fontWeight:700,fontSize:14,color:T.text}}>Configuración</span>
           </div>
@@ -5203,11 +5218,11 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   );
 }
 
-// ═══════════════════════════════════════════
+// ===========================================
 
-// ═══════════════════════════════════════════
-// APP PLANES — Página de suscripción
-// ═══════════════════════════════════════════
+// ===========================================
+// APP PLANES - Página de suscripción
+// ===========================================
 function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT_EMAIL}) {
   const iS=InputStyle(T);
   const [step,setStep]=useState("planes"); // planes | pago | enviado
@@ -5258,14 +5273,14 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   if(step==="pago") return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12}}>
-        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
+        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}><- Volver</button>
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pagar plan {planSelecc?.nombre}</span>
       </div>
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
         {/* Resumen */}
         <div style={{background:T.card,border:`0.5px solid ${planSelecc?.color}44`,borderLeft:`3px solid ${planSelecc?.color}`,borderRadius:12,padding:"18px 20px",marginBottom:24}}>
           <div style={{fontSize:13,color:T.textSm,marginBottom:4}}>Plan seleccionado</div>
-          <div style={{fontSize:20,fontWeight:700,color:planSelecc?.color}}>{planSelecc?.icon} {planSelecc?.nombre} — ${planSelecc?.precio} USDT/mes</div>
+          <div style={{fontSize:20,fontWeight:700,color:planSelecc?.color}}>{planSelecc?.icon} {planSelecc?.nombre} - ${planSelecc?.precio} USDT/mes</div>
         </div>
 
         {/* Dirección USDT */}
@@ -5304,7 +5319,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Topbar */}
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
-        <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
+        <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}><- Inicio</button>
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Planes y suscripción</span>
       </div>
 
@@ -5352,7 +5367,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         {planSel&&(
           <div style={{textAlign:"center"}}>
             <button onClick={()=>setStep("pago")} style={{...BtnPrimary(T),fontSize:15,padding:"13px 32px",justifyContent:"center"}}>
-              Continuar con plan {planSelecc?.nombre} →
+              Continuar con plan {planSelecc?.nombre} ->
             </button>
           </div>
         )}
@@ -5365,9 +5380,9 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   );
 }
 
-// ═══════════════════════════════════════════
-// APP ADMIN — Panel de administrador
-// ═══════════════════════════════════════════
+// ===========================================
+// APP ADMIN - Panel de administrador
+// ===========================================
 function AppAdmin({T, user, onBack}) {
   const iS=InputStyle(T);
   const [usuarios,setUsuarios]=useState([]);
@@ -5432,7 +5447,7 @@ function AppAdmin({T, user, onBack}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
+          <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}><- Inicio</button>
           <span style={{fontWeight:700,fontSize:15,color:T.yellow}}>👑 Panel Admin</span>
         </div>
         <AsyncButton onClick={loadData} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>⟳ Recargar</AsyncButton>
@@ -5469,7 +5484,7 @@ function AppAdmin({T, user, onBack}) {
             {pagos.length===0&&<div style={{textAlign:"center",padding:40,color:T.textSm}}>No hay pagos registrados</div>}
             {pagos.map(p=>{
               const u=usuarios.find(u=>u._id===p.uid);
-              const fecha=p.createdAt?.toDate?.()?.toLocaleDateString("es-AR")||"—";
+              const fecha=p.createdAt?.toDate?.()?.toLocaleDateString("es-AR")||"--";
               return (
                 <div key={p._id} style={{background:T.card,border:`0.5px solid ${p.estado==="pendiente"?T.yellow+"44":p.estado==="confirmado"?T.green+"44":T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:10}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
@@ -5529,7 +5544,7 @@ function AppAdmin({T, user, onBack}) {
 }
 
 // ROOT APP
-// ═══════════════════════════════════════════
+// ===========================================
 export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   const [page,setPage]=useState("home");
@@ -5659,7 +5674,7 @@ export default function App() {
     } catch(e){setOrdersStatus("error");}
   }
 
-  // Fetch orders on login — fetch empaquetar tab por defecto + total count
+  // Fetch orders on login - fetch empaquetar tab por defecto + total count
   useEffect(()=>{
     if(!user) return;
     try{ localStorage.removeItem(`growith_orders_${user.uid}`); localStorage.removeItem("growith_orders_v3"); }catch(e){}
