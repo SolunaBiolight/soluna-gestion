@@ -382,18 +382,22 @@ function AppTopbar({T, section, onHome, children}) {
   );
 }
 
-// ─── Shared AppTabs ───
-function AppTabs({T, tabs, active, onChange}) {
+// ─── Shared AppTabs — pill style ───
+function AppTabs({T, tabs, active, onChange, size="normal"}) {
+  const isLarge = size==="large";
   return (
-    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:60,zIndex:99}}>
-      <div style={{display:"flex",maxWidth:1600,margin:"0 auto",gap:2}}>
-        {tabs.map(t=>(
-          <button key={t.id} onClick={()=>onChange(t.id)}
-            style={{padding:"0 20px",height:44,fontSize:13,fontWeight:active===t.id?700:400,color:active===t.id?T.accent:T.textMd,background:"none",border:"none",borderBottom:active===t.id?`2px solid ${T.accent}`:"2px solid transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,marginBottom:-1,transition:"color 0.15s ease,border-color 0.15s ease",whiteSpace:"nowrap"}}>
-            {t.label}
-            {t.badge!=null&&t.badge>0&&<span style={{fontSize:10,fontWeight:700,background:t.badgeColor||T.red,color:"#fff",borderRadius:4,padding:"1px 5px",marginLeft:2}}>{t.badge}</span>}
-          </button>
-        ))}
+    <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:60,zIndex:99}}>
+      <div style={{display:"inline-flex",background:T.bg,borderRadius:isLarge?12:10,padding:3,border:`1px solid ${T.border}`,gap:isLarge?3:2}}>
+        {tabs.map(t=>{
+          const isActive=active===t.id;
+          return (
+            <button key={t.id} onClick={()=>onChange(t.id)}
+              style={{padding:isLarge?"10px 24px":"7px 18px",fontSize:isLarge?14:13,fontWeight:isActive?700:500,borderRadius:isLarge?10:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"all 0.15s ease",boxShadow:isActive?`0 1px 4px rgba(0,0,0,0.15)`:"none",whiteSpace:"nowrap"}}>
+              {t.label}
+              {t.badge!=null&&t.badge>0&&<span style={{fontSize:10,fontWeight:700,background:t.badgeColor||T.red,color:"#fff",borderRadius:4,padding:"1px 5px"}}>{t.badge}</span>}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -995,14 +999,22 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
         <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
-      <AppTabs T={T} active={view} onChange={v=>{setView(v);setActiveReclamo(null);}} tabs={[
-        {id:"dashboard",label:"Dashboard"},
-        {id:"buscar",label:"Buscar pedido"},
-        {id:"reclamos",label:"Lista",badge:stats.urgentes,badgeColor:T.red},
-        {id:"config",label:"Plantillas"},
-      ]}/>
 
       <div style={{padding:"16px 24px 64px"}}>
+
+        {/* Tabs de navegación */}
+        <div style={{display:"inline-flex",background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:3,marginBottom:20,gap:2}}>
+          {[{id:"dashboard",label:"Dashboard"},{id:"buscar",label:"Buscar pedido"},{id:"reclamos",label:"Lista"},{id:"config",label:"Plantillas"}].map(t=>{
+            const isActive=view===t.id;
+            return (
+              <button key={t.id} onClick={()=>{setView(t.id);setActiveReclamo(null);}}
+                style={{padding:"7px 16px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",boxShadow:isActive?`0 1px 4px rgba(0,0,0,0.15)`:"none",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                {t.label}
+                {t.id==="reclamos"&&stats.urgentes>0&&<span style={{fontSize:10,fontWeight:700,background:T.red,color:"#fff",borderRadius:4,padding:"1px 5px"}}>{stats.urgentes}</span>}
+              </button>
+            );
+          })}
+        </div>
 
         {/* ── BANNER ANDREANI — Paquetes listos para retirar ── */}
         {andreaniAlertas.length > 0 && (
@@ -2376,13 +2388,21 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       </AppTopbar>
 
       <div style={{padding:"16px 24px 64px"}}>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:"12px 0 0"}}>
-          <StatCard T={T} label="Total canjes" value={stats.total} color={T.textMd}/>
-          <StatCard T={T} label="Pend. envío" value={stats.pendientes} color={T.yellow}/>
-          <StatCard T={T} label="Enviados" value={stats.enviados} color={T.blue}/>
-          <StatCard T={T} label="Cont. pendiente" value={stats.contPend} color={T.orange}/>
-          <StatCard T={T} label="Publicados" value={stats.publicados} color={T.purple}/>
-          <StatCard T={T} label="Finalizados" value={stats.finalizados} color={T.green}/>
+        {/* Stats bar */}
+        <div style={{display:"flex",gap:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+          {[
+            {label:"Total",value:stats.total,color:T.textMd},
+            {label:"Pend. envío",value:stats.pendientes,color:T.yellow},
+            {label:"Enviados",value:stats.enviados,color:T.blue},
+            {label:"Cont. pendiente",value:stats.contPend,color:T.orange},
+            {label:"Publicados",value:stats.publicados,color:T.purple},
+            {label:"Finalizados",value:stats.finalizados,color:T.green},
+          ].map((s,i,arr)=>(
+            <div key={s.label} style={{flex:1,padding:"14px 16px",borderRight:i<arr.length-1?`1px solid ${T.borderL}`:"none",textAlign:"center"}}>
+              <div style={{fontSize:24,fontWeight:800,color:s.color,letterSpacing:-0.5,lineHeight:1}}>{s.value??<Spinner size={13} color={s.color}/>}</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:5,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
+            </div>
+          ))}
         </div>
 
         {/* Filtros rapidos de estado */}
@@ -2401,12 +2421,18 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           })}
         </div>
 
-        <AppTabs T={T} active={viewTab} onChange={setViewTab} tabs={[
-          {id:"lista",label:"Lista"},
-          {id:"kanban",label:"Kanban"},
-          {id:"ranking",label:"Ranking"},
-          {id:"comisiones",label:"Pagos Cupones"},
-        ]}/>
+        {/* Tabs de vista */}
+        <div style={{display:"flex",gap:0,background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:3,marginBottom:16,alignSelf:"flex-start",display:"inline-flex"}}>
+          {[{id:"lista",label:"Lista"},{id:"kanban",label:"Kanban"},{id:"ranking",label:"Ranking"},{id:"comisiones",label:"Pagos Cupones"}].map(t=>{
+            const isActive=viewTab===t.id;
+            return (
+              <button key={t.id} onClick={()=>setViewTab(t.id)}
+                style={{padding:"7px 16px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",boxShadow:isActive?`0 1px 4px rgba(0,0,0,0.15)`:"none",whiteSpace:"nowrap"}}>
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
 
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
           {viewTab!=="ranking"&&viewTab!=="comisiones"&&<>
@@ -4027,10 +4053,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           ⟳ Sincronizar
         </AsyncButton>
       </AppTopbar>
-      <AppTabs T={T} active={tab} onChange={setTab} tabs={[
-        {id:"panel",label:"Panel de Envíos"},
-        {id:"sku",label:"SKU en Rótulos"},
-        {id:"seguimientos",label:"Seguimientos"},
+      <AppTabs T={T} active={tab} onChange={setTab} size="large" tabs={[
+        {id:"panel",label:"📦  Panel de Envíos"},
+        {id:"sku",label:"🔖  SKU en Rótulos"},
+        {id:"seguimientos",label:"📮  Seguimientos"},
       ]}/>
 
       <div style={{padding:"20px 24px 64px"}}>
