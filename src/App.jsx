@@ -359,6 +359,59 @@ function TabView({children, tabKey}) {
     </div>
   );
 }
+// ─── Shared AppTopbar ───
+function AppTopbar({T, section, onHome, children}) {
+  return (
+    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1600,margin:"0 auto"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={onHome} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",fontSize:13,fontWeight:500,borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease"}}
+            onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
+            onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textMd;}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Inicio
+          </button>
+          <span style={{color:T.borderL,fontSize:16,fontWeight:200}}>|</span>
+          <span style={{fontWeight:700,fontSize:15,color:T.text,letterSpacing:-0.2}}>{section}</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Shared AppTabs ───
+function AppTabs({T, tabs, active, onChange}) {
+  return (
+    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:60,zIndex:99}}>
+      <div style={{display:"flex",maxWidth:1600,margin:"0 auto",gap:2}}>
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>onChange(t.id)}
+            style={{padding:"0 20px",height:44,fontSize:13,fontWeight:active===t.id?700:400,color:active===t.id?T.accent:T.textMd,background:"none",border:"none",borderBottom:active===t.id?`2px solid ${T.accent}`:"2px solid transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,marginBottom:-1,transition:"color 0.15s ease,border-color 0.15s ease",whiteSpace:"nowrap"}}>
+            {t.label}
+            {t.badge!=null&&t.badge>0&&<span style={{fontSize:10,fontWeight:700,background:t.badgeColor||T.red,color:"#fff",borderRadius:4,padding:"1px 5px",marginLeft:2}}>{t.badge}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Empty State ───
+function EmptyState({T, icon, title, description, action}) {
+  return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"80px 24px",textAlign:"center"}}>
+      <div style={{width:64,height:64,borderRadius:16,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,marginBottom:20}}>{icon}</div>
+      <div style={{fontSize:17,fontWeight:700,color:T.text,marginBottom:8}}>{title}</div>
+      {description&&<div style={{fontSize:14,color:T.textSm,maxWidth:320,lineHeight:1.6,marginBottom:action?20:0}}>{description}</div>}
+      {action}
+    </div>
+  );
+}
+
+
 
 // AsyncButton — muestra spinner automáticamente mientras el onClick async procesa
 function AsyncButton({onClick, children, style, disabled, ...props}) {
@@ -415,7 +468,7 @@ function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
   if(!open) return null;
   return ReactDOM.createPortal(
     <div onClick={onClose} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.65:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16,transition:"background 0.2s ease",fontFamily:"'Inter',system-ui,sans-serif"}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"90vh",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.45)",border:`0.5px solid ${T.border}`,display:"flex",flexDirection:"column",transform:visible?"translateY(0) scale(1)":"translateY(16px) scale(0.97)",opacity:visible?1:0,transition:"transform 0.22s cubic-bezier(0.34,1.26,0.64,1), opacity 0.18s ease"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"90vh",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.45)",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",transform:visible?"translateY(0) scale(1)":"translateY(16px) scale(0.97)",opacity:visible?1:0,transition:"transform 0.22s cubic-bezier(0.34,1.26,0.64,1), opacity 0.18s ease"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:`1px solid ${T.borderL}`,flexShrink:0}}>
           <div style={{margin:0,fontSize:17,fontWeight:700,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>{title}</div>
           <button onClick={onClose} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textMd}}>✕</button>
@@ -442,10 +495,10 @@ function Divider({T}) { return <div style={{height:1,background:T.borderL,margin
 
 function StatCard({T, label, value, color, sub}) {
   return (
-    <div style={{background:T.card,border:`0.5px solid ${T.border}`,borderRadius:14,padding:"18px 20px",flex:"1 1 120px",minWidth:120,position:"relative",overflow:"hidden"}}>
+    <div style={{background:T.card,border:`1px solid ${color&&color!==T.textMd?color+"33":T.border}`,borderRadius:12,padding:"14px 18px",flex:"1 1 110px",minWidth:110,position:"relative",overflow:"hidden",transition:"border-color 0.2s"}}>
       {color&&color!==T.textMd&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:color,borderRadius:"3px 0 0 3px"}}/>}
-      <div style={{fontSize:28,fontWeight:700,color,letterSpacing:-0.5,lineHeight:1}}>{value}</div>
-      <div style={{fontSize:12,color:T.textSm,marginTop:6,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.04em"}}>{label}</div>
+      <div style={{fontSize:26,fontWeight:800,color:color||T.text,letterSpacing:-0.5,lineHeight:1}}>{value??<Spinner size={14} color={color||T.accent}/>}</div>
+      <div style={{fontSize:11,color:T.textSm,marginTop:6,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</div>
       {sub&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>{sub}</div>}
     </div>
   );
@@ -463,7 +516,7 @@ function InputStyle(T) {
 }
 
 function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid,color:"#fff",letterSpacing:"0.01em"}; }
-function BtnSecondary(T) { return {border:`0.5px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.surface,color:T.text}; }
+function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.surface,color:T.text}; }
 function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
 function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
 
@@ -511,7 +564,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
         {loading&&<span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></span>}
       </div>
       {q.length>=2&&results.length>0&&(
-        <div style={{marginTop:6,background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:12,maxHeight:300,overflow:"auto"}}>
+        <div style={{marginTop:6,background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,maxHeight:300,overflow:"auto"}}>
           {localResults.length===0&&apiResults.length>0&&<div style={{padding:"6px 14px",fontSize:10,color:T.textSm,borderBottom:`1px solid ${T.borderL}`,textTransform:"uppercase",letterSpacing:0.5}}>Resultados de TN</div>}
           {results.map((o,i)=>(
             <div key={o.numero} onClick={()=>onSelect(o.numero)} style={{padding:"12px 16px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -528,8 +581,8 @@ function OrderSearchField({T, orders, onSelect, uid}) {
           ))}
         </div>
       )}
-      {q.length>=2&&!loading&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:14,border:`0.5px solid ${T.border}`,borderRadius:12}}>Sin resultados para "{q}"</div>}
-      {q.length>=2&&loading&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:13,border:`0.5px solid ${T.border}`,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/>Buscando en Tienda Nube...</div>}
+      {q.length>=2&&!loading&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:14,border:`1px solid ${T.border}`,borderRadius:12}}>Sin resultados para "{q}"</div>}
+      {q.length>=2&&loading&&results.length===0&&<div style={{marginTop:6,padding:14,textAlign:"center",color:T.textSm,fontSize:13,border:`1px solid ${T.border}`,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/>Buscando en Tienda Nube...</div>}
     </div>
   );
 }
@@ -938,26 +991,18 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
 
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1400,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onHome} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
-            <span style={{color:T.borderL,fontSize:15}}>/</span>
-            <span style={{fontWeight:700,fontSize:14,color:T.text}}>Reclamos</span>
-          </div>
-          <div style={{display:"flex",gap:6}}>
-            {["dashboard","buscar","reclamos","config"].map(v=>{
-              const labels={dashboard:"Dashboard",buscar:"Buscar",reclamos:"Lista",config:"Plantillas"};
-              const isCurrent=view===v;
-              return <button key={v} onClick={()=>{setView(v);setActiveReclamo(null);}} style={{padding:"6px 13px",fontSize:12,fontWeight:isCurrent?600:400,border:"none",borderRadius:7,background:isCurrent?T.accentSolid:"transparent",color:isCurrent?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>{labels[v]}{v==="reclamos"&&stats.urgentes>0&&<span style={{background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:4,padding:"1px 5px",marginLeft:2}}>{stats.urgentes}</span>}</button>;
-            })}
-            <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>+ Nuevo</button>
-            <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",opacity:ordersStatus==="loading"?0.5:1}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
-          </div>
-        </div>
-      </div>
+      <AppTopbar T={T} section="Reclamos" onHome={onHome}>
+        <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
+        <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo reclamo</button>
+      </AppTopbar>
+      <AppTabs T={T} active={view} onChange={v=>{setView(v);setActiveReclamo(null);}} tabs={[
+        {id:"dashboard",label:"Dashboard"},
+        {id:"buscar",label:"Buscar pedido"},
+        {id:"reclamos",label:"Lista",badge:stats.urgentes,badgeColor:T.red},
+        {id:"config",label:"Plantillas"},
+      ]}/>
 
-      <div style={{maxWidth:1400,margin:"0 auto",padding:"0 16px"}}>
+      <div style={{padding:"16px 24px 64px"}}>
 
         {/* ── BANNER ANDREANI — Paquetes listos para retirar ── */}
         {andreaniAlertas.length > 0 && (
@@ -2325,22 +2370,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   return (
     <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1280,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onHome} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
-            <span style={{color:T.borderL,fontSize:15}}>/</span>
-            <span style={{fontWeight:700,fontSize:14,color:T.text}}>Canjes</span>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={exportCSV} style={{...BtnSecondary(T),fontSize:12,color:T.textMd}}>Exportar CSV</button>
-            <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13}}>+ Nuevo</button>
-          </div>
-        </div>
-      </div>
+      <AppTopbar T={T} section="Canjes" onHome={onHome}>
+        <button onClick={exportCSV} style={{...BtnSecondary(T),fontSize:12,color:T.textMd}}>Exportar CSV</button>
+        <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo canje</button>
+      </AppTopbar>
 
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"0 16px"}}>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:"24px 0 0"}}>
+      <div style={{padding:"16px 24px 64px"}}>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:"12px 0 0"}}>
           <StatCard T={T} label="Total canjes" value={stats.total} color={T.textMd}/>
           <StatCard T={T} label="Pend. envío" value={stats.pendientes} color={T.yellow}/>
           <StatCard T={T} label="Enviados" value={stats.enviados} color={T.blue}/>
@@ -2365,15 +2401,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           })}
         </div>
 
-        {/* Tabs */}
-        <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginTop:20}}>
-          {[{id:"lista",label:"Lista",icon:"☰"},{id:"kanban",label:"Kanban",icon:"⬜"},{id:"ranking",label:"Ranking",icon:"★"},{id:"comisiones",label:"Pagos Cupones",icon:"$"}].map(t=>(
-            <button key={t.id} onClick={()=>setViewTab(t.id)}
-              style={{padding:"13px 20px",fontSize:14,fontWeight:viewTab===t.id?700:400,color:viewTab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:viewTab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"Inter,system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,marginBottom:-1,transition:"color 0.15s"}}>
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
+        <AppTabs T={T} active={viewTab} onChange={setViewTab} tabs={[
+          {id:"lista",label:"Lista"},
+          {id:"kanban",label:"Kanban"},
+          {id:"ranking",label:"Ranking"},
+          {id:"comisiones",label:"Pagos Cupones"},
+        ]}/>
 
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
           {viewTab!=="ranking"&&viewTab!=="comisiones"&&<>
@@ -2392,10 +2425,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         {/* LISTA */}
         {viewTab==="lista"&&<div key="lista" className="gh-tab-content" style={{paddingBottom:48}}>
           {filtered.length===0?(
-            <div style={{textAlign:"center",padding:"80px 20px"}}>
-              <div style={{fontSize:48,marginBottom:16}}>🤝</div>
-              <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>{canjes.length===0?"Sin canjes todavía":"Sin resultados"}</div>
-            </div>
+            <EmptyState T={T}
+              icon="🤝"
+              title={canjes.length===0?"Sin canjes todavía":"Sin resultados"}
+              description={canjes.length===0?"Creá tu primer canje para empezar a trackear influencers y contenido.":"Probá cambiando los filtros o el término de búsqueda."}
+              action={canjes.length===0&&<button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13,padding:"9px 20px"}}>+ Nuevo canje</button>}
+            />
           ):(
             <>
               <div style={{display:"grid",gridTemplateColumns:"1fr 90px 160px 190px 1fr 80px",gap:8,padding:"8px 16px",fontSize:12,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
@@ -3983,35 +4018,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       })()}
 
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:1280,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onHome} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
-            <span style={{color:T.borderL,fontSize:15}}>/</span>
-            <span style={{fontWeight:700,fontSize:14,color:T.text}}>Envíos</span>
-          </div>
-          <AsyncButton onClick={async()=>{
-            tabCacheRef.current={};
-            setTabOrders([]);
-            await Promise.all([fetchTabOrders(tabEnvio), fetchTabCounts(user?.uid)]);
-          }} style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px",color:T.textMd}}>
-            ⟳ Sincronizar
-          </AsyncButton>
-        </div>
-      </div>
+      <AppTopbar T={T} section="Envíos" onHome={onHome}>
+        <AsyncButton onClick={async()=>{
+          tabCacheRef.current={};
+          setTabOrders([]);
+          await Promise.all([fetchTabOrders(tabEnvio), fetchTabCounts(user?.uid)]);
+        }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.textMd}}>
+          ⟳ Sincronizar
+        </AsyncButton>
+      </AppTopbar>
+      <AppTabs T={T} active={tab} onChange={setTab} tabs={[
+        {id:"panel",label:"Panel de Envíos"},
+        {id:"sku",label:"SKU en Rótulos"},
+        {id:"seguimientos",label:"Seguimientos"},
+      ]}/>
 
-      {/* Tabs */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 16px"}}>
-        <div style={{display:"flex",maxWidth:1280,margin:"0 auto"}}>
-          {[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}].map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"13px 18px",fontSize:14,fontWeight:tab===t.id?700:400,color:tab===t.id?T.text:T.textMd,background:"none",border:"none",borderBottom:tab===t.id?`2.5px solid ${T.accent}`:"2.5px solid transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:-1,transition:"color 0.15s"}}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 16px 64px"}}>
+      <div style={{padding:"20px 24px 64px"}}>
 
         {/* ── PANEL DE ENVIOS ── */}
         {tab==="panel"&&(
@@ -4100,7 +4122,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 {showColMenu&&(
                   <>
                     <div onClick={()=>setShowColMenu(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
-                    <div style={{position:"absolute",top:"110%",right:0,background:T.card,border:`0.5px solid ${T.border}`,borderRadius:10,padding:"8px",zIndex:100,minWidth:160,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
+                    <div style={{position:"absolute",top:"110%",right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px",zIndex:100,minWidth:160,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
                       {[["estado","Estado"],["envio","Envío"],["total","Total"]].map(([col,label])=>(
                         <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",fontSize:13,color:T.text,borderRadius:6}}>
                           <input type="checkbox" checked={!hiddenCols.has(col)} onChange={()=>toggleCol(col)} style={{cursor:"pointer"}}/>
@@ -4457,7 +4479,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     const sentState=trackingSent[r.pedidoNum]; // "ok" | "error" | undefined
                     const sending=sendingTracking[r.pedidoNum];
                     return (
-                      <div key={i} style={{display:"grid",gridTemplateColumns:"80px 1fr 80px",gap:8,padding:"12px 18px",borderBottom:i<pdfResults.length-1?`0.5px solid ${T.borderL}`:"none",alignItems:"center",background:sentState==="ok"?T.green+"08":sentState==="error"?T.red+"08":"transparent",transition:"background 0.2s ease"}}>
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"80px 1fr 80px",gap:8,padding:"12px 18px",borderBottom:i<pdfResults.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:sentState==="ok"?T.green+"08":sentState==="error"?T.red+"08":"transparent",transition:"background 0.2s ease"}}>
                         <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"—"}</span>
                         <div>
                           {r.destinatario&&<div style={{fontSize:13,color:T.text,fontWeight:500,marginBottom:2}}>{r.destinatario}</div>}
@@ -4489,7 +4511,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       {/* Sucursal confirmed toast */}
       {copiedToast&&(
-        <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`0.5px solid ${T.border}`,borderRadius:8,padding:"8px 16px",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",animation:"growith-fadeIn 0.15s ease",fontSize:13,color:T.text}}>
+        <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 16px",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",animation:"growith-fadeIn 0.15s ease",fontSize:13,color:T.text}}>
           <span style={{fontSize:14}}>📋</span> {copiedToast}
         </div>
       )}
@@ -4514,7 +4536,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>
                 <span style={{fontSize:20,fontWeight:700,color:T.text,marginLeft:"auto"}}>{fmtMoney(o.total)}</span>
               </div>
-              <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Cliente</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px",fontSize:13}}>
                   {[["Nombre",o.comprador],["Email",o.email],["Teléfono",o.telefono],["DNI",o.dni],["Fecha",o.fecha],["Pago",o.estadoPago],["Medio de pago",o.medioPago]].map(([l,v])=>v?(
@@ -4525,7 +4547,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   ):null)}
                 </div>
               </div>
-              <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Envío</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px",fontSize:13}}>
                   {o.esSucursal?(<>
@@ -4549,7 +4571,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   ):null)}
                 </div>
               </div>
-              <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:18}}>
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:18}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Productos</div>
                 {o.productos.map((p,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<o.productos.length-1?`1px solid ${T.borderL}`:"none",fontSize:13}}>
@@ -5223,7 +5245,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         {/* Dirección USDT */}
         <div style={{marginBottom:24}}>
           <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Enviá exactamente ${planSelecc?.precio} USDT (TRC20) a esta dirección:</div>
-          <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
+          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
             <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"monospace"}}>{USDT_ADDRESS}</code>
             <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>📋 Copiar</button>
           </div>
@@ -5399,7 +5421,7 @@ function AppAdmin({T, user, onBack}) {
             {label:"Usuarios Total",value:usuarios.filter(u=>u.plan==="total").length,color:T.purple},
             {label:"Total usuarios",value:usuarios.length,color:T.textMd},
           ].map((s,i)=>(
-            <div key={i} style={{background:T.card,border:`0.5px solid ${T.border}`,borderLeft:`3px solid ${s.color}`,borderRadius:10,padding:"14px 18px",flex:"1 1 120px",minWidth:110}}>
+            <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${s.color}`,borderRadius:10,padding:"14px 18px",flex:"1 1 120px",minWidth:110}}>
               <div style={{fontSize:24,fontWeight:700,color:s.color}}>{s.value}</div>
               <div style={{fontSize:11,color:T.textSm,marginTop:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
             </div>
@@ -5454,7 +5476,7 @@ function AppAdmin({T, user, onBack}) {
             {filteredUsers.map(u=>{
               const expiry=u.planExpiry?.toDate?.()?.toLocaleDateString("es-AR")||null;
               return (
-                <div key={u._id} style={{background:T.card,border:`0.5px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                <div key={u._id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
                     <div style={{fontSize:13,fontWeight:600,color:T.text}}>{u.email||u.nombre}</div>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginTop:3}}>
