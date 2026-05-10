@@ -1020,8 +1020,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
       <div style={{padding:"24px 40px 64px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
 
-        {/* Tabs de navegación */
-        <div style={{display:"inline-flex",background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:3,marginBottom:20,gap:2}}>
+        {/* Tabs de navegacion */}
+        <div style={{display:"inline-flex",background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:3,marginBottom:20,gap:2}}>
           {[{id:"dashboard",label:"Dashboard"},{id:"buscar",label:"Buscar pedido"},{id:"reclamos",label:"Lista"},{id:"config",label:"Plantillas"}].map(t=>{
             const isActive=view===t.id;
             return (
@@ -5094,7 +5094,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:800,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}><- Inicio</button>
+            <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
             <span style={{color:T.borderL,fontSize:15}}>/</span>
             <span style={{fontWeight:700,fontSize:14,color:T.text}}>Configuración</span>
           </div>
@@ -5273,7 +5273,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   if(step==="pago") return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12}}>
-        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}><- Volver</button>
+        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pagar plan {planSelecc?.nombre}</span>
       </div>
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
@@ -5319,7 +5319,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Topbar */}
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
-        <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}><- Inicio</button>
+        <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Planes y suscripción</span>
       </div>
 
@@ -5447,7 +5447,7 @@ function AppAdmin({T, user, onBack}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}><- Inicio</button>
+          <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
           <span style={{fontWeight:700,fontSize:15,color:T.yellow}}>👑 Panel Admin</span>
         </div>
         <AsyncButton onClick={loadData} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>⟳ Recargar</AsyncButton>
