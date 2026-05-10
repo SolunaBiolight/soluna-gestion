@@ -58,20 +58,22 @@ function splitMultipart(body, boundary) {
 }
 
 // Calcula el layout optimo para N skus en una zona de W x H puntos
-// Devuelve { fontSize, cols, rows, fits, lh }
-function calcLayout(skuLines, zoneW, zoneH, maxFontSize = 6.5, minFontSize = 3.5) {
+// Prioridad: mantener font legible > agregar columnas > reducir font
+// Font minimo = 5pt (igual que etiqueta de 3 productos)
+function calcLayout(skuLines, zoneW, zoneH, maxFontSize = 6.5, minFontSize = 5.0) {
   const MAX_COLS = 3;
 
-  for (let cols = 1; cols <= MAX_COLS; cols++) {
-    const colW = zoneW / cols;
+  // Iterar primero por font size (grande a pequeño), dentro por columnas
+  // Así no achicamos la letra hasta agotar todas las opciones de columnas
+  for (let fs = maxFontSize; fs >= minFontSize; fs -= 0.25) {
+    const lh = fs + 1.5;
+    const rowsPerCol = Math.floor(zoneH / lh);
+    if (rowsPerCol < 1) continue;
 
-    for (let fs = maxFontSize; fs >= minFontSize; fs -= 0.25) {
-      const lh = fs + 1.5;
-      const rowsPerCol = Math.floor(zoneH / lh);
+    for (let cols = 1; cols <= MAX_COLS; cols++) {
+      const colW = zoneW / cols;
       const totalSlots = rowsPerCol * cols;
-      const charWidth = fs * 0.62; // estimacion ancho caracter HelveticaBold
-
-      // Verificar que cada linea entra en el ancho de columna
+      const charWidth = fs * 0.62;
       const maxChars = Math.floor(colW / charWidth);
       const allFit = skuLines.every(l => l.length <= maxChars);
 
@@ -81,12 +83,13 @@ function calcLayout(skuLines, zoneW, zoneH, maxFontSize = 6.5, minFontSize = 3.5
     }
   }
 
-  // Fallback: fuente minima, maximas columnas
+  // Fallback: 2 columnas con font minimo — nunca usar 1 columna con letra diminuta
   const fs = minFontSize;
   const lh = fs + 1.5;
   const rowsPerCol = Math.max(1, Math.floor(zoneH / lh));
-  const colW = zoneW / MAX_COLS;
-  return { fontSize: fs, cols: MAX_COLS, rowsPerCol, fits: false, lh, colW };
+  const cols = Math.min(MAX_COLS, Math.ceil(skuLines.length / Math.max(1, rowsPerCol)));
+  const colW = zoneW / cols;
+  return { fontSize: fs, cols, rowsPerCol, fits: false, lh, colW };
 }
 
 export default async function handler(req, res) {

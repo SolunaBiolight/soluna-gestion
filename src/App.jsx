@@ -4156,7 +4156,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
         {/* ── SKU EN ROTULOS ── */}
         {tab==="sku"&&(
-          <div key="sku" className="gh-tab-content" style={{maxWidth:720,paddingBottom:48}}>
+          <div key="sku" className="gh-tab-content" style={{maxWidth:720,margin:"0 auto",paddingBottom:48}}>
 
             {/* Upload zone */}
             <label htmlFor="sku-file-input" style={{display:"block",background:T.card,border:`2px dashed ${skuFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
