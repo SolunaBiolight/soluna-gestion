@@ -3788,16 +3788,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     if(!result.pedidoNum||!result.tracking) return;
     setSendingTracking(p=>({...p,[result.pedidoNum]:true}));
     try {
-      // update-shipping busca el ID interno de TN por número de pedido directamente
       const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
       const data=await res.json();
       if(res.ok&&!data.error) {
-        setTrackingSent(p=>({...p,[result.pedidoNum]:true}));
+        setTrackingSent(p=>({...p,[result.pedidoNum]:"ok"}));
       } else {
+        // Marcar como error (no como enviado) y tirar excepción para que sendAllTracking lo cuente
+        setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
         throw new Error(data.error||"Error al actualizar tracking en TN");
       }
     } catch(e){
-      alert("❌ Error pedido #"+result.pedidoNum+": "+e.message);
+      setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
+      throw e; // re-throw para que sendAllTracking lo cuente como fail
     }
     setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
   }
@@ -3807,15 +3809,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     setSendBatchActive(true);
     setSeguimientoProgress({active:true,current:0,total:pending.length,last:"",done:false,ok:0,fail:0});
     let ok=0,fail=0;
+    const errors=[];
     for(let i=0;i<pending.length;i++){
       const r=pending[i];
       setSeguimientoProgress(p=>({...p,current:i+1,last:`Pedido #${r.pedidoNum}`}));
-      try { await sendTracking(r); ok++; setSeguimientoProgress(p=>({...p,ok})); }
-      catch(_) { fail++; setSeguimientoProgress(p=>({...p,fail})); }
+      try {
+        await sendTracking(r);
+        ok++;
+        setSeguimientoProgress(p=>({...p,ok}));
+      } catch(e) {
+        fail++;
+        errors.push({pedido:r.pedidoNum,msg:e.message});
+        setSeguimientoProgress(p=>({...p,fail}));
+      }
     }
     setSendBatchActive(false);
-    setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail});
-    setTimeout(()=>setSeguimientoProgress({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0}),6000);
+    setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors});
   }
 
   return (
@@ -3872,7 +3881,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <div style={{fontSize:13,color:T.textSm}}>{seguimientoProgress.total} seguimiento{seguimientoProgress.total!==1?"s":""} procesados</div>
             </div>
             {/* Cards resultado */}
-            <div style={{display:"flex",gap:12,marginBottom:24}}>
+            <div style={{display:"flex",gap:12,marginBottom:seguimientoProgress.errors?.length>0?16:24}}>
               <div style={{flex:1,background:T.green+"12",border:`1px solid ${T.green}33`,borderRadius:12,padding:"16px",textAlign:"center"}}>
                 <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{seguimientoProgress.ok}</div>
                 <div style={{fontSize:12,color:T.green,fontWeight:600}}>enviados OK</div>
@@ -3884,6 +3893,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 </div>
               )}
             </div>
+            {/* Detalle errores */}
+            {seguimientoProgress.errors?.length>0&&(
+              <div style={{background:T.redBg,border:`1px solid ${T.red}22`,borderRadius:10,padding:"12px 14px",marginBottom:20,maxHeight:140,overflowY:"auto"}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Detalle de errores</div>
+                {seguimientoProgress.errors.map((e,i)=>(
+                  <div key={i} style={{fontSize:12,color:T.red,marginBottom:4}}>
+                    <span style={{fontWeight:600}}>#{e.pedido}:</span> {e.msg}
+                  </div>
+                ))}
+              </div>
+            )}
             <button onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"12px"}}>
               Cerrar
             </button>
@@ -4378,7 +4398,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             {/* Resultados */}
             {pdfResults.length>0&&(()=>{
               const pending=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
-              const sentCount=Object.keys(trackingSent).length;
+              const sentCount=Object.values(trackingSent).filter(v=>v==="ok").length;
+              const errorCount=Object.values(trackingSent).filter(v=>v==="error").length;
               const pct=pdfResults.length>0?Math.round((sentCount/pdfResults.length)*100):0;
 
               return (<div>
@@ -4433,26 +4454,27 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     <span>Pedido</span><span>Destinatario + Tracking</span><span></span><span>Estado</span>
                   </div>
                   {pdfResults.map((r,i)=>{
-                    const sent=trackingSent[r.pedidoNum];
+                    const sentState=trackingSent[r.pedidoNum]; // "ok" | "error" | undefined
                     const sending=sendingTracking[r.pedidoNum];
                     return (
-                      <div key={i} style={{display:"grid",gridTemplateColumns:"80px 1fr 140px 80px",gap:8,padding:"12px 18px",borderBottom:i<pdfResults.length-1?`0.5px solid ${T.borderL}`:"none",alignItems:"center",background:sent?T.green+"08":"transparent",transition:"background 0.2s ease"}}>
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"80px 1fr 80px",gap:8,padding:"12px 18px",borderBottom:i<pdfResults.length-1?`0.5px solid ${T.borderL}`:"none",alignItems:"center",background:sentState==="ok"?T.green+"08":sentState==="error"?T.red+"08":"transparent",transition:"background 0.2s ease"}}>
                         <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"—"}</span>
                         <div>
                           {r.destinatario&&<div style={{fontSize:13,color:T.text,fontWeight:500,marginBottom:2}}>{r.destinatario}</div>}
                           <div style={{fontSize:11,color:T.textSm,fontFamily:"monospace",letterSpacing:"0.02em"}}>{r.tracking||"Sin tracking"}</div>
                         </div>
-                        <div/>
-                        <div style={{flexShrink:0,display:"flex",justifyContent:"flex-end"}}>
-                          {sent
+                        <div style={{display:"flex",justifyContent:"flex-end"}}>
+                          {sentState==="ok"
                             ? <span style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Ok</span>
-                            : sending
-                              ? <Spinner size={13} color={T.yellow}/>
-                              : sendBatchActive
-                                ? <span style={{fontSize:11,color:T.textSm}}>En cola...</span>
-                                : r.tracking&&r.pedidoNum
-                                  ? <AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Enviar</AsyncButton>
-                                  : <span style={{fontSize:11,color:T.red}}>Sin datos</span>
+                            : sentState==="error"
+                              ? <span style={{fontSize:12,color:T.red,fontWeight:600}}>✗ Error</span>
+                              : sending
+                                ? <Spinner size={13} color={T.yellow}/>
+                                : sendBatchActive
+                                  ? <span style={{fontSize:11,color:T.textSm}}>En cola...</span>
+                                  : r.tracking&&r.pedidoNum
+                                    ? <AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Enviar</AsyncButton>
+                                    : <span style={{fontSize:11,color:T.red}}>Sin datos</span>
                           }
                         </div>
                       </div>
