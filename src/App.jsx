@@ -2309,7 +2309,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const data = await r.json();
 
       if(!data.coupons||data.coupons.length===0){
-        setComError(`No se encontraron pedidos con cupones en el período ${comFechaDesde} -> ${comFechaHasta}. Probá con un rango más amplio.`);
+        setComError(`No se encontraron pedidos con cupones en el período ${comFechaDesde} → ${comFechaHasta}. Probá con un rango más amplio.`);
         setComLoading(false);
         return;
       }
@@ -5367,7 +5367,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         {planSel&&(
           <div style={{textAlign:"center"}}>
             <button onClick={()=>setStep("pago")} style={{...BtnPrimary(T),fontSize:15,padding:"13px 32px",justifyContent:"center"}}>
-              Continuar con plan {planSelecc?.nombre} ->
+              Continuar con plan {planSelecc?.nombre} →
             </button>
           </div>
         )}
