@@ -414,10 +414,10 @@ function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
   },[open]);
   if(!open) return null;
   return ReactDOM.createPortal(
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.65:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16,transition:"background 0.2s ease"}}>
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.65:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16,transition:"background 0.2s ease",fontFamily:"'Inter',system-ui,sans-serif"}}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"90vh",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.45)",border:`0.5px solid ${T.border}`,display:"flex",flexDirection:"column",transform:visible?"translateY(0) scale(1)":"translateY(16px) scale(0.97)",opacity:visible?1:0,transition:"transform 0.22s cubic-bezier(0.34,1.26,0.64,1), opacity 0.18s ease"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:`1px solid ${T.borderL}`,flexShrink:0}}>
-          <h2 style={{margin:0,fontSize:17,fontWeight:700,color:T.text}}>{title}</h2>
+          <div style={{margin:0,fontSize:17,fontWeight:700,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>{title}</div>
           <button onClick={onClose} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textMd}}>✕</button>
         </div>
         <div style={{padding:"18px 24px 24px",overflowY:"auto",flex:1}}>{children}</div>
@@ -3385,12 +3385,43 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     // Sheet1: envíos a domicilio
     function buildDomicilioRowsXml(ords, startRow){
       let xml='';
+
+      // Extrae el numero de calle de forma inteligente
+      function extractStreetNum(direccion, dirNumero) {
+        // Si ya viene el numero separado, usarlo
+        const n = String(dirNumero||"").trim();
+        if(n && !isNaN(n) && parseFloat(n) > 0) return n;
+        // Intentar extraer numero de la direccion: buscar patron \d+ al final o tras km/nro/n°
+        const dir = String(direccion||"");
+        // Patron "km 1301", "KM1301", "nro 234", "N° 123"
+        const kmMatch = dir.match(/(?:km|kms?)\s*(\d+)/i);
+        if(kmMatch) return kmMatch[1];
+        // Numero al final de la cadena
+        const endNum = dir.match(/\s(\d{1,6})\s*(?:[a-z])?$/i);
+        if(endNum) return endNum[1];
+        // Numero precedido de espacio en la cadena
+        const anyNum = dir.match(/\b(\d{1,6})\b/);
+        if(anyNum) return anyNum[1];
+        // Sin numero: Andreani acepta "S/N" pero requiere el campo
+        return "S/N";
+      }
+
+      // Separa la calle del numero cuando estan en el mismo campo
+      function extractStreetName(direccion, dirNumero) {
+        const dir = cleanAndreani(direccion||"");
+        // Si ya hay numero separado, devolver la calle limpia
+        const n = String(dirNumero||"").trim();
+        if(n && !isNaN(n) && parseFloat(n) > 0) return dir;
+        // Quitar el numero extraido del nombre de calle
+        return dir.replace(/\s*\d{1,6}\s*$/, "").replace(/\s{2,}/g," ").trim() || dir;
+      }
+
       ords.forEach(function(o,i){
         const rn=startRow+i;
         const {nombre,apellido,telCod,telNum}=getPersonData(o);
         const ubicacion=locationOverridesRef.current[o.numero]||findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad)||locs.list.find(l=>l.startsWith('BUENOS AIRES'))||locs.list[0]||"";
-        const dirNum=String(o.dirNumero||"");
-        const direccion=cleanField(o.direccion||"");
+        const dirNum=extractStreetNum(o.direccion, o.dirNumero);
+        const direccion=extractStreetName(o.direccion, o.dirNumero);
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -3406,7 +3437,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
           sC('N'+rn,cleanAndreani(direccion)),
-          (dirNum&&!isNaN(dirNum)&&dirNum!==''&&parseFloat(dirNum)>0)?nC('O'+rn,parseFloat(dirNum)):sC('O'+rn,''),
+          (dirNum&&dirNum!=="S/N"&&!isNaN(dirNum)&&parseFloat(dirNum)>0)?nC('O'+rn,parseFloat(dirNum)):sC('O'+rn,dirNum||'S/N'),
           sC('P'+rn,cleanField(o.piso||"")),
           sC('Q'+rn,""),
           sC('R'+rn,ubicacion),
