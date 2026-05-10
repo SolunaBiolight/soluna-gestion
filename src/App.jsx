@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import ReactDOM from "react-dom";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs, orderBy } from "firebase/firestore";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "firebase/auth";
@@ -405,17 +406,24 @@ function LensDots({productos}) {
 }
 
 function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
+  const [visible, setVisible] = React.useState(false);
+  React.useEffect(()=>{
+    if(open) { document.body.style.overflow='hidden'; requestAnimationFrame(()=>setVisible(true)); }
+    else { document.body.style.overflow=''; setVisible(false); }
+    return()=>{ document.body.style.overflow=''; };
+  },[open]);
   if(!open) return null;
-  return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"92vh",overflow:"visible",boxShadow:"0 32px 80px rgba(0,0,0,0.35)",border:`0.5px solid ${T.border}`,display:"flex",flexDirection:"column"}}>
+  return ReactDOM.createPortal(
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.65:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16,transition:"background 0.2s ease"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"90vh",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.45)",border:`0.5px solid ${T.border}`,display:"flex",flexDirection:"column",transform:visible?"translateY(0) scale(1)":"translateY(16px) scale(0.97)",opacity:visible?1:0,transition:"transform 0.22s cubic-bezier(0.34,1.26,0.64,1), opacity 0.18s ease"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:`1px solid ${T.borderL}`,flexShrink:0}}>
           <h2 style={{margin:0,fontSize:17,fontWeight:700,color:T.text}}>{title}</h2>
           <button onClick={onClose} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,width:32,height:32,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textMd}}>✕</button>
         </div>
-        <div style={{padding:"18px 24px 24px",overflow:"auto",flex:1}}>{children}</div>
+        <div style={{padding:"18px 24px 24px",overflowY:"auto",flex:1}}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
