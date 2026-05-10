@@ -225,8 +225,8 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
                   background 0.15s ease, border-color 0.15s ease,
                   box-shadow 0.15s ease !important;
     }
-    button:not(:disabled):hover  { filter: brightness(1.08); }
-    button:not(:disabled):active { transform: scale(0.95) !important; opacity: 0.82 !important; }
+    button:not(:disabled):hover  { opacity: 0.88; }
+    button:not(:disabled):active { transform: scale(0.95) !important; opacity: 0.75 !important; }
     button:disabled { cursor: not-allowed !important; opacity: 0.4 !important; }
 
     /* ── Links ── */
@@ -281,7 +281,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     .gh-chip {
       transition: all 0.16s cubic-bezier(0.22,1,0.36,1) !important;
     }
-    .gh-chip:hover  { transform: translateY(-1px) !important; filter: brightness(1.1); }
+    .gh-chip:hover  { transform: translateY(-1px) !important; opacity: 0.88; }
     .gh-chip:active { transform: scale(0.95) !important; }
 
     /* ── Toggle switch ── */
