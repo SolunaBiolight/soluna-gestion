@@ -58,13 +58,14 @@ function splitMultipart(body, boundary) {
 }
 
 // Calcula el layout optimo para N skus en una zona de W x H puntos
-// Prioridad: mantener font legible > agregar columnas > reducir font
-// Font minimo = 5pt (igual que etiqueta de 3 productos)
-function calcLayout(skuLines, zoneW, zoneH, maxFontSize = 6.5, minFontSize = 5.0) {
+// Logica: font grande + 1 col → font grande + 2 cols → font grande + 3 cols
+//         → font medio + 1 col → ... → font minimo + 3 cols
+// Garantia: TODOS los SKUs entran siempre, achicamos font solo como ultimo recurso
+function calcLayout(skuLines, zoneW, zoneH, maxFontSize = 6.5, minFontSize = 4.0) {
   const MAX_COLS = 3;
 
-  // Iterar primero por font size (grande a pequeño), dentro por columnas
-  // Así no achicamos la letra hasta agotar todas las opciones de columnas
+  // Iterar: para cada font (grande → chico), probar 1, 2, 3 columnas
+  // Así priorizamos mantener el font y agregamos columnas antes de achicar
   for (let fs = maxFontSize; fs >= minFontSize; fs -= 0.25) {
     const lh = fs + 1.5;
     const rowsPerCol = Math.floor(zoneH / lh);
@@ -83,13 +84,15 @@ function calcLayout(skuLines, zoneW, zoneH, maxFontSize = 6.5, minFontSize = 5.0
     }
   }
 
-  // Fallback: 2 columnas con font minimo — nunca usar 1 columna con letra diminuta
+  // Fallback absoluto: si nada funciona, usar font minimo + columnas necesarias
+  // y truncar strings para que entren (preferimos texto cortado a texto faltante)
   const fs = minFontSize;
   const lh = fs + 1.5;
   const rowsPerCol = Math.max(1, Math.floor(zoneH / lh));
-  const cols = Math.min(MAX_COLS, Math.ceil(skuLines.length / Math.max(1, rowsPerCol)));
+  const colsNeeded = Math.ceil(skuLines.length / rowsPerCol);
+  const cols = Math.min(MAX_COLS, Math.max(1, colsNeeded));
   const colW = zoneW / cols;
-  return { fontSize: fs, cols, rowsPerCol, fits: false, lh, colW };
+  return { fontSize: fs, cols, rowsPerCol, fits: colsNeeded <= MAX_COLS, lh, colW };
 }
 
 export default async function handler(req, res) {

@@ -3101,7 +3101,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
   const [copiedToast,setCopiedToast]=useState(null);
   const [orderDetail,setOrderDetail]=useState(null);
-  const [skuGenerating,setSkuGenerating]=useState(false);
+  const [skuBlob,setSkuBlob]=useState(null);
   const [skuProgress,setSkuProgress]=useState(0);
   function copyToClipboard(text, label) {
     navigator.clipboard.writeText(text).then(()=>{
@@ -3740,15 +3740,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(!resp.ok) throw new Error("Error al generar PDF: "+resp.status);
       setSkuProgress(85);
       const blob=await resp.blob();
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement("a");
-      a.href=url; a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`; a.click();
-      URL.revokeObjectURL(url);
+      setSkuBlob(blob);  // guardar — el usuario descarga cuando quiera
       setSkuProgress(100);
       const notFound=results.filter(r=>!r.found).length;
-      if(notFound>0) toast(`PDF generado - ${notFound} pedido${notFound>1?"s":""} no encontrado${notFound>1?"s":""}`, "warning");
-      else toast(`PDF con SKUs listo - ${results.length} rotulos procesados`, "success");
-      setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},1800);
+      if(notFound>0) toast(`PDF listo - ${notFound} pedido${notFound>1?"s":""} no encontrado${notFound>1?"s":""}`, "warning");
+      else toast(`PDF listo para descargar - ${results.length} rotulos`, "success");
+      setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},600);
     } catch(e){ toast("Error al generar PDF: "+e.message,"error"); setSkuGenerating(false); setSkuProgress(0); }
   }
 
@@ -4160,7 +4157,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
             {/* Upload zone */}
             <label htmlFor="sku-file-input" style={{display:"block",background:T.card,border:`2px dashed ${skuFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
-              <input id="sku-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(false);setSkuResults([]);setSkuGenerating(false);setSkuProgress(0);parsePdf(f,"sku");}}}/>
+              <input id="sku-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(false);setSkuResults([]);setSkuGenerating(false);setSkuProgress(0);setSkuBlob(null);parsePdf(f,"sku");}}}/>
               {skuProcessing
                 ? <div>
                     <div style={{width:44,height:44,border:`3px solid ${T.accentSolid}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",margin:"0 auto 14px"}}/>
@@ -4211,7 +4208,26 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 </div>
 
-                {/* Chips de totales por SKU */}
+                {/* Botón de descarga prominente cuando está listo */}
+                {skuBlob&&!skuGenerating&&(
+                  <div style={{background:T.green+"12",border:`1.5px solid ${T.green}55`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:14}}>
+                    <div style={{width:36,height:36,borderRadius:10,background:T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <span style={{fontSize:18}}>✓</span>
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,fontWeight:700,color:T.green}}>PDF listo para descargar</div>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{found.length} rótulos con SKUs · {notFound.length>0?`${notFound.length} sin match`:"todos encontrados"}</div>
+                    </div>
+                    <button onClick={()=>{
+                      const url=URL.createObjectURL(skuBlob);
+                      const a=document.createElement("a");
+                      a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
+                      URL.revokeObjectURL(url);
+                    }} style={{...BtnPrimary(T),padding:"10px 22px",fontSize:14,fontWeight:700,flexShrink:0}}>
+                      Descargar PDF
+                    </button>
+                  </div>
+                )}
                 {Object.keys(skuTotals).length>0&&(
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
                     <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>Resumen despacho</div>
@@ -4255,9 +4271,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
                 {/* Botones acción */}
                 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                  {found.length>0&&!skuGenerating&&(
-                    <AsyncButton onClick={()=>autoGenerateSkuPdf(skuResults,skuFile)} style={{...BtnPrimary(T),flex:1,justifyContent:"center",fontSize:14,padding:"12px 20px"}}>
-                      Regenerar PDF con SKUs
+                  {found.length>0&&(
+                    <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
+                      {skuGenerating?"Generando...":"Regenerar PDF"}
                     </AsyncButton>
                   )}
                   {Object.keys(skuTotals).length>0&&(
@@ -4267,7 +4283,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       const a=document.createElement("a");
                       a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(lines.join("\n"));
                       a.download="resumen-sku.txt";a.click();
-                    }} style={{...BtnSecondary(T),padding:"12px 18px",fontSize:13}}>
+                    }} style={{...BtnSecondary(T),padding:"10px 18px",fontSize:13}}>
                       Exportar resumen
                     </button>
                   )}
