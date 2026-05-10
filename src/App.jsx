@@ -3525,19 +3525,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const selOrders=tabOrders.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
     setExporting(true);
-    await new Promise(r=>setTimeout(r,100));
+    setExportProgress({step:"Cargando ubicaciones Andreani...",pct:10,current:0,total:selOrders.length});
+    await new Promise(r=>setTimeout(r,80));
     try {
       const locs=await loadAndreaniLocations();
+      setExportProgress({step:"Verificando direcciones...",pct:30,current:0,total:selOrders.length});
       const domicilioOrders=selOrders.filter(o=>!isSucursalOrder(o));
       const sucursalOrders=selOrders.filter(o=>isSucursalOrder(o));
 
-      // Check unresolved domicilios
       const unresolvedDom=domicilioOrders.filter(o=>{
         if(locationOverridesRef.current[o.numero]) return false;
         return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
       });
-
-      // Check unresolved sucursales
       const unresolvedSuc=sucursalOrders.filter(o=>{
         if(sucursalOverridesRef.current[o.numero]) return false;
         const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
@@ -3546,29 +3545,54 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       if(unresolvedDom.length>0||unresolvedSuc.length>0){
         setExporting(false);
+        setExportProgress({step:"",pct:0,current:0,total:0});
+        setExportModal(false);
         await resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs);
         return;
       }
 
-      const date=new Date().toISOString().split('T')[0];
-      // Filtrar pedidos excluidos manualmente
       const finalOrders=selOrders.filter(o=>
         locationOverridesRef.current[o.numero]!=="EXCLUIR" &&
         sucursalOverridesRef.current[o.numero]!=="EXCLUIR"
       );
-      if(!finalOrders.length){ alert("Todos los pedidos fueron excluidos."); setExporting(false); return; }
+      if(!finalOrders.length){
+        toast("Todos los pedidos fueron excluidos","warning");
+        setExportModal(false);
+        setExporting(false);
+        setExportProgress({step:"",pct:0,current:0,total:0});
+        return;
+      }
+
+      setExportProgress({step:`Generando planilla para ${finalOrders.length} pedidos...`,pct:60,current:finalOrders.length,total:finalOrders.length});
       const b=await generateAndreaniXlsx(finalOrders,locs);
-      const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';a.click();
-      // Guardar historial de exportaciones
+      setExportProgress({step:"Descargando...",pct:90,current:finalOrders.length,total:finalOrders.length});
+      const date=new Date().toISOString().split('T')[0];
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(b);
+      a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';
+      a.click();
       try{
         const hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");
         hist.unshift({fecha:new Date().toISOString(),cantidad:finalOrders.length,pedidos:finalOrders.map(o=>o.numero)});
         localStorage.setItem("growith_exportHistory",JSON.stringify(hist.slice(0,50)));
-      }catch(e){}
-      setExportModal(false);setSelected(new Set());
-      locationOverridesRef.current={};sucursalOverridesRef.current={};
-    } catch(e){alert("Error al exportar: "+e.message);}
-    setExporting(false);
+      }catch(_){}
+      setExportProgress({step:"Listo",pct:100,current:finalOrders.length,total:finalOrders.length});
+      toast(`${finalOrders.length} etiquetas generadas correctamente`,"success");
+      setTimeout(()=>{
+        setExportModal(false);
+        setSelected(new Set());
+        locationOverridesRef.current={};
+        sucursalOverridesRef.current={};
+        setExportProgress({step:"",pct:0,current:0,total:0});
+      },800);
+    } catch(e){
+      console.error("exportAndreani error:", e);
+      toast("Error al exportar: "+e.message,"error");
+      setExportModal(false);
+      setExportProgress({step:"",pct:0,current:0,total:0});
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs) {
