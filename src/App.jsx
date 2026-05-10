@@ -3402,8 +3402,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         // Numero precedido de espacio en la cadena
         const anyNum = dir.match(/\b(\d{1,6})\b/);
         if(anyNum) return anyNum[1];
-        // Sin numero: Andreani acepta "S/N" pero requiere el campo
-        return "S/N";
+        // Sin numero: Andreani no acepta S/N, usar 0
+        return "0";
       }
 
       // Separa la calle del numero cuando estan en el mismo campo
@@ -3437,7 +3437,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
           sC('N'+rn,cleanAndreani(direccion)),
-          (dirNum&&dirNum!=="S/N"&&!isNaN(dirNum)&&parseFloat(dirNum)>0)?nC('O'+rn,parseFloat(dirNum)):sC('O'+rn,dirNum||'S/N'),
+          (dirNum&&dirNum!=="0"&&!isNaN(dirNum)&&parseFloat(dirNum)>0)?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,parseFloat(dirNum)||0),
           sC('P'+rn,cleanField(o.piso||"")),
           sC('Q'+rn,""),
           sC('R'+rn,ubicacion),
@@ -3826,15 +3826,61 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           </div>
         </div>
       )}
-      {/* Progress overlay - active */}
-      {(exporting||(skuGenerating&&skuProgress>0)||seguimientoProgress.active)&&(()=>{
-        const isExport=exporting;
-        const isSku=skuGenerating&&skuProgress>0&&!exporting;
-        const isSeg=seguimientoProgress.active&&!exporting&&!isSku;
-        const pct=isExport?exportProgress.pct:isSku?skuProgress:Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100);
-        const step=isExport?exportProgress.step:isSku?(skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rotulos...":"Generando PDF..."):("Enviando "+seguimientoProgress.current+"/"+seguimientoProgress.total);
+
+      {/* Export progress — overlay prominente centrado via portal */}
+      {exporting&&ReactDOM.createPortal(
+        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)"}}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:340,maxWidth:420,boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.blue}44`,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            {/* Spinner + título */}
+            <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
+              <div style={{width:44,height:44,borderRadius:12,background:T.blue+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                {exportProgress.pct>=100
+                  ? <span style={{fontSize:22,color:T.green}}>✓</span>
+                  : <div style={{width:22,height:22,border:`3px solid ${T.blue}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
+                }
+              </div>
+              <div>
+                <div style={{fontSize:16,fontWeight:700,color:T.text}}>Generando etiquetas</div>
+                <div style={{fontSize:13,color:T.textSm,marginTop:2}}>{exportProgress.step||"Iniciando..."}</div>
+              </div>
+            </div>
+
+            {/* Barra de progreso */}
+            <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
+              <div style={{height:"100%",width:`${exportProgress.pct||0}%`,background:exportProgress.pct>=100?T.green:T.blue,borderRadius:20,transition:"width 0.4s ease"}}/>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:T.textSm}}>
+              <span>{exportProgress.current>0?`${exportProgress.current} pedidos`:""}</span>
+              <span style={{fontWeight:700,color:exportProgress.pct>=100?T.green:T.blue}}>{exportProgress.pct||0}%</span>
+            </div>
+
+            {/* Pasos */}
+            <div style={{display:"flex",gap:6,marginTop:20}}>
+              {[
+                {label:"Ubicaciones",done:exportProgress.pct>=30},
+                {label:"Verificar",done:exportProgress.pct>=50},
+                {label:"Generar",done:exportProgress.pct>=90},
+                {label:"Descargar",done:exportProgress.pct>=100},
+              ].map((s,i)=>(
+                <div key={i} style={{flex:1,textAlign:"center"}}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:s.done?T.green:T.borderL,margin:"0 auto 4px",transition:"background 0.3s ease"}}/>
+                  <div style={{fontSize:9,color:s.done?T.green:T.textSm,fontWeight:s.done?600:400,transition:"color 0.3s ease"}}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* SKU + seguimientos progress — esquina inferior derecha */}
+      {((skuGenerating&&skuProgress>0)||seguimientoProgress.active)&&(()=>{
+        const isSku=skuGenerating&&skuProgress>0;
+        const isSeg=seguimientoProgress.active&&!isSku;
+        const pct=isSku?skuProgress:Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100);
+        const step=isSku?(skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rotulos...":"Generando PDF..."):("Enviando "+seguimientoProgress.current+"/"+seguimientoProgress.total);
         const isDone=pct>=100;
-        const accent=isDone?T.green:isExport?T.blue:isSku?T.purple:T.green;
+        const accent=isDone?T.green:isSku?T.purple:T.green;
         return (
           <div style={{position:"fixed",bottom:28,right:28,zIndex:9998,width:300,background:T.card,border:`1px solid ${accent}44`,borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.3)",padding:"16px 18px"}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
