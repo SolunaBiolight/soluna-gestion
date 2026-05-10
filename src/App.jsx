@@ -3821,24 +3821,75 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
 
-      {/* Progress overlay - seguimientos summary */}
-      {seguimientoProgress.done&&!seguimientoProgress.active&&(
-        <div style={{position:"fixed",bottom:28,right:28,zIndex:9998,width:300,background:T.card,border:`1px solid ${seguimientoProgress.fail>0?T.orange:T.green}44`,borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.3)",padding:"16px 18px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-            <div style={{width:28,height:28,borderRadius:8,background:seguimientoProgress.fail>0?T.orange+"22":T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              <span style={{fontSize:14,color:seguimientoProgress.fail>0?T.orange:T.green}}>{seguimientoProgress.fail>0?"!":"✓"}</span>
+      {/* Seguimientos batch progress modal */}
+      {seguimientoProgress.active&&ReactDOM.createPortal(
+        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:360,maxWidth:440,boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.green}44`}}>
+            <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
+              <div style={{width:44,height:44,borderRadius:12,background:T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <div style={{width:22,height:22,border:`3px solid ${T.green}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:16,fontWeight:700,color:T.text}}>Enviando seguimientos</div>
+                <div style={{fontSize:13,color:T.textSm,marginTop:2}}>{seguimientoProgress.last||"Iniciando..."}</div>
+              </div>
             </div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text}}>Seguimientos enviados</div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{seguimientoProgress.ok} ok{seguimientoProgress.fail>0?" · "+seguimientoProgress.fail+" con error":""} · {seguimientoProgress.total} total</div>
+            {/* Barra */}
+            <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
+              <div style={{height:"100%",width:`${Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100)}%`,background:T.green,borderRadius:20,transition:"width 0.3s ease"}}/>
             </div>
-            <button onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:16}}>x</button>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:T.textSm,marginBottom:20}}>
+              <span>{seguimientoProgress.current} de {seguimientoProgress.total}</span>
+              <span style={{fontWeight:700,color:T.green}}>{Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100)}%</span>
+            </div>
+            {/* Contador ok/fail en tiempo real */}
+            <div style={{display:"flex",gap:12}}>
+              <div style={{flex:1,background:T.green+"12",border:`1px solid ${T.green}33`,borderRadius:10,padding:"10px 14px",textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:800,color:T.green}}>{seguimientoProgress.ok}</div>
+                <div style={{fontSize:11,color:T.textSm}}>enviados</div>
+              </div>
+              <div style={{flex:1,background:seguimientoProgress.fail>0?T.red+"12":T.borderL+"44",border:`1px solid ${seguimientoProgress.fail>0?T.red+"33":T.borderL}`,borderRadius:10,padding:"10px 14px",textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:800,color:seguimientoProgress.fail>0?T.red:T.textSm}}>{seguimientoProgress.fail}</div>
+                <div style={{fontSize:11,color:T.textSm}}>con error</div>
+              </div>
+            </div>
           </div>
-          <div style={{display:"flex",gap:3}}>
-            <div style={{flex:seguimientoProgress.ok||1,height:5,background:T.green,borderRadius:10}}/>
-            {seguimientoProgress.fail>0&&<div style={{flex:seguimientoProgress.fail,height:5,background:T.red,borderRadius:10}}/>}
+        </div>,
+        document.body
+      )}
+
+      {/* Seguimientos resultado final */}
+      {seguimientoProgress.done&&!seguimientoProgress.active&&ReactDOM.createPortal(
+        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)",fontFamily:"'Inter',system-ui,sans-serif"}}
+          onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:360,maxWidth:440,boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.fail>0?T.orange:T.green}44`}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{textAlign:"center",marginBottom:24}}>
+              <div style={{fontSize:52,marginBottom:10}}>{seguimientoProgress.fail===0?"✅":seguimientoProgress.ok===0?"❌":"⚠️"}</div>
+              <div style={{fontSize:18,fontWeight:800,color:T.text,marginBottom:6}}>
+                {seguimientoProgress.fail===0?"Todos enviados":seguimientoProgress.ok===0?"Error al enviar":"Envío parcial"}
+              </div>
+              <div style={{fontSize:13,color:T.textSm}}>{seguimientoProgress.total} seguimiento{seguimientoProgress.total!==1?"s":""} procesados</div>
+            </div>
+            {/* Cards resultado */}
+            <div style={{display:"flex",gap:12,marginBottom:24}}>
+              <div style={{flex:1,background:T.green+"12",border:`1px solid ${T.green}33`,borderRadius:12,padding:"16px",textAlign:"center"}}>
+                <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{seguimientoProgress.ok}</div>
+                <div style={{fontSize:12,color:T.green,fontWeight:600}}>enviados OK</div>
+              </div>
+              {seguimientoProgress.fail>0&&(
+                <div style={{flex:1,background:T.red+"12",border:`1px solid ${T.red}33`,borderRadius:12,padding:"16px",textAlign:"center"}}>
+                  <div style={{fontSize:28,fontWeight:800,color:T.red,letterSpacing:-1}}>{seguimientoProgress.fail}</div>
+                  <div style={{fontSize:12,color:T.red,fontWeight:600}}>con error</div>
+                </div>
+              )}
+            </div>
+            <button onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"12px"}}>
+              Cerrar
+            </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Export progress — overlay prominente centrado via portal */}
@@ -4296,60 +4347,120 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
         {/* ── SEGUIMIENTOS ── */}
         {tab==="seguimientos"&&(
-          <div key="seguimientos" className="gh-tab-content" style={{maxWidth:700}}>
-            <div style={{fontSize:14,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
-              Subí el PDF de rótulos de Andreani ya impresos. La app extrae el N° de seguimiento y pedido, y los envía a Tienda Nube automáticamente.
-            </div>
+          <div key="seguimientos" className="gh-tab-content" style={{maxWidth:720,margin:"0 auto",paddingBottom:48}}>
 
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:20,marginBottom:16}}>
-              <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>1. Seleccioná el PDF de rótulos Andreani</div>
-              <input type="file" accept=".pdf" onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfPending(false);setPdfResults([]);setTrackingSent({});parsePdf(f,"tracking");}}} style={{...iS,cursor:"pointer",fontSize:13}}/>
-            </div>
-
-            {pdfProcessing&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:32,textAlign:"center",marginBottom:16}}>
-                <div style={{fontSize:28,marginBottom:10}}>⏳</div>
-                <div style={{fontSize:15,fontWeight:600,color:T.text}}>Analizando PDF...</div>
-                <div style={{fontSize:13,color:T.textSm,marginTop:6}}>Extrayendo números de seguimiento</div>
-              </div>
-            )}
-
-            {pdfResults.length>0&&(
-              <div style={{background:T.card,border:`0.5px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                <div style={{padding:"14px 18px",borderBottom:`0.5px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                  <div>
-                    <span style={{fontSize:14,fontWeight:700,color:T.text}}>{pdfResults.length} etiquetas detectadas</span>
-                    {Object.keys(trackingSent).length>0&&<span style={{fontSize:12,color:T.green,marginLeft:10}}>· {Object.keys(trackingSent).length} enviados ✓</span>}
+            {/* Upload zone */}
+            <label htmlFor="seg-file-input" style={{display:"block",background:T.card,border:`2px dashed ${pdfFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
+              <input id="seg-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfPending(false);setPdfResults([]);setTrackingSent({});parsePdf(f,"tracking");}}}/>
+              {pdfProcessing
+                ? <div>
+                    <div style={{width:44,height:44,border:`3px solid ${T.accentSolid}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",margin:"0 auto 14px"}}/>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Analizando PDF...</div>
+                    <div style={{fontSize:13,color:T.textSm}}>Extrayendo números de seguimiento</div>
                   </div>
-                  <AsyncButton onClick={sendAllTracking} style={{...BtnPrimary(T),fontSize:13,padding:"8px 18px"}}>
-                    ↑ Enviar seguimientos ({pdfResults.filter(r=>!trackingSent[r.pedidoNum]).length} pendientes)
-                  </AsyncButton>
-                </div>
-                {pdfResults.map((r,i)=>{
-                  const sent=trackingSent[r.pedidoNum];
-                  const sending=sendingTracking[r.pedidoNum];
-                  return (
-                    <div key={i} style={{padding:"12px 18px",borderBottom:i<pdfResults.length-1?`0.5px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,background:sent?T.greenBg:"transparent",transition:"background 0.3s"}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
-                          <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"—"}</span>
-                          {r.destinatario&&<span style={{fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.destinatario}</span>}
-                        </div>
-                        <div style={{fontSize:11,color:T.textSm,fontFamily:"monospace",letterSpacing:"0.03em"}}>{r.tracking||"Sin tracking"}</div>
-                      </div>
-                      <div style={{flexShrink:0}}>
-                        {sent?<span style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Enviado</span>
-                        :sending?<Spinner size={13} color={T.yellow}/>
-                        :sendBatchActive?<span style={{fontSize:11,color:T.textSm}}>En cola...</span>
-                        :r.tracking&&r.pedidoNum?
-                          <AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>↑ Enviar</AsyncButton>
-                        :<span style={{fontSize:11,color:T.red}}>Sin datos</span>}
+                : pdfFile
+                  ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12}}>
+                      <span style={{fontSize:28}}>📄</span>
+                      <div style={{textAlign:"left"}}>
+                        <div style={{fontSize:14,fontWeight:600,color:T.text}}>{pdfFile.name}</div>
+                        <div style={{fontSize:12,color:T.accent,marginTop:2}}>Click para cambiar</div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  : <div>
+                      <div style={{fontSize:40,marginBottom:12}}>📮</div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Subí el PDF de rótulos Andreani</div>
+                      <div style={{fontSize:13,color:T.textSm,marginBottom:16,lineHeight:1.6}}>Extrae el N° de seguimiento de cada etiqueta<br/>y lo envía automáticamente a Tienda Nube</div>
+                      <div style={{display:"inline-block",background:T.accentSolid,color:"#fff",borderRadius:8,padding:"8px 22px",fontSize:13,fontWeight:600}}>Seleccionar PDF</div>
+                    </div>
+              }
+            </label>
+
+            {/* Resultados */}
+            {pdfResults.length>0&&(()=>{
+              const pending=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
+              const sentCount=Object.keys(trackingSent).length;
+              const pct=pdfResults.length>0?Math.round((sentCount/pdfResults.length)*100):0;
+
+              return (<div>
+                {/* Cards resumen */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Detectados</div>
+                    <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:-1}}>{pdfResults.length}</div>
+                    <div style={{fontSize:12,color:T.textSm}}>seguimientos</div>
+                  </div>
+                  <div style={{background:T.card,border:`1px solid ${sentCount>0?T.green+"44":T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Enviados</div>
+                    <div style={{fontSize:28,fontWeight:800,color:sentCount>0?T.green:T.textSm,letterSpacing:-1}}>{sentCount}</div>
+                    <div style={{fontSize:12,color:T.textSm}}>a Tienda Nube</div>
+                  </div>
+                  <div style={{background:T.card,border:`1px solid ${pending.length>0?T.orange+"44":T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{fontSize:11,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Pendientes</div>
+                    <div style={{fontSize:28,fontWeight:800,color:pending.length>0?T.orange:T.textSm,letterSpacing:-1}}>{pending.length}</div>
+                    <div style={{fontSize:12,color:T.textSm}}>sin enviar</div>
+                  </div>
+                </div>
+
+                {/* Barra progreso si hay enviados */}
+                {sentCount>0&&(
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:16}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                      <span style={{fontSize:13,fontWeight:600,color:T.text}}>Progreso de envío</span>
+                      <span style={{fontSize:13,fontWeight:700,color:pct===100?T.green:T.accent}}>{pct}%</span>
+                    </div>
+                    <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${pct}%`,background:pct===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s ease"}}/>
+                    </div>
+                  </div>
+                )}
+
+                {/* Botón enviar todos */}
+                {pending.length>0&&(
+                  <AsyncButton onClick={sendAllTracking} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"13px 20px",marginBottom:16}}>
+                    Enviar {pending.length} seguimiento{pending.length!==1?"s":""} pendiente{pending.length!==1?"s":""}
+                  </AsyncButton>
+                )}
+                {pending.length===0&&sentCount>0&&(
+                  <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:16,color:T.green}}>✓</span>
+                    <span style={{fontSize:13,fontWeight:600,color:T.green}}>Todos los seguimientos enviados</span>
+                  </div>
+                )}
+
+                {/* Lista */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"80px 1fr 140px 80px",gap:8,padding:"8px 18px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                    <span>Pedido</span><span>Destinatario + Tracking</span><span></span><span>Estado</span>
+                  </div>
+                  {pdfResults.map((r,i)=>{
+                    const sent=trackingSent[r.pedidoNum];
+                    const sending=sendingTracking[r.pedidoNum];
+                    return (
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"80px 1fr 140px 80px",gap:8,padding:"12px 18px",borderBottom:i<pdfResults.length-1?`0.5px solid ${T.borderL}`:"none",alignItems:"center",background:sent?T.green+"08":"transparent",transition:"background 0.2s ease"}}>
+                        <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"—"}</span>
+                        <div>
+                          {r.destinatario&&<div style={{fontSize:13,color:T.text,fontWeight:500,marginBottom:2}}>{r.destinatario}</div>}
+                          <div style={{fontSize:11,color:T.textSm,fontFamily:"monospace",letterSpacing:"0.02em"}}>{r.tracking||"Sin tracking"}</div>
+                        </div>
+                        <div/>
+                        <div style={{flexShrink:0,display:"flex",justifyContent:"flex-end"}}>
+                          {sent
+                            ? <span style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Ok</span>
+                            : sending
+                              ? <Spinner size={13} color={T.yellow}/>
+                              : sendBatchActive
+                                ? <span style={{fontSize:11,color:T.textSm}}>En cola...</span>
+                                : r.tracking&&r.pedidoNum
+                                  ? <AsyncButton onClick={()=>sendTracking(r)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Enviar</AsyncButton>
+                                  : <span style={{fontSize:11,color:T.red}}>Sin datos</span>
+                          }
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>);
+            })()}
           </div>
         )}
       </div>
