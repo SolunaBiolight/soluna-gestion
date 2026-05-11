@@ -6219,10 +6219,8 @@ function AppAudioStudio({T, user, onHome}) {
 // ===========================================
 function AppMetaAds({T, user, onHome}) {
   const OBJECTIVES=[
-    {id:"OUTCOME_SALES",label:"Ventas"},
-    {id:"OUTCOME_TRAFFIC",label:"Tráfico"},
-    {id:"OUTCOME_ENGAGEMENT",label:"Interacción"},
-    {id:"OUTCOME_LEADS",label:"Clientes potenciales"},
+    {id:"OUTCOME_SALES",label:"Ventas"},{id:"OUTCOME_TRAFFIC",label:"Tráfico"},
+    {id:"OUTCOME_ENGAGEMENT",label:"Interacción"},{id:"OUTCOME_LEADS",label:"Clientes potenciales"},
     {id:"OUTCOME_AWARENESS",label:"Reconocimiento"},
   ];
   const CTAS=["LEARN_MORE","SHOP_NOW","SIGN_UP","GET_OFFER","ORDER_NOW","BUY_NOW","CONTACT_US","WHATSAPP_MESSAGE"];
@@ -6235,11 +6233,14 @@ function AppMetaAds({T, user, onHome}) {
   const [accounts,setAccounts]=useState([]);
   const [activeAccId,setActiveAccId]=useState(null);
 
-  // Selección de ad account / page post-OAuth (si tiene múltiples)
-  const [pendingSetup,setPendingSetup]=useState(null); // {id, ad_accounts, pages, access_token}
+  // Conexión System User Token
+  const [tokenInput,setTokenInput]=useState("");
+  const [connecting,setConnecting]=useState(false);
+  const [connectData,setConnectData]=useState(null); // {id, ad_accounts, pages}
   const [selAdAcc,setSelAdAcc]=useState("");
   const [selPage,setSelPage]=useState("");
   const [savingSetup,setSavingSetup]=useState(false);
+  const [showGuide,setShowGuide]=useState(false);
 
   // Campañas
   const [campaigns,setCampaigns]=useState([]);
@@ -6285,33 +6286,13 @@ function AppMetaAds({T, user, onHome}) {
     }).then(r=>r.json());
   };
 
-  // Cargar cuentas + detectar ?meta_success=1 en URL
   useEffect(()=>{
     if(!uid) return;
-    const params=new URLSearchParams(window.location.search);
-    if(params.get("meta_success")==="1") {
-      window.history.replaceState({},"",window.location.pathname);
-      toast("Cuenta Meta conectada ✓","success");
-    }
-    if(params.get("meta_error")) {
-      const err=params.get("meta_error");
-      window.history.replaceState({},"",window.location.pathname);
-      toast(`Error conectando Meta: ${err}`,"error");
-    }
     metaApi("accounts").then(d=>{
       const accs=d.accounts||[];
       setAccounts(accs);
       if(d.active) setActiveAccId(d.active);
       else if(accs.length>0) setActiveAccId(accs[0].id);
-      // Detectar cuenta recién conectada que necesita setup (sin ad_account_id)
-      const needsSetup=accs.find(a=>!a.ad_account_id&&a.has_token);
-      if(needsSetup) {
-        metaApi("resources","GET",null,{acc_id:needsSetup.id}).then(r=>{
-          if(r.ad_accounts?.length>1||r.pages?.length>1) {
-            setPendingSetup({id:needsSetup.id,ad_accounts:r.ad_accounts||[],pages:r.pages||[]});
-          }
-        }).catch(()=>{});
-      }
       metaApi("brand").then(d=>{if(d.text!==undefined)setBrand(d.text);}).catch(()=>{});
     }).catch(()=>{}).finally(()=>setLoading(false));
   },[uid]);
@@ -6321,43 +6302,65 @@ function AppMetaAds({T, user, onHome}) {
     if(tab==="creativos"&&activeAccId) loadCreatives();
   },[tab,activeAccId]);
 
-  // ── OAuth: iniciar flujo ──────────────────────────────
-  function handleOAuth() {
-    if(!uid) return;
-    const appId=process.env.NEXT_PUBLIC_META_APP_ID||"905872205806657";
-    const redirectUri=encodeURIComponent(`${window.location.origin}/api/meta-callback`);
-    const scope="ads_management,ads_read,pages_show_list,pages_read_engagement";
-    const state=encodeURIComponent(uid);
-    window.location.href=`https://www.facebook.com/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=code`;
+  // ── Conectar System User Token ────────────────────────
+  async function handleConnect() {
+    if(!tokenInput.trim()) return toast("Pegá tu System User Token","warning");
+    setConnecting(true);
+    const d=await metaApi("connect","POST",{access_token:tokenInput.trim()});
+    if(d.error){toast(d.error,"error");setConnecting(false);return;}
+    // Si tiene 1 ad account y 1 página, guardar directo sin selector
+    if((d.ad_accounts||[]).length===1 && (d.pages||[]).length===1) {
+      const aa=d.ad_accounts[0];
+      const pg=d.pages[0];
+      const ig=pg.instagram_business_account;
+      const s=await metaApi("select","POST",{
+        ad_account_id:aa.id, ad_account_name:aa.name||"",
+        page_id:pg.id, page_name:pg.name||"",
+        page_access_token:pg.access_token||tokenInput.trim(),
+        ig_account_id:ig?.id||"", ig_username:ig?.username||"",
+      },{acc_id:d.id});
+      if(s.error){toast(s.error,"error");setConnecting(false);return;}
+      const newAcc={...d.account,...(s.account||{})};
+      setAccounts(prev=>[...prev.filter(a=>a.id!==d.id),newAcc]);
+      setActiveAccId(d.id);
+      await metaApi("set_active","POST",{id:d.id});
+      setTokenInput("");
+      toast("Cuenta conectada ✓","success");
+    } else {
+      // Tiene múltiples — mostrar selector
+      setConnectData(d);
+      if((d.ad_accounts||[]).length>0) setSelAdAcc(d.ad_accounts[0].id);
+      if((d.pages||[]).length>0) setSelPage(d.pages[0].id);
+    }
+    setConnecting(false);
   }
 
-  // ── Setup post-OAuth (elegir ad account y página si tiene múltiples) ──
   async function handleSaveSetup() {
-    if(!selAdAcc||!selPage) return toast("Seleccioná ad account y página","warning");
+    if(!selAdAcc) return toast("Seleccioná un Ad Account","warning");
     setSavingSetup(true);
-    const page=pendingSetup.pages.find(p=>p.id===selPage);
-    const adAcc=pendingSetup.ad_accounts.find(a=>a.id===selAdAcc);
+    const aa=(connectData.ad_accounts||[]).find(a=>a.id===selAdAcc);
+    const pg=(connectData.pages||[]).find(p=>p.id===selPage);
+    const ig=pg?.instagram_business_account;
     const d=await metaApi("select","POST",{
-      ad_account_id:selAdAcc,
-      ad_account_name:adAcc?.name||"",
-      page_id:selPage,
-      page_name:page?.name||"",
-      page_access_token:page?.access_token||"",
-      ig_account_id:page?.instagram_business_account?.id||"",
-      ig_username:page?.instagram_business_account?.username||"",
-    },{acc_id:pendingSetup.id});
+      ad_account_id:selAdAcc, ad_account_name:aa?.name||"",
+      page_id:selPage||"", page_name:pg?.name||"",
+      page_access_token:pg?.access_token||tokenInput||"",
+      ig_account_id:ig?.id||"", ig_username:ig?.username||"",
+    },{acc_id:connectData.id});
     if(d.error){toast(d.error,"error");setSavingSetup(false);return;}
-    setAccounts(prev=>prev.map(a=>a.id===pendingSetup.id?{...a,...d.account}:a));
-    setPendingSetup(null);
+    setAccounts(prev=>[...prev.filter(a=>a.id!==connectData.id),{...connectData,...(d.account||{})}]);
+    setActiveAccId(connectData.id);
+    await metaApi("set_active","POST",{id:connectData.id});
+    setConnectData(null); setTokenInput("");
     toast("Cuenta configurada ✓","success");
     setSavingSetup(false);
   }
 
   async function handleDisconnect(accId) {
     if(!window.confirm("¿Desconectar esta cuenta de Meta?")) return;
-    await fetch(`/api/meta?action=delete_account&uid=${uid}&acc_id=${accId||activeAccId}`,{method:"DELETE"});
-    setAccounts(prev=>prev.filter(a=>a.id!==(accId||activeAccId)));
-    if(activeAccId===(accId||activeAccId)) setActiveAccId(null);
+    await fetch(`/api/meta?action=delete_account&uid=${uid}&acc_id=${accId}`,{method:"DELETE"});
+    setAccounts(prev=>prev.filter(a=>a.id!==accId));
+    if(activeAccId===accId) setActiveAccId(null);
     toast("Cuenta desconectada","success");
   }
 
@@ -6379,8 +6382,7 @@ function AppMetaAds({T, user, onHome}) {
     toast(`Campaña "${d.name}" creada ✓`,"success");
     setShowNewCamp(false);
     setNewCamp({name:"",objective:"OUTCOME_SALES",cbo_daily_budget_ars:"",is_cbo:true});
-    loadCampaigns();
-    setCampCreating(false);
+    loadCampaigns(); setCampCreating(false);
   }
 
   async function handleCreateAdset() {
@@ -6392,8 +6394,7 @@ function AppMetaAds({T, user, onHome}) {
     toast(`AdSet "${d.name}" creado ✓`,"success");
     setShowNewAdset(false);
     setNewAdset({name:"",campaign_id:"",daily_budget_ars:"3000",is_cbo:false,start_time:""});
-    loadCampaigns();
-    setAdsetCreating(false);
+    loadCampaigns(); setAdsetCreating(false);
   }
 
   // ── Creativos ─────────────────────────────────────────
@@ -6462,6 +6463,31 @@ function AppMetaAds({T, user, onHome}) {
     {id:"creativos",label:"Creativos"},
   ];
 
+  // Guía paso a paso para obtener System User Token
+  const GuiaToken=()=>(
+    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>📋 Cómo obtener tu System User Token (5 min)</div>
+      {[
+        {n:1,txt:"Entrá a",link:"https://business.facebook.com/settings/system-users",linkTxt:"business.facebook.com → Configuración → Usuarios → Usuarios del sistema"},
+        {n:2,txt:"Hacé click en + Agregar → Ponele un nombre (ej: Growith) → Rol: Administrador → Crear usuario del sistema"},
+        {n:3,txt:"Click en los 3 puntos del usuario creado → Asignar activos → Seleccioná tu Ad Account y tu Página → Permisos completos → Guardar"},
+        {n:4,txt:"Click en Generar token → Elegí la app Growith → Permisos: ads_management, ads_read, pages_show_list → Vencimiento: Nunca → Generar token"},
+        {n:5,txt:"Copiá el token y pegalo acá abajo"},
+      ].map(s=>(
+        <div key={s.n} style={{display:"flex",gap:10,marginBottom:10}}>
+          <div style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid,color:"#fff",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>{s.n}</div>
+          <div style={{fontSize:12,color:T.textMd,lineHeight:1.5}}>
+            {s.txt}{" "}
+            {s.link&&<a href={s.link} target="_blank" rel="noopener noreferrer" style={{color:T.accent,textDecoration:"none"}}>{s.linkTxt}</a>}
+          </div>
+        </div>
+      ))}
+      <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:11,color:T.green}}>
+        ✓ El token "Nunca vence" — no vas a tener que renovarlo ni reconectar la cuenta
+      </div>
+    </div>
+  );
+
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Meta Ads" onHome={onHome}>
@@ -6476,35 +6502,15 @@ function AppMetaAds({T, user, onHome}) {
 
       <div style={{maxWidth:1100,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
-        {/* ── CUENTA ─────────────────────────────────── */}
+        {/* ── CUENTA ──────────────────────────────────── */}
         {tab==="cuenta"&&(
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"start"}}>
             <div>
-              {/* Setup post-OAuth: elegir ad account y página */}
-              {pendingSetup&&(
-                <div style={{...Card,border:`1px solid ${T.accentSolid}55`}}>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Último paso — elegí tu ad account y página</div>
-                  <label style={Label}>Ad Account</label>
-                  <select value={selAdAcc} onChange={e=>setSelAdAcc(e.target.value)} style={{...iS,marginBottom:12}}>
-                    <option value="">— Seleccioná —</option>
-                    {(pendingSetup.ad_accounts||[]).map(a=><option key={a.id} value={a.id}>{a.name||a.id} ({a.id})</option>)}
-                  </select>
-                  <label style={Label}>Página de Facebook</label>
-                  <select value={selPage} onChange={e=>setSelPage(e.target.value)} style={{...iS,marginBottom:14}}>
-                    <option value="">— Seleccioná —</option>
-                    {(pendingSetup.pages||[]).map(p=><option key={p.id} value={p.id}>{p.name}{p.instagram_business_account?` · IG @${p.instagram_business_account.username}`:""}</option>)}
-                  </select>
-                  <button onClick={handleSaveSetup} disabled={savingSetup} style={{...BtnPri,width:"100%",justifyContent:"center"}}>
-                    {savingSetup?<><Spinner size={13} color="#fff"/>Guardando...</>:"Guardar configuración"}
-                  </button>
-                </div>
-              )}
-
               {/* Cuentas conectadas */}
               <div style={Card}>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuentas conectadas</div>
-                {accounts.length===0&&!pendingSetup?(
-                  <div style={{textAlign:"center",padding:"32px 0",color:T.textSm,fontSize:13}}>No hay cuentas conectadas</div>
+                {accounts.length===0?(
+                  <div style={{textAlign:"center",padding:"24px 0",color:T.textSm,fontSize:13}}>No hay cuentas. Conectá una abajo.</div>
                 ):accounts.map(a=>(
                   <div key={a.id} onClick={()=>{setActiveAccId(a.id);metaApi("set_active","POST",{id:a.id});}}
                     style={{background:activeAccId===a.id?T.accentSolid+"12":T.surface,border:`1px solid ${activeAccId===a.id?T.accentSolid+"55":T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,cursor:"pointer",transition:"all 0.15s"}}>
@@ -6512,28 +6518,74 @@ function AppMetaAds({T, user, onHome}) {
                       <div style={{width:32,height:32,borderRadius:8,background:T.blueBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>📘</div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.user_name||"Cuenta Meta"}</div>
-                        <div style={{fontSize:11,color:T.textSm}}>{a.ad_account_name||"Sin ad account"}{a.ig_username?` · @${a.ig_username}`:""}</div>
+                        <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{a.ad_account_name||"Sin ad account"}{a.ig_username?` · @${a.ig_username}`:""}</div>
+                        <div style={{fontSize:10,color:T.green,marginTop:2}}>✓ System User Token · No vence</div>
                       </div>
                       {activeAccId===a.id&&<span style={{fontSize:10,background:T.accentSolid,color:"#fff",borderRadius:4,padding:"2px 7px",fontWeight:600,flexShrink:0}}>ACTIVA</span>}
                       <button onClick={e=>{e.stopPropagation();handleDisconnect(a.id);}} style={{...BtnSec,padding:"4px 8px",fontSize:11,color:T.red,borderColor:T.red+"44",flexShrink:0}}>✕</button>
                     </div>
                   </div>
                 ))}
-                {/* Botón OAuth */}
-                <button onClick={handleOAuth} style={{...BtnPri,width:"100%",justifyContent:"center",marginTop:accounts.length>0?12:0,background:"#1877f2"}}>
-                  <span style={{fontSize:16}}>f</span>
-                  {accounts.length>0?"Conectar otra cuenta":"Conectar cuenta con Meta"}
-                </button>
               </div>
+
+              {/* Selector post-conexión si tiene múltiples */}
+              {connectData&&(
+                <div style={{...Card,border:`1px solid ${T.accentSolid}55`}}>
+                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>✓ Token válido — {connectData.user_name} · Elegí tu ad account y página</div>
+                  <label style={Label}>Ad Account</label>
+                  <select value={selAdAcc} onChange={e=>setSelAdAcc(e.target.value)} style={{...iS,marginBottom:12}}>
+                    <option value="">— Seleccioná —</option>
+                    {(connectData.ad_accounts||[]).map(a=><option key={a.id} value={a.id}>{a.name||a.id} ({a.id})</option>)}
+                  </select>
+                  {(connectData.pages||[]).length>0&&(
+                    <>
+                      <label style={Label}>Página de Facebook</label>
+                      <select value={selPage} onChange={e=>setSelPage(e.target.value)} style={{...iS,marginBottom:14}}>
+                        <option value="">— Opcional —</option>
+                        {(connectData.pages||[]).map(p=><option key={p.id} value={p.id}>{p.name}{p.instagram_business_account?` · IG @${p.instagram_business_account.username}`:""}</option>)}
+                      </select>
+                    </>
+                  )}
+                  <button onClick={handleSaveSetup} disabled={savingSetup} style={{...BtnPri,width:"100%",justifyContent:"center"}}>
+                    {savingSetup?<><Spinner size={13} color="#fff"/>Guardando...</>:"Guardar configuración"}
+                  </button>
+                </div>
+              )}
+
+              {/* Form conectar */}
+              {!connectData&&(
+                <div style={Card}>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>
+                    {accounts.length>0?"Agregar otra cuenta":"Conectar cuenta Meta"}
+                  </div>
+
+                  {/* Botón mostrar/ocultar guía */}
+                  <button onClick={()=>setShowGuide(s=>!s)} style={{...BtnSec,marginBottom:12,width:"100%",justifyContent:"center",fontSize:12}}>
+                    {showGuide?"▲ Ocultar guía":"❓ ¿Cómo obtengo el token?"}
+                  </button>
+                  {showGuide&&<GuiaToken/>}
+
+                  <label style={Label}>System User Token</label>
+                  <textarea
+                    value={tokenInput}
+                    onChange={e=>setTokenInput(e.target.value)}
+                    placeholder="Pegá tu System User Token acá..."
+                    style={{...iS,minHeight:80,resize:"none",fontFamily:"monospace",fontSize:11,marginBottom:12,lineHeight:1.5}}
+                  />
+                  <button onClick={handleConnect} disabled={connecting||!tokenInput.trim()} style={{...BtnPri,width:"100%",justifyContent:"center"}}>
+                    {connecting?<><Spinner size={13} color="#fff"/>Verificando...</>:"Conectar cuenta →"}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Brand context */}
             <div style={Card}>
               <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Contexto de marca</div>
-              <div style={{fontSize:12,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Esta info la usa la IA para generar copy. Producto, beneficios, target, precio, URL de destino.</div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:12,lineHeight:1.5}}>La IA usa esta info para generar el copy. Producto, beneficios, target, precio, URL de destino.</div>
               <textarea value={brand} onChange={e=>setBrand(e.target.value)}
-                placeholder="Ej: Vendemos anteojos con filtro de luz azul. Colores: Rojo, Naranja, Amarillo. Target: 30-60 años. Precio: $25.000. Link: mitienda.com"
-                style={{...iS,minHeight:180,resize:"vertical",lineHeight:1.6,marginBottom:12}}/>
+                placeholder="Ej: Vendemos anteojos con filtro de luz azul. Colores: Rojo, Naranja, Amarillo. Target: 30-60 años con pantallas. Precio: $25.000. Link: mitienda.com"
+                style={{...iS,minHeight:200,resize:"vertical",lineHeight:1.6,marginBottom:12}}/>
               <button onClick={handleSaveBrand} disabled={brandSaving} style={{...BtnSec,width:"100%",justifyContent:"center"}}>
                 {brandSaving?<><Spinner size={12} color={T.textMd}/>Guardando...</>:"Guardar brand context"}
               </button>
@@ -6541,10 +6593,10 @@ function AppMetaAds({T, user, onHome}) {
           </div>
         )}
 
-        {/* ── CAMPAÑAS ───────────────────────────────── */}
+        {/* ── CAMPAÑAS ────────────────────────────────── */}
         {tab==="campanas"&&(
           !activeAcc
-          ?<div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero</div>
+          ?<div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero en la pestaña Cuenta</div>
           :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
             {/* Campañas */}
             <div>
@@ -6588,7 +6640,6 @@ function AppMetaAds({T, user, onHome}) {
                 </div>
               ))}
             </div>
-
             {/* AdSets */}
             <div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
@@ -6624,7 +6675,7 @@ function AppMetaAds({T, user, onHome}) {
           </div>
         )}
 
-        {/* ── CREATIVOS ──────────────────────────────── */}
+        {/* ── CREATIVOS ────────────────────────────────── */}
         {tab==="creativos"&&(
           !activeAcc
           ?<div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero</div>
@@ -6666,8 +6717,6 @@ function AppMetaAds({T, user, onHome}) {
                 </div>
               ))}
             </div>
-
-            {/* Panel edición creativo */}
             {selCreative&&(
               <div style={{...Card,position:"sticky",top:80}}>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>{selCreative.filename_base}</div>
