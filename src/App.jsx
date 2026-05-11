@@ -4831,6 +4831,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               envios:   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
               audio:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>,
               meta:     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>,
+              arca:     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
             };
             return (
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14,marginBottom:28}}>
@@ -4840,6 +4841,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               {id:"envios",   label:"Envíos",   desc:"Despachos y seguimientos", stat:ordersCount,   statLabel:"pedidos",  accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
               {id:"audio",    label:"Audio Studio", desc:"Voces TTS con IA",     stat:null,          statLabel:"voces",    accent:"#a78bfa", accentBg:"rgba(167,139,250,0.08)"},
               {id:"meta",     label:"Meta Ads",      desc:"Campañas y creativos IA", stat:null, statLabel:"",       accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
+              {id:"arca",     label:"ARCA",          desc:"Facturación electrónica", stat:null, statLabel:"",       accent:"#4ade80", accentBg:"rgba(74,222,128,0.08)"},
             ].map(item=>(
               <button key={item.id} onClick={()=>onNavigate(item.id)}
                 style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 24px 20px",textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column",position:"relative",overflow:"hidden"}}
@@ -5535,6 +5537,388 @@ function AppAdmin({T, user, onBack}) {
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ===========================================
+// APP ARCA — Facturación electrónica AFIP
+// ===========================================
+function AppArca({T, user, onHome}) {
+  const [tab, setTab] = useState("cuits"); // cuits | facturar | historial
+  const [cuits, setCuits] = useState([]);
+  const [cuitSel, setCuitSel] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // Config CUIT
+  const [showNewCuit, setShowNewCuit] = useState(false);
+  const [newCuit, setNewCuit] = useState({cuit:"",razon_social:"",nombre_fantasia:"",domicilio:"",fecha_inicio:"",condicion_fiscal:"RESPONSABLE_INSCRIPTO",punto_venta:"1",arca_prod:false});
+  const [certText, setCertText] = useState("");
+  const [keyText, setKeyText] = useState("");
+  const [savingCuit, setSavingCuit] = useState(false);
+  const [testingCuit, setTestingCuit] = useState(null);
+
+  // Facturar
+  const [archivo, setArchivo] = useState(null);
+  const [parsing, setParsing] = useState(false);
+  const [ordenes, setOrdenes] = useState(null);
+  const [productos, setProductos] = useState([]);
+  const [productMap, setProductMap] = useState({});
+  const [emitting, setEmitting] = useState(false);
+  const [resultados, setResultados] = useState(null);
+  const [pdfs, setPdfs] = useState([]);
+
+  const uid = user?.uid;
+  const iS = {width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
+  const BtnPri = {background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
+  const BtnSec = {background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
+
+  const api = (action, method="GET", body=null, extra={}) => {
+    const params = new URLSearchParams({action, uid, ...extra});
+    return fetch(`/api/arca?${params}`, {
+      method,
+      headers: method!=="GET"&&!(body instanceof FormData) ? {"Content-Type":"application/json"} : undefined,
+      body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
+    }).then(r=>r.json());
+  };
+
+  useEffect(()=>{
+    if(!uid) return;
+    api("list_cuits").then(d=>{ if(d.cuits) setCuits(d.cuits); }).finally(()=>setLoading(false));
+  },[uid]);
+
+  async function handleSaveCuit() {
+    if(!newCuit.cuit.trim()||!newCuit.razon_social.trim()) return toast("Completá CUIT y razón social","warning");
+    setSavingCuit(true);
+    const fd = new FormData();
+    Object.entries(newCuit).forEach(([k,v])=>fd.append(k,String(v)));
+    if(certText.trim()) fd.append("cert_pem", certText.trim());
+    if(keyText.trim()) fd.append("key_pem", keyText.trim());
+    const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
+    if(d.error){toast(d.error,"error");setSavingCuit(false);return;}
+    toast("CUIT guardado ✓","success");
+    const updated = await api("list_cuits");
+    if(updated.cuits) setCuits(updated.cuits);
+    setShowNewCuit(false);
+    setNewCuit({cuit:"",razon_social:"",nombre_fantasia:"",domicilio:"",fecha_inicio:"",condicion_fiscal:"RESPONSABLE_INSCRIPTO",punto_venta:"1",arca_prod:false});
+    setCertText(""); setKeyText("");
+    setSavingCuit(false);
+  }
+
+  async function handleTestCuit(cuitNum) {
+    setTestingCuit(cuitNum);
+    const d = await api("test_cuit","POST",null,{cuit:cuitNum});
+    if(d.error) toast(`Error: ${d.error}`,"error");
+    else toast(`Conexión OK · Último F-B: ${d.ultimo_b}`,"success");
+    setTestingCuit(null);
+  }
+
+  async function handleDeleteCuit(cuitNum) {
+    if(!window.confirm(`¿Eliminar CUIT ${cuitNum}?`)) return;
+    await fetch(`/api/arca?action=delete_cuit&uid=${uid}&cuit=${cuitNum}`,{method:"DELETE"}).then(r=>r.json());
+    setCuits(prev=>prev.filter(c=>c.cuit!==cuitNum));
+    toast("CUIT eliminado","success");
+  }
+
+  async function handleParseFile() {
+    if(!archivo) return toast("Seleccioná un archivo","warning");
+    if(!cuitSel) return toast("Seleccioná un CUIT emisor","warning");
+    setParsing(true); setOrdenes(null); setResultados(null); setPdfs([]);
+    const fd = new FormData();
+    fd.append("file", archivo);
+    const d = await fetch(`/api/arca?action=parse&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
+    if(d.error){toast(d.error,"error");setParsing(false);return;}
+    setOrdenes(d.ordenes);
+    setProductos(d.productos||[]);
+    setProductMap(Object.fromEntries((d.productos||[]).map(p=>[p,""])));
+    toast(`${d.total} órdenes listas para facturar`,"success");
+    setParsing(false);
+  }
+
+  async function handleEmit() {
+    if(!ordenes||!cuitSel) return;
+    if(!window.confirm(`¿Emitir ${Object.keys(ordenes).length} facturas en ARCA?`)) return;
+    setEmitting(true);
+    const d = await api("emit","POST",{cuit:cuitSel,ordenes,product_map:productMap});
+    if(d.error){toast(d.error,"error");setEmitting(false);return;}
+    setResultados(d.resultados||[]);
+    setPdfs(d.pdfs||[]);
+    const ok = (d.resultados||[]).filter(r=>r.ok).length;
+    const err = (d.resultados||[]).filter(r=>!r.ok).length;
+    toast(`${ok} facturas emitidas${err>0?` · ${err} con error`:""}`,"success");
+    setEmitting(false);
+  }
+
+  function downloadPDF(pdf) {
+    const a = document.createElement("a");
+    a.href = `data:application/pdf;base64,${pdf.bytes}`;
+    a.download = pdf.nombre;
+    a.click();
+  }
+
+  function downloadAllPDFs() {
+    pdfs.forEach((pdf,i)=>setTimeout(()=>downloadPDF(pdf),i*300));
+  }
+
+  if(loading) return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <Spinner size={28} color={T.accent}/>
+    </div>
+  );
+
+  const TABS=[{id:"cuits",label:"CUITs & Certificados"},{id:"facturar",label:"Facturar"}];
+  const CONDICIONES=[{id:"RESPONSABLE_INSCRIPTO",label:"Responsable Inscripto"},{id:"MONOTRIBUTO",label:"Monotributista"}];
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      <AppTopbar T={T} section="ARCA · Facturación" onHome={onHome}>
+        <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:5}}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:cuits.length>0?T.green:T.orange,display:"inline-block"}}/>
+          {cuits.length>0?`${cuits.length} CUIT${cuits.length>1?"s":""} configurado${cuits.length>1?"s":""}`:"Sin CUITs"}
+        </div>
+      </AppTopbar>
+      <AppTabs T={T} tabs={TABS} active={tab} onChange={setTab}/>
+
+      <div style={{maxWidth:1000,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
+
+        {/* ── CUITS ──────────────────────────────────── */}
+        {tab==="cuits"&&(
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>CUITs registrados ({cuits.length})</div>
+              <button onClick={()=>setShowNewCuit(s=>!s)} style={{...BtnSec,padding:"6px 14px",fontSize:12}}>+ Agregar CUIT</button>
+            </div>
+
+            {/* Form nuevo CUIT */}
+            {showNewCuit&&(
+              <div style={{background:T.card,border:`1px solid ${T.accentSolid}44`,borderRadius:14,padding:20,marginBottom:20}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Nuevo CUIT emisor</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                  <div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>CUIT (sin guiones)</div>
+                    <input value={newCuit.cuit} onChange={e=>setNewCuit(p=>({...p,cuit:e.target.value.replace(/\D/g,"")}))} placeholder="27467595755" style={iS}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Condición fiscal</div>
+                    <select value={newCuit.condicion_fiscal} onChange={e=>setNewCuit(p=>({...p,condicion_fiscal:e.target.value}))} style={iS}>
+                      {CONDICIONES.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Razón social</div>
+                    <input value={newCuit.razon_social} onChange={e=>setNewCuit(p=>({...p,razon_social:e.target.value}))} placeholder="GARCÍA JUAN PABLO" style={iS}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Nombre fantasía (opcional)</div>
+                    <input value={newCuit.nombre_fantasia} onChange={e=>setNewCuit(p=>({...p,nombre_fantasia:e.target.value}))} placeholder="MI TIENDA" style={iS}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Domicilio comercial</div>
+                    <input value={newCuit.domicilio} onChange={e=>setNewCuit(p=>({...p,domicilio:e.target.value}))} placeholder="Av. Siempre Viva 742, Buenos Aires" style={iS}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Punto de venta</div>
+                    <input value={newCuit.punto_venta} onChange={e=>setNewCuit(p=>({...p,punto_venta:e.target.value}))} placeholder="1" style={iS}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Fecha inicio actividades</div>
+                    <input value={newCuit.fecha_inicio} onChange={e=>setNewCuit(p=>({...p,fecha_inicio:e.target.value}))} placeholder="01/01/2024" style={iS}/>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,paddingTop:20}}>
+                    <div className="gh-toggle" onClick={()=>setNewCuit(p=>({...p,arca_prod:!p.arca_prod}))} style={{width:34,height:18,borderRadius:9,background:newCuit.arca_prod?T.green:T.border,position:"relative",flexShrink:0,cursor:"pointer"}}>
+                      <div className="gh-toggle-thumb" style={{width:14,height:14,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:newCuit.arca_prod?18:2}}/>
+                    </div>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:600,color:T.text}}>Ambiente de producción</div>
+                      <div style={{fontSize:11,color:T.textSm}}>{newCuit.arca_prod?"Real (cuidado)":"Homologación (pruebas)"}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Certificados */}
+                <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginBottom:14}}>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:12}}>Certificado ARCA</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Certificado (.crt) — pegá el contenido</div>
+                      <textarea value={certText} onChange={e=>setCertText(e.target.value)} placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"} style={{...iS,minHeight:100,resize:"vertical",fontFamily:"monospace",fontSize:11}}/>
+                    </div>
+                    <div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Clave privada (.key) — pegá el contenido</div>
+                      <textarea value={keyText} onChange={e=>setKeyText(e.target.value)} placeholder={"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"} style={{...iS,minHeight:100,resize:"vertical",fontFamily:"monospace",fontSize:11}}/>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{display:"flex",gap:10}}>
+                  <button onClick={handleSaveCuit} disabled={savingCuit} style={{...BtnPri,flex:1,justifyContent:"center"}}>
+                    {savingCuit?<><Spinner size={13} color="#fff"/>Guardando...</>:"Guardar CUIT"}
+                  </button>
+                  <button onClick={()=>setShowNewCuit(false)} style={{...BtnSec,padding:"9px 16px"}}>Cancelar</button>
+                </div>
+              </div>
+            )}
+
+            {/* Lista de CUITs */}
+            {cuits.length===0&&!showNewCuit&&(
+              <div style={{textAlign:"center",padding:60,color:T.textSm,fontSize:13}}>
+                No hay CUITs configurados. Agregá uno con tu certificado AFIP/ARCA para empezar a facturar.
+              </div>
+            )}
+            {cuits.map(c=>(
+              <div key={c.cuit} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <div style={{width:36,height:36,borderRadius:9,background:T.yellowBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🧾</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>{c.nombre_fantasia||c.razon_social}</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>
+                      CUIT {c.cuit} · PV {String(c.punto_venta||1).padStart(5,"0")} · {c.condicion_fiscal==="MONOTRIBUTO"?"Monotributista":"RI"}
+                      {" · "}<span style={{color:c.arca_prod?T.green:T.orange}}>{c.arca_prod?"Producción":"Homologación"}</span>
+                    </div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2,display:"flex",gap:10}}>
+                      <span style={{color:c.has_cert?T.green:T.red}}>{c.has_cert?"✓ Cert":"✗ Sin cert"}</span>
+                      <span style={{color:c.has_key?T.green:T.red}}>{c.has_key?"✓ Key":"✗ Sin key"}</span>
+                      {c.last_test&&<span style={{color:c.last_test.ok?T.green:T.red}}>· Último test: {new Date(c.last_test.ts).toLocaleDateString("es-AR")}</span>}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:8,flexShrink:0}}>
+                    <button onClick={()=>handleTestCuit(c.cuit)} disabled={testingCuit===c.cuit||!c.has_cert||!c.has_key} style={{...BtnSec,fontSize:12,padding:"6px 12px"}}>
+                      {testingCuit===c.cuit?<><Spinner size={11} color={T.textMd}/>Testeando...</>:"🔌 Testear"}
+                    </button>
+                    <button onClick={()=>handleDeleteCuit(c.cuit)} style={{...BtnSec,fontSize:12,padding:"6px 10px",color:T.red,borderColor:T.red+"44"}}>✕</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── FACTURAR ───────────────────────────────── */}
+        {tab==="facturar"&&(
+          <div>
+            {cuits.length===0
+              ? <div style={{textAlign:"center",padding:60,color:T.textSm}}>Configurá al menos un CUIT en la pestaña anterior para poder facturar.</div>
+              : (
+              <div style={{display:"grid",gridTemplateColumns:"1fr 360px",gap:20,alignItems:"start"}}>
+
+                {/* Izquierda: archivo + órdenes */}
+                <div>
+                  {/* Selector CUIT */}
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>CUIT emisor</div>
+                    <select value={cuitSel||""} onChange={e=>setCuitSel(e.target.value)} style={iS}>
+                      <option value="">— Seleccioná un CUIT —</option>
+                      {cuits.map(c=><option key={c.cuit} value={c.cuit}>{c.nombre_fantasia||c.razon_social} ({c.cuit})</option>)}
+                    </select>
+                  </div>
+
+                  {/* Upload archivo */}
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>Archivo de ventas</div>
+                    <div style={{fontSize:12,color:T.textSm,marginBottom:12,lineHeight:1.5}}>
+                      Subí el <strong style={{color:T.text}}>Excel de ventas de Mercado Libre</strong> (.xlsx) o el <strong style={{color:T.text}}>CSV de Shopify</strong> (.csv)
+                    </div>
+                    <input type="file" accept=".xlsx,.csv" onChange={e=>setArchivo(e.target.files[0])} style={{...iS,padding:"7px 12px",marginBottom:10}}/>
+                    <button onClick={handleParseFile} disabled={parsing||!archivo||!cuitSel} style={{...BtnPri,width:"100%",justifyContent:"center"}}>
+                      {parsing?<><Spinner size={13} color="#fff"/>Procesando...</>:"📂 Cargar y previsualizar"}
+                    </button>
+                  </div>
+
+                  {/* Preview órdenes */}
+                  {ordenes&&(
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:12}}>
+                        {Object.keys(ordenes).length} órdenes a facturar
+                      </div>
+                      <div style={{maxHeight:300,overflowY:"auto"}}>
+                        {Object.entries(ordenes).map(([id,o])=>(
+                          <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12,fontWeight:600,color:T.text}}>{o.nombre||"Consumidor Final"}</div>
+                              <div style={{fontSize:11,color:T.textSm}}>{id} · {o.doc_tipo==="CUIT"?"Factura A":"Factura B"}{o.doc_nro?` · ${o.doc_tipo} ${o.doc_nro}`:""}</div>
+                            </div>
+                            <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>${o.total.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Resultados */}
+                  {resultados&&(
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:12}}>
+                        Resultado de emisión
+                      </div>
+                      {resultados.map((r,i)=>(
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                          <span style={{fontSize:16,flexShrink:0}}>{r.ok?"✅":"🔴"}</span>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.orden_id}</div>
+                            {r.ok
+                              ? <div style={{fontSize:11,color:T.textSm}}>F-{r.letra} Nro {String(r.comprobante).padStart(8,"0")} · CAE {r.cae} · Vto {r.cae_vto}</div>
+                              : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>
+                            }
+                          </div>
+                          <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>${r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Derecha: mapeo productos + acciones */}
+                <div style={{display:"flex",flexDirection:"column",gap:16,position:"sticky",top:80}}>
+
+                  {/* Mapeo de productos */}
+                  {productos.length>0&&(
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:4}}>Nombre en factura</div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.4}}>Podés cambiar cómo aparece cada producto en el PDF. Dejalo vacío para usar el original.</div>
+                      {productos.map(p=>(
+                        <div key={p} style={{marginBottom:10}}>
+                          <div style={{fontSize:11,color:T.textSm,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p}</div>
+                          <input value={productMap[p]||""} onChange={e=>setProductMap(prev=>({...prev,[p]:e.target.value}))} placeholder={p.slice(0,35)+"..."} style={{...iS,fontSize:12}}/>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Botón emitir */}
+                  {ordenes&&!resultados&&(
+                    <button onClick={handleEmit} disabled={emitting||!cuitSel} style={{...BtnPri,width:"100%",justifyContent:"center",padding:"13px",fontSize:14,background:"#16a34a"}}>
+                      {emitting?<><Spinner size={14} color="#fff"/>Emitiendo en ARCA...</>:"🧾 Emitir facturas en ARCA"}
+                    </button>
+                  )}
+
+                  {/* Descargar PDFs */}
+                  {pdfs.length>0&&(
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:12}}>{pdfs.length} PDFs generados</div>
+                      <button onClick={downloadAllPDFs} style={{...BtnPri,width:"100%",justifyContent:"center",marginBottom:10}}>⬇ Descargar todos</button>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
+                        {pdfs.map((pdf,i)=>(
+                          <button key={i} onClick={()=>downloadPDF(pdf)} style={{...BtnSec,justifyContent:"flex-start",fontSize:11,padding:"6px 10px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            📄 {pdf.nombre}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Reset */}
+                  {(ordenes||resultados)&&(
+                    <button onClick={()=>{setOrdenes(null);setResultados(null);setPdfs([]);setArchivo(null);}} style={{...BtnSec,width:"100%",justifyContent:"center",fontSize:12}}>
+                      Nueva facturación
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -6644,6 +7028,7 @@ export default function App() {
   if(page==="config") return <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 
   // App
+  if(page==="arca") return <PageView pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
   if(page==="meta") return <PageView pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
   if(page==="audio") return <PageView pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
   if(page==="reclamos") return <PageView pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
