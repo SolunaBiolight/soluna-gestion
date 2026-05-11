@@ -6226,592 +6226,500 @@ function AppMetaAds({T, user, onHome}) {
     {id:"OUTCOME_AWARENESS",label:"Reconocimiento"},
   ];
   const CTAS=["LEARN_MORE","SHOP_NOW","SIGN_UP","GET_OFFER","ORDER_NOW","BUY_NOW","CONTACT_US","WHATSAPP_MESSAGE"];
-  const TONOS=["directo","empático","experto","ugc","dramático","informativo","inspirador"];
+  const TONOS=["directo","emocional","urgencia","educativo"];
   const LARGOS=["corto","medio","largo"];
-  const FORMATOS=["storytelling","pregunta-hook","lista","testimonio","experto","ugc"];
+  const FORMATOS=["storytelling","directo","pregunta","testimonial"];
 
-  // Estado global
-  const [tab,setTab]=useState("cuenta"); // cuenta | campanas | creativo
-  const [loading,setLoading]=useState(false);
+  const [tab,setTab]=useState("cuenta");
+  const [loading,setLoading]=useState(true);
   const [accounts,setAccounts]=useState([]);
-  const [activeAcc,setActiveAcc]=useState(null);
+  const [activeAccId,setActiveAccId]=useState(null);
 
-  // Conexión
-  const [tokenInput,setTokenInput]=useState("");
-  const [connectStep,setConnectStep]=useState("input"); // input | select | done
-  const [connectData,setConnectData]=useState(null); // {user, ad_accounts, pages, access_token}
-  const [selAdAccount,setSelAdAccount]=useState(null);
-  const [selPage,setSelPage]=useState(null);
+  // Selección de ad account / page post-OAuth (si tiene múltiples)
+  const [pendingSetup,setPendingSetup]=useState(null); // {id, ad_accounts, pages, access_token}
+  const [selAdAcc,setSelAdAcc]=useState("");
+  const [selPage,setSelPage]=useState("");
+  const [savingSetup,setSavingSetup]=useState(false);
 
   // Campañas
   const [campaigns,setCampaigns]=useState([]);
   const [adsets,setAdsets]=useState([]);
   const [campsLoading,setCampsLoading]=useState(false);
-  // Nueva campaña
   const [showNewCamp,setShowNewCamp]=useState(false);
-  const [newCamp,setNewCamp]=useState({name:"",objective:"OUTCOME_SALES",cbo_daily_budget_ars:"",is_cbo:true});
-  // Nuevo adset
   const [showNewAdset,setShowNewAdset]=useState(false);
+  const [newCamp,setNewCamp]=useState({name:"",objective:"OUTCOME_SALES",cbo_daily_budget_ars:"",is_cbo:true});
   const [newAdset,setNewAdset]=useState({name:"",campaign_id:"",daily_budget_ars:"3000",is_cbo:false,start_time:""});
+  const [campCreating,setCampCreating]=useState(false);
+  const [adsetCreating,setAdsetCreating]=useState(false);
 
-  // Creativo
-  const [creative,setCreative]=useState({
-    filename:"",kind:"image",fileBase64:"",
-    copy:"",title:"",description:"",
-    link:"",cta:"LEARN_MORE",adset_id:"",
-    tone:"directo",length:"medio",format:"storytelling",notes:"",
-  });
-  const [brandContext,setBrandContext]=useState(() => {try{return localStorage.getItem("growith_meta_brand")||"";}catch(e){return "";}});
-  const [copyLoading,setCopyLoading]=useState(false);
-  const [publishLoading,setPublishLoading]=useState(false);
-  const [publishResult,setPublishResult]=useState(null);
-  const fileRef=useRef();
+  // Creativos
+  const [creatives,setCreatives]=useState([]);
+  const [creativesLoading,setCreativesLoading]=useState(false);
+  const [selCreative,setSelCreative]=useState(null);
+  const [addingUrl,setAddingUrl]=useState(false);
+  const [newCUrl,setNewCUrl]=useState("");
+  const [newCName,setNewCName]=useState("");
+  const [newCKind,setNewCKind]=useState("image");
+  const [generatingCopy,setGeneratingCopy]=useState(null);
+  const [publishing,setPublishing]=useState(null);
 
-  const API=uid=>`/api/meta?uid=${uid}`;
+  // Brand
+  const [brand,setBrand]=useState("");
+  const [brandSaving,setBrandSaving]=useState(false);
+
   const uid=user?.uid;
+  const activeAcc=accounts.find(a=>a.id===activeAccId)||null;
 
-  // Cargar cuentas al montar
+  const iS={width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
+  const BtnPri={background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
+  const BtnSec={background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
+  const Card={background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16};
+  const Label={fontSize:11,color:T.textSm,fontWeight:500,marginBottom:5,display:"block"};
+
+  const metaApi=(action,method="GET",body=null,extra={})=>{
+    const params=new URLSearchParams({action,uid,...extra});
+    return fetch(`/api/meta?${params}`,{
+      method,
+      headers:method!=="GET"?{"Content-Type":"application/json"}:undefined,
+      body:body?JSON.stringify(body):undefined,
+    }).then(r=>r.json());
+  };
+
+  // Cargar cuentas + detectar ?meta_success=1 en URL
   useEffect(()=>{
     if(!uid) return;
-    fetch(`${API(uid)}&action=accounts`)
-      .then(r=>r.json())
-      .then(d=>{
-        setAccounts(d.accounts||[]);
-        setActiveAcc((d.accounts||[]).find(a=>a.active)||null);
-      }).catch(()=>{});
+    const params=new URLSearchParams(window.location.search);
+    if(params.get("meta_success")==="1") {
+      window.history.replaceState({},"",window.location.pathname);
+      toast("Cuenta Meta conectada ✓","success");
+    }
+    if(params.get("meta_error")) {
+      const err=params.get("meta_error");
+      window.history.replaceState({},"",window.location.pathname);
+      toast(`Error conectando Meta: ${err}`,"error");
+    }
+    metaApi("accounts").then(d=>{
+      const accs=d.accounts||[];
+      setAccounts(accs);
+      if(d.active) setActiveAccId(d.active);
+      else if(accs.length>0) setActiveAccId(accs[0].id);
+      // Detectar cuenta recién conectada que necesita setup (sin ad_account_id)
+      const needsSetup=accs.find(a=>!a.ad_account_id&&a.has_token);
+      if(needsSetup) {
+        metaApi("resources","GET",null,{acc_id:needsSetup.id}).then(r=>{
+          if(r.ad_accounts?.length>1||r.pages?.length>1) {
+            setPendingSetup({id:needsSetup.id,ad_accounts:r.ad_accounts||[],pages:r.pages||[]});
+          }
+        }).catch(()=>{});
+      }
+      metaApi("brand").then(d=>{if(d.text!==undefined)setBrand(d.text);}).catch(()=>{});
+    }).catch(()=>{}).finally(()=>setLoading(false));
   },[uid]);
 
-  // Persistir brand context
   useEffect(()=>{
-    try{localStorage.setItem("growith_meta_brand",brandContext);}catch(e){}
-  },[brandContext]);
+    if(tab==="campanas"&&activeAccId) loadCampaigns();
+    if(tab==="creativos"&&activeAccId) loadCreatives();
+  },[tab,activeAccId]);
 
-  async function loadCampaigns() {
+  // ── OAuth: iniciar flujo ──────────────────────────────
+  function handleOAuth() {
     if(!uid) return;
+    const appId=process.env.NEXT_PUBLIC_META_APP_ID||"905872205806657";
+    const redirectUri=encodeURIComponent(`${window.location.origin}/api/meta-callback`);
+    const scope="ads_management,ads_read,pages_show_list,pages_read_engagement";
+    const state=encodeURIComponent(uid);
+    window.location.href=`https://www.facebook.com/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=code`;
+  }
+
+  // ── Setup post-OAuth (elegir ad account y página si tiene múltiples) ──
+  async function handleSaveSetup() {
+    if(!selAdAcc||!selPage) return toast("Seleccioná ad account y página","warning");
+    setSavingSetup(true);
+    const page=pendingSetup.pages.find(p=>p.id===selPage);
+    const adAcc=pendingSetup.ad_accounts.find(a=>a.id===selAdAcc);
+    const d=await metaApi("select","POST",{
+      ad_account_id:selAdAcc,
+      ad_account_name:adAcc?.name||"",
+      page_id:selPage,
+      page_name:page?.name||"",
+      page_access_token:page?.access_token||"",
+      ig_account_id:page?.instagram_business_account?.id||"",
+      ig_username:page?.instagram_business_account?.username||"",
+    },{acc_id:pendingSetup.id});
+    if(d.error){toast(d.error,"error");setSavingSetup(false);return;}
+    setAccounts(prev=>prev.map(a=>a.id===pendingSetup.id?{...a,...d.account}:a));
+    setPendingSetup(null);
+    toast("Cuenta configurada ✓","success");
+    setSavingSetup(false);
+  }
+
+  async function handleDisconnect(accId) {
+    if(!window.confirm("¿Desconectar esta cuenta de Meta?")) return;
+    await fetch(`/api/meta?action=delete_account&uid=${uid}&acc_id=${accId||activeAccId}`,{method:"DELETE"});
+    setAccounts(prev=>prev.filter(a=>a.id!==(accId||activeAccId)));
+    if(activeAccId===(accId||activeAccId)) setActiveAccId(null);
+    toast("Cuenta desconectada","success");
+  }
+
+  // ── Campañas ──────────────────────────────────────────
+  async function loadCampaigns() {
     setCampsLoading(true);
-    try{
-      const r=await fetch(`${API(uid)}&action=campaigns`);
-      const d=await r.json();
-      if(d.error) throw new Error(d.error);
-      setCampaigns(d.campaigns||[]);
-      setAdsets(d.adsets||[]);
-    }catch(e){toast(e.message,"error");}
-    finally{setCampsLoading(false);}
+    const d=await metaApi("campaigns","GET",null,{acc_id:activeAccId});
+    if(d.error){toast(d.error,"error");setCampsLoading(false);return;}
+    setCampaigns(d.campaigns||[]);
+    setAdsets(d.adsets||[]);
+    setCampsLoading(false);
   }
 
-  useEffect(()=>{
-    if(tab==="campanas"&&activeAcc) loadCampaigns();
-  },[tab,activeAcc]);
-
-  // ── Conexión ──────────────────────────────────────────────────────────────
-  async function handleConnect() {
-    if(!tokenInput.trim()) return toast("Pegá tu access token","warning");
-    setLoading(true);
-    try{
-      const r=await fetch(`${API(uid)}&action=connect`,{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({access_token:tokenInput.trim()}),
-      });
-      const d=await r.json();
-      if(!r.ok||d.error) throw new Error(d.error||"Error");
-      setConnectData(d);
-      setSelAdAccount(d.ad_accounts[0]||null);
-      const firstPageWithIG=d.pages.find(p=>p.instagram_business_account)||d.pages[0]||null;
-      setSelPage(firstPageWithIG);
-      setConnectStep("select");
-    }catch(e){toast(e.message,"error");}
-    finally{setLoading(false);}
-  }
-
-  async function handleSaveAccount() {
-    if(!selAdAccount||!selPage) return toast("Seleccioná ad account y página","warning");
-    setLoading(true);
-    try{
-      const ig=selPage.instagram_business_account;
-      await fetch(`${API(uid)}&action=select`,{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          access_token:connectData.access_token,
-          user_id:connectData.user.id,
-          user_name:connectData.user.name,
-          ad_account_id:selAdAccount.id,
-          ad_account_name:selAdAccount.name,
-          page_id:selPage.id,
-          page_name:selPage.name,
-          page_access_token:selPage.access_token,
-          ig_account_id:ig?.id||"",
-          ig_username:ig?.username||"",
-        }),
-      });
-      const accNew={
-        user_id:connectData.user.id,user_name:connectData.user.name,
-        ad_account_id:selAdAccount.id,ad_account_name:selAdAccount.name,
-        page_id:selPage.id,page_name:selPage.name,
-        ig_username:ig?.username||"",active:true,
-        has_token:true,
-      };
-      setActiveAcc(accNew);
-      setAccounts(prev=>[...prev.filter(a=>a.user_id!==accNew.user_id),accNew]);
-      setConnectStep("done");
-      setTokenInput("");
-      toast("Cuenta conectada ✓","success");
-    }catch(e){toast(e.message,"error");}
-    finally{setLoading(false);}
-  }
-
-  async function handleDisconnect() {
-    if(!activeAcc||!window.confirm("¿Desconectar esta cuenta?")) return;
-    await fetch(`${API(uid)}&action=delete_account`,{
-      method:"DELETE",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({user_id:activeAcc.user_id}),
-    });
-    setActiveAcc(null);
-    setAccounts([]);
-    setConnectStep("input");
-    toast("Cuenta desconectada","info");
-  }
-
-  // ── Campañas ──────────────────────────────────────────────────────────────
   async function handleCreateCampaign() {
     if(!newCamp.name.trim()) return toast("Poné un nombre","warning");
-    setLoading(true);
-    try{
-      const r=await fetch(`${API(uid)}&action=create_campaign`,{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(newCamp),
-      });
-      const d=await r.json();
-      if(!r.ok||d.error) throw new Error(d.error);
-      toast(`Campaña "${d.name}" creada (PAUSED) ✓`,"success");
-      setShowNewCamp(false);
-      setNewCamp({name:"",objective:"OUTCOME_SALES",cbo_daily_budget_ars:"",is_cbo:true});
-      loadCampaigns();
-    }catch(e){toast(e.message,"error");}
-    finally{setLoading(false);}
+    setCampCreating(true);
+    const d=await metaApi("create_campaign","POST",newCamp,{acc_id:activeAccId});
+    if(d.error){toast(d.error,"error");setCampCreating(false);return;}
+    toast(`Campaña "${d.name}" creada ✓`,"success");
+    setShowNewCamp(false);
+    setNewCamp({name:"",objective:"OUTCOME_SALES",cbo_daily_budget_ars:"",is_cbo:true});
+    loadCampaigns();
+    setCampCreating(false);
   }
 
   async function handleCreateAdset() {
-    if(!newAdset.name.trim()||!newAdset.campaign_id) return toast("Completá nombre y campaña","warning");
-    setLoading(true);
-    try{
-      const r=await fetch(`${API(uid)}&action=create_adset`,{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(newAdset),
-      });
-      const d=await r.json();
-      if(!r.ok||d.error) throw new Error(d.error);
-      toast(`AdSet "${d.name}" creado (PAUSED) ✓`,"success");
-      setShowNewAdset(false);
-      setNewAdset({name:"",campaign_id:"",daily_budget_ars:"3000",is_cbo:false,start_time:""});
-      loadCampaigns();
-    }catch(e){toast(e.message,"error");}
-    finally{setLoading(false);}
+    if(!newAdset.campaign_id) return toast("Elegí una campaña","warning");
+    if(!newAdset.name.trim()) return toast("Poné un nombre","warning");
+    setAdsetCreating(true);
+    const d=await metaApi("create_adset","POST",newAdset,{acc_id:activeAccId});
+    if(d.error){toast(d.error,"error");setAdsetCreating(false);return;}
+    toast(`AdSet "${d.name}" creado ✓`,"success");
+    setShowNewAdset(false);
+    setNewAdset({name:"",campaign_id:"",daily_budget_ars:"3000",is_cbo:false,start_time:""});
+    loadCampaigns();
+    setAdsetCreating(false);
   }
 
-  // ── Creativo ──────────────────────────────────────────────────────────────
-  function handleFileSelect(e) {
-    const file=e.target.files?.[0];
-    if(!file) return;
-    const kind=file.type.startsWith("video/")?"video":"image";
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      const b64=ev.target.result.split(",")[1];
-      setCreative(prev=>({...prev,filename:file.name,kind,fileBase64:b64}));
-    };
-    reader.readAsDataURL(file);
-    setPublishResult(null);
+  // ── Creativos ─────────────────────────────────────────
+  async function loadCreatives() {
+    setCreativesLoading(true);
+    const d=await metaApi("creatives","GET",null,{acc_id:activeAccId});
+    if(d.creatives) setCreatives(d.creatives);
+    setCreativesLoading(false);
   }
 
-  async function handleGenerateCopy() {
-    if(!creative.filename) return toast("Primero subí un creativo","warning");
-    setCopyLoading(true);
-    try{
-      const r=await fetch(`${API(uid)}&action=generate_copy`,{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          brand_context:brandContext,
-          filename:creative.filename,
-          tone:creative.tone,
-          length:creative.length,
-          format:creative.format,
-          notes:creative.notes,
-        }),
-      });
-      const d=await r.json();
-      if(!r.ok||d.error) throw new Error(d.error);
-      setCreative(prev=>({...prev,copy:d.copy,title:d.title,description:d.description}));
-      toast("Copy generado ✓","success");
-    }catch(e){toast(e.message,"error");}
-    finally{setCopyLoading(false);}
+  async function handleAddCreative() {
+    if(!newCUrl.trim()||!newCName.trim()) return toast("Completá URL y nombre","warning");
+    const d=await metaApi("add_creative","POST",{filename:newCName,kind:newCKind,url:newCUrl},{acc_id:activeAccId});
+    if(d.error){toast(d.error,"error");return;}
+    setCreatives(prev=>[d.creative,...prev]);
+    setNewCUrl("");setNewCName("");setAddingUrl(false);
+    toast("Creativo agregado ✓","success");
   }
 
-  async function handlePublish(activate) {
-    if(!creative.fileBase64) return toast("Subí un creativo primero","warning");
-    if(!creative.copy.trim()) return toast("Generá o escribí el copy primero","warning");
-    if(!creative.adset_id) return toast("Seleccioná un AdSet","warning");
-    setPublishLoading(true);
-    setPublishResult(null);
-    try{
-      const r=await fetch(`${API(uid)}&action=publish`,{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({creative,activate,default_link:"",default_cta:creative.cta||"LEARN_MORE"}),
-      });
-      const d=await r.json();
-      if(!r.ok||d.error) throw new Error(d.error);
-      setPublishResult(d);
-      toast(activate?"Ad publicado ACTIVO ✓":"Ad creado en PAUSA ✓","success");
-    }catch(e){toast(e.message,"error");}
-    finally{setPublishLoading(false);}
+  async function handleGenerateCopy(c) {
+    setGeneratingCopy(c.id);
+    const params=new URLSearchParams({action:"generate_copy",uid,cid:c.id});
+    const d=await fetch(`/api/meta?${params}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tone:c.tone,length:c.length,format:c.format,notes:c.notes||""})}).then(r=>r.json());
+    if(d.error){toast(d.error,"error");setGeneratingCopy(null);return;}
+    setCreatives(prev=>prev.map(x=>x.id===c.id?d.creative:x));
+    setSelCreative(d.creative);
+    toast("Copy generado ✓","success");
+    setGeneratingCopy(null);
   }
 
-  // ── Estilos compartidos ───────────────────────────────────────────────────
-  const iS={width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"9px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
-  const BtnSec={background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
-  const BtnPri={background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7};
-  const BtnGreen={...BtnPri,background:T.green.replace("#","")?"#16a34a":T.green};
-  const Card={background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:20,marginBottom:16};
-  const Label={fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginBottom:7,display:"block"};
+  async function handlePatch(c,updates) {
+    const params=new URLSearchParams({action:"patch_creative",uid,cid:c.id});
+    const d=await fetch(`/api/meta?${params}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(updates)}).then(r=>r.json());
+    if(d.error){toast(d.error,"error");return;}
+    setCreatives(prev=>prev.map(x=>x.id===c.id?d.creative:x));
+    setSelCreative(d.creative);
+  }
+
+  async function handlePublish(c) {
+    if(!c.copy?.trim()) return toast("Generá el copy primero","warning");
+    if(!c.adset_id) return toast("Asigná un AdSet","warning");
+    if(!c.url) return toast("El creativo necesita URL","warning");
+    setPublishing(c.id);
+    const d=await metaApi("publish","POST",{creative_id:c.id,activate:false},{acc_id:activeAccId});
+    if(d.error){toast(d.error,"error");setPublishing(null);return;}
+    toast(`Ad publicado en PAUSED ✓ (ID: ${d.ad_id})`,"success");
+    setPublishing(null);
+  }
+
+  async function handleSaveBrand() {
+    setBrandSaving(true);
+    await metaApi("save_brand","POST",{text:brand});
+    toast("Brand context guardado ✓","success");
+    setBrandSaving(false);
+  }
+
+  if(loading) return(
+    <div style={{background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <Spinner size={28} color={T.accent}/>
+    </div>
+  );
 
   const TABS=[
     {id:"cuenta",label:"Cuenta"},
     {id:"campanas",label:"Campañas & AdSets"},
-    {id:"creativo",label:"Creativo & Publicar"},
+    {id:"creativos",label:"Creativos"},
   ];
 
-  return (
+  return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Meta Ads" onHome={onHome}>
         {activeAcc&&(
-          <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:6}}>
+          <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:5}}>
             <span style={{width:6,height:6,borderRadius:"50%",background:T.green,display:"inline-block"}}/>
-            {activeAcc.ad_account_name||activeAcc.user_name}
+            {activeAcc.ad_account_name||activeAcc.user_name||"Conectado"}
           </div>
         )}
       </AppTopbar>
-      <AppTabs T={T} tabs={TABS} active={tab} onChange={t=>{setTab(t);setShowNewCamp(false);setShowNewAdset(false);}}/>
+      <AppTabs T={T} tabs={TABS} active={tab} onChange={setTab}/>
 
-      <div style={{flex:1,maxWidth:960,margin:"0 auto",padding:"24px 24px",width:"100%"}}>
+      <div style={{maxWidth:1100,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
-        {/* ── TAB CUENTA ─────────────────────────────────────────────────── */}
+        {/* ── CUENTA ─────────────────────────────────── */}
         {tab==="cuenta"&&(
-          <TabView tabKey="cuenta">
-            {/* Cuenta activa */}
-            {activeAcc?(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"start"}}>
+            <div>
+              {/* Setup post-OAuth: elegir ad account y página */}
+              {pendingSetup&&(
+                <div style={{...Card,border:`1px solid ${T.accentSolid}55`}}>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Último paso — elegí tu ad account y página</div>
+                  <label style={Label}>Ad Account</label>
+                  <select value={selAdAcc} onChange={e=>setSelAdAcc(e.target.value)} style={{...iS,marginBottom:12}}>
+                    <option value="">— Seleccioná —</option>
+                    {(pendingSetup.ad_accounts||[]).map(a=><option key={a.id} value={a.id}>{a.name||a.id} ({a.id})</option>)}
+                  </select>
+                  <label style={Label}>Página de Facebook</label>
+                  <select value={selPage} onChange={e=>setSelPage(e.target.value)} style={{...iS,marginBottom:14}}>
+                    <option value="">— Seleccioná —</option>
+                    {(pendingSetup.pages||[]).map(p=><option key={p.id} value={p.id}>{p.name}{p.instagram_business_account?` · IG @${p.instagram_business_account.username}`:""}</option>)}
+                  </select>
+                  <button onClick={handleSaveSetup} disabled={savingSetup} style={{...BtnPri,width:"100%",justifyContent:"center"}}>
+                    {savingSetup?<><Spinner size={13} color="#fff"/>Guardando...</>:"Guardar configuración"}
+                  </button>
+                </div>
+              )}
+
+              {/* Cuentas conectadas */}
               <div style={Card}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuenta conectada</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-                  {[
-                    {label:"Usuario",value:activeAcc.user_name},
-                    {label:"Ad Account",value:activeAcc.ad_account_name||activeAcc.ad_account_id},
-                    {label:"Página",value:activeAcc.page_name},
-                    {label:"Instagram",value:activeAcc.ig_username?`@${activeAcc.ig_username}`:"—"},
-                  ].map(f=>(
-                    <div key={f.label} style={{background:T.surface,borderRadius:10,padding:"10px 14px"}}>
-                      <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{f.label}</div>
-                      <div style={{fontSize:13,fontWeight:600,color:T.text}}>{f.value||"—"}</div>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={handleDisconnect} style={{...BtnSec,color:T.red,borderColor:T.red+"44"}}>Desconectar cuenta</button>
-              </div>
-            ):(
-              <div style={Card}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Conectar cuenta Meta</div>
-                {connectStep==="input"&&(
-                  <>
-                    <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:12,color:T.yellow,lineHeight:1.5}}>
-                      Necesitás un <strong>User Access Token</strong> con permisos: <code>ads_management, ads_read, pages_show_list, instagram_basic</code>.<br/>
-                      Generalo en <strong>Meta for Developers → Graph API Explorer</strong>.
-                    </div>
-                    <label style={Label}>Access Token</label>
-                    <input style={{...iS,marginBottom:12,fontFamily:"monospace",fontSize:12}} placeholder="EAAxxxxxxxxxxxxx..." value={tokenInput} onChange={e=>setTokenInput(e.target.value)}/>
-                    <button onClick={handleConnect} disabled={loading} style={BtnPri}>
-                      {loading?<><Spinner size={13} color="#fff"/>Verificando...</>:"Conectar →"}
-                    </button>
-                  </>
-                )}
-                {connectStep==="select"&&connectData&&(
-                  <>
-                    <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:T.green}}>
-                      ✓ Token válido — {connectData.user.name}
-                    </div>
-                    <label style={Label}>Ad Account</label>
-                    <select style={{...iS,marginBottom:12}} value={selAdAccount?.id||""} onChange={e=>setSelAdAccount(connectData.ad_accounts.find(a=>a.id===e.target.value))}>
-                      {connectData.ad_accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.id})</option>)}
-                    </select>
-                    <label style={Label}>Página de Facebook</label>
-                    <select style={{...iS,marginBottom:16}} value={selPage?.id||""} onChange={e=>setSelPage(connectData.pages.find(p=>p.id===e.target.value))}>
-                      {connectData.pages.map(p=><option key={p.id} value={p.id}>{p.name}{p.instagram_business_account?` · IG @${p.instagram_business_account.username}`:""}</option>)}
-                    </select>
-                    <div style={{display:"flex",gap:8}}>
-                      <button onClick={handleSaveAccount} disabled={loading} style={BtnPri}>
-                        {loading?<><Spinner size={13} color="#fff"/>Guardando...</>:"Guardar configuración"}
-                      </button>
-                      <button onClick={()=>setConnectStep("input")} style={BtnSec}>← Atrás</button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Contexto de marca */}
-            <div style={Card}>
-              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Contexto de marca</div>
-              <div style={{fontSize:12,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Esta info la usa la IA para generar el copy. Producto, beneficios, target, promociones, URL de destino, etc.</div>
-              <textarea value={brandContext} onChange={e=>setBrandContext(e.target.value)}
-                placeholder="Ej: Soluna Biolight vende anteojos con filtro de luz azul. Colores: Rojo, Naranja, Amarillo. Target: personas de 30-60 años con pantallas. Precio: $25.000. Link: solunabiolight2.mitiendanube.com"
-                style={{...iS,minHeight:140,resize:"vertical",lineHeight:1.6}}/>
-              <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Se guarda automáticamente en este dispositivo.</div>
-            </div>
-          </TabView>
-        )}
-
-        {/* ── TAB CAMPAÑAS ───────────────────────────────────────────────── */}
-        {tab==="campanas"&&(
-          <TabView tabKey="campanas">
-            {!activeAcc?(
-              <div style={{textAlign:"center",padding:60,color:T.textSm,fontSize:13}}>Primero conectá una cuenta Meta en la pestaña Cuenta.</div>
-            ):(
-              <>
-                {/* Campañas */}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text}}>Campañas</div>
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={loadCampaigns} style={BtnSec} disabled={campsLoading}>{campsLoading?<Spinner size={12} color={T.accent}/>:"↻"} Actualizar</button>
-                    <button onClick={()=>setShowNewCamp(s=>!s)} style={BtnPri}>+ Nueva campaña</button>
-                  </div>
-                </div>
-
-                {showNewCamp&&(
-                  <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>Nueva campaña</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                      <div>
-                        <label style={Label}>Nombre</label>
-                        <input style={iS} placeholder="Ej: PRO · Mayo 2026" value={newCamp.name} onChange={e=>setNewCamp(p=>({...p,name:e.target.value}))}/>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuentas conectadas</div>
+                {accounts.length===0&&!pendingSetup?(
+                  <div style={{textAlign:"center",padding:"32px 0",color:T.textSm,fontSize:13}}>No hay cuentas conectadas</div>
+                ):accounts.map(a=>(
+                  <div key={a.id} onClick={()=>{setActiveAccId(a.id);metaApi("set_active","POST",{id:a.id});}}
+                    style={{background:activeAccId===a.id?T.accentSolid+"12":T.surface,border:`1px solid ${activeAccId===a.id?T.accentSolid+"55":T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,cursor:"pointer",transition:"all 0.15s"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:32,height:32,borderRadius:8,background:T.blueBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>📘</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.user_name||"Cuenta Meta"}</div>
+                        <div style={{fontSize:11,color:T.textSm}}>{a.ad_account_name||"Sin ad account"}{a.ig_username?` · @${a.ig_username}`:""}</div>
                       </div>
-                      <div>
-                        <label style={Label}>Objetivo</label>
-                        <select style={iS} value={newCamp.objective} onChange={e=>setNewCamp(p=>({...p,objective:e.target.value}))}>
-                          {OBJECTIVES.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}
-                        </select>
-                      </div>
+                      {activeAccId===a.id&&<span style={{fontSize:10,background:T.accentSolid,color:"#fff",borderRadius:4,padding:"2px 7px",fontWeight:600,flexShrink:0}}>ACTIVA</span>}
+                      <button onClick={e=>{e.stopPropagation();handleDisconnect(a.id);}} style={{...BtnSec,padding:"4px 8px",fontSize:11,color:T.red,borderColor:T.red+"44",flexShrink:0}}>✕</button>
                     </div>
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-                      <div onClick={()=>setNewCamp(p=>({...p,is_cbo:!p.is_cbo}))} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
-                        <div className="gh-toggle" style={{width:34,height:18,borderRadius:9,background:newCamp.is_cbo?T.accentSolid:T.border,position:"relative",flexShrink:0}}>
-                          <div className="gh-toggle-thumb" style={{width:14,height:14,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:newCamp.is_cbo?18:2}}/>
-                        </div>
-                        <span style={{fontSize:12,color:T.text,fontWeight:600}}>CBO (presupuesto en campaña)</span>
-                      </div>
-                      {newCamp.is_cbo&&(
-                        <input style={{...iS,width:160}} placeholder="Budget diario ARS" type="number" value={newCamp.cbo_daily_budget_ars} onChange={e=>setNewCamp(p=>({...p,cbo_daily_budget_ars:e.target.value}))}/>
-                      )}
-                    </div>
-                    <div style={{display:"flex",gap:8}}>
-                      <button onClick={handleCreateCampaign} disabled={loading} style={BtnPri}>{loading?<><Spinner size={12} color="#fff"/>Creando...</>:"Crear campaña"}</button>
-                      <button onClick={()=>setShowNewCamp(false)} style={BtnSec}>Cancelar</button>
-                    </div>
-                  </div>
-                )}
-
-                {campsLoading?(
-                  <div style={{textAlign:"center",padding:40}}><Spinner size={28} color={T.accent}/></div>
-                ):(
-                  <div style={{marginBottom:28}}>
-                    {campaigns.length===0?(
-                      <div style={{textAlign:"center",padding:30,color:T.textSm,fontSize:13}}>No hay campañas. Creá una o revisá que el ad account sea correcto.</div>
-                    ):campaigns.map(c=>(
-                      <div key={c.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-                        <div>
-                          <div style={{fontSize:13,fontWeight:700,color:T.text}}>{c.name}</div>
-                          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{c.objective} · {c.daily_budget?`$${Math.round(c.daily_budget/100).toLocaleString("es-AR")}/día`:"sin budget"}</div>
-                        </div>
-                        <span style={{fontSize:11,padding:"3px 9px",borderRadius:5,fontWeight:600,background:c.effective_status==="ACTIVE"?T.greenBg:T.yellowBg,color:c.effective_status==="ACTIVE"?T.green:T.yellow}}>{c.effective_status}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* AdSets */}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text}}>AdSets</div>
-                  <button onClick={()=>setShowNewAdset(s=>!s)} style={BtnPri}>+ Nuevo AdSet</button>
-                </div>
-
-                {showNewAdset&&(
-                  <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>Nuevo AdSet</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                      <div>
-                        <label style={Label}>Nombre</label>
-                        <input style={iS} placeholder="Ej: BIOHACKER · 30-45" value={newAdset.name} onChange={e=>setNewAdset(p=>({...p,name:e.target.value}))}/>
-                      </div>
-                      <div>
-                        <label style={Label}>Campaña</label>
-                        <select style={iS} value={newAdset.campaign_id} onChange={e=>setNewAdset(p=>({...p,campaign_id:e.target.value}))}>
-                          <option value="">— Seleccioná —</option>
-                          {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={Label}>Budget diario ARS (ABO)</label>
-                        <input style={iS} type="number" placeholder="3000" value={newAdset.daily_budget_ars} onChange={e=>setNewAdset(p=>({...p,daily_budget_ars:e.target.value}))}/>
-                      </div>
-                      <div>
-                        <label style={Label}>Inicio (opcional)</label>
-                        <input style={iS} type="datetime-local" value={newAdset.start_time} onChange={e=>setNewAdset(p=>({...p,start_time:e.target.value}))}/>
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:8}}>
-                      <button onClick={handleCreateAdset} disabled={loading} style={BtnPri}>{loading?<><Spinner size={12} color="#fff"/>Creando...</>:"Crear AdSet"}</button>
-                      <button onClick={()=>setShowNewAdset(false)} style={BtnSec}>Cancelar</button>
-                    </div>
-                  </div>
-                )}
-
-                {!campsLoading&&adsets.map(s=>(
-                  <div key={s.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-                    <div>
-                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>{s.name}</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{s.optimization_goal} · {s.daily_budget?`$${Math.round(s.daily_budget/100).toLocaleString("es-AR")}/día`:"CBO"}</div>
-                    </div>
-                    <span style={{fontSize:11,padding:"3px 9px",borderRadius:5,fontWeight:600,background:s.effective_status==="ACTIVE"?T.greenBg:T.yellowBg,color:s.effective_status==="ACTIVE"?T.green:T.yellow}}>{s.effective_status}</span>
                   </div>
                 ))}
-              </>
-            )}
-          </TabView>
+                {/* Botón OAuth */}
+                <button onClick={handleOAuth} style={{...BtnPri,width:"100%",justifyContent:"center",marginTop:accounts.length>0?12:0,background:"#1877f2"}}>
+                  <span style={{fontSize:16}}>f</span>
+                  {accounts.length>0?"Conectar otra cuenta":"Conectar cuenta con Meta"}
+                </button>
+              </div>
+            </div>
+
+            {/* Brand context */}
+            <div style={Card}>
+              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Contexto de marca</div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Esta info la usa la IA para generar copy. Producto, beneficios, target, precio, URL de destino.</div>
+              <textarea value={brand} onChange={e=>setBrand(e.target.value)}
+                placeholder="Ej: Vendemos anteojos con filtro de luz azul. Colores: Rojo, Naranja, Amarillo. Target: 30-60 años. Precio: $25.000. Link: mitienda.com"
+                style={{...iS,minHeight:180,resize:"vertical",lineHeight:1.6,marginBottom:12}}/>
+              <button onClick={handleSaveBrand} disabled={brandSaving} style={{...BtnSec,width:"100%",justifyContent:"center"}}>
+                {brandSaving?<><Spinner size={12} color={T.textMd}/>Guardando...</>:"Guardar brand context"}
+              </button>
+            </div>
+          </div>
         )}
 
-        {/* ── TAB CREATIVO ───────────────────────────────────────────────── */}
-        {tab==="creativo"&&(
-          <TabView tabKey="creativo">
-            {!activeAcc?(
-              <div style={{textAlign:"center",padding:60,color:T.textSm,fontSize:13}}>Primero conectá una cuenta Meta en la pestaña Cuenta.</div>
-            ):(
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-
-                {/* Izquierda: archivo + copy */}
-                <div>
-                  {/* Upload */}
-                  <div style={Card}>
-                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Creativo</div>
-                    <input ref={fileRef} type="file" accept="image/*,video/*" style={{display:"none"}} onChange={handleFileSelect}/>
-                    {creative.fileBase64?(
-                      <div style={{background:T.surface,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
-                        <span style={{fontSize:18}}>{creative.kind==="video"?"🎬":"🖼️"}</span>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{creative.filename}</div>
-                          <div style={{fontSize:11,color:T.textSm,textTransform:"capitalize"}}>{creative.kind}</div>
-                        </div>
-                        <button onClick={()=>{setCreative(p=>({...p,fileBase64:"",filename:"",kind:"image"}));setPublishResult(null);}} style={{...BtnSec,padding:"4px 9px",fontSize:11}}>✕</button>
-                      </div>
-                    ):(
-                      <button onClick={()=>fileRef.current?.click()} style={{...BtnSec,width:"100%",justifyContent:"center",padding:"16px",fontSize:13,borderStyle:"dashed",marginBottom:0}}>
-                        📎 Seleccionar imagen o video
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Copy settings */}
-                  <div style={Card}>
-                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Estilo del copy</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
-                      <div>
-                        <label style={Label}>Tono</label>
-                        <select style={iS} value={creative.tone} onChange={e=>setCreative(p=>({...p,tone:e.target.value}))}>
-                          {TONOS.map(t=><option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={Label}>Largo</label>
-                        <select style={iS} value={creative.length} onChange={e=>setCreative(p=>({...p,length:e.target.value}))}>
-                          {LARGOS.map(l=><option key={l} value={l}>{l}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={Label}>Formato</label>
-                        <select style={iS} value={creative.format} onChange={e=>setCreative(p=>({...p,format:e.target.value}))}>
-                          {FORMATOS.map(f=><option key={f} value={f}>{f}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                    <label style={Label}>Notas para la IA (opcional)</label>
-                    <input style={{...iS,marginBottom:12}} placeholder="Ej: enfocate en el dolor de cabeza, target mamás" value={creative.notes} onChange={e=>setCreative(p=>({...p,notes:e.target.value}))}/>
-                    <button onClick={handleGenerateCopy} disabled={copyLoading||!creative.filename} style={BtnPri}>
-                      {copyLoading?<><Spinner size={13} color="#fff"/>Generando...</>:"✨ Generar copy con IA"}
-                    </button>
-                  </div>
-
-                  {/* Copy editable */}
-                  <div style={Card}>
-                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Copy</div>
-                    <label style={Label}>Texto principal</label>
-                    <textarea value={creative.copy} onChange={e=>setCreative(p=>({...p,copy:e.target.value}))} placeholder="El copy del ad..." style={{...iS,minHeight:120,resize:"vertical",lineHeight:1.6,marginBottom:10}}/>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                      <div>
-                        <label style={Label}>Título (máx 40 chars)</label>
-                        <input style={iS} maxLength={40} value={creative.title} onChange={e=>setCreative(p=>({...p,title:e.target.value}))} placeholder="Título del ad"/>
-                      </div>
-                      <div>
-                        <label style={Label}>Descripción (máx 30 chars)</label>
-                        <input style={iS} maxLength={30} value={creative.description} onChange={e=>setCreative(p=>({...p,description:e.target.value}))} placeholder="Descripción"/>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Derecha: destino + publicar */}
-                <div>
-                  <div style={Card}>
-                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Destino y AdSet</div>
-                    <label style={Label}>URL de destino</label>
-                    <input style={{...iS,marginBottom:10}} placeholder="https://tu-tienda.com/producto" value={creative.link} onChange={e=>setCreative(p=>({...p,link:e.target.value}))}/>
-                    <label style={Label}>CTA</label>
-                    <select style={{...iS,marginBottom:10}} value={creative.cta} onChange={e=>setCreative(p=>({...p,cta:e.target.value}))}>
-                      {CTAS.map(c=><option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <label style={Label}>AdSet destino</label>
-                    <select style={iS} value={creative.adset_id} onChange={e=>setCreative(p=>({...p,adset_id:e.target.value}))}>
-                      <option value="">— Seleccioná un AdSet —</option>
-                      {adsets.map(s=>{
-                        const camp=campaigns.find(c=>c.id===s.campaign_id);
-                        return <option key={s.id} value={s.id}>{camp?`[${camp.name}] `:""}{s.name}</option>;
-                      })}
-                    </select>
-                    {adsets.length===0&&(
-                      <div style={{fontSize:11,color:T.textSm,marginTop:8}}>No hay AdSets. Creá uno en la pestaña Campañas & AdSets.</div>
-                    )}
-                  </div>
-
-                  {/* Publicar */}
-                  <div style={Card}>
-                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Publicar</div>
-                    {publishResult?(
-                      <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"14px 16px",marginBottom:12}}>
-                        <div style={{fontSize:13,fontWeight:700,color:T.green,marginBottom:6}}>✓ Ad creado</div>
-                        <div style={{fontSize:12,color:T.textMd}}>Ad ID: <code style={{fontFamily:"monospace"}}>{publishResult.ad_id}</code></div>
-                        <div style={{fontSize:12,color:T.textMd}}>Estado: <strong style={{color:publishResult.status==="ACTIVE"?T.green:T.yellow}}>{publishResult.status}</strong></div>
-                      </div>
-                    ):(
-                      <div style={{fontSize:12,color:T.textSm,marginBottom:14,lineHeight:1.5}}>
-                        Revisá todo antes de publicar. El ad se crea directamente en tu cuenta de Meta.
-                      </div>
-                    )}
-                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                      <button onClick={()=>handlePublish(false)} disabled={publishLoading} style={{...BtnSec,justifyContent:"center",padding:"10px"}}>
-                        {publishLoading?<><Spinner size={12} color={T.accent}/>Publicando...</>:"Crear en PAUSA"}
-                      </button>
-                      <button onClick={()=>handlePublish(true)} disabled={publishLoading} style={{...BtnPri,justifyContent:"center",padding:"11px",background:"#16a34a"}}>
-                        {publishLoading?<><Spinner size={12} color="#fff"/>Publicando...</>:"🚀 Publicar ACTIVO"}
-                      </button>
-                    </div>
-                  </div>
+        {/* ── CAMPAÑAS ───────────────────────────────── */}
+        {tab==="campanas"&&(
+          !activeAcc
+          ?<div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero</div>
+          :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+            {/* Campañas */}
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>Campañas ({campaigns.length})</div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={loadCampaigns} disabled={campsLoading} style={{...BtnSec,padding:"6px 10px"}}>↻</button>
+                  <button onClick={()=>setShowNewCamp(s=>!s)} style={{...BtnSec,fontSize:12,padding:"6px 12px"}}>+ Nueva</button>
                 </div>
               </div>
+              {showNewCamp&&(
+                <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
+                  <input value={newCamp.name} onChange={e=>setNewCamp(p=>({...p,name:e.target.value}))} placeholder="Nombre campaña" style={{...iS,marginBottom:10}}/>
+                  <select value={newCamp.objective} onChange={e=>setNewCamp(p=>({...p,objective:e.target.value}))} style={{...iS,marginBottom:10}}>
+                    {OBJECTIVES.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,cursor:"pointer"}} onClick={()=>setNewCamp(p=>({...p,is_cbo:!p.is_cbo}))}>
+                    <div className="gh-toggle" style={{width:34,height:18,borderRadius:9,background:newCamp.is_cbo?T.accentSolid:T.border,position:"relative",flexShrink:0}}>
+                      <div className="gh-toggle-thumb" style={{width:14,height:14,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:newCamp.is_cbo?18:2}}/>
+                    </div>
+                    <span style={{fontSize:12,color:T.text}}>CBO</span>
+                    {newCamp.is_cbo&&<input onClick={e=>e.stopPropagation()} value={newCamp.cbo_daily_budget_ars} onChange={e=>setNewCamp(p=>({...p,cbo_daily_budget_ars:e.target.value}))} placeholder="Budget diario ARS" style={{...iS,width:160}}/>}
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={handleCreateCampaign} disabled={campCreating} style={{...BtnPri,flex:1,justifyContent:"center"}}>{campCreating?<><Spinner size={12} color="#fff"/>Creando...</>:"Crear campaña"}</button>
+                    <button onClick={()=>setShowNewCamp(false)} style={{...BtnSec,padding:"9px 14px"}}>✕</button>
+                  </div>
+                </div>
+              )}
+              {campsLoading?<div style={{textAlign:"center",padding:40}}><Spinner size={24} color={T.accent}/></div>
+              :campaigns.length===0?<div style={{textAlign:"center",padding:32,color:T.textSm,fontSize:13}}>No hay campañas</div>
+              :campaigns.map(c=>(
+                <div key={c.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 14px",marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+                      <div style={{fontSize:11,color:T.textSm}}>{OBJECTIVES.find(o=>o.id===c.objective)?.label||c.objective}{c.daily_budget?` · $${Math.round(c.daily_budget/100).toLocaleString("es-AR")}/día`:""}</div>
+                    </div>
+                    <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,background:c.effective_status==="ACTIVE"?T.greenBg:T.surface,color:c.effective_status==="ACTIVE"?T.green:T.textSm,border:`1px solid ${c.effective_status==="ACTIVE"?T.green+"33":T.border}`,flexShrink:0}}>{c.effective_status||c.status}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* AdSets */}
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>AdSets ({adsets.length})</div>
+                <button onClick={()=>setShowNewAdset(s=>!s)} style={{...BtnSec,fontSize:12,padding:"6px 12px"}}>+ Nuevo</button>
+              </div>
+              {showNewAdset&&(
+                <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
+                  <select value={newAdset.campaign_id} onChange={e=>setNewAdset(p=>({...p,campaign_id:e.target.value}))} style={{...iS,marginBottom:10}}>
+                    <option value="">— Campaña —</option>
+                    {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <input value={newAdset.name} onChange={e=>setNewAdset(p=>({...p,name:e.target.value}))} placeholder="Nombre AdSet" style={{...iS,marginBottom:10}}/>
+                  <input value={newAdset.daily_budget_ars} onChange={e=>setNewAdset(p=>({...p,daily_budget_ars:e.target.value}))} placeholder="Presupuesto diario ARS" style={{...iS,marginBottom:10}}/>
+                  <input type="datetime-local" value={newAdset.start_time} onChange={e=>setNewAdset(p=>({...p,start_time:e.target.value}))} style={{...iS,marginBottom:12}}/>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={handleCreateAdset} disabled={adsetCreating} style={{...BtnPri,flex:1,justifyContent:"center"}}>{adsetCreating?<><Spinner size={12} color="#fff"/>Creando...</>:"Crear AdSet"}</button>
+                    <button onClick={()=>setShowNewAdset(false)} style={{...BtnSec,padding:"9px 14px"}}>✕</button>
+                  </div>
+                </div>
+              )}
+              {adsets.length===0?<div style={{textAlign:"center",padding:32,color:T.textSm,fontSize:13}}>No hay adsets</div>
+              :adsets.map(a=>{
+                const camp=campaigns.find(c=>c.id===a.campaign_id);
+                return(
+                  <div key={a.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 14px",marginBottom:8}}>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{camp?.name||a.campaign_id} · {a.effective_status||a.status}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── CREATIVOS ──────────────────────────────── */}
+        {tab==="creativos"&&(
+          !activeAcc
+          ?<div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero</div>
+          :<div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:20,alignItems:"start"}}>
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>Creativos ({creatives.length})</div>
+                <button onClick={()=>setAddingUrl(s=>!s)} style={{...BtnSec,fontSize:12,padding:"6px 12px"}}>+ Agregar por URL</button>
+              </div>
+              {addingUrl&&(
+                <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
+                  <input value={newCUrl} onChange={e=>setNewCUrl(e.target.value)} placeholder="URL pública del archivo" style={{...iS,marginBottom:10}}/>
+                  <input value={newCName} onChange={e=>setNewCName(e.target.value)} placeholder="Nombre (ej: reel_dolor.mp4)" style={{...iS,marginBottom:10}}/>
+                  <select value={newCKind} onChange={e=>setNewCKind(e.target.value)} style={{...iS,marginBottom:12}}>
+                    <option value="image">Imagen</option>
+                    <option value="video">Video</option>
+                  </select>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={handleAddCreative} style={{...BtnPri,flex:1,justifyContent:"center"}}>Agregar</button>
+                    <button onClick={()=>setAddingUrl(false)} style={{...BtnSec,padding:"9px 14px"}}>✕</button>
+                  </div>
+                </div>
+              )}
+              {creativesLoading?<div style={{textAlign:"center",padding:40}}><Spinner size={24} color={T.accent}/></div>
+              :creatives.length===0?<div style={{textAlign:"center",padding:40,color:T.textSm,fontSize:13}}>No hay creativos. Agregá uno con URL pública.</div>
+              :creatives.map(c=>(
+                <div key={c.id} onClick={()=>setSelCreative(selCreative?.id===c.id?null:c)}
+                  style={{background:selCreative?.id===c.id?T.accentSolid+"12":T.card,border:`1px solid ${selCreative?.id===c.id?T.accentSolid+"55":T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,cursor:"pointer",transition:"all 0.15s"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:20,flexShrink:0}}>{c.kind==="video"?"🎬":"🖼️"}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.filename}</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>
+                        {c.ia_status==="ok"?<span style={{color:T.green}}>✓ Copy listo</span>:<span>Sin copy</span>}
+                        {c.adset_id?<span style={{color:T.blue,marginLeft:8}}>· AdSet ✓</span>:""}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Panel edición creativo */}
+            {selCreative&&(
+              <div style={{...Card,position:"sticky",top:80}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>{selCreative.filename_base}</div>
+                {[{label:"Tono",key:"tone",opts:TONOS},{label:"Largo",key:"length",opts:LARGOS},{label:"Formato",key:"format",opts:FORMATOS}].map(({label,key,opts})=>(
+                  <div key={key} style={{marginBottom:10}}>
+                    <label style={Label}>{label}</label>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                      {opts.map(o=>(
+                        <button key={o} onClick={()=>{const u={...selCreative,[key]:o};setSelCreative(u);handlePatch(selCreative,{[key]:o});}}
+                          style={{padding:"4px 10px",fontSize:11,borderRadius:6,border:`1px solid ${selCreative[key]===o?T.accentSolid+"88":T.border}`,background:selCreative[key]===o?T.accentSolid+"18":"transparent",color:selCreative[key]===o?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                          {o}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <label style={Label}>Notas para la IA</label>
+                <textarea value={selCreative.notes||""} onChange={e=>setSelCreative(p=>({...p,notes:e.target.value}))} onBlur={()=>handlePatch(selCreative,{notes:selCreative.notes})} placeholder="Indicaciones extras..." style={{...iS,minHeight:60,resize:"vertical",marginBottom:12}}/>
+                <button onClick={()=>handleGenerateCopy(selCreative)} disabled={!!generatingCopy} style={{...BtnPri,width:"100%",justifyContent:"center",marginBottom:14}}>
+                  {generatingCopy===selCreative.id?<><Spinner size={13} color="#fff"/>Generando...</>:"✨ Generar copy con Gemini"}
+                </button>
+                {selCreative.copy&&(
+                  <>
+                    <label style={Label}>Copy</label>
+                    <textarea value={selCreative.copy} onChange={e=>{const u={...selCreative,copy:e.target.value};setSelCreative(u);}} onBlur={()=>handlePatch(selCreative,{copy:selCreative.copy})} style={{...iS,minHeight:90,resize:"vertical",marginBottom:10}}/>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                      <div>
+                        <label style={Label}>Titular</label>
+                        <input value={selCreative.title||""} onChange={e=>{const u={...selCreative,title:e.target.value};setSelCreative(u);}} onBlur={()=>handlePatch(selCreative,{title:selCreative.title})} style={iS}/>
+                      </div>
+                      <div>
+                        <label style={Label}>Descripción</label>
+                        <input value={selCreative.description||""} onChange={e=>{const u={...selCreative,description:e.target.value};setSelCreative(u);}} onBlur={()=>handlePatch(selCreative,{description:selCreative.description})} style={iS}/>
+                      </div>
+                    </div>
+                    <label style={Label}>AdSet</label>
+                    <select value={selCreative.adset_id||""} onChange={e=>{const u={...selCreative,adset_id:e.target.value};setSelCreative(u);handlePatch(selCreative,{adset_id:e.target.value});}} style={{...iS,marginBottom:10}}>
+                      <option value="">— Elegí un AdSet —</option>
+                      {adsets.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                    <label style={Label}>CTA</label>
+                    <select value={selCreative.cta||"LEARN_MORE"} onChange={e=>{const u={...selCreative,cta:e.target.value};setSelCreative(u);handlePatch(selCreative,{cta:e.target.value});}} style={{...iS,marginBottom:14}}>
+                      {CTAS.map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <button onClick={()=>handlePublish(selCreative)} disabled={!!publishing} style={{...BtnPri,width:"100%",justifyContent:"center",background:"#16a34a"}}>
+                      {publishing===selCreative.id?<><Spinner size={13} color="#fff"/>Publicando...</>:"🚀 Publicar en Meta (PAUSED)"}
+                    </button>
+                  </>
+                )}
+              </div>
             )}
-          </TabView>
+          </div>
         )}
       </div>
     </div>
