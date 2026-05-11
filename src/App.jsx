@@ -4829,13 +4829,15 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               reclamos: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
               canjes:   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
               envios:   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
+              audio:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>,
             };
             return (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:28}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>
             {[
               {id:"reclamos", label:"Reclamos", desc:"Cambios y devoluciones",   stat:reclamosCount, statLabel:"activos",  accent:"#f87171", accentBg:"rgba(248,113,113,0.08)"},
               {id:"canjes",   label:"Canjes",   desc:"Influencers y contenido",  stat:canjesCount,   statLabel:"canjes",   accent:"#c084fc", accentBg:"rgba(192,132,252,0.08)"},
               {id:"envios",   label:"Envíos",   desc:"Despachos y seguimientos", stat:ordersCount,   statLabel:"pedidos",  accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
+              {id:"audio",    label:"Audio Studio", desc:"Voces TTS con IA",     stat:null,          statLabel:"voces",    accent:"#a78bfa", accentBg:"rgba(167,139,250,0.08)"},
             ].map(item=>(
               <button key={item.id} onClick={()=>onNavigate(item.id)}
                 style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 24px 20px",textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column",position:"relative",overflow:"hidden"}}
@@ -4848,8 +4850,10 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
                 <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>{item.label}</div>
                 <div style={{fontSize:12,color:T.textSm,marginBottom:20,lineHeight:1.5}}>{item.desc}</div>
                 <div style={{marginTop:"auto",paddingTop:18,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"baseline",gap:6}}>
-                  <span style={{fontSize:34,fontWeight:800,color:item.accent,letterSpacing:-1.5,lineHeight:1}}>{item.stat??<Spinner size={16} color={item.accent}/>}</span>
-                  <span style={{fontSize:12,color:T.textSm}}>{item.statLabel}</span>
+                  {item.id==="audio"
+                    ? <span style={{fontSize:20,fontWeight:800,color:item.accent,letterSpacing:-0.5,lineHeight:1}}>30 voces</span>
+                    : <><span style={{fontSize:34,fontWeight:800,color:item.accent,letterSpacing:-1.5,lineHeight:1}}>{item.stat??<Spinner size={16} color={item.accent}/>}</span><span style={{fontSize:12,color:T.textSm}}>{item.statLabel}</span></>
+                  }
                 </div>
               </button>
             ))}
@@ -5536,6 +5540,293 @@ function AppAdmin({T, user, onBack}) {
   );
 }
 
+
+// ===========================================
+// APP AUDIO STUDIO
+// ===========================================
+function AppAudioStudio({T, user, onHome}) {
+  const VOICES_DATA=[
+    {name:"Zephyr",desc:"Brillante",gen:"f",tono:"energica"},
+    {name:"Puck",desc:"Animada",gen:"m",tono:"energica"},
+    {name:"Charon",desc:"Informativa",gen:"m",tono:"neutra"},
+    {name:"Kore",desc:"Firme",gen:"f",tono:"neutra"},
+    {name:"Fenrir",desc:"Excitable",gen:"m",tono:"energica"},
+    {name:"Leda",desc:"Juvenil",gen:"f",tono:"calma"},
+    {name:"Orus",desc:"Firme",gen:"m",tono:"neutra"},
+    {name:"Aoede",desc:"Suave",gen:"f",tono:"calma"},
+    {name:"Callirrhoe",desc:"Tranquila",gen:"f",tono:"calma"},
+    {name:"Autonoe",desc:"Brillante",gen:"f",tono:"energica"},
+    {name:"Enceladus",desc:"Susurrante",gen:"m",tono:"calma"},
+    {name:"Iapetus",desc:"Clara",gen:"m",tono:"neutra"},
+    {name:"Umbriel",desc:"Tranquila",gen:"m",tono:"calma"},
+    {name:"Algieba",desc:"Suave",gen:"m",tono:"calma"},
+    {name:"Despina",desc:"Suave",gen:"f",tono:"calma"},
+    {name:"Erinome",desc:"Clara",gen:"f",tono:"neutra"},
+    {name:"Algenib",desc:"Grave",gen:"m",tono:"neutra"},
+    {name:"Rasalgethi",desc:"Informativa",gen:"m",tono:"neutra"},
+    {name:"Laomedeia",desc:"Animada",gen:"f",tono:"energica"},
+    {name:"Achernar",desc:"Suave",gen:"f",tono:"calma"},
+    {name:"Alnilam",desc:"Firme",gen:"m",tono:"neutra"},
+    {name:"Schedar",desc:"Equilibrada",gen:"f",tono:"neutra"},
+    {name:"Gacrux",desc:"Madura",gen:"f",tono:"neutra"},
+    {name:"Pulcherrima",desc:"Decidida",gen:"f",tono:"energica"},
+    {name:"Achird",desc:"Amigable",gen:"m",tono:"calma"},
+    {name:"Zubenelgenubi",desc:"Casual",gen:"m",tono:"neutra"},
+    {name:"Vindemiatrix",desc:"Gentil",gen:"f",tono:"calma"},
+    {name:"Sadachbia",desc:"Animada",gen:"m",tono:"energica"},
+    {name:"Sadaltager",desc:"Sabio",gen:"m",tono:"neutra"},
+    {name:"Sulafat",desc:"Cálida",gen:"f",tono:"calma"},
+  ];
+
+  const [filtroGen,setFiltroGen]=useState("todos");
+  const [filtroTono,setFiltroTono]=useState("todos");
+  const [voiceSel,setVoiceSel]=useState("Zephyr");
+  const [text,setText]=useState("");
+  const [applyStyle,setApplyStyle]=useState(true);
+  const [generating,setGenerating]=useState(false);
+  const [genError,setGenError]=useState(null);
+  const [previewLoading,setPreviewLoading]=useState(null);
+  const [previewAudio,setPreviewAudio]=useState({});
+  const [previewPlaying,setPreviewPlaying]=useState(null);
+  const [history,setHistory]=useState([]);
+  const [playingId,setPlayingId]=useState(null);
+  const previewRefs=useRef({});
+  const audioRefs=useRef({});
+  const MAX_CHARS=3000;
+
+  const voicesFiltradas=VOICES_DATA.filter(v=>{
+    if(filtroGen!=="todos"&&v.gen!==filtroGen) return false;
+    if(filtroTono!=="todos"&&v.tono!==filtroTono) return false;
+    return true;
+  });
+
+  async function handlePreview(voiceName) {
+    if(previewAudio[voiceName]) {
+      const audio=previewRefs.current[voiceName];
+      if(!audio) return;
+      if(previewPlaying===voiceName){audio.pause();setPreviewPlaying(null);}
+      else{
+        if(previewPlaying&&previewRefs.current[previewPlaying]) previewRefs.current[previewPlaying].pause();
+        audio.currentTime=0; audio.play(); setPreviewPlaying(voiceName);
+        audio.onended=()=>setPreviewPlaying(null);
+      }
+      return;
+    }
+    setPreviewLoading(voiceName);
+    try{
+      const r=await fetch(`/api/audio?action=sample&voice=${voiceName}`);
+      const d=await r.json();
+      if(!d.audioBase64) throw new Error(d.error||"Error");
+      const url=`data:${d.mimeType};base64,${d.audioBase64}`;
+      setPreviewAudio(prev=>({...prev,[voiceName]:url}));
+      if(previewPlaying&&previewRefs.current[previewPlaying]) previewRefs.current[previewPlaying].pause();
+      setTimeout(()=>{
+        const audio=previewRefs.current[voiceName];
+        if(audio){audio.currentTime=0;audio.play();setPreviewPlaying(voiceName);audio.onended=()=>setPreviewPlaying(null);}
+      },50);
+    }catch(e){toast("Error al previsualizar: "+e.message,"error");}
+    finally{setPreviewLoading(null);}
+  }
+
+  async function handleGenerate() {
+    if(!text.trim()) return toast("Escribí algo antes de generar","warning");
+    if(!voiceSel) return toast("Seleccioná una voz","warning");
+    if(text.length>MAX_CHARS) return toast(`Máximo ${MAX_CHARS} caracteres`,"warning");
+    setGenerating(true); setGenError(null);
+    try{
+      const r=await fetch("/api/audio",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({text,voice_name:voiceSel,apply_style:applyStyle,uid:user?.uid}),
+      });
+      const d=await r.json();
+      if(!r.ok||d.error) throw new Error(d.error||"Error al generar");
+      const url=`data:${d.mimeType};base64,${d.audioBase64}`;
+      const id=Date.now();
+      setHistory(prev=>[{
+        id,url,voice:d.voice,duration:d.duration,chars:d.chars,
+        text:text.slice(0,120)+(text.length>120?"…":""),
+        ts:new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}),
+        mimeType:d.mimeType,
+      },...prev].slice(0,20));
+      toast("Audio generado ✓","success");
+    }catch(e){setGenError(e.message);toast(e.message,"error");}
+    finally{setGenerating(false);}
+  }
+
+  function togglePlay(id) {
+    if(playingId===id){audioRefs.current[id]?.pause();setPlayingId(null);}
+    else{
+      if(playingId&&audioRefs.current[playingId]) audioRefs.current[playingId].pause();
+      const a=audioRefs.current[id];
+      if(a){a.currentTime=0;a.play();setPlayingId(id);a.onended=()=>setPlayingId(null);}
+    }
+  }
+
+  function downloadAudio(item) {
+    const a=document.createElement("a");
+    a.href=item.url;
+    a.download=`growith_audio_${item.voice}_${Date.now()}.wav`;
+    a.click();
+  }
+
+  const iS={width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"10px 14px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
+  const BtnSec={background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
+  const BtnPri={background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"11px 20px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8};
+  const TONO_DOT={calma:T.blue,neutra:T.textSm,energica:T.orange};
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      <AppTopbar T={T} section="Audio Studio" onHome={onHome}>
+        <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:5}}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:T.green,display:"inline-block"}}/>
+          Gemini TTS · {VOICES_DATA.length} voces
+        </div>
+      </AppTopbar>
+
+      <div style={{flex:1,maxWidth:1280,margin:"0 auto",padding:"24px 24px",width:"100%",display:"grid",gridTemplateColumns:"1fr 370px",gap:24,alignItems:"start"}}>
+
+        {/* IZQUIERDA — selector de voces */}
+        <div>
+          {/* Filtros */}
+          <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+            <div style={{display:"flex",background:T.surface,borderRadius:8,padding:3,border:`1px solid ${T.border}`,gap:2}}>
+              {[["todos","Todas"],["f","Femeninas"],["m","Masculinas"]].map(([val,label])=>(
+                <button key={val} onClick={()=>setFiltroGen(val)} style={{padding:"5px 12px",fontSize:12,fontWeight:filtroGen===val?700:400,borderRadius:6,border:"none",background:filtroGen===val?T.card:"transparent",color:filtroGen===val?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:filtroGen===val?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{label}</button>
+              ))}
+            </div>
+            <div style={{display:"flex",background:T.surface,borderRadius:8,padding:3,border:`1px solid ${T.border}`,gap:2}}>
+              {[["todos","Todos"],["calma","Calma"],["neutra","Neutra"],["energica","Enérgica"]].map(([val,label])=>(
+                <button key={val} onClick={()=>setFiltroTono(val)} style={{padding:"5px 12px",fontSize:12,fontWeight:filtroTono===val?700:400,borderRadius:6,border:"none",background:filtroTono===val?T.card:"transparent",color:filtroTono===val?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:filtroTono===val?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{label}</button>
+              ))}
+            </div>
+            <span style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>{voicesFiltradas.length} de {VOICES_DATA.length} voces</span>
+          </div>
+
+          {/* Grid voces */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(168px,1fr))",gap:10}}>
+            {voicesFiltradas.map(v=>{
+              const isSel=voiceSel===v.name;
+              const isLoadPrev=previewLoading===v.name;
+              const isPlayPrev=previewPlaying===v.name;
+              const cached=!!previewAudio[v.name];
+              return (
+                <div key={v.name} onClick={()=>setVoiceSel(v.name)}
+                  style={{background:isSel?T.accentSolid+"15":T.card,border:`1px solid ${isSel?T.accentSolid+"88":T.border}`,borderRadius:12,padding:"13px 13px 11px",cursor:"pointer",transition:"all 0.15s",position:"relative",boxShadow:isSel?`0 0 0 2px ${T.accentSolid}33`:"none"}}
+                  onMouseEnter={e=>{if(!isSel)e.currentTarget.style.borderColor=T.accent+"55";}}
+                  onMouseLeave={e=>{if(!isSel)e.currentTarget.style.borderColor=T.border;}}>
+                  {previewAudio[v.name]&&<audio ref={el=>previewRefs.current[v.name]=el} src={previewAudio[v.name]} preload="auto" style={{display:"none"}}/>}
+                  {isSel&&<div style={{position:"absolute",top:10,right:10,width:7,height:7,borderRadius:"50%",background:T.accentSolid}}/>}
+                  <div style={{width:36,height:36,borderRadius:9,background:isSel?T.accentSolid:T.surface,border:`1px solid ${isSel?T.accentSolid:T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,marginBottom:9,color:isSel?"#fff":T.textMd}}>
+                    {v.gen==="f"?"♀":"♂"}
+                  </div>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>{v.name}</div>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:9}}>{v.desc}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:9}}>
+                    <span style={{width:5,height:5,borderRadius:"50%",background:TONO_DOT[v.tono]||T.textSm,flexShrink:0}}/>
+                    <span style={{fontSize:10,color:T.textSm,textTransform:"capitalize"}}>{v.tono}</span>
+                    <span style={{fontSize:10,color:T.textSm}}>·</span>
+                    <span style={{fontSize:10,color:T.textSm}}>{v.gen==="f"?"Fem":"Mas"}</span>
+                  </div>
+                  <button onClick={e=>{e.stopPropagation();handlePreview(v.name);}}
+                    style={{width:"100%",padding:"5px 0",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${isSel?T.accentSolid+"55":T.border}`,background:"transparent",color:isSel?T.accent:T.textMd,cursor:isLoadPrev?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                    {isLoadPrev?<><Spinner size={9} color={T.accent}/>Cargando...</>:isPlayPrev?"⏸ Pausar":cached?"▶ Escuchar":"▶ Preview"}
+                  </button>
+                </div>
+              );
+            })}
+            {voicesFiltradas.length===0&&(
+              <div style={{gridColumn:"1/-1",textAlign:"center",padding:40,color:T.textSm,fontSize:13}}>No hay voces con esos filtros</div>
+            )}
+          </div>
+        </div>
+
+        {/* DERECHA — editor + historial */}
+        <div style={{display:"flex",flexDirection:"column",gap:16,position:"sticky",top:80}}>
+
+          {/* Panel generación */}
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:20}}>
+            <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Generar audio</div>
+
+            {/* Voz seleccionada */}
+            {voiceSel&&(()=>{
+              const v=VOICES_DATA.find(x=>x.name===voiceSel);
+              return v?(
+                <div style={{background:T.surface,border:`1px solid ${T.accentSolid}44`,borderRadius:10,padding:"9px 13px",marginBottom:14,display:"flex",alignItems:"center",gap:9}}>
+                  <div style={{width:30,height:30,borderRadius:8,background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{v.gen==="f"?"♀":"♂"}</div>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text}}>{v.name}</div>
+                    <div style={{fontSize:11,color:T.textSm}}>{v.desc} · {v.tono}</div>
+                  </div>
+                </div>
+              ):null;
+            })()}
+
+            {/* Textarea */}
+            <div style={{position:"relative",marginBottom:14}}>
+              <textarea value={text} onChange={e=>setText(e.target.value)}
+                placeholder="Escribí el texto para generar la locución..." maxLength={MAX_CHARS}
+                style={{...iS,minHeight:140,resize:"vertical",lineHeight:1.6,padding:"12px 14px"}}/>
+              <div style={{position:"absolute",bottom:10,right:12,fontSize:11,color:text.length>MAX_CHARS*0.9?T.orange:T.textSm}}>
+                {text.length}/{MAX_CHARS}
+              </div>
+            </div>
+
+            {/* Toggle acento */}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,cursor:"pointer"}} onClick={()=>setApplyStyle(s=>!s)}>
+              <div className="gh-toggle" style={{width:34,height:18,borderRadius:9,background:applyStyle?T.accentSolid:T.border,position:"relative",flexShrink:0}}>
+                <div className="gh-toggle-thumb" style={{width:14,height:14,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:applyStyle?18:2}}/>
+              </div>
+              <div>
+                <div style={{fontSize:12,fontWeight:600,color:T.text}}>Acento porteño</div>
+                <div style={{fontSize:11,color:T.textSm}}>Fuerza pronunciación rioplatense</div>
+              </div>
+            </div>
+
+            {genError&&(
+              <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"10px 14px",fontSize:12,color:T.red,marginBottom:12}}>{genError}</div>
+            )}
+
+            <button onClick={handleGenerate} disabled={generating||!text.trim()||!voiceSel}
+              style={{...BtnPri,width:"100%",justifyContent:"center",padding:"12px",fontSize:14}}>
+              {generating?<><Spinner size={14} color="#fff"/>Generando...</>:"🎙️ Generar audio"}
+            </button>
+          </div>
+
+          {/* Historial sesión */}
+          {history.length>0&&(
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:20}}>
+              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>
+                Generados esta sesión <span style={{fontSize:10,fontWeight:400}}>({history.length})</span>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:480,overflowY:"auto"}}>
+                {history.map(item=>(
+                  <div key={item.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
+                    <audio ref={el=>audioRefs.current[item.id]=el} src={item.url} preload="auto" style={{display:"none"}}/>
+                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6}}>
+                      <span style={{fontSize:11,fontWeight:700,color:T.accent}}>{item.voice}</span>
+                      {item.duration&&<span style={{fontSize:11,color:T.textSm}}>{item.duration}s</span>}
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{item.ts}</span>
+                    </div>
+                    <div style={{fontSize:12,color:T.textMd,marginBottom:9,lineHeight:1.4}}>{item.text}</div>
+                    <div style={{display:"flex",gap:7}}>
+                      <button onClick={()=>togglePlay(item.id)} style={{...BtnSec,flex:1,justifyContent:"center",padding:"6px 0"}}>
+                        {playingId===item.id?"⏸ Pausar":"▶ Escuchar"}
+                      </button>
+                      <button onClick={()=>downloadAudio(item)} style={{...BtnSec,padding:"6px 11px"}} title="Descargar WAV">⬇</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ROOT APP
 // ===========================================
 export default function App() {
@@ -5745,6 +6036,7 @@ export default function App() {
   if(page==="config") return <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 
   // App
+  if(page==="audio") return <PageView pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
   if(page==="reclamos") return <PageView pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
   if(page==="canjes") return <PageView pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/><ToastContainer T={T}/></PageView>;
   if(page==="envios") return <PageView pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
