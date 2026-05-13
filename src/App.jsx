@@ -1018,7 +1018,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
 
-      <div style={{padding:"24px 40px 64px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"24px 24px 64px",maxWidth:1200,margin:"0 auto",width:"100%"}}>
 
         {/* Tabs de navegacion */}
         <div style={{display:"inline-flex",background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:3,marginBottom:20,gap:2}}>
@@ -2405,7 +2405,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo canje</button>
       </AppTopbar>
 
-      <div style={{padding:"24px 40px 64px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"24px 24px 64px",maxWidth:1200,margin:"0 auto",width:"100%"}}>
         {/* Stats bar - clickeable para filtrar */}
         <div style={{display:"flex",gap:0,background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:20}}>
           {[
@@ -3502,7 +3502,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           sC('G'+rn,'#'+o.numero),
           sC('H'+rn,cleanAndreani(nombre)),
           sC('I'+rn,cleanAndreani(apellido)),
-          (o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),
+          (()=>{const d=String(o.dni||'').replace(/\D/g,'');const dniClean=d.length===11?d.slice(2,10):d;return (dniClean&&!isNaN(dniClean)&&dniClean.length>=7)?nC('J'+rn,parseFloat(dniClean)):sC('J'+rn,dniClean||'');})(),
           sC('K'+rn,cleanField(o.email||"")),
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
@@ -3535,7 +3535,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           sC('G'+rn,'#'+o.numero),
           sC('H'+rn,cleanAndreani(nombre)),
           sC('I'+rn,cleanAndreani(apellido)),
-          (o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),
+          (()=>{const d=String(o.dni||'').replace(/\D/g,'');const dniClean=d.length===11?d.slice(2,10):d;return (dniClean&&!isNaN(dniClean)&&dniClean.length>=7)?nC('J'+rn,parseFloat(dniClean)):sC('J'+rn,dniClean||'');})(),
           sC('K'+rn,cleanField(o.email||"")),
           telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),
           telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),
@@ -3565,7 +3565,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const sheet2=await sheet2file.async('string');
       const totalRows2=2+sucursalOrders.length;
       let newSheet2=sheet2
-        .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+totalRows2+'"/>')
+        .replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:N'+totalRows2+'"/>')
         .replace('</sheetData>',sucRowsXml+'</sheetData>');
       {const _i=newSheet2.indexOf('<dataValidations');if(_i>=0){const _j=newSheet2.indexOf('</dataValidations>');if(_j>=0)newSheet2=newSheet2.slice(0,_i)+newSheet2.slice(_j+18);}}
       zip.file('xl/worksheets/sheet2.xml',newSheet2);
@@ -4067,7 +4067,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {id:"seguimientos",label:"📮  Seguimientos"},
       ]}/>
 
-      <div style={{padding:"24px 40px 64px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"24px 24px 64px",maxWidth:1200,margin:"0 auto",width:"100%"}}>
 
         {/* -- PANEL DE ENVIOS -- */}
         {tab==="panel"&&(
