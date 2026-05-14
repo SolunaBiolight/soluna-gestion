@@ -4296,11 +4296,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             {/* Upload zone */}
             <label htmlFor="sku-file-input" style={{display:"block",background:T.card,border:`2px dashed ${skuFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
               <input id="sku-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(false);setSkuResults([]);setSkuGenerating(false);setSkuProgress(0);setSkuBlob(null);parsePdf(f,"sku");}}}/>
-              {skuProcessing
-                ? <div>
-                    <div style={{width:44,height:44,border:`3px solid ${T.accentSolid}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",margin:"0 auto 14px"}}/>
-                    <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>Buscando pedidos en TN...</div>
-                    <div style={{fontSize:13,color:T.textSm}}>Esto puede tardar unos segundos</div>
+              {skuFile && (skuProcessing || skuGenerating)
+                ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,opacity:0.6}}>
+                    <span style={{fontSize:28}}>📄</span>
+                    <div style={{textAlign:"left"}}>
+                      <div style={{fontSize:14,fontWeight:600,color:T.text}}>{skuFile.name}</div>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Procesando...</div>
+                    </div>
                   </div>
                 : skuFile
                   ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12}}>
