@@ -4073,7 +4073,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {id:"seguimientos",label:"📮  Seguimientos"},
       ]}/>
 
-      <div style={{padding:"24px 24px 64px",maxWidth:1200,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"24px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
 
         {/* -- PANEL DE ENVIOS -- */}
         {tab==="panel"&&(
