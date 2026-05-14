@@ -4067,7 +4067,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           ⟳ Sincronizar
         </AsyncButton>
       </AppTopbar>
-      <AppTabs T={T} active={tab} onChange={setTab} size="large" tabs={[
+      <AppTabs T={T} active={tab} onChange={setTab} tabs={[
         {id:"panel",label:"📦  Panel de Envíos"},
         {id:"sku",label:"🔖  SKU en Rótulos"},
         {id:"seguimientos",label:"📮  Seguimientos"},
