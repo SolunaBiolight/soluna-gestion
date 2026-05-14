@@ -4067,13 +4067,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           ⟳ Sincronizar
         </AsyncButton>
       </AppTopbar>
-      <AppTabs T={T} active={tab} onChange={setTab} tabs={[
-        {id:"panel",label:"📦  Panel de Envíos"},
-        {id:"sku",label:"🔖  SKU en Rótulos"},
-        {id:"seguimientos",label:"📮  Seguimientos"},
-      ]}/>
+      <div style={{padding:"20px 24px 0",maxWidth:1100,margin:"0 auto",width:"100%"}}>
+        <div style={{display:"inline-flex",background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:3,marginBottom:0,gap:2}}>
+          {[{id:"panel",label:"📦  Panel de Envíos"},{id:"sku",label:"🔖  SKU en Rótulos"},{id:"seguimientos",label:"📮  Seguimientos"}].map(t=>{
+            const isActive=tab===t.id;
+            return <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 18px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",boxShadow:isActive?"0 1px 4px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>{t.label}</button>;
+          })}
+        </div>
+      </div>
 
-      <div style={{padding:"24px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"16px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
 
         {/* -- PANEL DE ENVIOS -- */}
         {tab==="panel"&&(
