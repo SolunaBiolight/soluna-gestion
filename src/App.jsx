@@ -4067,11 +4067,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           ⟳ Sincronizar
         </AsyncButton>
       </AppTopbar>
-      <div style={{padding:"20px 24px 0",maxWidth:1100,margin:"0 auto",width:"100%"}}>
-        <div style={{display:"inline-flex",background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:3,marginBottom:0,gap:2}}>
+      <div style={{borderBottom:"1px solid "+T.border,background:T.surface}}>
+        <div style={{maxWidth:1100,margin:"0 auto",padding:"0 24px",display:"flex",gap:0}}>
           {[{id:"panel",label:"📦  Panel de Envíos"},{id:"sku",label:"🔖  SKU en Rótulos"},{id:"seguimientos",label:"📮  Seguimientos"}].map(t=>{
             const isActive=tab===t.id;
-            return <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 18px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",boxShadow:isActive?"0 1px 4px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>{t.label}</button>;
+            return <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"14px 20px",fontSize:13,fontWeight:isActive?700:500,border:"none",borderBottom:isActive?`2px solid ${T.accentSolid}`:"2px solid transparent",background:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",whiteSpace:"nowrap",marginBottom:"-1px"}}>{t.label}</button>;
           })}
         </div>
       </div>
@@ -4099,7 +4099,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       else{fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);}
                     }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:isActive?600:400,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
                       {t.label}
-                      {t.id!=="buscar"&&<span style={{background:isActive?t.color:"transparent",color:isActive?"#fff":T.textSm,fontSize:11,fontWeight:700,borderRadius:5,padding:"1px 6px",minWidth:18,textAlign:"center",border:isActive?"none":`1px solid ${T.border}`}}>
+                      {t.id!=="buscar"&&<span style={{background:isActive?t.color+"22":T.surface,color:isActive?t.color:T.textSm,fontSize:11,fontWeight:700,borderRadius:5,padding:"1px 6px",minWidth:18,textAlign:"center",border:`1px solid ${isActive?t.color+"44":T.border}`}}>
                         {counts[t.id]===null?"·":counts[t.id]}
                       </span>}
                     </button>
