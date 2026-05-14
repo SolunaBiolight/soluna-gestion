@@ -204,6 +204,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     @keyframes growith-spin    { to { transform: rotate(360deg); } }
     @keyframes growith-fadeIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
     @keyframes growith-fadeInFast { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes growith-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     @keyframes growith-skeleton{ 0%,100%{opacity:0.4} 50%{opacity:0.8} }
     @keyframes growith-toast-in{ from{opacity:0;transform:translateY(16px) scale(0.95)} to{opacity:1;transform:translateY(0) scale(1)} }
     @keyframes growith-slideIn { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
@@ -4318,6 +4319,36 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               }
             </label>
 
+            {/* Barra de progreso inline — visible mientras genera el PDF */}
+            {(skuProcessing||skuGenerating)&&(
+              <div style={{background:"#1a1a2e",border:`1px solid ${skuGenerating?"#a78bfa44":"#60a5fa44"}`,borderRadius:14,padding:"20px 22px",marginBottom:20}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:skuGenerating?"#a78bfa22":"#60a5fa22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <div style={{width:18,height:18,border:`2.5px solid ${skuGenerating?"#a78bfa":"#60a5fa"}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",marginBottom:3}}>
+                      {skuProcessing?"Buscando pedidos en TN...":skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":"Generando PDF con SKUs..."}
+                    </div>
+                    <div style={{fontSize:12,color:"#94a3b8"}}>
+                      {skuProcessing?"Esto puede tardar unos segundos según la cantidad de pedidos":`${skuProgress}% completado`}
+                    </div>
+                  </div>
+                  {skuGenerating&&<span style={{fontSize:13,fontWeight:700,color:"#a78bfa"}}>{skuProgress}%</span>}
+                </div>
+                {skuGenerating&&(
+                  <div style={{height:6,background:"rgba(255,255,255,0.08)",borderRadius:10,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${skuProgress}%`,background:"linear-gradient(90deg,#7c3aed,#a78bfa)",borderRadius:10,transition:"width 0.4s ease"}}/>
+                  </div>
+                )}
+                {skuProcessing&&(
+                  <div style={{height:6,background:"rgba(255,255,255,0.08)",borderRadius:10,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:"100%",background:"linear-gradient(90deg,#2563eb,#60a5fa,#2563eb)",backgroundSize:"200% 100%",animation:"growith-shimmer 1.5s linear infinite",borderRadius:10}}/>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Resultados */}
             {skuResults.length>0&&(()=>{
               const found=skuResults.filter(r=>r.found);
@@ -4347,21 +4378,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
                 {/* Botón de descarga prominente cuando está listo */}
                 {skuBlob&&!skuGenerating&&(
-                  <div style={{background:T.green+"12",border:`1.5px solid ${T.green}55`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:14}}>
-                    <div style={{width:36,height:36,borderRadius:10,background:T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      <span style={{fontSize:18}}>✓</span>
-                    </div>
+                  <div style={{background:"linear-gradient(135deg,#16a34a18,#16a34a08)",border:`2px solid ${T.green}66`,borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
+                    <div style={{width:44,height:44,borderRadius:12,background:T.green+"30",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>✅</div>
                     <div style={{flex:1}}>
-                      <div style={{fontSize:14,fontWeight:700,color:T.green}}>PDF listo para descargar</div>
-                      <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{found.length} rótulos con SKUs · {notFound.length>0?`${notFound.length} sin match`:"todos encontrados"}</div>
+                      <div style={{fontSize:15,fontWeight:800,color:T.green,marginBottom:3}}>¡PDF listo para descargar!</div>
+                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos con SKUs escritos{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
                     </div>
                     <button onClick={()=>{
                       const url=URL.createObjectURL(skuBlob);
                       const a=document.createElement("a");
                       a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
                       URL.revokeObjectURL(url);
-                    }} style={{...BtnPrimary(T),padding:"10px 22px",fontSize:14,fontWeight:700,flexShrink:0}}>
-                      Descargar PDF
+                    }} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.green}44`}}>
+                      ⬇ Descargar PDF
                     </button>
                   </div>
                 )}
