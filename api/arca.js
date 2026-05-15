@@ -1206,16 +1206,58 @@ export default async function handler(req, res) {
     }
 
     // ── HISTORIAL: lista de batches del CUIT activo ──
+    // Construido dinámicamente desde arca_comprobantes agrupando por timestamp cercano (±10 min).
+    // Así incluye facturas emitidas antes de que existiera el sistema de batches.
 
     if (action === "list_batches" && req.method === "GET") {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
-      const snap = await db.collection("users").doc(uid).collection("arca_batches")
+
+      const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
         .where("cuit_emisor", "==", cuitParam)
-        .orderBy("emitido_at", "desc")
-        .limit(50)
         .get();
-      return res.json({ batches: snap.docs.map(d => d.data()) });
+
+      const comprobantes = snap.docs.map(d => d.data())
+        .sort((a, b) => (b.emitido_at || "").localeCompare(a.emitido_at || ""));
+
+      const GROUP_WINDOW_MS = 10 * 60 * 1000; // 10 minutos
+      const batches = [];
+      let current = null;
+      for (const c of comprobantes) {
+        const ts = c.emitido_at ? new Date(c.emitido_at).getTime() : 0;
+        if (!current || current._lastTs - ts > GROUP_WINDOW_MS) {
+          current = {
+            batch_id: "B_" + ts,
+            cuit_emisor: cuitParam,
+            emitido_at: c.emitido_at,
+            cantidad: 0,
+            total: 0,
+            comprobante_ids: [],
+            resumen: [],
+            _lastTs: ts,
+          };
+          batches.push(current);
+        }
+        current.cantidad++;
+        current.total += c.total || 0;
+        current.comprobante_ids.push(`${c.cuit_emisor}_${c.tipo_cbte}_${String(c.nro).padStart(8, "0")}`);
+        current.resumen.push({
+          orden_id: c.orden_id || ("N° " + c.nro),
+          letra: c.letra,
+          comprobante: c.nro,
+          cae: c.cae,
+          total: c.total || 0,
+        });
+        current._lastTs = ts;
+      }
+
+      // Limpiar campo interno antes de devolver
+      const out = batches.slice(0, 100).map(b => {
+        const { _lastTs, ...rest } = b;
+        return rest;
+      });
+
+      return res.json({ batches: out });
     }
 
     // ── HISTORIAL: regenerar PDFs de un batch específico ──
