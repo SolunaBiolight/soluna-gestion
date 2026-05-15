@@ -6385,30 +6385,24 @@ function AppArca({T, user, onHome}) {
             {wizStep===1&&(
               <div>
                 <>
-                    {/* Bloque 1: Generar */}
-                    <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:18,marginBottom:14}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                        <div style={{width:26,height:26,borderRadius:7,background:csrPem?T.green+"22":T.accentSolid+"22",border:"1px solid "+(csrPem?T.green:T.accent)+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:csrPem?T.green:T.accent}}>{csrPem?"✓":"1"}</div>
-                        <div style={{fontSize:13,fontWeight:700,color:T.text}}>Generá tu clave criptográfica</div>
-                      </div>
-                      <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
-                        Tocá el botón y Growith genera todo lo que necesitás. Te vamos a descargar un archivo <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>growith-{wizCuit||"CUIT"}.csr</code> que vas a subir a ARCA en el paso siguiente.
-                      </div>
-                      {!csrPem ? (
-                        <>
-                          <button onClick={generarCsrYKey} disabled={genLoading} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"12px 18px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:genLoading?0.7:1}}>
-                            {genLoading ? <><Spinner size={13} color="#fff"/> Generando (10-20 seg)...</> : "🔐 Generar mi archivo para ARCA"}
-                          </button>
-                          {genError && (
-                            <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {genError}</div>
-                          )}
-                        </>
-                      ) : (
-                        <div style={{padding:"10px 12px",background:T.greenBg,border:"1px solid "+T.green+"33",borderRadius:8,fontSize:12,color:T.green,fontWeight:500}}>
-                          ✓ Listo. Se descargó <strong>growith-{wizCuit}.csr</strong> — ese archivo lo subís a ARCA en el paso siguiente.
+                    {/* Bloque 1: Generar (solo visible mientras no se generó) */}
+                    {!csrPem && (
+                      <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:18,marginBottom:14}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                          <div style={{width:26,height:26,borderRadius:7,background:T.accentSolid+"22",border:"1px solid "+T.accent+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:T.accent}}>1</div>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Generá tu archivo para ARCA</div>
                         </div>
-                      )}
-                    </div>
+                        <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
+                          Tocá el botón y Growith genera tu CSR (Certificate Signing Request). Lo vas a descargar como <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>growith-{wizCuit||"CUIT"}.csr</code> para subirlo a ARCA en el paso siguiente.
+                        </div>
+                        <button onClick={generarCsrYKey} disabled={genLoading} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"12px 18px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:genLoading?0.7:1}}>
+                          {genLoading ? <><Spinner size={13} color="#fff"/> Generando (10-20 seg)...</> : "🔐 Generar mi archivo para ARCA"}
+                        </button>
+                        {genError && (
+                          <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {genError}</div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Bloque 2: Subir CSR a ARCA */}
                     {csrPem && (
@@ -6466,13 +6460,6 @@ function AppArca({T, user, onHome}) {
                           <li>Tocá <strong style={{color:T.text}}>"Confirmar"</strong> para guardar la relación</li>
                         </ol>
 
-                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte C — Dar de alta el Punto de Venta tipo Web Services</div>
-                        <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
-                          <li>Buscá el servicio <strong style={{color:T.text}}>"Administración de puntos de venta y domicilios"</strong>. Si no lo tenés, adherilo igual que en la Parte A (Administrador de Relaciones → Adherir Servicio → ARCA → Servicios Interactivos → ese)</li>
-                          <li>Entrá al servicio → tocá <strong style={{color:T.text}}>"A/B/M de puntos de venta"</strong> → <strong style={{color:T.text}}>"Agregar"</strong></li>
-                          <li>Elegí el sistema de facturación <strong style={{color:T.text}}>"Web Services"</strong> (también conocido como RECE / WSFE)</li>
-                          <li>El número de punto de venta que ARCA asigne tiene que coincidir con el que pusiste en el wizard: <strong style={{color:T.accent}}>{wizPuntoVenta||"1"}</strong>. Si querés otro número, volvé al paso 1 del wizard y cambialo</li>
-                        </ol>
 
                         <button onClick={descargarCsr} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"12px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
                           ⬇ Descargar archivo .csr para subir a ARCA
