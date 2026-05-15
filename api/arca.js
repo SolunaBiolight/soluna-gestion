@@ -1307,6 +1307,87 @@ export default async function handler(req, res) {
       return res.json({ pdfs });
     }
 
+    // ── TN: traer órdenes pendientes de facturar ──
+
+    if (action === "tn_pending_orders" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+
+      // 1) Leer la store TN del user
+      const userSnap = await db.collection("users").doc(uid).get();
+      if (!userSnap.exists) return res.json({ connected: false });
+      const tnStore = (userSnap.data().stores || []).find(s => s.type === "tiendanube");
+      if (!tnStore?.accessToken || !tnStore?.storeId) return res.json({ connected: false });
+
+      // 2) Traer órdenes pagas de los últimos 60 días desde TN
+      const sinceDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const headers = {
+        "Authentication": `bearer ${tnStore.accessToken}`,
+        "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
+      };
+      const allOrders = [];
+      for (let page = 1; page <= 5; page++) {
+        const tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}`;
+        const tnRes = await fetch(tnUrl, { headers });
+        if (!tnRes.ok) break;
+        const batch = await tnRes.json();
+        if (!Array.isArray(batch) || batch.length === 0) break;
+        allOrders.push(...batch);
+        if (batch.length < 200) break;
+      }
+
+      // 3) Filtrar las que ya están facturadas (cruzando con arca_comprobantes)
+      const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+        .where("cuit_emisor", "==", cuitParam).get();
+      const billedIds = new Set(billedSnap.docs.map(d => d.data().orden_id).filter(Boolean));
+
+      // 4) Normalizar al schema interno
+      const ordenes = {};
+      for (const o of allOrders) {
+        const orderId = String(o.number || o.id);
+        if (billedIds.has(orderId)) continue;
+        // Skip canceladas
+        if ((o.status || "").toLowerCase() === "cancelled") continue;
+
+        const docRaw = String(o.customer?.identification || "").replace(/[.\-]/g, "");
+        const clas = clasificarDoc(docRaw);
+        const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
+          || o.customer?.name || o.contact_name || "";
+
+        ordenes[orderId] = {
+          nombre: customerName,
+          email: o.customer?.email || o.contact_email || "",
+          dni: docRaw,
+          ...clas,
+          total: parseFloat(o.total) || 0,
+          subtotal: parseFloat(o.subtotal) || 0,
+          descuento: parseFloat(o.discount) || 0,
+          envio: parseFloat(o.shipping_cost_customer) || 0,
+          estado_pago: "paid",
+          fecha: o.paid_at || o.created_at || "",
+          ciudad: o.shipping_address?.city || o.billing_city || "",
+          provincia: o.shipping_address?.province || o.billing_province || "",
+          direccion: o.shipping_address?.address || "",
+          metodo_pago: o.payment_details?.method || (o.payment_status === "paid" ? "Pagado" : ""),
+          items: (o.products || []).map(p => ({
+            nombre: p.name || "Producto",
+            nombre_original: p.name || "Producto",
+            cantidad: parseInt(p.quantity) || 1,
+            precio: parseFloat(p.price) || 0,
+            descuento_item: 0,
+          })),
+        };
+      }
+
+      return res.json({
+        connected: true,
+        store_name: tnStore.storeName || "Tienda Nube",
+        total_found: allOrders.length,
+        total_pending: Object.keys(ordenes).length,
+        ordenes,
+      });
+    }
+
     // ── DUPLICADOS: verificar si una orden ya fue facturada este mes ──
 
     if (action === "check_duplicates" && req.method === "POST") {

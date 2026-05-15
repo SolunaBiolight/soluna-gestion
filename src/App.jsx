@@ -5632,6 +5632,12 @@ function AppArca({T, user, onHome}) {
   // Dashboard del CUIT activo (stats del mes)
   const [dashboardStats, setDashboardStats] = useState(null);
 
+  // TN — importar órdenes pendientes
+  const [showTnModal, setShowTnModal] = useState(false);
+  const [tnLoading, setTnLoading] = useState(false);
+  const [tnData, setTnData] = useState(null); // {connected, store_name, ordenes, total_pending}
+  const [tnSelected, setTnSelected] = useState({}); // {orderId: true|false}
+
   // Historial de batches (facturaciones recientes)
   const [batches, setBatches] = useState([]);
   const [expandedBatch, setExpandedBatch] = useState(null);
@@ -5858,6 +5864,34 @@ function AppArca({T, user, onHome}) {
     if(updated.cuits) setCuits(updated.cuits);
     toast("CUIT actualizado ✓","success");
     setShowEditCuit(false); setEditCuit(null); setSavingEdit(false);
+  }
+
+  async function openTnImport() {
+    if(!cuitSel) return toast("Seleccioná un CUIT primero","warning");
+    setShowTnModal(true); setTnLoading(true); setTnData(null); setTnSelected({});
+    const d = await api("tn_pending_orders","GET",null,{cuit:cuitSel});
+    setTnLoading(false);
+    if(d.error) { toast("Error: "+d.error,"error"); setShowTnModal(false); return; }
+    setTnData(d);
+    // Por default todas seleccionadas
+    const sel = {};
+    Object.keys(d.ordenes||{}).forEach(id => sel[id] = true);
+    setTnSelected(sel);
+  }
+
+  function confirmTnImport() {
+    if(!tnData?.ordenes) return;
+    const filtered = {};
+    Object.entries(tnData.ordenes).forEach(([id,o])=>{
+      if(tnSelected[id]) filtered[id] = o;
+    });
+    if(Object.keys(filtered).length === 0) return toast("Seleccioná al menos una orden","warning");
+    setOrdenes(filtered);
+    const productos = [...new Set(Object.values(filtered).flatMap(o => o.items.map(i => i.nombre_original)))];
+    setProductos(productos);
+    setProductMap(Object.fromEntries(productos.map(p=>[p,""])));
+    setShowTnModal(false);
+    toast(`${Object.keys(filtered).length} órdenes listas para facturar`,"success");
   }
 
   async function refreshDashboard() {
@@ -6299,9 +6333,14 @@ function AppArca({T, user, onHome}) {
               <div>
                 {/* Upload */}
                 <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"22px 24px",marginBottom:16}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                    <span style={{width:28,height:28,borderRadius:8,background:T.accentSolid+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.accent}}>1</span>
-                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>Archivo de ventas</div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:4}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{width:28,height:28,borderRadius:8,background:T.accentSolid+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.accent}}>1</span>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>Archivo de ventas <span style={{color:T.textSm,fontWeight:400,textTransform:"none"}}>o importar directo</span></div>
+                    </div>
+                    <button onClick={openTnImport} disabled={!cuitSel} style={{background:"transparent",border:"1px solid "+T.blue+"55",color:T.blue,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,cursor:cuitSel?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:cuitSel?1:0.5}}>
+                      📥 Importar de Tienda Nube
+                    </button>
                   </div>
                   <div style={{border:"2px dashed "+T.border,borderRadius:10,padding:"28px 20px",textAlign:"center",marginTop:14,cursor:"pointer"}}
                     onClick={()=>document.getElementById('arca-file-input')?.click()}
@@ -6772,6 +6811,85 @@ function AppArca({T, user, onHome}) {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL IMPORTAR DE TIENDA NUBE ══ */}
+      {showTnModal && (
+        <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>!tnLoading && setShowTnModal(false)}>
+          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:640,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8}}>🔵 Importar desde Tienda Nube</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Órdenes pagas de los últimos 60 días que todavía no facturaste</div>
+              </div>
+              <button onClick={()=>!tnLoading && setShowTnModal(false)} disabled={tnLoading} style={{background:"transparent",border:"none",color:T.textMd,cursor:tnLoading?"wait":"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
+            </div>
+
+            {tnLoading ? (
+              <div style={{padding:"40px 20px",textAlign:"center"}}>
+                <Spinner size={18} color={T.accent}/>
+                <div style={{fontSize:12,color:T.textSm,marginTop:12}}>Trayendo órdenes de Tienda Nube...</div>
+              </div>
+            ) : !tnData ? null : !tnData.connected ? (
+              <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6}}>
+                ⚠ No tenés Tienda Nube conectada. Andá a la configuración de la app para conectarla primero.
+              </div>
+            ) : tnData.total_pending === 0 ? (
+              <div style={{padding:"30px 16px",textAlign:"center"}}>
+                <div style={{fontSize:32,marginBottom:10}}>✨</div>
+                <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:6}}>Todo facturado</div>
+                <div style={{fontSize:12,color:T.textSm}}>De {tnData.store_name} no hay órdenes pagas pendientes de facturar.</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Se revisaron {tnData.total_found} órdenes de los últimos 60 días.</div>
+              </div>
+            ) : (() => {
+              const ids = Object.keys(tnData.ordenes);
+              const allSelected = ids.every(id => tnSelected[id]);
+              const someSelected = ids.some(id => tnSelected[id]);
+              const selectedCount = ids.filter(id => tnSelected[id]).length;
+              const selectedTotal = ids.filter(id => tnSelected[id]).reduce((s,id)=>s+(tnData.ordenes[id].total||0),0);
+              return (
+                <>
+                  <div style={{fontSize:12,color:T.textMd,marginBottom:10,padding:"10px 14px",background:T.bg,borderRadius:8,border:"1px solid "+T.borderL}}>
+                    <strong style={{color:T.text}}>{tnData.store_name}</strong> · {tnData.total_pending} orden{tnData.total_pending===1?"":"es"} pendiente{tnData.total_pending===1?"":"s"} · Total: <strong style={{color:T.text}}>${Object.values(tnData.ordenes).reduce((s,o)=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderBottom:"1px solid "+T.borderL,marginBottom:6,cursor:"pointer"}} onClick={()=>{
+                    const newSel = {}; ids.forEach(id => newSel[id] = !allSelected); setTnSelected(newSel);
+                  }}>
+                    <input type="checkbox" checked={allSelected} ref={el=>{ if(el) el.indeterminate = someSelected && !allSelected; }} readOnly style={{cursor:"pointer"}}/>
+                    <span style={{fontSize:12,fontWeight:600,color:T.text}}>{allSelected ? "Deseleccionar todas" : "Seleccionar todas"}</span>
+                  </div>
+                  <div style={{maxHeight:380,overflowY:"auto"}}>
+                    {ids.map(id => {
+                      const o = tnData.ordenes[id];
+                      const sel = !!tnSelected[id];
+                      return (
+                        <div key={id} onClick={()=>setTnSelected(prev=>({...prev, [id]:!prev[id]}))} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,cursor:"pointer",background:sel?T.accentSolid+"10":"transparent"}}>
+                          <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>#{id} · {o.nombre||"sin nombre"}</div>
+                            <div style={{fontSize:11,color:T.textSm}}>{o.doc_tipo==="CUIT"?`Factura A · CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`Factura B · DNI ${o.doc_nro}`:"Factura B · Consumidor Final"}</div>
+                          </div>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text}}>${(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{display:"flex",gap:10,marginTop:18,paddingTop:14,borderTop:"1px solid "+T.borderL}}>
+                    <button onClick={()=>setShowTnModal(false)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      Cancelar
+                    </button>
+                    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"flex-end",fontSize:12,color:T.textSm,paddingRight:10}}>
+                      {selectedCount} seleccionada{selectedCount===1?"":"s"} · <strong style={{color:T.text,marginLeft:4}}>${selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>
+                    </div>
+                    <button onClick={confirmTnImport} disabled={selectedCount===0} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:selectedCount===0?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:selectedCount===0?0.5:1}}>
+                      Importar {selectedCount}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
