@@ -5595,10 +5595,19 @@ function AppArca({T, user, onHome}) {
   const [showCuitMenu, setShowCuitMenu] = useState(false);
   const [showGuia, setShowGuia] = useState(false);
 
-  // Modal wizard CUIT
+  // Wizard CUIT - individual states to avoid re-render focus loss
   const [showWizard, setShowWizard] = useState(false);
   const [wizStep, setWizStep] = useState(0);
-  const [newCuit, setNewCuit] = useState({cuit:"",tipo_persona:"FISICA",razon_social:"",nombre_fantasia:"",domicilio:"",fecha_inicio:"",condicion_fiscal:"RESPONSABLE_INSCRIPTO",punto_venta:"1",arca_prod:false,ingresos_brutos:""});
+  const [wizCuit, setWizCuit] = useState("");
+  const [wizTipoPersona, setWizTipoPersona] = useState("FISICA");
+  const [wizRazonSocial, setWizRazonSocial] = useState("");
+  const [wizNombreFantasia, setWizNombreFantasia] = useState("");
+  const [wizDomicilio, setWizDomicilio] = useState("");
+  const [wizFechaInicio, setWizFechaInicio] = useState("");
+  const [wizCondicion, setWizCondicion] = useState("RESPONSABLE_INSCRIPTO");
+  const [wizPuntoVenta, setWizPuntoVenta] = useState("1");
+  const [wizArcaProd, setWizArcaProd] = useState(false);
+  const [wizIngresosBrutos, setWizIngresosBrutos] = useState("");
   const [certText, setCertText] = useState("");
   const [keyText, setKeyText] = useState("");
   const [savingCuit, setSavingCuit] = useState(false);
@@ -5617,8 +5626,9 @@ function AppArca({T, user, onHome}) {
 
   const uid = user?.uid;
   const cuitActivo = cuits.find(c => c.cuit === cuitSel);
-  const iS = {width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",outline:"none",transition:"border-color 0.15s ease"};
+  const iS = {width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",outline:"none"};
   const labelS = {fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6,display:"block"};
+  const mesActual = new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"});
 
   const api = (action, method="GET", body=null, extra={}) => {
     const params = new URLSearchParams({action, uid, ...extra});
@@ -5634,7 +5644,6 @@ function AppArca({T, user, onHome}) {
     api("list_cuits").then(d=>{ if(d.cuits){ setCuits(d.cuits); if(d.cuits.length>0 && !cuitSel) setCuitSel(d.cuits[0].cuit); } }).finally(()=>setLoading(false));
   },[uid]);
 
-  // Click fuera cierra menú
   useEffect(()=>{
     if(!showCuitMenu) return;
     const h = (e) => { if(!e.target.closest('.arca-cuit-menu')) setShowCuitMenu(false); };
@@ -5642,38 +5651,54 @@ function AppArca({T, user, onHome}) {
     return ()=>document.removeEventListener('click', h);
   },[showCuitMenu]);
 
+  const formatCuit = (c) => c && c.length===11 ? c.slice(0,2)+"-"+c.slice(2,10)+"-"+c.slice(10) : c;
+
+  function resetWizard(){
+    setShowWizard(false); setWizStep(0);
+    setWizCuit(""); setWizTipoPersona("FISICA"); setWizRazonSocial(""); setWizNombreFantasia("");
+    setWizDomicilio(""); setWizFechaInicio(""); setWizCondicion("RESPONSABLE_INSCRIPTO");
+    setWizPuntoVenta("1"); setWizArcaProd(false); setWizIngresosBrutos("");
+    setCertText(""); setKeyText(""); setTestResult(null);
+  }
+
   async function handleSaveCuit() {
-    if(!newCuit.cuit.trim()||!newCuit.razon_social.trim()) return toast("Completá CUIT y razón social","warning");
+    if(!wizCuit.trim()||!wizRazonSocial.trim()) return toast("Completá CUIT y razón social","warning");
     setSavingCuit(true);
     const fd = new FormData();
-    Object.entries(newCuit).forEach(([k,v])=>fd.append(k,String(v)));
+    fd.append("cuit", wizCuit); fd.append("tipo_persona", wizTipoPersona);
+    fd.append("razon_social", wizRazonSocial); fd.append("nombre_fantasia", wizNombreFantasia);
+    fd.append("domicilio", wizDomicilio); fd.append("fecha_inicio", wizFechaInicio);
+    fd.append("condicion_fiscal", wizCondicion); fd.append("punto_venta", wizPuntoVenta);
+    fd.append("arca_prod", String(wizArcaProd)); fd.append("ingresos_brutos", wizIngresosBrutos);
     if(certText.trim()) fd.append("cert_pem", certText.trim());
     if(keyText.trim()) fd.append("key_pem", keyText.trim());
     const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
     if(d.error){toast(d.error,"error");setSavingCuit(false);return;}
     toast("CUIT guardado ✓","success");
     const updated = await api("list_cuits");
-    if(updated.cuits){ setCuits(updated.cuits); setCuitSel(newCuit.cuit); }
-    resetWizard();
-    setSavingCuit(false);
+    if(updated.cuits){ setCuits(updated.cuits); setCuitSel(wizCuit); }
+    resetWizard(); setSavingCuit(false);
   }
 
-  function resetWizard(){
-    setShowWizard(false); setWizStep(0);
-    setNewCuit({cuit:"",tipo_persona:"FISICA",razon_social:"",nombre_fantasia:"",domicilio:"",fecha_inicio:"",condicion_fiscal:"RESPONSABLE_INSCRIPTO",punto_venta:"1",arca_prod:false,ingresos_brutos:""});
-    setCertText(""); setKeyText(""); setTestResult(null);
-  }
-
-  async function handleTestCuit(cuitNum) {
-    setTestingCuit(cuitNum);
-    const d = await api("test_cuit","POST",null,{cuit:cuitNum});
-    if(d.error){ toast(`Error: ${d.error}`,"error"); setTestResult({ok:false,msg:d.error}); }
-    else { toast(`Conexión OK · Último F-B: ${d.ultimo_b}`,"success"); setTestResult({ok:true,msg:`Último comprobante: ${d.ultimo_b}`}); }
+  async function handleTestCuitWiz() {
+    setTestingCuit(wizCuit);
+    const fd = new FormData();
+    fd.append("cuit", wizCuit); fd.append("tipo_persona", wizTipoPersona);
+    fd.append("razon_social", wizRazonSocial); fd.append("nombre_fantasia", wizNombreFantasia);
+    fd.append("domicilio", wizDomicilio); fd.append("fecha_inicio", wizFechaInicio);
+    fd.append("condicion_fiscal", wizCondicion); fd.append("punto_venta", wizPuntoVenta);
+    fd.append("arca_prod", String(wizArcaProd));
+    if(certText.trim()) fd.append("cert_pem", certText.trim());
+    if(keyText.trim()) fd.append("key_pem", keyText.trim());
+    await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
+    const d = await api("test_cuit","POST",null,{cuit:wizCuit});
+    if(d.error){ toast("Error: "+d.error,"error"); setTestResult({ok:false,msg:d.error}); }
+    else { toast("Conexión OK · Último F-B: "+d.ultimo_b,"success"); setTestResult({ok:true,msg:"Último comprobante: "+d.ultimo_b}); }
     setTestingCuit(null);
   }
 
   async function handleDeleteCuit(cuitNum) {
-    if(!window.confirm(`¿Eliminar CUIT ${cuitNum}?`)) return;
+    if(!window.confirm("¿Eliminar CUIT "+cuitNum+"?")) return;
     await fetch(`/api/arca?action=delete_cuit&uid=${uid}&cuit=${cuitNum}`,{method:"DELETE"}).then(r=>r.json());
     setCuits(prev=>prev.filter(c=>c.cuit!==cuitNum));
     if(cuitSel===cuitNum) setCuitSel(cuits.find(c=>c.cuit!==cuitNum)?.cuit||null);
@@ -5684,41 +5709,28 @@ function AppArca({T, user, onHome}) {
     if(!archivo) return toast("Seleccioná un archivo","warning");
     if(!cuitSel) return toast("Seleccioná un CUIT emisor","warning");
     setParsing(true); setOrdenes(null); setResultados(null); setPdfs([]);
-    const fd = new FormData();
-    fd.append("file", archivo);
+    const fd = new FormData(); fd.append("file", archivo);
     const d = await fetch(`/api/arca?action=parse&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
     if(d.error){toast(d.error,"error");setParsing(false);return;}
-    setOrdenes(d.ordenes);
-    setProductos(d.productos||[]);
+    setOrdenes(d.ordenes); setProductos(d.productos||[]);
     setProductMap(Object.fromEntries((d.productos||[]).map(p=>[p,""])));
-    toast(`${d.total} órdenes listas para facturar`,"success");
-    setParsing(false);
+    toast(d.total+" órdenes listas para facturar","success"); setParsing(false);
   }
 
   async function handleEmit() {
     if(!ordenes||!cuitSel) return;
-    if(!window.confirm(`¿Emitir ${Object.keys(ordenes).length} facturas en ARCA?`)) return;
+    if(!window.confirm("¿Emitir "+Object.keys(ordenes).length+" facturas en ARCA?")) return;
     setEmitting(true);
     const d = await api("emit","POST",{cuit:cuitSel,ordenes,product_map:productMap});
     if(d.error){toast(d.error,"error");setEmitting(false);return;}
-    setResultados(d.resultados||[]);
-    setPdfs(d.pdfs||[]);
+    setResultados(d.resultados||[]); setPdfs(d.pdfs||[]);
     const ok = (d.resultados||[]).filter(r=>r.ok).length;
     const err = (d.resultados||[]).filter(r=>!r.ok).length;
-    toast(`${ok} facturas emitidas${err>0?` · ${err} con error`:""}`,"success");
-    setEmitting(false);
+    toast(ok+" facturas emitidas"+(err>0?" · "+err+" con error":""),"success"); setEmitting(false);
   }
 
-  function downloadPDF(pdf) {
-    const a = document.createElement("a");
-    a.href = `data:application/pdf;base64,${pdf.bytes}`;
-    a.download = pdf.nombre;
-    a.click();
-  }
-
-  function downloadAllPDFs() {
-    pdfs.forEach((pdf,i)=>setTimeout(()=>downloadPDF(pdf),i*300));
-  }
+  function downloadPDF(pdf) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+pdf.bytes; a.download=pdf.nombre; a.click(); }
+  function downloadAllPDFs() { pdfs.forEach((pdf,i)=>setTimeout(()=>downloadPDF(pdf),i*300)); }
 
   if(loading) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -5728,538 +5740,550 @@ function AppArca({T, user, onHome}) {
 
   const CONDICIONES=[{id:"RESPONSABLE_INSCRIPTO",label:"Responsable Inscripto"},{id:"MONOTRIBUTO",label:"Monotributista"}];
   const TIPOS_PERSONA=[{id:"FISICA",label:"Persona física"},{id:"JURIDICA",label:"Persona jurídica"}];
+  const esRI = cuitActivo?.condicion_fiscal === "RESPONSABLE_INSCRIPTO";
+  const esMono = cuitActivo?.condicion_fiscal === "MONOTRIBUTO";
 
-  const formatCuit = (c) => c.length===11 ? `${c.slice(0,2)}-${c.slice(2,10)}-${c.slice(10)}` : c;
-
-  /* ── Wizard steps config ── */
-  const wizSteps = [
-    {label:"Datos fiscales", icon:"📋"},
-    {label:"Certificado", icon:"🔐"},
-    {label:"Clave privada", icon:"🔑"},
-    {label:"Verificar", icon:"✅"},
-  ];
-
-  /* ── CUIT Dropdown component ── */
-  const CuitDropdown = () => (
-    <div className="arca-cuit-menu" style={{position:"relative"}}>
-      <button onClick={(e)=>{e.stopPropagation();setShowCuitMenu(s=>!s);}} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",borderRadius:10,border:`1px solid ${T.border}`,background:T.card,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",minWidth:200}}>
-        {cuitActivo ? (
-          <>
-            <div style={{width:8,height:8,borderRadius:"50%",background:T.green,flexShrink:0}}/>
-            <div style={{flex:1,textAlign:"left"}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.text,lineHeight:1.2}}>{cuitActivo.nombre_fantasia||cuitActivo.razon_social}</div>
-              <div style={{fontSize:10,color:T.textSm}}>CUIT {formatCuit(cuitActivo.cuit)} · PV {String(cuitActivo.punto_venta||1).padStart(5,"0")}</div>
-            </div>
-            <span style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:`1px solid ${T.green}44`,color:T.green,background:T.greenBg}}>
-              {cuitActivo.condicion_fiscal==="MONOTRIBUTO"?"MT":"RI"}
-            </span>
-          </>
-        ) : (
-          <span style={{fontSize:12,color:T.textSm}}>Seleccionar CUIT</span>
-        )}
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg>
-      </button>
-      {showCuitMenu && (
-        <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:280,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:6,zIndex:200,boxShadow:"0 8px 30px rgba(0,0,0,0.35)"}}>
-          {cuits.map(c=>(
-            <button key={c.cuit} onClick={()=>{setCuitSel(c.cuit);setShowCuitMenu(false);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 12px",borderRadius:8,border:"none",background:cuitSel===c.cuit?T.accentSolid+"18":"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"background 0.1s ease"}}
-              onMouseEnter={e=>{if(cuitSel!==c.cuit)e.currentTarget.style.background=T.surface;}}
-              onMouseLeave={e=>{if(cuitSel!==c.cuit)e.currentTarget.style.background="transparent";}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:T.green,flexShrink:0}}/>
-              <div style={{flex:1,textAlign:"left"}}>
-                <div style={{fontSize:13,fontWeight:600,color:T.text}}>{c.nombre_fantasia||c.razon_social}</div>
-                <div style={{fontSize:11,color:T.textSm}}>{formatCuit(c.cuit)} · vinculado</div>
-              </div>
-              {cuitSel===c.cuit && <span style={{color:T.accent,fontSize:16}}>✓</span>}
-            </button>
-          ))}
-          <div style={{borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:4}}>
-            <button onClick={()=>{setShowCuitMenu(false);setShowWizard(true);}} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",borderRadius:8,border:"none",background:"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.accent,fontSize:13,fontWeight:600}}
-              onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              + Conectar nuevo CUIT
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  /* ── Wizard Modal ── */
-  const WizardModal = () => (
-    <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>resetWizard()}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto",padding:"28px 32px"}} onClick={e=>e.stopPropagation()}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.accent}}>Conectar nuevo CUIT a ARCA</div>
-          <button onClick={resetWizard} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
-        </div>
-
-        {/* Progress bar */}
-        <div style={{display:"flex",gap:6,marginBottom:28}}>
-          {wizSteps.map((_,i)=>(
-            <div key={i} style={{flex:1,height:4,borderRadius:2,background:i<=wizStep?T.accent:T.border,transition:"background 0.2s ease"}}/>
-          ))}
-        </div>
-
-        {/* Step 0: Datos fiscales */}
-        {wizStep===0&&(
-          <div style={{display:"flex",flexDirection:"column",gap:16}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-              <div>
-                <label style={labelS}>CUIT (11 dígitos)</label>
-                <input value={newCuit.cuit} onChange={e=>setNewCuit(p=>({...p,cuit:e.target.value.replace(/\D/g,"").slice(0,11)}))} placeholder="20111111119" style={iS}/>
-                <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Con o sin guiones</div>
-              </div>
-              <div>
-                <label style={labelS}>Tipo de persona</label>
-                <select value={newCuit.tipo_persona} onChange={e=>setNewCuit(p=>({...p,tipo_persona:e.target.value}))} style={iS}>
-                  {TIPOS_PERSONA.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label style={labelS}>Razón social / Nombre completo</label>
-              <input value={newCuit.razon_social} onChange={e=>setNewCuit(p=>({...p,razon_social:e.target.value}))} placeholder="Vargas Martinotti Rocío Belén" style={iS}/>
-            </div>
-            <div>
-              <label style={labelS}>Nombre de fantasía (opcional)</label>
-              <input value={newCuit.nombre_fantasia} onChange={e=>setNewCuit(p=>({...p,nombre_fantasia:e.target.value}))} placeholder="Inditropic" style={iS}/>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-              <div>
-                <label style={labelS}>Condición frente al IVA</label>
-                <select value={newCuit.condicion_fiscal} onChange={e=>setNewCuit(p=>({...p,condicion_fiscal:e.target.value}))} style={iS}>
-                  {CONDICIONES.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
-                </select>
-                <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Emite Factura A o B</div>
-              </div>
-              <div>
-                <label style={labelS}>Punto de venta</label>
-                <input value={newCuit.punto_venta} onChange={e=>setNewCuit(p=>({...p,punto_venta:e.target.value}))} placeholder="1" style={iS}/>
-              </div>
-            </div>
-            <div>
-              <label style={labelS}>Domicilio comercial</label>
-              <input value={newCuit.domicilio} onChange={e=>setNewCuit(p=>({...p,domicilio:e.target.value}))} placeholder="Av. Corrientes 1234, CABA" style={iS}/>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-              <div>
-                <label style={labelS}>Fecha inicio actividades</label>
-                <input value={newCuit.fecha_inicio} onChange={e=>setNewCuit(p=>({...p,fecha_inicio:e.target.value}))} placeholder="01/02/2024" style={iS}/>
-              </div>
-              <div>
-                <label style={labelS}>Ingresos brutos</label>
-                <input value={newCuit.ingresos_brutos} onChange={e=>setNewCuit(p=>({...p,ingresos_brutos:e.target.value}))} placeholder="(default: tu CUIT)" style={iS}/>
-              </div>
-            </div>
-            <div>
-              <label style={labelS}>Ambiente ARCA</label>
-              <select value={newCuit.arca_prod?"prod":"homo"} onChange={e=>setNewCuit(p=>({...p,arca_prod:e.target.value==="prod"}))} style={iS}>
-                <option value="homo">Homologación (pruebas)</option>
-                <option value="prod">Producción (facturas reales con CAE válido)</option>
-              </select>
-            </div>
-          </div>
-        )}
-
-        {/* Step 1: Certificado */}
-        {wizStep===1&&(
-          <div>
-            <div style={{background:T.blueBg,border:`1px solid ${T.blue}33`,borderRadius:10,padding:16,marginBottom:20}}>
-              <div style={{fontSize:13,fontWeight:600,color:T.blue,marginBottom:6}}>📋 ¿Cómo obtengo el certificado?</div>
-              <ol style={{margin:0,paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.7}}>
-                <li>Entrá a <strong style={{color:T.text}}>ARCA → Mis Aplicaciones</strong></li>
-                <li>Generá un <strong style={{color:T.text}}>CSR</strong> (Certificate Signing Request) con tu CUIT</li>
-                <li>Descargá el archivo <strong style={{color:T.text}}>.crt</strong> que te da ARCA</li>
-                <li>Abrilo con un editor de texto y copiá todo el contenido</li>
-                <li>Pegalo acá abajo</li>
-              </ol>
-            </div>
-            <label style={labelS}>Certificado (.crt) — pegá el contenido</label>
-            <textarea value={certText} onChange={e=>setCertText(e.target.value)} placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"} style={{...iS,minHeight:150,resize:"vertical",fontFamily:"monospace",fontSize:11}}/>
-          </div>
-        )}
-
-        {/* Step 2: Clave privada */}
-        {wizStep===2&&(
-          <div>
-            <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:10,padding:16,marginBottom:20}}>
-              <div style={{fontSize:13,fontWeight:600,color:T.yellow,marginBottom:6}}>🔑 ¿Qué es la clave privada?</div>
-              <div style={{fontSize:12,color:T.textMd,lineHeight:1.7}}>
-                Es el archivo <strong style={{color:T.text}}>.key</strong> que generaste junto con el CSR al tramitar tu certificado en ARCA. 
-                <strong style={{color:T.text}}> No es la contraseña de tu cuenta</strong> — es un archivo de texto que empieza con "BEGIN PRIVATE KEY". Abrilo con un editor de texto y pegá todo el contenido.
-              </div>
-            </div>
-            <label style={labelS}>Clave privada (.key) — pegá el contenido</label>
-            <textarea value={keyText} onChange={e=>setKeyText(e.target.value)} placeholder={"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"} style={{...iS,minHeight:150,resize:"vertical",fontFamily:"monospace",fontSize:11}}/>
-          </div>
-        )}
-
-        {/* Step 3: Verificar */}
-        {wizStep===3&&(
-          <div>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:18,marginBottom:20}}>
-              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:12}}>Resumen</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                {[
-                  ["CUIT",formatCuit(newCuit.cuit)],
-                  ["Razón social",newCuit.razon_social],
-                  ["Fantasía",newCuit.nombre_fantasia||"—"],
-                  ["Condición",newCuit.condicion_fiscal==="MONOTRIBUTO"?"Monotributista":"Resp. Inscripto"],
-                  ["PV",newCuit.punto_venta],
-                  ["Ambiente",newCuit.arca_prod?"Producción":"Homologación"],
-                  ["Certificado",certText.trim()?"✅ Cargado":"❌ Sin cargar"],
-                  ["Clave privada",keyText.trim()?"✅ Cargada":"❌ Sin cargar"],
-                ].map(([k,v],i)=>(
-                  <div key={i} style={{padding:"8px 10px",background:T.bg,borderRadius:8}}>
-                    <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>{k}</div>
-                    <div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:2}}>{v}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            {testResult&&(
-              <div style={{padding:12,borderRadius:8,marginBottom:16,background:testResult.ok?T.greenBg:T.redBg,border:`1px solid ${testResult.ok?T.green:T.red}33`,fontSize:12,color:testResult.ok?T.green:T.red,fontWeight:500}}>
-                {testResult.ok?"✅ Conexión exitosa":"❌ Error de conexión"} — {testResult.msg}
-              </div>
-            )}
-            <button onClick={()=>handleTestCuit(newCuit.cuit)} disabled={testingCuit||!certText.trim()||!keyText.trim()} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:12}}>
-              {testingCuit?<><Spinner size={12} color={T.textMd}/> Testeando...</>:"🔌 Testear conexión con ARCA"}
-            </button>
-          </div>
-        )}
-
-        {/* Nav buttons */}
-        <div style={{display:"flex",gap:10,marginTop:24}}>
-          {wizStep>0&&(
-            <button onClick={()=>setWizStep(s=>s-1)} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-              Cancelar
-            </button>
-          )}
-          <div style={{flex:1}}/>
-          {wizStep<3?(
-            <button onClick={()=>setWizStep(s=>s+1)} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
-              Continuar →
-            </button>
-          ):(
-            <button onClick={handleSaveCuit} disabled={savingCuit} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
-              {savingCuit?<><Spinner size={13} color="#fff"/> Guardando...</>:"✅ Guardar CUIT"}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  /* ── Guía / Tutorial ── */
-  const GuiaArca = () => (
-    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:24}}>
-      <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"16px 20px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:18}}>📖</span>
-          <div style={{textAlign:"left"}}>
-            <div style={{fontSize:14,fontWeight:700,color:T.text}}>¿Cómo funciona la facturación en ARCA?</div>
-            <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Guía paso a paso para emitir tus primeras facturas</div>
-          </div>
-        </div>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s ease"}}><path d="M6 9l6 6 6-6"/></svg>
-      </button>
-      {showGuia&&(
-        <div style={{padding:"0 20px 20px",borderTop:`1px solid ${T.border}`}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
-            {[
-              {step:"1",title:"Conectá tu CUIT",desc:"Tocá el selector de CUIT arriba a la derecha y elegí '+ Conectar nuevo CUIT'. Vas a necesitar tu certificado .crt y clave .key de ARCA (los generás desde arca.gob.ar → Mis Aplicaciones).",color:T.accent},
-              {step:"2",title:"Subí tu archivo de ventas",desc:"Descargá el Excel de ventas de Mercado Libre (.xlsx) o el CSV de Shopify (.csv) y arrastralo en la zona de carga. Growith lee los datos automáticamente.",color:T.blue},
-              {step:"3",title:"Revisá las facturas",desc:"El sistema detecta si cada cliente es RI o consumidor final y elige Factura A o B solo. Podés renombrar los productos antes de emitir.",color:T.yellow},
-              {step:"4",title:"Emití y descargá PDFs",desc:"Tocá 'Emitir facturas' y en segundos tenés todas las facturas con CAE válido. Descargá los PDFs individualmente o todos juntos.",color:T.green},
-            ].map(s=>(
-              <div key={s.step} style={{display:"flex",gap:12,padding:16,background:T.bg,borderRadius:10,border:`1px solid ${T.border}`}}>
-                <div style={{width:32,height:32,borderRadius:8,background:s.color+"18",border:`1px solid ${s.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
-                <div>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>{s.title}</div>
-                  <div style={{fontSize:11,color:T.textMd,lineHeight:1.5}}>{s.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{marginTop:16,padding:14,background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:10}}>
-            <div style={{fontSize:12,fontWeight:600,color:T.purple,marginBottom:4}}>💡 Tip para Responsables Inscriptos</div>
-            <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>
-              Si el cliente tiene CUIT, Growith intenta emitir Factura A. Si ARCA rechaza porque ese CUIT no es RI, automáticamente reintenta como Factura B sin que tengas que hacer nada.
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  /* ── Dashboard IVA (placeholder) ── */
-  const DashboardIVA = () => {
-    const mesActual = new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"});
-    return (
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px"}}>
-          <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>IVA Débito fiscal · {mesActual}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>—</div>
-          <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Se calcula al emitir facturas</div>
-        </div>
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px"}}>
-          <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>IVA Crédito fiscal · {mesActual}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>—</div>
-          <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Próximamente: carga de compras</div>
-        </div>
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px"}}>
-          <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Facturas emitidas · {mesActual}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>—</div>
-          <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Historial próximamente</div>
-        </div>
-      </div>
-    );
-  };
-
-  /* ── Canales conectados (placeholder) ── */
-  const CanalesConectados = () => (
-    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:24}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-        <div>
-          <div style={{fontSize:14,fontWeight:700,color:T.text}}>Canales de venta</div>
-          <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Conectá tus tiendas para facturar directo desde las órdenes</div>
-        </div>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-        {[
-          {name:"Mercado Libre",icon:"🟡",desc:"Importar desde Excel de ventas",status:"manual",statusLabel:"Subir archivo"},
-          {name:"Tienda Nube",icon:"🔵",desc:"Sincronización automática",status:"soon",statusLabel:"Próximamente"},
-          {name:"Shopify",icon:"🟢",desc:"Importar desde CSV de ventas",status:"manual",statusLabel:"Subir archivo"},
-        ].map(ch=>(
-          <div key={ch.name} style={{border:`1px solid ${T.border}`,borderRadius:10,padding:"16px",background:T.bg}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-              <span style={{fontSize:20}}>{ch.icon}</span>
-              <div style={{fontSize:13,fontWeight:700,color:T.text}}>{ch.name}</div>
-            </div>
-            <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,marginBottom:12}}>{ch.desc}</div>
-            <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:6,fontSize:10,fontWeight:600,
-              background:ch.status==="manual"?T.blueBg:T.yellowBg,
-              color:ch.status==="manual"?T.blue:T.yellow,
-              border:`1px solid ${ch.status==="manual"?T.blue:T.yellow}33`}}>
-              <span style={{width:5,height:5,borderRadius:"50%",background:"currentColor"}}/>
-              {ch.statusLabel}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  /* ── Sección Facturación principal ── */
-  const SeccionFacturar = () => (
-    <div>
-      {/* Info condición fiscal */}
-      {cuitActivo && (
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 22px",marginBottom:20}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-            <span style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,border:`1px solid ${T.green}44`,color:T.green,background:T.greenBg,textTransform:"uppercase",letterSpacing:0.4}}>
-              {cuitActivo.condicion_fiscal==="MONOTRIBUTO"?"Monotributista":"Responsable Inscripto"}
-            </span>
-            <span style={{fontSize:12,color:T.textMd}}>El bot elige el tipo de factura solo, según los datos del cliente.</span>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {[
-              {icon:"🟢",title:"Cliente con CUIT y es Responsable Inscripto",desc:`Se emite Factura A. Si ARCA rechaza (porque ese CUIT no es RI), automáticamente reintenta como Factura B sin que tengas que hacer nada.`},
-              {icon:"🔵",title:"Cliente con DNI (consumidor final)",desc:"Se emite Factura B a nombre del cliente."},
-              {icon:"⚪",title:"Sin datos del cliente",desc:`Si no trae DNI ni CUIT (porque el cliente no completó el campo "empresa") se emite Factura B a Consumidor Final.`},
-            ].map((r,i)=>(
-              <div key={i} style={{display:"flex",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:`1px solid ${T.borderL}`}}>
-                <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{r.icon}</span>
-                <div>
-                  <div style={{fontSize:12,fontWeight:700,color:T.text}}>{r.title}</div>
-                  <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,marginTop:2}}>{r.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div style={{display:"grid",gridTemplateColumns:ordenes?"1fr 340px":"1fr",gap:20,alignItems:"start"}}>
-        <div>
-          {/* Upload */}
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",marginBottom:16}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-              <span style={{width:28,height:28,borderRadius:8,background:T.accentSolid+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>1</span>
-              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>Archivo de ventas</div>
-            </div>
-            <div style={{border:`2px dashed ${T.border}`,borderRadius:10,padding:"28px 20px",textAlign:"center",marginTop:14,cursor:"pointer",transition:"border-color 0.15s ease"}}
-              onClick={()=>document.getElementById('arca-file-input')?.click()}
-              onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
-              onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
-              onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;if(e.dataTransfer.files[0])setArchivo(e.dataTransfer.files[0]);}}>
-              {archivo ? (
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                  <span style={{fontSize:24}}>📄</span>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{archivo.name}</div>
-                    <div style={{fontSize:11,color:T.textSm}}>{(archivo.size/1024).toFixed(0)} KB · Click para cambiar</div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <span style={{fontSize:28,display:"block",marginBottom:8}}>📦</span>
-                  <div style={{fontSize:13,fontWeight:600,color:T.text}}>Arrastrá tu archivo acá o tocá para elegir</div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:4}}>.xlsx (Mercado Libre) o .csv (Shopify)</div>
-                </>
-              )}
-              <input id="arca-file-input" type="file" accept=".xlsx,.csv" onChange={e=>{if(e.target.files[0])setArchivo(e.target.files[0]);}} style={{display:"none"}}/>
-            </div>
-            <button onClick={handleParseFile} disabled={parsing||!archivo||!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginTop:14,display:"flex",alignItems:"center",justifyContent:"center",gap:6,opacity:(!archivo||!cuitSel)?0.5:1}}>
-              {parsing?<><Spinner size={13} color="#fff"/> Procesando...</>:"📂 Cargar y previsualizar"}
-            </button>
-          </div>
-
-          {/* Preview órdenes */}
-          {ordenes&&(
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 22px",marginBottom:16}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-                <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>2</span>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>
-                  {Object.keys(ordenes).length} órdenes a facturar
-                </div>
-              </div>
-              <div style={{maxHeight:350,overflowY:"auto",borderRadius:8}}>
-                {Object.entries(ordenes).map(([id,o])=>(
-                  <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:600,color:T.text}}>{o.nombre||"Consumidor Final"}</div>
-                      <div style={{fontSize:11,color:T.textSm}}>{id} · {o.doc_tipo==="CUIT"?"Factura A":"Factura B"}{o.doc_nro?` · ${o.doc_tipo} ${o.doc_nro}`:""}</div>
-                    </div>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>${o.total.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Resultados */}
-          {resultados&&(
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 22px"}}>
-              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>
-                Resultado de emisión
-              </div>
-              {resultados.map((r,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                  <span style={{fontSize:16,flexShrink:0}}>{r.ok?"✅":"🔴"}</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.orden_id}</div>
-                    {r.ok
-                      ? <div style={{fontSize:11,color:T.textSm}}>F-{r.letra} Nro {String(r.comprobante).padStart(8,"0")} · CAE {r.cae} · Vto {r.cae_vto}</div>
-                      : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>
-                    }
-                  </div>
-                  <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>${r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Sidebar derecho */}
-        {ordenes && (
-          <div style={{display:"flex",flexDirection:"column",gap:16,position:"sticky",top:80}}>
-            {productos.length>0&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:4}}>Nombre en factura</div>
-                <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.4}}>Podés cambiar cómo aparece cada producto en el PDF.</div>
-                {productos.map(p=>(
-                  <div key={p} style={{marginBottom:10}}>
-                    <div style={{fontSize:11,color:T.textSm,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p}</div>
-                    <input value={productMap[p]||""} onChange={e=>setProductMap(prev=>({...prev,[p]:e.target.value}))} placeholder={p.slice(0,35)+"..."} style={{...iS,fontSize:12}}/>
-                  </div>
-                ))}
-              </div>
-            )}
-            {!resultados&&(
-              <button onClick={handleEmit} disabled={emitting||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"13px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir facturas en ARCA"}
-              </button>
-            )}
-            {pdfs.length>0&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:12}}>{pdfs.length} PDFs generados</div>
-                <button onClick={downloadAllPDFs} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:10}}>⬇ Descargar todos</button>
-                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
-                  {pdfs.map((pdf,i)=>(
-                    <button key={i} onClick={()=>downloadPDF(pdf)} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                      📄 {pdf.nombre}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {(ordenes||resultados)&&(
-              <button onClick={()=>{setOrdenes(null);setResultados(null);setPdfs([]);setArchivo(null);}} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                Nueva facturación
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  /* ── RENDER PRINCIPAL ── */
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      {/* ── TOPBAR ── */}
       <AppTopbar T={T} section="ARCA" onHome={onHome}>
-        <CuitDropdown/>
+        <div className="arca-cuit-menu" style={{position:"relative"}}>
+          <button onClick={(e)=>{e.stopPropagation();setShowCuitMenu(s=>!s);}} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",borderRadius:10,border:"1px solid "+T.border,background:T.card,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",minWidth:200}}>
+            {cuitActivo ? (
+              <>
+                <div style={{width:8,height:8,borderRadius:"50%",background:T.green,flexShrink:0}}/>
+                <div style={{flex:1,textAlign:"left"}}>
+                  <div style={{fontSize:12,fontWeight:700,color:T.text,lineHeight:1.2}}>{cuitActivo.nombre_fantasia||cuitActivo.razon_social}</div>
+                  <div style={{fontSize:10,color:T.textSm}}>CUIT {formatCuit(cuitActivo.cuit)} · PV {String(cuitActivo.punto_venta||1).padStart(5,"0")}</div>
+                </div>
+                <span style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.green+"44",color:T.green,background:T.greenBg}}>
+                  {cuitActivo.condicion_fiscal==="MONOTRIBUTO"?"MT":"RI"}
+                </span>
+              </>
+            ) : (
+              <span style={{fontSize:12,color:T.textSm}}>Seleccionar CUIT</span>
+            )}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {showCuitMenu && (
+            <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:280,background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:6,zIndex:200,boxShadow:"0 8px 30px rgba(0,0,0,0.35)"}}>
+              {cuits.map(c=>(
+                <button key={c.cuit} onClick={()=>{setCuitSel(c.cuit);setShowCuitMenu(false);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 12px",borderRadius:8,border:"none",background:cuitSel===c.cuit?T.accentSolid+"18":"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}
+                  onMouseEnter={e=>{if(cuitSel!==c.cuit)e.currentTarget.style.background=T.surface;}}
+                  onMouseLeave={e=>{if(cuitSel!==c.cuit)e.currentTarget.style.background="transparent";}}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:T.green,flexShrink:0}}/>
+                  <div style={{flex:1,textAlign:"left"}}>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{c.nombre_fantasia||c.razon_social}</div>
+                    <div style={{fontSize:11,color:T.textSm}}>{formatCuit(c.cuit)} · vinculado</div>
+                  </div>
+                  {cuitSel===c.cuit && <span style={{color:T.accent,fontSize:16}}>✓</span>}
+                </button>
+              ))}
+              <div style={{borderTop:"1px solid "+T.border,marginTop:4,paddingTop:4}}>
+                <button onClick={()=>{setShowCuitMenu(false);setShowWizard(true);}} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",borderRadius:8,border:"none",background:"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.accent,fontSize:13,fontWeight:600}}
+                  onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  + Conectar nuevo CUIT
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </AppTopbar>
 
       <div style={{maxWidth:1100,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
-        {/* Si no tiene CUITs → onboarding */}
+        {/* ══ SIN CUITs → ONBOARDING ══ */}
         {cuits.length===0 ? (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 24px",textAlign:"center"}}>
-            <div style={{width:72,height:72,borderRadius:18,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34,marginBottom:24}}>🧾</div>
+            <div style={{width:72,height:72,borderRadius:18,background:T.surface,border:"1px solid "+T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34,marginBottom:24}}>🧾</div>
             <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:8}}>Facturación electrónica con ARCA</div>
-            <div style={{fontSize:14,color:T.textMd,maxWidth:480,lineHeight:1.6,marginBottom:28}}>
-              Conectá tu CUIT con certificado de ARCA y empezá a emitir facturas A y B directo desde tus ventas de Mercado Libre, Shopify y Tienda Nube.
+            <div style={{fontSize:14,color:T.textMd,maxWidth:520,lineHeight:1.7,marginBottom:28}}>
+              Conectá tu CUIT con tu certificado digital de ARCA y empezá a emitir facturas electrónicas directo desde tus ventas de Mercado Libre, Shopify y Tienda Nube. El sistema detecta automáticamente el tipo de comprobante según tu condición fiscal y los datos de cada cliente.
             </div>
             <button onClick={()=>setShowWizard(true)} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
               + Conectar mi primer CUIT
             </button>
-            <div style={{marginTop:40,width:"100%",maxWidth:700}}>
-              <GuiaArca/>
+
+            {/* Guía inline en onboarding */}
+            <div style={{marginTop:48,width:"100%",maxWidth:750,textAlign:"left"}}>
+              <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:20,textAlign:"center"}}>📖 ¿Cómo funciona?</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                {[
+                  {step:"1",title:"Sacá tu certificado digital en ARCA",desc:"Entrá a arca.gob.ar con tu CUIT y clave fiscal. Andá a Administración de Certificados Digitales → Nuevo Certificado. Ahí generás un archivo CSR (Certificate Signing Request) que ARCA firma y te devuelve como un archivo .crt. También vas a tener un archivo .key (clave privada) que se genera junto con el CSR. Ambos archivos los vas a necesitar en el paso siguiente.",color:T.accent},
+                  {step:"2",title:"Conectá tu CUIT en Growith",desc:"Tocá '+ Conectar mi primer CUIT' acá arriba. Te va a pedir tus datos fiscales (CUIT, razón social, condición frente al IVA, punto de venta) y después el contenido de los archivos .crt y .key que sacaste de ARCA. Los abrís con cualquier editor de texto (TextEdit, Notepad, VS Code), copiás todo el contenido y lo pegás en los campos correspondientes.",color:T.blue},
+                  {step:"3",title:"Subí tus ventas para facturar",desc:"Descargá el reporte de ventas desde tu plataforma: en Mercado Libre es un archivo Excel (.xlsx) que bajás desde Ventas → Facturación, y en Shopify es un CSV que exportás desde Orders. Arrastrá ese archivo en la zona de carga y Growith lo procesa automáticamente: identifica cada cliente, el monto, y prepara las facturas.",color:T.yellow},
+                  {step:"4",title:"Emití y descargá los PDFs",desc:"Revisá la previsualización de las facturas. Podés renombrar los productos si querés que aparezcan distinto en el comprobante. Tocá 'Emitir' y en segundos tenés todas las facturas con CAE válido emitidas en ARCA. Descargá los PDFs uno por uno o todos juntos en un click.",color:T.green},
+                ].map(s=>(
+                  <div key={s.step} style={{display:"flex",gap:12,padding:18,background:T.card,borderRadius:12,border:"1px solid "+T.border}}>
+                    <div style={{width:34,height:34,borderRadius:9,background:s.color+"18",border:"1px solid "+s.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>{s.title}</div>
+                      <div style={{fontSize:11,color:T.textMd,lineHeight:1.65}}>{s.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:20,padding:16,background:T.purpleBg,border:"1px solid "+T.purple+"33",borderRadius:10}}>
+                <div style={{fontSize:12,fontWeight:600,color:T.purple,marginBottom:6}}>💡 ¿Qué tipo de factura emite Growith?</div>
+                <div style={{fontSize:12,color:T.textMd,lineHeight:1.7}}>
+                  <strong style={{color:T.text}}>Si sos Responsable Inscripto:</strong> Growith emite Factura A cuando el cliente tiene CUIT y también es RI. Si ARCA rechaza la Factura A (porque ese CUIT no es RI), automáticamente reintenta como Factura B sin que hagas nada. Para clientes con DNI o sin datos fiscales, emite Factura B directamente.<br/><br/>
+                  <strong style={{color:T.text}}>Si sos Monotributista:</strong> Siempre se emite Factura C, sin importar quién sea el cliente. Los monotributistas no discriminan IVA en sus comprobantes.
+                </div>
+              </div>
             </div>
           </div>
+
         ) : (
           <>
+            {/* ══ CON CUITs → PANEL PRINCIPAL ══ */}
+
             {/* Guía colapsable */}
-            <GuiaArca/>
+            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,overflow:"hidden",marginBottom:24}}>
+              <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"16px 20px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:18}}>📖</span>
+                  <div style={{textAlign:"left"}}>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>¿Cómo funciona la facturación en ARCA?</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Guía completa paso a paso — tocá para {showGuia?"cerrar":"abrir"}</div>
+                  </div>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s ease"}}><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              {showGuia&&(
+                <div style={{padding:"0 20px 20px",borderTop:"1px solid "+T.border}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
+                    {[
+                      {step:"1",title:"Conectá tu CUIT",desc:"Tocá el selector de CUIT arriba a la derecha → '+ Conectar nuevo CUIT'. Necesitás tu certificado digital (.crt) y clave privada (.key) de ARCA. Los generás en arca.gob.ar → Administración de Certificados Digitales. El .crt es el certificado firmado y el .key es la clave privada que se genera junto con el CSR. Abrí cada archivo con un editor de texto, copiá todo el contenido y pegalo en los campos del wizard.",color:T.accent},
+                      {step:"2",title:"Subí tu archivo de ventas",desc:"Descargá el Excel de ventas de Mercado Libre (.xlsx) desde Ventas → Facturación, o el CSV de Shopify desde Orders → Export. Arrastrá el archivo en la zona de carga de abajo. Growith lee las órdenes automáticamente y prepara cada factura con los datos del comprador (nombre, CUIT/DNI, monto, productos).",color:T.blue},
+                      {step:"3",title:"Revisá y ajustá",desc:"Antes de emitir podés revisar cada orden: el sistema muestra el tipo de comprobante que va a generar (Factura A, B o C según tu condición fiscal y los datos del cliente). También podés cambiar el nombre de los productos para que aparezcan distinto en el PDF final del comprobante.",color:T.yellow},
+                      {step:"4",title:"Emití y descargá PDFs",desc:"Tocá 'Emitir facturas en ARCA' y el sistema se comunica directo con ARCA para generar cada comprobante con CAE válido. En segundos tenés los resultados: facturas exitosas con su número de comprobante y CAE. Descargá los PDFs uno por uno o todos juntos.",color:T.green},
+                    ].map(s=>(
+                      <div key={s.step} style={{display:"flex",gap:12,padding:16,background:T.bg,borderRadius:10,border:"1px solid "+T.border}}>
+                        <div style={{width:32,height:32,borderRadius:8,background:s.color+"18",border:"1px solid "+s.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:5}}>{s.title}</div>
+                          <div style={{fontSize:11,color:T.textMd,lineHeight:1.65}}>{s.desc}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{marginTop:16,padding:14,background:T.purpleBg,border:"1px solid "+T.purple+"33",borderRadius:10}}>
+                    <div style={{fontSize:12,fontWeight:600,color:T.purple,marginBottom:6}}>💡 Tipos de factura según tu condición fiscal</div>
+                    <div style={{fontSize:11,color:T.textMd,lineHeight:1.7}}>
+                      <strong style={{color:T.text}}>Responsable Inscripto →</strong> Factura A (cliente RI con CUIT) o Factura B (consumidor final, cliente con DNI, o sin datos). Si ARCA rechaza una Factura A porque el CUIT del cliente no es RI, Growith reintenta como Factura B automáticamente.<br/>
+                      <strong style={{color:T.text}}>Monotributista →</strong> Siempre Factura C, independientemente de quién sea el cliente. Los monotributistas no discriminan IVA.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
-            {/* Dashboard IVA */}
-            {cuitActivo?.condicion_fiscal==="RESPONSABLE_INSCRIPTO" && <DashboardIVA/>}
+            {/* Dashboard IVA (solo RI) */}
+            {esRI && (
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
+                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
+                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>IVA Débito fiscal · {mesActual}</div>
+                  <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>—</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>Se calcula automáticamente al emitir facturas A y B. Es el IVA que cobraste a tus clientes.</div>
+                </div>
+                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
+                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>IVA Crédito fiscal · {mesActual}</div>
+                  <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>—</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>Próximamente: vas a poder cargar tus compras para calcular el crédito fiscal del mes.</div>
+                </div>
+                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
+                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Facturas emitidas · {mesActual}</div>
+                  <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>—</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>Historial de comprobantes emitidos desde Growith.</div>
+                </div>
+              </div>
+            )}
 
-            {/* Canales conectados */}
-            <CanalesConectados/>
+            {/* Canales de venta */}
+            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px",marginBottom:24}}>
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Canales de venta</div>
+                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Importá tus ventas desde cada plataforma para facturarlas en ARCA</div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+                {[
+                  {name:"Mercado Libre",icon:"🟡",desc:"Descargá el Excel de ventas (.xlsx) desde Ventas → Facturación en tu cuenta de ML. Subilo en la zona de carga de abajo.",status:"manual",statusLabel:"Subir archivo"},
+                  {name:"Tienda Nube",icon:"🔵",desc:"Próximamente vas a poder sincronizar las órdenes directamente sin descargar archivos.",status:"soon",statusLabel:"Próximamente"},
+                  {name:"Shopify",icon:"🟢",desc:"Exportá las órdenes como CSV desde Orders → Export en tu admin de Shopify. Subilo en la zona de carga.",status:"manual",statusLabel:"Subir archivo"},
+                ].map(ch=>(
+                  <div key={ch.name} style={{border:"1px solid "+T.border,borderRadius:10,padding:"16px",background:T.bg}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                      <span style={{fontSize:20}}>{ch.icon}</span>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>{ch.name}</div>
+                    </div>
+                    <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginBottom:12,minHeight:48}}>{ch.desc}</div>
+                    <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:6,fontSize:10,fontWeight:600,
+                      background:ch.status==="manual"?T.blueBg:T.yellowBg,
+                      color:ch.status==="manual"?T.blue:T.yellow,
+                      border:"1px solid "+(ch.status==="manual"?T.blue:T.yellow)+"33"}}>
+                      <span style={{width:5,height:5,borderRadius:"50%",background:"currentColor"}}/>
+                      {ch.statusLabel}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-            {/* Emisión de facturas */}
+            {/* Título facturación */}
             <div style={{marginBottom:8}}>
               <div style={{fontSize:22,fontWeight:800,color:T.text}}>
                 Emisión de facturas <span style={{color:T.accent}}>en ARCA</span>
               </div>
-              <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6,maxWidth:600}}>
-                Subí abajo el <strong style={{color:T.text}}>.csv de Shopify</strong> o el <strong style={{color:T.text}}>.xlsx de Mercado Libre</strong> con las ventas que querés facturar. El bot decide solo el tipo de factura según tu condición fiscal y los datos del cliente.
+              <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6,maxWidth:650}}>
+                Subí el <strong style={{color:T.text}}>.csv de Shopify</strong> o el <strong style={{color:T.text}}>.xlsx de Mercado Libre</strong> con las ventas que querés facturar.
+                {esRI && " El bot decide solo el tipo de factura (A o B) según los datos del cliente."}
+                {esMono && " Se emiten Facturas C automáticamente para todas las ventas."}
               </div>
             </div>
             <div style={{height:1,background:T.border,margin:"18px 0 22px"}}/>
 
-            <SeccionFacturar/>
+            {/* Info condición fiscal */}
+            {cuitActivo && (
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginBottom:20}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                  <span style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,border:"1px solid "+T.green+"44",color:T.green,background:T.greenBg,textTransform:"uppercase",letterSpacing:0.4}}>
+                    {esMono?"Monotributista":"Responsable Inscripto"}
+                  </span>
+                  <span style={{fontSize:12,color:T.textMd}}>
+                    {esMono?"Siempre se emite Factura C.":"El tipo de factura se elige automáticamente según el cliente."}
+                  </span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {esRI ? [
+                    {icon:"🟢",title:"Cliente con CUIT y es Responsable Inscripto",desc:"Se emite Factura A. Incluye IVA discriminado (21%). Si ARCA rechaza porque ese CUIT no es RI, automáticamente reintenta como Factura B sin que tengas que hacer nada."},
+                    {icon:"🔵",title:"Cliente con DNI (consumidor final)",desc:"Se emite Factura B a nombre del cliente. El IVA va incluido en el precio final, no se discrimina en el comprobante."},
+                    {icon:"⚪",title:"Sin datos del cliente",desc:"Si la plataforma no trae DNI ni CUIT del comprador (porque no completó el campo 'empresa' o 'documento'), se emite Factura B a Consumidor Final con CUIT genérico."},
+                  ].map((r,i)=>(
+                    <div key={i} style={{display:"flex",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:"1px solid "+T.borderL}}>
+                      <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{r.icon}</span>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700,color:T.text}}>{r.title}</div>
+                        <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginTop:3}}>{r.desc}</div>
+                      </div>
+                    </div>
+                  )) : [
+                    {icon:"🟣",title:"Todos los clientes → Factura C",desc:"Como monotributista, todos tus comprobantes son Factura C independientemente de si el cliente tiene CUIT, DNI o ningún dato. La Factura C no discrimina IVA — el monto total es lo que figura en el comprobante."},
+                  ].map((r,i)=>(
+                    <div key={i} style={{display:"flex",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:"1px solid "+T.borderL}}>
+                      <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{r.icon}</span>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700,color:T.text}}>{r.title}</div>
+                        <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginTop:3}}>{r.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Zona de facturación */}
+            <div style={{display:"grid",gridTemplateColumns:ordenes?"1fr 340px":"1fr",gap:20,alignItems:"start"}}>
+              <div>
+                {/* Upload */}
+                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"22px 24px",marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <span style={{width:28,height:28,borderRadius:8,background:T.accentSolid+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.accent}}>1</span>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>Archivo de ventas</div>
+                  </div>
+                  <div style={{border:"2px dashed "+T.border,borderRadius:10,padding:"28px 20px",textAlign:"center",marginTop:14,cursor:"pointer"}}
+                    onClick={()=>document.getElementById('arca-file-input')?.click()}
+                    onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
+                    onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
+                    onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;if(e.dataTransfer.files[0])setArchivo(e.dataTransfer.files[0]);}}>
+                    {archivo ? (
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                        <span style={{fontSize:24}}>📄</span>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:600,color:T.text}}>{archivo.name}</div>
+                          <div style={{fontSize:11,color:T.textSm}}>{(archivo.size/1024).toFixed(0)} KB · Click para cambiar</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <span style={{fontSize:28,display:"block",marginBottom:8}}>📦</span>
+                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>Arrastrá tu archivo acá o tocá para elegir</div>
+                        <div style={{fontSize:11,color:T.textSm,marginTop:4}}>.xlsx (Mercado Libre) o .csv (Shopify)</div>
+                      </>
+                    )}
+                    <input id="arca-file-input" type="file" accept=".xlsx,.csv" onChange={e=>{if(e.target.files[0])setArchivo(e.target.files[0]);}} style={{display:"none"}}/>
+                  </div>
+                  <button onClick={handleParseFile} disabled={parsing||!archivo||!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginTop:14,display:"flex",alignItems:"center",justifyContent:"center",gap:6,opacity:(!archivo||!cuitSel)?0.5:1}}>
+                    {parsing?<><Spinner size={13} color="#fff"/> Procesando...</>:"📂 Cargar y previsualizar"}
+                  </button>
+                </div>
+
+                {/* Preview órdenes */}
+                {ordenes&&(
+                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginBottom:16}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                      <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.green}}>2</span>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>
+                        {Object.keys(ordenes).length} órdenes a facturar
+                      </div>
+                    </div>
+                    <div style={{maxHeight:350,overflowY:"auto",borderRadius:8}}>
+                      {Object.entries(ordenes).map(([id,o])=>(
+                        <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid "+T.borderL}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>{o.nombre||"Consumidor Final"}</div>
+                            <div style={{fontSize:11,color:T.textSm}}>{id} · {esMono?"Factura C":(o.doc_tipo==="CUIT"?"Factura A":"Factura B")}{o.doc_nro?" · "+o.doc_tipo+" "+o.doc_nro:""}</div>
+                          </div>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>${o.total.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Resultados */}
+                {resultados&&(
+                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px"}}>
+                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Resultado de emisión</div>
+                    {resultados.map((r,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid "+T.borderL}}>
+                        <span style={{fontSize:16,flexShrink:0}}>{r.ok?"✅":"🔴"}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.orden_id}</div>
+                          {r.ok
+                            ? <div style={{fontSize:11,color:T.textSm}}>F-{r.letra} Nro {String(r.comprobante).padStart(8,"0")} · CAE {r.cae} · Vto {r.cae_vto}</div>
+                            : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>}
+                        </div>
+                        <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>${r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Sidebar */}
+              {ordenes && (
+                <div style={{display:"flex",flexDirection:"column",gap:16,position:"sticky",top:80}}>
+                  {productos.length>0&&(
+                    <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:4}}>Nombre en factura</div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.4}}>Podés cambiar cómo aparece cada producto en el PDF del comprobante. Dejalo vacío para usar el nombre original.</div>
+                      {productos.map(p=>(
+                        <div key={p} style={{marginBottom:10}}>
+                          <div style={{fontSize:11,color:T.textSm,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p}</div>
+                          <input value={productMap[p]||""} onChange={e=>setProductMap(prev=>({...prev,[p]:e.target.value}))} placeholder={p.slice(0,35)+"..."} style={{...iS,fontSize:12}}/>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!resultados&&(
+                    <button onClick={handleEmit} disabled={emitting||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"13px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                      {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir facturas en ARCA"}
+                    </button>
+                  )}
+                  {pdfs.length>0&&(
+                    <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:12}}>{pdfs.length} PDFs generados</div>
+                      <button onClick={downloadAllPDFs} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:10}}>⬇ Descargar todos</button>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
+                        {pdfs.map((pdf,i)=>(
+                          <button key={i} onClick={()=>downloadPDF(pdf)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            📄 {pdf.nombre}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(ordenes||resultados)&&(
+                    <button onClick={()=>{setOrdenes(null);setResultados(null);setPdfs([]);setArchivo(null);}} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                      Nueva facturación
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
 
-      {/* Wizard Modal */}
-      {showWizard && <WizardModal/>}
+      {/* ══ WIZARD MODAL ══ */}
+      {showWizard && (
+        <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={resetWizard}>
+          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto",padding:"28px 32px"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
+              <div style={{fontSize:17,fontWeight:700,color:T.accent}}>Conectar nuevo CUIT a ARCA</div>
+              <button onClick={resetWizard} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
+            </div>
+
+            {/* Progress bar */}
+            <div style={{display:"flex",gap:6,marginBottom:28}}>
+              {["Datos fiscales","Certificado","Clave privada","Verificar"].map((_,i)=>(
+                <div key={i} style={{flex:1,height:4,borderRadius:2,background:i<=wizStep?T.accent:T.border,transition:"background 0.2s ease"}}/>
+              ))}
+            </div>
+
+            {/* Step 0: Datos */}
+            {wizStep===0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                  <div>
+                    <label style={labelS}>CUIT (11 dígitos)</label>
+                    <input value={wizCuit} onChange={e=>setWizCuit(e.target.value.replace(/\D/g,"").slice(0,11))} placeholder="20345678901" style={iS}/>
+                    <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Con o sin guiones</div>
+                  </div>
+                  <div>
+                    <label style={labelS}>Tipo de persona</label>
+                    <select value={wizTipoPersona} onChange={e=>setWizTipoPersona(e.target.value)} style={iS}>
+                      {TIPOS_PERSONA.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelS}>Razón social / Nombre completo</label>
+                  <input value={wizRazonSocial} onChange={e=>setWizRazonSocial(e.target.value)} placeholder="García López María Eugenia" style={iS}/>
+                </div>
+                <div>
+                  <label style={labelS}>Nombre de fantasía (opcional)</label>
+                  <input value={wizNombreFantasia} onChange={e=>setWizNombreFantasia(e.target.value)} placeholder="Mi Tienda Online" style={iS}/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                  <div>
+                    <label style={labelS}>Condición frente al IVA</label>
+                    <select value={wizCondicion} onChange={e=>setWizCondicion(e.target.value)} style={iS}>
+                      {CONDICIONES.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>
+                    <div style={{fontSize:10,color:T.textSm,marginTop:3}}>{wizCondicion==="MONOTRIBUTO"?"Emite Factura C":"Emite Factura A o B"}</div>
+                  </div>
+                  <div>
+                    <label style={labelS}>Punto de venta</label>
+                    <input value={wizPuntoVenta} onChange={e=>setWizPuntoVenta(e.target.value)} placeholder="1" style={iS}/>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelS}>Domicilio comercial</label>
+                  <input value={wizDomicilio} onChange={e=>setWizDomicilio(e.target.value)} placeholder="Av. Corrientes 1234, CABA" style={iS}/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                  <div>
+                    <label style={labelS}>Fecha inicio actividades</label>
+                    <input value={wizFechaInicio} onChange={e=>setWizFechaInicio(e.target.value)} placeholder="01/02/2024" style={iS}/>
+                  </div>
+                  <div>
+                    <label style={labelS}>Ingresos brutos</label>
+                    <input value={wizIngresosBrutos} onChange={e=>setWizIngresosBrutos(e.target.value)} placeholder="(default: tu CUIT)" style={iS}/>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelS}>Ambiente ARCA</label>
+                  <select value={wizArcaProd?"prod":"homo"} onChange={e=>setWizArcaProd(e.target.value==="prod")} style={iS}>
+                    <option value="homo">Homologación (pruebas — las facturas no son reales)</option>
+                    <option value="prod">Producción (facturas reales con CAE válido — cuidado)</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Step 1: Certificado */}
+            {wizStep===1&&(
+              <div>
+                <div style={{background:T.blueBg,border:"1px solid "+T.blue+"33",borderRadius:10,padding:16,marginBottom:20}}>
+                  <div style={{fontSize:13,fontWeight:600,color:T.blue,marginBottom:8}}>📋 ¿Cómo obtengo el certificado?</div>
+                  <div style={{fontSize:12,color:T.textMd,lineHeight:1.7}}>
+                    El certificado digital es lo que le permite a Growith comunicarse con ARCA en tu nombre. Para obtenerlo:
+                  </div>
+                  <ol style={{margin:"8px 0 0",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
+                    <li>Entrá a <strong style={{color:T.text}}>arca.gob.ar</strong> con tu CUIT y clave fiscal nivel 3 o superior</li>
+                    <li>Andá a <strong style={{color:T.text}}>Administración de Certificados Digitales → Nuevo Certificado</strong></li>
+                    <li>Seguí los pasos para generar un <strong style={{color:T.text}}>CSR</strong> (Certificate Signing Request). En este paso se genera también la <strong style={{color:T.text}}>clave privada (.key)</strong> que vas a necesitar en el siguiente paso — guardala bien</li>
+                    <li>ARCA firma tu solicitud y te entrega un archivo <strong style={{color:T.text}}>.crt</strong></li>
+                    <li>Abrí el archivo .crt con cualquier editor de texto (TextEdit en Mac, Notepad en Windows, o VS Code)</li>
+                    <li>Seleccioná <strong style={{color:T.text}}>todo el contenido</strong> (incluyendo las líneas BEGIN y END) y copialo</li>
+                    <li>Pegalo acá abajo</li>
+                  </ol>
+                </div>
+                <label style={labelS}>Certificado (.crt) — pegá el contenido completo</label>
+                <textarea value={certText} onChange={e=>setCertText(e.target.value)} placeholder={"-----BEGIN CERTIFICATE-----\nMIICxjCCAa6gAwIBAgIUO...\n...\n-----END CERTIFICATE-----"} style={{...iS,minHeight:150,resize:"vertical",fontFamily:"monospace",fontSize:11}}/>
+              </div>
+            )}
+
+            {/* Step 2: Clave privada */}
+            {wizStep===2&&(
+              <div>
+                <div style={{background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,padding:16,marginBottom:20}}>
+                  <div style={{fontSize:13,fontWeight:600,color:T.yellow,marginBottom:8}}>🔑 ¿Qué es la clave privada?</div>
+                  <div style={{fontSize:12,color:T.textMd,lineHeight:1.8}}>
+                    La clave privada es un archivo <strong style={{color:T.text}}>.key</strong> que se generó automáticamente cuando creaste el CSR en ARCA (en el paso anterior). <strong style={{color:T.text}}>No es tu contraseña de ARCA ni tu clave fiscal</strong> — es un archivo de texto que empieza con "BEGIN PRIVATE KEY".<br/><br/>
+                    Si no lo encontrás, fijate en la carpeta de descargas de tu navegador o en la ubicación donde generaste el CSR. Si lo perdiste, vas a tener que generar un nuevo par de certificado + clave desde ARCA.<br/><br/>
+                    Abrilo con un editor de texto, seleccioná todo el contenido (incluyendo las líneas BEGIN y END) y pegalo acá abajo.
+                  </div>
+                </div>
+                <label style={labelS}>Clave privada (.key) — pegá el contenido completo</label>
+                <textarea value={keyText} onChange={e=>setKeyText(e.target.value)} placeholder={"-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhki...\n...\n-----END PRIVATE KEY-----"} style={{...iS,minHeight:150,resize:"vertical",fontFamily:"monospace",fontSize:11}}/>
+              </div>
+            )}
+
+            {/* Step 3: Verificar */}
+            {wizStep===3&&(
+              <div>
+                <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:18,marginBottom:20}}>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:14}}>Resumen de tu CUIT</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    {[
+                      ["CUIT",formatCuit(wizCuit)],
+                      ["Razón social",wizRazonSocial||"—"],
+                      ["Fantasía",wizNombreFantasia||"—"],
+                      ["Condición",wizCondicion==="MONOTRIBUTO"?"Monotributista (Factura C)":"Resp. Inscripto (Factura A/B)"],
+                      ["Punto de venta",wizPuntoVenta],
+                      ["Ambiente",wizArcaProd?"⚠️ Producción (real)":"Homologación (pruebas)"],
+                      ["Certificado",certText.trim()?"✅ Cargado":"❌ Sin cargar"],
+                      ["Clave privada",keyText.trim()?"✅ Cargada":"❌ Sin cargar"],
+                    ].map(([k,v],i)=>(
+                      <div key={i} style={{padding:"10px 12px",background:T.card,borderRadius:8,border:"1px solid "+T.borderL}}>
+                        <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>{k}</div>
+                        <div style={{fontSize:12,color:T.text,fontWeight:500,marginTop:3}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {testResult&&(
+                  <div style={{padding:14,borderRadius:8,marginBottom:16,background:testResult.ok?T.greenBg:T.redBg,border:"1px solid "+(testResult.ok?T.green:T.red)+"33",fontSize:12,color:testResult.ok?T.green:T.red,fontWeight:500}}>
+                    {testResult.ok?"✅ Conexión exitosa con ARCA":"❌ Error al conectar con ARCA"} — {testResult.msg}
+                  </div>
+                )}
+                <button onClick={handleTestCuitWiz} disabled={testingCuit||!certText.trim()||!keyText.trim()} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:12,opacity:(!certText.trim()||!keyText.trim())?0.5:1}}>
+                  {testingCuit?<><Spinner size={12} color={T.textMd}/> Testeando conexión...</>:"🔌 Testear conexión con ARCA (opcional)"}
+                </button>
+                <div style={{fontSize:11,color:T.textSm,textAlign:"center",lineHeight:1.5}}>
+                  El test guarda el CUIT temporalmente y verifica que ARCA responda. Si no querés testear, podés guardar directo.
+                </div>
+              </div>
+            )}
+
+            {/* Nav buttons */}
+            <div style={{display:"flex",gap:10,marginTop:24}}>
+              {wizStep>0?(
+                <button onClick={()=>setWizStep(s=>s-1)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  ← Atrás
+                </button>
+              ):(
+                <button onClick={resetWizard} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  Cancelar
+                </button>
+              )}
+              <div style={{flex:1}}/>
+              {wizStep<3?(
+                <button onClick={()=>setWizStep(s=>s+1)} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                  Continuar →
+                </button>
+              ):(
+                <button onClick={handleSaveCuit} disabled={savingCuit} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                  {savingCuit?<><Spinner size={13} color="#fff"/> Guardando...</>:"✅ Guardar CUIT"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
