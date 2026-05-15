@@ -5619,6 +5619,20 @@ function AppArca({T, user, onHome}) {
   const [genError, setGenError] = useState("");
   const [csrCopied, setCsrCopied] = useState(false);
   const [savingCuit, setSavingCuit] = useState(false);
+
+  // Modal edición CUIT
+  const [showEditCuit, setShowEditCuit] = useState(false);
+  const [editCuit, setEditCuit] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Modal facturación manual (mayoristas, etc)
+  const [showManual, setShowManual] = useState(false);
+  const [manualNombre, setManualNombre] = useState("");
+  const [manualDocTipo, setManualDocTipo] = useState("CUIT");
+  const [manualDocNro, setManualDocNro] = useState("");
+  const [manualItems, setManualItems] = useState([{nombre:"",cantidad:1,precio:0}]);
+  const [emittingManual, setEmittingManual] = useState(false);
+  const [manualResult, setManualResult] = useState(null);
   const [testingCuit, setTestingCuit] = useState(null);
   const [testResult, setTestResult] = useState(null);
 
@@ -5729,12 +5743,7 @@ function AppArca({T, user, onHome}) {
 
   function readPemFile(file, kind, setText, setName, setErr) {
     setErr("");
-    const allowedExt = kind==="cert" ? [".crt",".pem",".cer"] : [".key",".pem"];
-    const name = (file.name||"").toLowerCase();
-    if(!allowedExt.some(ext=>name.endsWith(ext))) {
-      setErr("Extensión no válida. Se espera "+allowedExt.join(", "));
-      return;
-    }
+    // ARCA descarga el .crt sin extensión (formato "Alias_NroSerie"), así que solo validamos por contenido
     if(file.size > 100*1024) { setErr("Archivo demasiado grande (>100 KB)"); return; }
     const reader = new FileReader();
     reader.onload = ev => {
@@ -5794,11 +5803,83 @@ function AppArca({T, user, onHome}) {
   }
 
   async function handleDeleteCuit(cuitNum) {
-    if(!window.confirm("¿Eliminar CUIT "+cuitNum+"?")) return;
+    if(!window.confirm("¿Eliminar CUIT "+cuitNum+"? Se borra de Growith pero el certificado en ARCA queda activo.")) return;
     await fetch(`/api/arca?action=delete_cuit&uid=${uid}&cuit=${cuitNum}`,{method:"DELETE"}).then(r=>r.json());
     setCuits(prev=>prev.filter(c=>c.cuit!==cuitNum));
     if(cuitSel===cuitNum) setCuitSel(cuits.find(c=>c.cuit!==cuitNum)?.cuit||null);
     toast("CUIT eliminado","success");
+  }
+
+  function openEditCuit(c) {
+    setEditCuit({...c});
+    setShowEditCuit(true);
+    setShowCuitMenu(false);
+  }
+
+  async function handleSaveEditCuit() {
+    if(!editCuit) return;
+    setSavingEdit(true);
+    const fd = new FormData();
+    fd.append("cuit", editCuit.cuit);
+    fd.append("razon_social", editCuit.razon_social||"");
+    fd.append("nombre_fantasia", editCuit.nombre_fantasia||"");
+    fd.append("domicilio", editCuit.domicilio||"");
+    fd.append("fecha_inicio", editCuit.fecha_inicio||"");
+    fd.append("condicion_fiscal", editCuit.condicion_fiscal||"RESPONSABLE_INSCRIPTO");
+    fd.append("punto_venta", String(editCuit.punto_venta||1));
+    fd.append("arca_prod", String(editCuit.arca_prod||false));
+    fd.append("ingresos_brutos", editCuit.ingresos_brutos||"");
+    const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
+    if(d.error){toast(d.error,"error");setSavingEdit(false);return;}
+    const updated = await api("list_cuits");
+    if(updated.cuits) setCuits(updated.cuits);
+    toast("CUIT actualizado ✓","success");
+    setShowEditCuit(false); setEditCuit(null); setSavingEdit(false);
+  }
+
+  function resetManual() {
+    setShowManual(false); setManualNombre(""); setManualDocTipo("CUIT");
+    setManualDocNro(""); setManualItems([{nombre:"",cantidad:1,precio:0}]);
+    setManualResult(null);
+  }
+
+  async function handleEmitManual() {
+    if(!cuitSel) return toast("Seleccioná un CUIT emisor","warning");
+    const itemsValid = manualItems.filter(it => it.nombre.trim() && it.cantidad > 0 && it.precio > 0);
+    if(itemsValid.length === 0) return toast("Agregá al menos un ítem con nombre, cantidad y precio","warning");
+    if(manualDocTipo !== "CF" && !manualDocNro.trim()) return toast("Completá el número de documento o elegí 'Consumidor Final'","warning");
+
+    const total = itemsValid.reduce((s,it)=>s + it.cantidad*it.precio, 0);
+    const docNro = manualDocTipo === "CF" ? "" : manualDocNro.replace(/\D/g,"");
+    const orderId = "MANUAL-" + Date.now();
+    const orden = {
+      nombre: manualNombre.trim() || "Consumidor Final",
+      doc_tipo: manualDocTipo,
+      doc_nro: docNro,
+      dni: docNro,
+      total,
+      subtotal: total,
+      descuento: 0,
+      envio: 0,
+      estado_pago: "paid",
+      fecha: new Date().toISOString().slice(0,10),
+      ciudad: "", provincia: "",
+      metodo_pago: "Manual",
+      items: itemsValid.map(it => ({
+        nombre: it.nombre.trim(), nombre_original: it.nombre.trim(),
+        cantidad: parseInt(it.cantidad), precio: parseFloat(it.precio), descuento_item: 0,
+      })),
+    };
+
+    setEmittingManual(true); setManualResult(null);
+    const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}});
+    if(d.error){toast(d.error,"error");setEmittingManual(false);return;}
+    const r = (d.resultados||[])[0];
+    const pdf = (d.pdfs||[])[0];
+    setManualResult({r, pdf});
+    if(r?.ok) toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`,"success");
+    else toast("Error: "+(r?.obs||"falló la emisión"),"error");
+    setEmittingManual(false);
   }
 
   async function handleParseFile() {
@@ -5864,16 +5945,24 @@ function AppArca({T, user, onHome}) {
           {showCuitMenu && (
             <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:280,background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:6,zIndex:200,boxShadow:"0 8px 30px rgba(0,0,0,0.35)"}}>
               {cuits.map(c=>(
-                <button key={c.cuit} onClick={()=>{setCuitSel(c.cuit);setShowCuitMenu(false);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 12px",borderRadius:8,border:"none",background:cuitSel===c.cuit?T.accentSolid+"18":"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}
+                <div key={c.cuit} style={{display:"flex",alignItems:"center",gap:4,padding:"4px",borderRadius:8,background:cuitSel===c.cuit?T.accentSolid+"18":"transparent"}}
                   onMouseEnter={e=>{if(cuitSel!==c.cuit)e.currentTarget.style.background=T.surface;}}
                   onMouseLeave={e=>{if(cuitSel!==c.cuit)e.currentTarget.style.background="transparent";}}>
-                  <div style={{width:8,height:8,borderRadius:"50%",background:T.green,flexShrink:0}}/>
-                  <div style={{flex:1,textAlign:"left"}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{c.nombre_fantasia||c.razon_social}</div>
-                    <div style={{fontSize:11,color:T.textSm}}>{formatCuit(c.cuit)} · vinculado</div>
-                  </div>
-                  {cuitSel===c.cuit && <span style={{color:T.accent,fontSize:16}}>✓</span>}
-                </button>
+                  <button onClick={()=>{setCuitSel(c.cuit);setShowCuitMenu(false);}} style={{display:"flex",alignItems:"center",gap:10,flex:1,padding:"7px 8px",borderRadius:6,border:"none",background:"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:T.green,flexShrink:0}}/>
+                    <div style={{flex:1,textAlign:"left"}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.text}}>{c.nombre_fantasia||c.razon_social}</div>
+                      <div style={{fontSize:11,color:T.textSm}}>{formatCuit(c.cuit)} · vinculado</div>
+                    </div>
+                    {cuitSel===c.cuit && <span style={{color:T.accent,fontSize:14}}>✓</span>}
+                  </button>
+                  <button onClick={(e)=>{e.stopPropagation();openEditCuit(c);}} title="Editar datos" style={{background:"transparent",border:"none",cursor:"pointer",padding:"6px",borderRadius:6,fontSize:13,color:T.textMd,display:"flex",alignItems:"center"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=T.bg}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>✏️</button>
+                  <button onClick={(e)=>{e.stopPropagation();handleDeleteCuit(c.cuit);}} title="Eliminar CUIT" style={{background:"transparent",border:"none",cursor:"pointer",padding:"6px",borderRadius:6,fontSize:13,color:T.red,display:"flex",alignItems:"center"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=T.redBg}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>🗑</button>
+                </div>
               ))}
               <div style={{borderTop:"1px solid "+T.border,marginTop:4,paddingTop:4}}>
                 <button onClick={()=>{setShowCuitMenu(false);setShowWizard(true);}} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",borderRadius:8,border:"none",background:"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.accent,fontSize:13,fontWeight:600}}
@@ -6027,15 +6116,23 @@ function AppArca({T, user, onHome}) {
             </div>
 
             {/* Título facturación */}
-            <div style={{marginBottom:8}}>
-              <div style={{fontSize:22,fontWeight:800,color:T.text}}>
-                Emisión de facturas <span style={{color:T.accent}}>en ARCA</span>
+            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,marginBottom:8}}>
+              <div>
+                <div style={{fontSize:22,fontWeight:800,color:T.text}}>
+                  Emisión de facturas <span style={{color:T.accent}}>en ARCA</span>
+                </div>
+                <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6,maxWidth:650}}>
+                  Subí el <strong style={{color:T.text}}>.csv de Shopify</strong> o el <strong style={{color:T.text}}>.xlsx de Mercado Libre</strong> con las ventas que querés facturar.
+                  {esRI && " El bot decide solo el tipo de factura (A o B) según los datos del cliente."}
+                  {esMono && " Se emiten Facturas C automáticamente para todas las ventas."}
+                </div>
               </div>
-              <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6,maxWidth:650}}>
-                Subí el <strong style={{color:T.text}}>.csv de Shopify</strong> o el <strong style={{color:T.text}}>.xlsx de Mercado Libre</strong> con las ventas que querés facturar.
-                {esRI && " El bot decide solo el tipo de factura (A o B) según los datos del cliente."}
-                {esMono && " Se emiten Facturas C automáticamente para todas las ventas."}
-              </div>
+              <button onClick={()=>setShowManual(true)} disabled={!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:cuitSel?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:cuitSel?1:0.5,flexShrink:0}}>
+                + Factura manual
+              </button>
+            </div>
+            <div style={{fontSize:12,color:T.textSm,marginTop:-4,marginBottom:12}}>
+              ¿Vendiste por afuera de las integraciones? Usá <strong style={{color:T.text}}>Factura manual</strong> para emitir una factura puntual (mayoristas, ventas directas, etc.)
             </div>
             <div style={{height:1,background:T.border,margin:"18px 0 22px"}}/>
 
@@ -6329,28 +6426,52 @@ function AppArca({T, user, onHome}) {
                           </div>
                         )}
 
-                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte A — Crear el certificado</div>
+                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte A — Crear el alias en ARCA (sube el .csr)</div>
                         <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
-                          <li>Entrá a <a href="https://www.afip.gob.ar" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>arca.gob.ar</a> con tu CUIT y clave fiscal nivel 3</li>
-                          <li>Si no la tenés en tus servicios, andá a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → Adherir Servicio → buscá y adherí <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong>. Cerrá sesión y volvé a entrar</li>
+                          <li>Entrá a <a href="https://www.afip.gob.ar" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>arca.gob.ar</a> con tu CUIT y clave fiscal <strong style={{color:T.text}}>nivel 3</strong></li>
+                          <li>
+                            Si <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> no aparece en tus servicios, adherila primero:
+                            <ul style={{margin:"4px 0 0",paddingLeft:18,lineHeight:1.7}}>
+                              <li>Entrá a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → tocá <strong style={{color:T.text}}>"Adherir Servicio"</strong></li>
+                              <li>Aparece una grilla de organismos (ANAC, ANSES, ARCA, ASIP...). Tocá el botón <strong style={{color:T.text}}>ARCA</strong> y se despliega su menú</li>
+                              <li>Tocá <strong style={{color:T.text}}>"Servicios Interactivos"</strong> → buscá y elegí <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → Confirmar</li>
+                              <li>Cerrá sesión y volvé a entrar para que aparezca en tu lista</li>
+                            </ul>
+                          </li>
                           <li>Entrá al servicio <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
-                          <li>Escribí un <strong style={{color:T.text}}>nombre de alias</strong> (ej. "growith") y en <strong style={{color:T.text}}>"Seleccionar archivo"</strong> elegí el <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>.csr</code> que descargaste acá abajo. Después tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
-                          <li>ARCA te muestra el certificado generado — tocá <strong style={{color:T.text}}>"Ver"</strong> y descargalo como archivo <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>.crt</code>. Guardalo, lo vas a subir en el bloque siguiente</li>
+                          <li>Escribí un <strong style={{color:T.text}}>nombre de alias</strong> (ej. <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>growith</code>), tocá <strong style={{color:T.text}}>"Seleccionar archivo"</strong> y elegí el <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>.csr</code> que descargaste acá abajo. Después tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
+                          <li style={{color:T.yellow}}>⏱ Esperá unos segundos. ARCA puede tardar en mostrar el alias creado — <strong style={{color:T.text}}>no toques "Agregar alias" dos veces</strong> o vas a duplicarlo</li>
+                          <li>Tocá <strong style={{color:T.text}}>"VOLVER"</strong> → en la tabla "Certificados" vas a ver tu alias (ej. <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>growith</code>) → tocá <strong style={{color:T.text}}>"Ver"</strong> en esa fila → tocá el ícono <strong style={{color:T.text}}>"Descargar"</strong>. ARCA descarga el certificado <strong style={{color:T.text}}>sin extensión</strong>, no te preocupes — el dropzone de abajo lo acepta igual</li>
                         </ol>
 
-                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte B — Autorizar el certificado para Facturación</div>
+                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte B — Autorizar el alias para Facturación Electrónica</div>
                         <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
-                          <li>Volvé a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → <strong style={{color:T.text}}>"Nueva Relación"</strong></li>
-                          <li>En <strong style={{color:T.text}}>"Servicio"</strong> tocá el botón <strong style={{color:T.text}}>BUSCAR</strong> → ARCA → <strong style={{color:T.text}}>"WebServices"</strong> → seleccioná <strong style={{color:T.text}}>"Facturación Electrónica"</strong> (Nivel de seguridad mínimo requerido 3)</li>
-                          <li>En <strong style={{color:T.text}}>"Representante"</strong> tocá <strong style={{color:T.text}}>BUSCAR</strong> → en el desplegable <strong style={{color:T.text}}>"Computador Fiscal"</strong> elegí el alias que creaste recién (ej. "growith") → BUSCAR → Confirmar</li>
-                          <li>Tocá <strong style={{color:T.text}}>"Confirmar"</strong> para guardar la relación. Esto autoriza a tu certificado a emitir facturas en tu nombre</li>
+                          <li>Volvé al portal de ARCA → <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → tocá <strong style={{color:T.text}}>"Nueva Relación"</strong></li>
+                          <li>
+                            En la fila <strong style={{color:T.text}}>"Servicio"</strong> tocá <strong style={{color:T.text}}>BUSCAR</strong>:
+                            <ul style={{margin:"4px 0 0",paddingLeft:18,lineHeight:1.7}}>
+                              <li>Tocá <strong style={{color:T.text}}>ARCA</strong> en la grilla de organismos</li>
+                              <li>Se despliega → tocá <strong style={{color:T.text}}>"WebServices"</strong></li>
+                              <li>En la lista (ordenada alfabéticamente) buscá <strong style={{color:T.text}}>"Facturación Electrónica"</strong> (Nivel de seguridad mínimo requerido 3) — ojo, NO es "Facturación Electrónica con Detalle - MTXCA" ni "Factura electronica de exportacion", es el del medio sin sufijos</li>
+                            </ul>
+                          </li>
+                          <li>
+                            En la fila <strong style={{color:T.text}}>"Representante"</strong> tocá <strong style={{color:T.text}}>BUSCAR</strong>:
+                            <ul style={{margin:"4px 0 0",paddingLeft:18,lineHeight:1.7}}>
+                              <li>Te abre "Selección del Representante a autorizar"</li>
+                              <li>En el desplegable <strong style={{color:T.text}}>"Computador Fiscal"</strong> elegí el alias que creaste en la Parte A. Si no aparece, refrescá la página y volvé a entrar</li>
+                            </ul>
+                          </li>
+                          <li style={{color:T.red}}>⚠ <strong>NO confirmes sin haber cambiado el Representante</strong>. Si dejás "ACUÑA THIAGO [Clave Fiscal Nivel 3]" (vos mismo), ARCA te tira error: "El dador de la autorización no debe ser igual al autorizado"</li>
+                          <li>Tocá <strong style={{color:T.text}}>"Confirmar"</strong> para guardar la relación</li>
                         </ol>
 
-                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte C — Dar de alta el Punto de Venta</div>
+                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte C — Dar de alta el Punto de Venta tipo Web Services</div>
                         <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
-                          <li>Buscá el servicio <strong style={{color:T.text}}>"Administración de puntos de venta y domicilios"</strong> (si no lo tenés, adherilo desde "Administrador de Relaciones")</li>
-                          <li>Tocá <strong style={{color:T.text}}>"Alta"</strong> → elegí el sistema <strong style={{color:T.text}}>"Web Services"</strong> (RECE / WSFE)</li>
-                          <li>El número de punto de venta que ARCA asigne tiene que coincidir con el que pusiste en el wizard: <strong style={{color:T.accent}}>{wizPuntoVenta||"1"}</strong>. Si querés otro, volvé al paso 1 del wizard y cambialo</li>
+                          <li>Buscá el servicio <strong style={{color:T.text}}>"Administración de puntos de venta y domicilios"</strong>. Si no lo tenés, adherilo igual que en la Parte A (Administrador de Relaciones → Adherir Servicio → ARCA → Servicios Interactivos → ese)</li>
+                          <li>Entrá al servicio → tocá <strong style={{color:T.text}}>"A/B/M de puntos de venta"</strong> → <strong style={{color:T.text}}>"Agregar"</strong></li>
+                          <li>Elegí el sistema de facturación <strong style={{color:T.text}}>"Web Services"</strong> (también conocido como RECE / WSFE)</li>
+                          <li>El número de punto de venta que ARCA asigne tiene que coincidir con el que pusiste en el wizard: <strong style={{color:T.accent}}>{wizPuntoVenta||"1"}</strong>. Si querés otro número, volvé al paso 1 del wizard y cambialo</li>
                         </ol>
 
                         <button onClick={descargarCsr} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"12px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
@@ -6467,6 +6588,189 @@ function AppArca({T, user, onHome}) {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL EDITAR CUIT ══ */}
+      {showEditCuit && editCuit && (
+        <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setShowEditCuit(false)}>
+          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:700,color:T.text}}>Editar datos del CUIT</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>CUIT {formatCuit(editCuit.cuit)} — el certificado y la clave no se modifican</div>
+              </div>
+              <button onClick={()=>setShowEditCuit(false)} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div>
+                <label style={labelS}>Razón social / Nombre</label>
+                <input value={editCuit.razon_social||""} onChange={e=>setEditCuit({...editCuit,razon_social:e.target.value})} style={iS}/>
+              </div>
+              <div>
+                <label style={labelS}>Nombre de fantasía</label>
+                <input value={editCuit.nombre_fantasia||""} onChange={e=>setEditCuit({...editCuit,nombre_fantasia:e.target.value})} style={iS}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                <div>
+                  <label style={labelS}>Condición IVA</label>
+                  <select value={editCuit.condicion_fiscal||"RESPONSABLE_INSCRIPTO"} onChange={e=>setEditCuit({...editCuit,condicion_fiscal:e.target.value})} style={iS}>
+                    {CONDICIONES.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelS}>Punto de venta</label>
+                  <input value={editCuit.punto_venta||"1"} onChange={e=>setEditCuit({...editCuit,punto_venta:e.target.value.replace(/\D/g,"")})} style={iS}/>
+                </div>
+              </div>
+              <div>
+                <label style={labelS}>Domicilio</label>
+                <input value={editCuit.domicilio||""} onChange={e=>setEditCuit({...editCuit,domicilio:e.target.value})} style={iS}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                <div>
+                  <label style={labelS}>Fecha inicio actividades</label>
+                  <input value={editCuit.fecha_inicio||""} onChange={e=>setEditCuit({...editCuit,fecha_inicio:e.target.value})} placeholder="01/02/2024" style={iS}/>
+                </div>
+                <div>
+                  <label style={labelS}>Ingresos brutos</label>
+                  <input value={editCuit.ingresos_brutos||""} onChange={e=>setEditCuit({...editCuit,ingresos_brutos:e.target.value})} style={iS}/>
+                </div>
+              </div>
+              <div>
+                <label style={labelS}>Ambiente ARCA</label>
+                <select value={editCuit.arca_prod?"prod":"homo"} onChange={e=>setEditCuit({...editCuit,arca_prod:e.target.value==="prod"})} style={iS}>
+                  <option value="homo">Homologación (pruebas)</option>
+                  <option value="prod">Producción (facturas reales)</option>
+                </select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:22}}>
+              <button onClick={()=>setShowEditCuit(false)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                Cancelar
+              </button>
+              <div style={{flex:1}}/>
+              <button onClick={handleSaveEditCuit} disabled={savingEdit} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                {savingEdit?<><Spinner size={13} color="#fff"/> Guardando...</>:"Guardar cambios"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL FACTURACIÓN MANUAL ══ */}
+      {showManual && (
+        <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>!emittingManual && resetManual()}>
+          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:640,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:700,color:T.text}}>Emitir factura manual</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Para ventas fuera de tus integraciones (mayoristas, venta directa, etc.)</div>
+              </div>
+              <button onClick={resetManual} disabled={emittingManual} style={{background:"transparent",border:"none",color:T.textMd,cursor:emittingManual?"wait":"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
+            </div>
+
+            {!manualResult ? (
+              <>
+                {/* Cliente */}
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8}}>Cliente</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}>
+                  <div>
+                    <label style={labelS}>Nombre / Razón social</label>
+                    <input value={manualNombre} onChange={e=>setManualNombre(e.target.value)} placeholder="Distribuidora SRL" style={iS}/>
+                  </div>
+                  <div>
+                    <label style={labelS}>Tipo de documento</label>
+                    <select value={manualDocTipo} onChange={e=>setManualDocTipo(e.target.value)} style={iS}>
+                      <option value="CUIT">CUIT</option>
+                      <option value="DNI">DNI</option>
+                      <option value="CF">Consumidor Final (sin doc)</option>
+                    </select>
+                  </div>
+                </div>
+                {manualDocTipo !== "CF" && (
+                  <div style={{marginBottom:18}}>
+                    <label style={labelS}>{manualDocTipo === "CUIT" ? "CUIT del cliente" : "DNI del cliente"}</label>
+                    <input value={manualDocNro} onChange={e=>setManualDocNro(e.target.value.replace(/\D/g,""))} placeholder={manualDocTipo === "CUIT" ? "30712345678" : "12345678"} style={iS}/>
+                    {esRI && manualDocTipo === "CUIT" && <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Si el cliente es Responsable Inscripto se emite Factura A, sino se reintenta como B</div>}
+                  </div>
+                )}
+
+                {/* Items */}
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8,marginTop:6}}>Ítems</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8}}>
+                  {manualItems.map((it,i)=>(
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 110px 30px",gap:8,alignItems:"center"}}>
+                      <input value={it.nombre} onChange={e=>{const arr=[...manualItems];arr[i].nombre=e.target.value;setManualItems(arr);}} placeholder="Producto / servicio" style={{...iS,fontSize:12}}/>
+                      <input value={it.cantidad} onChange={e=>{const arr=[...manualItems];arr[i].cantidad=parseInt(e.target.value.replace(/\D/g,""))||0;setManualItems(arr);}} placeholder="Cant." style={{...iS,fontSize:12,textAlign:"center"}}/>
+                      <input value={it.precio||""} onChange={e=>{const arr=[...manualItems];arr[i].precio=parseFloat(e.target.value)||0;setManualItems(arr);}} placeholder="Precio s/IVA" type="number" step="0.01" style={{...iS,fontSize:12,textAlign:"right"}}/>
+                      <button onClick={()=>setManualItems(manualItems.filter((_,j)=>j!==i))} disabled={manualItems.length===1} style={{background:"transparent",border:"none",cursor:manualItems.length===1?"not-allowed":"pointer",color:T.red,fontSize:14,opacity:manualItems.length===1?0.3:1}}>🗑</button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={()=>setManualItems([...manualItems,{nombre:"",cantidad:1,precio:0}])} style={{background:"transparent",border:"1px dashed "+T.border,color:T.textMd,borderRadius:8,padding:"7px 12px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginBottom:14}}>
+                  + Agregar ítem
+                </button>
+
+                {/* Total */}
+                <div style={{padding:"14px 16px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{fontSize:12,color:T.textMd}}>Total {esMono ? "(sin IVA discriminado)" : "(IVA incluido al 21%)"}</div>
+                  <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.5}}>
+                    ${manualItems.reduce((s,it)=>s+(it.cantidad||0)*(it.precio||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}
+                  </div>
+                </div>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:18,lineHeight:1.5}}>
+                  Tipo de comprobante: <strong style={{color:T.text}}>
+                    {esMono ? "Factura C" : (manualDocTipo === "CUIT" ? "Factura A (con fallback a B)" : "Factura B")}
+                  </strong> · Punto de venta {String(cuitActivo?.punto_venta||1).padStart(5,"0")}
+                </div>
+
+                <div style={{display:"flex",gap:10}}>
+                  <button onClick={resetManual} disabled={emittingManual} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    Cancelar
+                  </button>
+                  <div style={{flex:1}}/>
+                  <button onClick={handleEmitManual} disabled={emittingManual} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                    {emittingManual?<><Spinner size={13} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir factura"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Resultado */}
+                {manualResult.r?.ok ? (
+                  <div style={{padding:18,background:T.greenBg,border:"1px solid "+T.green+"33",borderRadius:10,marginBottom:14}}>
+                    <div style={{fontSize:14,fontWeight:700,color:T.green,marginBottom:6}}>✅ Factura emitida</div>
+                    <div style={{fontSize:12,color:T.text,lineHeight:1.7}}>
+                      Factura <strong>{manualResult.r.letra}</strong> N° <strong>{String(manualResult.r.comprobante).padStart(8,"0")}</strong><br/>
+                      CAE: <strong>{manualResult.r.cae}</strong> (vto. {manualResult.r.cae_vto})<br/>
+                      Total: <strong>${manualResult.r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{padding:14,background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:10,marginBottom:14,fontSize:12,color:T.red}}>
+                    ❌ {manualResult.r?.obs || "Error desconocido"}
+                  </div>
+                )}
+                <div style={{display:"flex",gap:10}}>
+                  <button onClick={resetManual} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    Cerrar
+                  </button>
+                  <div style={{flex:1}}/>
+                  {manualResult.pdf && (
+                    <button onClick={()=>downloadPDF(manualResult.pdf)} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                      ⬇ Descargar PDF
+                    </button>
+                  )}
+                  {manualResult.r?.ok && (
+                    <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      Emitir otra
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
