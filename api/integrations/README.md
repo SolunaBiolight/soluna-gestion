@@ -14,22 +14,23 @@ Documento de diseño para cuando integremos Shopify, Tienda Nube y Mercado Libre
 ## Estructura propuesta
 
 ```
-api/integrations/
-├── README.md          ← este archivo
-├── shopify.js         ← OAuth + REST API
-├── tiendanube.js      ← OAuth + REST API
-├── mercadolibre.js    ← OAuth + REST API
-└── _shared.js         ← utilidades comunes (prefijo `_` para que Vercel no lo deploye como function)
+api/
+├── integrations.js              ← dispatcher único (un solo endpoint por límite de funciones de Vercel Hobby)
+└── integrations/
+    ├── README.md                ← este archivo
+    └── _shared.js               ← utilidades comunes (prefijo `_` para que Vercel no lo deploye)
 ```
 
 ## Endpoints API
 
-Cada plataforma expone los mismos 4 endpoints:
+Un solo endpoint `/api/integrations` con dispatching por query params. Esto evita pasar el límite de 12 functions del plan Hobby de Vercel:
 
-- `GET /api/integrations/{platform}/connect?uid=X&cuit=Y` — devuelve URL de OAuth para redirect
-- `GET /api/integrations/{platform}/callback?code=...&state=...` — recibe el code, intercambia por token, guarda en Firestore
-- `GET /api/integrations/{platform}/orders?uid=X&cuit=Y&since=2026-05-01` — lista órdenes pendientes (con filtro por fecha)
-- `POST /api/integrations/{platform}/mark_billed` — marca órdenes como ya facturadas
+- `GET /api/integrations?platform=shopify&action=connect&uid=X&cuit=Y` — URL de OAuth para redirect
+- `GET /api/integrations?platform=shopify&action=callback&code=...&state=...` — recibe code, guarda token
+- `GET /api/integrations?platform=shopify&action=orders&uid=X&cuit=Y&since=2026-05-01` — lista órdenes pendientes
+- `POST /api/integrations?platform=shopify&action=mark_billed` — marca como facturadas
+
+Mismo patrón para `platform=tiendanube` y `platform=mercadolibre`.
 
 Cada plataforma normaliza su formato propio al schema interno que ya usa `parsearCSV`/`parsearXlsxML`:
 
