@@ -5614,7 +5614,6 @@ function AppArca({T, user, onHome}) {
   const [keyFileName, setKeyFileName] = useState("");
   const [certFileError, setCertFileError] = useState("");
   const [keyFileError, setKeyFileError] = useState("");
-  const [wizMode, setWizMode] = useState("auto"); // "auto" | "manual"
   const [csrPem, setCsrPem] = useState("");
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState("");
@@ -5669,7 +5668,7 @@ function AppArca({T, user, onHome}) {
     setWizPuntoVenta("1"); setWizArcaProd(false); setWizIngresosBrutos("");
     setCertText(""); setKeyText(""); setCertFileName(""); setKeyFileName("");
     setCertFileError(""); setKeyFileError(""); setTestResult(null);
-    setWizMode("auto"); setCsrPem(""); setGenError(""); setCsrCopied(false);
+    setCsrPem(""); setGenError(""); setCsrCopied(false);
   }
 
   async function generarCsrYKey() {
@@ -5698,11 +5697,11 @@ function AppArca({T, user, onHome}) {
       setCsrPem(csrPemOut);
       setKeyText(keyPemOut);
       setKeyFileName(`growith-${wizCuit}.key`);
-      // Auto-descarga de la .key — el usuario debería guardarla como backup
-      const blob = new Blob([keyPemOut], { type: "application/x-pem-file" });
+      // Auto-descarga del .csr — es el archivo que el usuario tiene que subir a ARCA YA
+      const blob = new Blob([csrPemOut], { type: "application/pkcs10" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `growith-${wizCuit}.key`;
+      a.download = `growith-${wizCuit}.csr`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     } catch (e) {
@@ -5718,16 +5717,6 @@ function AppArca({T, user, onHome}) {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `growith-${wizCuit}.csr`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  }
-
-  function descargarKeyBackup() {
-    if(!keyText) return;
-    const blob = new Blob([keyText], { type: "application/x-pem-file" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `growith-${wizCuit}.key`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
@@ -6298,21 +6287,7 @@ function AppArca({T, user, onHome}) {
             {/* Step 1: Certificado + Clave (modo auto o manual) */}
             {wizStep===1&&(
               <div>
-                {/* Switch de modo */}
-                <div style={{display:"flex",gap:8,marginBottom:18,background:T.surface,padding:4,borderRadius:10,border:"1px solid "+T.border}}>
-                  <button onClick={()=>setWizMode("auto")} style={{flex:1,padding:"10px 12px",borderRadius:8,border:"none",background:wizMode==="auto"?T.card:"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:wizMode==="auto"?"0 1px 3px rgba(0,0,0,0.2)":"none"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:wizMode==="auto"?T.accent:T.textMd,marginBottom:2}}>🪄 Generar automáticamente</div>
-                    <div style={{fontSize:10,color:T.textSm}}>Recomendado · 3 minutos</div>
-                  </button>
-                  <button onClick={()=>setWizMode("manual")} style={{flex:1,padding:"10px 12px",borderRadius:8,border:"none",background:wizMode==="manual"?T.card:"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:wizMode==="manual"?"0 1px 3px rgba(0,0,0,0.2)":"none"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:wizMode==="manual"?T.accent:T.textMd,marginBottom:2}}>⚙️ Ya tengo mis archivos</div>
-                    <div style={{fontSize:10,color:T.textSm}}>Avanzado · subo .crt y .key</div>
-                  </button>
-                </div>
-
-                {/* ════ MODO AUTO ════ */}
-                {wizMode==="auto" && (
-                  <>
+                <>
                     {/* Bloque 1: Generar */}
                     <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:18,marginBottom:14}}>
                       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
@@ -6320,12 +6295,12 @@ function AppArca({T, user, onHome}) {
                         <div style={{fontSize:13,fontWeight:700,color:T.text}}>Generá tu clave criptográfica</div>
                       </div>
                       <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
-                        Creamos en tu navegador un par RSA-2048 (clave privada + CSR). La clave privada nunca sale de tu computadora hasta que termines el proceso. Cuando le des al botón, vas a descargar automáticamente un archivo <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>growith-{wizCuit||"CUIT"}.key</code> — <strong style={{color:T.text}}>guardalo como backup</strong>, no se puede recuperar.
+                        Tocá el botón y Growith genera todo lo que necesitás. Te vamos a descargar un archivo <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>growith-{wizCuit||"CUIT"}.csr</code> que vas a subir a ARCA en el paso siguiente.
                       </div>
                       {!csrPem ? (
                         <>
                           <button onClick={generarCsrYKey} disabled={genLoading} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"12px 18px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:genLoading?0.7:1}}>
-                            {genLoading ? <><Spinner size={13} color="#fff"/> Generando par RSA-2048 (10-20 seg)...</> : "🔐 Generar mi clave y CSR"}
+                            {genLoading ? <><Spinner size={13} color="#fff"/> Generando (10-20 seg)...</> : "🔐 Generar mi archivo para ARCA"}
                           </button>
                           {genError && (
                             <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {genError}</div>
@@ -6333,8 +6308,7 @@ function AppArca({T, user, onHome}) {
                         </>
                       ) : (
                         <div style={{padding:"10px 12px",background:T.greenBg,border:"1px solid "+T.green+"33",borderRadius:8,fontSize:12,color:T.green,fontWeight:500}}>
-                          ✓ Par generado. Tu clave privada se descargó como <strong>growith-{wizCuit}.key</strong>.
-                          <button onClick={descargarKeyBackup} style={{marginLeft:8,background:"transparent",border:"none",color:T.green,cursor:"pointer",textDecoration:"underline",fontSize:11,fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>Descargar de nuevo</button>
+                          ✓ Listo. Se descargó <strong>growith-{wizCuit}.csr</strong> — ese archivo lo subís a ARCA en el paso siguiente.
                         </div>
                       )}
                     </div>
@@ -6430,69 +6404,7 @@ function AppArca({T, user, onHome}) {
                         )}
                       </div>
                     )}
-                  </>
-                )}
-
-                {/* ════ MODO MANUAL ════ */}
-                {wizMode==="manual" && (
-                  <>
-                    <div style={{background:T.blueBg,border:"1px solid "+T.blue+"33",borderRadius:10,padding:14,marginBottom:14,fontSize:12,color:T.textMd,lineHeight:1.7}}>
-                      <strong style={{color:T.blue}}>Modo avanzado.</strong> Si ya tenés un certificado activo en ARCA con su clave privada, subí ambos archivos acá. Tienen que ser <strong style={{color:T.text}}>del mismo par</strong> (la .key se generó al momento de hacer el CSR que mandaste a ARCA). Si la perdiste, cambiá a "Generar automáticamente".
-                    </div>
-
-                    <label style={labelS}>Certificado (.crt) que te dio ARCA</label>
-                    <div
-                      onClick={()=>document.getElementById('cert-file-input')?.click()}
-                      onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
-                      onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
-                      onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;const f=e.dataTransfer.files[0];if(f)readPemFile(f,"cert",setCertText,setCertFileName,setCertFileError);}}
-                      style={{border:"2px dashed "+(certText?T.green:T.border),borderRadius:10,padding:"20px 18px",textAlign:"center",cursor:"pointer",background:certText?T.greenBg:"transparent",marginBottom:14}}>
-                      {certText ? (
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                          <span style={{fontSize:20}}>📄</span>
-                          <div style={{textAlign:"left"}}>
-                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>{certFileName||"certificado.crt"}</div>
-                            <div style={{fontSize:11,color:T.green}}>✓ Cargado</div>
-                          </div>
-                          <button onClick={e=>{e.stopPropagation();setCertText("");setCertFileName("");setCertFileError("");}} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:14,padding:2,marginLeft:6}}>✕</button>
-                        </div>
-                      ) : (
-                        <>
-                          <span style={{fontSize:22,display:"block",marginBottom:4}}>🔐</span>
-                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>Arrastrá tu .crt o tocá para elegirlo</div>
-                        </>
-                      )}
-                      <input id="cert-file-input" type="file" accept=".crt,.pem,.cer" onChange={e=>{const f=e.target.files[0];if(f)readPemFile(f,"cert",setCertText,setCertFileName,setCertFileError);e.target.value="";}} style={{display:"none"}}/>
-                    </div>
-                    {certFileError && <div style={{marginBottom:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {certFileError}</div>}
-
-                    <label style={labelS}>Clave privada (.key) del mismo par</label>
-                    <div
-                      onClick={()=>document.getElementById('key-file-input')?.click()}
-                      onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
-                      onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
-                      onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;const f=e.dataTransfer.files[0];if(f)readPemFile(f,"key",setKeyText,setKeyFileName,setKeyFileError);}}
-                      style={{border:"2px dashed "+(keyText?T.green:T.border),borderRadius:10,padding:"20px 18px",textAlign:"center",cursor:"pointer",background:keyText?T.greenBg:"transparent"}}>
-                      {keyText ? (
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                          <span style={{fontSize:20}}>🔑</span>
-                          <div style={{textAlign:"left"}}>
-                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>{keyFileName||"clave.key"}</div>
-                            <div style={{fontSize:11,color:T.green}}>✓ Cargada</div>
-                          </div>
-                          <button onClick={e=>{e.stopPropagation();setKeyText("");setKeyFileName("");setKeyFileError("");}} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:14,padding:2,marginLeft:6}}>✕</button>
-                        </div>
-                      ) : (
-                        <>
-                          <span style={{fontSize:22,display:"block",marginBottom:4}}>🗝️</span>
-                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>Arrastrá tu .key o tocá para elegirla</div>
-                        </>
-                      )}
-                      <input id="key-file-input" type="file" accept=".key,.pem" onChange={e=>{const f=e.target.files[0];if(f)readPemFile(f,"key",setKeyText,setKeyFileName,setKeyFileError);e.target.value="";}} style={{display:"none"}}/>
-                    </div>
-                    {keyFileError && <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {keyFileError}</div>}
-                  </>
-                )}
+                </>
               </div>
             )}
 
