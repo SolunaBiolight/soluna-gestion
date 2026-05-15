@@ -663,13 +663,15 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   ];
 
   useEffect(()=>{
-    if(!user?.uid) return;
+    console.log("[DIAG reclamos] effect run · user:", user, "· user.uid:", user?.uid);
+    if(!user?.uid) { console.warn("[DIAG reclamos] SKIP: no user.uid"); return; }
     const q=query(collection(db,"reclamos"),where("ownerId","==",user.uid));
     const unsub1=onSnapshot(q,snap=>{
+      console.log("[DIAG reclamos] snapshot recibido · size:", snap.size, "· uid usado:", user.uid);
       const data=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
       setReclamos(data);
-    },(err)=>{ console.error("[reclamos] snapshot error:", err); });
+    },(err)=>{ console.error("[DIAG reclamos] snapshot ERROR:", err); });
     const unsub2=onSnapshot(doc(db,"config","plantillas"),snap=>{
       if(snap.exists()) {
         setPlantillas(snap.data().lista||DEFAULT_PLANTILLAS);
@@ -2206,13 +2208,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   },[initialDetail]);
 
   useEffect(()=>{
-    if(!user?.uid) return;
+    console.log("[DIAG canjes] effect run · user:", user, "· user.uid:", user?.uid);
+    if(!user?.uid) { console.warn("[DIAG canjes] SKIP: no user.uid"); return; }
     const qc=query(collection(db,"canjes"),where("ownerId","==",user.uid));
     const unsub=onSnapshot(qc,snap=>{
+      console.log("[DIAG canjes] snapshot recibido · size:", snap.size, "· uid usado:", user.uid);
       const data=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
       setCanjes(data);
-    },(err)=>{ console.error("[canjes] snapshot error:", err); });
+    },(err)=>{ console.error("[DIAG canjes] snapshot ERROR:", err); });
     return ()=>unsub();
   },[user?.uid]);
 
