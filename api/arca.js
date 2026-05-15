@@ -1013,8 +1013,13 @@ export default async function handler(req, res) {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
+      // Inicio del mes en hora Argentina (UTC-3). 00:00 ARG = 03:00 UTC.
+      const argFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit" });
+      const parts = argFmt.formatToParts(new Date());
+      const argYear = parts.find(p => p.type === "year").value;
+      const argMonth = parts.find(p => p.type === "month").value;
+      const monthStart = `${argYear}-${argMonth}-01T03:00:00.000Z`;
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
       // Una sola query con un solo where (no requiere índice compuesto). Filtramos por mes en memoria.
       const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
@@ -1308,8 +1313,12 @@ export default async function handler(req, res) {
       const body = JSON.parse((await readBody(req)).toString());
       const { cuit: cuitParam, order_ids } = body;
       if (!cuitParam || !Array.isArray(order_ids)) return res.status(400).json({ error: "Faltan cuit u order_ids" });
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      // Inicio del mes en hora Argentina
+      const argFmtD = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit" });
+      const partsD = argFmtD.formatToParts(new Date());
+      const argYearD = partsD.find(p => p.type === "year").value;
+      const argMonthD = partsD.find(p => p.type === "month").value;
+      const monthStart = `${argYearD}-${argMonthD}-01T03:00:00.000Z`;
       // Firestore "where in" limita a 30 valores — batchea si es necesario
       const dup = [];
       for (let i = 0; i < order_ids.length; i += 30) {
