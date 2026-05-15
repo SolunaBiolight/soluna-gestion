@@ -118,6 +118,24 @@ async function firmarTRA(certPem, keyPem, arcaProd) {
 
 // ─── Login WSAA ────────────────────────────────────────
 
+async function arcaFetch(url, opts = {}) {
+  // ARCA puede colgarse hasta 30 seg en horarios pico — damos margen pero abortamos para que no se cuelgue la function de Vercel
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 45000);
+  try {
+    return await fetch(url, {
+      ...opts,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; GrowithApp/1.0)",
+        ...(opts.headers || {}),
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(tid);
+  }
+}
+
 async function loginWSAA(cmsCms64, wsaaUrl) {
   const soap = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -129,11 +147,18 @@ async function loginWSAA(cmsCms64, wsaaUrl) {
   </soapenv:Body>
 </soapenv:Envelope>`;
 
-  const r = await fetch(wsaaUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "" },
-    body: soap,
-  });
+  let r;
+  try {
+    r = await arcaFetch(wsaaUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "" },
+      body: soap,
+    });
+  } catch (e) {
+    const cause = e.cause?.code || e.cause?.message || e.code || "";
+    if (e.name === "AbortError") throw new Error("ARCA no respondió en 45 segundos — puede estar saturado. Probá de nuevo en un minuto.");
+    throw new Error(`No se pudo conectar con WSAA (${wsaaUrl.replace(/^https?:\/\//,"").split("/")[0]}): ${e.message}${cause ? " — " + cause : ""}. Si persiste, ARCA puede estar caído o bloqueando la IP del server.`);
+  }
   const rawText = await r.text();
 
   // WSAA devuelve el loginTicketResponse dentro de <loginCmsReturn> con entidades HTML escapadas
@@ -208,14 +233,22 @@ async function wsfeCall(action, bodyXml, wsfeUrl) {
 </soapenv:Envelope>`;
 
   for (let intento = 0; intento < 3; intento++) {
-    const r = await fetch(wsfeUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/xml; charset=utf-8",
-        SOAPAction: `http://ar.gov.afip.dif.FEV1/${action}`,
-      },
-      body: soap,
-    });
+    let r;
+    try {
+      r = await arcaFetch(wsfeUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/xml; charset=utf-8",
+          SOAPAction: `http://ar.gov.afip.dif.FEV1/${action}`,
+        },
+        body: soap,
+      });
+    } catch (e) {
+      if (intento < 2) { await new Promise(res => setTimeout(res, (intento + 1) * 3000)); continue; }
+      const cause = e.cause?.code || e.cause?.message || "";
+      if (e.name === "AbortError") throw new Error("WSFE no respondió en 45 segundos. Probá de nuevo.");
+      throw new Error(`No se pudo conectar con WSFE: ${e.message}${cause ? " — " + cause : ""}`);
+    }
     const text = await r.text();
     if (r.ok) return text;
     if (r.status === 500 && intento < 2) {

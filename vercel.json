@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/arca.js": {
+      "maxDuration": 60
+    }
+  }
+}
