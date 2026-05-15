@@ -946,6 +946,41 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // ── DASHBOARD: stats del mes actual para el CUIT activo ─
+
+    if (action === "dashboard_stats" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+      const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+        .where("cuit_emisor", "==", cuitParam)
+        .where("emitido_at", ">=", monthStart)
+        .get();
+
+      let iva_debito = 0, total_facturado = 0, neto_total = 0;
+      const porLetra = { A: 0, B: 0, C: 0 };
+      for (const d of snap.docs) {
+        const data = d.data();
+        iva_debito += data.iva || 0;
+        total_facturado += data.total || 0;
+        neto_total += data.neto || 0;
+        if (porLetra[data.letra] !== undefined) porLetra[data.letra]++;
+      }
+
+      return res.json({
+        iva_debito: Math.round(iva_debito * 100) / 100,
+        iva_credito: 0,
+        facturas_emitidas: snap.size,
+        total_facturado: Math.round(total_facturado * 100) / 100,
+        neto_total: Math.round(neto_total * 100) / 100,
+        por_letra: porLetra,
+        mes: now.toLocaleDateString("es-AR", { month: "long", year: "numeric" }),
+      });
+    }
+
     // ── PARSEAR archivo (XLSX o CSV) ───────────────────
 
     if (action === "parse" && req.method === "POST") {
@@ -1042,6 +1077,33 @@ export default async function handler(req, res) {
           pdfs.push({ nombre: `F${letra} - ${nombreCliente} - ${String(cbteNro).padStart(8, "0")}.pdf`, bytes: Buffer.from(pdfBytes).toString("base64") });
 
           resultados.push({ orden_id: orderId, ok: true, letra, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: orden.total });
+
+          // Persistir comprobante en Firestore para el dashboard
+          try {
+            const neto = isMonotributo ? orden.total : Math.round((orden.total / 1.21) * 100) / 100;
+            const iva = isMonotributo ? 0 : Math.round((orden.total - neto) * 100) / 100;
+            await db.collection("users").doc(uid).collection("arca_comprobantes")
+              .doc(`${cuitEmit}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`).set({
+                cuit_emisor: cuitEmit,
+                tipo_cbte: tipoCbte,
+                letra,
+                nro: cbteNro,
+                punto_venta: pv,
+                fecha_str: factData.fecha,
+                emitido_at: new Date().toISOString(),
+                cae: result.cae,
+                cae_vto: result.cae_vto,
+                cliente: orden.nombre || "Consumidor Final",
+                doc_tipo: orden.doc_tipo,
+                doc_nro: orden.doc_nro || "",
+                total: orden.total,
+                neto,
+                iva,
+                orden_id: orderId,
+              });
+          } catch (e) {
+            console.error("[arca] no se pudo guardar comprobante:", e.message);
+          }
 
           if (letra === "A") cbteA++;
           else if (letra === "C") cbteC++;

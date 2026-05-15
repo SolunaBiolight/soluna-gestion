@@ -5629,6 +5629,9 @@ function AppArca({T, user, onHome}) {
   const [testingConn, setTestingConn] = useState(false);
   const [testConnResult, setTestConnResult] = useState(null);
 
+  // Dashboard del CUIT activo (stats del mes)
+  const [dashboardStats, setDashboardStats] = useState(null);
+
   // Modal facturación manual (mayoristas, etc)
   const [showManual, setShowManual] = useState(false);
   const [manualNombre, setManualNombre] = useState("");
@@ -5669,6 +5672,13 @@ function AppArca({T, user, onHome}) {
     if(!uid) return;
     api("list_cuits").then(d=>{ if(d.cuits){ setCuits(d.cuits); if(d.cuits.length>0 && !cuitSel) setCuitSel(d.cuits[0].cuit); } }).finally(()=>setLoading(false));
   },[uid]);
+
+  useEffect(()=>{
+    if(!uid || !cuitSel) { setDashboardStats(null); return; }
+    api("dashboard_stats","GET",null,{cuit:cuitSel}).then(d=>{
+      if(!d.error) setDashboardStats(d);
+    });
+  },[uid, cuitSel]);
 
   useEffect(()=>{
     if(!showCuitMenu) return;
@@ -5841,6 +5851,12 @@ function AppArca({T, user, onHome}) {
     setShowEditCuit(false); setEditCuit(null); setSavingEdit(false);
   }
 
+  async function refreshDashboard() {
+    if(!cuitSel) return;
+    const d = await api("dashboard_stats","GET",null,{cuit:cuitSel});
+    if(!d.error) setDashboardStats(d);
+  }
+
   async function handleTestConnection() {
     if(!cuitSel) return toast("Seleccioná un CUIT primero","warning");
     setTestingConn(true); setTestConnResult(null);
@@ -5896,7 +5912,7 @@ function AppArca({T, user, onHome}) {
     const r = (d.resultados||[])[0];
     const pdf = (d.pdfs||[])[0];
     setManualResult({r, pdf});
-    if(r?.ok) toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`,"success");
+    if(r?.ok) { toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`,"success"); refreshDashboard(); }
     else toast("Error: "+(r?.obs||"falló la emisión"),"error");
     setEmittingManual(false);
   }
@@ -5923,6 +5939,7 @@ function AppArca({T, user, onHome}) {
     const ok = (d.resultados||[]).filter(r=>r.ok).length;
     const err = (d.resultados||[]).filter(r=>!r.ok).length;
     toast(ok+" facturas emitidas"+(err>0?" · "+err+" con error":""),"success"); setEmitting(false);
+    refreshDashboard();
   }
 
   function downloadPDF(pdf) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+pdf.bytes; a.download=pdf.nombre; a.click(); }
@@ -6083,26 +6100,36 @@ function AppArca({T, user, onHome}) {
               )}
             </div>
 
-            {/* Dashboard IVA (solo RI) */}
-            {esRI && (
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
+            {/* Dashboard del mes */}
+            <div style={{display:"grid",gridTemplateColumns: esRI ? "1fr 1fr 1fr" : "1fr 1fr",gap:14,marginBottom:24}}>
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
+                <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Monto facturado · {mesActual}</div>
+                <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>
+                  {dashboardStats ? "$ "+dashboardStats.total_facturado.toLocaleString("es-AR",{minimumFractionDigits:2}) : "$ 0,00"}
+                </div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>Total facturado en el mes (IVA incluido).</div>
+              </div>
+              {esRI && (
                 <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
                   <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>IVA Débito fiscal · {mesActual}</div>
-                  <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>—</div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>Se calcula automáticamente al emitir facturas A y B. Es el IVA que cobraste a tus clientes.</div>
+                  <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>
+                    {dashboardStats ? "$ "+dashboardStats.iva_debito.toLocaleString("es-AR",{minimumFractionDigits:2}) : "$ 0,00"}
+                  </div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>IVA que cobraste a tus clientes en facturas A y B.</div>
                 </div>
-                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
-                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>IVA Crédito fiscal · {mesActual}</div>
-                  <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>—</div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>Próximamente: vas a poder cargar tus compras para calcular el crédito fiscal del mes.</div>
+              )}
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
+                <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Facturas emitidas · {mesActual}</div>
+                <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>
+                  {dashboardStats ? dashboardStats.facturas_emitidas : 0}
                 </div>
-                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
-                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Facturas emitidas · {mesActual}</div>
-                  <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>—</div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>Historial de comprobantes emitidos desde Growith.</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>
+                  {dashboardStats && (dashboardStats.por_letra.A + dashboardStats.por_letra.B + dashboardStats.por_letra.C) > 0
+                    ? `A: ${dashboardStats.por_letra.A} · B: ${dashboardStats.por_letra.B} · C: ${dashboardStats.por_letra.C}`
+                    : "Historial de comprobantes emitidos desde Growith."}
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Canales de venta */}
             <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px",marginBottom:24}}>
@@ -6230,7 +6257,7 @@ function AppArca({T, user, onHome}) {
                       <>
                         <span style={{fontSize:28,display:"block",marginBottom:8}}>📦</span>
                         <div style={{fontSize:13,fontWeight:600,color:T.text}}>Arrastrá tu archivo acá o tocá para elegir</div>
-                        <div style={{fontSize:11,color:T.textSm,marginTop:4}}>.xlsx (Mercado Libre) o .csv (Shopify)</div>
+                        <div style={{fontSize:11,color:T.textSm,marginTop:4}}>.xlsx (Mercado Libre) · .csv (Tienda Nube o Shopify)</div>
                       </>
                     )}
                     <input id="arca-file-input" type="file" accept=".xlsx,.csv" onChange={e=>{if(e.target.files[0])setArchivo(e.target.files[0]);}} style={{display:"none"}}/>
