@@ -580,6 +580,44 @@ async function parsearCSVtn(buffer) {
 
 // ─── Generación PDF con pdf-lib ────────────────────────
 
+// Genera el QR de ARCA según especificación oficial AFIP
+// https://www.afip.gob.ar/fe/qr/especificaciones.asp
+async function generarQrArca(factData, config) {
+  const QRCode = (await import("qrcode")).default;
+
+  const fecha = factData.fecha_iso || new Date().toISOString().slice(0, 10);
+  const cuitNum = parseInt(String(config.cuit).replace(/\D/g, ""));
+  const docTipoCode = factData.doc_tipo === "CUIT" ? 80 : factData.doc_tipo === "DNI" ? 96 : 99;
+  const docNroNum = parseInt(String(factData.doc_nro || "0").replace(/\D/g, "")) || 0;
+
+  const payload = {
+    ver: 1,
+    fecha,
+    cuit: cuitNum,
+    ptoVta: parseInt(config.punto_venta) || 1,
+    tipoCmp: factData.tipo_cbte,
+    nroCmp: factData.comprobante,
+    importe: parseFloat(factData.total),
+    moneda: "PES",
+    ctz: 1,
+    tipoDocRec: docTipoCode,
+    nroDocRec: docNroNum,
+    tipoCodAut: "E",
+    codAut: parseInt(factData.cae) || 0,
+  };
+
+  const b64 = Buffer.from(JSON.stringify(payload)).toString("base64");
+  const url = `https://www.afip.gob.ar/fe/qr/?p=${b64}`;
+
+  const pngBuffer = await QRCode.toBuffer(url, {
+    errorCorrectionLevel: "M",
+    margin: 1,
+    width: 200,
+    color: { dark: "#000000", light: "#FFFFFF" },
+  });
+  return pngBuffer;
+}
+
 async function generarPDF(factData, config) {
   const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
 
@@ -593,6 +631,15 @@ async function generarPDF(factData, config) {
   const total = factData.total;
   const neto = isMonotributo ? total : Math.round((total / 1.21) * 100) / 100;
   const iva21 = isMonotributo ? 0 : Math.round((total - neto) * 100) / 100;
+
+  // Generar QR una vez (mismo para las 3 copias)
+  let qrImage = null;
+  try {
+    const qrBuffer = await generarQrArca(factData, config);
+    qrImage = await pdfDoc.embedPng(qrBuffer);
+  } catch (e) {
+    console.error("[pdf] no se pudo generar QR:", e.message);
+  }
 
   // Sanitiza texto para Helvetica (WinAnsi): caracteres fuera del rango se reemplazan
   const safe = (s) => String(s || "").replace(/[^\x20-\x7E\xA0-\xFF]/g, "?");
@@ -778,15 +825,29 @@ async function generarPDF(factData, config) {
     draw("Importe Total:", labelX, ty2 + 16, 11, true, "right");
     draw("$ " + total.toFixed(2), valX, ty2 + 16, 12, true, "right");
 
-    // ─────── CAE / AUTORIZACIÓN ───────
+    // ─────── CAE / AUTORIZACIÓN + QR ARCA ───────
     const caeY = totY + 86;
-    rect(MX, caeY, UW, 30, { fill: rgb(0.97, 0.97, 0.97) });
-    draw("Comprobante Autorizado por ARCA", MX + 8, caeY + 11, 8, true);
-    draw("AGENCIA DE RECAUDACIÓN Y CONTROL ADUANERO", MX + 8, caeY + 22, 7, false, "left", COL_GREY);
-    draw("CAE N°:", MX + UW - 130, caeY + 11, 8, true, "left");
-    draw(factData.cae || "—", MX + UW - 8, caeY + 11, 9, true, "right");
-    draw("Fecha de Vto. CAE:", MX + UW - 130, caeY + 22, 7, false, "left");
-    draw(factData.cae_vto || "—", MX + UW - 8, caeY + 22, 7, false, "right");
+    const qrSize = 75;
+    rect(MX, caeY, UW, qrSize + 8, { fill: rgb(0.97, 0.97, 0.97) });
+
+    // QR a la izquierda
+    if (qrImage) {
+      page.drawImage(qrImage, {
+        x: MX + 8, y: H - caeY - qrSize - 4, width: qrSize, height: qrSize,
+      });
+    }
+
+    // Texto del medio
+    const midX = MX + qrSize + 22;
+    draw("Comprobante Autorizado", midX, caeY + 14, 9, true);
+    draw("AGENCIA DE RECAUDACIÓN Y CONTROL ADUANERO (ARCA)", midX, caeY + 26, 7, false, "left", COL_GREY);
+    draw("Escaneá el código QR para validar el comprobante", midX, caeY + 38, 6, false, "left", COL_GREY);
+
+    // CAE a la derecha
+    draw("CAE N°:", MX + UW - 130, caeY + 14, 8, true, "left");
+    draw(factData.cae || "—", MX + UW - 8, caeY + 14, 9, true, "right");
+    draw("Fecha de Vto. CAE:", MX + UW - 130, caeY + 26, 7, false, "left");
+    draw(factData.cae_vto || "—", MX + UW - 8, caeY + 26, 7, false, "right");
 
     // ─────── COPIA + FOOTER GROWITH ───────
     draw(copyLabel, MX, H - 50, 7, true, "left", COL_GREY);
@@ -1063,9 +1124,11 @@ export default async function handler(req, res) {
 
         if (result.cae) {
           // Generar PDF
+          const fechaIso = new Date().toISOString().slice(0, 10);
           const factData = {
             comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto,
             fecha: new Date().toLocaleDateString("es-AR"),
+            fecha_iso: fechaIso,
             cliente: orden.nombre || "Consumidor Final",
             doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || "",
             letra, tipo_cbte: tipoCbte,
@@ -1113,7 +1176,117 @@ export default async function handler(req, res) {
         }
       }
 
+      // Persistir el batch (lote de emisión) — solo metadata, NO los PDFs (se regeneran on-demand)
+      try {
+        const exitosos = resultados.filter(r => r.ok);
+        if (exitosos.length > 0) {
+          const batchId = "B_" + Date.now();
+          const totalBatch = exitosos.reduce((s, r) => s + (r.total || 0), 0);
+          await db.collection("users").doc(uid).collection("arca_batches").doc(batchId).set({
+            batch_id: batchId,
+            cuit_emisor: cuitEmit,
+            emitido_at: new Date().toISOString(),
+            cantidad: exitosos.length,
+            total: totalBatch,
+            comprobante_ids: exitosos.map(r => `${cuitEmit}_${r.tipo_cbte || (isMonotributo ? 11 : (r.letra === "A" ? 1 : 6))}_${String(r.comprobante).padStart(8, "0")}`),
+            resumen: exitosos.map(r => ({
+              orden_id: r.orden_id,
+              letra: r.letra,
+              comprobante: r.comprobante,
+              cae: r.cae,
+              total: r.total,
+            })),
+          });
+        }
+      } catch (e) {
+        console.error("[arca] no se pudo guardar batch:", e.message);
+      }
+
       return res.json({ ok: true, resultados, pdfs });
+    }
+
+    // ── HISTORIAL: lista de batches del CUIT activo ──
+
+    if (action === "list_batches" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+      const snap = await db.collection("users").doc(uid).collection("arca_batches")
+        .where("cuit_emisor", "==", cuitParam)
+        .orderBy("emitido_at", "desc")
+        .limit(50)
+        .get();
+      return res.json({ batches: snap.docs.map(d => d.data()) });
+    }
+
+    // ── HISTORIAL: regenerar PDFs de un batch específico ──
+
+    if (action === "get_batch_pdfs" && req.method === "GET") {
+      const batchId = req.query.batch_id;
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!batchId || !cuitParam) return res.status(400).json({ error: "Falta batch_id o cuit" });
+
+      const cfg = await loadCuitConfig(db, uid, cuitParam);
+      if (!cfg) return res.status(404).json({ error: "CUIT no encontrado" });
+
+      const batchSnap = await db.collection("users").doc(uid).collection("arca_batches").doc(batchId).get();
+      if (!batchSnap.exists) return res.status(404).json({ error: "Batch no encontrado" });
+      const batch = batchSnap.data();
+
+      const pdfs = [];
+      for (const comprobanteId of (batch.comprobante_ids || [])) {
+        const cSnap = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(comprobanteId).get();
+        if (!cSnap.exists) continue;
+        const c = cSnap.data();
+        const factData = {
+          comprobante: c.nro,
+          cae: c.cae,
+          cae_vto: c.cae_vto,
+          fecha: c.fecha_str,
+          fecha_iso: c.emitido_at?.slice(0, 10),
+          cliente: c.cliente || "Consumidor Final",
+          doc_tipo: c.doc_tipo,
+          doc_nro: c.doc_nro || "",
+          letra: c.letra,
+          tipo_cbte: c.tipo_cbte,
+          domicilio: "",
+          total: c.total,
+          items: [{ nombre: "(Detalle no disponible en re-impresión)", cantidad: 1, precio: c.total, descuento_item: 0 }],
+        };
+        const pdfBytes = await generarPDF(factData, cfg);
+        const nombreCliente = (c.cliente || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
+        pdfs.push({
+          nombre: `F${c.letra} - ${nombreCliente} - ${String(c.nro).padStart(8, "0")}.pdf`,
+          bytes: Buffer.from(pdfBytes).toString("base64"),
+        });
+      }
+      return res.json({ pdfs });
+    }
+
+    // ── DUPLICADOS: verificar si una orden ya fue facturada este mes ──
+
+    if (action === "check_duplicates" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { cuit: cuitParam, order_ids } = body;
+      if (!cuitParam || !Array.isArray(order_ids)) return res.status(400).json({ error: "Faltan cuit u order_ids" });
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      // Firestore "where in" limita a 30 valores — batchea si es necesario
+      const dup = [];
+      for (let i = 0; i < order_ids.length; i += 30) {
+        const chunk = order_ids.slice(i, i + 30);
+        const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+          .where("cuit_emisor", "==", cuitParam)
+          .where("emitido_at", ">=", monthStart)
+          .where("orden_id", "in", chunk)
+          .get();
+        snap.docs.forEach(d => dup.push({
+          orden_id: d.data().orden_id,
+          letra: d.data().letra,
+          nro: d.data().nro,
+          total: d.data().total,
+        }));
+      }
+      return res.json({ duplicates: dup });
     }
 
     return res.status(404).json({ error: `Acción desconocida: ${action}` });

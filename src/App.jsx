@@ -5632,6 +5632,12 @@ function AppArca({T, user, onHome}) {
   // Dashboard del CUIT activo (stats del mes)
   const [dashboardStats, setDashboardStats] = useState(null);
 
+  // Historial de batches (facturaciones recientes)
+  const [batches, setBatches] = useState([]);
+  const [expandedBatch, setExpandedBatch] = useState(null);
+  const [batchPdfs, setBatchPdfs] = useState({}); // {batchId: [pdfs]}
+  const [loadingBatchPdfs, setLoadingBatchPdfs] = useState(null);
+
   // Modal facturación manual (mayoristas, etc)
   const [showManual, setShowManual] = useState(false);
   const [manualNombre, setManualNombre] = useState("");
@@ -5674,9 +5680,12 @@ function AppArca({T, user, onHome}) {
   },[uid]);
 
   useEffect(()=>{
-    if(!uid || !cuitSel) { setDashboardStats(null); return; }
+    if(!uid || !cuitSel) { setDashboardStats(null); setBatches([]); return; }
     api("dashboard_stats","GET",null,{cuit:cuitSel}).then(d=>{
       if(!d.error) setDashboardStats(d);
+    });
+    api("list_batches","GET",null,{cuit:cuitSel}).then(d=>{
+      if(!d.error) setBatches(d.batches||[]);
     });
   },[uid, cuitSel]);
 
@@ -5855,6 +5864,50 @@ function AppArca({T, user, onHome}) {
     if(!cuitSel) return;
     const d = await api("dashboard_stats","GET",null,{cuit:cuitSel});
     if(!d.error) setDashboardStats(d);
+    const b = await api("list_batches","GET",null,{cuit:cuitSel});
+    if(!b.error) setBatches(b.batches||[]);
+  }
+
+  async function loadBatchPdfs(batchId) {
+    if(batchPdfs[batchId]) return batchPdfs[batchId];
+    setLoadingBatchPdfs(batchId);
+    const d = await api("get_batch_pdfs","GET",null,{cuit:cuitSel, batch_id:batchId});
+    setLoadingBatchPdfs(null);
+    if(d.error) { toast("Error al cargar PDFs: "+d.error,"error"); return null; }
+    setBatchPdfs(prev=>({...prev, [batchId]: d.pdfs||[]}));
+    return d.pdfs;
+  }
+
+  async function downloadBatchZip(batch) {
+    const pdfList = await loadBatchPdfs(batch.batch_id);
+    if(!pdfList) return;
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    for(const p of pdfList) {
+      zip.file(p.nombre, p.bytes, {base64: true});
+    }
+    const blob = await zip.generateAsync({type:"blob"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    const fechaStr = batch.emitido_at?.slice(0,10) || "facturas";
+    a.download = `growith-facturas-${fechaStr}-${batch.batch_id}.zip`;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  }
+
+  async function downloadCurrentBatchZip() {
+    if(!pdfs.length) return;
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    for(const p of pdfs) {
+      zip.file(p.nombre, p.bytes, {base64: true});
+    }
+    const blob = await zip.generateAsync({type:"blob"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `growith-facturas-${new Date().toISOString().slice(0,10)}.zip`;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
   }
 
   async function handleTestConnection() {
@@ -5931,7 +5984,17 @@ function AppArca({T, user, onHome}) {
 
   async function handleEmit() {
     if(!ordenes||!cuitSel) return;
-    if(!window.confirm("¿Emitir "+Object.keys(ordenes).length+" facturas en ARCA?")) return;
+    // Chequear duplicados del mes
+    const orderIds = Object.keys(ordenes);
+    const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds});
+    const duplicates = dupRes?.duplicates || [];
+    let msg = "¿Emitir "+orderIds.length+" facturas en ARCA?";
+    if(duplicates.length > 0) {
+      const ids = duplicates.slice(0, 5).map(d => `· ${d.orden_id} (F${d.letra} ${String(d.nro).padStart(8,"0")})`).join("\n");
+      const masMsg = duplicates.length > 5 ? `\n…y ${duplicates.length - 5} más` : "";
+      msg = `⚠ Hay ${duplicates.length} órden${duplicates.length>1?"es":""} ya facturada${duplicates.length>1?"s":""} este mes:\n${ids}${masMsg}\n\n¿Querés refacturarla${duplicates.length>1?"s":""} igual? Se van a emitir nuevos comprobantes (los anteriores no se anulan).`;
+    }
+    if(!window.confirm(msg)) return;
     setEmitting(true);
     const d = await api("emit","POST",{cuit:cuitSel,ordenes,product_map:productMap});
     if(d.error){toast(d.error,"error");setEmitting(false);return;}
@@ -6364,7 +6427,7 @@ function AppArca({T, user, onHome}) {
                   {pdfs.length>0&&(
                     <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
                       <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:12}}>{pdfs.length} PDFs generados</div>
-                      <button onClick={downloadAllPDFs} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:10}}>⬇ Descargar todos</button>
+                      <button onClick={downloadCurrentBatchZip} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:10}}>⬇ Descargar todos (.zip)</button>
                       <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
                         {pdfs.map((pdf,i)=>(
                           <button key={i} onClick={()=>downloadPDF(pdf)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -6382,6 +6445,65 @@ function AppArca({T, user, onHome}) {
                 </div>
               )}
             </div>
+
+            {/* ══ HISTORIAL DE BATCHES ══ */}
+            {batches.length > 0 && (
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px",marginTop:24}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>Facturaciones recientes</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Cada lote queda registrado. Tocá uno para ver el detalle o descargar de nuevo los PDFs.</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.4}}>Total facturado · histórico</div>
+                    <div style={{fontSize:16,fontWeight:800,color:T.text}}>$ {batches.reduce((s,b)=>s+(b.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {batches.map(b=>{
+                    const fechaStr = b.emitido_at ? new Date(b.emitido_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+                    const isExpanded = expandedBatch === b.batch_id;
+                    return (
+                      <div key={b.batch_id} style={{border:"1px solid "+T.borderL,borderRadius:10,overflow:"hidden",background:T.bg}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",cursor:"pointer"}} onClick={()=>setExpandedBatch(isExpanded ? null : b.batch_id)}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:isExpanded?"rotate(90deg)":"none",transition:"transform 0.15s",flexShrink:0}}><path d="M9 18l6-6-6-6"/></svg>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{fechaStr}</div>
+                            <div style={{fontSize:11,color:T.textSm}}>{b.cantidad} factura{b.cantidad===1?"":"s"} · {b.batch_id}</div>
+                          </div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text,marginRight:8}}>$ {(b.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                          <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accent,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
+                            {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> ZIP</> : "⬇ ZIP"}
+                          </button>
+                        </div>
+                        {isExpanded && (
+                          <div style={{borderTop:"1px solid "+T.borderL,background:T.card}}>
+                            {(b.resumen||[]).map((r,i)=>(
+                              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:i<b.resumen.length-1?"1px solid "+T.borderL:"none"}}>
+                                <div style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.accent+"44",color:T.accent,background:T.accent+"11",flexShrink:0}}>F{r.letra}</div>
+                                <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
+                                  <div style={{fontSize:12,fontWeight:500,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.orden_id}</div>
+                                  <div style={{fontSize:11,color:T.textSm}}>N° {String(r.comprobante).padStart(8,"0")} · CAE {r.cae}</div>
+                                </div>
+                                <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>$ {(r.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                                <button onClick={async()=>{
+                                  const list = await loadBatchPdfs(b.batch_id);
+                                  if(!list) return;
+                                  const pdf = list[i];
+                                  if(pdf) downloadPDF(pdf);
+                                }} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+                                  ⬇ PDF
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
