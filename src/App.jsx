@@ -5632,11 +5632,13 @@ function AppArca({T, user, onHome}) {
   // Dashboard del CUIT activo (stats del mes)
   const [dashboardStats, setDashboardStats] = useState(null);
 
-  // TN — importar órdenes pendientes
-  const [showTnModal, setShowTnModal] = useState(false);
+  // Ventas pendientes de las integraciones (TN/Shopify/ML)
   const [tnLoading, setTnLoading] = useState(false);
   const [tnData, setTnData] = useState(null); // {connected, store_name, ordenes, total_pending}
   const [tnSelected, setTnSelected] = useState({}); // {orderId: true|false}
+  const [periodoDias, setPeriodoDias] = useState(7); // filtro de período
+  const [canalSel, setCanalSel] = useState("todos"); // "todos" | "tn" | "shopify" | "ml"
+  const [showManualUpload, setShowManualUpload] = useState(false);
 
   // Historial de batches (facturaciones recientes)
   const [batches, setBatches] = useState([]);
@@ -5686,7 +5688,7 @@ function AppArca({T, user, onHome}) {
   },[uid]);
 
   useEffect(()=>{
-    if(!uid || !cuitSel) { setDashboardStats(null); setBatches([]); return; }
+    if(!uid || !cuitSel) { setDashboardStats(null); setBatches([]); setTnData(null); return; }
     api("dashboard_stats","GET",null,{cuit:cuitSel}).then(d=>{
       if(!d.error) setDashboardStats(d);
     });
@@ -5694,6 +5696,12 @@ function AppArca({T, user, onHome}) {
       if(!d.error) setBatches(d.batches||[]);
     });
   },[uid, cuitSel]);
+
+  useEffect(()=>{
+    if(!uid || !cuitSel) return;
+    loadPendingOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[uid, cuitSel, periodoDias]);
 
   useEffect(()=>{
     if(!showCuitMenu) return;
@@ -5866,32 +5874,35 @@ function AppArca({T, user, onHome}) {
     setShowEditCuit(false); setEditCuit(null); setSavingEdit(false);
   }
 
-  async function openTnImport() {
-    if(!cuitSel) return toast("Seleccioná un CUIT primero","warning");
-    setShowTnModal(true); setTnLoading(true); setTnData(null); setTnSelected({});
-    const d = await api("tn_pending_orders","GET",null,{cuit:cuitSel});
+  async function loadPendingOrders() {
+    if(!cuitSel) return;
+    setTnLoading(true);
+    const d = await api("tn_pending_orders","GET",null,{cuit:cuitSel, days:periodoDias});
     setTnLoading(false);
-    if(d.error) { toast("Error: "+d.error,"error"); setShowTnModal(false); return; }
+    if(d.error) { toast("Error: "+d.error,"error"); return; }
     setTnData(d);
-    // Por default todas seleccionadas
-    const sel = {};
-    Object.keys(d.ordenes||{}).forEach(id => sel[id] = true);
-    setTnSelected(sel);
+    // Mantener selecciones previas si las órdenes siguen ahí; las nuevas quedan deseleccionadas por default
+    const newSel = {};
+    Object.keys(d.ordenes||{}).forEach(id => { newSel[id] = tnSelected[id] || false; });
+    setTnSelected(newSel);
   }
 
-  function confirmTnImport() {
+  function facturarSeleccionadas() {
     if(!tnData?.ordenes) return;
     const filtered = {};
     Object.entries(tnData.ordenes).forEach(([id,o])=>{
       if(tnSelected[id]) filtered[id] = o;
     });
-    if(Object.keys(filtered).length === 0) return toast("Seleccioná al menos una orden","warning");
+    if(Object.keys(filtered).length === 0) return toast("Tildá al menos una venta","warning");
     setOrdenes(filtered);
     const productos = [...new Set(Object.values(filtered).flatMap(o => o.items.map(i => i.nombre_original)))];
     setProductos(productos);
     setProductMap(Object.fromEntries(productos.map(p=>[p,""])));
-    setShowTnModal(false);
-    toast(`${Object.keys(filtered).length} órdenes listas para facturar`,"success");
+    toast(`${Object.keys(filtered).length} ventas listas para emitir`,"success");
+    // Scroll suave hacia el preview
+    setTimeout(()=>{
+      document.getElementById("arca-preview-ordenes")?.scrollIntoView({behavior:"smooth",block:"start"});
+    }, 100);
   }
 
   async function refreshDashboard() {
@@ -6332,41 +6343,138 @@ function AppArca({T, user, onHome}) {
             <div style={{display:"grid",gridTemplateColumns:ordenes?"1fr 340px":"1fr",gap:20,alignItems:"start"}}>
               <div>
                 {/* Upload */}
+                {/* ══ VENTAS PENDIENTES (desde integraciones conectadas) ══ */}
                 <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"22px 24px",marginBottom:16}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:4}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{width:28,height:28,borderRadius:8,background:T.accentSolid+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.accent}}>1</span>
-                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>Archivo de ventas <span style={{color:T.textSm,fontWeight:400,textTransform:"none"}}>o importar directo</span></div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>Ventas pendientes de facturar</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Importadas en vivo de tus integraciones · Tildá las que querés facturar en esta pasada</div>
                     </div>
-                    <button onClick={openTnImport} disabled={!cuitSel} style={{background:"transparent",border:"1px solid "+T.blue+"55",color:T.blue,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,cursor:cuitSel?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:cuitSel?1:0.5}}>
-                      📥 Importar de Tienda Nube
-                    </button>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,color:T.textSm}}>Período</span>
+                      <select value={periodoDias} onChange={e=>setPeriodoDias(parseInt(e.target.value))} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
+                        <option value={1}>Hoy</option>
+                        <option value={7}>Últimos 7 días</option>
+                        <option value={15}>Últimos 15 días</option>
+                        <option value={30}>Últimos 30 días</option>
+                        <option value={60}>Últimos 60 días</option>
+                        <option value={90}>Últimos 90 días</option>
+                      </select>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>Canal</span>
+                      <select value={canalSel} onChange={e=>setCanalSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
+                        <option value="todos">Todos</option>
+                        <option value="tn">Tienda Nube</option>
+                        <option value="shopify" disabled>Shopify (próximamente)</option>
+                        <option value="ml" disabled>Mercado Libre (próximamente)</option>
+                      </select>
+                      <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar" style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:tnLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        {tnLoading ? <Spinner size={12} color={T.textMd}/> : "🔄"}
+                      </button>
+                    </div>
                   </div>
-                  <div style={{border:"2px dashed "+T.border,borderRadius:10,padding:"28px 20px",textAlign:"center",marginTop:14,cursor:"pointer"}}
-                    onClick={()=>document.getElementById('arca-file-input')?.click()}
-                    onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
-                    onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
-                    onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;if(e.dataTransfer.files[0])setArchivo(e.dataTransfer.files[0]);}}>
-                    {archivo ? (
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                        <span style={{fontSize:24}}>📄</span>
-                        <div>
-                          <div style={{fontSize:13,fontWeight:600,color:T.text}}>{archivo.name}</div>
-                          <div style={{fontSize:11,color:T.textSm}}>{(archivo.size/1024).toFixed(0)} KB · Click para cambiar</div>
-                        </div>
-                      </div>
-                    ) : (
+
+                  {/* Tags de conexiones */}
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+                    <span style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+(tnData?.connected?T.green+"44":T.border),color:tnData?.connected?T.green:T.textSm,background:tnData?.connected?T.greenBg:T.bg,fontWeight:600}}>
+                      🔵 Tienda Nube {tnData?.connected ? "· conectada" : "· no conectada"}
+                    </span>
+                    <span style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+T.border,color:T.textSm,background:T.bg,fontWeight:500}}>⚪ Shopify · próximamente</span>
+                    <span style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+T.border,color:T.textSm,background:T.bg,fontWeight:500}}>⚪ Mercado Libre · próximamente</span>
+                  </div>
+
+                  {tnLoading && !tnData ? (
+                    <div style={{padding:"40px 20px",textAlign:"center"}}>
+                      <Spinner size={18} color={T.accent}/>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:12}}>Trayendo tus ventas...</div>
+                    </div>
+                  ) : !tnData?.connected ? (
+                    <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:8}}>
+                      ⚠ No tenés ninguna integración conectada todavía. Andá a la configuración de la app para conectar Tienda Nube (o usá subir archivo manual abajo).
+                    </div>
+                  ) : Object.keys(tnData.ordenes||{}).length === 0 ? (
+                    <div style={{padding:"30px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
+                      <div style={{fontSize:28,marginBottom:8}}>✨</div>
+                      <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>No hay ventas pendientes</div>
+                      <div style={{fontSize:11,color:T.textSm}}>En {tnData.store_name} no encontramos ventas pagas sin facturar en el período seleccionado.</div>
+                    </div>
+                  ) : (() => {
+                    // Listado ordenado por fecha desc
+                    const items = Object.entries(tnData.ordenes).sort((a,b)=>(b[1].fecha||"").localeCompare(a[1].fecha||""));
+                    const allSel = items.every(([id])=>tnSelected[id]);
+                    const someSel = items.some(([id])=>tnSelected[id]);
+                    const selectedCount = items.filter(([id])=>tnSelected[id]).length;
+                    const selectedTotal = items.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
+                    return (
                       <>
-                        <span style={{fontSize:28,display:"block",marginBottom:8}}>📦</span>
-                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>Arrastrá tu archivo acá o tocá para elegir</div>
-                        <div style={{fontSize:11,color:T.textSm,marginTop:4}}>.xlsx (Mercado Libre) · .csv (Tienda Nube o Shopify)</div>
+                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,cursor:"pointer"}} onClick={()=>{
+                          const ns = {}; items.forEach(([id])=>ns[id]=!allSel); setTnSelected(ns);
+                        }}>
+                          <input type="checkbox" checked={allSel} ref={el=>{ if(el) el.indeterminate = someSel && !allSel; }} readOnly style={{cursor:"pointer"}}/>
+                          <span style={{fontSize:12,fontWeight:600,color:T.text}}>{allSel?"Deseleccionar":"Seleccionar"} todas ({items.length})</span>
+                          <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Total disponible: $ {items.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
+                        </div>
+                        <div style={{maxHeight:420,overflowY:"auto"}}>
+                          {items.map(([id,o])=>{
+                            const sel = !!tnSelected[id];
+                            const fechaCorta = (o.fecha||"").slice(0,10).split("-").slice(1).reverse().join("/");
+                            const tipoFact = esMono ? "C" : (o.doc_tipo === "CUIT" ? "A" : "B");
+                            return (
+                              <div key={id} onClick={()=>setTnSelected(prev=>({...prev,[id]:!prev[id]}))} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,cursor:"pointer",background:sel?T.accentSolid+"10":"transparent",borderBottom:"1px solid "+T.borderL}}>
+                                <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
+                                <span style={{fontSize:10,color:T.textSm,minWidth:34}}>{fechaCorta||"—"}</span>
+                                <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.blue+"22",color:T.blue,fontWeight:700,minWidth:24,textAlign:"center"}}>TN</span>
+                                <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
+                                  <div style={{fontSize:12,fontWeight:600,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
+                                  <div style={{fontSize:10,color:T.textSm}}>F{tipoFact} · {o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}</div>
+                                </div>
+                                <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14,paddingTop:14,borderTop:"1px solid "+T.borderL}}>
+                          <div style={{flex:1,fontSize:12,color:T.textSm}}>
+                            {selectedCount} seleccionada{selectedCount===1?"":"s"} · <strong style={{color:T.text}}>$ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>
+                          </div>
+                          <button onClick={facturarSeleccionadas} disabled={selectedCount===0} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:selectedCount===0?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:selectedCount===0?0.5:1,display:"flex",alignItems:"center",gap:6}}>
+                            Facturar {selectedCount} →
+                          </button>
+                        </div>
                       </>
-                    )}
-                    <input id="arca-file-input" type="file" accept=".xlsx,.csv" onChange={e=>{if(e.target.files[0])setArchivo(e.target.files[0]);}} style={{display:"none"}}/>
-                  </div>
-                  <button onClick={handleParseFile} disabled={parsing||!archivo||!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginTop:14,display:"flex",alignItems:"center",justifyContent:"center",gap:6,opacity:(!archivo||!cuitSel)?0.5:1}}>
-                    {parsing?<><Spinner size={13} color="#fff"/> Procesando...</>:"📂 Cargar y previsualizar"}
-                  </button>
+                    );
+                  })()}
+
+                  {/* Upload manual colapsable */}
+                  <details style={{marginTop:14}} open={showManualUpload} onToggle={e=>setShowManualUpload(e.target.open)}>
+                    <summary style={{cursor:"pointer",fontSize:11,color:T.textSm,padding:"8px 10px",background:T.bg,borderRadius:6,border:"1px solid "+T.borderL}}>▶ ¿Preferís subir un archivo manual? (.xlsx de ML, .csv de TN/Shopify)</summary>
+                    <div style={{padding:"14px 0 4px"}}>
+                      <div style={{border:"2px dashed "+T.border,borderRadius:10,padding:"22px 18px",textAlign:"center",cursor:"pointer"}}
+                        onClick={()=>document.getElementById('arca-file-input')?.click()}
+                        onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
+                        onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
+                        onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;if(e.dataTransfer.files[0])setArchivo(e.dataTransfer.files[0]);}}>
+                        {archivo ? (
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                            <span style={{fontSize:22}}>📄</span>
+                            <div>
+                              <div style={{fontSize:12,fontWeight:600,color:T.text}}>{archivo.name}</div>
+                              <div style={{fontSize:11,color:T.textSm}}>{(archivo.size/1024).toFixed(0)} KB · Click para cambiar</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <span style={{fontSize:24,display:"block",marginBottom:6}}>📦</span>
+                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>Arrastrá un archivo acá o tocá para elegir</div>
+                            <div style={{fontSize:10,color:T.textSm,marginTop:3}}>.xlsx (Mercado Libre) · .csv (Tienda Nube o Shopify)</div>
+                          </>
+                        )}
+                        <input id="arca-file-input" type="file" accept=".xlsx,.csv" onChange={e=>{if(e.target.files[0])setArchivo(e.target.files[0]);}} style={{display:"none"}}/>
+                      </div>
+                      <button onClick={handleParseFile} disabled={parsing||!archivo||!cuitSel} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginTop:10,display:"flex",alignItems:"center",justifyContent:"center",gap:6,opacity:(!archivo||!cuitSel)?0.5:1}}>
+                        {parsing?<><Spinner size={12} color="#fff"/> Procesando...</>:"📂 Cargar archivo"}
+                      </button>
+                    </div>
+                  </details>
                 </div>
 
                 {/* Preview órdenes */}
@@ -6375,7 +6483,7 @@ function AppArca({T, user, onHome}) {
                   const netoTotal = esMono ? totalGeneral : Math.round((totalGeneral / 1.21) * 100) / 100;
                   const ivaTotal = esMono ? 0 : Math.round((totalGeneral - netoTotal) * 100) / 100;
                   return (
-                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginBottom:16}}>
+                  <div id="arca-preview-ordenes" style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginBottom:16}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
                       <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.green}}>2</span>
                       <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>
@@ -6811,85 +6919,6 @@ function AppArca({T, user, onHome}) {
                 </button>
               )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══ MODAL IMPORTAR DE TIENDA NUBE ══ */}
-      {showTnModal && (
-        <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>!tnLoading && setShowTnModal(false)}>
-          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:640,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
-              <div>
-                <div style={{fontSize:16,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8}}>🔵 Importar desde Tienda Nube</div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Órdenes pagas de los últimos 60 días que todavía no facturaste</div>
-              </div>
-              <button onClick={()=>!tnLoading && setShowTnModal(false)} disabled={tnLoading} style={{background:"transparent",border:"none",color:T.textMd,cursor:tnLoading?"wait":"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
-            </div>
-
-            {tnLoading ? (
-              <div style={{padding:"40px 20px",textAlign:"center"}}>
-                <Spinner size={18} color={T.accent}/>
-                <div style={{fontSize:12,color:T.textSm,marginTop:12}}>Trayendo órdenes de Tienda Nube...</div>
-              </div>
-            ) : !tnData ? null : !tnData.connected ? (
-              <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6}}>
-                ⚠ No tenés Tienda Nube conectada. Andá a la configuración de la app para conectarla primero.
-              </div>
-            ) : tnData.total_pending === 0 ? (
-              <div style={{padding:"30px 16px",textAlign:"center"}}>
-                <div style={{fontSize:32,marginBottom:10}}>✨</div>
-                <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:6}}>Todo facturado</div>
-                <div style={{fontSize:12,color:T.textSm}}>De {tnData.store_name} no hay órdenes pagas pendientes de facturar.</div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Se revisaron {tnData.total_found} órdenes de los últimos 60 días.</div>
-              </div>
-            ) : (() => {
-              const ids = Object.keys(tnData.ordenes);
-              const allSelected = ids.every(id => tnSelected[id]);
-              const someSelected = ids.some(id => tnSelected[id]);
-              const selectedCount = ids.filter(id => tnSelected[id]).length;
-              const selectedTotal = ids.filter(id => tnSelected[id]).reduce((s,id)=>s+(tnData.ordenes[id].total||0),0);
-              return (
-                <>
-                  <div style={{fontSize:12,color:T.textMd,marginBottom:10,padding:"10px 14px",background:T.bg,borderRadius:8,border:"1px solid "+T.borderL}}>
-                    <strong style={{color:T.text}}>{tnData.store_name}</strong> · {tnData.total_pending} orden{tnData.total_pending===1?"":"es"} pendiente{tnData.total_pending===1?"":"s"} · Total: <strong style={{color:T.text}}>${Object.values(tnData.ordenes).reduce((s,o)=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderBottom:"1px solid "+T.borderL,marginBottom:6,cursor:"pointer"}} onClick={()=>{
-                    const newSel = {}; ids.forEach(id => newSel[id] = !allSelected); setTnSelected(newSel);
-                  }}>
-                    <input type="checkbox" checked={allSelected} ref={el=>{ if(el) el.indeterminate = someSelected && !allSelected; }} readOnly style={{cursor:"pointer"}}/>
-                    <span style={{fontSize:12,fontWeight:600,color:T.text}}>{allSelected ? "Deseleccionar todas" : "Seleccionar todas"}</span>
-                  </div>
-                  <div style={{maxHeight:380,overflowY:"auto"}}>
-                    {ids.map(id => {
-                      const o = tnData.ordenes[id];
-                      const sel = !!tnSelected[id];
-                      return (
-                        <div key={id} onClick={()=>setTnSelected(prev=>({...prev, [id]:!prev[id]}))} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,cursor:"pointer",background:sel?T.accentSolid+"10":"transparent"}}>
-                          <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>#{id} · {o.nombre||"sin nombre"}</div>
-                            <div style={{fontSize:11,color:T.textSm}}>{o.doc_tipo==="CUIT"?`Factura A · CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`Factura B · DNI ${o.doc_nro}`:"Factura B · Consumidor Final"}</div>
-                          </div>
-                          <div style={{fontSize:13,fontWeight:700,color:T.text}}>${(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{display:"flex",gap:10,marginTop:18,paddingTop:14,borderTop:"1px solid "+T.borderL}}>
-                    <button onClick={()=>setShowTnModal(false)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      Cancelar
-                    </button>
-                    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"flex-end",fontSize:12,color:T.textSm,paddingRight:10}}>
-                      {selectedCount} seleccionada{selectedCount===1?"":"s"} · <strong style={{color:T.text,marginLeft:4}}>${selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>
-                    </div>
-                    <button onClick={confirmTnImport} disabled={selectedCount===0} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:selectedCount===0?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:selectedCount===0?0.5:1}}>
-                      Importar {selectedCount}
-                    </button>
-                  </div>
-                </>
-              );
-            })()}
           </div>
         </div>
       )}

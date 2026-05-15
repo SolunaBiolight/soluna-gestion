@@ -1313,14 +1313,16 @@ export default async function handler(req, res) {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
+      const days = Math.min(parseInt(req.query.days) || 7, 365);
+
       // 1) Leer la store TN del user
       const userSnap = await db.collection("users").doc(uid).get();
       if (!userSnap.exists) return res.json({ connected: false });
       const tnStore = (userSnap.data().stores || []).find(s => s.type === "tiendanube");
       if (!tnStore?.accessToken || !tnStore?.storeId) return res.json({ connected: false });
 
-      // 2) Traer órdenes pagas de los últimos 60 días desde TN
-      const sinceDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      // 2) Traer órdenes pagas del período seleccionado
+      const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const headers = {
         "Authentication": `bearer ${tnStore.accessToken}`,
         "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
