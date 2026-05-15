@@ -5636,7 +5636,9 @@ function AppArca({T, user, onHome}) {
   const [tnLoading, setTnLoading] = useState(false);
   const [tnData, setTnData] = useState(null); // {connected, store_name, ordenes, total_pending}
   const [tnSelected, setTnSelected] = useState({}); // {orderId: true|false}
-  const [periodoDias, setPeriodoDias] = useState(7); // filtro de período
+  const [periodoModo, setPeriodoModo] = useState("7"); // "1"|"7"|"15"|"30"|"60"|"90"|"custom"
+  const [fechaDesde, setFechaDesde] = useState(new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10));
+  const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0,10));
   const [canalSel, setCanalSel] = useState("todos"); // "todos" | "tn" | "shopify" | "ml"
   const [showManualUpload, setShowManualUpload] = useState(false);
 
@@ -5699,9 +5701,10 @@ function AppArca({T, user, onHome}) {
 
   useEffect(()=>{
     if(!uid || !cuitSel) return;
+    if(periodoModo === "custom" && !fechaDesde) return;
     loadPendingOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[uid, cuitSel, periodoDias]);
+  },[uid, cuitSel, periodoModo, fechaDesde, fechaHasta]);
 
   useEffect(()=>{
     if(!showCuitMenu) return;
@@ -5876,8 +5879,16 @@ function AppArca({T, user, onHome}) {
 
   async function loadPendingOrders() {
     if(!cuitSel) return;
+    const params = {cuit:cuitSel};
+    if(periodoModo === "custom") {
+      if(!fechaDesde) return;
+      params.since = fechaDesde;
+      params.until = fechaHasta || new Date().toISOString().slice(0,10);
+    } else {
+      params.days = parseInt(periodoModo);
+    }
     setTnLoading(true);
-    const d = await api("tn_pending_orders","GET",null,{cuit:cuitSel, days:periodoDias});
+    const d = await api("tn_pending_orders","GET",null,params);
     setTnLoading(false);
     if(d.error) { toast("Error: "+d.error,"error"); return; }
     setTnData(d);
@@ -6352,14 +6363,22 @@ function AppArca({T, user, onHome}) {
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                       <span style={{fontSize:11,color:T.textSm}}>Período</span>
-                      <select value={periodoDias} onChange={e=>setPeriodoDias(parseInt(e.target.value))} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
-                        <option value={1}>Hoy</option>
-                        <option value={7}>Últimos 7 días</option>
-                        <option value={15}>Últimos 15 días</option>
-                        <option value={30}>Últimos 30 días</option>
-                        <option value={60}>Últimos 60 días</option>
-                        <option value={90}>Últimos 90 días</option>
+                      <select value={periodoModo} onChange={e=>setPeriodoModo(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
+                        <option value="1">Hoy</option>
+                        <option value="7">Últimos 7 días</option>
+                        <option value="15">Últimos 15 días</option>
+                        <option value="30">Últimos 30 días</option>
+                        <option value="60">Últimos 60 días</option>
+                        <option value="90">Últimos 90 días</option>
+                        <option value="custom">Personalizado</option>
                       </select>
+                      {periodoModo === "custom" && (
+                        <>
+                          <input type="date" value={fechaDesde} max={fechaHasta} onChange={e=>setFechaDesde(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12,colorScheme:"dark"}}/>
+                          <span style={{fontSize:11,color:T.textSm}}>a</span>
+                          <input type="date" value={fechaHasta} min={fechaDesde} max={new Date().toISOString().slice(0,10)} onChange={e=>setFechaHasta(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12,colorScheme:"dark"}}/>
+                        </>
+                      )}
                       <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>Canal</span>
                       <select value={canalSel} onChange={e=>setCanalSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
                         <option value="todos">Todos</option>

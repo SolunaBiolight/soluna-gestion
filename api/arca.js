@@ -1313,7 +1313,16 @@ export default async function handler(req, res) {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
-      const days = Math.min(parseInt(req.query.days) || 7, 365);
+      // Rango de fechas: usa `since` y `until` si vienen, sino calcula desde `days`
+      let sinceDate, untilDate;
+      if (req.query.since) {
+        sinceDate = String(req.query.since).slice(0, 10);
+        untilDate = req.query.until ? String(req.query.until).slice(0, 10) : new Date().toISOString().slice(0, 10);
+      } else {
+        const days = Math.min(parseInt(req.query.days) || 7, 365);
+        sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        untilDate = null;
+      }
 
       // 1) Leer la store TN del user
       const userSnap = await db.collection("users").doc(uid).get();
@@ -1322,14 +1331,14 @@ export default async function handler(req, res) {
       if (!tnStore?.accessToken || !tnStore?.storeId) return res.json({ connected: false });
 
       // 2) Traer órdenes pagas del período seleccionado
-      const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const headers = {
         "Authentication": `bearer ${tnStore.accessToken}`,
         "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
       };
       const allOrders = [];
       for (let page = 1; page <= 5; page++) {
-        const tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}`;
+        let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}`;
+        if (untilDate) tnUrl += `&created_at_max=${untilDate}T23:59:59`;
         const tnRes = await fetch(tnUrl, { headers });
         if (!tnRes.ok) break;
         const batch = await tnRes.json();
