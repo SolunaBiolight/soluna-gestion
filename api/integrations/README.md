@@ -19,7 +19,7 @@ api/integrations/
 ├── shopify.js         ← OAuth + REST API
 ├── tiendanube.js      ← OAuth + REST API
 ├── mercadolibre.js    ← OAuth + REST API
-└── shared.js          ← utilidades comunes
+└── _shared.js         ← utilidades comunes (prefijo `_` para que Vercel no lo deploye como function)
 ```
 
 ## Endpoints API
