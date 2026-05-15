@@ -17,6 +17,7 @@
     "pdf-lib": "^1.17.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "undici": "^6.25.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
