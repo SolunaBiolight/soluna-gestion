@@ -6346,25 +6346,45 @@ function AppArca({T, user, onHome}) {
                           <div style={{width:26,height:26,borderRadius:7,background:T.accentSolid+"22",border:"1px solid "+T.accent+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:T.accent}}>2</div>
                           <div style={{fontSize:13,fontWeight:700,color:T.text}}>Subí el CSR a ARCA</div>
                         </div>
+                        <div style={{fontSize:11,color:T.textMd,background:T.bg,border:"1px solid "+T.borderL,borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
+                          📎 ARCA te va a pedir <strong style={{color:T.text}}>subir un archivo</strong> (no pegar texto). Descargá el <code style={{background:T.surface,padding:"1px 4px",borderRadius:3}}>.csr</code> con el botón verde de abajo antes de empezar.
+                        </div>
                         {!wizArcaProd && (
                           <div style={{fontSize:11,color:T.yellow,background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
-                            ⚠ Elegiste ambiente <strong>Homologación</strong>. Cuando estés en "Administración de Certificados Digitales", asegurate de marcar el toggle de <strong>Homologación</strong> antes de crear el alias — los certs de homologación no funcionan en producción y viceversa.
+                            ⚠ Elegiste ambiente <strong>Homologación</strong>. En "Administración de Certificados Digitales" buscá la opción de Homologación antes de agregar el alias — los certs de homologación no funcionan en producción.
                           </div>
                         )}
-                        <ol style={{margin:"4px 0 12px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
-                          <li>Entrá a <a href="https://www.afip.gob.ar" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>arca.gob.ar</a> con tu CUIT y clave fiscal (nivel 3 o superior)</li>
-                          <li>Si no aparecen en tus servicios, andá a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → Adherir Servicio → buscá y adherí <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong></li>
-                          <li>Entrá al servicio <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → Agregar alias → poné un nombre (ej. "growith") → en el campo CSR pegá el contenido del paso anterior (botón Copiar CSR abajo) → Agregar</li>
-                          <li>ARCA te va a mostrar el certificado generado — descargalo como archivo <strong style={{color:T.text}}>.crt</strong></li>
-                          <li>Volvé a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → Nueva Relación → Servicio <strong style={{color:T.text}}>"Facturación Electrónica - Web Service (WSFE)"</strong> → Representante: <strong style={{color:T.text}}>"Computador Fiscal"</strong> con el alias del certificado que acabás de crear</li>
-                          <li>Entrá a <strong style={{color:T.text}}>"Administración de puntos de venta y domicilios"</strong> → Alta de punto de venta → marcá <strong style={{color:T.text}}>"Web Services"</strong> como sistema de facturación. El número que ARCA asigne tiene que coincidir con el que pusiste en el wizard (<strong style={{color:T.text}}>{wizPuntoVenta||"1"}</strong>)</li>
+
+                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte A — Crear el certificado</div>
+                        <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
+                          <li>Entrá a <a href="https://www.afip.gob.ar" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>arca.gob.ar</a> con tu CUIT y clave fiscal nivel 3</li>
+                          <li>Si no la tenés en tus servicios, andá a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → Adherir Servicio → buscá y adherí <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong>. Cerrá sesión y volvé a entrar</li>
+                          <li>Entrá al servicio <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
+                          <li>Escribí un <strong style={{color:T.text}}>nombre de alias</strong> (ej. "growith") y en <strong style={{color:T.text}}>"Seleccionar archivo"</strong> elegí el <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>.csr</code> que descargaste acá abajo. Después tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
+                          <li>ARCA te muestra el certificado generado — tocá <strong style={{color:T.text}}>"Ver"</strong> y descargalo como archivo <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>.crt</code>. Guardalo, lo vas a subir en el bloque siguiente</li>
                         </ol>
-                        <div style={{display:"flex",gap:8,marginBottom:10}}>
-                          <button onClick={copiarCsr} style={{flex:1,background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                            {csrCopied ? "✓ Copiado al portapapeles" : "📋 Copiar CSR"}
-                          </button>
-                          <button onClick={descargarCsr} style={{flex:1,background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                            ⬇ Descargar .csr
+
+                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte B — Autorizar el certificado para Facturación</div>
+                        <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
+                          <li>Volvé a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → <strong style={{color:T.text}}>"Nueva Relación"</strong></li>
+                          <li>En <strong style={{color:T.text}}>"Servicio"</strong> tocá el botón <strong style={{color:T.text}}>BUSCAR</strong> → ARCA → <strong style={{color:T.text}}>"WebServices"</strong> → seleccioná <strong style={{color:T.text}}>"Facturación Electrónica"</strong> (Nivel de seguridad mínimo requerido 3)</li>
+                          <li>En <strong style={{color:T.text}}>"Representante"</strong> tocá <strong style={{color:T.text}}>BUSCAR</strong> → en el desplegable <strong style={{color:T.text}}>"Computador Fiscal"</strong> elegí el alias que creaste recién (ej. "growith") → BUSCAR → Confirmar</li>
+                          <li>Tocá <strong style={{color:T.text}}>"Confirmar"</strong> para guardar la relación. Esto autoriza a tu certificado a emitir facturas en tu nombre</li>
+                        </ol>
+
+                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte C — Dar de alta el Punto de Venta</div>
+                        <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
+                          <li>Buscá el servicio <strong style={{color:T.text}}>"Administración de puntos de venta y domicilios"</strong> (si no lo tenés, adherilo desde "Administrador de Relaciones")</li>
+                          <li>Tocá <strong style={{color:T.text}}>"Alta"</strong> → elegí el sistema <strong style={{color:T.text}}>"Web Services"</strong> (RECE / WSFE)</li>
+                          <li>El número de punto de venta que ARCA asigne tiene que coincidir con el que pusiste en el wizard: <strong style={{color:T.accent}}>{wizPuntoVenta||"1"}</strong>. Si querés otro, volvé al paso 1 del wizard y cambialo</li>
+                        </ol>
+
+                        <button onClick={descargarCsr} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"12px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
+                          ⬇ Descargar archivo .csr para subir a ARCA
+                        </button>
+                        <div style={{display:"flex",gap:8,marginBottom:6}}>
+                          <button onClick={copiarCsr} style={{flex:1,background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"7px 12px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                            {csrCopied ? "✓ Copiado" : "📋 Copiar contenido (opcional)"}
                           </button>
                         </div>
                         <details style={{marginTop:4}}>
