@@ -118,18 +118,34 @@ async function firmarTRA(certPem, keyPem, arcaProd) {
 
 // ─── Login WSAA ────────────────────────────────────────
 
+// Undici Agent para ARCA: bajamos el SECLEVEL porque AFIP usa DH keys cortas (legacy SSL).
+// Sin esto, Node 18+ rechaza el handshake con ERR_SSL_DH_KEY_TOO_SMALL.
+let _arcaDispatcher = null;
+async function getArcaDispatcher() {
+  if (_arcaDispatcher) return _arcaDispatcher;
+  const { Agent } = await import("undici");
+  _arcaDispatcher = new Agent({
+    connect: {
+      ciphers: "DEFAULT:@SECLEVEL=0",
+    },
+  });
+  return _arcaDispatcher;
+}
+
 async function arcaFetch(url, opts = {}) {
-  // ARCA puede colgarse hasta 30 seg en horarios pico — damos margen pero abortamos para que no se cuelgue la function de Vercel
+  const { fetch: undiciFetch } = await import("undici");
+  const dispatcher = await getArcaDispatcher();
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), 45000);
   try {
-    return await fetch(url, {
+    return await undiciFetch(url, {
       ...opts,
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; GrowithApp/1.0)",
         ...(opts.headers || {}),
       },
       signal: controller.signal,
+      dispatcher,
     });
   } finally {
     clearTimeout(tid);
