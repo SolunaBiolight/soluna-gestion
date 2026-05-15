@@ -6268,7 +6268,11 @@ function AppArca({T, user, onHome}) {
                 </div>
 
                 {/* Preview órdenes */}
-                {ordenes&&(
+                {ordenes&&(() => {
+                  const totalGeneral = Object.values(ordenes).reduce((s,o)=>s+(o.total||0), 0);
+                  const netoTotal = esMono ? totalGeneral : Math.round((totalGeneral / 1.21) * 100) / 100;
+                  const ivaTotal = esMono ? 0 : Math.round((totalGeneral - netoTotal) * 100) / 100;
+                  return (
                   <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginBottom:16}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
                       <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.green}}>2</span>
@@ -6276,6 +6280,32 @@ function AppArca({T, user, onHome}) {
                         {Object.keys(ordenes).length} órdenes a facturar
                       </div>
                     </div>
+
+                    {/* Resumen totales */}
+                    <div style={{display:"grid",gridTemplateColumns: esRI ? "1fr 1fr 1fr" : "1fr",gap:10,marginBottom:14,padding:"12px 14px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10}}>
+                      {esRI ? (
+                        <>
+                          <div>
+                            <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Subtotal neto</div>
+                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {netoTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                          </div>
+                          <div style={{borderLeft:"1px solid "+T.borderL,paddingLeft:14}}>
+                            <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>IVA 21%</div>
+                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {ivaTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                          </div>
+                          <div style={{borderLeft:"1px solid "+T.borderL,paddingLeft:14}}>
+                            <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total a facturar</div>
+                            <div style={{fontSize:16,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total a facturar (Factura C)</div>
+                          <div style={{fontSize:18,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                        </div>
+                      )}
+                    </div>
+
                     <div style={{maxHeight:350,overflowY:"auto",borderRadius:8}}>
                       {Object.entries(ordenes).map(([id,o])=>(
                         <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid "+T.borderL}}>
@@ -6288,7 +6318,8 @@ function AppArca({T, user, onHome}) {
                       ))}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Resultados */}
                 {resultados&&(
