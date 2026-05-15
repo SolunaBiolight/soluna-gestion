@@ -134,9 +134,20 @@ async function loginWSAA(cmsCms64, wsaaUrl) {
     headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "" },
     body: soap,
   });
-  const text = await r.text();
+  const rawText = await r.text();
 
-  // Extraer token y sign del XML (puede venir con HTTP 200 o 500 si es fault)
+  // WSAA devuelve el loginTicketResponse dentro de <loginCmsReturn> con entidades HTML escapadas
+  // (&lt;token&gt;...&lt;/token&gt;). Decodificamos para poder hacer match.
+  const decodeEntities = (s) => s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+
+  const text = decodeEntities(rawText);
+
+  // Extraer token y sign del XML decodificado (puede venir con HTTP 200 o 500 si es fault)
   const tokenMatch = text.match(/<token>([\s\S]*?)<\/token>/);
   const signMatch = text.match(/<sign>([\s\S]*?)<\/sign>/);
   if (tokenMatch && signMatch) {

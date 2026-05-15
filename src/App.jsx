@@ -6441,7 +6441,7 @@ function AppArca({T, user, onHome}) {
                           <div style={{fontSize:13,fontWeight:700,color:T.text}}>Subí el CSR a ARCA</div>
                         </div>
                         <div style={{fontSize:11,color:T.textMd,background:T.bg,border:"1px solid "+T.borderL,borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
-                          📎 ARCA te va a pedir <strong style={{color:T.text}}>subir un archivo</strong> (no pegar texto). Descargá el <code style={{background:T.surface,padding:"1px 4px",borderRadius:3}}>.csr</code> con el botón verde de abajo antes de empezar.
+                          📎 ARCA te va a pedir <strong style={{color:T.text}}>subir un archivo</strong>. Ya descargamos tu <code style={{background:T.surface,padding:"1px 4px",borderRadius:3}}>growith-{wizCuit}.csr</code> al generar — buscalo en tu carpeta de Descargas.
                         </div>
                         {!wizArcaProd && (
                           <div style={{fontSize:11,color:T.yellow,background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
@@ -6450,22 +6450,22 @@ function AppArca({T, user, onHome}) {
                         )}
 
                         <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte A — Crear el alias en ARCA (sube el .csr)</div>
-                        <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
+                        <ol style={{margin:"4px 0 10px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
                           <li>Entrá a <a href="https://www.afip.gob.ar" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>arca.gob.ar</a> con tu CUIT y clave fiscal <strong style={{color:T.text}}>nivel 3</strong></li>
-                          <li>
-                            Si <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> no aparece en tus servicios, adherila primero:
-                            <ul style={{margin:"4px 0 0",paddingLeft:18,lineHeight:1.7}}>
-                              <li>Entrá a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → tocá <strong style={{color:T.text}}>"Adherir Servicio"</strong></li>
-                              <li>Aparece una grilla de organismos (ANAC, ANSES, ARCA, ASIP...). Tocá el botón <strong style={{color:T.text}}>ARCA</strong> y se despliega su menú</li>
-                              <li>Tocá <strong style={{color:T.text}}>"Servicios Interactivos"</strong> → buscá y elegí <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → Confirmar</li>
-                              <li>Cerrá sesión y volvé a entrar para que aparezca en tu lista</li>
-                            </ul>
-                          </li>
                           <li>Entrá al servicio <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
-                          <li>Escribí un <strong style={{color:T.text}}>nombre de alias</strong> (ej. <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>growith</code>), tocá <strong style={{color:T.text}}>"Seleccionar archivo"</strong> y elegí el <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>.csr</code> que descargaste acá abajo. Después tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
+                          <li>Escribí un <strong style={{color:T.text}}>nombre de alias</strong> (ej. <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>growith</code>), tocá <strong style={{color:T.text}}>"Seleccionar archivo"</strong> y elegí el <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>.csr</code> que descargaste. Después tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
                           <li style={{color:T.yellow}}>⏱ Esperá unos segundos. ARCA puede tardar en mostrar el alias creado — <strong style={{color:T.text}}>no toques "Agregar alias" dos veces</strong> o vas a duplicarlo</li>
-                          <li>Tocá <strong style={{color:T.text}}>"VOLVER"</strong> → en la tabla "Certificados" vas a ver tu alias (ej. <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>growith</code>) → tocá <strong style={{color:T.text}}>"Ver"</strong> en esa fila → tocá el ícono <strong style={{color:T.text}}>"Descargar"</strong>. ARCA descarga el certificado <strong style={{color:T.text}}>sin extensión</strong>, no te preocupes — el dropzone de abajo lo acepta igual</li>
+                          <li>Tocá <strong style={{color:T.text}}>"VOLVER"</strong> → en la tabla "Certificados" vas a ver tu alias → tocá <strong style={{color:T.text}}>"Ver"</strong> en esa fila → tocá el ícono <strong style={{color:T.text}}>"Descargar"</strong>. ARCA descarga el certificado <strong style={{color:T.text}}>sin extensión</strong>, no te preocupes — el dropzone de abajo lo acepta igual</li>
                         </ol>
+                        <details style={{margin:"0 0 14px",fontSize:11,color:T.textSm}}>
+                          <summary style={{cursor:"pointer",padding:"6px 10px",background:T.bg,borderRadius:6,border:"1px solid "+T.borderL}}>▶ ¿No te aparece "Administración de Certificados Digitales" en tus servicios? (solo primera vez)</summary>
+                          <ol style={{margin:"8px 0 0",paddingLeft:18,fontSize:11,color:T.textMd,lineHeight:1.7}}>
+                            <li>Entrá a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → tocá <strong style={{color:T.text}}>"Adherir Servicio"</strong></li>
+                            <li>Aparece una grilla de organismos (ANAC, ANSES, ARCA, ASIP...). Tocá el botón <strong style={{color:T.text}}>ARCA</strong> y se despliega su menú</li>
+                            <li>Tocá <strong style={{color:T.text}}>"Servicios Interactivos"</strong> → buscá y elegí <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → Confirmar</li>
+                            <li>Cerrá sesión y volvé a entrar para que aparezca en tu lista</li>
+                          </ol>
+                        </details>
 
                         <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte B — Autorizar el alias para Facturación Electrónica</div>
                         <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
@@ -6485,23 +6485,11 @@ function AppArca({T, user, onHome}) {
                               <li>En el desplegable <strong style={{color:T.text}}>"Computador Fiscal"</strong> elegí el alias que creaste en la Parte A. Si no aparece, refrescá la página y volvé a entrar</li>
                             </ul>
                           </li>
-                          <li style={{color:T.red}}>⚠ <strong>NO confirmes sin haber cambiado el Representante</strong>. Si dejás "ACUÑA THIAGO [Clave Fiscal Nivel 3]" (vos mismo), ARCA te tira error: "El dador de la autorización no debe ser igual al autorizado"</li>
+                          <li style={{color:T.red}}>⚠ <strong>NO confirmes sin haber cambiado el Representante</strong>. Si dejás "{(wizRazonSocial||"tu nombre").toUpperCase()} [Clave Fiscal Nivel 3]" (vos mismo), ARCA te tira error: "El dador de la autorización no debe ser igual al autorizado"</li>
                           <li>Tocá <strong style={{color:T.text}}>"Confirmar"</strong> para guardar la relación</li>
                         </ol>
 
 
-                        <button onClick={descargarCsr} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"12px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
-                          ⬇ Descargar archivo .csr para subir a ARCA
-                        </button>
-                        <div style={{display:"flex",gap:8,marginBottom:6}}>
-                          <button onClick={copiarCsr} style={{flex:1,background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"7px 12px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
-                            {csrCopied ? "✓ Copiado" : "📋 Copiar contenido (opcional)"}
-                          </button>
-                        </div>
-                        <details style={{marginTop:4}}>
-                          <summary style={{fontSize:11,color:T.textSm,cursor:"pointer"}}>Ver contenido del CSR</summary>
-                          <textarea readOnly value={csrPem} style={{...iS,marginTop:8,minHeight:120,fontFamily:"monospace",fontSize:10,resize:"vertical"}}/>
-                        </details>
                       </div>
                     )}
 
