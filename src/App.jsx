@@ -5614,6 +5614,11 @@ function AppArca({T, user, onHome}) {
   const [keyFileName, setKeyFileName] = useState("");
   const [certFileError, setCertFileError] = useState("");
   const [keyFileError, setKeyFileError] = useState("");
+  const [wizMode, setWizMode] = useState("auto"); // "auto" | "manual"
+  const [csrPem, setCsrPem] = useState("");
+  const [genLoading, setGenLoading] = useState(false);
+  const [genError, setGenError] = useState("");
+  const [csrCopied, setCsrCopied] = useState(false);
   const [savingCuit, setSavingCuit] = useState(false);
   const [testingCuit, setTestingCuit] = useState(null);
   const [testResult, setTestResult] = useState(null);
@@ -5664,6 +5669,73 @@ function AppArca({T, user, onHome}) {
     setWizPuntoVenta("1"); setWizArcaProd(false); setWizIngresosBrutos("");
     setCertText(""); setKeyText(""); setCertFileName(""); setKeyFileName("");
     setCertFileError(""); setKeyFileError(""); setTestResult(null);
+    setWizMode("auto"); setCsrPem(""); setGenError(""); setCsrCopied(false);
+  }
+
+  async function generarCsrYKey() {
+    if(!wizCuit || wizCuit.length!==11) { setGenError("Completá tu CUIT (11 dígitos) en el paso anterior"); return; }
+    if(!wizRazonSocial.trim()) { setGenError("Completá tu razón social en el paso anterior"); return; }
+    setGenLoading(true); setGenError(""); setCsrCopied(false);
+    try {
+      const forge = (await import("node-forge")).default;
+      // Generación async para no bloquear el thread principal del browser
+      const keypair = await new Promise((resolve, reject) => {
+        forge.pki.rsa.generateKeyPair({ bits: 2048, workers: -1 }, (err, kp) => err ? reject(err) : resolve(kp));
+      });
+      const csr = forge.pki.createCertificationRequest();
+      csr.publicKey = keypair.publicKey;
+      // Subject DN para ARCA: serialNumber=CUIT XXX es obligatorio
+      const cn = (wizNombreFantasia || wizRazonSocial).slice(0, 64);
+      csr.setSubject([
+        { name: "countryName", value: "AR" },
+        { name: "organizationName", value: wizRazonSocial.slice(0, 64) },
+        { name: "commonName", value: cn },
+        { type: "2.5.4.5", value: "CUIT " + wizCuit }, // serialNumber attribute
+      ]);
+      csr.sign(keypair.privateKey, forge.md.sha256.create());
+      const csrPemOut = forge.pki.certificationRequestToPem(csr);
+      const keyPemOut = forge.pki.privateKeyToPem(keypair.privateKey);
+      setCsrPem(csrPemOut);
+      setKeyText(keyPemOut);
+      setKeyFileName(`growith-${wizCuit}.key`);
+      // Auto-descarga de la .key — el usuario debería guardarla como backup
+      const blob = new Blob([keyPemOut], { type: "application/x-pem-file" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `growith-${wizCuit}.key`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (e) {
+      setGenError("No se pudo generar el par: " + (e.message || String(e)));
+    } finally {
+      setGenLoading(false);
+    }
+  }
+
+  function descargarCsr() {
+    if(!csrPem) return;
+    const blob = new Blob([csrPem], { type: "application/pkcs10" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `growith-${wizCuit}.csr`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  function descargarKeyBackup() {
+    if(!keyText) return;
+    const blob = new Blob([keyText], { type: "application/x-pem-file" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `growith-${wizCuit}.key`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  async function copiarCsr() {
+    if(!csrPem) return;
+    try { await navigator.clipboard.writeText(csrPem); setCsrCopied(true); setTimeout(()=>setCsrCopied(false), 2000); }
+    catch { toast("No se pudo copiar al portapapeles","error"); }
   }
 
   function readPemFile(file, kind, setText, setName, setErr) {
@@ -5845,8 +5917,8 @@ function AppArca({T, user, onHome}) {
               <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:20,textAlign:"center"}}>📖 ¿Cómo funciona?</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
                 {[
-                  {step:"1",title:"Dá de alta el servicio de facturación en ARCA",desc:"Entrá a arca.gob.ar con CUIT y clave fiscal nivel 3. En 'Administrador de Relaciones' adherí los servicios 'Administración de Certificados Digitales', 'Comprobantes en línea' y 'Facturación Electrónica (WSFE)'. Después generá un Certificado Digital nuevo subiendo un CSR — en ese proceso obtenés el .crt (que firma ARCA) y la .key (clave privada que queda en tu compu). Por último, dá de alta un Punto de Venta tipo 'Web Services' en 'Puntos de venta y domicilios'. El wizard te explica todo en detalle.",color:T.accent},
-                  {step:"2",title:"Conectá tu CUIT en Growith",desc:"Tocá '+ Conectar mi primer CUIT' acá arriba. Te va a pedir tus datos fiscales (CUIT, razón social, condición frente al IVA, punto de venta) y después vas a subir los archivos .crt y .key que generaste en ARCA — directo desde tu computadora, sin copiar/pegar texto. Growith los lee localmente y los guarda cifrados.",color:T.blue},
+                  {step:"1",title:"Tocá 'Conectar CUIT' y completá tus datos",desc:"El wizard te pide CUIT, razón social, condición frente al IVA (Responsable Inscripto o Monotributista) y punto de venta. Necesitás clave fiscal nivel 3 en ARCA y estar inscripto como RI o Monotributo (no Consumidor Final).",color:T.accent},
+                  {step:"2",title:"Generá tu certificado (modo automático)",desc:"Growith genera por vos un par RSA-2048 directamente en tu navegador — la clave privada nunca sale de tu computadora hasta que termines. Te da un CSR para copiar/pegar en ARCA (Administración de Certificados Digitales → Nuevo) y guardás el .key como backup. ARCA te devuelve un .crt que subís en el wizard, y listo. Si ya tenés tus archivos, hay modo manual para subir .crt y .key directo.",color:T.blue},
                   {step:"3",title:"Subí tus ventas para facturar",desc:"Descargá el reporte de ventas desde tu plataforma: en Mercado Libre es un archivo Excel (.xlsx) que bajás desde Ventas → Facturación, y en Shopify es un CSV que exportás desde Orders. Arrastrá ese archivo en la zona de carga y Growith lo procesa automáticamente: identifica cada cliente, el monto, y prepara las facturas.",color:T.yellow},
                   {step:"4",title:"Emití y descargá los PDFs",desc:"Revisá la previsualización de las facturas. Podés renombrar los productos si querés que aparezcan distinto en el comprobante. Tocá 'Emitir' y en segundos tenés todas las facturas con CAE válido emitidas en ARCA. Descargá los PDFs uno por uno o todos juntos en un click.",color:T.green},
                 ].map(s=>(
@@ -5889,7 +5961,7 @@ function AppArca({T, user, onHome}) {
                 <div style={{padding:"0 20px 20px",borderTop:"1px solid "+T.border}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
                     {[
-                      {step:"1",title:"Conectá tu CUIT",desc:"Tocá el selector de CUIT arriba a la derecha → '+ Conectar nuevo CUIT'. Necesitás haber dado de alta los servicios 'Administración de Certificados Digitales', 'Comprobantes en línea' y 'Facturación Electrónica (WSFE)' en ARCA, generado un Certificado Digital (.crt + .key) y dado de alta un Punto de Venta tipo Web Services. El wizard te guía paso a paso y al final subís los archivos .crt y .key directo desde tu compu.",color:T.accent},
+                      {step:"1",title:"Conectá tu CUIT",desc:"Tocá el selector de CUIT arriba a la derecha → '+ Conectar nuevo CUIT'. El wizard tiene 3 pasos: tus datos fiscales, generación del certificado (Growith genera el par RSA y te da el CSR para subir a ARCA → ARCA te devuelve un .crt que subís acá), y verificación. Si ya tenés un certificado de ARCA con su clave privada, hay un modo manual para subir ambos archivos directo.",color:T.accent},
                       {step:"2",title:"Subí tu archivo de ventas",desc:"Descargá el Excel de ventas de Mercado Libre (.xlsx) desde Ventas → Facturación, o el CSV de Shopify desde Orders → Export. Arrastrá el archivo en la zona de carga de abajo. Growith lee las órdenes automáticamente y prepara cada factura con los datos del comprador (nombre, CUIT/DNI, monto, productos).",color:T.blue},
                       {step:"3",title:"Revisá y ajustá",desc:"Antes de emitir podés revisar cada orden: el sistema muestra el tipo de comprobante que va a generar (Factura A, B o C según tu condición fiscal y los datos del cliente). También podés cambiar el nombre de los productos para que aparezcan distinto en el PDF final del comprobante.",color:T.yellow},
                       {step:"4",title:"Emití y descargá PDFs",desc:"Tocá 'Emitir facturas en ARCA' y el sistema se comunica directo con ARCA para generar cada comprobante con CAE válido. En segundos tenés los resultados: facturas exitosas con su número de comprobante y CAE. Descargá los PDFs uno por uno o todos juntos.",color:T.green},
@@ -6151,9 +6223,14 @@ function AppArca({T, user, onHome}) {
             </div>
 
             {/* Progress bar */}
-            <div style={{display:"flex",gap:6,marginBottom:28}}>
-              {["Datos fiscales","Certificado","Clave privada","Verificar"].map((_,i)=>(
+            <div style={{display:"flex",gap:6,marginBottom:8}}>
+              {["Datos fiscales","Certificado en ARCA","Verificar"].map((_,i)=>(
                 <div key={i} style={{flex:1,height:4,borderRadius:2,background:i<=wizStep?T.accent:T.border,transition:"background 0.2s ease"}}/>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:6,marginBottom:24,fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>
+              {["Datos fiscales","Certificado en ARCA","Verificar"].map((label,i)=>(
+                <div key={i} style={{flex:1,textAlign:"center",color:i===wizStep?T.accent:T.textSm}}>{label}</div>
               ))}
             </div>
 
@@ -6218,117 +6295,189 @@ function AppArca({T, user, onHome}) {
               </div>
             )}
 
-            {/* Step 1: Certificado */}
+            {/* Step 1: Certificado + Clave (modo auto o manual) */}
             {wizStep===1&&(
               <div>
-                <div style={{background:T.blueBg,border:"1px solid "+T.blue+"33",borderRadius:10,padding:16,marginBottom:16}}>
-                  <div style={{fontSize:13,fontWeight:600,color:T.blue,marginBottom:8}}>📋 Cómo dar de alta el servicio de facturación electrónica en ARCA</div>
-                  <div style={{fontSize:12,color:T.textMd,lineHeight:1.7,marginBottom:8}}>
-                    El certificado digital es lo que le permite a Growith comunicarse con ARCA en tu nombre y emitir facturas por web service. Si nunca lo hiciste, seguí estos pasos en orden — la primera vez lleva 15-20 min, después no tenés que volver a tocar nada.
-                  </div>
-                  <div style={{fontSize:11,fontWeight:700,color:T.text,marginTop:12,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>Pre-requisitos</div>
-                  <ol style={{margin:"4px 0 0",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
-                    <li>Tener <strong style={{color:T.text}}>clave fiscal nivel 3</strong> en ARCA. Si tenés nivel 2 (típico cuando recién te dan el CUIT), tenés que elevarla yendo a una dependencia con DNI o usando el reconocimiento facial desde la app "Mi ARCA"</li>
-                    <li>Estar inscripto como <strong style={{color:T.text}}>Responsable Inscripto</strong> o <strong style={{color:T.text}}>Monotributista</strong> (no Consumidor Final). Verificalo en "Sistema Registral → Consulta"</li>
-                  </ol>
-                  <div style={{fontSize:11,fontWeight:700,color:T.text,marginTop:14,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>Paso a paso en arca.gob.ar</div>
-                  <ol style={{margin:"4px 0 0",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
-                    <li>Entrá a <strong style={{color:T.text}}>arca.gob.ar</strong> con CUIT y clave fiscal y, si no aparece en tus servicios, andá a <strong style={{color:T.text}}>Administrador de Relaciones de Clave Fiscal</strong> → Adherir Servicio → "AFIP - WebService Autenticación y Autorización (WSAA)" y "AFIP - Administración de Certificados Digitales". Cerrá sesión y volvé a entrar</li>
-                    <li>Adherí también el servicio <strong style={{color:T.text}}>"Comprobantes en línea"</strong> y, si vas a producción, <strong style={{color:T.text}}>"Facturación Electrónica - Web Service (WSFE)"</strong></li>
-                    <li>Andá a <strong style={{color:T.text}}>Administración de Certificados Digitales → Nuevo Certificado</strong>. Te pide subir un archivo CSR (Certificate Signing Request). Para generarlo podés usar la guía oficial de ARCA o cualquier generador online de CSR — en el proceso obtenés también la <strong style={{color:T.text}}>clave privada (.key)</strong> que vas a necesitar en el próximo paso. <strong style={{color:T.text}}>Guardala bien, no se puede recuperar</strong></li>
-                    <li>ARCA firma tu solicitud y te entrega un archivo <strong style={{color:T.text}}>.crt</strong> para descargar</li>
-                    <li>Volvé a <strong style={{color:T.text}}>Administrador de Relaciones</strong> → Nueva Relación → Servicio "Facturación Electrónica (WSFE)" → Representante: tu Computador Fiscal (el del CRT que acabás de generar). Esto autoriza al certificado a emitir facturas en tu nombre</li>
-                    <li>En <strong style={{color:T.text}}>"Administración de puntos de venta y domicilios"</strong> → Alta de punto de venta → elegí "Web Services" como sistema de facturación. Anotá el número de punto de venta (1, 2, 3...) — es el que pusiste en el paso anterior del wizard</li>
-                    <li>Volvé acá y subí los archivos <strong style={{color:T.text}}>.crt</strong> (este paso) y <strong style={{color:T.text}}>.key</strong> (el siguiente)</li>
-                  </ol>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:10,padding:"8px 10px",background:T.bg,borderRadius:6,lineHeight:1.6}}>
-                    💡 <strong style={{color:T.text}}>Tip:</strong> si elegiste ambiente "Homologación" en el paso anterior, generá el certificado en <strong style={{color:T.text}}>wsaahomo</strong> (botón "Homologación" dentro de Administración de Certificados Digitales). Para producción real, el certificado va en el ambiente productivo. <strong style={{color:T.text}}>No son intercambiables.</strong>
-                  </div>
+                {/* Switch de modo */}
+                <div style={{display:"flex",gap:8,marginBottom:18,background:T.surface,padding:4,borderRadius:10,border:"1px solid "+T.border}}>
+                  <button onClick={()=>setWizMode("auto")} style={{flex:1,padding:"10px 12px",borderRadius:8,border:"none",background:wizMode==="auto"?T.card:"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:wizMode==="auto"?"0 1px 3px rgba(0,0,0,0.2)":"none"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:wizMode==="auto"?T.accent:T.textMd,marginBottom:2}}>🪄 Generar automáticamente</div>
+                    <div style={{fontSize:10,color:T.textSm}}>Recomendado · 3 minutos</div>
+                  </button>
+                  <button onClick={()=>setWizMode("manual")} style={{flex:1,padding:"10px 12px",borderRadius:8,border:"none",background:wizMode==="manual"?T.card:"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:wizMode==="manual"?"0 1px 3px rgba(0,0,0,0.2)":"none"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:wizMode==="manual"?T.accent:T.textMd,marginBottom:2}}>⚙️ Ya tengo mis archivos</div>
+                    <div style={{fontSize:10,color:T.textSm}}>Avanzado · subo .crt y .key</div>
+                  </button>
                 </div>
 
-                <label style={labelS}>Subí tu archivo de certificado (.crt)</label>
-                <div
-                  onClick={()=>document.getElementById('cert-file-input')?.click()}
-                  onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
-                  onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
-                  onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;const f=e.dataTransfer.files[0];if(f)readPemFile(f,"cert",setCertText,setCertFileName,setCertFileError);}}
-                  style={{border:"2px dashed "+(certText?T.green:T.border),borderRadius:10,padding:"22px 18px",textAlign:"center",cursor:"pointer",background:certText?T.greenBg:"transparent",transition:"all 0.15s"}}>
-                  {certText ? (
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                      <span style={{fontSize:22}}>📄</span>
-                      <div style={{textAlign:"left"}}>
-                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{certFileName||"certificado.crt"}</div>
-                        <div style={{fontSize:11,color:T.green}}>✓ Certificado válido cargado · Click para cambiar</div>
+                {/* ════ MODO AUTO ════ */}
+                {wizMode==="auto" && (
+                  <>
+                    {/* Bloque 1: Generar */}
+                    <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:18,marginBottom:14}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                        <div style={{width:26,height:26,borderRadius:7,background:csrPem?T.green+"22":T.accentSolid+"22",border:"1px solid "+(csrPem?T.green:T.accent)+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:csrPem?T.green:T.accent}}>{csrPem?"✓":"1"}</div>
+                        <div style={{fontSize:13,fontWeight:700,color:T.text}}>Generá tu clave criptográfica</div>
                       </div>
-                      <button onClick={e=>{e.stopPropagation();setCertText("");setCertFileName("");setCertFileError("");}} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:16,padding:4,marginLeft:8}}>✕</button>
+                      <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
+                        Creamos en tu navegador un par RSA-2048 (clave privada + CSR). La clave privada nunca sale de tu computadora hasta que termines el proceso. Cuando le des al botón, vas a descargar automáticamente un archivo <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>growith-{wizCuit||"CUIT"}.key</code> — <strong style={{color:T.text}}>guardalo como backup</strong>, no se puede recuperar.
+                      </div>
+                      {!csrPem ? (
+                        <>
+                          <button onClick={generarCsrYKey} disabled={genLoading} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"12px 18px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:genLoading?0.7:1}}>
+                            {genLoading ? <><Spinner size={13} color="#fff"/> Generando par RSA-2048 (10-20 seg)...</> : "🔐 Generar mi clave y CSR"}
+                          </button>
+                          {genError && (
+                            <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {genError}</div>
+                          )}
+                        </>
+                      ) : (
+                        <div style={{padding:"10px 12px",background:T.greenBg,border:"1px solid "+T.green+"33",borderRadius:8,fontSize:12,color:T.green,fontWeight:500}}>
+                          ✓ Par generado. Tu clave privada se descargó como <strong>growith-{wizCuit}.key</strong>.
+                          <button onClick={descargarKeyBackup} style={{marginLeft:8,background:"transparent",border:"none",color:T.green,cursor:"pointer",textDecoration:"underline",fontSize:11,fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>Descargar de nuevo</button>
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <>
-                      <span style={{fontSize:26,display:"block",marginBottom:6}}>🔐</span>
-                      <div style={{fontSize:13,fontWeight:600,color:T.text}}>Arrastrá tu archivo .crt acá o tocá para elegirlo</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Acepta .crt, .pem o .cer · Lo leemos localmente, nunca se sube en texto plano</div>
-                    </>
-                  )}
-                  <input id="cert-file-input" type="file" accept=".crt,.pem,.cer" onChange={e=>{const f=e.target.files[0];if(f)readPemFile(f,"cert",setCertText,setCertFileName,setCertFileError);e.target.value="";}} style={{display:"none"}}/>
-                </div>
-                {certFileError && (
-                  <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {certFileError}</div>
+
+                    {/* Bloque 2: Subir CSR a ARCA */}
+                    {csrPem && (
+                      <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:18,marginBottom:14}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                          <div style={{width:26,height:26,borderRadius:7,background:T.accentSolid+"22",border:"1px solid "+T.accent+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:T.accent}}>2</div>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Subí el CSR a ARCA</div>
+                        </div>
+                        {!wizArcaProd && (
+                          <div style={{fontSize:11,color:T.yellow,background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
+                            ⚠ Elegiste ambiente <strong>Homologación</strong>. Cuando estés en "Administración de Certificados Digitales", asegurate de marcar el toggle de <strong>Homologación</strong> antes de crear el alias — los certs de homologación no funcionan en producción y viceversa.
+                          </div>
+                        )}
+                        <ol style={{margin:"4px 0 12px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
+                          <li>Entrá a <a href="https://www.afip.gob.ar" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>arca.gob.ar</a> con tu CUIT y clave fiscal (nivel 3 o superior)</li>
+                          <li>Si no aparecen en tus servicios, andá a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → Adherir Servicio → buscá y adherí <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong></li>
+                          <li>Entrá al servicio <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → Agregar alias → poné un nombre (ej. "growith") → en el campo CSR pegá el contenido del paso anterior (botón Copiar CSR abajo) → Agregar</li>
+                          <li>ARCA te va a mostrar el certificado generado — descargalo como archivo <strong style={{color:T.text}}>.crt</strong></li>
+                          <li>Volvé a <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → Nueva Relación → Servicio <strong style={{color:T.text}}>"Facturación Electrónica - Web Service (WSFE)"</strong> → Representante: <strong style={{color:T.text}}>"Computador Fiscal"</strong> con el alias del certificado que acabás de crear</li>
+                          <li>Entrá a <strong style={{color:T.text}}>"Administración de puntos de venta y domicilios"</strong> → Alta de punto de venta → marcá <strong style={{color:T.text}}>"Web Services"</strong> como sistema de facturación. El número que ARCA asigne tiene que coincidir con el que pusiste en el wizard (<strong style={{color:T.text}}>{wizPuntoVenta||"1"}</strong>)</li>
+                        </ol>
+                        <div style={{display:"flex",gap:8,marginBottom:10}}>
+                          <button onClick={copiarCsr} style={{flex:1,background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                            {csrCopied ? "✓ Copiado al portapapeles" : "📋 Copiar CSR"}
+                          </button>
+                          <button onClick={descargarCsr} style={{flex:1,background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                            ⬇ Descargar .csr
+                          </button>
+                        </div>
+                        <details style={{marginTop:4}}>
+                          <summary style={{fontSize:11,color:T.textSm,cursor:"pointer"}}>Ver contenido del CSR</summary>
+                          <textarea readOnly value={csrPem} style={{...iS,marginTop:8,minHeight:120,fontFamily:"monospace",fontSize:10,resize:"vertical"}}/>
+                        </details>
+                      </div>
+                    )}
+
+                    {/* Bloque 3: Subir .crt que devolvió ARCA */}
+                    {csrPem && (
+                      <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:18}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                          <div style={{width:26,height:26,borderRadius:7,background:certText?T.green+"22":T.accentSolid+"22",border:"1px solid "+(certText?T.green:T.accent)+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:certText?T.green:T.accent}}>{certText?"✓":"3"}</div>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Subí el certificado (.crt) que te devolvió ARCA</div>
+                        </div>
+                        <div
+                          onClick={()=>document.getElementById('cert-file-input-auto')?.click()}
+                          onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
+                          onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
+                          onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;const f=e.dataTransfer.files[0];if(f)readPemFile(f,"cert",setCertText,setCertFileName,setCertFileError);}}
+                          style={{border:"2px dashed "+(certText?T.green:T.border),borderRadius:10,padding:"22px 18px",textAlign:"center",cursor:"pointer",background:certText?T.greenBg:"transparent",transition:"all 0.15s"}}>
+                          {certText ? (
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                              <span style={{fontSize:22}}>📄</span>
+                              <div style={{textAlign:"left"}}>
+                                <div style={{fontSize:13,fontWeight:600,color:T.text}}>{certFileName||"certificado.crt"}</div>
+                                <div style={{fontSize:11,color:T.green}}>✓ Certificado válido cargado · Click para cambiar</div>
+                              </div>
+                              <button onClick={e=>{e.stopPropagation();setCertText("");setCertFileName("");setCertFileError("");}} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:16,padding:4,marginLeft:8}}>✕</button>
+                            </div>
+                          ) : (
+                            <>
+                              <span style={{fontSize:26,display:"block",marginBottom:6}}>📥</span>
+                              <div style={{fontSize:13,fontWeight:600,color:T.text}}>Arrastrá el .crt que descargaste de ARCA</div>
+                              <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Acepta .crt, .pem o .cer</div>
+                            </>
+                          )}
+                          <input id="cert-file-input-auto" type="file" accept=".crt,.pem,.cer" onChange={e=>{const f=e.target.files[0];if(f)readPemFile(f,"cert",setCertText,setCertFileName,setCertFileError);e.target.value="";}} style={{display:"none"}}/>
+                        </div>
+                        {certFileError && (
+                          <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {certFileError}</div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* ════ MODO MANUAL ════ */}
+                {wizMode==="manual" && (
+                  <>
+                    <div style={{background:T.blueBg,border:"1px solid "+T.blue+"33",borderRadius:10,padding:14,marginBottom:14,fontSize:12,color:T.textMd,lineHeight:1.7}}>
+                      <strong style={{color:T.blue}}>Modo avanzado.</strong> Si ya tenés un certificado activo en ARCA con su clave privada, subí ambos archivos acá. Tienen que ser <strong style={{color:T.text}}>del mismo par</strong> (la .key se generó al momento de hacer el CSR que mandaste a ARCA). Si la perdiste, cambiá a "Generar automáticamente".
+                    </div>
+
+                    <label style={labelS}>Certificado (.crt) que te dio ARCA</label>
+                    <div
+                      onClick={()=>document.getElementById('cert-file-input')?.click()}
+                      onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
+                      onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
+                      onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;const f=e.dataTransfer.files[0];if(f)readPemFile(f,"cert",setCertText,setCertFileName,setCertFileError);}}
+                      style={{border:"2px dashed "+(certText?T.green:T.border),borderRadius:10,padding:"20px 18px",textAlign:"center",cursor:"pointer",background:certText?T.greenBg:"transparent",marginBottom:14}}>
+                      {certText ? (
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                          <span style={{fontSize:20}}>📄</span>
+                          <div style={{textAlign:"left"}}>
+                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>{certFileName||"certificado.crt"}</div>
+                            <div style={{fontSize:11,color:T.green}}>✓ Cargado</div>
+                          </div>
+                          <button onClick={e=>{e.stopPropagation();setCertText("");setCertFileName("");setCertFileError("");}} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:14,padding:2,marginLeft:6}}>✕</button>
+                        </div>
+                      ) : (
+                        <>
+                          <span style={{fontSize:22,display:"block",marginBottom:4}}>🔐</span>
+                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>Arrastrá tu .crt o tocá para elegirlo</div>
+                        </>
+                      )}
+                      <input id="cert-file-input" type="file" accept=".crt,.pem,.cer" onChange={e=>{const f=e.target.files[0];if(f)readPemFile(f,"cert",setCertText,setCertFileName,setCertFileError);e.target.value="";}} style={{display:"none"}}/>
+                    </div>
+                    {certFileError && <div style={{marginBottom:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {certFileError}</div>}
+
+                    <label style={labelS}>Clave privada (.key) del mismo par</label>
+                    <div
+                      onClick={()=>document.getElementById('key-file-input')?.click()}
+                      onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
+                      onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
+                      onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;const f=e.dataTransfer.files[0];if(f)readPemFile(f,"key",setKeyText,setKeyFileName,setKeyFileError);}}
+                      style={{border:"2px dashed "+(keyText?T.green:T.border),borderRadius:10,padding:"20px 18px",textAlign:"center",cursor:"pointer",background:keyText?T.greenBg:"transparent"}}>
+                      {keyText ? (
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                          <span style={{fontSize:20}}>🔑</span>
+                          <div style={{textAlign:"left"}}>
+                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>{keyFileName||"clave.key"}</div>
+                            <div style={{fontSize:11,color:T.green}}>✓ Cargada</div>
+                          </div>
+                          <button onClick={e=>{e.stopPropagation();setKeyText("");setKeyFileName("");setKeyFileError("");}} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:14,padding:2,marginLeft:6}}>✕</button>
+                        </div>
+                      ) : (
+                        <>
+                          <span style={{fontSize:22,display:"block",marginBottom:4}}>🗝️</span>
+                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>Arrastrá tu .key o tocá para elegirla</div>
+                        </>
+                      )}
+                      <input id="key-file-input" type="file" accept=".key,.pem" onChange={e=>{const f=e.target.files[0];if(f)readPemFile(f,"key",setKeyText,setKeyFileName,setKeyFileError);e.target.value="";}} style={{display:"none"}}/>
+                    </div>
+                    {keyFileError && <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {keyFileError}</div>}
+                  </>
                 )}
               </div>
             )}
 
-            {/* Step 2: Clave privada */}
+            {/* Step 2: Verificar */}
             {wizStep===2&&(
-              <div>
-                <div style={{background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,padding:16,marginBottom:16}}>
-                  <div style={{fontSize:13,fontWeight:600,color:T.yellow,marginBottom:8}}>🔑 ¿Qué es la clave privada y dónde está?</div>
-                  <div style={{fontSize:12,color:T.textMd,lineHeight:1.8}}>
-                    Es un archivo <strong style={{color:T.text}}>.key</strong> que se generó <strong style={{color:T.text}}>en tu computadora</strong> (no en ARCA) cuando creaste el CSR del paso anterior. <strong style={{color:T.text}}>No es tu contraseña de ARCA ni tu clave fiscal</strong> — es un archivo de texto que empieza con líneas tipo <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>-----BEGIN PRIVATE KEY-----</code> o <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>-----BEGIN RSA PRIVATE KEY-----</code>.
-                  </div>
-                  <div style={{fontSize:11,fontWeight:700,color:T.text,marginTop:12,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>¿Dónde la encuentro?</div>
-                  <ul style={{margin:"4px 0 0",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.7}}>
-                    <li>Si generaste el CSR con <strong style={{color:T.text}}>openssl</strong>: está en la carpeta donde corriste el comando (típicamente <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>privada.key</code>)</li>
-                    <li>Si usaste un <strong style={{color:T.text}}>generador online</strong>: la podés haber descargado en la carpeta "Descargas"</li>
-                    <li>Si la perdiste: tenés que <strong style={{color:T.text}}>generar un nuevo certificado en ARCA</strong>. No se puede recuperar — es el principio de seguridad: solo vos la tenés</li>
-                  </ul>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:10,padding:"8px 10px",background:T.bg,borderRadius:6,lineHeight:1.6}}>
-                    🔒 La clave se guarda cifrada en nuestra base de datos y solo se usa para firmar tus pedidos a ARCA. Nunca se muestra ni se comparte con terceros.
-                  </div>
-                </div>
-
-                <label style={labelS}>Subí tu archivo de clave privada (.key)</label>
-                <div
-                  onClick={()=>document.getElementById('key-file-input')?.click()}
-                  onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
-                  onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
-                  onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;const f=e.dataTransfer.files[0];if(f)readPemFile(f,"key",setKeyText,setKeyFileName,setKeyFileError);}}
-                  style={{border:"2px dashed "+(keyText?T.green:T.border),borderRadius:10,padding:"22px 18px",textAlign:"center",cursor:"pointer",background:keyText?T.greenBg:"transparent",transition:"all 0.15s"}}>
-                  {keyText ? (
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                      <span style={{fontSize:22}}>🔑</span>
-                      <div style={{textAlign:"left"}}>
-                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{keyFileName||"clave.key"}</div>
-                        <div style={{fontSize:11,color:T.green}}>✓ Clave privada válida cargada · Click para cambiar</div>
-                      </div>
-                      <button onClick={e=>{e.stopPropagation();setKeyText("");setKeyFileName("");setKeyFileError("");}} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:16,padding:4,marginLeft:8}}>✕</button>
-                    </div>
-                  ) : (
-                    <>
-                      <span style={{fontSize:26,display:"block",marginBottom:6}}>🗝️</span>
-                      <div style={{fontSize:13,fontWeight:600,color:T.text}}>Arrastrá tu archivo .key acá o tocá para elegirlo</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Acepta .key o .pem · Se cifra antes de guardarse</div>
-                    </>
-                  )}
-                  <input id="key-file-input" type="file" accept=".key,.pem" onChange={e=>{const f=e.target.files[0];if(f)readPemFile(f,"key",setKeyText,setKeyFileName,setKeyFileError);e.target.value="";}} style={{display:"none"}}/>
-                </div>
-                {keyFileError && (
-                  <div style={{marginTop:10,padding:"8px 12px",background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:8,fontSize:11,color:T.red}}>⚠ {keyFileError}</div>
-                )}
-              </div>
-            )}
-
-            {/* Step 3: Verificar */}
-            {wizStep===3&&(
               <div>
                 <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:18,marginBottom:20}}>
                   <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:14}}>Resumen de tu CUIT</div>
@@ -6376,8 +6525,8 @@ function AppArca({T, user, onHome}) {
                 </button>
               )}
               <div style={{flex:1}}/>
-              {wizStep<3?(
-                <button onClick={()=>setWizStep(s=>s+1)} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+              {wizStep<2?(
+                <button onClick={()=>setWizStep(s=>s+1)} disabled={wizStep===1 && (!certText.trim()||!keyText.trim())} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:(wizStep===1&&(!certText.trim()||!keyText.trim()))?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:(wizStep===1&&(!certText.trim()||!keyText.trim()))?0.5:1}}>
                   Continuar →
                 </button>
               ):(

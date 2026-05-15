@@ -36,10 +36,55 @@ function arcaUrls(prod = true) {
   };
 }
 
+// ─── Validación local del par cert/key (antes de pegarle a AFIP) ──
+
+async function validarParCertKey(certPem, keyPem, arcaProd) {
+  const forge = (await import("node-forge")).default;
+
+  let cert, key;
+  try { cert = forge.pki.certificateFromPem(certPem); }
+  catch (e) { throw new Error("El archivo .crt no es un certificado PEM válido. Volvé a subir el archivo que te dio ARCA después de procesar el CSR."); }
+  try { key = forge.pki.privateKeyFromPem(keyPem); }
+  catch (e) { throw new Error("El archivo .key no es una clave privada PEM válida. Asegurate de subir el .key que se generó junto con tu CSR."); }
+
+  // 1) ¿Coinciden cert y key? Comparamos el modulus de la pub del cert con el de la priv key
+  const certMod = cert.publicKey.n.toString(16);
+  const keyMod = key.n.toString(16);
+  if (certMod !== keyMod) {
+    throw new Error("El certificado y la clave privada no coinciden — son de pares distintos. Si generaste el CSR desde Growith, la .key correcta es la que descargaste en ese mismo momento. Si lo hiciste por afuera, asegurate de subir el .key que se creó junto con el .csr que enviaste a ARCA.");
+  }
+
+  // 2) ¿Está vencido o todavía no es válido?
+  const now = new Date();
+  if (cert.validity.notAfter < now) {
+    const venc = cert.validity.notAfter.toLocaleDateString("es-AR");
+    throw new Error(`El certificado venció el ${venc}. Generá uno nuevo en ARCA (Administración de Certificados Digitales → Nuevo Certificado).`);
+  }
+  if (cert.validity.notBefore > now) {
+    throw new Error("El certificado todavía no es válido (fecha de inicio en el futuro). Verificá la fecha de tu sistema.");
+  }
+
+  // 3) ¿El certificado es del ambiente que el usuario seleccionó?
+  // Los certs de homologación tienen el issuer "AFIP-CA-HOMO" o similar; los de prod tienen "MEDIACERT"/"AC AFIP" etc.
+  const issuer = (cert.issuer.attributes || []).map(a => `${a.shortName || a.name}=${a.value}`).join(",").toLowerCase();
+  const esHomologacion = issuer.includes("homo") || issuer.includes("test");
+  if (arcaProd && esHomologacion) {
+    throw new Error("Marcaste ambiente Producción pero el certificado es de Homologación (issuer contiene 'homo'). Generá un certificado de producción en arca.gob.ar (no en wsaahomo).");
+  }
+  if (!arcaProd && !esHomologacion && issuer.length > 0) {
+    throw new Error("Marcaste ambiente Homologación pero el certificado parece de Producción. Para pruebas, generá el certificado en wsaahomo.afip.gov.ar.");
+  }
+
+  return { cert, key };
+}
+
 // ─── Firma TRA con node-forge (reemplaza openssl subprocess) ──
 
-async function firmarTRA(certPem, keyPem) {
+async function firmarTRA(certPem, keyPem, arcaProd) {
   const forge = (await import("node-forge")).default;
+
+  // Validación local primero — atajamos los errores típicos antes de gastar un round-trip a AFIP
+  const { cert, key } = await validarParCertKey(certPem, keyPem, arcaProd);
 
   const now = new Date();
   const gen = new Date(now.getTime() - 10 * 60000);
@@ -55,9 +100,6 @@ async function firmarTRA(certPem, keyPem) {
   </header>
   <service>wsfe</service>
 </loginTicketRequest>`;
-
-  const cert = forge.pki.certificateFromPem(certPem);
-  const key = forge.pki.privateKeyFromPem(keyPem);
 
   const p7 = forge.pkcs7.createSignedData();
   p7.content = forge.util.createBuffer(tra, "utf8");
@@ -93,27 +135,52 @@ async function loginWSAA(cmsCms64, wsaaUrl) {
     body: soap,
   });
   const text = await r.text();
-  if (!r.ok) throw new Error(`WSAA HTTP ${r.status}: ${text.slice(0, 300)}`);
 
-  // Extraer token y sign del XML
+  // Extraer token y sign del XML (puede venir con HTTP 200 o 500 si es fault)
   const tokenMatch = text.match(/<token>([\s\S]*?)<\/token>/);
   const signMatch = text.match(/<sign>([\s\S]*?)<\/sign>/);
-  if (!tokenMatch || !signMatch) {
-    // Detectar fault AFIP con mensajes útiles
-    const faultMatch = text.match(/<faultstring[^>]*>([\s\S]*?)<\/faultstring>/i);
-    const fault = faultMatch?.[1]?.trim() || text.slice(0, 300);
-    let hint = "";
-    const low = fault.toLowerCase();
-    if (low.includes("notauthorized") || low.includes("destino inv") || low.includes("computador no autorizado"))
-      hint = " — Autorizá el servicio 'wsfe' en el portal AFIP: Administrador de Relaciones → Nueva relación → Facturación Electrónica (WSFE)";
-    else if (low.includes("expired") || low.includes("vencido"))
-      hint = " — El certificado está vencido. Generá uno nuevo en AFIP.";
-    else if (low.includes("untrusted") || low.includes("no es de confianza"))
-      hint = " — Subí el .crt que te dio AFIP, no el CSR.";
-    throw new Error(`AFIP rechazó el login: ${fault}${hint}`);
+  if (tokenMatch && signMatch) {
+    return { token: tokenMatch[1].trim(), sign: signMatch[1].trim() };
   }
 
-  return { token: tokenMatch[1].trim(), sign: signMatch[1].trim() };
+  // No vino token → leer el SOAP Fault para dar un mensaje útil
+  const faultStringM = text.match(/<faultstring[^>]*>([\s\S]*?)<\/faultstring>/i);
+  const faultCodeM = text.match(/<faultcode[^>]*>([\s\S]*?)<\/faultcode>/i);
+  const faultString = faultStringM?.[1]?.trim() || "";
+  const faultCode = faultCodeM?.[1]?.trim() || "";
+  const low = (faultString + " " + faultCode).toLowerCase();
+
+  let mensaje = "ARCA rechazó el login";
+  let hint = "";
+
+  if (low.includes("notauthorized") || low.includes("destino inv") || low.includes("computador no autorizado") || low.includes("ns1:cms.notauthorized")) {
+    mensaje = "El certificado no está autorizado para emitir facturas";
+    hint = " — En arca.gob.ar entrá a 'Administrador de Relaciones de Clave Fiscal' → Nueva Relación → Servicio 'Facturación Electrónica (WSFE)' → Representante: el Computador Fiscal asociado a tu certificado. Después esperá 5 minutos y volvé a intentar.";
+  } else if (low.includes("cms.sign") || low.includes("sign.invalid") || low.includes("firma")) {
+    mensaje = "La firma del certificado es inválida";
+    hint = " — Suele pasar cuando el .crt y el .key no son del mismo par. Si generaste todo desde Growith, asegurate de subir la .key que descargaste en el mismo momento que el CSR.";
+  } else if (low.includes("cms.cert.notfound") || low.includes("cert.notfound") || low.includes("certificado no encontrado")) {
+    mensaje = "ARCA no encuentra registrado tu certificado";
+    hint = " — Verificá en 'Administración de Certificados Digitales' que tu certificado esté activo (no revocado). También puede pasar si subiste un certificado del ambiente equivocado: los de homologación no sirven en producción y viceversa.";
+  } else if (low.includes("cms.cert.untrusted") || low.includes("untrusted") || low.includes("no es de confianza")) {
+    mensaje = "ARCA no confía en el certificado que subiste";
+    hint = " — Suele pasar si subiste el CSR (el que vos enviaste a ARCA) en lugar del CRT (el que ARCA te devolvió firmado). En 'Administración de Certificados Digitales' bajá el archivo .crt y subí ese, no el .csr.";
+  } else if (low.includes("expired") || low.includes("vencido")) {
+    mensaje = "El certificado está vencido";
+    hint = " — Generá uno nuevo en arca.gob.ar → Administración de Certificados Digitales → Nuevo Certificado.";
+  } else if (low.includes("cms.bad.base64") || low.includes("bad.base64")) {
+    mensaje = "ARCA no pudo decodificar el certificado";
+    hint = " — El archivo .crt está corrupto. Volvé a descargarlo de ARCA y subilo de nuevo.";
+  } else if (low.includes("ns1:cms")) {
+    mensaje = "ARCA rechazó el certificado (error CMS)";
+    hint = " — Típicamente: (a) el .crt y .key no coinciden, (b) el certificado es de un ambiente y estás conectándote al otro (homologación ↔ producción), o (c) el certificado fue revocado. Verificá los tres puntos.";
+  } else if (faultString) {
+    mensaje = `ARCA rechazó el login: ${faultString}`;
+  } else {
+    mensaje = `WSAA HTTP ${r.status}: respuesta inesperada`;
+  }
+
+  throw new Error(mensaje + hint);
 }
 
 // ─── Llamada WSFE ──────────────────────────────────────
@@ -609,7 +676,7 @@ export default async function handler(req, res) {
       if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "Falta certificado o clave" });
 
       const { wsaa, wsfe } = arcaUrls(cfg.arca_prod);
-      const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem);
+      const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
       const { token, sign } = await loginWSAA(cms, wsaa);
       const ultimoB = await getUltimoCbte(token, sign, parseInt(cfg.cuit), cfg.punto_venta, 6, wsfe);
 
@@ -663,7 +730,7 @@ export default async function handler(req, res) {
       const { wsaa, wsfe } = arcaUrls(cfg.arca_prod);
 
       // Autenticar
-      const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem);
+      const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
       const { token, sign } = await loginWSAA(cms, wsaa);
 
       // Numeradores
