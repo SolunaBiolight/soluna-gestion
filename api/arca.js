@@ -1016,15 +1016,17 @@ export default async function handler(req, res) {
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
+      // Una sola query con un solo where (no requiere índice compuesto). Filtramos por mes en memoria.
       const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
         .where("cuit_emisor", "==", cuitParam)
-        .where("emitido_at", ">=", monthStart)
         .get();
 
-      let iva_debito = 0, total_facturado = 0, neto_total = 0;
+      let iva_debito = 0, total_facturado = 0, neto_total = 0, facturas_emitidas = 0;
       const porLetra = { A: 0, B: 0, C: 0 };
       for (const d of snap.docs) {
         const data = d.data();
+        if (!data.emitido_at || data.emitido_at < monthStart) continue;
+        facturas_emitidas++;
         iva_debito += data.iva || 0;
         total_facturado += data.total || 0;
         neto_total += data.neto || 0;
@@ -1034,7 +1036,7 @@ export default async function handler(req, res) {
       return res.json({
         iva_debito: Math.round(iva_debito * 100) / 100,
         iva_credito: 0,
-        facturas_emitidas: snap.size,
+        facturas_emitidas,
         total_facturado: Math.round(total_facturado * 100) / 100,
         neto_total: Math.round(neto_total * 100) / 100,
         por_letra: porLetra,
@@ -1262,20 +1264,16 @@ export default async function handler(req, res) {
 
     // ── HISTORIAL: regenerar PDFs de un batch específico ──
 
-    if (action === "get_batch_pdfs" && req.method === "GET") {
-      const batchId = req.query.batch_id;
-      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
-      if (!batchId || !cuitParam) return res.status(400).json({ error: "Falta batch_id o cuit" });
+    if (action === "get_batch_pdfs" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { cuit: cuitParam, comprobante_ids } = body;
+      if (!cuitParam || !Array.isArray(comprobante_ids)) return res.status(400).json({ error: "Faltan cuit o comprobante_ids" });
 
       const cfg = await loadCuitConfig(db, uid, cuitParam);
       if (!cfg) return res.status(404).json({ error: "CUIT no encontrado" });
 
-      const batchSnap = await db.collection("users").doc(uid).collection("arca_batches").doc(batchId).get();
-      if (!batchSnap.exists) return res.status(404).json({ error: "Batch no encontrado" });
-      const batch = batchSnap.data();
-
       const pdfs = [];
-      for (const comprobanteId of (batch.comprobante_ids || [])) {
+      for (const comprobanteId of comprobante_ids) {
         const cSnap = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(comprobanteId).get();
         if (!cSnap.exists) continue;
         const c = cSnap.data();

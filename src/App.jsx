@@ -5868,18 +5868,18 @@ function AppArca({T, user, onHome}) {
     if(!b.error) setBatches(b.batches||[]);
   }
 
-  async function loadBatchPdfs(batchId) {
-    if(batchPdfs[batchId]) return batchPdfs[batchId];
-    setLoadingBatchPdfs(batchId);
-    const d = await api("get_batch_pdfs","GET",null,{cuit:cuitSel, batch_id:batchId});
+  async function loadBatchPdfs(batch) {
+    if(batchPdfs[batch.batch_id]) return batchPdfs[batch.batch_id];
+    setLoadingBatchPdfs(batch.batch_id);
+    const d = await api("get_batch_pdfs","POST",{cuit:cuitSel, comprobante_ids:batch.comprobante_ids||[]});
     setLoadingBatchPdfs(null);
     if(d.error) { toast("Error al cargar PDFs: "+d.error,"error"); return null; }
-    setBatchPdfs(prev=>({...prev, [batchId]: d.pdfs||[]}));
+    setBatchPdfs(prev=>({...prev, [batch.batch_id]: d.pdfs||[]}));
     return d.pdfs;
   }
 
   async function downloadBatchZip(batch) {
-    const pdfList = await loadBatchPdfs(batch.batch_id);
+    const pdfList = await loadBatchPdfs(batch);
     if(!pdfList) return;
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
@@ -6487,7 +6487,7 @@ function AppArca({T, user, onHome}) {
                                 </div>
                                 <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>$ {(r.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
                                 <button onClick={async()=>{
-                                  const list = await loadBatchPdfs(b.batch_id);
+                                  const list = await loadBatchPdfs(b);
                                   if(!list) return;
                                   const pdf = list[i];
                                   if(pdf) downloadPDF(pdf);
