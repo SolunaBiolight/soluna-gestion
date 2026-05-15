@@ -430,14 +430,40 @@ async function parsearXlsxML(buffer) {
   return ordenes;
 }
 
+// Parser CSV con soporte para valores entre comillas (maneja ; dentro de "..." sin romper)
+function splitCsvLine(line, sep) {
+  const out = []; let cur = ""; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (c === sep && !inQ) {
+      out.push(cur); cur = "";
+    } else cur += c;
+  }
+  out.push(cur);
+  return out.map(v => v.trim());
+}
+
 async function parsearCSV(buffer) {
+  // Detectar formato: TN usa ";" y Latin1; Shopify usa "," y UTF-8
+  const head = buffer.slice(0, 600).toString("utf-8");
+  const headLatin = buffer.slice(0, 600).toString("latin1");
+  const isTN = (head.includes(";") && (head.includes("Nombre del comprador") || headLatin.includes("Número de orden") || head.includes("Número de orden") || head.includes("DNI / CUIT")));
+
+  if (isTN) return parsearCSVtn(buffer);
+  return parsearCSVshopify(buffer);
+}
+
+async function parsearCSVshopify(buffer) {
   const text = buffer.toString("utf-8");
   const lines = text.split("\n");
-  const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ""));
+  const headers = splitCsvLine(lines[0], ",");
   const ordenes = {};
   for (const line of lines.slice(1)) {
     if (!line.trim()) continue;
-    const vals = line.split(",").map(v => v.trim().replace(/^"|"$/g, ""));
+    const vals = splitCsvLine(line, ",");
     const row = Object.fromEntries(headers.map((h, i) => [h, vals[i] || ""]));
     const orderId = row["Name"];
     if (!orderId) continue;
@@ -469,6 +495,89 @@ async function parsearCSV(buffer) {
   return ordenes;
 }
 
+async function parsearCSVtn(buffer) {
+  // TN exporta en Latin1 (ISO-8859-1) con separador ; y filas múltiples por orden
+  const text = buffer.toString("latin1");
+  const lines = text.split(/\r?\n/);
+  const headers = splitCsvLine(lines[0], ";").map(h => h.replace(/^"|"$/g, "").trim());
+
+  // Índices de columnas
+  const idx = (name) => headers.findIndex(h => h === name);
+  const I = {
+    orderId: idx("Número de orden"),
+    email: idx("Email"),
+    fecha: idx("Fecha"),
+    estadoOrden: idx("Estado de la orden"),
+    estadoPago: idx("Estado del pago"),
+    subtotal: idx("Subtotal de productos"),
+    descuento: idx("Descuento"),
+    envio: idx("Costo de envío"),
+    total: idx("Total"),
+    nombre: idx("Nombre del comprador"),
+    docNro: idx("DNI / CUIT"),
+    direccion: idx("Dirección"),
+    ciudad: idx("Ciudad"),
+    provincia: idx("Provincia o estado"),
+    medioPago: idx("Medio de pago"),
+    fechaPago: idx("Fecha de pago"),
+    producto: idx("Nombre del producto"),
+    precio: idx("Precio del producto"),
+    cantidad: idx("Cantidad del producto"),
+    sku: idx("SKU"),
+  };
+
+  const ordenes = {};
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue;
+    const vals = splitCsvLine(line, ";").map(v => v.replace(/^"|"$/g, ""));
+    const orderId = vals[I.orderId];
+    if (!orderId) continue;
+
+    const nombreProd = vals[I.producto] || "";
+    if (!nombreProd) continue;
+
+    const cantidad = parseInt(vals[I.cantidad]) || 1;
+    const precio = parseFloat(vals[I.precio]) || 0;
+
+    if (!ordenes[orderId]) {
+      // Primera fila: tiene datos del comprador
+      const estadoOrden = (vals[I.estadoOrden] || "").toLowerCase();
+      const estadoPago = (vals[I.estadoPago] || "").toLowerCase();
+      // Filtrar canceladas y no pagadas
+      if (estadoOrden.includes("cancel") || estadoOrden.includes("reembolso")) continue;
+
+      const docRaw = (vals[I.docNro] || "").replace(/[.\-]/g, "").trim();
+      const clas = clasificarDoc(docRaw);
+      ordenes[orderId] = {
+        nombre: vals[I.nombre] || "",
+        email: vals[I.email] || "",
+        dni: docRaw, ...clas,
+        total: parseFloat(vals[I.total]) || 0,
+        subtotal: parseFloat(vals[I.subtotal]) || 0,
+        descuento: parseFloat(vals[I.descuento]) || 0,
+        envio: parseFloat(vals[I.envio]) || 0,
+        estado_pago: (estadoPago === "recibido" || estadoPago === "paid") ? "paid" : estadoPago,
+        fecha: vals[I.fechaPago] || vals[I.fecha] || "",
+        ciudad: vals[I.ciudad] || "",
+        provincia: vals[I.provincia] || "",
+        direccion: vals[I.direccion] || "",
+        metodo_pago: vals[I.medioPago] || "",
+        items: [{
+          nombre: nombreProd, nombre_original: nombreProd,
+          cantidad, precio, descuento_item: 0,
+        }],
+      };
+    } else {
+      // Fila adicional: solo agrega un item
+      ordenes[orderId].items.push({
+        nombre: nombreProd, nombre_original: nombreProd,
+        cantidad, precio, descuento_item: 0,
+      });
+    }
+  }
+  return ordenes;
+}
+
 // ─── Generación PDF con pdf-lib ────────────────────────
 
 async function generarPDF(factData, config) {
@@ -478,129 +587,214 @@ async function generarPDF(factData, config) {
   const fontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-  const { cuit, razon_social, nombre_fantasia, domicilio, punto_venta, condicion_fiscal } = config;
+  const { cuit, razon_social, nombre_fantasia, domicilio, punto_venta, condicion_fiscal, ingresos_brutos } = config;
   const isMonotributo = condicion_fiscal === "MONOTRIBUTO";
   const letra = factData.letra;
   const total = factData.total;
   const neto = isMonotributo ? total : Math.round((total / 1.21) * 100) / 100;
   const iva21 = isMonotributo ? 0 : Math.round((total - neto) * 100) / 100;
 
+  // Sanitiza texto para Helvetica (WinAnsi): caracteres fuera del rango se reemplazan
+  const safe = (s) => String(s || "").replace(/[^\x20-\x7E\xA0-\xFF]/g, "?");
+
   const drawPage = async (copyLabel) => {
     const page = pdfDoc.addPage([595, 842]);
     const { width: W, height: H } = page.getSize();
-    const MX = 28, MY = 28;
+    const MX = 36;
     const UW = W - MX * 2;
     const MID = MX + UW / 2;
 
-    const draw = (text, x, y, size, bold = false, align = "left") => {
+    const COL_BLACK = rgb(0, 0, 0);
+    const COL_GREY = rgb(0.4, 0.4, 0.4);
+    const COL_LINE = rgb(0.7, 0.7, 0.7);
+    const COL_HEAD_BG = rgb(0.95, 0.95, 0.95);
+    const COL_ACCENT = rgb(0.0, 0.0, 0.0);
+
+    const draw = (text, x, y, size, bold = false, align = "left", color = COL_BLACK) => {
       const font = bold ? fontB : fontR;
-      const tw = font.widthOfTextAtSize(String(text), size);
+      const t = safe(text);
+      const tw = font.widthOfTextAtSize(t, size);
       let rx = x;
       if (align === "center") rx = x - tw / 2;
       else if (align === "right") rx = x - tw;
-      page.drawText(String(text), { x: rx, y: H - y, size, font, color: rgb(0, 0, 0) });
+      page.drawText(t, { x: rx, y: H - y, size, font, color });
     };
-    const rect = (x, y, w, h) => page.drawRectangle({ x, y: H - y - h, width: w, height: h, borderColor: rgb(0, 0, 0), borderWidth: 0.5, color: rgb(1, 1, 1) });
-    const line = (x1, y1, x2, y2) => page.drawLine({ start: { x: x1, y: H - y1 }, end: { x: x2, y: H - y2 }, thickness: 0.5, color: rgb(0, 0, 0) });
+    const rect = (x, y, w, h, opts = {}) => page.drawRectangle({
+      x, y: H - y - h, width: w, height: h,
+      borderColor: opts.borderColor || COL_LINE,
+      borderWidth: opts.borderWidth ?? 0.6,
+      color: opts.fill || rgb(1, 1, 1),
+    });
+    const line = (x1, y1, x2, y2, color = COL_LINE) => page.drawLine({
+      start: { x: x1, y: H - y1 }, end: { x: x2, y: H - y2 },
+      thickness: 0.6, color,
+    });
 
-    // COPIA
-    draw(copyLabel, W / 2, 20, 9, true, "center");
+    // ─────── HEADER ───────
+    // Tres zonas: emisor (izq) | letra (centro) | datos factura (der)
+    const HY = 40, HH = 80;
+    const LW = 50; // ancho recuadro letra
+    const halfW = (UW - LW) / 2;
+    rect(MX, HY, halfW, HH);
+    rect(MX + halfW, HY, LW, HH, { fill: rgb(0.98, 0.98, 0.98) });
+    rect(MX + halfW + LW, HY, halfW, HH);
 
-    // Recuadro encabezado
-    rect(MX, 25, UW / 2 - 15, 55);
-    rect(MID + 15, 25, UW / 2 - 15, 55);
-    rect(MID - 12, 25, 24, 24);
-
-    // Letra grande
-    draw(letra, MID, 44, 22, true, "center");
-    draw(letra === "A" ? "COD. 01" : letra === "B" ? "COD. 06" : "COD. 11", MID, 50, 6, false, "center");
+    // Letra grande en el centro
+    draw(letra, MX + halfW + LW / 2, HY + 38, 38, true, "center");
+    const cod = letra === "A" ? "01" : letra === "B" ? "06" : "11";
+    draw("COD. " + cod, MX + halfW + LW / 2, HY + 60, 7, false, "center", COL_GREY);
 
     // Emisor (izquierda)
-    draw(nombre_fantasia || razon_social, MX + 4, 31, 10, true);
-    draw(`Razón Social: ${razon_social}`, MX + 4, 41, 7);
-    draw(`Domicilio: ${domicilio}`, MX + 4, 49, 7);
-    draw(`Condición IVA: ${isMonotributo ? "Monotributista" : "IVA Responsable Inscripto"}`, MX + 4, 57, 7);
+    draw(nombre_fantasia || razon_social, MX + 8, HY + 14, 12, true);
+    draw("Razón Social: " + razon_social, MX + 8, HY + 28, 7);
+    draw("Domicilio Comercial: " + (domicilio || "—"), MX + 8, HY + 39, 7);
+    draw("Condición frente al IVA: " + (isMonotributo ? "Responsable Monotributo" : "IVA Responsable Inscripto"), MX + 8, HY + 50, 7);
+    if (ingresos_brutos) draw("Ingresos Brutos: " + ingresos_brutos, MX + 8, HY + 61, 7);
+    draw("Fecha Inicio Actividades: " + (config.fecha_inicio || "—"), MX + 8, HY + 72, 7);
 
-    // Factura (derecha)
-    draw("FACTURA", W - MX - 4, 31, 13, true, "right");
-    draw(`Pto. Venta: ${String(punto_venta).padStart(5, "0")}  Comp. Nro: ${String(factData.comprobante).padStart(8, "0")}`, MID + 18, 40, 7);
-    draw(`Fecha de Emisión: ${factData.fecha}`, MID + 18, 48, 7);
-    draw(`CUIT: ${cuit}`, MID + 18, 56, 7);
-    draw(`Fecha Inicio Actividades: ${config.fecha_inicio || "01/01/2024"}`, MID + 18, 64, 7);
+    // Datos factura (derecha)
+    const RX = MX + halfW + LW + 8;
+    draw("FACTURA " + letra, RX, HY + 14, 14, true);
+    draw("Punto de Venta: " + String(punto_venta).padStart(5, "0") + "    Comp. Nro: " + String(factData.comprobante).padStart(8, "0"), RX, HY + 28, 7);
+    draw("Fecha de Emisión: " + factData.fecha, RX, HY + 39, 7);
+    draw("CUIT: " + cuit, RX, HY + 50, 7);
 
-    // Receptor
-    const ry = 84;
-    rect(MX, ry, UW, 26);
+    // ─────── DATOS RECEPTOR ───────
+    const RY = HY + HH + 12;
+    rect(MX, RY, UW, 36);
     const docTipo = factData.doc_tipo;
     const docNro = factData.doc_nro || "";
     const condIVA = docTipo === "CUIT" ? "IVA Responsable Inscripto" : "Consumidor Final";
     const docLabel = docTipo === "CUIT" ? "CUIT" : docTipo === "DNI" ? "DNI" : "";
+    const clienteName = factData.cliente || "Consumidor Final";
+
     if (docLabel && docNro) {
-      draw(`${docLabel}: ${docNro}`, MX + 4, ry + 7, 8, true);
-      draw(`Apellido/Razón Social: ${factData.cliente}`, MID + 4, ry + 7, 7);
+      draw(docLabel + ": " + docNro, MX + 8, RY + 11, 8, true);
+      draw("Apellido y Nombre / Razón Social: " + clienteName, MID + 8, RY + 11, 7);
     } else {
-      draw("Consumidor Final", MX + 4, ry + 7, 8, true);
+      draw("Apellido y Nombre / Razón Social: " + clienteName, MX + 8, RY + 11, 8, true);
     }
-    draw(`Condición IVA: ${condIVA}`, MX + 4, ry + 15, 7);
-    draw(`Domicilio: ${factData.domicilio || ""}`, MID + 4, ry + 15, 7);
-    draw("Condición de venta: Contado", MX + 4, ry + 23, 7);
+    draw("Condición frente al IVA: " + condIVA, MX + 8, RY + 22, 7);
+    draw("Domicilio: " + (factData.domicilio || "—"), MID + 8, RY + 22, 7);
+    draw("Condición de venta: Contado", MX + 8, RY + 32, 7);
 
-    // Tabla items
-    const ty = 115;
-    const cols = [15, 60, 22, 22, 28, 15, 22, 16];
-    const headers = ["Cód", "Producto / Servicio", "Cantidad", "Unidad", "Precio Unit.", "Bonif%", "Subtotal", "IVA"];
-    rect(MX, ty, UW, 9);
+    // ─────── TABLA ITEMS ───────
+    const TY = RY + 50;
+    // Columnas: [Cód, Producto/Servicio, Cant, Unidad, Precio Unit, Bonif%, Subtotal]
+    // Si es A/C, se agrega IVA % al final
+    const showIVA = !isMonotributo;
+    let cols, hdrs;
+    if (showIVA) {
+      cols = [38, 200, 38, 50, 65, 38, 60, 34];
+      hdrs = ["Código", "Producto / Servicio", "Cant.", "U. Medida", "Precio Unit.", "Bonif.", "Subtotal", "Alíc. IVA"];
+    } else {
+      cols = [40, 240, 40, 56, 70, 40, 76];
+      hdrs = ["Código", "Producto / Servicio", "Cant.", "U. Medida", "Precio Unit.", "Bonif.", "Subtotal"];
+    }
+    const totalColsW = cols.reduce((s,c)=>s+c, 0);
+    const scale = UW / totalColsW;
+    const scaledCols = cols.map(c => c * scale);
+
+    // Header fila
     let cx = MX;
-    for (let i = 0; i < cols.length; i++) {
-      page.drawRectangle({ x: cx, y: H - ty - 9, width: cols[i], height: 9, color: rgb(0.9, 0.9, 0.9), borderColor: rgb(0, 0, 0), borderWidth: 0.3 });
-      draw(headers[i], cx + 2, ty + 7, 6, true);
-      cx += cols[i];
+    const headRowH = 14;
+    for (let i = 0; i < scaledCols.length; i++) {
+      page.drawRectangle({
+        x: cx, y: H - TY - headRowH, width: scaledCols[i], height: headRowH,
+        color: COL_HEAD_BG, borderColor: COL_BLACK, borderWidth: 0.4,
+      });
+      const align = i >= 2 ? "center" : "left";
+      draw(hdrs[i], align === "center" ? cx + scaledCols[i] / 2 : cx + 4, TY + 9, 7, true, align);
+      cx += scaledCols[i];
     }
-    let iy = ty + 9;
-    for (const item of (factData.items || [])) {
-      const precioNeto = isMonotributo ? item.precio : Math.round((item.precio / 1.21) * 100) / 100;
-      const subtotalNeto = Math.round(item.cantidad * precioNeto * 100) / 100;
+
+    // Filas de items
+    let iy = TY + headRowH;
+    const items = factData.items || [];
+    for (let idx = 0; idx < items.length; idx++) {
+      const item = items[idx];
+      const precioBruto = item.precio || 0;
+      const precioUnit = isMonotributo ? precioBruto : Math.round((precioBruto / 1.21) * 100) / 100;
+      const subtotal = Math.round(item.cantidad * precioUnit * 100) / 100;
       const bonif = item.descuento_item > 0 ? Math.round((item.descuento_item / (item.cantidad * item.precio)) * 10000) / 100 : 0;
+      const cellData = [
+        item.sku || "—",
+        item.nombre,
+        String(item.cantidad),
+        "unidades",
+        precioUnit.toFixed(2),
+        bonif > 0 ? bonif.toFixed(2) : "0,00",
+        subtotal.toFixed(2),
+        ...(showIVA ? ["21,00%"] : []),
+      ];
+      // Truncar nombre de producto largo
+      cellData[1] = cellData[1].length > 50 ? cellData[1].slice(0, 50) + "…" : cellData[1];
+
+      const rowH = 12;
       let cx2 = MX;
-      const cellData = ["", item.nombre.slice(0, 40), String(item.cantidad), "unidades", precioNeto.toFixed(2), bonif > 0 ? bonif.toFixed(1) : "", subtotalNeto.toFixed(2), isMonotributo ? "—" : "21%"];
-      for (let i = 0; i < cols.length; i++) {
-        rect(cx2, iy, cols[i], 7);
-        draw(cellData[i], i === 0 ? cx2 + 2 : i >= 4 ? cx2 + cols[i] - 2 : cx2 + 2, iy + 5.5, 6, false, i >= 4 ? "right" : "left");
-        cx2 += cols[i];
+      for (let i = 0; i < scaledCols.length; i++) {
+        rect(cx2, iy, scaledCols[i], rowH, { borderWidth: 0.3 });
+        const align = i === 0 ? "left" : i === 1 ? "left" : i >= 4 ? "right" : "center";
+        const xPos = align === "right" ? cx2 + scaledCols[i] - 4 : align === "center" ? cx2 + scaledCols[i] / 2 : cx2 + 4;
+        draw(cellData[i], xPos, iy + 8, 7, false, align);
+        cx2 += scaledCols[i];
       }
-      iy += 7;
+      iy += rowH;
     }
-    // Relleno si pocos items
-    for (let i = factData.items.length; i < 3; i++) {
+
+    // Filler para que la tabla tenga altura mínima
+    const minRows = 4;
+    for (let i = items.length; i < minRows; i++) {
       let cx2 = MX;
-      for (const c of cols) { rect(cx2, iy, c, 7); cx2 += c; }
-      iy += 7;
+      for (const c of scaledCols) { rect(cx2, iy, c, 12, { borderWidth: 0.3 }); cx2 += c; }
+      iy += 12;
     }
 
-    // Totales
-    const totY = iy + 6;
-    rect(MX, totY, UW, 60);
-    const rx2 = MID + 25, lw = 50, vw = 32;
-    const totRows = [
-      ["Importe Neto Gravado", neto.toFixed(2)],
-      ["IVA 27%", "0,00"], ["IVA 21%", iva21.toFixed(2)],
-      ["IVA 10,5%", "0,00"], ["IVA 5%", "0,00"], ["Imp. Internos", "0,00"],
-    ];
-    let ty2 = totY + 6;
-    for (const [label, val] of totRows) {
-      draw(`${label}: $`, rx2, ty2, 7, false, "right");
-      draw(val, rx2 + vw, ty2, 7, false, "right");
-      ty2 += 8;
+    // ─────── TOTALES ───────
+    const totY = iy + 16;
+    rect(MX, totY, UW, 70);
+    // Importes a la derecha
+    const labelX = MX + UW - 130;
+    const valX = MX + UW - 12;
+    let ty2 = totY + 12;
+    if (showIVA) {
+      const rows = [
+        ["Subtotal:", "$ " + neto.toFixed(2)],
+        ["Importe Neto Gravado:", "$ " + neto.toFixed(2)],
+        ["IVA 21%:", "$ " + iva21.toFixed(2)],
+      ];
+      for (const [l, v] of rows) {
+        draw(l, labelX, ty2, 8, false, "right");
+        draw(v, valX, ty2, 8, false, "right");
+        ty2 += 12;
+      }
+    } else {
+      draw("Subtotal:", labelX, ty2, 8, false, "right");
+      draw("$ " + total.toFixed(2), valX, ty2, 8, false, "right");
+      ty2 += 12;
     }
-    draw("Importe Total: $", rx2, ty2 + 2, 8, true, "right");
-    draw(total.toFixed(2), rx2 + vw, ty2 + 2, 8, true, "right");
+    // Línea separadora de total
+    line(MX + UW - 200, ty2 + 2, MX + UW - 8, ty2 + 2, COL_BLACK);
+    draw("Importe Total:", labelX, ty2 + 16, 11, true, "right");
+    draw("$ " + total.toFixed(2), valX, ty2 + 16, 12, true, "right");
 
-    // CAE
-    const pieY = totY + 66;
-    draw(`CAE N°: ${factData.cae}`, W - MX - 4, pieY + 8, 9, true, "right");
-    draw(`Fecha Vto. CAE: ${factData.cae_vto || ""}`, W - MX - 4, pieY + 18, 8, false, "right");
-    draw("ARCA — AGENCIA DE RECAUDACIÓN Y CONTROL ADUANERO", MX + 4, pieY + 8, 7);
-    draw("Comprobante Autorizado", MX + 4, pieY + 16, 7);
+    // ─────── CAE / AUTORIZACIÓN ───────
+    const caeY = totY + 86;
+    rect(MX, caeY, UW, 30, { fill: rgb(0.97, 0.97, 0.97) });
+    draw("Comprobante Autorizado por ARCA", MX + 8, caeY + 11, 8, true);
+    draw("AGENCIA DE RECAUDACIÓN Y CONTROL ADUANERO", MX + 8, caeY + 22, 7, false, "left", COL_GREY);
+    draw("CAE N°:", MX + UW - 130, caeY + 11, 8, true, "left");
+    draw(factData.cae || "—", MX + UW - 8, caeY + 11, 9, true, "right");
+    draw("Fecha de Vto. CAE:", MX + UW - 130, caeY + 22, 7, false, "left");
+    draw(factData.cae_vto || "—", MX + UW - 8, caeY + 22, 7, false, "right");
+
+    // ─────── COPIA + FOOTER GROWITH ───────
+    draw(copyLabel, MX, H - 50, 7, true, "left", COL_GREY);
+    draw("Página 1 de 1", MX + UW, H - 50, 7, false, "right", COL_GREY);
+
+    // Línea separadora antes del footer
+    line(MX, H - 38, MX + UW, H - 38, COL_LINE);
+    draw("Documento emitido por Growith — growithapp.com", MX + UW / 2, H - 28, 7, false, "center", COL_GREY);
   };
 
   for (const copy of ["ORIGINAL", "DUPLICADO", "TRIPLICADO"]) {

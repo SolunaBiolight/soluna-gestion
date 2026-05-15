@@ -6113,7 +6113,7 @@ function AppArca({T, user, onHome}) {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                 {[
                   {name:"Mercado Libre",icon:"🟡",desc:"Descargá el Excel de ventas (.xlsx) desde Ventas → Facturación en tu cuenta de ML. Subilo en la zona de carga de abajo.",status:"manual",statusLabel:"Subir archivo"},
-                  {name:"Tienda Nube",icon:"🔵",desc:"Próximamente vas a poder sincronizar las órdenes directamente sin descargar archivos.",status:"soon",statusLabel:"Próximamente"},
+                  {name:"Tienda Nube",icon:"🔵",desc:"Descargá el CSV de ventas desde Estadísticas → Ventas → Exportar a CSV en tu admin de TN. Subilo en la zona de carga.",status:"manual",statusLabel:"Subir archivo"},
                   {name:"Shopify",icon:"🟢",desc:"Exportá las órdenes como CSV desde Orders → Export en tu admin de Shopify. Subilo en la zona de carga.",status:"manual",statusLabel:"Subir archivo"},
                 ].map(ch=>(
                   <div key={ch.name} style={{border:"1px solid "+T.border,borderRadius:10,padding:"16px",background:T.bg}}>
