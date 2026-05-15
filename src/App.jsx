@@ -5625,6 +5625,10 @@ function AppArca({T, user, onHome}) {
   const [editCuit, setEditCuit] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Test conexión con ARCA del CUIT activo
+  const [testingConn, setTestingConn] = useState(false);
+  const [testConnResult, setTestConnResult] = useState(null);
+
   // Modal facturación manual (mayoristas, etc)
   const [showManual, setShowManual] = useState(false);
   const [manualNombre, setManualNombre] = useState("");
@@ -5835,6 +5839,21 @@ function AppArca({T, user, onHome}) {
     if(updated.cuits) setCuits(updated.cuits);
     toast("CUIT actualizado ✓","success");
     setShowEditCuit(false); setEditCuit(null); setSavingEdit(false);
+  }
+
+  async function handleTestConnection() {
+    if(!cuitSel) return toast("Seleccioná un CUIT primero","warning");
+    setTestingConn(true); setTestConnResult(null);
+    const d = await api("test_cuit","POST",null,{cuit:cuitSel});
+    if(d.error){
+      setTestConnResult({ok:false, msg:d.error});
+      toast("Error de conexión","error");
+    } else {
+      setTestConnResult({ok:true, msg:`Último comprobante B autorizado: ${d.ultimo_b}`});
+      toast("Conexión con ARCA OK ✓","success");
+    }
+    setTestingConn(false);
+    setTimeout(()=>setTestConnResult(null), 8000);
   }
 
   function resetManual() {
@@ -6127,13 +6146,23 @@ function AppArca({T, user, onHome}) {
                   {esMono && " Se emiten Facturas C automáticamente para todas las ventas."}
                 </div>
               </div>
-              <button onClick={()=>setShowManual(true)} disabled={!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:cuitSel?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:cuitSel?1:0.5,flexShrink:0}}>
-                + Factura manual
-              </button>
+              <div style={{display:"flex",flexDirection:"column",gap:8,alignItems:"flex-end",flexShrink:0}}>
+                <button onClick={()=>setShowManual(true)} disabled={!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:cuitSel?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:cuitSel?1:0.5}}>
+                  + Factura manual
+                </button>
+                <button onClick={handleTestConnection} disabled={!cuitSel||testingConn} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:500,cursor:(!cuitSel||testingConn)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:(!cuitSel||testingConn)?0.5:1}}>
+                  {testingConn ? <><Spinner size={11} color={T.textMd}/> Probando...</> : "🔌 Probar conexión"}
+                </button>
+              </div>
             </div>
             <div style={{fontSize:12,color:T.textSm,marginTop:-4,marginBottom:12}}>
               ¿Vendiste por afuera de las integraciones? Usá <strong style={{color:T.text}}>Factura manual</strong> para emitir una factura puntual (mayoristas, ventas directas, etc.)
             </div>
+            {testConnResult && (
+              <div style={{padding:"10px 14px",borderRadius:10,marginBottom:12,fontSize:12,fontWeight:500,lineHeight:1.5,background:testConnResult.ok?T.greenBg:T.redBg,border:"1px solid "+(testConnResult.ok?T.green:T.red)+"33",color:testConnResult.ok?T.green:T.red}}>
+                {testConnResult.ok ? "✅ Conexión exitosa con ARCA" : "❌ Error conectando con ARCA"} — {testConnResult.msg}
+              </div>
+            )}
             <div style={{height:1,background:T.border,margin:"18px 0 22px"}}/>
 
             {/* Info condición fiscal */}
