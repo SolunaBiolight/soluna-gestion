@@ -663,12 +663,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   ];
 
   useEffect(()=>{
-    const q=query(collection(db,"reclamos"),where("ownerId","==",user?.uid||"__none__"));
+    if(!user?.uid) return;
+    const q=query(collection(db,"reclamos"),where("ownerId","==",user.uid));
     const unsub1=onSnapshot(q,snap=>{
       const data=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
       setReclamos(data);
-    },()=>{});
+    },(err)=>{ console.error("[reclamos] snapshot error:", err); });
     const unsub2=onSnapshot(doc(db,"config","plantillas"),snap=>{
       if(snap.exists()) {
         setPlantillas(snap.data().lista||DEFAULT_PLANTILLAS);
@@ -676,7 +677,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       } else setPlantillas(DEFAULT_PLANTILLAS);
     },()=>setPlantillas(DEFAULT_PLANTILLAS));
     return ()=>{unsub1();unsub2();};
-  },[]);
+  },[user?.uid]);
 
   const emptyForm=(orderNum="", clienteData={})=>({
     _docId:null, orderNum, tipo:"Cambio", motivo:"", descripcion:"", estado:"Nuevo",
@@ -2197,8 +2198,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [comFechaHasta,setComFechaHasta]=useState(()=>new Date().toISOString().split("T")[0]);
   const iS=InputStyle(T);
   const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
-  const qc=query(collection(db,"canjes"),where("ownerId","==",user?.uid||"__none__"));
-
   useEffect(()=>{
     if(initialDetail) {
       setDetail(initialDetail);
@@ -2207,13 +2206,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   },[initialDetail]);
 
   useEffect(()=>{
+    if(!user?.uid) return;
+    const qc=query(collection(db,"canjes"),where("ownerId","==",user.uid));
     const unsub=onSnapshot(qc,snap=>{
       const data=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
       setCanjes(data);
-    },()=>{});
+    },(err)=>{ console.error("[canjes] snapshot error:", err); });
     return ()=>unsub();
-  },[]);
+  },[user?.uid]);
 
   useEffect(()=>{
     if(pendingCanje) {
@@ -5082,7 +5083,32 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   const [userDoc,setUserDoc]=useState(null);
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
+  const [showShopifyModal,setShowShopifyModal]=useState(false);
+  const [shopifyShop,setShopifyShop]=useState("");
+  const [shopifyToken,setShopifyToken]=useState("");
+  const [connectingShopify,setConnectingShopify]=useState(false);
   const iS=InputStyle(T);
+
+  async function connectShopify() {
+    if(!shopifyShop.trim() || !shopifyToken.trim()) { setMsg("Completá ambos campos"); return; }
+    setConnectingShopify(true);
+    try {
+      const r = await fetch("/api/integrations?platform=shopify&action=connect", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ uid: user.uid, shop: shopifyShop.trim(), access_token: shopifyToken.trim() }),
+      });
+      const d = await r.json();
+      if(d.error) { setMsg("Error: "+d.error); setConnectingShopify(false); return; }
+      setMsg(`Shopify conectado: ${d.storeName}`);
+      setShowShopifyModal(false);
+      setShopifyShop(""); setShopifyToken("");
+    } catch(e) {
+      setMsg("Error de red: "+e.message);
+    } finally {
+      setConnectingShopify(false);
+    }
+  }
 
   useEffect(()=>{
     if(!user) return;
@@ -5162,30 +5188,95 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
         {/* Tiendas */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Tiendas conectadas</div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderBottom:`1px solid ${T.borderL}`,gap:10}}>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>
+            Conectá <strong style={{color:T.text}}>una</strong> plataforma de e-commerce (TN <em>o</em> Shopify). La conexión vale para toda la app.
+          </div>
+          {/* Tienda Nube */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderBottom:`1px solid ${T.borderL}`,gap:10,opacity:shStore && !tnStore ? 0.5 : 1}}>
             <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
               <div style={{width:36,height:36,borderRadius:8,background:"#00a0e3",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>☁️</div>
               <div style={{minWidth:0}}>
                 <div style={{fontSize:14,fontWeight:700,color:T.text}}>Tienda Nube</div>
-                {tnStore?<div style={{fontSize:11,color:T.green,marginTop:1}}>✓ {tnStore.storeName||tnStore.storeId}</div>:<div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
+                {tnStore
+                  ? <div style={{fontSize:11,color:T.green,marginTop:1}}>✓ {tnStore.storeName||tnStore.storeId}</div>
+                  : shStore
+                    ? <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Desvinculá Shopify primero</div>
+                    : <div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
               </div>
             </div>
             {tnStore
               ?<button onClick={()=>disconnectStore("tiendanube")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
-              :<button onClick={connectTiendaNube} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Conectar</button>
+              :<button onClick={connectTiendaNube} disabled={!!shStore} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0,opacity:shStore?0.4:1,cursor:shStore?"not-allowed":"pointer"}}>Conectar</button>
             }
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",gap:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {/* Shopify */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",gap:10,opacity:tnStore && !shStore ? 0.5 : 1}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
               <div style={{width:36,height:36,borderRadius:8,background:"#96BF48",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🛍️</div>
-              <div>
+              <div style={{minWidth:0}}>
                 <div style={{fontSize:14,fontWeight:700,color:T.text}}>Shopify</div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Próximamente</div>
+                {shStore
+                  ? <div style={{fontSize:11,color:T.green,marginTop:1}}>✓ {shStore.storeName||shStore.shop}</div>
+                  : tnStore
+                    ? <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Desvinculá Tienda Nube primero</div>
+                    : <div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
               </div>
             </div>
-            <button disabled style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",opacity:0.4,flexShrink:0}}>Próximamente</button>
+            {shStore
+              ?<button onClick={()=>disconnectStore("shopify")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
+              :<button onClick={()=>setShowShopifyModal(true)} disabled={!!tnStore} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0,opacity:tnStore?0.4:1,cursor:tnStore?"not-allowed":"pointer"}}>Conectar</button>
+            }
           </div>
         </div>
+
+        {/* Modal conectar Shopify */}
+        {showShopifyModal && (
+          <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingShopify && setShowShopifyModal(false)}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+                <div>
+                  <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Shopify</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Pegá el dominio de tu tienda y el Admin API access token</div>
+                </div>
+                <button onClick={()=>!connectingShopify && setShowShopifyModal(false)} disabled={connectingShopify} style={{background:"transparent",border:"none",color:T.textMd,cursor:connectingShopify?"wait":"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
+              </div>
+
+              <div style={{padding:14,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:18}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:8}}>📖 Cómo obtener el token (3 minutos)</div>
+                <ol style={{margin:0,paddingLeft:18,fontSize:11,color:T.textMd,lineHeight:1.7}}>
+                  <li>Entrá a tu admin de Shopify → <strong style={{color:T.text}}>Settings → Apps and sales channels</strong></li>
+                  <li>Tocá <strong style={{color:T.text}}>Develop apps</strong> → habilitá si te pide (botón "Allow custom app development")</li>
+                  <li>Tocá <strong style={{color:T.text}}>Create an app</strong>, ponele un nombre (ej. "Growith")</li>
+                  <li>En <strong style={{color:T.text}}>Configuration → Admin API integration</strong> → tocá <strong style={{color:T.text}}>Configure</strong></li>
+                  <li>Marcá los scopes <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10}}>read_orders</code> y <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10}}>read_customers</code> → Save</li>
+                  <li>En la pestaña <strong style={{color:T.text}}>API credentials</strong> tocá <strong style={{color:T.text}}>Install app</strong> → confirmá</li>
+                  <li>Te muestra el <strong style={{color:T.text}}>Admin API access token</strong> (empieza con <code style={{fontSize:10}}>shpat_...</code>). Copialo y pegalo abajo (solo se muestra una vez)</li>
+                </ol>
+              </div>
+
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Dominio de tu tienda</div>
+                  <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="mitienda.myshopify.com" style={iS} disabled={connectingShopify}/>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Podés pegar solo "mitienda" o la URL completa</div>
+                </div>
+                <div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Admin API access token</div>
+                  <input value={shopifyToken} onChange={e=>setShopifyToken(e.target.value)} placeholder="shpat_..." type="password" style={{...iS,fontFamily:"monospace"}} disabled={connectingShopify}/>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:4}}>El token se guarda cifrado y solo se usa para leer tus órdenes</div>
+                </div>
+              </div>
+
+              <div style={{display:"flex",gap:10,marginTop:22}}>
+                <button onClick={()=>setShowShopifyModal(false)} disabled={connectingShopify} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
+                <div style={{flex:1}}/>
+                <button onClick={connectShopify} disabled={connectingShopify||!shopifyShop.trim()||!shopifyToken.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:(!shopifyShop.trim()||!shopifyToken.trim())?0.5:1}}>
+                  {connectingShopify?"Validando...":"Conectar Shopify"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Alertas de Canjes */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
