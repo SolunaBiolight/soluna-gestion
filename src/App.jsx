@@ -5085,47 +5085,32 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   const [msg,setMsg]=useState("");
   const [showShopifyModal,setShowShopifyModal]=useState(false);
   const [shopifyShop,setShopifyShop]=useState("");
+  const [shopifyClientId,setShopifyClientId]=useState("");
+  const [shopifyToken,setShopifyToken]=useState("");
   const [connectingShopify,setConnectingShopify]=useState(false);
-
-  // Detectar query params del callback OAuth de Shopify (?shopify_success o ?shopify_error)
-  useEffect(()=>{
-    const url=new URL(window.location.href);
-    const success=url.searchParams.get("shopify_success");
-    const error=url.searchParams.get("shopify_error");
-    if(success){
-      setMsg("Shopify conectado ✓");
-      url.searchParams.delete("shopify_success");
-      window.history.replaceState({},"",url.pathname+url.search);
-    } else if(error){
-      const map={
-        token_failed:"Shopify rechazó el intercambio del code. Verificá que el Client Secret esté bien en Vercel.",
-        missing_env_vars:"Faltan SHOPIFY_CLIENT_ID o SHOPIFY_CLIENT_SECRET en las env vars de Vercel.",
-        no_access_token:"Shopify no devolvió access_token. Volvé a intentar.",
-        user_not_found:"No se encontró tu usuario en Firestore.",
-        tn_already_connected:"Ya tenés Tienda Nube conectada. Desvinculala primero.",
-        save_failed:"No se pudo guardar la conexión.",
-        missing_params:"Parámetros faltantes en el callback de Shopify.",
-        server_error:"Error de conexión con Shopify.",
-      };
-      setMsg("Error Shopify: "+(map[error]||error));
-      url.searchParams.delete("shopify_error");
-      url.searchParams.delete("status");
-      window.history.replaceState({},"",url.pathname+url.search);
-    }
-  },[]);
   const iS=InputStyle(T);
 
   async function connectShopify() {
-    if(!shopifyShop.trim()) { setMsg("Pegá el dominio de tu tienda"); return; }
+    if(!shopifyShop.trim() || !shopifyClientId.trim() || !shopifyToken.trim()) {
+      setMsg("Completá los 3 campos: dominio, Client ID y Access Token"); return;
+    }
     setConnectingShopify(true);
     try {
-      const r = await fetch(`/api/integrations?platform=shopify&action=oauth_start&uid=${user.uid}&shop=${encodeURIComponent(shopifyShop.trim())}`);
+      const r = await fetch("/api/integrations?platform=shopify&action=connect", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          uid: user.uid,
+          shop: shopifyShop.trim(),
+          client_id: shopifyClientId.trim(),
+          access_token: shopifyToken.trim(),
+        }),
+      });
       const d = await r.json();
       if(d.error) { setMsg("Error: "+d.error); setConnectingShopify(false); return; }
-      window.open(d.url, "_blank");
-      setMsg("Completá la autorización en la ventana que se abrió. Volvé acá cuando termines.");
+      setMsg(`Shopify conectado: ${d.storeName}`);
       setShowShopifyModal(false);
-      setShopifyShop("");
+      setShopifyShop(""); setShopifyClientId(""); setShopifyToken("");
     } catch(e) {
       setMsg("Error de red: "+e.message);
     } finally {
@@ -5255,30 +5240,62 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
         {/* Modal conectar Shopify */}
         {showShopifyModal && (
           <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingShopify && setShowShopifyModal(false)}>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:480,padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:600,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
                 <div>
                   <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Shopify</div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Pegá el dominio de tu tienda y autorizá en Shopify (1 click)</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Creá tu app en el Dev Dashboard de Shopify y pegá los 3 datos abajo</div>
                 </div>
                 <button onClick={()=>!connectingShopify && setShowShopifyModal(false)} disabled={connectingShopify} style={{background:"transparent",border:"none",color:T.textMd,cursor:connectingShopify?"wait":"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
               </div>
 
-              <div style={{padding:12,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:16,fontSize:11,color:T.textMd,lineHeight:1.6}}>
-                Cuando toques "Autorizar en Shopify" se abre una ventana de Shopify pidiéndote permiso para que Growith lea tus órdenes. Aceptás → volvés acá conectado. No tenés que generar tokens manualmente.
+              <div style={{padding:14,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:18}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:10}}>📖 Cómo crear tu app en Shopify Dev Dashboard</div>
+                <ol style={{margin:0,paddingLeft:18,fontSize:11,color:T.textMd,lineHeight:1.8}}>
+                  <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> con tu cuenta</li>
+                  <li>Tocá <strong style={{color:T.text}}>"Crear app"</strong> → ponele un nombre (ej. "Growith"), URL: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10}}>https://www.growithapp.com/</code></li>
+                  <li>Menú izquierdo → <strong style={{color:T.text}}>"Versiones"</strong> → <strong style={{color:T.text}}>"Crear versión"</strong></li>
+                  <li>Bajá a la sección <strong style={{color:T.text}}>"Acceso"</strong> → tocá <strong style={{color:T.text}}>"Seleccionar alcances"</strong> y marcá los 4:
+                    <div style={{margin:"5px 0",display:"flex",gap:5,flexWrap:"wrap"}}>
+                      <code style={{background:T.surface,padding:"2px 7px",borderRadius:3,fontSize:10,color:T.accent}}>read_all_orders</code>
+                      <code style={{background:T.surface,padding:"2px 7px",borderRadius:3,fontSize:10,color:T.accent}}>read_customers</code>
+                      <code style={{background:T.surface,padding:"2px 7px",borderRadius:3,fontSize:10,color:T.accent}}>read_orders</code>
+                      <code style={{background:T.surface,padding:"2px 7px",borderRadius:3,fontSize:10,color:T.accent}}>write_orders</code>
+                    </div>
+                    Tocá <strong style={{color:T.text}}>"Listo"</strong> → <strong style={{color:T.text}}>"Publicar"</strong></li>
+                  <li>⚠ <strong style={{color:T.text}}>Instalá la app en tu tienda:</strong> tocá <strong style={{color:T.text}}>"Tiendas en desarrollo"</strong> (menú izquierdo del Dev Dashboard) → elegí tu tienda → "Instalar app" / "Test app on store" → autorizá los scopes</li>
+                  <li>Volvé al menú izquierdo → <strong style={{color:T.text}}>"Configuración"</strong>:
+                    <ul style={{margin:"4px 0 0",paddingLeft:16,lineHeight:1.7}}>
+                      <li>Copiá el <strong style={{color:T.text}}>ID de cliente</strong> → pegalo abajo</li>
+                      <li>En <strong style={{color:T.text}}>"Token de automatización de la app"</strong> tocá <strong style={{color:T.text}}>"Crear token"</strong> → copialo (solo se muestra una vez) → pegalo abajo</li>
+                    </ul>
+                  </li>
+                  <li>El <strong style={{color:T.text}}>dominio</strong> es la URL nativa de tu tienda (<code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10}}>xxxx-xx.myshopify.com</code>)</li>
+                </ol>
               </div>
 
-              <div>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Dominio de tu tienda</div>
-                <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="mi-tienda.myshopify.com" style={iS} disabled={connectingShopify} autoFocus/>
-                <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Lo encontrás en tu admin de Shopify, arriba a la izquierda. Podés pegar solo "mi-tienda" o la URL completa.</div>
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Dominio de tu tienda</div>
+                  <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="xxxx-xx.myshopify.com" style={iS} disabled={connectingShopify}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Client ID</div>
+                  <input value={shopifyClientId} onChange={e=>setShopifyClientId(e.target.value)} placeholder="8a3b6810ff78..." style={{...iS,fontFamily:"monospace"}} disabled={connectingShopify}/>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:4}}>"ID de cliente" de Configuración → Credenciales</div>
+                </div>
+                <div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Access Token</div>
+                  <input value={shopifyToken} onChange={e=>setShopifyToken(e.target.value)} placeholder="shpat_... o atkn_..." type="password" style={{...iS,fontFamily:"monospace"}} disabled={connectingShopify}/>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Generado en "Token de automatización de la app" → "Crear token"</div>
+                </div>
               </div>
 
               <div style={{display:"flex",gap:10,marginTop:22}}>
                 <button onClick={()=>setShowShopifyModal(false)} disabled={connectingShopify} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
                 <div style={{flex:1}}/>
-                <button onClick={connectShopify} disabled={connectingShopify||!shopifyShop.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:!shopifyShop.trim()?0.5:1}}>
-                  {connectingShopify?"Redirigiendo...":"Autorizar en Shopify →"}
+                <button onClick={connectShopify} disabled={connectingShopify||!shopifyShop.trim()||!shopifyClientId.trim()||!shopifyToken.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:(!shopifyShop.trim()||!shopifyClientId.trim()||!shopifyToken.trim())?0.5:1}}>
+                  {connectingShopify?"Validando...":"Conectar Shopify"}
                 </button>
               </div>
             </div>

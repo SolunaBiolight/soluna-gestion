@@ -29,13 +29,8 @@ async function readBody(req) {
   });
 }
 
-// ─── Shopify: OAuth flow ─────────────────────────────────────────
-// Una sola app de Shopify Partners para todos los clientes de Growith.
-// SHOPIFY_CLIENT_ID y SHOPIFY_CLIENT_SECRET en env vars de Vercel.
-
-const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders";
-const APP_URL = "https://www.growithapp.com";
-const SHOPIFY_REDIRECT_URI = `${APP_URL}/api/integrations?platform=shopify&action=callback`;
+// ─── Shopify: conexión manual con 3 datos (dominio + client_id + access_token) ──
+// Cada cliente crea su propia app en dev.shopify.com/dashboard y pega los 3 valores.
 
 function normalizeShop(shopRaw) {
   let shop = String(shopRaw || "").trim().toLowerCase()
@@ -45,9 +40,66 @@ function normalizeShop(shopRaw) {
   return `${shop}.myshopify.com`;
 }
 
-// GET ?platform=shopify&action=oauth_start&uid=...&shop=...
-// Devuelve { url } con la URL OAuth a la que redirigir al usuario
-async function shopifyOauthStart(req, res) {
+async function shopifyConnect(req, res, db) {
+  const body = JSON.parse((await readBody(req)).toString());
+  const { uid, shop: shopRaw, client_id, access_token } = body;
+  if (!uid || !shopRaw || !client_id || !access_token) {
+    return res.status(400).json({ error: "Faltan uid, shop, client_id o access_token" });
+  }
+
+  const shop = normalizeShop(shopRaw);
+  const token = String(access_token).trim();
+
+  // Validar token llamando a /admin/api/2024-10/shop.json
+  let shopName = shop, shopEmail = "";
+  try {
+    const r = await fetch(`https://${shop}/admin/api/2024-10/shop.json`, {
+      headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+    });
+    if (r.status === 401 || r.status === 403) {
+      return res.status(401).json({ error: "Shopify rechazó el token (401/403). Verificá que la app esté INSTALADA en tu tienda y que tenga los scopes read_all_orders, read_customers, read_orders, write_orders. Token usado: " + token.slice(0, 8) + "..." });
+    }
+    if (r.status === 404) {
+      return res.status(404).json({ error: `No se encontró la tienda ${shop}. Verificá el dominio.` });
+    }
+    if (!r.ok) {
+      const txt = await r.text();
+      return res.status(502).json({ error: `Shopify HTTP ${r.status}: ${txt.slice(0, 200)}` });
+    }
+    const data = await r.json();
+    shopName = data.shop?.name || shop;
+    shopEmail = data.shop?.email || "";
+  } catch (e) {
+    return res.status(502).json({ error: `No se pudo conectar a ${shop}: ${e.message}` });
+  }
+
+  // Guardar en Firestore con mutual exclusion
+  const userRef = db.collection("users").doc(uid);
+  const snap = await userRef.get();
+  if (!snap.exists) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  const currentStores = snap.data().stores || [];
+  if (currentStores.find(s => s.type === "tiendanube")) {
+    return res.status(409).json({ error: "Ya tenés Tienda Nube conectada. Desvinculala primero." });
+  }
+
+  const stores = currentStores.filter(s => s.type !== "shopify");
+  stores.push({
+    type: "shopify",
+    shop,
+    clientId: String(client_id).trim(),
+    accessToken: token,
+    storeName: shopName,
+    storeEmail: shopEmail,
+    connectedAt: new Date().toISOString(),
+  });
+  await userRef.update({ stores });
+
+  return res.json({ ok: true, shop, storeName: shopName });
+}
+
+// (Sin OAuth — descartado)
+async function _unused_shopifyOauthStart(req, res) {
   const uid = req.query.uid;
   const shopRaw = req.query.shop;
   if (!uid || !shopRaw) return res.status(400).json({ error: "Faltan uid o shop" });
@@ -184,8 +236,7 @@ export default async function handler(req, res) {
 
   try {
     if (platform === "shopify") {
-      if (action === "oauth_start" && req.method === "GET") return shopifyOauthStart(req, res);
-      if (action === "callback" && req.method === "GET") return shopifyOauthCallback(req, res, db);
+      if (action === "connect" && req.method === "POST") return shopifyConnect(req, res, db);
       if (action === "disconnect" && req.method === "POST") return shopifyDisconnect(req, res, db);
     }
 
