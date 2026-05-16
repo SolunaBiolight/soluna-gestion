@@ -115,7 +115,13 @@ export default async function handler(req, res) {
       return res.redirect(`${APP_URL}?tn_error=user_not_found`);
     }
 
-    const stores = (userSnap.data().stores || []).filter(s => s.type !== "tiendanube");
+    // Mutual exclusion: si tiene Shopify, no permitir conectar TN
+    const currentStores = userSnap.data().stores || [];
+    if (currentStores.find(s => s.type === "shopify")) {
+      return res.redirect(`${APP_URL}?tn_error=shopify_already_connected`);
+    }
+
+    const stores = currentStores.filter(s => s.type !== "tiendanube");
     await userRef.update({
       stores: [
         ...stores,

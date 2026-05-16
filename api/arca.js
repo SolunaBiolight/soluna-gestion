@@ -1307,7 +1307,160 @@ export default async function handler(req, res) {
       return res.json({ pdfs });
     }
 
-    // ── TN: traer órdenes pendientes de facturar ──
+    // ── INTEGRACIONES: traer órdenes pendientes de facturar de TODAS las plataformas conectadas ──
+
+    if (action === "pending_orders" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+
+      // Rango de fechas
+      let sinceDate, untilDate;
+      if (req.query.since) {
+        sinceDate = String(req.query.since).slice(0, 10);
+        untilDate = req.query.until ? String(req.query.until).slice(0, 10) : new Date().toISOString().slice(0, 10);
+      } else {
+        const days = Math.min(parseInt(req.query.days) || 7, 365);
+        sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        untilDate = new Date().toISOString().slice(0, 10);
+      }
+
+      const userSnap = await db.collection("users").doc(uid).get();
+      if (!userSnap.exists) return res.json({ connections: [], ordenes: {} });
+      const stores = userSnap.data().stores || [];
+
+      // IDs ya facturadas (para filtrar)
+      const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+        .where("cuit_emisor", "==", cuitParam).get();
+      const billedIds = new Set(billedSnap.docs.map(d => d.data().orden_id).filter(Boolean));
+
+      const connections = [];
+      const ordenes = {};
+
+      // ─── Tienda Nube ───
+      const tnStore = stores.find(s => s.type === "tiendanube");
+      if (tnStore?.accessToken && tnStore?.storeId) {
+        connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
+        const headers = {
+          "Authentication": `bearer ${tnStore.accessToken}`,
+          "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
+        };
+        const allTN = [];
+        for (let page = 1; page <= 5; page++) {
+          let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}&created_at_max=${untilDate}T23:59:59`;
+          const tnRes = await fetch(tnUrl, { headers });
+          if (!tnRes.ok) break;
+          const batch = await tnRes.json();
+          if (!Array.isArray(batch) || batch.length === 0) break;
+          allTN.push(...batch);
+          if (batch.length < 200) break;
+        }
+        for (const o of allTN) {
+          const orderId = "TN-" + String(o.number || o.id);
+          if (billedIds.has(orderId)) continue;
+          if ((o.status || "").toLowerCase() === "cancelled") continue;
+          const docRaw = String(o.customer?.identification || "").replace(/[.\-]/g, "");
+          const clas = clasificarDoc(docRaw);
+          const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
+            || o.customer?.name || o.contact_name || "";
+          ordenes[orderId] = {
+            _platform: "tiendanube",
+            _platform_label: "TN",
+            _order_number: String(o.number || o.id),
+            nombre: customerName,
+            email: o.customer?.email || o.contact_email || "",
+            dni: docRaw, ...clas,
+            total: parseFloat(o.total) || 0,
+            subtotal: parseFloat(o.subtotal) || 0,
+            descuento: parseFloat(o.discount) || 0,
+            envio: parseFloat(o.shipping_cost_customer) || 0,
+            estado_pago: "paid",
+            fecha: o.paid_at || o.created_at || "",
+            ciudad: o.shipping_address?.city || o.billing_city || "",
+            provincia: o.shipping_address?.province || o.billing_province || "",
+            direccion: o.shipping_address?.address || "",
+            metodo_pago: o.payment_details?.method || "Pagado",
+            items: (o.products || []).map(p => ({
+              nombre: p.name || "Producto",
+              nombre_original: p.name || "Producto",
+              cantidad: parseInt(p.quantity) || 1,
+              precio: parseFloat(p.price) || 0,
+              descuento_item: 0,
+            })),
+          };
+        }
+      }
+
+      // ─── Shopify ───
+      const shStore = stores.find(s => s.type === "shopify");
+      if (shStore?.accessToken && shStore?.shop) {
+        connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
+        const allSH = [];
+        // Shopify usa cursor pagination con Link header — para simplificar usamos page_info implícito vía date filters
+        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&created_at_min=${sinceDate}T00:00:00&created_at_max=${untilDate}T23:59:59`;
+        for (let i = 0; i < 4; i++) {
+          if (!pageInfoUrl) break;
+          const shRes = await fetch(pageInfoUrl, {
+            headers: { "X-Shopify-Access-Token": shStore.accessToken },
+          });
+          if (!shRes.ok) break;
+          const data = await shRes.json();
+          const batch = data.orders || [];
+          allSH.push(...batch);
+          // Detectar next page por Link header
+          const linkHeader = shRes.headers.get("link") || shRes.headers.get("Link") || "";
+          const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+          pageInfoUrl = nextMatch ? nextMatch[1] : null;
+        }
+        for (const o of allSH) {
+          const orderId = "SH-" + (o.name || String(o.order_number || o.id));
+          if (billedIds.has(orderId)) continue;
+          if (o.cancelled_at) continue;
+          // Shopify: el CUIT/DNI puede venir en billing_address.company (igual que ya hacíamos)
+          const docRaw = String(o.billing_address?.company || o.customer?.note || "").replace(/[.\-]/g, "");
+          const clas = clasificarDoc(docRaw);
+          const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
+            || o.billing_address?.name || o.shipping_address?.name || "";
+          ordenes[orderId] = {
+            _platform: "shopify",
+            _platform_label: "SH",
+            _order_number: o.name || String(o.order_number || o.id),
+            nombre: customerName,
+            email: o.email || o.customer?.email || "",
+            dni: docRaw, ...clas,
+            total: parseFloat(o.total_price) || 0,
+            subtotal: parseFloat(o.subtotal_price) || 0,
+            descuento: parseFloat(o.total_discounts) || 0,
+            envio: parseFloat(o.total_shipping_price_set?.shop_money?.amount) || 0,
+            estado_pago: "paid",
+            fecha: o.processed_at || o.created_at || "",
+            ciudad: o.billing_address?.city || o.shipping_address?.city || "",
+            provincia: o.billing_address?.province || o.shipping_address?.province || "",
+            direccion: o.billing_address?.address1 || o.shipping_address?.address1 || "",
+            metodo_pago: o.payment_gateway_names?.join(", ") || "Pagado",
+            items: (o.line_items || []).map(li => ({
+              nombre: li.title || "Producto",
+              nombre_original: li.title || "Producto",
+              cantidad: parseInt(li.quantity) || 1,
+              precio: parseFloat(li.price) || 0,
+              descuento_item: 0,
+            })),
+          };
+        }
+      }
+
+      // Plataformas no conectadas (informativas)
+      if (!stores.find(s => s.type === "tiendanube")) connections.push({ platform: "tiendanube", connected: false });
+      if (!stores.find(s => s.type === "shopify")) connections.push({ platform: "shopify", connected: false });
+      connections.push({ platform: "mercadolibre", connected: false, soon: true });
+
+      return res.json({
+        connections,
+        total_pending: Object.keys(ordenes).length,
+        ordenes,
+      });
+    }
+
+    // ── TN: traer órdenes pendientes de facturar (legacy, mantener compat) ──
 
     if (action === "tn_pending_orders" && req.method === "GET") {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
