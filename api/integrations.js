@@ -29,70 +29,122 @@ async function readBody(req) {
   });
 }
 
-// ─── Shopify: conectar con custom app token ─────────────────────
+// ─── Shopify: OAuth flow ─────────────────────────────────────────
+// Una sola app de Shopify Partners para todos los clientes de Growith.
+// SHOPIFY_CLIENT_ID y SHOPIFY_CLIENT_SECRET en env vars de Vercel.
 
-async function shopifyConnect(req, res, db) {
-  const body = JSON.parse((await readBody(req)).toString());
-  const { uid, shop: shopRaw, access_token, client_id } = body;
-  if (!uid || !shopRaw || !access_token || !client_id) {
-    return res.status(400).json({ error: "Faltan uid, shop, access_token o client_id" });
-  }
+const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders";
+const APP_URL = "https://www.growithapp.com";
+const SHOPIFY_REDIRECT_URI = `${APP_URL}/api/integrations?platform=shopify&action=callback`;
 
-  // Normalizar shop: aceptar "mitienda.myshopify.com", "mitienda", "https://mitienda.myshopify.com", "xxxx-xx"
-  let shop = String(shopRaw).trim().toLowerCase()
+function normalizeShop(shopRaw) {
+  let shop = String(shopRaw || "").trim().toLowerCase()
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
     .replace(/\.myshopify\.com$/, "");
-  shop = `${shop}.myshopify.com`;
+  return `${shop}.myshopify.com`;
+}
 
-  // Validar token llamando a /admin/api/2024-10/shop.json
-  const url = `https://${shop}/admin/api/2024-10/shop.json`;
-  let shopName, shopEmail;
+// GET ?platform=shopify&action=oauth_start&uid=...&shop=...
+// Devuelve { url } con la URL OAuth a la que redirigir al usuario
+async function shopifyOauthStart(req, res) {
+  const uid = req.query.uid;
+  const shopRaw = req.query.shop;
+  if (!uid || !shopRaw) return res.status(400).json({ error: "Faltan uid o shop" });
+
+  const shop = normalizeShop(shopRaw);
+  if (!/^[a-z0-9-]+\.myshopify\.com$/.test(shop)) {
+    return res.status(400).json({ error: "Dominio inválido. Tiene que ser tipo xxxx-xx.myshopify.com" });
+  }
+
+  const clientId = process.env.SHOPIFY_CLIENT_ID;
+  if (!clientId) {
+    return res.status(500).json({ error: "Falta SHOPIFY_CLIENT_ID en env vars de Vercel. Configurá la variable y redeploy." });
+  }
+
+  // state = uid (CSRF + para saber qué user es al volver)
+  const state = uid;
+  const url = `https://${shop}/admin/oauth/authorize?client_id=${encodeURIComponent(clientId)}&scope=${encodeURIComponent(SHOPIFY_SCOPES)}&redirect_uri=${encodeURIComponent(SHOPIFY_REDIRECT_URI)}&state=${encodeURIComponent(state)}`;
+  return res.json({ url, shop });
+}
+
+// GET ?platform=shopify&action=callback&code=...&shop=...&state=...
+// Recibido desde Shopify después de que el usuario autoriza. Intercambia code por access_token.
+async function shopifyOauthCallback(req, res, db) {
+  const { code, shop: shopRaw, state } = req.query;
+  if (!code || !shopRaw || !state) {
+    return res.redirect(`${APP_URL}?shopify_error=missing_params`);
+  }
+  const shop = normalizeShop(shopRaw);
+  const uid = String(state);
+
+  const clientId = process.env.SHOPIFY_CLIENT_ID;
+  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    return res.redirect(`${APP_URL}?shopify_error=missing_env_vars`);
+  }
+
+  // 1) Intercambiar code por access_token
+  let accessToken;
   try {
-    const r = await fetch(url, {
-      headers: { "X-Shopify-Access-Token": String(access_token).trim(), "Content-Type": "application/json" },
+    const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
     });
-    if (r.status === 401 || r.status === 403) {
-      return res.status(401).json({ error: "Token inválido o sin permisos. Verificá que la app en Dev Dashboard tenga los scopes: read_all_orders, read_customers, read_orders, write_orders." });
+    if (!tokenRes.ok) {
+      const txt = await tokenRes.text();
+      console.error("[shopify-callback] token exchange failed", tokenRes.status, txt.slice(0, 200));
+      return res.redirect(`${APP_URL}?shopify_error=token_failed&status=${tokenRes.status}`);
     }
-    if (r.status === 404) {
-      return res.status(404).json({ error: `No se encontró la tienda ${shop}. Verificá el dominio.` });
-    }
-    if (!r.ok) {
-      const txt = await r.text();
-      return res.status(502).json({ error: `Shopify rechazó la conexión (HTTP ${r.status}): ${txt.slice(0, 200)}` });
-    }
-    const data = await r.json();
-    shopName = data.shop?.name || shop;
-    shopEmail = data.shop?.email || "";
+    const tokenData = await tokenRes.json();
+    accessToken = tokenData.access_token;
+    if (!accessToken) return res.redirect(`${APP_URL}?shopify_error=no_access_token`);
   } catch (e) {
-    return res.status(502).json({ error: `No se pudo conectar a ${shop}: ${e.message}` });
+    console.error("[shopify-callback] error:", e.message);
+    return res.redirect(`${APP_URL}?shopify_error=server_error`);
   }
 
-  // Guardar en users/{uid}.stores[]
-  const userRef = db.collection("users").doc(uid);
-  const snap = await userRef.get();
-  if (!snap.exists) return res.status(404).json({ error: "Usuario no encontrado" });
+  // 2) Obtener nombre de la tienda
+  let shopName = shop, shopEmail = "";
+  try {
+    const infoRes = await fetch(`https://${shop}/admin/api/2024-10/shop.json`, {
+      headers: { "X-Shopify-Access-Token": accessToken },
+    });
+    if (infoRes.ok) {
+      const data = await infoRes.json();
+      shopName = data.shop?.name || shop;
+      shopEmail = data.shop?.email || "";
+    }
+  } catch (e) { /* ignorar — no es bloqueante */ }
 
-  // Mutual exclusion: una sola plataforma de e-commerce conectada por vez
-  const currentStores = snap.data().stores || [];
-  if (currentStores.find(s => s.type === "tiendanube")) {
-    return res.status(409).json({ error: "Ya tenés Tienda Nube conectada. Desvinculala primero para conectar Shopify." });
+  // 3) Guardar en Firestore con mutual exclusion
+  try {
+    const userRef = db.collection("users").doc(uid);
+    const snap = await userRef.get();
+    if (!snap.exists) return res.redirect(`${APP_URL}?shopify_error=user_not_found`);
+
+    const currentStores = snap.data().stores || [];
+    if (currentStores.find(s => s.type === "tiendanube")) {
+      return res.redirect(`${APP_URL}?shopify_error=tn_already_connected`);
+    }
+
+    const stores = currentStores.filter(s => s.type !== "shopify");
+    stores.push({
+      type: "shopify",
+      shop,
+      accessToken,
+      storeName: shopName,
+      storeEmail: shopEmail,
+      connectedAt: new Date().toISOString(),
+    });
+    await userRef.update({ stores });
+  } catch (e) {
+    console.error("[shopify-callback] save error:", e.message);
+    return res.redirect(`${APP_URL}?shopify_error=save_failed`);
   }
 
-  const stores = currentStores.filter(s => s.type !== "shopify");
-  stores.push({
-    type: "shopify",
-    shop,                                     // ej. "mitienda.myshopify.com"
-    clientId: String(client_id).trim(),       // Client ID de la app en Dev Dashboard del cliente
-    accessToken: String(access_token).trim(),
-    storeName: shopName,
-    storeEmail: shopEmail,
-    connectedAt: new Date().toISOString(),
-  });
-  await userRef.update({ stores });
-
-  return res.json({ ok: true, shop, storeName: shopName });
+  return res.redirect(`${APP_URL}?shopify_success=1`);
 }
 
 async function shopifyDisconnect(req, res, db) {
@@ -132,7 +184,8 @@ export default async function handler(req, res) {
 
   try {
     if (platform === "shopify") {
-      if (action === "connect" && req.method === "POST") return shopifyConnect(req, res, db);
+      if (action === "oauth_start" && req.method === "GET") return shopifyOauthStart(req, res);
+      if (action === "callback" && req.method === "GET") return shopifyOauthCallback(req, res, db);
       if (action === "disconnect" && req.method === "POST") return shopifyDisconnect(req, res, db);
     }
 
