@@ -6147,9 +6147,11 @@ function AppArca({T, user, onHome}) {
       params.days = parseInt(periodoModo);
     }
     setTnLoading(true);
-    const d = await api("tn_pending_orders","GET",null,params);
+    const d = await api("pending_orders","GET",null,params);
     setTnLoading(false);
     if(d.error) { toast("Error: "+d.error,"error"); return; }
+    // Normalizar para mantener compat: connections es array, agregamos flag connected si hay al menos 1
+    d.connected = (d.connections||[]).some(c => c.connected);
     setTnData(d);
     // Mantener selecciones previas si las órdenes siguen ahí; las nuevas quedan deseleccionadas por default
     const newSel = {};
@@ -6641,9 +6643,9 @@ function AppArca({T, user, onHome}) {
                       <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>Canal</span>
                       <select value={canalSel} onChange={e=>setCanalSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
                         <option value="todos">Todos</option>
-                        <option value="tn">Tienda Nube</option>
-                        <option value="shopify" disabled>Shopify (próximamente)</option>
-                        <option value="ml" disabled>Mercado Libre (próximamente)</option>
+                        <option value="tiendanube">Tienda Nube</option>
+                        <option value="shopify">Shopify</option>
+                        <option value="mercadolibre">Mercado Libre</option>
                       </select>
                       <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar" style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:tnLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                         {tnLoading ? <Spinner size={12} color={T.textMd}/> : "🔄"}
@@ -6653,11 +6655,26 @@ function AppArca({T, user, onHome}) {
 
                   {/* Tags de conexiones */}
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
-                    <span style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+(tnData?.connected?T.green+"44":T.border),color:tnData?.connected?T.green:T.textSm,background:tnData?.connected?T.greenBg:T.bg,fontWeight:600}}>
-                      🔵 Tienda Nube {tnData?.connected ? "· conectada" : "· no conectada"}
-                    </span>
-                    <span style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+T.border,color:T.textSm,background:T.bg,fontWeight:500}}>⚪ Shopify · próximamente</span>
-                    <span style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+T.border,color:T.textSm,background:T.bg,fontWeight:500}}>⚪ Mercado Libre · próximamente</span>
+                    {(()=>{
+                      const meta = {
+                        tiendanube: { icon:"🔵", label:"Tienda Nube" },
+                        shopify:    { icon:"🛍️", label:"Shopify" },
+                        mercadolibre:{ icon:"🛒", label:"Mercado Libre" },
+                      };
+                      const conns = tnData?.connections || [
+                        { platform:"tiendanube", connected:false },
+                        { platform:"shopify", connected:false },
+                        { platform:"mercadolibre", connected:false },
+                      ];
+                      return conns.map(c => {
+                        const m = meta[c.platform] || { icon:"⚪", label:c.platform };
+                        return (
+                          <span key={c.platform} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+(c.connected?T.green+"44":T.border),color:c.connected?T.green:T.textSm,background:c.connected?T.greenBg:T.bg,fontWeight:c.connected?600:500}}>
+                            {m.icon} {m.label} · {c.connected ? "conectada" : "no conectada"}
+                          </span>
+                        );
+                      });
+                    })()}
                   </div>
 
                   {tnLoading && !tnData ? (
@@ -6667,25 +6684,36 @@ function AppArca({T, user, onHome}) {
                     </div>
                   ) : !tnData?.connected ? (
                     <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:8}}>
-                      ⚠ No tenés ninguna integración conectada todavía. Andá a la configuración de la app para conectar Tienda Nube (o usá subir archivo manual abajo).
+                      ⚠ No tenés ninguna integración conectada todavía. Andá a la configuración de la app para conectar Tienda Nube, Shopify o Mercado Libre (o usá subir archivo manual abajo).
                     </div>
                   ) : Object.keys(tnData.ordenes||{}).length === 0 ? (
                     <div style={{padding:"30px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
                       <div style={{fontSize:28,marginBottom:8}}>✨</div>
                       <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>No hay ventas pendientes</div>
-                      <div style={{fontSize:11,color:T.textSm}}>En {tnData.store_name} no encontramos ventas pagas sin facturar en el período seleccionado.</div>
+                      <div style={{fontSize:11,color:T.textSm}}>No encontramos ventas pagas sin facturar en el período seleccionado.</div>
                     </div>
                   ) : (() => {
-                    // Listado ordenado por fecha desc
-                    const items = Object.entries(tnData.ordenes).sort((a,b)=>(b[1].fecha||"").localeCompare(a[1].fecha||""));
+                    // El backend ya manda ordenado por fecha desc. Aplicamos solo el filtro de canal.
+                    const all = Object.entries(tnData.ordenes);
+                    const items = canalSel === "todos" ? all : all.filter(([, o]) => o._platform === canalSel);
+                    if (items.length === 0) {
+                      return (
+                        <div style={{padding:"30px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
+                          <div style={{fontSize:22,marginBottom:6}}>🔍</div>
+                          <div style={{fontSize:12,color:T.textSm}}>No hay ventas en {canalSel} en este período.</div>
+                        </div>
+                      );
+                    }
                     const allSel = items.every(([id])=>tnSelected[id]);
                     const someSel = items.some(([id])=>tnSelected[id]);
                     const selectedCount = items.filter(([id])=>tnSelected[id]).length;
                     const selectedTotal = items.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
+                    const badgeColor = (plat) => plat === "shopify" ? "#96BF48" : plat === "mercadolibre" ? "#FFE600" : T.blue;
+                    const badgeTextColor = (plat) => plat === "mercadolibre" ? "#333" : "#fff";
                     return (
                       <>
                         <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,cursor:"pointer"}} onClick={()=>{
-                          const ns = {}; items.forEach(([id])=>ns[id]=!allSel); setTnSelected(ns);
+                          const ns = {...tnSelected}; items.forEach(([id])=>ns[id]=!allSel); setTnSelected(ns);
                         }}>
                           <input type="checkbox" checked={allSel} ref={el=>{ if(el) el.indeterminate = someSel && !allSel; }} readOnly style={{cursor:"pointer"}}/>
                           <span style={{fontSize:12,fontWeight:600,color:T.text}}>{allSel?"Deseleccionar":"Seleccionar"} todas ({items.length})</span>
@@ -6696,11 +6724,13 @@ function AppArca({T, user, onHome}) {
                             const sel = !!tnSelected[id];
                             const fechaCorta = (o.fecha||"").slice(0,10).split("-").slice(1).reverse().join("/");
                             const tipoFact = esMono ? "C" : (o.doc_tipo === "CUIT" ? "A" : "B");
+                            const plat = o._platform;
+                            const label = o._platform_label || (plat==="tiendanube"?"TN":plat==="shopify"?"SH":plat==="mercadolibre"?"ML":"—");
                             return (
                               <div key={id} onClick={()=>setTnSelected(prev=>({...prev,[id]:!prev[id]}))} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,cursor:"pointer",background:sel?T.accentSolid+"10":"transparent",borderBottom:"1px solid "+T.borderL}}>
                                 <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
                                 <span style={{fontSize:10,color:T.textSm,minWidth:34}}>{fechaCorta||"—"}</span>
-                                <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.blue+"22",color:T.blue,fontWeight:700,minWidth:24,textAlign:"center"}}>TN</span>
+                                <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:badgeColor(plat),color:badgeTextColor(plat),fontWeight:700,minWidth:24,textAlign:"center"}}>{label}</span>
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
                                   <div style={{fontSize:12,fontWeight:600,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
                                   <div style={{fontSize:10,color:T.textSm}}>F{tipoFact} · {o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}</div>

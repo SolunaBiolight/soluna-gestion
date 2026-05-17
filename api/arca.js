@@ -1520,10 +1520,17 @@ export default async function handler(req, res) {
       if (!stores.find(s => s.type === "shopify")) connections.push({ platform: "shopify", connected: false });
       if (!stores.find(s => s.type === "mercadolibre")) connections.push({ platform: "mercadolibre", connected: false });
 
+      // Ordenar todas las órdenes por fecha desc (las más recientes primero), mezclando canales.
+      const ordenadas = Object.fromEntries(
+        Object.entries(ordenes).sort(([, a], [, b]) =>
+          String(b.fecha || "").localeCompare(String(a.fecha || ""))
+        )
+      );
+
       return res.json({
         connections,
-        total_pending: Object.keys(ordenes).length,
-        ordenes,
+        total_pending: Object.keys(ordenadas).length,
+        ordenes: ordenadas,
       });
     }
 
