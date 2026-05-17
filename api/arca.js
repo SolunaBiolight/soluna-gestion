@@ -293,6 +293,57 @@ async function getUltimoCbte(token, sign, cuitNum, puntoVenta, tipoCbte, wsfeUrl
   return m ? parseInt(m[1]) : 0;
 }
 
+// Feriados nacionales AR 2026-2027 (hardcoded — actualizar a futuro).
+// Solo los inamovibles principales — los trasladables Buscan último día hábil.
+const FERIADOS_AR = new Set([
+  // 2026
+  "2026-01-01","2026-02-16","2026-02-17","2026-03-24","2026-04-02","2026-04-03",
+  "2026-05-01","2026-05-25","2026-06-15","2026-06-20","2026-07-09","2026-08-17",
+  "2026-10-12","2026-11-23","2026-12-08","2026-12-25",
+  // 2027
+  "2027-01-01","2027-02-08","2027-02-09","2027-03-24","2027-03-26",
+  "2027-05-01","2027-05-25","2027-06-21","2027-07-09","2027-08-16",
+  "2027-10-11","2027-11-22","2027-12-08","2027-12-25",
+]);
+
+function esDiaHabil(date) {
+  const dow = date.getUTCDay(); // 0=domingo, 6=sabado
+  if (dow === 0 || dow === 6) return false;
+  const iso = date.toISOString().slice(0, 10);
+  return !FERIADOS_AR.has(iso);
+}
+
+// Devuelve YYYYMMDD del último día hábil del mes anterior al mes actual de ARG.
+function ultimoDiaHabilMesAnterior() {
+  const argFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit" });
+  const parts = argFmt.formatToParts(new Date());
+  const y = parseInt(parts.find(p => p.type === "year").value);
+  const m = parseInt(parts.find(p => p.type === "month").value);
+  const prevYear = m === 1 ? y - 1 : y;
+  const prevMonth = m === 1 ? 12 : m - 1;
+  // Último día del mes anterior
+  let d = new Date(Date.UTC(prevYear, prevMonth, 0)); // truco: día 0 del mes siguiente = último día del anterior
+  while (!esDiaHabil(d)) d.setUTCDate(d.getUTCDate() - 1);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yyyy}${mm}${dd}`;
+}
+
+// Chequea si una fecha YYYYMMDD está dentro de los 10 días corridos hacia atrás desde hoy
+// (límite de ARCA WSFE para emitir comprobantes con fecha retroactiva).
+function dentroDe10DiasCorridos(yyyymmdd) {
+  const y = parseInt(yyyymmdd.slice(0, 4));
+  const m = parseInt(yyyymmdd.slice(4, 6));
+  const d = parseInt(yyyymmdd.slice(6, 8));
+  const target = new Date(Date.UTC(y, m - 1, d));
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const diffMs = today.getTime() - target.getTime();
+  const diffDays = diffMs / (24 * 60 * 60 * 1000);
+  return diffDays >= 0 && diffDays <= 10;
+}
+
 // Condición frente al IVA del RECEPTOR (RG ARCA 5616 — obligatorio desde 01/06/2026)
 // Tabla: https://www.afip.gob.ar/ws/documentacion/ws-factura-electronica.asp
 //   1 = IVA Responsable Inscripto
@@ -1101,8 +1152,19 @@ export default async function handler(req, res) {
 
     if (action === "emit" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const { cuit: cuitEmit, ordenes, product_map } = body;
+      const { cuit: cuitEmit, ordenes, product_map, mes_imputacion } = body;
       if (!cuitEmit || !ordenes) return res.status(400).json({ error: "Faltan cuit u ordenes" });
+
+      // Resolver fecha de imputación. "anterior" = último día hábil del mes pasado.
+      let fechaImputacion = null;
+      if (mes_imputacion === "anterior") {
+        fechaImputacion = ultimoDiaHabilMesAnterior();
+        if (!dentroDe10DiasCorridos(fechaImputacion)) {
+          return res.status(400).json({
+            error: `No se puede imputar al mes anterior: la fecha calculada (${fechaImputacion.slice(6,8)}/${fechaImputacion.slice(4,6)}/${fechaImputacion.slice(0,4)}) está fuera del rango de 10 días corridos que permite ARCA. Solo es posible los primeros días hábiles de cada mes.`
+          });
+        }
+      }
 
       const cfg = await loadCuitConfig(db, uid, cuitEmit);
       if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "Falta certificado o clave para ese CUIT" });
@@ -1135,20 +1197,20 @@ export default async function handler(req, res) {
         let result, letra, tipoCbte, cbteNro;
 
         if (isMonotributo) {
-          result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true);
+          result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion);
           letra = "C"; tipoCbte = 11; cbteNro = cbteC;
         } else {
           const tieneCuit = orden.doc_tipo === "CUIT";
           if (tieneCuit) {
-            result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false);
+            result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion);
             if (result.cae) { letra = "A"; tipoCbte = 1; cbteNro = cbteA; }
             else {
               // Fallback a B
-              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false);
+              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion);
               letra = "B"; tipoCbte = 6; cbteNro = cbteB;
             }
           } else {
-            result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false);
+            result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion);
             letra = "B"; tipoCbte = 6; cbteNro = cbteB;
           }
         }

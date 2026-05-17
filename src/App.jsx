@@ -5925,6 +5925,7 @@ function AppArca({T, user, onHome}) {
   const [productos, setProductos] = useState([]);
   const [productMap, setProductMap] = useState({});
   const [emitting, setEmitting] = useState(false);
+  const [mesImputacion, setMesImputacion] = useState("actual"); // "actual" | "anterior"
   const [resultados, setResultados] = useState(null);
   const [pdfs, setPdfs] = useState([]);
 
@@ -6313,7 +6314,7 @@ function AppArca({T, user, onHome}) {
     }
     if(!window.confirm(msg)) return;
     setEmitting(true);
-    const d = await api("emit","POST",{cuit:cuitSel,ordenes,product_map:productMap});
+    const d = await api("emit","POST",{cuit:cuitSel,ordenes,product_map:productMap,mes_imputacion:mesImputacion});
     if(d.error){toast(d.error,"error");setEmitting(false);return;}
     setResultados(d.resultados||[]); setPdfs(d.pdfs||[]);
     const ok = (d.resultados||[]).filter(r=>r.ok).length;
@@ -6823,6 +6824,36 @@ function AppArca({T, user, onHome}) {
                         </div>
                       )}
                     </div>
+
+                    {/* Selector mes de imputación */}
+                    {(() => {
+                      const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
+                      const diaHoy = nowArg.getDate();
+                      const puedeMesAnterior = diaHoy <= 12; // margen amplio; el backend valida el rango de 10 días corridos
+                      const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+                      const mesActualLabel = meses[nowArg.getMonth()];
+                      const mesAnteriorLabel = meses[(nowArg.getMonth()+11)%12];
+                      const yearAnterior = nowArg.getMonth() === 0 ? nowArg.getFullYear()-1 : nowArg.getFullYear();
+                      return (
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,flexWrap:"wrap"}}>
+                          <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Imputar al mes</span>
+                          <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:12,color:T.text}}>
+                            <input type="radio" name="mes-imp" checked={mesImputacion==="actual"} onChange={()=>setMesImputacion("actual")}/>
+                            <span style={{fontWeight:600,textTransform:"capitalize"}}>{mesActualLabel} {nowArg.getFullYear()}</span>
+                          </label>
+                          <label style={{display:"flex",alignItems:"center",gap:6,cursor:puedeMesAnterior?"pointer":"not-allowed",fontSize:12,color:puedeMesAnterior?T.text:T.textSm,opacity:puedeMesAnterior?1:0.5}}>
+                            <input type="radio" name="mes-imp" checked={mesImputacion==="anterior"} disabled={!puedeMesAnterior} onChange={()=>setMesImputacion("anterior")}/>
+                            <span style={{fontWeight:600,textTransform:"capitalize"}}>{mesAnteriorLabel} {yearAnterior}</span>
+                            {!puedeMesAnterior && <span style={{fontSize:10,color:T.textSm}}>(solo en los primeros días del mes)</span>}
+                          </label>
+                          {mesImputacion==="anterior" && (
+                            <div style={{flexBasis:"100%",fontSize:10,color:T.textSm,marginTop:2,lineHeight:1.4}}>
+                              ⓘ ARCA va a registrar las facturas con fecha del último día hábil de {mesAnteriorLabel}, así caen contablemente ese mes.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div style={{maxHeight:350,overflowY:"auto",borderRadius:8}}>
                       {Object.entries(ordenes).map(([id,o])=>(
