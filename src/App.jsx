@@ -8116,6 +8116,24 @@ function AppMetaAds({T, user, onHome}) {
     }).catch(()=>{}).finally(()=>setLoading(false));
   },[uid]);
 
+  // Auto-evaluación de reglas en background al entrar al módulo Meta.
+  // Si pasaron >6h desde la última eval, se dispara automaticamente.
+  // No requiere cron de Vercel ni nada externo — corre del lado del navegador.
+  useEffect(()=>{
+    if(!activeAccId) return;
+    const key = `growith_meta_lasteval_${activeAccId}`;
+    const last = parseInt(localStorage.getItem(key) || "0");
+    const sixHours = 6 * 3600 * 1000;
+    if (Date.now() - last < sixHours) return;
+    // Dispara en background sin bloquear UI
+    metaApi("evaluate_rules","POST",null,{acc_id:activeAccId}).then(d=>{
+      if(d?.error) return;
+      localStorage.setItem(key, Date.now().toString());
+      if(d?.actions > 0) toast(`Auto-eval: ${d.actions} acción${d.actions===1?"":"es"} aplicada${d.actions===1?"":"s"}`,"success");
+    }).catch(()=>{});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[activeAccId]);
+
   useEffect(()=>{
     if(tab==="campanas"&&activeAccId) loadCampaigns();
     if(tab==="creativos"&&activeAccId) loadCreatives();
@@ -8771,7 +8789,7 @@ function AppMetaAds({T, user, onHome}) {
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>Reglas de optimización</div>
-                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cada 6 hs Growith evalúa tus reglas activas y pausa lo que matchea. También podés disparar manualmente.</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Se auto-evalúan cada 6 hs mientras tengas Growith abierto. También podés disparar manualmente.</div>
                   </div>
                   <div style={{display:"flex",gap:8}}>
                     <button onClick={evaluateRulesNow} disabled={evaluatingNow||rules.filter(r=>r.active).length===0} style={{padding:"8px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:evaluatingNow?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
@@ -8845,6 +8863,27 @@ function AppMetaAds({T, user, onHome}) {
                     </div>
                   </div>
                 )}
+
+                {/* Tip: cron 24/7 sin Growith abierto */}
+                <details style={{marginTop:16,background:T.card,border:`1px solid ${T.border}`,borderRadius:12}}>
+                  <summary style={{cursor:"pointer",padding:"12px 16px",fontSize:12,fontWeight:600,color:T.text,listStyle:"none"}}>
+                    ⏰ ¿Querés que las reglas se evalúen aunque no abras Growith?
+                  </summary>
+                  <div style={{padding:"0 16px 16px",fontSize:12,color:T.textMd,lineHeight:1.7}}>
+                    Hoy las reglas se evalúan automáticamente <strong style={{color:T.text}}>cada 6 horas cuando entrás a Meta Ads</strong> en Growith. Si querés que corran 24/7 sin tener que abrir la app, configurá un cron externo gratis:
+                    <ol style={{margin:"10px 0",paddingLeft:18}}>
+                      <li>Andá a <a href="https://cron-job.org" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>cron-job.org</a> y crea una cuenta gratis</li>
+                      <li>Click en <strong style={{color:T.text}}>"Create cronjob"</strong></li>
+                      <li>URL: <code style={{background:T.surface,padding:"2px 6px",borderRadius:4,fontSize:11,color:T.accent,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/meta?action=evaluate_rules&uid=${uid}&acc_id=${activeAccId||"TU_ACC_ID"}`}</code></li>
+                      <li>Schedule: cada 6 horas (o lo que prefieras)</li>
+                      <li>Method: <strong style={{color:T.text}}>POST</strong></li>
+                      <li>Guardar</li>
+                    </ol>
+                    <div style={{padding:"10px 12px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:8,fontSize:11}}>
+                      ✓ Listo. Cron-job.org va a llamar a Growith en el schedule que pongas y disparar la evaluación automática. <strong style={{color:T.green}}>Sin tocar Vercel ni nada</strong>.
+                    </div>
+                  </div>
+                </details>
 
                 {/* Editor de regla (modal) */}
                 {editingRule && <RuleEditor T={T} initialRule={editingRule==="new"?null:editingRule} onSave={saveRule} onCancel={()=>setEditingRule(null)}/>}
