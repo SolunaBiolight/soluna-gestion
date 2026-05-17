@@ -7863,6 +7863,151 @@ function AppAudioStudio({T, user, onHome}) {
 
 
 // ===========================================
+// META ADS · Rule Editor (Fase 3 optimizador)
+// ===========================================
+function RuleEditor({T, initialRule, onSave, onCancel}) {
+  const METRICS = [
+    {id:"spend",label:"Gasto ($)",unit:"$"},
+    {id:"roas",label:"ROAS (x)",unit:"x"},
+    {id:"cpa",label:"CPA ($)",unit:"$"},
+    {id:"ctr",label:"CTR (%)",unit:"%"},
+    {id:"frequency",label:"Frecuencia",unit:""},
+    {id:"impressions",label:"Impresiones",unit:""},
+    {id:"purchases",label:"Compras",unit:""},
+    {id:"clicks",label:"Clicks",unit:""},
+    {id:"cpm",label:"CPM ($)",unit:"$"},
+    {id:"cpc",label:"CPC ($)",unit:"$"},
+  ];
+  const OPS=[{id:">=",l:"≥"},{id:">",l:">"},{id:"<=",l:"≤"},{id:"<",l:"<"},{id:"=",l:"="}];
+  const WINDOWS=[1,3,7,14,30];
+
+  const [name,setName]=useState(initialRule?.name||"");
+  const [level,setLevel]=useState(initialRule?.level||"ad");
+  const [logic,setLogic]=useState(initialRule?.logic||"AND");
+  const [action,setAction]=useState(initialRule?.action||"pause");
+  const [active,setActive]=useState(initialRule?.active!==false);
+  const [conditions,setConditions]=useState(initialRule?.conditions?.length?[...initialRule.conditions]:[{metric:"spend",op:">=",value:"",window_days:7}]);
+  const [saving,setSaving]=useState(false);
+
+  const updateCond=(i,patch)=>{
+    setConditions(prev=>prev.map((c,idx)=>idx===i?{...c,...patch}:c));
+  };
+  const addCond=()=>setConditions(prev=>[...prev,{metric:"roas",op:"<",value:"",window_days:7}]);
+  const removeCond=i=>setConditions(prev=>prev.filter((_,idx)=>idx!==i));
+
+  async function handleSave() {
+    if(!name.trim()){alert("Ponele un nombre");return;}
+    const validConds = conditions.filter(c=>c.value!==""&&c.value!==null);
+    if(validConds.length===0){alert("Necesita al menos 1 condición con valor");return;}
+    setSaving(true);
+    const ok = await onSave({
+      ...(initialRule?{id:initialRule.id}:{}),
+      name:name.trim(), level, logic, action, active,
+      conditions: validConds.map(c=>({metric:c.metric,op:c.op,value:parseFloat(c.value),window_days:parseInt(c.window_days)||7})),
+    });
+    setSaving(false);
+    if(!ok) return; // se queda abierto si falló
+  }
+
+  return ReactDOM.createPortal(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onCancel()}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:680,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+          <div>
+            <div style={{fontSize:17,fontWeight:700,color:T.text}}>{initialRule?"Editar regla":"Nueva regla"}</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Definí cuándo y qué pausar automáticamente</div>
+          </div>
+          <button onClick={onCancel} disabled={saving} style={{background:"transparent",border:"none",color:T.textMd,cursor:saving?"wait":"pointer",fontSize:18,padding:4}}>✕</button>
+        </div>
+
+        {/* Nombre */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Nombre</div>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder='Ej. "Pausar ads con CPA alto"' style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"}}/>
+        </div>
+
+        {/* Nivel + Lógica */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+          <div>
+            <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Aplicar a</div>
+            <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+              {[{id:"campaign",l:"Campañas"},{id:"adset",l:"Adsets"},{id:"ad",l:"Ads"}].map(o=>(
+                <button key={o.id} onClick={()=>setLevel(o.id)} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:level===o.id?T.card:"transparent",color:level===o.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{o.l}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Cumplir</div>
+            <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+              <button onClick={()=>setLogic("AND")} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:logic==="AND"?T.card:"transparent",color:logic==="AND"?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Todas (AND)</button>
+              <button onClick={()=>setLogic("OR")} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:logic==="OR"?T.card:"transparent",color:logic==="OR"?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Alguna (OR)</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Condiciones */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Condiciones</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {conditions.map((c,i)=>{
+              const M=METRICS.find(m=>m.id===c.metric);
+              return (
+                <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8,flexWrap:"wrap"}}>
+                  <select value={c.metric} onChange={e=>updateCond(i,{metric:e.target.value})} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"6px 8px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",minWidth:130}}>
+                    {METRICS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                  <select value={c.op} onChange={e=>updateCond(i,{op:e.target.value})} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"6px 8px",fontSize:14,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700,width:54,textAlign:"center"}}>
+                    {OPS.map(o=><option key={o.id} value={o.id}>{o.l}</option>)}
+                  </select>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    {M?.unit==="$"&&<span style={{fontSize:13,color:T.textSm}}>$</span>}
+                    <input type="number" value={c.value} onChange={e=>updateCond(i,{value:e.target.value})} placeholder="valor" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"6px 8px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",width:92}}/>
+                    {M?.unit&&M.unit!=="$"&&<span style={{fontSize:13,color:T.textSm}}>{M.unit}</span>}
+                  </div>
+                  <span style={{fontSize:11,color:T.textSm}}>en últimos</span>
+                  <select value={c.window_days} onChange={e=>updateCond(i,{window_days:parseInt(e.target.value)})} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"6px 8px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    {WINDOWS.map(w=><option key={w} value={w}>{w} día{w>1?"s":""}</option>)}
+                  </select>
+                  {conditions.length>1&&<button onClick={()=>removeCond(i)} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.red}33`,color:T.red,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>✕</button>}
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={addCond} style={{marginTop:8,padding:"7px 12px",fontSize:11,border:`1px dashed ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Agregar condición</button>
+        </div>
+
+        {/* Acción + Estado */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
+          <div>
+            <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Acción</div>
+            <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+              <button onClick={()=>setAction("pause")} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:action==="pause"?T.card:"transparent",color:action==="pause"?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⏸ Pausar</button>
+              <button onClick={()=>setAction("notify")} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:action==="notify"?T.card:"transparent",color:action==="notify"?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>📢 Solo notificar</button>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Estado</div>
+            <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+              <button onClick={()=>setActive(true)} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:active?T.green+"33":"transparent",color:active?T.green:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>● Activa</button>
+              <button onClick={()=>setActive(false)} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:!active?T.textSm+"33":"transparent",color:!active?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⏸ Pausada</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={onCancel} disabled={saving} style={{padding:"10px 18px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:saving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving} style={{padding:"10px 24px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:saving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            {saving?"Guardando...":"Guardar regla"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ===========================================
 // APP META ADS
 // ===========================================
 function AppMetaAds({T, user, onHome}) {
@@ -7899,6 +8044,13 @@ function AppMetaAds({T, user, onHome}) {
   const [libSort,setLibSort]=useState("spend"); // spend | roas | recent
   const [analyzingId,setAnalyzingId]=useState(null);
   const [expandedAdId,setExpandedAdId]=useState(null);
+
+  // Estado del tab Reglas
+  const [rules,setRules]=useState([]);
+  const [ruleLog,setRuleLog]=useState([]);
+  const [rulesLoading,setRulesLoading]=useState(false);
+  const [editingRule,setEditingRule]=useState(null); // null | "new" | rule object
+  const [evaluatingNow,setEvaluatingNow]=useState(false);
 
   // Conexión System User Token
   const [tokenInput,setTokenInput]=useState("");
@@ -7969,6 +8121,7 @@ function AppMetaAds({T, user, onHome}) {
     if(tab==="creativos"&&activeAccId) loadCreatives();
     if(tab==="analisis"&&activeAccId) loadInsights();
     if(tab==="biblioteca"&&activeAccId) loadLibrary();
+    if(tab==="reglas"&&activeAccId) loadRules();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab,activeAccId]);
 
@@ -7991,6 +8144,52 @@ function AppMetaAds({T, user, onHome}) {
       setExpandedAdId(ad.id);
       toast("Análisis listo ✓","success");
     } finally { setAnalyzingId(null); }
+  }
+
+  // ── Reglas ──
+  async function loadRules() {
+    if(!activeAccId) return;
+    setRulesLoading(true);
+    try {
+      const [r, l] = await Promise.all([
+        metaApi("rules_list","GET",null,{acc_id:activeAccId}),
+        metaApi("rule_log","GET"),
+      ]);
+      if(!r.error) setRules(r.rules||[]);
+      if(!l.error) setRuleLog(l.log||[]);
+    } finally { setRulesLoading(false); }
+  }
+
+  async function saveRule(rule) {
+    const d = await metaApi("rule_save","POST",{rule:{...rule, acc_id:activeAccId}});
+    if(d.error) { toast("Error: "+d.error,"error"); return false; }
+    toast("Regla guardada ✓","success");
+    await loadRules();
+    setEditingRule(null);
+    return true;
+  }
+
+  async function deleteRule(ruleId) {
+    if(!window.confirm("¿Borrar esta regla?")) return;
+    const params=new URLSearchParams({action:"rule_delete",uid,rule_id:ruleId});
+    const d=await fetch(`/api/meta?${params}`,{method:"DELETE"}).then(r=>r.json());
+    if(d.error) { toast("Error: "+d.error,"error"); return; }
+    toast("Regla eliminada","success");
+    loadRules();
+  }
+
+  async function toggleRuleActive(rule) {
+    await saveRule({...rule, active: !rule.active});
+  }
+
+  async function evaluateRulesNow() {
+    setEvaluatingNow(true);
+    try {
+      const d = await metaApi("evaluate_rules","POST",null,{acc_id:activeAccId});
+      if(d.error) { toast("Error: "+d.error,"error"); return; }
+      toast(`Evaluación lista · ${d.actions||0} acciones aplicadas`,"success");
+      loadRules();
+    } finally { setEvaluatingNow(false); }
   }
 
   useEffect(()=>{
@@ -8182,6 +8381,7 @@ function AppMetaAds({T, user, onHome}) {
   const TABS=[
     {id:"analisis",label:"📊 Análisis"},
     {id:"biblioteca",label:"📚 Biblioteca"},
+    {id:"reglas",label:"⚡ Reglas"},
     {id:"cuenta",label:"Cuenta"},
     {id:"campanas",label:"Campañas & AdSets"},
     {id:"creativos",label:"Creativos"},
@@ -8554,6 +8754,100 @@ function AppMetaAds({T, user, onHome}) {
                     </div>
                   );
                 })()}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── REGLAS (Fase 3 optimizador) ──────────────── */}
+        {tab==="reglas"&&(
+          <div>
+            {!activeAccId ? (
+              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd}}>
+                ⚠ Conectá tu cuenta de Meta primero desde Config.
+              </div>
+            ) : (
+              <>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>Reglas de optimización</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cada 6 hs Growith evalúa tus reglas activas y pausa lo que matchea. También podés disparar manualmente.</div>
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={evaluateRulesNow} disabled={evaluatingNow||rules.filter(r=>r.active).length===0} style={{padding:"8px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:evaluatingNow?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                      {evaluatingNow ? <><Spinner size={12} color={T.textMd}/>Evaluando...</> : "▶ Evaluar ahora"}
+                    </button>
+                    <button onClick={()=>setEditingRule("new")} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nueva regla</button>
+                  </div>
+                </div>
+
+                {/* Lista de reglas */}
+                {rulesLoading && rules.length===0 ? (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"40px 20px",textAlign:"center"}}>
+                    <Spinner size={18} color={T.accent}/>
+                  </div>
+                ) : rules.length===0 ? (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                    <div style={{fontSize:32,marginBottom:8}}>⚡</div>
+                    <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:6}}>Sin reglas todavía</div>
+                    <div style={{fontSize:12,color:T.textSm,maxWidth:420,margin:"0 auto"}}>Creá tu primera regla para que Growith pause automáticamente ads que cumplan ciertos criterios (gasto, ROAS, CPA, etc.).</div>
+                  </div>
+                ) : (
+                  <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:24}}>
+                    {rules.map(r => {
+                      const fmtVal = (m, v) => m==="spend"||m==="cpa"||m==="purchase_value"||m==="cpm"||m==="cpc"?`$${v}`:m==="ctr"?`${v}%`:m==="roas"?`${v}x`:v;
+                      return (
+                        <div key={r.id} style={{background:T.card,border:`1px solid ${r.active?T.green+"44":T.border}`,borderRadius:12,padding:"14px 18px"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+                                <span style={{fontSize:14,fontWeight:700,color:T.text}}>{r.name}</span>
+                                <span style={{fontSize:9,padding:"2px 8px",borderRadius:4,background:r.active?T.green+"22":T.textSm+"22",color:r.active?T.green:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase"}}>{r.active?"Activa":"Pausada"}</span>
+                                <span style={{fontSize:10,color:T.textSm}}>· {r.level==="campaign"?"Campañas":r.level==="adset"?"Adsets":"Ads"} · {r.action==="pause"?"⏸ Pausar":"📢 Notificar"}</span>
+                              </div>
+                              <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>
+                                <strong>{r.logic==="AND"?"Si TODAS estas condiciones son ciertas":"Si AL MENOS UNA condición es cierta"}:</strong>
+                                <ul style={{margin:"4px 0 0",paddingLeft:18}}>
+                                  {(r.conditions||[]).map((c,i)=>(
+                                    <li key={i}><code style={{background:T.surface,padding:"1px 5px",borderRadius:3,color:T.accent,fontFamily:"monospace",fontSize:11}}>{c.metric}</code> {c.op} {fmtVal(c.metric,c.value)} <span style={{color:T.textSm}}>(últimos {c.window_days||7}d)</span></li>
+                                  ))}
+                                </ul>
+                              </div>
+                              {r.last_evaluated_at && <div style={{fontSize:10,color:T.textSm,marginTop:6}}>Última eval: {new Date(r.last_evaluated_at).toLocaleString("es-AR")}</div>}
+                            </div>
+                            <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
+                              <button onClick={()=>toggleRuleActive(r)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{r.active?"Pausar":"Activar"}</button>
+                              <button onClick={()=>setEditingRule(r)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                              <button onClick={()=>deleteRule(r.id)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar</button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Log de acciones */}
+                {ruleLog.length > 0 && (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Historial de acciones <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>· {ruleLog.length} eventos</span></div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:420,overflowY:"auto"}}>
+                      {ruleLog.map(ev => (
+                        <div key={ev.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`,fontSize:11}}>
+                          <span style={{fontSize:14}}>{ev.ok?(ev.action_taken==="pause"?"⏸":"📢"):"❌"}</span>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{color:T.text,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ev.node_name||"(sin nombre)"} <span style={{color:T.textSm,fontWeight:400}}>· {ev.rule_name}</span></div>
+                            <div style={{color:T.textSm,marginTop:2}}>{(ev.triggered||[]).map((t,i)=><span key={i}>{i>0?" · ":""}<code style={{background:T.surface,padding:"0 4px",borderRadius:2,color:T.accent}}>{t.metric}={Number(t.actual).toFixed(2)}</code></span>)}</div>
+                          </div>
+                          <span style={{fontSize:10,color:T.textSm,whiteSpace:"nowrap"}}>{new Date(ev.ts).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Editor de regla (modal) */}
+                {editingRule && <RuleEditor T={T} initialRule={editingRule==="new"?null:editingRule} onSave={saveRule} onCancel={()=>setEditingRule(null)}/>}
               </>
             )}
           </div>
