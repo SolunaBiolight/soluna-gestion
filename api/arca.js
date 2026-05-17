@@ -1088,15 +1088,23 @@ export default async function handler(req, res) {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
-      // Inicio del mes en hora Argentina (UTC-3). 00:00 ARG = 03:00 UTC.
-      const argFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit" });
-      const parts = argFmt.formatToParts(new Date());
-      const argYear = parts.find(p => p.type === "year").value;
-      const argMonth = parts.find(p => p.type === "month").value;
+      // Filtro de mes — usa params month/year si vienen, sino el mes actual ARG.
+      let argYear, argMonth;
+      if (req.query.month && req.query.year) {
+        argYear = String(req.query.year);
+        argMonth = String(req.query.month).padStart(2, "0");
+      } else {
+        const argFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit" });
+        const parts = argFmt.formatToParts(new Date());
+        argYear = parts.find(p => p.type === "year").value;
+        argMonth = parts.find(p => p.type === "month").value;
+      }
       const monthStart = `${argYear}-${argMonth}-01T03:00:00.000Z`;
-      const now = new Date();
+      // Inicio del mes siguiente
+      const nextMonth = parseInt(argMonth) === 12 ? "01" : String(parseInt(argMonth) + 1).padStart(2, "0");
+      const nextYear = parseInt(argMonth) === 12 ? String(parseInt(argYear) + 1) : argYear;
+      const monthEnd = `${nextYear}-${nextMonth}-01T03:00:00.000Z`;
 
-      // Una sola query con un solo where (no requiere índice compuesto). Filtramos por mes en memoria.
       const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
         .where("cuit_emisor", "==", cuitParam)
         .get();
@@ -1105,13 +1113,17 @@ export default async function handler(req, res) {
       const porLetra = { A: 0, B: 0, C: 0 };
       for (const d of snap.docs) {
         const data = d.data();
-        if (!data.emitido_at || data.emitido_at < monthStart) continue;
+        if (!data.emitido_at || data.emitido_at < monthStart || data.emitido_at >= monthEnd) continue;
         facturas_emitidas++;
         iva_debito += data.iva || 0;
         total_facturado += data.total || 0;
         neto_total += data.neto || 0;
         if (porLetra[data.letra] !== undefined) porLetra[data.letra]++;
       }
+
+      // Label del mes elegido
+      const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+      const mesLabel = `${meses[parseInt(argMonth)-1]} ${argYear}`;
 
       return res.json({
         iva_debito: Math.round(iva_debito * 100) / 100,
@@ -1120,7 +1132,9 @@ export default async function handler(req, res) {
         total_facturado: Math.round(total_facturado * 100) / 100,
         neto_total: Math.round(neto_total * 100) / 100,
         por_letra: porLetra,
-        mes: now.toLocaleDateString("es-AR", { month: "long", year: "numeric" }),
+        mes: mesLabel,
+        year: parseInt(argYear),
+        month: parseInt(argMonth),
       });
     }
 
@@ -1306,11 +1320,23 @@ export default async function handler(req, res) {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
+      // Filtro opcional por mes/año (mismo formato que dashboard_stats)
+      let filterStart = null, filterEnd = null;
+      if (req.query.month && req.query.year) {
+        const y = String(req.query.year);
+        const m = String(req.query.month).padStart(2, "0");
+        filterStart = `${y}-${m}-01T03:00:00.000Z`;
+        const nextM = parseInt(m) === 12 ? "01" : String(parseInt(m) + 1).padStart(2, "0");
+        const nextY = parseInt(m) === 12 ? String(parseInt(y) + 1) : y;
+        filterEnd = `${nextY}-${nextM}-01T03:00:00.000Z`;
+      }
+
       const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
         .where("cuit_emisor", "==", cuitParam)
         .get();
 
       const comprobantes = snap.docs.map(d => d.data())
+        .filter(c => !filterStart || (c.emitido_at >= filterStart && c.emitido_at < filterEnd))
         .sort((a, b) => (b.emitido_at || "").localeCompare(a.emitido_at || ""));
 
       const GROUP_WINDOW_MS = 10 * 60 * 1000; // 10 minutos

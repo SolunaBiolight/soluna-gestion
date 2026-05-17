@@ -5933,7 +5933,21 @@ function AppArca({T, user, onHome}) {
   const cuitActivo = cuits.find(c => c.cuit === cuitSel);
   const iS = {width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",outline:"none"};
   const labelS = {fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6,display:"block"};
-  const mesActual = new Date().toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+  // Mes navegado en el dashboard (default = mes actual ARG)
+  const _now = new Date();
+  const [dashMonth, setDashMonth] = useState(_now.getMonth()+1); // 1-12
+  const [dashYear, setDashYear] = useState(_now.getFullYear());
+  const mesesNombres = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const mesActual = `${mesesNombres[dashMonth-1]} ${dashYear}`;
+  const esMesActualReal = dashMonth === _now.getMonth()+1 && dashYear === _now.getFullYear();
+  function navMes(delta) {
+    let m = dashMonth + delta, y = dashYear;
+    if (m < 1) { m = 12; y -= 1; }
+    if (m > 12) { m = 1; y += 1; }
+    // No permitir navegar a futuro
+    if (y > _now.getFullYear() || (y === _now.getFullYear() && m > _now.getMonth()+1)) return;
+    setDashMonth(m); setDashYear(y);
+  }
 
   const api = (action, method="GET", body=null, extra={}) => {
     const params = new URLSearchParams({action, uid, ...extra});
@@ -5951,13 +5965,13 @@ function AppArca({T, user, onHome}) {
 
   useEffect(()=>{
     if(!uid || !cuitSel) { setDashboardStats(null); setBatches([]); setTnData(null); return; }
-    api("dashboard_stats","GET",null,{cuit:cuitSel}).then(d=>{
+    api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}).then(d=>{
       if(!d.error) setDashboardStats(d);
     });
-    api("list_batches","GET",null,{cuit:cuitSel}).then(d=>{
+    api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear}).then(d=>{
       if(!d.error) setBatches(d.batches||[]);
     });
-  },[uid, cuitSel]);
+  },[uid, cuitSel, dashMonth, dashYear]);
 
   useEffect(()=>{
     if(!uid || !cuitSel) return;
@@ -6180,9 +6194,9 @@ function AppArca({T, user, onHome}) {
 
   async function refreshDashboard() {
     if(!cuitSel) return;
-    const d = await api("dashboard_stats","GET",null,{cuit:cuitSel});
+    const d = await api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
     if(!d.error) setDashboardStats(d);
-    const b = await api("list_batches","GET",null,{cuit:cuitSel});
+    const b = await api("list_batches","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
     if(!b.error) setBatches(b.batches||[]);
   }
 
@@ -6479,6 +6493,16 @@ function AppArca({T, user, onHome}) {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Navegador de meses del dashboard */}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
+              <button onClick={()=>navMes(-1)} style={{background:"transparent",border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"6px 12px",fontSize:14,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>←</button>
+              <div style={{flex:1,textAlign:"center"}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Mes en vista</div>
+                <div style={{fontSize:15,fontWeight:700,color:T.text,textTransform:"capitalize",marginTop:2}}>{mesActual}{esMesActualReal && <span style={{fontSize:10,color:T.green,marginLeft:6,fontWeight:500,textTransform:"none"}}>· actual</span>}</div>
+              </div>
+              <button onClick={()=>navMes(1)} disabled={esMesActualReal} style={{background:"transparent",border:"1px solid "+T.border,color:esMesActualReal?T.textSm:T.text,borderRadius:8,padding:"6px 12px",fontSize:14,cursor:esMesActualReal?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:esMesActualReal?0.4:1}}>→</button>
             </div>
 
             {/* Dashboard del mes */}
