@@ -293,9 +293,29 @@ async function getUltimoCbte(token, sign, cuitNum, puntoVenta, tipoCbte, wsfeUrl
   return m ? parseInt(m[1]) : 0;
 }
 
-async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCbte, wsfeUrl, monotributo = false) {
+// Condición frente al IVA del RECEPTOR (RG ARCA 5616 — obligatorio desde 01/06/2026)
+// Tabla: https://www.afip.gob.ar/ws/documentacion/ws-factura-electronica.asp
+//   1 = IVA Responsable Inscripto
+//   4 = IVA Sujeto Exento
+//   5 = Consumidor Final
+//   6 = Responsable Monotributo
+//   7 = Sujeto No Categorizado
+//  13 = Monotributista Social
+//  15 = IVA No Alcanzado
+function condicionIvaReceptor(tipoCbte, docTipoClas) {
+  // Factura A (1/2/3): receptor es siempre Responsable Inscripto
+  if (tipoCbte === 1 || tipoCbte === 2 || tipoCbte === 3) return 1;
+  // Factura B (6/7/8) con CUIT: tipicamente Monotributista o Exento — usamos Monotributo (mayoría e-commerce)
+  if ((tipoCbte === 6 || tipoCbte === 7 || tipoCbte === 8) && docTipoClas === "CUIT") return 6;
+  // Factura C (11/12/13) con CUIT: receptor probablemente Resp. Inscripto que compra a monotributo
+  if ((tipoCbte === 11 || tipoCbte === 12 || tipoCbte === 13) && docTipoClas === "CUIT") return 1;
+  // Cualquier otro caso: Consumidor Final
+  return 5;
+}
+
+async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCbte, wsfeUrl, monotributo = false, fechaImputacion = null) {
   const total = orden.total;
-  const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const fecha = fechaImputacion || new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   const docTipoClas = orden.doc_tipo;
   let tipoDoc, nroDoc, neto, iva;
@@ -312,6 +332,8 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
     else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = orden.doc_nro || orden.dni; }
     else { tipoDoc = 99; nroDoc = 0; }
   }
+
+  const condIva = condicionIvaReceptor(tipoCbte, docTipoClas);
 
   const ivaXml = (!monotributo && iva > 0) ? `
     <ar:Iva>
@@ -345,6 +367,7 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
           <ar:ImpIVA>${iva}</ar:ImpIVA>
           <ar:MonId>PES</ar:MonId>
           <ar:MonCotiz>1</ar:MonCotiz>
+          <ar:CondicionIVAReceptorId>${condIva}</ar:CondicionIVAReceptorId>
           ${ivaXml}
         </ar:FECAEDetRequest>
       </ar:FeDetReq>
