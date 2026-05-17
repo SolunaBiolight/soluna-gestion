@@ -1440,10 +1440,14 @@ export default async function handler(req, res) {
       if (!userSnap.exists) return res.json({ connections: [], ordenes: {} });
       const stores = userSnap.data().stores || [];
 
-      // IDs ya facturadas (para filtrar)
+      // IDs ya facturadas (mantenemos para marcar visualmente, no para filtrar)
       const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
         .where("cuit_emisor", "==", cuitParam).get();
-      const billedIds = new Set(billedSnap.docs.map(d => d.data().orden_id).filter(Boolean));
+      const billedMap = new Map();
+      for (const d of billedSnap.docs) {
+        const data = d.data();
+        if (data.orden_id) billedMap.set(data.orden_id, { letra: data.letra, nro: data.nro, emitido_at: data.emitido_at });
+      }
 
       const connections = [];
       const ordenes = {};
@@ -1468,16 +1472,21 @@ export default async function handler(req, res) {
         }
         for (const o of allTN) {
           const orderId = "TN-" + String(o.number || o.id);
-          if (billedIds.has(orderId)) continue;
           if ((o.status || "").toLowerCase() === "cancelled") continue;
+          // Filtros estrictos de pago: solo pagadas, sin devoluciones
+          const pStatus = (o.payment_status || "").toLowerCase();
+          if (pStatus !== "paid") continue;
           const docRaw = String(o.customer?.identification || "").replace(/[.\-]/g, "");
           const clas = clasificarDoc(docRaw);
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
             || o.customer?.name || o.contact_name || "";
+          const billed = billedMap.get(orderId);
           ordenes[orderId] = {
             _platform: "tiendanube",
             _platform_label: "TN",
             _order_number: String(o.number || o.id),
+            _billed: !!billed,
+            _billed_info: billed || null,
             nombre: customerName,
             email: o.customer?.email || o.contact_email || "",
             dni: docRaw, ...clas,
@@ -1525,17 +1534,21 @@ export default async function handler(req, res) {
         }
         for (const o of allSH) {
           const orderId = "SH-" + (o.name || String(o.order_number || o.id));
-          if (billedIds.has(orderId)) continue;
           if (o.cancelled_at) continue;
+          // Filtros estrictos: solo pagadas (no pending, refunded, voided)
+          if ((o.financial_status || "").toLowerCase() !== "paid") continue;
           // Shopify: el CUIT/DNI puede venir en billing_address.company (igual que ya hacíamos)
           const docRaw = String(o.billing_address?.company || o.customer?.note || "").replace(/[.\-]/g, "");
           const clas = clasificarDoc(docRaw);
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
             || o.billing_address?.name || o.shipping_address?.name || "";
+          const billed = billedMap.get(orderId);
           ordenes[orderId] = {
             _platform: "shopify",
             _platform_label: "SH",
             _order_number: o.name || String(o.order_number || o.id),
+            _billed: !!billed,
+            _billed_info: billed || null,
             nombre: customerName,
             email: o.email || o.customer?.email || "",
             dni: docRaw, ...clas,
@@ -1568,7 +1581,6 @@ export default async function handler(req, res) {
           const { accessToken, userId } = await getValidMLToken(db, uid) || {};
           if (accessToken) {
             const allML = [];
-            // ML paginación: limit max 50 por request, usar offset
             for (let offset = 0; offset < 500; offset += 50) {
               const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&order.status=paid&order.date_created.from=${sinceDate}T00:00:00.000-00:00&order.date_created.to=${untilDate}T23:59:59.999-00:00&limit=50&offset=${offset}&sort=date_desc`;
               const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -1581,23 +1593,58 @@ export default async function handler(req, res) {
               allML.push(...batch);
               if (batch.length < 50) break;
             }
-            for (const o of allML) {
-              const orderId = "ML-" + String(o.id);
-              if (billedIds.has(orderId)) continue;
-              if (["cancelled", "invalid"].includes((o.status || "").toLowerCase())) continue;
 
+            // Pre-filtrar las que NO van a entrar (canceladas/inválidas/refundeadas) para no gastar fetch billing_info
+            const mlPaid = allML.filter(o => {
+              const st = (o.status || "").toLowerCase();
+              if (["cancelled", "invalid", "partially_paid", "payment_required", "payment_in_process"].includes(st)) return false;
+              const validPayments = (o.payments || []).filter(p => !["refunded", "cancelled"].includes((p.status || "").toLowerCase()));
+              if ((o.payments || []).length > 0 && validPayments.length === 0) return false;
+              return true;
+            });
+
+            // Fetch billing_info en paralelo (chunks de 10 para no saturar)
+            const billingByOrderId = {};
+            const CHUNK = 10;
+            for (let i = 0; i < mlPaid.length; i += CHUNK) {
+              const chunk = mlPaid.slice(i, i + CHUNK);
+              await Promise.all(chunk.map(async (o) => {
+                try {
+                  const r = await fetch(`https://api.mercadolibre.com/orders/${o.id}/billing_info`, {
+                    headers: { Authorization: `Bearer ${accessToken}` },
+                  });
+                  if (r.ok) {
+                    const data = await r.json();
+                    billingByOrderId[o.id] = data.buyer?.billing_info || null;
+                  }
+                } catch (e) { /* ignorar */ }
+              }));
+            }
+
+            for (const o of mlPaid) {
+              const orderId = "ML-" + String(o.id);
               const buyer = o.buyer || {};
-              const billing = buyer.billing_info || {};
-              const docRaw = String(billing.doc_number || "").replace(/[.\-]/g, "");
+              const bi = billingByOrderId[o.id] || buyer.billing_info || {};
+              const additional = Array.isArray(bi.additional_info) ? bi.additional_info : [];
+              const getInfo = (type) => additional.find(a => a.type === type)?.value || "";
+
+              const businessName = getInfo("BUSINESS_NAME");
+              const firstName = getInfo("FIRST_NAME") || buyer.first_name || "";
+              const lastName = getInfo("LAST_NAME") || buyer.last_name || "";
+              const customerName = businessName
+                || [firstName, lastName].filter(Boolean).join(" ").trim()
+                || "Consumidor Final";
+              const docRaw = String(bi.doc_number || "").replace(/[.\-]/g, "");
               const clas = clasificarDoc(docRaw);
-              const customerName = [buyer.first_name, buyer.last_name].filter(Boolean).join(" ").trim()
-                || buyer.nickname || "";
               const shipAddr = o.shipping?.receiver_address || {};
+              const billed = billedMap.get(orderId);
 
               ordenes[orderId] = {
                 _platform: "mercadolibre",
                 _platform_label: "ML",
                 _order_number: String(o.id),
+                _billed: !!billed,
+                _billed_info: billed || null,
                 nombre: customerName,
                 email: buyer.email || "",
                 dni: docRaw, ...clas,

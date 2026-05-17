@@ -6536,36 +6536,6 @@ function AppArca({T, user, onHome}) {
               </div>
             </div>
 
-            {/* Canales de venta */}
-            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px",marginBottom:24}}>
-              <div style={{marginBottom:16}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Canales de venta</div>
-                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Importá tus ventas desde cada plataforma para facturarlas en ARCA</div>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                {[
-                  {name:"Mercado Libre",icon:"🟡",desc:"Descargá el Excel de ventas (.xlsx) desde Ventas → Facturación en tu cuenta de ML. Subilo en la zona de carga de abajo.",status:"manual",statusLabel:"Subir archivo"},
-                  {name:"Tienda Nube",icon:"🔵",desc:"Descargá el CSV de ventas desde Estadísticas → Ventas → Exportar a CSV en tu admin de TN. Subilo en la zona de carga.",status:"manual",statusLabel:"Subir archivo"},
-                  {name:"Shopify",icon:"🟢",desc:"Exportá las órdenes como CSV desde Orders → Export en tu admin de Shopify. Subilo en la zona de carga.",status:"manual",statusLabel:"Subir archivo"},
-                ].map(ch=>(
-                  <div key={ch.name} style={{border:"1px solid "+T.border,borderRadius:10,padding:"16px",background:T.bg}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                      <span style={{fontSize:20}}>{ch.icon}</span>
-                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>{ch.name}</div>
-                    </div>
-                    <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginBottom:12,minHeight:48}}>{ch.desc}</div>
-                    <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:6,fontSize:10,fontWeight:600,
-                      background:ch.status==="manual"?T.blueBg:T.yellowBg,
-                      color:ch.status==="manual"?T.blue:T.yellow,
-                      border:"1px solid "+(ch.status==="manual"?T.blue:T.yellow)+"33"}}>
-                      <span style={{width:5,height:5,borderRadius:"50%",background:"currentColor"}}/>
-                      {ch.statusLabel}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* Título facturación */}
             <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,marginBottom:8}}>
               <div>
@@ -6573,9 +6543,8 @@ function AppArca({T, user, onHome}) {
                   Emisión de facturas <span style={{color:T.accent}}>en ARCA</span>
                 </div>
                 <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6,maxWidth:650}}>
-                  Subí el <strong style={{color:T.text}}>.csv de Shopify</strong> o el <strong style={{color:T.text}}>.xlsx de Mercado Libre</strong> con las ventas que querés facturar.
-                  {esRI && " El bot decide solo el tipo de factura (A o B) según los datos del cliente."}
-                  {esMono && " Se emiten Facturas C automáticamente para todas las ventas."}
+                  {esRI && "El bot decide solo el tipo de factura (A o B) según los datos del cliente."}
+                  {esMono && "Se emiten Facturas C automáticamente para todas las ventas."}
                 </div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:8,alignItems:"flex-end",flexShrink:0}}>
@@ -6729,38 +6698,79 @@ function AppArca({T, user, onHome}) {
                         </div>
                       );
                     }
-                    const allSel = items.every(([id])=>tnSelected[id]);
-                    const someSel = items.some(([id])=>tnSelected[id]);
-                    const selectedCount = items.filter(([id])=>tnSelected[id]).length;
-                    const selectedTotal = items.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
+                    // Solo se pueden seleccionar/contar las NO facturadas
+                    const itemsSelectables = items.filter(([, o]) => !o._billed);
+                    const allSel = itemsSelectables.length > 0 && itemsSelectables.every(([id])=>tnSelected[id]);
+                    const someSel = itemsSelectables.some(([id])=>tnSelected[id]);
+                    const selectedCount = itemsSelectables.filter(([id])=>tnSelected[id]).length;
+                    const selectedTotal = itemsSelectables.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
                     const badgeColor = (plat) => plat === "shopify" ? "#96BF48" : plat === "mercadolibre" ? "#FFE600" : T.blue;
                     const badgeTextColor = (plat) => plat === "mercadolibre" ? "#333" : "#fff";
+                    const fmtFechaHora = (iso) => {
+                      if (!iso) return "—";
+                      const d = new Date(iso);
+                      if (isNaN(d)) return "—";
+                      const dia = String(d.getDate()).padStart(2,"0");
+                      const mes = String(d.getMonth()+1).padStart(2,"0");
+                      const hh = String(d.getHours()).padStart(2,"0");
+                      const mm = String(d.getMinutes()).padStart(2,"0");
+                      return `${dia}/${mes} ${hh}:${mm}`;
+                    };
+                    const seleccionarPorcentaje = (pct) => {
+                      const shuffled = [...itemsSelectables].sort(() => Math.random() - 0.5);
+                      const n = Math.round(itemsSelectables.length * pct / 100);
+                      const selIds = new Set(shuffled.slice(0, n).map(([id]) => id));
+                      const ns = {...tnSelected};
+                      itemsSelectables.forEach(([id]) => ns[id] = selIds.has(id));
+                      setTnSelected(ns);
+                    };
                     return (
                       <>
-                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,cursor:"pointer"}} onClick={()=>{
-                          const ns = {...tnSelected}; items.forEach(([id])=>ns[id]=!allSel); setTnSelected(ns);
-                        }}>
-                          <input type="checkbox" checked={allSel} ref={el=>{ if(el) el.indeterminate = someSel && !allSel; }} readOnly style={{cursor:"pointer"}}/>
-                          <span style={{fontSize:12,fontWeight:600,color:T.text}}>{allSel?"Deseleccionar":"Seleccionar"} todas ({items.length})</span>
-                          <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Total disponible: $ {items.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
+                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap"}}>
+                          <div onClick={()=>{
+                            const ns = {...tnSelected}; itemsSelectables.forEach(([id])=>ns[id]=!allSel); setTnSelected(ns);
+                          }} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+                            <input type="checkbox" checked={allSel} ref={el=>{ if(el) el.indeterminate = someSel && !allSel; }} readOnly style={{cursor:"pointer"}}/>
+                            <span style={{fontSize:12,fontWeight:600,color:T.text}}>{allSel?"Deseleccionar":"Seleccionar"} todas ({itemsSelectables.length})</span>
+                          </div>
+                          <select onChange={e=>{const v=parseInt(e.target.value); if(v) seleccionarPorcentaje(v); e.target.value="";}} value="" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"5px 8px",fontSize:11,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
+                            <option value="">Selección parcial…</option>
+                            <option value="10">10% (aleatorio)</option>
+                            <option value="20">20% (aleatorio)</option>
+                            <option value="30">30% (aleatorio)</option>
+                            <option value="40">40% (aleatorio)</option>
+                            <option value="50">50% (aleatorio)</option>
+                            <option value="60">60% (aleatorio)</option>
+                            <option value="70">70% (aleatorio)</option>
+                            <option value="80">80% (aleatorio)</option>
+                            <option value="90">90% (aleatorio)</option>
+                          </select>
+                          <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Total disponible: $ {itemsSelectables.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
                         </div>
                         <div style={{maxHeight:420,overflowY:"auto"}}>
                           {items.map(([id,o])=>{
-                            const sel = !!tnSelected[id];
-                            const fechaCorta = (o.fecha||"").slice(0,10).split("-").slice(1).reverse().join("/");
+                            const billed = !!o._billed;
+                            const sel = !billed && !!tnSelected[id];
+                            const fechaHora = fmtFechaHora(o.fecha);
                             const tipoFact = esMono ? "C" : (o.doc_tipo === "CUIT" ? "A" : "B");
                             const plat = o._platform;
                             const label = o._platform_label || (plat==="tiendanube"?"TN":plat==="shopify"?"SH":plat==="mercadolibre"?"ML":"—");
+                            const bg = billed ? T.green+"18" : sel ? T.accentSolid+"10" : "transparent";
+                            const bord = billed ? "1px solid "+T.green+"33" : "1px solid "+T.borderL;
                             return (
-                              <div key={id} onClick={()=>setTnSelected(prev=>({...prev,[id]:!prev[id]}))} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,cursor:"pointer",background:sel?T.accentSolid+"10":"transparent",borderBottom:"1px solid "+T.borderL}}>
-                                <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
-                                <span style={{fontSize:10,color:T.textSm,minWidth:34}}>{fechaCorta||"—"}</span>
+                              <div key={id} onClick={()=>{ if(!billed) setTnSelected(prev=>({...prev,[id]:!prev[id]})); }} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,cursor:billed?"default":"pointer",background:bg,borderBottom:bord,opacity:billed?0.85:1}}>
+                                <input type="checkbox" checked={billed?true:sel} disabled={billed} readOnly style={{cursor:billed?"not-allowed":"pointer",accentColor:billed?T.green:undefined}}/>
+                                <span style={{fontSize:10,color:T.textSm,minWidth:74}}>{fechaHora}</span>
                                 <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:badgeColor(plat),color:badgeTextColor(plat),fontWeight:700,minWidth:24,textAlign:"center"}}>{label}</span>
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
-                                  <div style={{fontSize:12,fontWeight:600,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
-                                  <div style={{fontSize:10,color:T.textSm}}>F{tipoFact} · {o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}</div>
+                                  <div style={{fontSize:12,fontWeight:600,color:billed?T.green:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
+                                  <div style={{fontSize:10,color:billed?T.green:T.textSm}}>
+                                    {billed
+                                      ? `✓ Ya facturada · F${o._billed_info?.letra||""} N° ${String(o._billed_info?.nro||"").padStart(8,"0")}`
+                                      : `F${tipoFact} · ${o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}`}
+                                  </div>
                                 </div>
-                                <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                                <div style={{fontSize:13,fontWeight:700,color:billed?T.green:T.text,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
                               </div>
                             );
                           })}
@@ -6777,37 +6787,6 @@ function AppArca({T, user, onHome}) {
                     );
                   })()}
 
-                  {/* Upload manual colapsable */}
-                  <details style={{marginTop:14}} open={showManualUpload} onToggle={e=>setShowManualUpload(e.target.open)}>
-                    <summary style={{cursor:"pointer",fontSize:11,color:T.textSm,padding:"8px 10px",background:T.bg,borderRadius:6,border:"1px solid "+T.borderL}}>▶ ¿Preferís subir un archivo manual? (.xlsx de ML, .csv de TN/Shopify)</summary>
-                    <div style={{padding:"14px 0 4px"}}>
-                      <div style={{border:"2px dashed "+T.border,borderRadius:10,padding:"22px 18px",textAlign:"center",cursor:"pointer"}}
-                        onClick={()=>document.getElementById('arca-file-input')?.click()}
-                        onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.accent;}}
-                        onDragLeave={e=>{e.currentTarget.style.borderColor=T.border;}}
-                        onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=T.border;if(e.dataTransfer.files[0])setArchivo(e.dataTransfer.files[0]);}}>
-                        {archivo ? (
-                          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                            <span style={{fontSize:22}}>📄</span>
-                            <div>
-                              <div style={{fontSize:12,fontWeight:600,color:T.text}}>{archivo.name}</div>
-                              <div style={{fontSize:11,color:T.textSm}}>{(archivo.size/1024).toFixed(0)} KB · Click para cambiar</div>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <span style={{fontSize:24,display:"block",marginBottom:6}}>📦</span>
-                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>Arrastrá un archivo acá o tocá para elegir</div>
-                            <div style={{fontSize:10,color:T.textSm,marginTop:3}}>.xlsx (Mercado Libre) · .csv (Tienda Nube o Shopify)</div>
-                          </>
-                        )}
-                        <input id="arca-file-input" type="file" accept=".xlsx,.csv" onChange={e=>{if(e.target.files[0])setArchivo(e.target.files[0]);}} style={{display:"none"}}/>
-                      </div>
-                      <button onClick={handleParseFile} disabled={parsing||!archivo||!cuitSel} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginTop:10,display:"flex",alignItems:"center",justifyContent:"center",gap:6,opacity:(!archivo||!cuitSel)?0.5:1}}>
-                        {parsing?<><Spinner size={12} color="#fff"/> Procesando...</>:"📂 Cargar archivo"}
-                      </button>
-                    </div>
-                  </details>
                 </div>
 
                 {/* Preview órdenes */}
