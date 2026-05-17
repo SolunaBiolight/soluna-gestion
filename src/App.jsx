@@ -5899,6 +5899,8 @@ function AppArca({T, user, onHome}) {
   const [fechaDesde, setFechaDesde] = useState(new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10));
   const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0,10));
   const [canalSel, setCanalSel] = useState("todos"); // "todos" | "tn" | "shopify" | "ml"
+  const [montoMin, setMontoMin] = useState("");
+  const [montoMax, setMontoMax] = useState("");
   const [showManualUpload, setShowManualUpload] = useState(false);
 
   // Historial de batches (facturaciones recientes)
@@ -6641,6 +6643,10 @@ function AppArca({T, user, onHome}) {
                         <option value="shopify">Shopify</option>
                         <option value="mercadolibre">Mercado Libre</option>
                       </select>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>Monto $</span>
+                      <input type="number" placeholder="min" value={montoMin} onChange={e=>setMontoMin(e.target.value)} style={{...iS,width:78,padding:"6px 8px",fontSize:12}}/>
+                      <span style={{fontSize:11,color:T.textSm}}>–</span>
+                      <input type="number" placeholder="max" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:78,padding:"6px 8px",fontSize:12}}/>
                       <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar" style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:tnLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                         {tnLoading ? <Spinner size={12} color={T.textMd}/> : "🔄"}
                       </button>
@@ -6671,6 +6677,46 @@ function AppArca({T, user, onHome}) {
                     })()}
                   </div>
 
+                  {/* Tip Shopify: cómo capturar DNI/CUIT en el checkout */}
+                  {tnData?.connections?.find(c => c.platform === "shopify" && c.connected) && (
+                    <details style={{marginBottom:12}}>
+                      <summary style={{cursor:"pointer",fontSize:12,fontWeight:600,color:T.text,padding:"10px 14px",background:T.yellowBg,border:"1px solid "+T.yellow+"44",borderRadius:8,listStyle:"none"}}>
+                        ⚠ ¿Las ventas de Shopify no traen DNI/CUIT? — Click para ver cómo configurar tu checkout
+                      </summary>
+                      <div style={{padding:"14px 16px",background:T.bg,border:"1px solid "+T.borderL,borderTop:"none",borderRadius:"0 0 8px 8px",fontSize:12,color:T.textMd,lineHeight:1.7}}>
+                        <div style={{marginBottom:10}}>
+                          Shopify no tiene un campo nativo de "DNI/CUIT" — pero sí tiene el campo <strong style={{color:T.text}}>"Empresa"</strong> (<em>Company name</em>) que vamos a reutilizar para que tus clientes carguen su documento. Hay que hacer 2 cosas en tu admin de Shopify:
+                        </div>
+
+                        <div style={{marginTop:14,marginBottom:6,fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:0.5}}>Paso 1 — Activar el campo "Empresa" como requerido</div>
+                        <ol style={{margin:0,paddingLeft:20}}>
+                          <li>Admin de Shopify → <strong style={{color:T.text}}>Settings</strong> (Configuración, abajo a la izquierda)</li>
+                          <li>Click en <strong style={{color:T.text}}>Checkout</strong> (Pago)</li>
+                          <li>Scroll hasta la sección <strong style={{color:T.text}}>"Customer contact method"</strong> / <strong style={{color:T.text}}>"Form options"</strong> (Opciones del formulario)</li>
+                          <li>En <strong style={{color:T.text}}>"Company name"</strong> (Nombre de la empresa) cambiá la opción de <em>"Hidden"</em> a <strong style={{color:T.text}}>"Required"</strong> (Requerido)</li>
+                          <li>Click en <strong style={{color:T.text}}>"Save"</strong> arriba a la derecha</li>
+                        </ol>
+
+                        <div style={{marginTop:14,marginBottom:6,fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:0.5}}>Paso 2 — Renombrar el label "Empresa" → "DNI o CUIT"</div>
+                        <ol style={{margin:0,paddingLeft:20}}>
+                          <li>Admin de Shopify → <strong style={{color:T.text}}>Settings</strong> → <strong style={{color:T.text}}>Languages</strong> (Idiomas)</li>
+                          <li>En el idioma activo (Español) → click en <strong style={{color:T.text}}>"Edit translations"</strong> (Editar traducciones, botón violeta a la derecha)</li>
+                          <li>En la barra de búsqueda escribí <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>company</code></li>
+                          <li>Buscá la entrada del <strong style={{color:T.text}}>checkout</strong> que diga "Empresa" o "Company" (puede haber varias — modificá todas las que estén dentro de "checkout/contact")</li>
+                          <li>Cambiá el texto a: <code style={{background:T.surface,padding:"2px 8px",borderRadius:3,fontSize:11,color:T.green,fontWeight:700}}>DNI o CUIT (sin puntos ni guiones)</code></li>
+                          <li>Click en <strong style={{color:T.text}}>"Save"</strong></li>
+                        </ol>
+
+                        <div style={{marginTop:12,padding:"10px 14px",background:T.greenBg,border:"1px solid "+T.green+"44",borderRadius:8,fontSize:11,color:T.textMd,lineHeight:1.6}}>
+                          ✅ <strong style={{color:T.green}}>Resultado:</strong> tus clientes verán un campo obligatorio "DNI o CUIT" en el checkout. Si ponen <strong style={{color:T.text}}>CUIT válido</strong> → Growith emite <strong style={{color:T.text}}>Factura A</strong>. Si ponen <strong style={{color:T.text}}>DNI</strong> → Growith emite <strong style={{color:T.text}}>Factura B</strong>. Si lo dejan vacío (no debería pasar si lo marcaste "Required") → Factura B a Consumidor Final.
+                        </div>
+                        <div style={{marginTop:8,fontSize:10,color:T.textSm,fontStyle:"italic"}}>
+                          Nota: las ventas anteriores a este cambio no van a tener el documento. Solo las nuevas. Para esas viejas, usá el botón "Factura manual" o cargá el doc de cada una.
+                        </div>
+                      </div>
+                    </details>
+                  )}
+
                   {tnLoading && !tnData ? (
                     <div style={{padding:"40px 20px",textAlign:"center"}}>
                       <Spinner size={18} color={T.accent}/>
@@ -6687,14 +6733,21 @@ function AppArca({T, user, onHome}) {
                       <div style={{fontSize:11,color:T.textSm}}>No encontramos ventas pagas sin facturar en el período seleccionado.</div>
                     </div>
                   ) : (() => {
-                    // El backend ya manda ordenado por fecha desc. Aplicamos solo el filtro de canal.
+                    // El backend ya manda ordenado por fecha desc. Filtros locales: canal y rango de monto.
                     const all = Object.entries(tnData.ordenes);
-                    const items = canalSel === "todos" ? all : all.filter(([, o]) => o._platform === canalSel);
+                    const minN = montoMin === "" ? null : parseFloat(montoMin);
+                    const maxN = montoMax === "" ? null : parseFloat(montoMax);
+                    const items = all.filter(([, o]) => {
+                      if (canalSel !== "todos" && o._platform !== canalSel) return false;
+                      if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
+                      if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
+                      return true;
+                    });
                     if (items.length === 0) {
                       return (
                         <div style={{padding:"30px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
                           <div style={{fontSize:22,marginBottom:6}}>🔍</div>
-                          <div style={{fontSize:12,color:T.textSm}}>No hay ventas en {canalSel} en este período.</div>
+                          <div style={{fontSize:12,color:T.textSm}}>No hay ventas que coincidan con los filtros aplicados.</div>
                         </div>
                       );
                     }
