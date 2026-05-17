@@ -7876,10 +7876,21 @@ function AppMetaAds({T, user, onHome}) {
   const LARGOS=["corto","medio","largo"];
   const FORMATOS=["storytelling","directo","pregunta","testimonial"];
 
-  const [tab,setTab]=useState("cuenta");
+  const [tab,setTab]=useState("analisis");
   const [loading,setLoading]=useState(true);
   const [accounts,setAccounts]=useState([]);
   const [activeAccId,setActiveAccId]=useState(null);
+
+  // Estado del tab Análisis (Ads Manager)
+  const [aLevel,setALevel]=useState("campaign"); // campaign | adset | ad
+  const [aSince,setASince]=useState(()=>new Date(Date.now()-7*86400000).toISOString().slice(0,10));
+  const [aUntil,setAUntil]=useState(()=>new Date().toISOString().slice(0,10));
+  const [aRows,setARows]=useState([]);
+  const [aLoading,setALoading]=useState(false);
+  const [aSort,setASort]=useState({key:"spend",dir:"desc"});
+  const [aQuery,setAQuery]=useState("");
+  const [aFilterStatus,setAFilterStatus]=useState("all"); // all | active | paused
+  const [aBusyIds,setABusyIds]=useState({}); // ids siendo pausadas/activadas
 
   // Conexión System User Token
   const [tokenInput,setTokenInput]=useState("");
@@ -7948,7 +7959,40 @@ function AppMetaAds({T, user, onHome}) {
   useEffect(()=>{
     if(tab==="campanas"&&activeAccId) loadCampaigns();
     if(tab==="creativos"&&activeAccId) loadCreatives();
+    if(tab==="analisis"&&activeAccId) loadInsights();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab,activeAccId]);
+
+  useEffect(()=>{
+    if(tab==="analisis"&&activeAccId) loadInsights();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[aLevel,aSince,aUntil]);
+
+  async function loadInsights() {
+    if(!activeAccId) return;
+    setALoading(true);
+    try {
+      const d = await metaApi("insights","GET",null,{acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil});
+      if(d.error) { toast("Error: "+d.error,"error"); setARows([]); }
+      else setARows(d.rows||[]);
+    } finally { setALoading(false); }
+  }
+
+  async function toggleStatus(row) {
+    const targetStatus = row.effective_status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+    setABusyIds(b=>({...b,[row.id]:true}));
+    try {
+      const d = await metaApi("set_status","POST",{node_id:row.id,status:targetStatus},{acc_id:activeAccId});
+      if(d.error) toast("Error: "+d.error,"error");
+      else {
+        toast(`${targetStatus==="PAUSED"?"Pausado":"Activado"} ✓`,"success");
+        // Actualizar el row local sin recargar todo
+        setARows(prev => prev.map(r => r.id === row.id ? {...r, effective_status: targetStatus, status: targetStatus} : r));
+      }
+    } finally {
+      setABusyIds(b => { const n={...b}; delete n[row.id]; return n; });
+    }
+  }
 
   // ── Conectar System User Token ────────────────────────
   async function handleConnect() {
@@ -8106,6 +8150,7 @@ function AppMetaAds({T, user, onHome}) {
   );
 
   const TABS=[
+    {id:"analisis",label:"📊 Análisis"},
     {id:"cuenta",label:"Cuenta"},
     {id:"campanas",label:"Campañas & AdSets"},
     {id:"creativos",label:"Creativos"},
@@ -8148,7 +8193,175 @@ function AppMetaAds({T, user, onHome}) {
       </AppTopbar>
       <AppTabs T={T} tabs={TABS} active={tab} onChange={setTab}/>
 
-      <div style={{maxWidth:1100,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
+
+        {/* ── ANÁLISIS (Ads Manager) ──────────────────── */}
+        {tab==="analisis"&&(
+          <div>
+            {!activeAccId ? (
+              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd,lineHeight:1.6}}>
+                ⚠ Conectá tu cuenta de Meta primero. Andá a <strong style={{color:T.text}}>Config → Tiendas conectadas → Meta Ads</strong> y dale "Conectar".
+              </div>
+            ) : (
+              <>
+                {/* Header con controles */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    {/* Sub-tabs nivel */}
+                    <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+                      {[{id:"campaign",label:"Campañas"},{id:"adset",label:"Adsets"},{id:"ad",label:"Ads"}].map(l=>(
+                        <button key={l.id} onClick={()=>setALevel(l.id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:aLevel===l.id?T.card:"transparent",color:aLevel===l.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l.label}</button>
+                      ))}
+                    </div>
+                    {/* Date range */}
+                    <span style={{fontSize:11,color:T.textSm,marginLeft:8}}>Período</span>
+                    <input type="date" value={aSince} max={aUntil} onChange={e=>setASince(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <span style={{fontSize:11,color:T.textSm}}>a</span>
+                    <input type="date" value={aUntil} min={aSince} max={new Date().toISOString().slice(0,10)} onChange={e=>setAUntil(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    {/* Presets rápidos */}
+                    <div style={{display:"flex",gap:4}}>
+                      {[{d:7,l:"7d"},{d:14,l:"14d"},{d:30,l:"30d"}].map(p=>(
+                        <button key={p.d} onClick={()=>{setASince(new Date(Date.now()-p.d*86400000).toISOString().slice(0,10));setAUntil(new Date().toISOString().slice(0,10));}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
+                      ))}
+                    </div>
+                    {/* Filtro estado */}
+                    <select value={aFilterStatus} onChange={e=>setAFilterStatus(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <option value="all">Todos los estados</option>
+                      <option value="active">Solo activos</option>
+                      <option value="paused">Solo pausados</option>
+                    </select>
+                    {/* Búsqueda */}
+                    <input type="text" placeholder="🔍 Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:160,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <button onClick={loadInsights} disabled={aLoading} title="Refrescar" style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      {aLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tabla de insights */}
+                {aLoading && aRows.length === 0 ? (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+                    <Spinner size={20} color={T.accent}/>
+                    <div style={{fontSize:13,color:T.textSm,marginTop:14}}>Trayendo métricas de Meta...</div>
+                  </div>
+                ) : (() => {
+                  // Filtrar + sortear
+                  let filtered = aRows;
+                  if (aQuery.trim()) {
+                    const q = aQuery.trim().toLowerCase();
+                    filtered = filtered.filter(r => (r.name||"").toLowerCase().includes(q));
+                  }
+                  if (aFilterStatus === "active") filtered = filtered.filter(r => r.effective_status === "ACTIVE");
+                  if (aFilterStatus === "paused") filtered = filtered.filter(r => r.effective_status === "PAUSED");
+                  filtered = [...filtered].sort((a,b) => {
+                    const k = aSort.key; const dir = aSort.dir === "asc" ? 1 : -1;
+                    if (typeof a[k] === "string") return (a[k]||"").localeCompare(b[k]||"") * dir;
+                    return ((a[k]||0) - (b[k]||0)) * dir;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                        <div style={{fontSize:32,marginBottom:8}}>📭</div>
+                        <div style={{fontSize:13,color:T.textSm}}>No hay {aLevel === "campaign" ? "campañas" : aLevel === "adset" ? "adsets" : "ads"} en este rango.</div>
+                      </div>
+                    );
+                  }
+
+                  // Totales
+                  const sumSpend = filtered.reduce((s,r)=>s+r.spend,0);
+                  const sumPurchaseValue = filtered.reduce((s,r)=>s+r.purchase_value,0);
+                  const sumPurchases = filtered.reduce((s,r)=>s+r.purchases,0);
+                  const sumImpr = filtered.reduce((s,r)=>s+r.impressions,0);
+                  const sumClicks = filtered.reduce((s,r)=>s+r.clicks,0);
+                  const totalRoas = sumSpend > 0 ? sumPurchaseValue / sumSpend : 0;
+                  const totalCpa = sumPurchases > 0 ? sumSpend / sumPurchases : 0;
+                  const totalCtr = sumImpr > 0 ? (sumClicks / sumImpr) * 100 : 0;
+
+                  const fmt = (n) => n.toLocaleString("es-AR",{minimumFractionDigits:2, maximumFractionDigits:2});
+                  const fmtInt = (n) => Math.round(n).toLocaleString("es-AR");
+                  const headerCell = (key, label, align="right") => (
+                    <th onClick={()=>setASort(s=>({key, dir: s.key===key && s.dir==="desc" ? "asc" : "desc"}))} style={{padding:"10px 12px",textAlign:align,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,cursor:"pointer",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap",userSelect:"none"}}>
+                      {label} {aSort.key===key && (aSort.dir==="desc"?"▼":"▲")}
+                    </th>
+                  );
+
+                  return (
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                      <div style={{overflowX:"auto"}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                          <thead style={{background:T.bg,position:"sticky",top:0,zIndex:1}}>
+                            <tr>
+                              <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.border}`,width:54}}>Acción</th>
+                              {headerCell("name", aLevel==="campaign"?"Campaña":aLevel==="adset"?"AdSet":"Ad", "left")}
+                              {headerCell("spend","Gasto")}
+                              {headerCell("purchases","Compras")}
+                              {headerCell("purchase_value","Valor compras")}
+                              {headerCell("roas","ROAS")}
+                              {headerCell("cpa","CPA")}
+                              {headerCell("ctr","CTR")}
+                              {headerCell("cpm","CPM")}
+                              {headerCell("cpc","CPC")}
+                              {headerCell("frequency","Frec.")}
+                              {headerCell("impressions","Impr.")}
+                              {headerCell("reach","Alcance")}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filtered.map(r => {
+                              const busy = !!aBusyIds[r.id];
+                              const isActive = r.effective_status === "ACTIVE";
+                              return (
+                                <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6}}>
+                                  <td style={{padding:"10px 12px"}}>
+                                    <button onClick={()=>toggleStatus(r)} disabled={busy} title={isActive?"Pausar":"Activar"} style={{background:isActive?T.green+"22":T.red+"22",border:`1px solid ${isActive?T.green:T.red}55`,color:isActive?T.green:T.red,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:busy?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                                      {busy?<Spinner size={10} color={isActive?T.green:T.red}/>:isActive?"⏸":"▶"}
+                                    </button>
+                                  </td>
+                                  <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                    <div style={{fontWeight:600}}>{r.name||"(sin nombre)"}</div>
+                                    <div style={{fontSize:10,color:T.textSm,marginTop:1}}>
+                                      <span style={{padding:"1px 6px",borderRadius:4,background:isActive?T.green+"22":T.red+"22",color:isActive?T.green:T.red,fontWeight:600}}>{r.effective_status||"—"}</span>
+                                      {r.daily_budget && <span style={{marginLeft:6}}>· ${fmt(r.daily_budget)}/día</span>}
+                                    </div>
+                                  </td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,fontWeight:600,whiteSpace:"nowrap"}}>${fmt(r.spend)}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{r.purchases}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,whiteSpace:"nowrap"}}>${fmt(r.purchase_value)}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:r.roas>=2?T.green:r.roas>=1?T.text:T.red,fontWeight:700}}>{fmt(r.roas)}x</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,whiteSpace:"nowrap"}}>{r.cpa?"$"+fmt(r.cpa):"—"}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{fmt(r.ctr)}%</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,whiteSpace:"nowrap"}}>${fmt(r.cpm)}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,whiteSpace:"nowrap"}}>${fmt(r.cpc)}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{fmt(r.frequency)}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{fmtInt(r.impressions)}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{fmtInt(r.reach)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot style={{background:T.bg}}>
+                            <tr>
+                              <td style={{padding:"10px 12px"}}></td>
+                              <td style={{padding:"10px 12px",fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Totales · {filtered.length} {aLevel}{filtered.length===1?"":"s"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>${fmt(sumSpend)}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text}}>{sumPurchases}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>${fmt(sumPurchaseValue)}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:totalRoas>=2?T.green:totalRoas>=1?T.text:T.red}}>{fmt(totalRoas)}x</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{totalCpa?"$"+fmt(totalCpa):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text}}>{fmt(totalCtr)}%</td>
+                              <td colSpan="5"></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        )}
 
         {/* ── CUENTA ──────────────────────────────────── */}
         {tab==="cuenta"&&(

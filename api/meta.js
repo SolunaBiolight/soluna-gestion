@@ -240,6 +240,124 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // ── INSIGHTS (Ads Manager dentro de Growith) ─────────
+    // GET ?action=insights&acc_id=...&level=campaign|adset|ad&since=YYYY-MM-DD&until=YYYY-MM-DD
+    if (action === "insights" && req.method === "GET") {
+      const accIdQ = req.query.acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, accIdQ);
+      if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
+      if (!cfg.ad_account_id) return res.status(400).json({ error: "Falta seleccionar ad_account_id en la cuenta" });
+
+      const level = String(req.query.level || "campaign");
+      if (!["campaign", "adset", "ad"].includes(level)) return res.status(400).json({ error: "level inválido" });
+
+      const today = new Date().toISOString().slice(0, 10);
+      const since = String(req.query.since || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
+      const until = String(req.query.until || today);
+
+      const fields = [
+        "campaign_id", "campaign_name", "adset_id", "adset_name", "ad_id", "ad_name",
+        "spend", "impressions", "clicks", "ctr", "cpm", "cpc", "frequency", "reach",
+        "actions", "action_values", "purchase_roas", "cost_per_action_type",
+        "date_start", "date_stop",
+      ].join(",");
+
+      try {
+        const data = await metaGet(`${cfg.ad_account_id}/insights`, {
+          level,
+          time_range: JSON.stringify({ since, until }),
+          fields,
+          limit: 500,
+        }, cfg.access_token);
+
+        // También necesitamos el status de cada nodo (que insights no devuelve).
+        // Una sola llamada al endpoint correspondiente con id+status+effective_status.
+        const nodeMap = {};
+        const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget"
+                         : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id"
+                         : "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,object_story_spec}";
+        try {
+          const nodes = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads"}`, {
+            fields: nodeFields,
+            limit: 500,
+          }, cfg.access_token);
+          for (const n of (nodes.data || [])) nodeMap[n.id] = n;
+        } catch (e) { /* seguimos sin status */ }
+
+        const rows = (data.data || []).map(r => {
+          const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
+          const id = r[idField];
+          const node = nodeMap[id] || {};
+          const purchases = (r.actions || []).find(a => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase");
+          const purchaseValue = (r.action_values || []).find(a => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase");
+          const cpaPurchase = (r.cost_per_action_type || []).find(a => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase");
+          return {
+            id,
+            name: r[level + "_name"] || node.name || "",
+            status: node.status || null,
+            effective_status: node.effective_status || null,
+            campaign_id: r.campaign_id,
+            adset_id: r.adset_id,
+            ad_id: r.ad_id,
+            spend: parseFloat(r.spend) || 0,
+            impressions: parseInt(r.impressions) || 0,
+            clicks: parseInt(r.clicks) || 0,
+            ctr: parseFloat(r.ctr) || 0,
+            cpm: parseFloat(r.cpm) || 0,
+            cpc: parseFloat(r.cpc) || 0,
+            frequency: parseFloat(r.frequency) || 0,
+            reach: parseInt(r.reach) || 0,
+            purchases: parseInt(purchases?.value) || 0,
+            purchase_value: parseFloat(purchaseValue?.value) || 0,
+            roas: parseFloat((r.purchase_roas || [])[0]?.value) || 0,
+            cpa: parseFloat(cpaPurchase?.value) || 0,
+            daily_budget: node.daily_budget ? parseFloat(node.daily_budget) / 100 : null,
+            objective: node.objective || null,
+            creative: node.creative || null,
+          };
+        });
+
+        // Sumar nodos sin gasto (que no aparecen en insights pero existen)
+        for (const id in nodeMap) {
+          if (!rows.find(r => r.id === id)) {
+            const n = nodeMap[id];
+            rows.push({
+              id, name: n.name || "", status: n.status, effective_status: n.effective_status,
+              spend: 0, impressions: 0, clicks: 0, ctr: 0, cpm: 0, cpc: 0, frequency: 0, reach: 0,
+              purchases: 0, purchase_value: 0, roas: 0, cpa: 0,
+              daily_budget: n.daily_budget ? parseFloat(n.daily_budget) / 100 : null,
+              objective: n.objective || null,
+              creative: n.creative || null,
+              campaign_id: n.campaign_id, adset_id: n.adset_id,
+            });
+          }
+        }
+
+        return res.json({ rows, since, until, level });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
+    // ── SET STATUS (pausar/activar campaña, adset o ad) ──
+    // POST { node_id, status: "ACTIVE" | "PAUSED" }
+    if (action === "set_status" && req.method === "POST") {
+      const { node_id, status } = req.body || {};
+      if (!node_id || !status) return res.status(400).json({ error: "Faltan node_id o status" });
+      if (!["ACTIVE", "PAUSED"].includes(status)) return res.status(400).json({ error: "status inválido" });
+      const accIdQ = acc_id || req.query.acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, accIdQ);
+      if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
+      try {
+        await metaPost(node_id, { status }, cfg.access_token);
+        return res.json({ ok: true, node_id, status });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
     if (action === "resources" && req.method === "GET") {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const cfg = await loadMetaAccount(db, uid, acc_id);
