@@ -146,6 +146,170 @@ async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes
   return JSON.parse(cleaned);
 }
 
+// ─── Insights helper (reutilizable por endpoint y evaluador de reglas) ──
+
+async function fetchInsightsRows(cfg, level, since, until) {
+  const fields = [
+    "campaign_id", "campaign_name", "adset_id", "adset_name", "ad_id", "ad_name",
+    "spend", "impressions", "clicks", "ctr", "cpm", "cpc", "frequency", "reach",
+    "actions", "action_values", "purchase_roas", "cost_per_action_type",
+  ].join(",");
+  const data = await metaGet(`${cfg.ad_account_id}/insights`, {
+    level,
+    time_range: JSON.stringify({ since, until }),
+    fields,
+    limit: 500,
+  }, cfg.access_token);
+
+  const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget"
+                   : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id"
+                   : "id,name,status,effective_status,adset_id,campaign_id";
+  const nodes = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads"}`, {
+    fields: nodeFields, limit: 500,
+  }, cfg.access_token);
+  const nodeMap = {};
+  for (const n of (nodes.data || [])) nodeMap[n.id] = n;
+
+  const rows = (data.data || []).map(r => {
+    const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
+    const id = r[idField];
+    const node = nodeMap[id] || {};
+    const purchases = (r.actions || []).find(a => /purchase/.test(a.action_type || ""));
+    const purchaseValue = (r.action_values || []).find(a => /purchase/.test(a.action_type || ""));
+    const cpaPurchase = (r.cost_per_action_type || []).find(a => /purchase/.test(a.action_type || ""));
+    return {
+      id,
+      name: r[level + "_name"] || node.name || "",
+      status: node.status || null,
+      effective_status: node.effective_status || null,
+      campaign_id: r.campaign_id, adset_id: r.adset_id, ad_id: r.ad_id,
+      spend: parseFloat(r.spend) || 0,
+      impressions: parseInt(r.impressions) || 0,
+      clicks: parseInt(r.clicks) || 0,
+      ctr: parseFloat(r.ctr) || 0,
+      cpm: parseFloat(r.cpm) || 0,
+      cpc: parseFloat(r.cpc) || 0,
+      frequency: parseFloat(r.frequency) || 0,
+      reach: parseInt(r.reach) || 0,
+      purchases: parseInt(purchases?.value) || 0,
+      purchase_value: parseFloat(purchaseValue?.value) || 0,
+      roas: parseFloat((r.purchase_roas || [])[0]?.value) || 0,
+      cpa: parseFloat(cpaPurchase?.value) || 0,
+    };
+  });
+  // Agregar nodos sin gasto
+  for (const id in nodeMap) {
+    if (!rows.find(r => r.id === id)) {
+      const n = nodeMap[id];
+      rows.push({
+        id, name: n.name || "", status: n.status, effective_status: n.effective_status,
+        spend: 0, impressions: 0, clicks: 0, ctr: 0, cpm: 0, cpc: 0, frequency: 0, reach: 0,
+        purchases: 0, purchase_value: 0, roas: 0, cpa: 0,
+      });
+    }
+  }
+  return rows;
+}
+
+// ─── Evaluador de reglas (Fase 3 optimizador) ─────────
+
+function evalCondition(actual, op, target) {
+  const t = parseFloat(target);
+  const a = parseFloat(actual) || 0;
+  if (isNaN(t)) return false;
+  switch (op) {
+    case ">=": return a >= t;
+    case ">":  return a >  t;
+    case "<=": return a <= t;
+    case "<":  return a <  t;
+    case "=":  return Math.abs(a - t) < 0.0001;
+    default:   return false;
+  }
+}
+
+// Evalúa todas las reglas activas del usuario para esa cuenta.
+// Aplica acciones (pause) sobre nodos que matcheen y loguea cada disparo.
+async function evaluateRulesForAccount(db, uid, accId) {
+  const cfg = await loadMetaAccount(db, uid, accId);
+  if (!cfg?.access_token || !cfg.ad_account_id) return { error: "Cuenta no configurada" };
+
+  const rulesSnap = await db.collection("users").doc(uid).collection("meta_rules")
+    .where("acc_id", "==", accId).where("active", "==", true).get();
+  const rules = rulesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (rules.length === 0) return { evaluated: 0, actions: 0 };
+
+  // Pre-fetch insights por cada combinación única (level, window) que use alguna regla
+  const combos = new Set();
+  for (const rule of rules) {
+    for (const cond of rule.conditions || []) combos.add(`${rule.level}|${cond.window_days || 7}`);
+  }
+  const cache = new Map(); // "level|window" -> Map<nodeId, row>
+  for (const combo of combos) {
+    const [level, w] = combo.split("|");
+    const since = new Date(Date.now() - parseInt(w) * 86400000).toISOString().slice(0, 10);
+    const until = new Date().toISOString().slice(0, 10);
+    try {
+      const rows = await fetchInsightsRows(cfg, level, since, until);
+      cache.set(combo, new Map(rows.map(r => [r.id, r])));
+    } catch (e) {
+      console.error("[meta-rules] fetch failed", combo, e.message);
+    }
+  }
+
+  let totalActions = 0;
+  const logBatch = db.batch();
+  const logCol = db.collection("users").doc(uid).collection("meta_rule_log");
+
+  for (const rule of rules) {
+    if (!rule.conditions?.length) continue;
+    // Usamos la window de la PRIMERA condition como referencia para listar nodos.
+    // Cada condition se evalúa con su propia window cache.
+    const refCombo = `${rule.level}|${rule.conditions[0].window_days || 7}`;
+    const refMap = cache.get(refCombo) || new Map();
+
+    for (const [nodeId, refRow] of refMap) {
+      if (refRow.effective_status !== "ACTIVE") continue;
+
+      const results = rule.conditions.map(c => {
+        const combo = `${rule.level}|${c.window_days || 7}`;
+        const row = cache.get(combo)?.get(nodeId) || {};
+        const v = row[c.metric] ?? 0;
+        return { matched: evalCondition(v, c.op, c.value), actual: v, cond: c };
+      });
+      const matched = rule.logic === "OR"
+        ? results.some(r => r.matched)
+        : results.every(r => r.matched);
+
+      if (!matched) continue;
+
+      // Aplicar acción
+      let ok = true, errMsg = null;
+      if (rule.action === "pause") {
+        try { await metaPost(nodeId, { status: "PAUSED" }, cfg.access_token); }
+        catch (e) { ok = false; errMsg = e.message; }
+      }
+
+      const logRef = logCol.doc();
+      logBatch.set(logRef, {
+        rule_id: rule.id, rule_name: rule.name,
+        node_id: nodeId, node_name: refRow.name || "",
+        level: rule.level, logic: rule.logic,
+        action_taken: rule.action, ok, error: errMsg || null,
+        triggered: results.map(r => ({ metric: r.cond.metric, op: r.cond.op, target: r.cond.value, window_days: r.cond.window_days, actual: r.actual })),
+        ts: new Date().toISOString(),
+      });
+      totalActions++;
+    }
+
+    // Stamp de last_evaluated_at
+    logBatch.set(db.collection("users").doc(uid).collection("meta_rules").doc(rule.id),
+      { last_evaluated_at: new Date().toISOString() }, { merge: true });
+  }
+
+  await logBatch.commit().catch(e => console.error("[meta-rules] log commit failed:", e.message));
+  return { evaluated: rules.length, actions: totalActions };
+}
+
 // ─── Gemini analyze ad (Biblioteca) ───────────────────
 
 const ANALYZE_SYSTEM = `Sos un experto en Meta Ads (Facebook & Instagram) para ecommerce argentino. Analizás anuncios usando el copy, el creative y las métricas reales de los últimos 7 días. Sos honesto y directo — si un ad anda mal, lo decís.
@@ -223,9 +387,41 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const { action, uid, acc_id, cid } = req.query;
-  if (!uid) return res.status(401).json({ error: "Falta uid" });
 
   const db = initAdmin();
+
+  // ── CRON: corre evaluación de reglas para TODOS los users con reglas activas ──
+  // Lo dispara Vercel Cron (Bearer CRON_SECRET) sin uid.
+  if (action === "cron_run_all" && req.method === "GET") {
+    const expected = process.env.CRON_SECRET;
+    const got = req.headers.authorization || "";
+    if (expected && got !== `Bearer ${expected}`) {
+      return res.status(401).json({ error: "Unauthorized cron" });
+    }
+    try {
+      const allRules = await db.collectionGroup("meta_rules").where("active", "==", true).get();
+      const tasks = new Map();
+      allRules.docs.forEach(d => {
+        const data = d.data();
+        const ownerUid = d.ref.parent.parent.id;
+        if (data.acc_id) tasks.set(`${ownerUid}|${data.acc_id}`, { uid: ownerUid, accId: data.acc_id });
+      });
+      const summary = [];
+      for (const { uid: u, accId } of tasks.values()) {
+        try {
+          const r = await evaluateRulesForAccount(db, u, accId);
+          summary.push({ uid: u, accId, ...r });
+        } catch (e) {
+          summary.push({ uid: u, accId, error: e.message });
+        }
+      }
+      return res.json({ ok: true, ran: tasks.size, summary });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  if (!uid) return res.status(401).json({ error: "Falta uid" });
 
   try {
 
@@ -516,6 +712,68 @@ export default async function handler(req, res) {
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }
+    }
+
+    // ── REGLAS (Fase 3 optimizador) ──────────────────────
+
+    if (action === "rules_list" && req.method === "GET") {
+      const accIdQ = req.query.acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const snap = await db.collection("users").doc(uid).collection("meta_rules")
+        .where("acc_id", "==", accIdQ).get();
+      const rules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      rules.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+      return res.json({ rules });
+    }
+
+    if (action === "rule_save" && req.method === "POST") {
+      const { rule } = req.body || {};
+      if (!rule?.name || !rule?.level || !rule?.acc_id) return res.status(400).json({ error: "Faltan campos en la regla (name, level, acc_id)" });
+      if (!Array.isArray(rule.conditions) || rule.conditions.length === 0) return res.status(400).json({ error: "La regla necesita al menos 1 condición" });
+
+      const col = db.collection("users").doc(uid).collection("meta_rules");
+      const ruleId = rule.id || col.doc().id;
+      const data = {
+        name: String(rule.name).slice(0, 80),
+        level: rule.level,
+        logic: rule.logic === "OR" ? "OR" : "AND",
+        conditions: rule.conditions.map(c => ({
+          metric: c.metric,
+          op: c.op,
+          value: parseFloat(c.value) || 0,
+          window_days: parseInt(c.window_days) || 7,
+        })),
+        action: rule.action === "notify" ? "notify" : "pause",
+        active: rule.active !== false,
+        acc_id: rule.acc_id,
+        updated_at: new Date().toISOString(),
+        ...(rule.id ? {} : { created_at: new Date().toISOString() }),
+      };
+      await col.doc(ruleId).set(data, { merge: true });
+      return res.json({ ok: true, id: ruleId, rule: { id: ruleId, ...data } });
+    }
+
+    if (action === "rule_delete" && req.method === "DELETE") {
+      const { rule_id } = req.query;
+      if (!rule_id) return res.status(400).json({ error: "Falta rule_id" });
+      await db.collection("users").doc(uid).collection("meta_rules").doc(String(rule_id)).delete();
+      return res.json({ ok: true });
+    }
+
+    if (action === "rule_log" && req.method === "GET") {
+      const snap = await db.collection("users").doc(uid).collection("meta_rule_log").get();
+      const log = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.ts || "").localeCompare(a.ts || ""))
+        .slice(0, 100);
+      return res.json({ log });
+    }
+
+    // Evaluar reglas ahora (manualmente desde la UI)
+    if (action === "evaluate_rules" && req.method === "POST") {
+      const accIdQ = acc_id || req.query.acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const result = await evaluateRulesForAccount(db, uid, accIdQ);
+      return res.json(result);
     }
 
     // ── SET STATUS (pausar/activar campaña, adset o ad) ──

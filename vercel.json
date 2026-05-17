@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/meta?action=cron_run_all",
+      "schedule": "0 */6 * * *"
+    }
+  ]
+}
