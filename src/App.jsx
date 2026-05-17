@@ -6608,8 +6608,14 @@ function AppArca({T, user, onHome}) {
                     })()}
                   </div>
 
-                  {/* Tip Shopify: cómo capturar DNI/CUIT en el checkout */}
-                  {tnData?.connections?.find(c => c.platform === "shopify" && c.connected) && (
+                  {/* Tip Shopify: cómo capturar DNI/CUIT en el checkout — se oculta si ya hay
+                      al menos 1 venta de Shopify con documento cargado (config OK) */}
+                  {(() => {
+                    const shConnected = tnData?.connections?.find(c => c.platform === "shopify" && c.connected);
+                    if (!shConnected) return null;
+                    const algunShopifyConDoc = Object.values(tnData?.ordenes || {}).some(o => o._platform === "shopify" && o.dni && String(o.dni).length > 0);
+                    if (algunShopifyConDoc) return null; // ya está configurado, no molestamos
+                    return (
                     <details style={{marginBottom:12}}>
                       <summary style={{cursor:"pointer",fontSize:12,fontWeight:600,color:T.text,padding:"10px 14px",background:T.yellowBg,border:"1px solid "+T.yellow+"44",borderRadius:8,listStyle:"none"}}>
                         ⚠ ¿Las ventas de Shopify no traen DNI/CUIT? — Click para ver cómo configurar tu checkout
@@ -6621,32 +6627,36 @@ function AppArca({T, user, onHome}) {
 
                         <div style={{marginTop:14,marginBottom:6,fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:0.5}}>Paso 1 — Activar el campo "Empresa" como requerido</div>
                         <ol style={{margin:0,paddingLeft:20}}>
-                          <li>Admin de Shopify → <strong style={{color:T.text}}>Settings</strong> (Configuración, abajo a la izquierda)</li>
-                          <li>Click en <strong style={{color:T.text}}>Checkout</strong> (Pago)</li>
-                          <li>Scroll hasta la sección <strong style={{color:T.text}}>"Customer contact method"</strong> / <strong style={{color:T.text}}>"Form options"</strong> (Opciones del formulario)</li>
-                          <li>En <strong style={{color:T.text}}>"Company name"</strong> (Nombre de la empresa) cambiá la opción de <em>"Hidden"</em> a <strong style={{color:T.text}}>"Required"</strong> (Requerido)</li>
-                          <li>Click en <strong style={{color:T.text}}>"Save"</strong> arriba a la derecha</li>
+                          <li>Admin de Shopify → <strong style={{color:T.text}}>Configuración</strong> (abajo a la izquierda del sidebar)</li>
+                          <li>Click en <strong style={{color:T.text}}>Pagar</strong> / <strong style={{color:T.text}}>Checkout</strong></li>
+                          <li>Scroll hasta la sección <strong style={{color:T.text}}>"Opciones del formulario"</strong> / <strong style={{color:T.text}}>"Form options"</strong></li>
+                          <li>En <strong style={{color:T.text}}>"Nombre de la empresa"</strong> / <strong style={{color:T.text}}>"Company name"</strong> cambiá la opción de <em>"Oculto"</em> a <strong style={{color:T.text}}>"Obligatorio"</strong> / <strong style={{color:T.text}}>"Required"</strong></li>
+                          <li>Click en <strong style={{color:T.text}}>"Guardar"</strong> arriba a la derecha</li>
                         </ol>
 
                         <div style={{marginTop:14,marginBottom:6,fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:0.5}}>Paso 2 — Renombrar el label "Empresa" → "DNI o CUIT"</div>
                         <ol style={{margin:0,paddingLeft:20}}>
-                          <li>Admin de Shopify → <strong style={{color:T.text}}>Settings</strong> → <strong style={{color:T.text}}>Languages</strong> (Idiomas)</li>
-                          <li>En el idioma activo (Español) → click en <strong style={{color:T.text}}>"Edit translations"</strong> (Editar traducciones, botón violeta a la derecha)</li>
-                          <li>En la barra de búsqueda escribí <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>company</code></li>
-                          <li>Buscá la entrada del <strong style={{color:T.text}}>checkout</strong> que diga "Empresa" o "Company" (puede haber varias — modificá todas las que estén dentro de "checkout/contact")</li>
+                          <li>Admin de Shopify → <strong style={{color:T.text}}>Tienda online</strong> (en el sidebar izquierdo, debajo de "Canales de ventas")</li>
+                          <li>En el <strong style={{color:T.text}}>tema actual</strong> (el que dice "Tema actual" / "Current theme") tocá el botón <strong style={{color:T.text}}>⋮</strong> (tres puntos, al lado de "Editar tema")</li>
+                          <li>En el menú que se abre, click en <strong style={{color:T.text}}>"Editar contenido predeterminado del tema"</strong> / <strong style={{color:T.text}}>"Edit default theme content"</strong></li>
+                          <li>Te abre una pantalla con categorías y un buscador. En la barra de búsqueda escribí: <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>company</code></li>
+                          <li>Buscá la(s) entrada(s) del <strong style={{color:T.text}}>checkout</strong> / <strong style={{color:T.text}}>pago</strong> que digan "Empresa" o "Company" (suele haber varias — modificá <strong style={{color:T.text}}>todas</strong> las que estén dentro de "checkout" o "contact")</li>
                           <li>Cambiá el texto a: <code style={{background:T.surface,padding:"2px 8px",borderRadius:3,fontSize:11,color:T.green,fontWeight:700}}>DNI o CUIT (sin puntos ni guiones)</code></li>
-                          <li>Click en <strong style={{color:T.text}}>"Save"</strong></li>
+                          <li>Click en <strong style={{color:T.text}}>"Guardar"</strong></li>
                         </ol>
 
                         <div style={{marginTop:12,padding:"10px 14px",background:T.greenBg,border:"1px solid "+T.green+"44",borderRadius:8,fontSize:11,color:T.textMd,lineHeight:1.6}}>
-                          ✅ <strong style={{color:T.green}}>Resultado:</strong> tus clientes verán un campo obligatorio "DNI o CUIT" en el checkout. Si ponen <strong style={{color:T.text}}>CUIT válido</strong> → Growith emite <strong style={{color:T.text}}>Factura A</strong>. Si ponen <strong style={{color:T.text}}>DNI</strong> → Growith emite <strong style={{color:T.text}}>Factura B</strong>. Si lo dejan vacío (no debería pasar si lo marcaste "Required") → Factura B a Consumidor Final.
+                          ✅ <strong style={{color:T.green}}>Resultado:</strong> tus clientes verán un campo obligatorio "DNI o CUIT" en el checkout. Si ponen <strong style={{color:T.text}}>CUIT válido</strong> → Growith emite <strong style={{color:T.text}}>Factura A</strong>. Si ponen <strong style={{color:T.text}}>DNI</strong> → Growith emite <strong style={{color:T.text}}>Factura B</strong>. Si lo dejan vacío (no debería pasar si lo marcaste "Obligatorio") → Factura B a Consumidor Final.
                         </div>
                         <div style={{marginTop:8,fontSize:10,color:T.textSm,fontStyle:"italic"}}>
                           Nota: las ventas anteriores a este cambio no van a tener el documento. Solo las nuevas. Para esas viejas, usá el botón "Factura manual" o cargá el doc de cada una.
                         </div>
+                        <div style={{marginTop:8,fontSize:10,color:T.green,fontStyle:"italic"}}>
+                          🔄 Este aviso desaparece automáticamente en cuanto Growith detecte la primera venta de Shopify con DNI o CUIT cargado.
+                        </div>
                       </div>
                     </details>
-                  )}
+                  );})()}
 
                   {tnLoading && !tnData ? (
                     <div style={{padding:"40px 20px",textAlign:"center"}}>
