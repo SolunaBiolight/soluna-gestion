@@ -5092,6 +5092,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   const [mlClientId,setMlClientId]=useState("");
   const [mlSecret,setMlSecret]=useState("");
   const [connectingML,setConnectingML]=useState(false);
+  const [connectingMeta,setConnectingMeta]=useState(false);
 
   // Detectar callback OAuth (Shopify / ML) al volver
   useEffect(()=>{
@@ -5137,6 +5138,22 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
       setMsg("Error ML: "+(map[mlError]||mlError));
       url.searchParams.delete("ml_error");
       url.searchParams.delete("status");
+      window.history.replaceState({},"",url.pathname+url.search);
+    } else if(url.searchParams.get("meta_success")){
+      setMsg("Meta conectada ✓");
+      url.searchParams.delete("meta_success");
+      window.history.replaceState({},"",url.pathname+url.search);
+    } else if(url.searchParams.get("meta_error")){
+      const e=url.searchParams.get("meta_error");
+      const map={
+        cancelled:"Cancelaste la conexión con Meta.",
+        token_failed:"Meta rechazó el intercambio de credenciales.",
+        me_failed:"No se pudo obtener info de tu cuenta de Meta.",
+        user_not_found:"Tu usuario no se encontró en Firestore.",
+        server_error:"Error de conexión con Meta.",
+      };
+      setMsg("Error Meta: "+(map[e]||e));
+      url.searchParams.delete("meta_error");
       window.history.replaceState({},"",url.pathname+url.search);
     }
   },[]);
@@ -5193,6 +5210,30 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
     setMsg("Completá la autorización en la ventana que se abrió. Una vez autorizado, tu tienda aparecerá conectada.");
   }
 
+  async function connectMeta() {
+    setConnectingMeta(true);
+    try {
+      const r = await fetch(`/api/meta?action=oauth_start&uid=${user.uid}`);
+      const d = await r.json();
+      if(d.error) { setMsg("Error: "+d.error); return; }
+      window.open(d.url, "_blank");
+      setMsg("Completá la autorización en la ventana que se abrió. Volvé acá cuando termines.");
+    } catch(e) {
+      setMsg("Error de red: "+e.message);
+    } finally {
+      setConnectingMeta(false);
+    }
+  }
+
+  async function disconnectMeta() {
+    if(!window.confirm("¿Desvincular Meta? Vas a perder el acceso a las cuentas conectadas.")) return;
+    setSaving(true);
+    try {
+      await fetch(`/api/meta?action=disconnect&uid=${user.uid}`, {method:"POST"});
+      setMsg("Meta desvinculada.");
+    } finally { setSaving(false); }
+  }
+
   async function connectML() {
     if(!mlClientId.trim() || !mlSecret.trim()) {
       setMsg("Completá los 2 campos"); return;
@@ -5239,6 +5280,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   const tnStore=userDoc?.stores?.find(s=>s.type==="tiendanube");
   const shStore=userDoc?.stores?.find(s=>s.type==="shopify");
   const mlStore=userDoc?.stores?.find(s=>s.type==="mercadolibre");
+  const metaConnected=!!userDoc?.meta_active_account;
   const alertasCfg=userDoc?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
 
   const Toggle=({active,onToggle})=>(
@@ -5280,7 +5322,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Tiendas conectadas</div>
           <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>
-            Conectá <strong style={{color:T.text}}>una</strong> plataforma de e-commerce (TN <em>o</em> Shopify) y, si querés, sumá <strong style={{color:T.text}}>Mercado Libre</strong> en paralelo.
+            Conectá <strong style={{color:T.text}}>una</strong> plataforma de e-commerce (TN <em>o</em> Shopify), <strong style={{color:T.text}}>Mercado Libre</strong> y <strong style={{color:T.text}}>Meta Ads</strong> (Facebook + Instagram) para el módulo de análisis y optimización de campañas.
           </div>
           {/* Tienda Nube */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderBottom:`1px solid ${T.borderL}`,gap:10,opacity:shStore && !tnStore ? 0.5 : 1}}>
@@ -5332,6 +5374,22 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
             {mlStore
               ?<button onClick={()=>disconnectStore("mercadolibre")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
               :<button onClick={()=>setShowMLModal(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Conectar</button>
+            }
+          </div>
+          {/* Meta Ads */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderTop:`1px solid ${T.borderL}`,gap:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+              <div style={{width:36,height:36,borderRadius:8,background:"#1877F2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0,color:"#fff",fontWeight:800}}>f</div>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Meta Ads <span style={{fontSize:10,color:T.textSm,fontWeight:400}}>· Facebook + Instagram</span></div>
+                {metaConnected
+                  ? <div style={{fontSize:11,color:T.green,marginTop:1}}>✓ Conectada</div>
+                  : <div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
+              </div>
+            </div>
+            {metaConnected
+              ?<button onClick={disconnectMeta} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
+              :<button onClick={connectMeta} disabled={connectingMeta} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>{connectingMeta?"Abriendo...":"Conectar"}</button>
             }
           </div>
         </div>

@@ -165,6 +165,35 @@ export default async function handler(req, res) {
 
     // ── CUENTAS ──────────────────────────────────────────
 
+    // Devuelve la URL de OAuth de Meta para que el cliente la abra en una ventana.
+    // El callback (api/meta-callback.js) intercambia el code por token y guarda en Firestore.
+    if (action === "oauth_start" && req.method === "GET") {
+      const appId = process.env.META_APP_ID;
+      if (!appId) return res.status(500).json({ error: "Falta META_APP_ID en Vercel" });
+      const redirectUri = encodeURIComponent("https://www.growithapp.com/api/meta-callback");
+      const scopes = [
+        "ads_management",
+        "ads_read",
+        "business_management",
+        "pages_show_list",
+        "pages_read_engagement",
+        "instagram_basic",
+        "instagram_content_publish",
+      ].join(",");
+      const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${encodeURIComponent(uid)}&scope=${encodeURIComponent(scopes)}&response_type=code`;
+      return res.json({ url });
+    }
+
+    // Desconecta TODAS las cuentas Meta del usuario (limpia subcolección + flag activo)
+    if (action === "disconnect" && req.method === "POST") {
+      const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
+      const batch = db.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      batch.set(db.collection("users").doc(uid), { meta_active_account: null }, { merge: true });
+      await batch.commit();
+      return res.json({ ok: true });
+    }
+
     if (action === "accounts" && req.method === "GET") {
       const accounts = await listMetaAccounts(db, uid);
       const userSnap = await db.collection("users").doc(uid).get();
