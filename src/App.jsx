@@ -6538,75 +6538,6 @@ function AppArca({T, user, onHome}) {
               </div>
             </div>
 
-            {/* Título facturación */}
-            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,marginBottom:8}}>
-              <div>
-                <div style={{fontSize:22,fontWeight:800,color:T.text}}>
-                  Emisión de facturas <span style={{color:T.accent}}>en ARCA</span>
-                </div>
-                <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6,maxWidth:650}}>
-                  {esRI && "El bot decide solo el tipo de factura (A o B) según los datos del cliente."}
-                  {esMono && "Se emiten Facturas C automáticamente para todas las ventas."}
-                </div>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:8,alignItems:"flex-end",flexShrink:0}}>
-                <button onClick={()=>setShowManual(true)} disabled={!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:cuitSel?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:cuitSel?1:0.5}}>
-                  + Factura manual
-                </button>
-                <button onClick={handleTestConnection} disabled={!cuitSel||testingConn} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:500,cursor:(!cuitSel||testingConn)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:(!cuitSel||testingConn)?0.5:1}}>
-                  {testingConn ? <><Spinner size={11} color={T.textMd}/> Probando...</> : "🔌 Probar conexión"}
-                </button>
-              </div>
-            </div>
-            <div style={{fontSize:12,color:T.textSm,marginTop:-4,marginBottom:12}}>
-              ¿Vendiste por afuera de las integraciones? Usá <strong style={{color:T.text}}>Factura manual</strong> para emitir una factura puntual (mayoristas, ventas directas, etc.)
-            </div>
-            {testConnResult && (
-              <div style={{padding:"10px 14px",borderRadius:10,marginBottom:12,fontSize:12,fontWeight:500,lineHeight:1.5,background:testConnResult.ok?T.greenBg:T.redBg,border:"1px solid "+(testConnResult.ok?T.green:T.red)+"33",color:testConnResult.ok?T.green:T.red}}>
-                {testConnResult.ok ? "✅ Conexión exitosa con ARCA" : "❌ Error conectando con ARCA"} — {testConnResult.msg}
-              </div>
-            )}
-            <div style={{height:1,background:T.border,margin:"18px 0 22px"}}/>
-
-            {/* Info condición fiscal */}
-            {cuitActivo && (
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginBottom:20}}>
-                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-                  <span style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,border:"1px solid "+T.green+"44",color:T.green,background:T.greenBg,textTransform:"uppercase",letterSpacing:0.4}}>
-                    {esMono?"Monotributista":"Responsable Inscripto"}
-                  </span>
-                  <span style={{fontSize:12,color:T.textMd}}>
-                    {esMono?"Siempre se emite Factura C.":"El tipo de factura se elige automáticamente según el cliente."}
-                  </span>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {esRI ? [
-                    {icon:"🟢",title:"Cliente con CUIT y es Responsable Inscripto",desc:"Se emite Factura A. Incluye IVA discriminado (21%). Si ARCA rechaza porque ese CUIT no es RI, automáticamente reintenta como Factura B sin que tengas que hacer nada."},
-                    {icon:"🔵",title:"Cliente con DNI (consumidor final)",desc:"Se emite Factura B a nombre del cliente. El IVA va incluido en el precio final, no se discrimina en el comprobante."},
-                    {icon:"⚪",title:"Sin datos del cliente",desc:"Si la plataforma no trae DNI ni CUIT del comprador (porque no completó el campo 'empresa' o 'documento'), se emite Factura B a Consumidor Final con CUIT genérico."},
-                  ].map((r,i)=>(
-                    <div key={i} style={{display:"flex",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:"1px solid "+T.borderL}}>
-                      <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{r.icon}</span>
-                      <div>
-                        <div style={{fontSize:12,fontWeight:700,color:T.text}}>{r.title}</div>
-                        <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginTop:3}}>{r.desc}</div>
-                      </div>
-                    </div>
-                  )) : [
-                    {icon:"🟣",title:"Todos los clientes → Factura C",desc:"Como monotributista, todos tus comprobantes son Factura C independientemente de si el cliente tiene CUIT, DNI o ningún dato. La Factura C no discrimina IVA — el monto total es lo que figura en el comprobante."},
-                  ].map((r,i)=>(
-                    <div key={i} style={{display:"flex",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:"1px solid "+T.borderL}}>
-                      <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{r.icon}</span>
-                      <div>
-                        <div style={{fontSize:12,fontWeight:700,color:T.text}}>{r.title}</div>
-                        <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginTop:3}}>{r.desc}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Zona de facturación */}
             <div style={{display:"grid",gridTemplateColumns:ordenes?"1fr 340px":"1fr",gap:20,alignItems:"start"}}>
               <div>
@@ -6984,6 +6915,76 @@ function AppArca({T, user, onHome}) {
                       Nueva facturación
                     </button>
                   )}
+                </div>
+              )}
+            </div>
+
+            {/* ══ EMISIÓN DE FACTURAS · Info y acciones ══ */}
+            <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid "+T.border}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,marginBottom:8}}>
+                <div>
+                  <div style={{fontSize:22,fontWeight:800,color:T.text}}>
+                    Emisión de facturas <span style={{color:T.accent}}>en ARCA</span>
+                  </div>
+                  <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6,maxWidth:650}}>
+                    {esRI && "El bot decide solo el tipo de factura (A o B) según los datos del cliente."}
+                    {esMono && "Se emiten Facturas C automáticamente para todas las ventas."}
+                  </div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8,alignItems:"flex-end",flexShrink:0}}>
+                  <button onClick={()=>setShowManual(true)} disabled={!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:cuitSel?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:cuitSel?1:0.5}}>
+                    + Factura manual
+                  </button>
+                  <button onClick={handleTestConnection} disabled={!cuitSel||testingConn} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:500,cursor:(!cuitSel||testingConn)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:(!cuitSel||testingConn)?0.5:1}}>
+                    {testingConn ? <><Spinner size={11} color={T.textMd}/> Probando...</> : "🔌 Probar conexión"}
+                  </button>
+                </div>
+              </div>
+              <div style={{fontSize:12,color:T.textSm,marginTop:-4,marginBottom:12}}>
+                ¿Vendiste por afuera de las integraciones? Usá <strong style={{color:T.text}}>Factura manual</strong> para emitir una factura puntual (mayoristas, ventas directas, etc.)
+              </div>
+              {testConnResult && (
+                <div style={{padding:"10px 14px",borderRadius:10,marginBottom:12,fontSize:12,fontWeight:500,lineHeight:1.5,background:testConnResult.ok?T.greenBg:T.redBg,border:"1px solid "+(testConnResult.ok?T.green:T.red)+"33",color:testConnResult.ok?T.green:T.red}}>
+                  {testConnResult.ok ? "✅ Conexión exitosa con ARCA" : "❌ Error conectando con ARCA"} — {testConnResult.msg}
+                </div>
+              )}
+
+              {/* Info condición fiscal */}
+              {cuitActivo && (
+                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginTop:14}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                    <span style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,border:"1px solid "+T.green+"44",color:T.green,background:T.greenBg,textTransform:"uppercase",letterSpacing:0.4}}>
+                      {esMono?"Monotributista":"Responsable Inscripto"}
+                    </span>
+                    <span style={{fontSize:12,color:T.textMd}}>
+                      {esMono?"Siempre se emite Factura C.":"El tipo de factura se elige automáticamente según el cliente."}
+                    </span>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {esRI ? [
+                      {icon:"🟢",title:"Cliente con CUIT y es Responsable Inscripto",desc:"Se emite Factura A. Incluye IVA discriminado (21%). Si ARCA rechaza porque ese CUIT no es RI, automáticamente reintenta como Factura B sin que tengas que hacer nada."},
+                      {icon:"🔵",title:"Cliente con DNI (consumidor final)",desc:"Se emite Factura B a nombre del cliente. El IVA va incluido en el precio final, no se discrimina en el comprobante."},
+                      {icon:"⚪",title:"Sin datos del cliente",desc:"Si la plataforma no trae DNI ni CUIT del comprador (porque no completó el campo 'empresa' o 'documento'), se emite Factura B a Consumidor Final con CUIT genérico."},
+                    ].map((r,i)=>(
+                      <div key={i} style={{display:"flex",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:"1px solid "+T.borderL}}>
+                        <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{r.icon}</span>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:700,color:T.text}}>{r.title}</div>
+                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginTop:3}}>{r.desc}</div>
+                        </div>
+                      </div>
+                    )) : [
+                      {icon:"🟣",title:"Todos los clientes → Factura C",desc:"Como monotributista, todos tus comprobantes son Factura C independientemente de si el cliente tiene CUIT, DNI o ningún dato. La Factura C no discrimina IVA — el monto total es lo que figura en el comprobante."},
+                    ].map((r,i)=>(
+                      <div key={i} style={{display:"flex",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:"1px solid "+T.borderL}}>
+                        <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{r.icon}</span>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:700,color:T.text}}>{r.title}</div>
+                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginTop:3}}>{r.desc}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -7386,8 +7387,8 @@ function AppArca({T, user, onHome}) {
       )}
 
       {/* ══ MODAL FACTURACIÓN MANUAL ══ */}
-      {showManual && (
-        <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>!emittingManual && resetManual()}>
+      {showManual && ReactDOM.createPortal(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!emittingManual && resetManual()}>
           <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:640,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
               <div>
@@ -7498,7 +7499,8 @@ function AppArca({T, user, onHome}) {
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
