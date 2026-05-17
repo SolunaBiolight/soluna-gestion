@@ -146,6 +146,72 @@ async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes
   return JSON.parse(cleaned);
 }
 
+// ─── Gemini analyze ad (Biblioteca) ───────────────────
+
+const ANALYZE_SYSTEM = `Sos un experto en Meta Ads (Facebook & Instagram) para ecommerce argentino. Analizás anuncios usando el copy, el creative y las métricas reales de los últimos 7 días. Sos honesto y directo — si un ad anda mal, lo decís.
+
+Devolvés SIEMPRE un JSON válido con esta estructura EXACTA, sin texto extra ni backticks:
+{
+  "descripcion_corta": "1-2 líneas describiendo qué vende y a quién apunta",
+  "audiencia_target": "descripción del target probable según copy/creative",
+  "hook": "el gancho/primera línea del copy",
+  "angulos": ["array de 2-4 ángulos: precio, urgencia, social_proof, beneficio, problema_solucion, autoridad, novedad, exclusividad, transformacion, miedo, etc."],
+  "tono": "tono del copy en 1-2 palabras",
+  "formato": "formato del ad: testimonial, storytelling, lista, pregunta, directo, demo, antes_despues, etc.",
+  "estrategia": "qué busca lograr (conversion directa, awareness, retargeting, prospecting, etc.)",
+  "fortalezas": ["3 puntos fuertes concretos"],
+  "oportunidades": ["3 cosas concretas a mejorar"],
+  "performance_takeaway": "2-3 líneas con análisis honesto de las métricas (qué dice el ROAS, CTR, frecuencia, CPA)",
+  "accion_recomendada": "escalar | iterar | pausar | monitor",
+  "razon_accion": "1-2 líneas explicando la acción recomendada"
+}`;
+
+async function geminiAnalyzeAd(adData) {
+  const apiKey = process.env.GOOGLE_AI_KEY;
+  if (!apiKey) throw new Error("Falta GOOGLE_AI_KEY en env");
+  const fmt = (n) => (typeof n === "number" ? n.toFixed(2) : "0.00");
+  const userPrompt = `## Anuncio
+**Nombre:** ${adData.name || "(sin nombre)"}
+**Headline:** ${adData.headline || "(vacío)"}
+**Body / Copy:**
+${adData.body || "(vacío)"}
+**Description:** ${adData.description || "(vacío)"}
+**Call to action:** ${adData.cta || "(ninguno)"}
+**Link:** ${adData.link_url || "(sin link)"}
+**Tipo creative:** ${adData.creative_type || "imagen"}
+
+## Performance últimos 7 días
+- Gasto: $${fmt(adData.spend)}
+- Impresiones: ${adData.impressions || 0}
+- Clicks: ${adData.clicks || 0}
+- CTR: ${fmt(adData.ctr)}%
+- CPM: $${fmt(adData.cpm)}
+- Frecuencia: ${fmt(adData.frequency)}
+- Compras: ${adData.purchases || 0}
+- Valor compras: $${fmt(adData.purchase_value)}
+- ROAS: ${fmt(adData.roas)}x
+- CPA: $${fmt(adData.cpa)}
+
+Analizá el anuncio FULL y devolvé el JSON. Sé específico y útil — no des consejos genéricos.`;
+
+  const payload = {
+    system_instruction: { parts: [{ text: ANALYZE_SYSTEM }] },
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+    generationConfig: { response_mime_type: "application/json", temperature: 0.5, max_output_tokens: 2000 },
+  };
+  const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  const data = await r.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  if (!text) throw new Error("Gemini devolvió respuesta vacía");
+  let cleaned = text;
+  if (cleaned.includes("```")) { cleaned = cleaned.split("```")[1]; if (cleaned.startsWith("json")) cleaned = cleaned.slice(4); }
+  const s = cleaned.indexOf("{"), e = cleaned.lastIndexOf("}");
+  if (s >= 0 && e > s) cleaned = cleaned.slice(s, e + 1);
+  return JSON.parse(cleaned);
+}
+
 // ─── Handler ───────────────────────────────────────────
 
 export const config = { api: { bodyParser: true } };
@@ -335,6 +401,118 @@ export default async function handler(req, res) {
         }
 
         return res.json({ rows, since, until, level });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
+    // ── BIBLIOTECA DE ANUNCIOS (con creative + insights 7d + análisis IA cacheado) ──
+    if (action === "ads_library" && req.method === "GET") {
+      const accIdQ = req.query.acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, accIdQ);
+      if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
+      if (!cfg.ad_account_id) return res.status(400).json({ error: "Falta seleccionar ad_account_id" });
+
+      const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+      const until = new Date().toISOString().slice(0, 10);
+
+      try {
+        // 1) Ads con creative detallado
+        const adsData = await metaGet(`${cfg.ad_account_id}/ads`, {
+          fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,image_url,object_story_spec,object_type,body,title}",
+          limit: 300,
+        }, cfg.access_token);
+        const ads = adsData.data || [];
+
+        // 2) Insights de últimos 7 días por ad
+        let insightsRows = [];
+        try {
+          const ins = await metaGet(`${cfg.ad_account_id}/insights`, {
+            level: "ad",
+            time_range: JSON.stringify({ since, until }),
+            fields: "ad_id,spend,impressions,clicks,ctr,cpm,cpc,frequency,reach,actions,action_values,purchase_roas,cost_per_action_type",
+            limit: 500,
+          }, cfg.access_token);
+          insightsRows = ins.data || [];
+        } catch (e) { /* sin insights */ }
+
+        // 3) Análisis cacheados
+        const analysesSnap = await db.collection("users").doc(uid).collection("meta_ad_analyses").get();
+        const cachedAnalyses = {};
+        analysesSnap.docs.forEach(d => { cachedAnalyses[d.id] = d.data(); });
+
+        // 4) Mergear todo
+        const result = ads.map(ad => {
+          const ins = insightsRows.find(i => i.ad_id === ad.id) || {};
+          const purchases = (ins.actions || []).find(a => /purchase/.test(a.action_type || ""));
+          const purchaseValue = (ins.action_values || []).find(a => /purchase/.test(a.action_type || ""));
+          const cpaPurchase = (ins.cost_per_action_type || []).find(a => /purchase/.test(a.action_type || ""));
+          const creative = ad.creative || {};
+          const oss = creative.object_story_spec || {};
+          const linkData = oss.link_data || oss.video_data || {};
+          return {
+            id: ad.id,
+            name: ad.name,
+            status: ad.status,
+            effective_status: ad.effective_status,
+            campaign_id: ad.campaign_id,
+            adset_id: ad.adset_id,
+            creative_thumbnail: creative.thumbnail_url || creative.image_url || null,
+            creative_body: creative.body || linkData.message || "",
+            creative_title: creative.title || linkData.name || "",
+            creative_description: linkData.description || "",
+            creative_link: linkData.link || "",
+            creative_cta: linkData.call_to_action?.type || "",
+            creative_type: creative.object_type || "image",
+            spend: parseFloat(ins.spend) || 0,
+            impressions: parseInt(ins.impressions) || 0,
+            clicks: parseInt(ins.clicks) || 0,
+            ctr: parseFloat(ins.ctr) || 0,
+            cpm: parseFloat(ins.cpm) || 0,
+            frequency: parseFloat(ins.frequency) || 0,
+            purchases: parseInt(purchases?.value) || 0,
+            purchase_value: parseFloat(purchaseValue?.value) || 0,
+            roas: parseFloat((ins.purchase_roas || [])[0]?.value) || 0,
+            cpa: parseFloat(cpaPurchase?.value) || 0,
+            analysis: cachedAnalyses[ad.id]?.analysis || null,
+            analyzed_at: cachedAnalyses[ad.id]?.analyzed_at || null,
+          };
+        });
+
+        return res.json({ ads: result, since, until });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
+    // ── ANALIZAR UN AD CON GEMINI (cachea en Firestore) ──
+    if (action === "analyze_ad" && req.method === "POST") {
+      const { ad } = req.body || {};
+      if (!ad?.id) return res.status(400).json({ error: "Falta ad.id" });
+      try {
+        const analysis = await geminiAnalyzeAd({
+          name: ad.name,
+          headline: ad.creative_title,
+          body: ad.creative_body,
+          description: ad.creative_description,
+          cta: ad.creative_cta,
+          link_url: ad.creative_link,
+          creative_type: ad.creative_type,
+          spend: ad.spend,
+          impressions: ad.impressions,
+          clicks: ad.clicks,
+          ctr: ad.ctr,
+          cpm: ad.cpm,
+          frequency: ad.frequency,
+          purchases: ad.purchases,
+          purchase_value: ad.purchase_value,
+          roas: ad.roas,
+          cpa: ad.cpa,
+        });
+        await db.collection("users").doc(uid).collection("meta_ad_analyses").doc(String(ad.id))
+          .set({ ad_id: ad.id, analysis, analyzed_at: new Date().toISOString() }, { merge: true });
+        return res.json({ ok: true, analysis });
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }

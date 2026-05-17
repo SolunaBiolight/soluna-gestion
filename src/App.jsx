@@ -7892,6 +7892,14 @@ function AppMetaAds({T, user, onHome}) {
   const [aFilterStatus,setAFilterStatus]=useState("all"); // all | active | paused
   const [aBusyIds,setABusyIds]=useState({}); // ids siendo pausadas/activadas
 
+  // Estado del tab Biblioteca
+  const [libAds,setLibAds]=useState([]);
+  const [libLoading,setLibLoading]=useState(false);
+  const [libQuery,setLibQuery]=useState("");
+  const [libSort,setLibSort]=useState("spend"); // spend | roas | recent
+  const [analyzingId,setAnalyzingId]=useState(null);
+  const [expandedAdId,setExpandedAdId]=useState(null);
+
   // Conexión System User Token
   const [tokenInput,setTokenInput]=useState("");
   const [connecting,setConnecting]=useState(false);
@@ -7960,8 +7968,30 @@ function AppMetaAds({T, user, onHome}) {
     if(tab==="campanas"&&activeAccId) loadCampaigns();
     if(tab==="creativos"&&activeAccId) loadCreatives();
     if(tab==="analisis"&&activeAccId) loadInsights();
+    if(tab==="biblioteca"&&activeAccId) loadLibrary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab,activeAccId]);
+
+  async function loadLibrary() {
+    if(!activeAccId) return;
+    setLibLoading(true);
+    try {
+      const d = await metaApi("ads_library","GET",null,{acc_id:activeAccId});
+      if(d.error) { toast("Error: "+d.error,"error"); setLibAds([]); }
+      else setLibAds(d.ads||[]);
+    } finally { setLibLoading(false); }
+  }
+
+  async function analyzeAd(ad) {
+    setAnalyzingId(ad.id);
+    try {
+      const d = await metaApi("analyze_ad","POST",{ad},{acc_id:activeAccId});
+      if(d.error) { toast("Error IA: "+d.error,"error"); return; }
+      setLibAds(prev => prev.map(a => a.id === ad.id ? {...a, analysis: d.analysis, analyzed_at: new Date().toISOString()} : a));
+      setExpandedAdId(ad.id);
+      toast("Análisis listo ✓","success");
+    } finally { setAnalyzingId(null); }
+  }
 
   useEffect(()=>{
     if(tab==="analisis"&&activeAccId) loadInsights();
@@ -8151,6 +8181,7 @@ function AppMetaAds({T, user, onHome}) {
 
   const TABS=[
     {id:"analisis",label:"📊 Análisis"},
+    {id:"biblioteca",label:"📚 Biblioteca"},
     {id:"cuenta",label:"Cuenta"},
     {id:"campanas",label:"Campañas & AdSets"},
     {id:"creativos",label:"Creativos"},
@@ -8355,6 +8386,171 @@ function AppMetaAds({T, user, onHome}) {
                           </tfoot>
                         </table>
                       </div>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── BIBLIOTECA DE ANUNCIOS ──────────────────── */}
+        {tab==="biblioteca"&&(
+          <div>
+            {!activeAccId ? (
+              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd}}>
+                ⚠ Conectá tu cuenta de Meta primero desde Config.
+              </div>
+            ) : (
+              <>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:10}}>
+                    <div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Biblioteca de anuncios</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Tus anuncios con métricas reales de los últimos 7 días. Tocá "Analizar con IA" para que Gemini desglose qué hace cada uno.</div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <input type="text" placeholder="🔍 Buscar…" value={libQuery} onChange={e=>setLibQuery(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,minWidth:180,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                      <select value={libSort} onChange={e=>setLibSort(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <option value="spend">Más gasto 7d</option>
+                        <option value="roas">Mejor ROAS 7d</option>
+                        <option value="recent">Recién analizados</option>
+                      </select>
+                      <button onClick={loadLibrary} disabled={libLoading} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
+                    </div>
+                  </div>
+                </div>
+
+                {libLoading && libAds.length===0 ? (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+                    <Spinner size={20} color={T.accent}/>
+                    <div style={{fontSize:13,color:T.textSm,marginTop:14}}>Cargando tus anuncios desde Meta...</div>
+                  </div>
+                ) : (() => {
+                  let filtered = libAds;
+                  if (libQuery.trim()) {
+                    const q = libQuery.trim().toLowerCase();
+                    filtered = filtered.filter(a => (a.name||"").toLowerCase().includes(q) || (a.creative_body||"").toLowerCase().includes(q) || (a.creative_title||"").toLowerCase().includes(q));
+                  }
+                  filtered = [...filtered].sort((a,b) => {
+                    if (libSort === "spend") return (b.spend||0) - (a.spend||0);
+                    if (libSort === "roas") return (b.roas||0) - (a.roas||0);
+                    if (libSort === "recent") return (b.analyzed_at||"").localeCompare(a.analyzed_at||"");
+                    return 0;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                        <div style={{fontSize:32,marginBottom:8}}>📭</div>
+                        <div style={{fontSize:13,color:T.textSm}}>No hay anuncios para mostrar.</div>
+                      </div>
+                    );
+                  }
+
+                  const fmt = (n) => (n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+                  return (
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(340px, 1fr))",gap:16}}>
+                      {filtered.map(ad => {
+                        const isActive = ad.effective_status === "ACTIVE";
+                        const isExpanded = expandedAdId === ad.id;
+                        const analyzing = analyzingId === ad.id;
+                        const A = ad.analysis;
+                        const roasColor = ad.roas >= 2 ? T.green : ad.roas >= 1 ? T.text : ad.roas > 0 ? T.red : T.textSm;
+                        return (
+                          <div key={ad.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+                            {/* Thumbnail */}
+                            <div style={{width:"100%",aspectRatio:"16/9",background:T.bg,position:"relative",overflow:"hidden"}}>
+                              {ad.creative_thumbnail
+                                ? <img src={ad.creative_thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
+                                : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>🖼️</div>
+                              }
+                              <span style={{position:"absolute",top:8,right:8,fontSize:10,padding:"3px 8px",borderRadius:5,background:isActive?T.green:T.red,color:"#fff",fontWeight:700,letterSpacing:0.3}}>
+                                {isActive ? "ACTIVO" : (ad.effective_status||"PAUSADO")}
+                              </span>
+                            </div>
+
+                            {/* Cuerpo */}
+                            <div style={{padding:"14px 16px",display:"flex",flexDirection:"column",gap:8,flex:1}}>
+                              <div>
+                                <div style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ad.name||"(sin nombre)"}</div>
+                                {ad.creative_title && <div style={{fontSize:11,color:T.accent,marginTop:2,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ad.creative_title}</div>}
+                              </div>
+                              {ad.creative_body && (
+                                <div style={{fontSize:11,color:T.textMd,lineHeight:1.5,maxHeight:54,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical"}}>{ad.creative_body}</div>
+                              )}
+
+                              {/* Métricas */}
+                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:6,padding:"10px 12px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+                                <div>
+                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Gasto 7d</div>
+                                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginTop:2}}>${fmt(ad.spend)}</div>
+                                </div>
+                                <div>
+                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>ROAS 7d</div>
+                                  <div style={{fontSize:13,fontWeight:700,color:roasColor,marginTop:2}}>{fmt(ad.roas)}x</div>
+                                </div>
+                                <div>
+                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Compras</div>
+                                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginTop:2}}>{ad.purchases||0}</div>
+                                </div>
+                              </div>
+
+                              {/* Análisis IA */}
+                              {A ? (
+                                <>
+                                  <div style={{fontSize:11,color:T.textMd,lineHeight:1.55,padding:"8px 10px",background:T.accent+"10",borderLeft:`2px solid ${T.accent}`,borderRadius:4,marginTop:4}}>
+                                    <span style={{fontSize:9,color:T.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>🤖 Resumen IA</span>
+                                    <div style={{marginTop:4}}>{A.descripcion_corta}</div>
+                                  </div>
+                                  {isExpanded && (
+                                    <div style={{fontSize:11,color:T.textMd,lineHeight:1.65,padding:"10px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8,marginTop:2,display:"flex",flexDirection:"column",gap:8}}>
+                                      <div><strong style={{color:T.text}}>Audiencia:</strong> {A.audiencia_target}</div>
+                                      <div><strong style={{color:T.text}}>Hook:</strong> "{A.hook}"</div>
+                                      <div><strong style={{color:T.text}}>Ángulos:</strong> {(A.angulos||[]).join(" · ")}</div>
+                                      <div><strong style={{color:T.text}}>Tono / Formato:</strong> {A.tono} · {A.formato}</div>
+                                      <div><strong style={{color:T.text}}>Estrategia:</strong> {A.estrategia}</div>
+                                      {A.fortalezas?.length>0 && (
+                                        <div>
+                                          <strong style={{color:T.green}}>Fortalezas:</strong>
+                                          <ul style={{margin:"4px 0 0",paddingLeft:16}}>{A.fortalezas.map((f,i)=><li key={i}>{f}</li>)}</ul>
+                                        </div>
+                                      )}
+                                      {A.oportunidades?.length>0 && (
+                                        <div>
+                                          <strong style={{color:T.yellow||"#eab308"}}>Mejoras:</strong>
+                                          <ul style={{margin:"4px 0 0",paddingLeft:16}}>{A.oportunidades.map((o,i)=><li key={i}>{o}</li>)}</ul>
+                                        </div>
+                                      )}
+                                      <div style={{padding:"8px 10px",background:T.surface,borderRadius:6,marginTop:2}}>
+                                        <strong style={{color:T.text}}>📈 Performance:</strong>
+                                        <div style={{marginTop:3}}>{A.performance_takeaway}</div>
+                                      </div>
+                                      <div style={{padding:"8px 10px",background:A.accion_recomendada==="escalar"?T.green+"15":A.accion_recomendada==="pausar"?T.red+"15":T.yellow+"15",border:`1px solid ${A.accion_recomendada==="escalar"?T.green+"55":A.accion_recomendada==="pausar"?T.red+"55":T.yellow+"55"}`,borderRadius:6,marginTop:2}}>
+                                        <strong style={{color:T.text,textTransform:"uppercase",fontSize:10,letterSpacing:0.5}}>Acción recomendada: {A.accion_recomendada}</strong>
+                                        <div style={{marginTop:3}}>{A.razon_accion}</div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div style={{display:"flex",gap:8,marginTop:6}}>
+                                    <button onClick={()=>setExpandedAdId(isExpanded?null:ad.id)} style={{flex:1,padding:"7px 12px",fontSize:11,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:7,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                      {isExpanded ? "− Cerrar análisis" : "+ Ver análisis FULL"}
+                                    </button>
+                                    <button onClick={()=>analyzeAd(ad)} disabled={analyzing} title="Re-analizar" style={{padding:"7px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:7,background:"transparent",color:T.textMd,cursor:analyzing?"wait":"pointer"}}>
+                                      {analyzing ? <Spinner size={10} color={T.textMd}/> : "🔄"}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <button onClick={()=>analyzeAd(ad)} disabled={analyzing} style={{marginTop:"auto",padding:"9px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:analyzing?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                                  {analyzing ? <><Spinner size={12} color="#fff"/>Analizando con Gemini...</> : "🤖 Analizar con IA"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })()}
