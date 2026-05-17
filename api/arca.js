@@ -1603,38 +1603,57 @@ export default async function handler(req, res) {
               return true;
             });
 
-            // Fetch billing_info en paralelo (chunks de 10 para no saturar)
+            // Fetch billing_info en paralelo (chunks de 5 para evitar 429)
             const billingByOrderId = {};
-            const CHUNK = 10;
+            let billingOk = 0, billingErr = 0;
+            const CHUNK = 5;
             for (let i = 0; i < mlPaid.length; i += CHUNK) {
               const chunk = mlPaid.slice(i, i + CHUNK);
               await Promise.all(chunk.map(async (o) => {
                 try {
                   const r = await fetch(`https://api.mercadolibre.com/orders/${o.id}/billing_info`, {
-                    headers: { Authorization: `Bearer ${accessToken}` },
+                    headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "GrowithApp (soluna.biolight@gmail.com)" },
                   });
                   if (r.ok) {
                     const data = await r.json();
-                    billingByOrderId[o.id] = data.buyer?.billing_info || null;
+                    // Probar varios paths que ML usa según versión del endpoint
+                    billingByOrderId[o.id] = data.buyer?.billing_info || data.billing_info || (data.doc_number ? data : null);
+                    billingOk++;
+                  } else {
+                    billingErr++;
+                    if (billingErr <= 3) {
+                      const txt = await r.text().catch(() => "");
+                      console.error(`[ml-billing] ${o.id} status=${r.status}: ${txt.slice(0, 200)}`);
+                    }
                   }
-                } catch (e) { /* ignorar */ }
+                } catch (e) {
+                  billingErr++;
+                  if (billingErr <= 3) console.error(`[ml-billing] ${o.id} error: ${e.message}`);
+                }
               }));
             }
+            if (billingErr > 0) console.warn(`[ml-billing] ${billingErr}/${mlPaid.length} fallaron (ok=${billingOk})`);
 
             for (const o of mlPaid) {
               const orderId = "ML-" + String(o.id);
               const buyer = o.buyer || {};
-              const bi = billingByOrderId[o.id] || buyer.billing_info || {};
-              const additional = Array.isArray(bi.additional_info) ? bi.additional_info : [];
+              // Combinamos billing_info del endpoint específico Y del response de /orders/search
+              const bi = billingByOrderId[o.id] || buyer.billing_info || null;
+              const additional = (bi && Array.isArray(bi.additional_info)) ? bi.additional_info : [];
               const getInfo = (type) => additional.find(a => a.type === type)?.value || "";
 
               const businessName = getInfo("BUSINESS_NAME");
-              const firstName = getInfo("FIRST_NAME") || buyer.first_name || "";
-              const lastName = getInfo("LAST_NAME") || buyer.last_name || "";
+              const biFirstName = getInfo("FIRST_NAME");
+              const biLastName = getInfo("LAST_NAME");
+              // Nombre con fallback en cascada: 1) razón social, 2) billing_info nombres,
+              // 3) buyer.first/last_name del search, 4) nickname, 5) "Consumidor Final"
               const customerName = businessName
-                || [firstName, lastName].filter(Boolean).join(" ").trim()
+                || [biFirstName, biLastName].filter(Boolean).join(" ").trim()
+                || [buyer.first_name, buyer.last_name].filter(Boolean).join(" ").trim()
+                || buyer.nickname
                 || "Consumidor Final";
-              const docRaw = String(bi.doc_number || "").replace(/[.\-]/g, "");
+              // Doc: primero del billing_info dedicado, después del que vino en search
+              const docRaw = String(bi?.doc_number || buyer.billing_info?.doc_number || "").replace(/[.\-]/g, "");
               const clas = clasificarDoc(docRaw);
               const shipAddr = o.shipping?.receiver_address || {};
               const billed = billedMap.get(orderId);
