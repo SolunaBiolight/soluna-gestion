@@ -916,7 +916,6 @@ async function generarPDF(factData, config) {
     const midX = MX + qrSize + 22;
     draw("Comprobante Autorizado", midX, caeY + 14, 9, true);
     draw("AGENCIA DE RECAUDACIÓN Y CONTROL ADUANERO (ARCA)", midX, caeY + 26, 7, false, "left", COL_GREY);
-    draw("Escaneá el código QR para validar el comprobante", midX, caeY + 38, 6, false, "left", COL_GREY);
 
     // CAE a la derecha
     draw("CAE N°:", MX + UW - 130, caeY + 14, 8, true, "left");
@@ -1270,6 +1269,14 @@ export default async function handler(req, res) {
                 neto,
                 iva,
                 orden_id: orderId,
+                // Items reales para re-imprimir el PDF con el detalle correcto
+                items: (orden.items || []).map(it => ({
+                  nombre: it.nombre || it.nombre_original || "Producto",
+                  cantidad: parseInt(it.cantidad) || 1,
+                  precio: parseFloat(it.precio) || 0,
+                  descuento_item: parseFloat(it.descuento_item) || 0,
+                })),
+                domicilio: [orden.ciudad, orden.provincia].filter(Boolean).join(", "),
               });
           } catch (e) {
             console.error("[arca] no se pudo guardar comprobante:", e.message);
@@ -1405,9 +1412,12 @@ export default async function handler(req, res) {
           doc_nro: c.doc_nro || "",
           letra: c.letra,
           tipo_cbte: c.tipo_cbte,
-          domicilio: "",
+          domicilio: c.domicilio || "",
           total: c.total,
-          items: [{ nombre: "(Detalle no disponible en re-impresión)", cantidad: 1, precio: c.total, descuento_item: 0 }],
+          // Items reales si fueron persistidos al emitir, sino fallback (facturas viejas)
+          items: (Array.isArray(c.items) && c.items.length > 0)
+            ? c.items
+            : [{ nombre: "(Detalle no disponible en re-impresión)", cantidad: 1, precio: c.total, descuento_item: 0 }],
         };
         const pdfBytes = await generarPDF(factData, cfg);
         const nombreCliente = (c.cliente || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
