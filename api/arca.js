@@ -8,6 +8,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
+import { getValidMLToken } from "./integrations.js";
 
 // ─── Inicialización Firebase ───────────────────────────
 
@@ -1448,10 +1449,76 @@ export default async function handler(req, res) {
         }
       }
 
+      // ─── Mercado Libre ───
+      const mlStore = stores.find(s => s.type === "mercadolibre");
+      if (mlStore?.userId) {
+        connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
+        try {
+          const { accessToken, userId } = await getValidMLToken(db, uid) || {};
+          if (accessToken) {
+            const allML = [];
+            // ML paginación: limit max 50 por request, usar offset
+            for (let offset = 0; offset < 500; offset += 50) {
+              const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&order.status=paid&order.date_created.from=${sinceDate}T00:00:00.000-00:00&order.date_created.to=${untilDate}T23:59:59.999-00:00&limit=50&offset=${offset}&sort=date_desc`;
+              const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+              if (!r.ok) {
+                console.error("[ml] orders search failed", r.status, await r.text().catch(()=>""));
+                break;
+              }
+              const data = await r.json();
+              const batch = data.results || [];
+              allML.push(...batch);
+              if (batch.length < 50) break;
+            }
+            for (const o of allML) {
+              const orderId = "ML-" + String(o.id);
+              if (billedIds.has(orderId)) continue;
+              if (["cancelled", "invalid"].includes((o.status || "").toLowerCase())) continue;
+
+              const buyer = o.buyer || {};
+              const billing = buyer.billing_info || {};
+              const docRaw = String(billing.doc_number || "").replace(/[.\-]/g, "");
+              const clas = clasificarDoc(docRaw);
+              const customerName = [buyer.first_name, buyer.last_name].filter(Boolean).join(" ").trim()
+                || buyer.nickname || "";
+              const shipAddr = o.shipping?.receiver_address || {};
+
+              ordenes[orderId] = {
+                _platform: "mercadolibre",
+                _platform_label: "ML",
+                _order_number: String(o.id),
+                nombre: customerName,
+                email: buyer.email || "",
+                dni: docRaw, ...clas,
+                total: parseFloat(o.total_amount) || 0,
+                subtotal: parseFloat(o.total_amount) || 0,
+                descuento: 0,
+                envio: parseFloat(o.shipping?.cost) || 0,
+                estado_pago: "paid",
+                fecha: o.date_closed || o.date_created || "",
+                ciudad: shipAddr.city?.name || "",
+                provincia: shipAddr.state?.name || "",
+                direccion: [shipAddr.street_name, shipAddr.street_number].filter(Boolean).join(" "),
+                metodo_pago: "Mercado Pago",
+                items: (o.order_items || []).map(it => ({
+                  nombre: it.item?.title || "Producto",
+                  nombre_original: it.item?.title || "Producto",
+                  cantidad: parseInt(it.quantity) || 1,
+                  precio: parseFloat(it.unit_price) || 0,
+                  descuento_item: 0,
+                })),
+              };
+            }
+          }
+        } catch (e) {
+          console.error("[ml] error trayendo órdenes:", e.message);
+        }
+      }
+
       // Plataformas no conectadas (informativas)
       if (!stores.find(s => s.type === "tiendanube")) connections.push({ platform: "tiendanube", connected: false });
       if (!stores.find(s => s.type === "shopify")) connections.push({ platform: "shopify", connected: false });
-      connections.push({ platform: "mercadolibre", connected: false, soon: true });
+      if (!stores.find(s => s.type === "mercadolibre")) connections.push({ platform: "mercadolibre", connected: false });
 
       return res.json({
         connections,
