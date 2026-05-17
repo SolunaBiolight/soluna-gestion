@@ -5088,6 +5088,9 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   const [shopifyClientId,setShopifyClientId]=useState("");
   const [shopifySecret,setShopifySecret]=useState("");
   const [connectingShopify,setConnectingShopify]=useState(false);
+  const [showMLModal,setShowMLModal]=useState(false);
+  const [mlClientId,setMlClientId]=useState("");
+  const [mlSecret,setMlSecret]=useState("");
   const [connectingML,setConnectingML]=useState(false);
 
   // Detectar callback OAuth (Shopify / ML) al volver
@@ -5191,17 +5194,26 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   }
 
   async function connectML() {
+    if(!mlClientId.trim() || !mlSecret.trim()) {
+      setMsg("Completá los 2 campos"); return;
+    }
     setConnectingML(true);
     try {
       const r = await fetch("/api/integrations?platform=mercadolibre&action=oauth_start", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ uid: user.uid }),
+        body: JSON.stringify({
+          uid: user.uid,
+          client_id: mlClientId.trim(),
+          client_secret: mlSecret.trim(),
+        }),
       });
       const d = await r.json();
-      if(d.error) { setMsg("Error: "+d.error); return; }
+      if(d.error) { setMsg("Error: "+d.error); setConnectingML(false); return; }
       window.open(d.url, "_blank");
       setMsg("Completá la autorización en la ventana que se abrió. Volvé acá cuando termines.");
+      setShowMLModal(false);
+      setMlClientId(""); setMlSecret("");
     } catch(e) {
       setMsg("Error de red: "+e.message);
     } finally {
@@ -5319,7 +5331,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
             </div>
             {mlStore
               ?<button onClick={()=>disconnectStore("mercadolibre")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
-              :<button onClick={connectML} disabled={connectingML} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>{connectingML?"Abriendo...":"Conectar"}</button>
+              :<button onClick={()=>setShowMLModal(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Conectar</button>
             }
           </div>
         </div>
@@ -5378,6 +5390,56 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                 <div style={{flex:1}}/>
                 <button onClick={connectShopify} disabled={connectingShopify||!shopifyShop.trim()||!shopifyClientId.trim()||!shopifySecret.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:(!shopifyShop.trim()||!shopifyClientId.trim()||!shopifySecret.trim())?0.5:1}}>
                   {connectingShopify?"Abriendo...":"Autorizar en Shopify →"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal conectar Mercado Libre */}
+        {showMLModal && (
+          <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingML && setShowMLModal(false)}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Mercado Libre</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Pegá las credenciales de TU app de ML (creada en developers.mercadolibre.com.ar)</div>
+                </div>
+                <button onClick={()=>!connectingML && setShowMLModal(false)} disabled={connectingML} style={{background:"transparent",border:"none",color:T.textMd,cursor:connectingML?"wait":"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
+              </div>
+
+              <div style={{padding:12,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:16,fontSize:11,color:T.textMd,lineHeight:1.65}}>
+                <div style={{fontWeight:700,color:T.text,marginBottom:6}}>📖 Crear tu app en Mercado Libre (5 minutos)</div>
+                <ol style={{margin:0,paddingLeft:18}}>
+                  <li>Entrá a <a href="https://developers.mercadolibre.com.ar/devcenter" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>developers.mercadolibre.com.ar/devcenter</a> con tu cuenta ML y vinculá tu cuenta de developer</li>
+                  <li><strong style={{color:T.text}}>"Crear aplicación"</strong> → completá nombre, descripción, propósito "Negocios"</li>
+                  <li>En <strong style={{color:T.text}}>Flujos OAuth</strong> marcá: <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>Authorization Code</code> y <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>Refresh Token</code></li>
+                  <li>En <strong style={{color:T.text}}>Negocios</strong> marcá <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>Mercado Libre</code></li>
+                  <li>En <strong style={{color:T.text}}>Permisos</strong> dale "Lectura y escritura" a: Usuarios, Facturación, Venta y envíos. Y "Lectura" a Métricas del negocio.</li>
+                  <li>⚠ En <strong style={{color:T.text}}>Redirect URIs</strong> agregá exactamente:
+                    <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=mercadolibre&action=callback`}</div>
+                  </li>
+                  <li>Guardá → te aparece el <strong style={{color:T.text}}>App ID</strong> (Client ID) y el <strong style={{color:T.text}}>Secret Key</strong> (Client Secret) → pegalos abajo</li>
+                </ol>
+              </div>
+
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>App ID (Client ID)</div>
+                  <input value={mlClientId} onChange={e=>setMlClientId(e.target.value)} placeholder="6123377008994979" style={{...iS,fontFamily:"monospace"}} disabled={connectingML} autoFocus/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Secret Key (Client Secret)</div>
+                  <input value={mlSecret} onChange={e=>setMlSecret(e.target.value)} placeholder="..." type="password" style={{...iS,fontFamily:"monospace"}} disabled={connectingML}/>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Se guarda cifrado para refrescar el token automáticamente cada 6 hs.</div>
+                </div>
+              </div>
+
+              <div style={{display:"flex",gap:10,marginTop:22}}>
+                <button onClick={()=>setShowMLModal(false)} disabled={connectingML} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
+                <div style={{flex:1}}/>
+                <button onClick={connectML} disabled={connectingML||!mlClientId.trim()||!mlSecret.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:(!mlClientId.trim()||!mlSecret.trim())?0.5:1}}>
+                  {connectingML?"Abriendo...":"Autorizar en ML →"}
                 </button>
               </div>
             </div>

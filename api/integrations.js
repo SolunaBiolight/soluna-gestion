@@ -188,21 +188,19 @@ async function shopifyDisconnect(req, res, db) {
   return res.json({ ok: true });
 }
 
-// ─── Mercado Libre: OAuth con app única de Growith (env vars) ────
-// El cliente solo aprieta "Conectar ML" — no necesita crear su propia app.
-// Credenciales: ML_CLIENT_ID + ML_CLIENT_SECRET en Vercel env vars.
+// ─── Mercado Libre: OAuth con credenciales del cliente ────────────
+// (Mismo patrón que Shopify — el cliente trae su Client ID + Secret de su app ML)
+// TODO: cuando se carguen ML_CLIENT_ID/SECRET en Vercel, podemos volver al patrón
+// app-única-de-Growith (revertir este commit).
 
-const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
-const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
 const ML_REDIRECT_URI = `${SHOPIFY_APP_URL}/api/integrations?platform=mercadolibre&action=callback`;
 
-// POST { uid }
+// POST { uid, client_id, client_secret }
 async function mercadolibreOauthStart(req, res, db) {
   const body = JSON.parse((await readBody(req)).toString());
-  const { uid } = body;
-  if (!uid) return res.status(400).json({ error: "Falta uid" });
-  if (!ML_CLIENT_ID || !ML_CLIENT_SECRET) {
-    return res.status(500).json({ error: "Faltan ML_CLIENT_ID o ML_CLIENT_SECRET en Vercel" });
+  const { uid, client_id, client_secret } = body;
+  if (!uid || !client_id || !client_secret) {
+    return res.status(400).json({ error: "Faltan uid, client_id o client_secret" });
   }
 
   const state = genState();
@@ -210,13 +208,15 @@ async function mercadolibreOauthStart(req, res, db) {
     await db.collection("oauth_pending").doc(state).set({
       uid: String(uid),
       platform: "mercadolibre",
+      client_id: String(client_id).trim(),
+      client_secret: String(client_secret).trim(),
       created_at: new Date().toISOString(),
     });
   } catch (e) {
     return res.status(500).json({ error: "No se pudo guardar el estado OAuth: " + e.message });
   }
 
-  const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${encodeURIComponent(ML_CLIENT_ID)}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}&state=${encodeURIComponent(state)}`;
+  const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${encodeURIComponent(client_id.trim())}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}&state=${encodeURIComponent(state)}`;
   return res.json({ url });
 }
 
@@ -225,9 +225,6 @@ async function mercadolibreOauthCallback(req, res, db) {
   const { code, state, error: oauthError } = req.query;
   if (oauthError) return res.redirect(`${SHOPIFY_APP_URL}?ml_error=${encodeURIComponent(oauthError)}`);
   if (!code || !state) return res.redirect(`${SHOPIFY_APP_URL}?ml_error=missing_params`);
-  if (!ML_CLIENT_ID || !ML_CLIENT_SECRET) {
-    return res.redirect(`${SHOPIFY_APP_URL}?ml_error=missing_env_vars`);
-  }
 
   let pending;
   try {
@@ -242,13 +239,18 @@ async function mercadolibreOauthCallback(req, res, db) {
     return res.redirect(`${SHOPIFY_APP_URL}?ml_error=platform_mismatch`);
   }
   const uid = pending.uid;
+  const clientId = pending.client_id;
+  const clientSecret = pending.client_secret;
+  if (!clientId || !clientSecret) {
+    return res.redirect(`${SHOPIFY_APP_URL}?ml_error=missing_credentials`);
+  }
 
   let tokenData;
   try {
     const params = new URLSearchParams({
       grant_type: "authorization_code",
-      client_id: ML_CLIENT_ID,
-      client_secret: ML_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
       code: String(code),
       redirect_uri: ML_REDIRECT_URI,
     });
@@ -296,6 +298,8 @@ async function mercadolibreOauthCallback(req, res, db) {
     stores.push({
       type: "mercadolibre",
       userId: user_id,
+      clientId,
+      clientSecret,
       accessToken: access_token,
       refreshToken: refresh_token,
       expiresAt,
@@ -327,7 +331,7 @@ async function mercadolibreDisconnect(req, res, db) {
 }
 
 // Helper para refrescar token de ML — exportable para api/arca.js u otros consumidores.
-// Lee el store ML del usuario; si el token venció, lo refresca y actualiza Firestore.
+// Usa clientId/clientSecret guardados en el store del usuario (vinieron del modal de conexión).
 // Devuelve { accessToken, userId } o null si no hay store ML.
 export async function getValidMLToken(db, uid) {
   const userRef = db.collection("users").doc(uid);
@@ -341,11 +345,11 @@ export async function getValidMLToken(db, uid) {
     return { accessToken: ml.accessToken, userId: ml.userId };
   }
 
-  if (!ML_CLIENT_ID || !ML_CLIENT_SECRET) throw new Error("Faltan ML_CLIENT_ID/SECRET en env vars");
+  if (!ml.clientId || !ml.clientSecret) throw new Error("Faltan credenciales ML en el store del usuario");
   const params = new URLSearchParams({
     grant_type: "refresh_token",
-    client_id: ML_CLIENT_ID,
-    client_secret: ML_CLIENT_SECRET,
+    client_id: ml.clientId,
+    client_secret: ml.clientSecret,
     refresh_token: ml.refreshToken,
   });
   const r = await fetch("https://api.mercadolibre.com/oauth/token", {
