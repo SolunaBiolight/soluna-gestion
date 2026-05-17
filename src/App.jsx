@@ -5088,17 +5088,20 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   const [shopifyClientId,setShopifyClientId]=useState("");
   const [shopifySecret,setShopifySecret]=useState("");
   const [connectingShopify,setConnectingShopify]=useState(false);
+  const [connectingML,setConnectingML]=useState(false);
 
-  // Detectar callback OAuth de Shopify al volver
+  // Detectar callback OAuth (Shopify / ML) al volver
   useEffect(()=>{
     const url=new URL(window.location.href);
-    const success=url.searchParams.get("shopify_success");
-    const error=url.searchParams.get("shopify_error");
-    if(success){
+    const shSuccess=url.searchParams.get("shopify_success");
+    const shError=url.searchParams.get("shopify_error");
+    const mlSuccess=url.searchParams.get("ml_success");
+    const mlError=url.searchParams.get("ml_error");
+    if(shSuccess){
       setMsg("Shopify conectado ✓");
       url.searchParams.delete("shopify_success");
       window.history.replaceState({},"",url.pathname+url.search);
-    } else if(error){
+    } else if(shError){
       const map={
         token_failed:"Shopify rechazó el intercambio. Verificá que el Client Secret esté correcto en Vercel.",
         missing_env_vars:"Faltan SHOPIFY_CLIENT_ID o SHOPIFY_CLIENT_SECRET en Vercel.",
@@ -5109,8 +5112,27 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
         missing_params:"Faltan parámetros en el callback.",
         server_error:"Error de conexión con Shopify.",
       };
-      setMsg("Error Shopify: "+(map[error]||error));
+      setMsg("Error Shopify: "+(map[shError]||shError));
       url.searchParams.delete("shopify_error");
+      url.searchParams.delete("status");
+      window.history.replaceState({},"",url.pathname+url.search);
+    } else if(mlSuccess){
+      setMsg("Mercado Libre conectado ✓");
+      url.searchParams.delete("ml_success");
+      window.history.replaceState({},"",url.pathname+url.search);
+    } else if(mlError){
+      const map={
+        token_failed:"Mercado Libre rechazó el intercambio. Revisá ML_CLIENT_SECRET en Vercel.",
+        missing_env_vars:"Faltan ML_CLIENT_ID o ML_CLIENT_SECRET en Vercel.",
+        no_tokens:"ML no devolvió access_token / refresh_token.",
+        user_not_found:"Tu usuario no se encontró en Firestore.",
+        save_failed:"No se pudo guardar la conexión en Firestore.",
+        missing_params:"Faltan parámetros en el callback.",
+        state_not_found:"El proceso OAuth expiró. Probá conectar de nuevo.",
+        server_error:"Error de conexión con Mercado Libre.",
+      };
+      setMsg("Error ML: "+(map[mlError]||mlError));
+      url.searchParams.delete("ml_error");
       url.searchParams.delete("status");
       window.history.replaceState({},"",url.pathname+url.search);
     }
@@ -5168,6 +5190,25 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
     setMsg("Completá la autorización en la ventana que se abrió. Una vez autorizado, tu tienda aparecerá conectada.");
   }
 
+  async function connectML() {
+    setConnectingML(true);
+    try {
+      const r = await fetch("/api/integrations?platform=mercadolibre&action=oauth_start", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ uid: user.uid }),
+      });
+      const d = await r.json();
+      if(d.error) { setMsg("Error: "+d.error); return; }
+      window.open(d.url, "_blank");
+      setMsg("Completá la autorización en la ventana que se abrió. Volvé acá cuando termines.");
+    } catch(e) {
+      setMsg("Error de red: "+e.message);
+    } finally {
+      setConnectingML(false);
+    }
+  }
+
   async function disconnectStore(storeType) {
     if(!window.confirm(`¿Desvincular ${storeType}?`)) return;
     setSaving(true);
@@ -5185,6 +5226,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
 
   const tnStore=userDoc?.stores?.find(s=>s.type==="tiendanube");
   const shStore=userDoc?.stores?.find(s=>s.type==="shopify");
+  const mlStore=userDoc?.stores?.find(s=>s.type==="mercadolibre");
   const alertasCfg=userDoc?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
 
   const Toggle=({active,onToggle})=>(
@@ -5226,7 +5268,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Tiendas conectadas</div>
           <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>
-            Conectá <strong style={{color:T.text}}>una</strong> plataforma de e-commerce (TN <em>o</em> Shopify). La conexión vale para toda la app.
+            Conectá <strong style={{color:T.text}}>una</strong> plataforma de e-commerce (TN <em>o</em> Shopify) y, si querés, sumá <strong style={{color:T.text}}>Mercado Libre</strong> en paralelo.
           </div>
           {/* Tienda Nube */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderBottom:`1px solid ${T.borderL}`,gap:10,opacity:shStore && !tnStore ? 0.5 : 1}}>
@@ -5262,6 +5304,22 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
             {shStore
               ?<button onClick={()=>disconnectStore("shopify")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
               :<button onClick={()=>setShowShopifyModal(true)} disabled={!!tnStore} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0,opacity:tnStore?0.4:1,cursor:tnStore?"not-allowed":"pointer"}}>Conectar</button>
+            }
+          </div>
+          {/* Mercado Libre */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderTop:`1px solid ${T.borderL}`,gap:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+              <div style={{width:36,height:36,borderRadius:8,background:"#FFE600",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🛒</div>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Mercado Libre</div>
+                {mlStore
+                  ? <div style={{fontSize:11,color:T.green,marginTop:1}}>✓ {mlStore.nickname||mlStore.userId}</div>
+                  : <div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
+              </div>
+            </div>
+            {mlStore
+              ?<button onClick={()=>disconnectStore("mercadolibre")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
+              :<button onClick={connectML} disabled={connectingML} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>{connectingML?"Abriendo...":"Conectar"}</button>
             }
           </div>
         </div>

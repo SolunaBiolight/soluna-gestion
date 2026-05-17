@@ -188,6 +188,187 @@ async function shopifyDisconnect(req, res, db) {
   return res.json({ ok: true });
 }
 
+// ─── Mercado Libre: OAuth con app única de Growith (env vars) ────
+// El cliente solo aprieta "Conectar ML" — no necesita crear su propia app.
+// Credenciales: ML_CLIENT_ID + ML_CLIENT_SECRET en Vercel env vars.
+
+const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
+const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
+const ML_REDIRECT_URI = `${SHOPIFY_APP_URL}/api/integrations?platform=mercadolibre&action=callback`;
+
+// POST { uid }
+async function mercadolibreOauthStart(req, res, db) {
+  const body = JSON.parse((await readBody(req)).toString());
+  const { uid } = body;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!ML_CLIENT_ID || !ML_CLIENT_SECRET) {
+    return res.status(500).json({ error: "Faltan ML_CLIENT_ID o ML_CLIENT_SECRET en Vercel" });
+  }
+
+  const state = genState();
+  try {
+    await db.collection("oauth_pending").doc(state).set({
+      uid: String(uid),
+      platform: "mercadolibre",
+      created_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    return res.status(500).json({ error: "No se pudo guardar el estado OAuth: " + e.message });
+  }
+
+  const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${encodeURIComponent(ML_CLIENT_ID)}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}&state=${encodeURIComponent(state)}`;
+  return res.json({ url });
+}
+
+// GET ?action=callback&code=...&state=...
+async function mercadolibreOauthCallback(req, res, db) {
+  const { code, state, error: oauthError } = req.query;
+  if (oauthError) return res.redirect(`${SHOPIFY_APP_URL}?ml_error=${encodeURIComponent(oauthError)}`);
+  if (!code || !state) return res.redirect(`${SHOPIFY_APP_URL}?ml_error=missing_params`);
+  if (!ML_CLIENT_ID || !ML_CLIENT_SECRET) {
+    return res.redirect(`${SHOPIFY_APP_URL}?ml_error=missing_env_vars`);
+  }
+
+  let pending;
+  try {
+    const snap = await db.collection("oauth_pending").doc(String(state)).get();
+    if (!snap.exists) return res.redirect(`${SHOPIFY_APP_URL}?ml_error=state_not_found`);
+    pending = snap.data();
+    await snap.ref.delete().catch(() => {});
+  } catch (e) {
+    return res.redirect(`${SHOPIFY_APP_URL}?ml_error=state_read_failed`);
+  }
+  if (pending.platform !== "mercadolibre") {
+    return res.redirect(`${SHOPIFY_APP_URL}?ml_error=platform_mismatch`);
+  }
+  const uid = pending.uid;
+
+  let tokenData;
+  try {
+    const params = new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: ML_CLIENT_ID,
+      client_secret: ML_CLIENT_SECRET,
+      code: String(code),
+      redirect_uri: ML_REDIRECT_URI,
+    });
+    const tokenRes = await fetch("https://api.mercadolibre.com/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+      body: params.toString(),
+    });
+    if (!tokenRes.ok) {
+      const txt = await tokenRes.text();
+      console.error("[ml-callback] token exchange failed", tokenRes.status, txt.slice(0, 300));
+      return res.redirect(`${SHOPIFY_APP_URL}?ml_error=token_failed&status=${tokenRes.status}`);
+    }
+    tokenData = await tokenRes.json();
+  } catch (e) {
+    console.error("[ml-callback] token error:", e.message);
+    return res.redirect(`${SHOPIFY_APP_URL}?ml_error=server_error`);
+  }
+
+  const { access_token, refresh_token, expires_in, user_id } = tokenData;
+  if (!access_token || !refresh_token) {
+    return res.redirect(`${SHOPIFY_APP_URL}?ml_error=no_tokens`);
+  }
+  const expiresAt = Date.now() + (Number(expires_in || 21600) - 60) * 1000;
+
+  let nickname = String(user_id || ""), email = "";
+  try {
+    const meRes = await fetch("https://api.mercadolibre.com/users/me", {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+    if (meRes.ok) {
+      const me = await meRes.json();
+      nickname = me.nickname || nickname;
+      email = me.email || "";
+    }
+  } catch (e) { /* ignorar */ }
+
+  try {
+    const userRef = db.collection("users").doc(uid);
+    const snap = await userRef.get();
+    if (!snap.exists) return res.redirect(`${SHOPIFY_APP_URL}?ml_error=user_not_found`);
+
+    const currentStores = snap.data().stores || [];
+    const stores = currentStores.filter(s => s.type !== "mercadolibre");
+    stores.push({
+      type: "mercadolibre",
+      userId: user_id,
+      accessToken: access_token,
+      refreshToken: refresh_token,
+      expiresAt,
+      nickname,
+      email,
+      connectedAt: new Date().toISOString(),
+    });
+    await userRef.update({ stores });
+  } catch (e) {
+    console.error("[ml-callback] save error:", e.message);
+    return res.redirect(`${SHOPIFY_APP_URL}?ml_error=save_failed`);
+  }
+
+  return res.redirect(`${SHOPIFY_APP_URL}?ml_success=1`);
+}
+
+async function mercadolibreDisconnect(req, res, db) {
+  const body = JSON.parse((await readBody(req)).toString());
+  const { uid } = body;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+
+  const userRef = db.collection("users").doc(uid);
+  const snap = await userRef.get();
+  if (!snap.exists) return res.status(404).json({ error: "Usuario no encontrado" });
+  const stores = (snap.data().stores || []).filter(s => s.type !== "mercadolibre");
+  await userRef.update({ stores });
+
+  return res.json({ ok: true });
+}
+
+// Helper para refrescar token de ML — exportable para api/arca.js u otros consumidores.
+// Lee el store ML del usuario; si el token venció, lo refresca y actualiza Firestore.
+// Devuelve { accessToken, userId } o null si no hay store ML.
+export async function getValidMLToken(db, uid) {
+  const userRef = db.collection("users").doc(uid);
+  const snap = await userRef.get();
+  if (!snap.exists) return null;
+  const stores = snap.data().stores || [];
+  const ml = stores.find(s => s.type === "mercadolibre");
+  if (!ml) return null;
+
+  if (ml.expiresAt && Date.now() < ml.expiresAt) {
+    return { accessToken: ml.accessToken, userId: ml.userId };
+  }
+
+  if (!ML_CLIENT_ID || !ML_CLIENT_SECRET) throw new Error("Faltan ML_CLIENT_ID/SECRET en env vars");
+  const params = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: ML_CLIENT_ID,
+    client_secret: ML_CLIENT_SECRET,
+    refresh_token: ml.refreshToken,
+  });
+  const r = await fetch("https://api.mercadolibre.com/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+    body: params.toString(),
+  });
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`ML refresh failed (${r.status}): ${txt.slice(0, 200)}`);
+  }
+  const t = await r.json();
+  const newStore = {
+    ...ml,
+    accessToken: t.access_token,
+    refreshToken: t.refresh_token || ml.refreshToken,
+    expiresAt: Date.now() + (Number(t.expires_in || 21600) - 60) * 1000,
+  };
+  const newStores = stores.map(s => s.type === "mercadolibre" ? newStore : s);
+  await userRef.update({ stores: newStores });
+  return { accessToken: newStore.accessToken, userId: newStore.userId };
+}
+
 // ─── Handler principal ──────────────────────────────────────────
 
 const PLATFORMS = ["shopify", "tiendanube", "mercadolibre"];
@@ -214,6 +395,12 @@ export default async function handler(req, res) {
       if (action === "oauth_start" && req.method === "POST") return shopifyOauthStart(req, res, db);
       if (action === "callback" && req.method === "GET") return shopifyOauthCallback(req, res, db);
       if (action === "disconnect" && req.method === "POST") return shopifyDisconnect(req, res, db);
+    }
+
+    if (platform === "mercadolibre") {
+      if (action === "oauth_start" && req.method === "POST") return mercadolibreOauthStart(req, res, db);
+      if (action === "callback" && req.method === "GET") return mercadolibreOauthCallback(req, res, db);
+      if (action === "disconnect" && req.method === "POST") return mercadolibreDisconnect(req, res, db);
     }
 
     return res.status(501).json({
