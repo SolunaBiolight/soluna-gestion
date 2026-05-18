@@ -7835,8 +7835,6 @@ function AppArca({T, user, onHome}) {
         </div>,
         document.body
       )}
-    </div>
-
       {/* ── MODAL PROGRESO EMISIÓN ARCA ── */}
       {(emitProgress.active||emitProgress.done)&&ReactDOM.createPortal(
         <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
