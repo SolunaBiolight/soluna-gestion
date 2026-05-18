@@ -1245,7 +1245,39 @@ export default async function handler(req, res) {
           const nombreCliente = (orden.nombre || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
           pdfs.push({ nombre: `F${letra} - ${nombreCliente} - ${String(cbteNro).padStart(8, "0")}.pdf`, bytes: Buffer.from(pdfBytes).toString("base64") });
 
-          resultados.push({ orden_id: orderId, ok: true, letra, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: orden.total });
+          // ── Auto-adjuntar factura a venta de ML ─────────────
+          // Si el orderId arranca con "ML-" y la factura salio OK, subimos el PDF a
+          // /packs/{pack_id}/fiscal_documents para que quede visible en la pestaña
+          // Factura de la venta en Mercado Libre.
+          let ml_uploaded = false, ml_upload_error = null;
+          if (orderId.startsWith("ML-")) {
+            try {
+              const ml = await getValidMLToken(db, uid);
+              if (ml?.accessToken) {
+                const packId = orderId.replace(/^ML-/, "");
+                const fd = new FormData();
+                const blob = new Blob([Buffer.from(pdfBytes)], { type: "application/pdf" });
+                fd.append("fiscal_document", blob, `F${letra}-${String(cbteNro).padStart(8, "0")}.pdf`);
+                const upRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${ml.accessToken}` },
+                  body: fd,
+                });
+                if (upRes.ok) {
+                  ml_uploaded = true;
+                } else {
+                  const txt = await upRes.text().catch(() => "");
+                  ml_upload_error = `${upRes.status}: ${txt.slice(0, 180)}`;
+                  console.error(`[ml-upload] ${orderId}:`, ml_upload_error);
+                }
+              }
+            } catch (e) {
+              ml_upload_error = e.message;
+              console.error(`[ml-upload] ${orderId} error:`, e.message);
+            }
+          }
+
+          resultados.push({ orden_id: orderId, ok: true, letra, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: orden.total, ml_uploaded, ml_upload_error });
 
           // Persistir comprobante en Firestore para el dashboard
           try {
