@@ -213,7 +213,32 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
 
     /* -- Page / section transitions -- */
     .gh-page {
-      animation: growith-fadeIn 0.22s cubic-bezier(0.22,1,0.36,1) both;
+      animation: growith-pageEnter 0.32s cubic-bezier(0.22,1,0.36,1) both;
+    }
+    @keyframes growith-pageEnter {
+      from { opacity: 0; transform: translateY(6px) scale(0.998); filter: blur(2px); }
+      to   { opacity: 1; transform: translateY(0)   scale(1);     filter: blur(0);   }
+    }
+
+    /* -- Smooth scroll global -- */
+    html { scroll-behavior: smooth; }
+    body { overscroll-behavior: none; }
+
+    /* -- Selection custom -- */
+    ::selection { background: rgba(139,92,246,0.35); color: inherit; }
+
+    /* -- Scrollbar custom dark -- */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); background-clip: padding-box; }
+
+    /* -- Focus visible refinado (saca outline azul fuerte) -- */
+    *:focus { outline: none; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
+      outline: 2px solid rgba(139,92,246,0.55);
+      outline-offset: 2px;
+      border-radius: 4px;
     }
 
     /* -- Tab content -- */
@@ -6489,8 +6514,32 @@ function AppArca({T, user, onHome}) {
   function downloadAllPDFs() { pdfs.forEach((pdf,i)=>setTimeout(()=>downloadPDF(pdf),i*300)); }
 
   if(loading) return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <Spinner size={28} color={T.accent}/>
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      <AppTopbar T={T} section="ARCA" onHome={onHome}/>
+      <div style={{flex:1,maxWidth:1100,margin:"0 auto",padding:"28px 24px",width:"100%",animation:"growith-fadeInFast 0.3s ease"}}>
+        {/* Skeleton dashboard */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
+          {[1,2,3].map(i=>(
+            <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"22px 20px",height:120,position:"relative",overflow:"hidden"}}>
+              <div style={{height:10,width:"40%",background:T.surface,borderRadius:4,marginBottom:14}}/>
+              <div style={{height:24,width:"70%",background:T.surface,borderRadius:6,marginBottom:10}}/>
+              <div style={{height:8,width:"60%",background:T.surface,borderRadius:4}}/>
+              <div style={{position:"absolute",inset:0,background:`linear-gradient(90deg, transparent, ${T.border}40, transparent)`,backgroundSize:"200% 100%",animation:"growith-shimmer 1.6s infinite"}}/>
+            </div>
+          ))}
+        </div>
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",position:"relative",overflow:"hidden"}}>
+          <div style={{height:14,width:"30%",background:T.surface,borderRadius:5,marginBottom:14}}/>
+          {[1,2,3,4].map(i=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
+              <div style={{width:20,height:20,background:T.surface,borderRadius:4}}/>
+              <div style={{height:11,flex:1,background:T.surface,borderRadius:4}}/>
+              <div style={{height:11,width:80,background:T.surface,borderRadius:4}}/>
+            </div>
+          ))}
+          <div style={{position:"absolute",inset:0,background:`linear-gradient(90deg, transparent, ${T.border}40, transparent)`,animation:"growith-shimmer 1.6s infinite"}}/>
+        </div>
+      </div>
     </div>
   );
 
@@ -9258,7 +9307,34 @@ function AppMetaAds({T, user, onHome}) {
 // ===========================================
 export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
-  const [page,setPage]=useState("home");
+  // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
+  // Sin libs externas, sin config server. Solo window.location.hash + listener.
+  const VALID_PAGES = ["home","arca","meta","audio","reclamos","canjes","envios","config","planes","admin","cupones","contenido"];
+  const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
+  const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "home");
+  const setPage = (p) => {
+    _setPage(p);
+    if (typeof window !== "undefined") {
+      const newHash = p === "home" ? "" : `#/${p}`;
+      if (window.location.hash !== newHash) {
+        window.history.pushState(null, "", newHash || window.location.pathname);
+      }
+    }
+  };
+  useEffect(()=>{
+    if(typeof window === "undefined") return;
+    const onHash = () => {
+      const h = window.location.hash.replace(/^#\/?/, "") || "home";
+      if (VALID_PAGES.includes(h)) _setPage(h);
+    };
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("popstate", onHash);
+    return ()=>{
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("popstate", onHash);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   const [pendingCanje,setPendingCanje]=useState(null); // datos pre-cargados desde un pedido
   const [pendingCanjeDetail,setPendingCanjeDetail]=useState(null); // _docId a abrir directo
   const [orders,setOrders]=useState([]);
