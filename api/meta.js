@@ -80,7 +80,9 @@ async function loadMetaAccount(db, uid, accId) {
   return snap.exists ? snap.data() : null;
 }
 async function saveMetaAccount(db, uid, accId, data) {
-  await metaAccountRef(db, uid, accId).set({ ...data, id: String(accId) }, { merge: true });
+  // Firestore no acepta undefined. Filtramos antes de escribir.
+  const clean = Object.fromEntries(Object.entries({ ...data, id: String(accId) }).filter(([, v]) => v !== undefined));
+  await metaAccountRef(db, uid, accId).set(clean, { merge: true });
 }
 async function listMetaAccounts(db, uid) {
   const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
