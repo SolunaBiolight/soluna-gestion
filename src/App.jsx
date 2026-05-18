@@ -7126,13 +7126,20 @@ function AppArca({T, user, onHome}) {
                   <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px"}}>
                     <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Resultado de emisión</div>
                     {resultados.map((r,i)=>(
-                      <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid "+T.borderL}}>
-                        <span style={{fontSize:16,flexShrink:0}}>{r.ok?"✅":"🔴"}</span>
+                      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 0",borderBottom:"1px solid "+T.borderL}}>
+                        <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{r.ok?"✅":"🔴"}</span>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.orden_id}</div>
                           {r.ok
                             ? <div style={{fontSize:11,color:T.textSm}}>F-{r.letra} Nro {String(r.comprobante).padStart(8,"0")} · CAE {r.cae} · Vto {r.cae_vto}</div>
                             : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>}
+                          {r.ok && r.orden_id?.startsWith("ML-") && (
+                            r.ml_uploaded
+                              ? <div style={{fontSize:10,color:T.green,marginTop:3}}>🟡 Factura adjuntada en Mercado Libre ✓</div>
+                              : r.ml_upload_error
+                                ? <div style={{fontSize:10,color:T.orange,marginTop:3}}>⚠ No se adjuntó en ML: {r.ml_upload_error}</div>
+                                : null
+                          )}
                         </div>
                         <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>${r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
                       </div>

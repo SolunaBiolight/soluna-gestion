@@ -1246,30 +1246,55 @@ export default async function handler(req, res) {
           pdfs.push({ nombre: `F${letra} - ${nombreCliente} - ${String(cbteNro).padStart(8, "0")}.pdf`, bytes: Buffer.from(pdfBytes).toString("base64") });
 
           // ── Auto-adjuntar factura a venta de ML ─────────────
-          // Si el orderId arranca con "ML-" y la factura salio OK, subimos el PDF a
-          // /packs/{pack_id}/fiscal_documents para que quede visible en la pestaña
-          // Factura de la venta en Mercado Libre.
+          // 1) Consultamos pack_id real de la orden (a veces es distinto al order_id)
+          // 2) Subimos PDF al endpoint /packs/{pack_id}/fiscal_documents
           let ml_uploaded = false, ml_upload_error = null;
           if (orderId.startsWith("ML-")) {
             try {
               const ml = await getValidMLToken(db, uid);
-              if (ml?.accessToken) {
-                const packId = orderId.replace(/^ML-/, "");
-                const fd = new FormData();
-                const blob = new Blob([Buffer.from(pdfBytes)], { type: "application/pdf" });
-                fd.append("fiscal_document", blob, `F${letra}-${String(cbteNro).padStart(8, "0")}.pdf`);
-                const upRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
-                  method: "POST",
+              if (!ml?.accessToken) throw new Error("Sin access_token de ML");
+              const orderIdRaw = orderId.replace(/^ML-/, "");
+
+              // Conseguir pack_id real (si la orden esta en un pack)
+              let packId = orderIdRaw;
+              try {
+                const oRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdRaw}?fields=pack_id`, {
                   headers: { Authorization: `Bearer ${ml.accessToken}` },
-                  body: fd,
                 });
-                if (upRes.ok) {
-                  ml_uploaded = true;
-                } else {
-                  const txt = await upRes.text().catch(() => "");
-                  ml_upload_error = `${upRes.status}: ${txt.slice(0, 180)}`;
-                  console.error(`[ml-upload] ${orderId}:`, ml_upload_error);
+                if (oRes.ok) {
+                  const oData = await oRes.json();
+                  if (oData.pack_id) packId = String(oData.pack_id);
                 }
+              } catch (_) { /* fallback al order_id */ }
+
+              // Construir multipart manualmente (mas confiable que FormData/Blob en Vercel runtime)
+              const boundary = "----GrowithBoundary" + Date.now();
+              const pdfBuf = Buffer.from(pdfBytes);
+              const filename = `F${letra}-${String(cbteNro).padStart(8, "0")}.pdf`;
+              const head = Buffer.from(
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="fiscal_document"; filename="${filename}"\r\n` +
+                `Content-Type: application/pdf\r\n\r\n`
+              );
+              const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+              const body = Buffer.concat([head, pdfBuf, tail]);
+
+              const upRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${ml.accessToken}`,
+                  "Content-Type": `multipart/form-data; boundary=${boundary}`,
+                  "Content-Length": String(body.length),
+                },
+                body,
+              });
+
+              if (upRes.ok) {
+                ml_uploaded = true;
+              } else {
+                const txt = await upRes.text().catch(() => "");
+                ml_upload_error = `HTTP ${upRes.status}: ${txt.slice(0, 220)}`;
+                console.error(`[ml-upload] ${orderId} pack=${packId}:`, ml_upload_error);
               }
             } catch (e) {
               ml_upload_error = e.message;
