@@ -520,7 +520,7 @@ function Modal({T, open, onClose, title, width, children, zIndex=1000}) {
   },[open]);
   if(!open) return null;
   return ReactDOM.createPortal(
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.65:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:zIndex,padding:16,transition:"background 0.2s ease",fontFamily:"'Inter',system-ui,sans-serif"}}>
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:`rgba(0,0,0,${visible?0.65:0})`,backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",zIndex:zIndex,padding:"24px 16px",transition:"background 0.2s ease",fontFamily:"'Inter',system-ui,sans-serif"}}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:16,width:"100%",maxWidth:width||560,maxHeight:"90vh",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.45)",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",transform:visible?"translateY(0) scale(1)":"translateY(16px) scale(0.97)",opacity:visible?1:0,transition:"transform 0.22s cubic-bezier(0.34,1.26,0.64,1), opacity 0.18s ease"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:`1px solid ${T.borderL}`,flexShrink:0}}>
           <div style={{margin:0,fontSize:17,fontWeight:700,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>{title}</div>
@@ -569,7 +569,7 @@ function InputStyle(T) {
 }
 
 function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid,color:"#fff",letterSpacing:"0.01em"}; }
-function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.surface,color:T.text}; }
+function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.card,color:T.text}; }
 function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
 function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
 
@@ -3891,38 +3891,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     return pages.join('---PAGE---');
   }
 
-  async function sendTracking(result, retries=3) {
+  async function sendTracking(result) {
     if(!result.pedidoNum||!result.tracking) return;
     setSendingTracking(p=>({...p,[result.pedidoNum]:true}));
-    let lastErr;
-    for(let intento=0; intento<retries; intento++){
-      try {
-        const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
-        const data=await res.json();
-        // Rate limit de TN → esperar y reintentar
-        if(res.status===429){
-          const wait=2000*(intento+1);
-          await new Promise(r=>setTimeout(r,wait));
-          continue;
-        }
-        if(res.ok&&!data.error) {
-          setTrackingSent(p=>({...p,[result.pedidoNum]:"ok"}));
-          setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
-          return;
-        }
-        lastErr=new Error(data.error||`Error ${res.status} al actualizar tracking en TN`);
-        // Si es error 403 (permisos) no reintentar
-        if(res.status===403||res.status===401) break;
-        // Otros errores: esperar y reintentar
-        if(intento<retries-1) await new Promise(r=>setTimeout(r,1500*(intento+1)));
-      } catch(e){
-        lastErr=e;
-        if(intento<retries-1) await new Promise(r=>setTimeout(r,1500*(intento+1)));
+    try {
+      const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
+      const data=await res.json();
+      if(res.ok&&!data.error) {
+        setTrackingSent(p=>({...p,[result.pedidoNum]:"ok"}));
+      } else {
+        // Marcar como error (no como enviado) y tirar excepción para que sendAllTracking lo cuente
+        setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
+        throw new Error(data.error||"Error al actualizar tracking en TN");
       }
+    } catch(e){
+      setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
+      throw e; // re-throw para que sendAllTracking lo cuente como fail
     }
-    setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
     setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
-    throw lastErr||new Error("Error desconocido");
   }
 
   async function sendAllTracking() {
@@ -3943,8 +3929,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         errors.push({pedido:r.pedidoNum,msg:e.message});
         setSeguimientoProgress(p=>({...p,fail}));
       }
-      // Pausa entre pedidos para respetar rate limit de TN (~500ms)
-      if(i<pending.length-1) await new Promise(r=>setTimeout(r,500));
     }
     setSendBatchActive(false);
     setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors});
@@ -6173,6 +6157,7 @@ function AppArca({T, user, onHome}) {
   const [productos, setProductos] = useState([]);
   const [productMap, setProductMap] = useState({});
   const [emitting, setEmitting] = useState(false);
+  const [emitProgress, setEmitProgress] = useState({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
   const [mesImputacion, setMesImputacion] = useState("actual"); // "actual" | "anterior"
   const [resultados, setResultados] = useState(null);
   const [pdfs, setPdfs] = useState([]);
@@ -6564,7 +6549,6 @@ function AppArca({T, user, onHome}) {
 
   async function handleEmit() {
     if(!ordenes||!cuitSel) return;
-    // Chequear duplicados del mes
     const orderIds = Object.keys(ordenes);
     const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds});
     const duplicates = dupRes?.duplicates || [];
@@ -6575,13 +6559,30 @@ function AppArca({T, user, onHome}) {
       msg = `⚠ Hay ${duplicates.length} órden${duplicates.length>1?"es":""} ya facturada${duplicates.length>1?"s":""} este mes:\n${ids}${masMsg}\n\n¿Querés refacturarla${duplicates.length>1?"s":""} igual? Se van a emitir nuevos comprobantes (los anteriores no se anulan).`;
     }
     if(!window.confirm(msg)) return;
+    const total = orderIds.length;
     setEmitting(true);
+    setEmitProgress({active:true,current:0,total,ok:0,fail:0,done:false,errors:[]});
+    // Progreso simulado mientras la API trabaja (~2s por factura)
+    let simCurrent = 0;
+    const simInterval = setInterval(()=>{
+      simCurrent = Math.min(simCurrent+1, Math.floor(total*0.85));
+      setEmitProgress(p=>({...p,current:simCurrent}));
+    }, Math.max(800, (total*1800)/total));
     const d = await api("emit","POST",{cuit:cuitSel,ordenes,product_map:productMap,mes_imputacion:mesImputacion});
-    if(d.error){toast(d.error,"error");setEmitting(false);return;}
-    setResultados(d.resultados||[]); setPdfs(d.pdfs||[]);
-    const ok = (d.resultados||[]).filter(r=>r.ok).length;
-    const err = (d.resultados||[]).filter(r=>!r.ok).length;
-    toast(ok+" facturas emitidas"+(err>0?" · "+err+" con error":""),"success"); setEmitting(false);
+    clearInterval(simInterval);
+    if(d.error){
+      toast(d.error,"error");
+      setEmitting(false);
+      setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
+      return;
+    }
+    const res = d.resultados||[];
+    const ok = res.filter(r=>r.ok).length;
+    const fail = res.filter(r=>!r.ok).length;
+    const errors = res.filter(r=>!r.ok).map(r=>({orden:r.orden_id,msg:r.obs||"Error"}));
+    setResultados(res); setPdfs(d.pdfs||[]);
+    setEmitProgress({active:false,current:total,total,ok,fail,done:true,errors});
+    setEmitting(false);
     refreshDashboard();
   }
 
@@ -7823,6 +7824,66 @@ function AppArca({T, user, onHome}) {
         document.body
       )}
     </div>
+
+      {/* ── MODAL PROGRESO EMISIÓN ARCA ── */}
+      {(emitProgress.active||emitProgress.done)&&ReactDOM.createPortal(
+        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:460,boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${emitProgress.done?(emitProgress.fail>0?T.orange+"55":T.green+"55"):T.accentSolid+"44"}`}}>
+            {!emitProgress.done?(
+              <>
+                <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
+                  <div style={{width:44,height:44,borderRadius:12,background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <div style={{width:22,height:22,border:`3px solid ${T.accentSolid}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:16,fontWeight:700,color:T.text}}>Emitiendo facturas en ARCA</div>
+                    <div style={{fontSize:13,color:T.textSm,marginTop:2}}>Esto puede tardar unos minutos...</div>
+                  </div>
+                </div>
+                <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
+                  <div style={{height:"100%",width:`${Math.round((emitProgress.current/Math.max(1,emitProgress.total))*100)}%`,background:T.accentSolid,borderRadius:20,transition:"width 0.5s ease"}}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:T.textSm}}>
+                  <span>Procesando {emitProgress.total} facturas...</span>
+                  <span style={{fontWeight:700,color:T.accent}}>{Math.round((emitProgress.current/Math.max(1,emitProgress.total))*100)}%</span>
+                </div>
+              </>
+            ):(
+              <>
+                <div style={{textAlign:"center",marginBottom:24}}>
+                  <div style={{fontSize:40,marginBottom:12}}>{emitProgress.fail===0?"✅":emitProgress.ok===0?"❌":"⚠️"}</div>
+                  <div style={{fontSize:18,fontWeight:800,color:emitProgress.fail===0?T.green:emitProgress.ok===0?T.red:T.orange,marginBottom:6}}>
+                    {emitProgress.fail===0?"¡Listo! Todas las facturas emitidas":emitProgress.ok===0?"Error al emitir":`${emitProgress.ok} emitidas, ${emitProgress.fail} con error`}
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+                  <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                    <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{emitProgress.ok}</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Emitidas OK</div>
+                  </div>
+                  <div style={{background:emitProgress.fail>0?T.redBg:T.surface,border:`1px solid ${emitProgress.fail>0?T.red+"33":T.border}`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                    <div style={{fontSize:28,fontWeight:800,color:emitProgress.fail>0?T.red:T.textSm,letterSpacing:-1}}>{emitProgress.fail}</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Con error</div>
+                  </div>
+                </div>
+                {emitProgress.errors.length>0&&(
+                  <div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",marginBottom:16,maxHeight:120,overflowY:"auto"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.red,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Detalle de errores</div>
+                    {emitProgress.errors.map((e,i)=>(
+                      <div key={i} style={{fontSize:12,color:T.red,marginBottom:3}}>· {e.orden}: {e.msg}</div>
+                    ))}
+                  </div>
+                )}
+                <button onClick={()=>setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]})}
+                  style={{width:"100%",background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  Cerrar
+                </button>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
   );
 }
 
