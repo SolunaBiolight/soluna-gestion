@@ -19,6 +19,30 @@ function cleanAddr(parts) {
     .join(", ");
 }
 
+// Extrae DNI/CUIT del comprador de una orden de Tienda Nube.
+// TN guarda el dato en varios lugares según versión del checkout y configuración del vendedor.
+function extractTNDoc(o) {
+  // 1) Campo estándar del checkout
+  const candidates = [
+    o.customer?.identification,
+    o.contact_identification,
+    o.customer?.tax_id,
+    o.billing_identification,
+    o.identification,
+  ];
+  for (const c of candidates) {
+    const clean = String(c || "").replace(/[.\-\s]/g, "");
+    if (/^\d{7,11}$/.test(clean)) return clean;
+  }
+  // 2) Buscar en la nota del comprador (a veces los clientes ponen "DNI 12345678")
+  const noteText = String(o.note || o.owner_note || "");
+  if (noteText) {
+    const m = noteText.match(/\b(\d{7,11})\b/);
+    if (m) return m[1];
+  }
+  return "";
+}
+
 // ─── Inicialización Firebase ───────────────────────────
 
 function initAdmin() {
@@ -1650,7 +1674,7 @@ export default async function handler(req, res) {
           // Filtros estrictos de pago: solo pagadas, sin devoluciones
           const pStatus = (o.payment_status || "").toLowerCase();
           if (pStatus !== "paid") continue;
-          const docRaw = String(o.customer?.identification || "").replace(/[.\-]/g, "");
+          const docRaw = extractTNDoc(o);
           const clas = clasificarDoc(docRaw);
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
             || o.customer?.name || o.contact_name || "";
