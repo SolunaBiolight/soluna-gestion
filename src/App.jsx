@@ -5600,12 +5600,39 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
               </div>
 
               <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:11,color:T.textMd,lineHeight:1.65,marginBottom:14}}>
-                <div style={{fontWeight:700,color:T.text,marginBottom:8}}>📋 Cómo generar tu System User Token (5 min)</div>
+                <div style={{fontWeight:700,color:T.text,marginBottom:8}}>📋 Cómo generar tu System User Token (5-8 min)</div>
+
+                <div style={{marginBottom:10,padding:"8px 11px",background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5}}>
+                  ⚡ <strong style={{color:T.text}}>Antes de empezar:</strong> necesitás una <strong style={{color:T.text}}>app</strong> en Meta for Developers (es lo que va a pedir el token). Si no tenés, mirá el desplegable de abajo — se crea en 1 minuto, una sola vez.
+                </div>
+
+                <details style={{marginBottom:12,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8}}>
+                  <summary style={{cursor:"pointer",padding:"8px 12px",fontSize:11,fontWeight:600,color:T.accent,listStyle:"none"}}>
+                    ▸ ¿No tenés una app creada? Crearla en 1 minuto
+                  </summary>
+                  <ol style={{margin:0,padding:"4px 12px 12px 30px",fontSize:11,color:T.textMd,lineHeight:1.7}}>
+                    <li>Entrá a <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>developers.facebook.com/apps</a></li>
+                    <li>Click en <strong style={{color:T.text}}>"Crear aplicación"</strong> (botón verde arriba a la derecha)</li>
+                    <li>"¿Qué experiencia quieres construir?" → elegí <strong style={{color:T.text}}>"Otro"</strong> → Siguiente</li>
+                    <li>Tipo de aplicación → <strong style={{color:T.text}}>"Negocio"</strong> → Siguiente</li>
+                    <li>Nombre: poné lo que quieras (ej. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>Growith Connect</code>) → tu email → Cuenta empresarial: elegí la tuya → <strong style={{color:T.text}}>Crear aplicación</strong></li>
+                  </ol>
+                </details>
+
                 <ol style={{margin:0,paddingLeft:18}}>
                   <li>Entrá a <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>business.facebook.com → Configuración del negocio → Usuarios → Usuarios del sistema</a></li>
                   <li>Click en <strong style={{color:T.text}}>+ Agregar</strong> → ponele un nombre (ej: "Growith") → rol: <strong style={{color:T.text}}>Administrador</strong> → Crear usuario del sistema</li>
                   <li>Click en los <strong style={{color:T.text}}>3 puntos</strong> del usuario que creaste → <strong style={{color:T.text}}>Asignar activos</strong> → seleccioná tu Ad Account y tu Página → <strong style={{color:T.text}}>permisos completos</strong> → Guardar</li>
-                  <li>Click en <strong style={{color:T.text}}>Generar token</strong> → elegí cualquier app tuya → permisos: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_management</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_read</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>pages_show_list</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>business_management</code> → vencimiento: <strong style={{color:T.text}}>Nunca</strong> → Generar token</li>
+                  <li style={{padding:"6px 8px",background:T.yellow+"15",border:`1px solid ${T.yellow}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>
+                    <strong style={{color:T.text}}>⚠ PASO CLAVE</strong> — asignar el system user como rol en tu app:
+                    <ol style={{margin:"4px 0 0",paddingLeft:18,fontSize:10.5}}>
+                      <li>Entrá a <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>developers.facebook.com/apps</a> → tu app</li>
+                      <li>Sidebar izquierdo → <strong style={{color:T.text}}>Roles → Roles</strong></li>
+                      <li>Sección <strong style={{color:T.text}}>"Usuarios del sistema"</strong> o <strong style={{color:T.text}}>"Administradores"</strong> → <strong style={{color:T.text}}>Agregar</strong></li>
+                      <li>Elegí el system user que creaste → rol <strong style={{color:T.text}}>Administrador</strong> → Confirmar</li>
+                    </ol>
+                  </li>
+                  <li>Volvé al Business Manager → click en <strong style={{color:T.text}}>Generar token</strong> → elegí la app → permisos: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_management</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_read</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>pages_show_list</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>business_management</code> → vencimiento: <strong style={{color:T.text}}>Nunca</strong> → Generar token</li>
                   <li>Copiá el token (empieza con <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>EAA...</code>) y pegalo abajo</li>
                 </ol>
                 <div style={{marginTop:10,padding:"8px 12px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,fontSize:11,color:T.green}}>
