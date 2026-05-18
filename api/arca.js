@@ -10,6 +10,15 @@ import { getFirestore } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
 import { getValidMLToken } from "./integrations.js";
 
+// Filtra valores basura ("?", "-", "—", "S/N", "N/A", "null", undefined) y arma una dirección legible.
+function cleanAddr(parts) {
+  const invalid = new Set(["", "?", "-", "—", "S/N", "s/n", "N/A", "n/a", "null", "undefined"]);
+  return (parts || [])
+    .map(p => (p == null ? "" : String(p).trim()))
+    .filter(p => !invalid.has(p))
+    .join(", ");
+}
+
 // ─── Inicialización Firebase ───────────────────────────
 
 function initAdmin() {
@@ -1239,7 +1248,7 @@ export default async function handler(req, res) {
             cliente: orden.nombre || "Consumidor Final",
             doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || "",
             letra, tipo_cbte: tipoCbte,
-            domicilio: [orden.direccion, orden.ciudad, orden.provincia].filter(Boolean).join(", "),
+            domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
             total: orden.total, items: orden.items,
           };
           const pdfBytes = await generarPDF(factData, cfg);
@@ -1334,7 +1343,7 @@ export default async function handler(req, res) {
                   precio: parseFloat(it.precio) || 0,
                   descuento_item: parseFloat(it.descuento_item) || 0,
                 })),
-                domicilio: [orden.direccion, orden.ciudad, orden.provincia].filter(Boolean).join(", "),
+                domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
                 ml_uploaded: ml_uploaded || false,
                 ml_uploaded_at: ml_uploaded ? new Date().toISOString() : null,
               });
