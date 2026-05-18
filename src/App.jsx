@@ -6793,7 +6793,7 @@ function AppArca({T, user, onHome}) {
             </div>
 
             {/* Zona de facturación */}
-            <div style={{display:"grid",gridTemplateColumns:ordenes?"1fr 340px":"1fr",gap:20,alignItems:"start"}}>
+            <div style={{display:"flex",flexDirection:"column",gap:20}}>
               <div>
                 {/* Upload */}
                 {/* ══ VENTAS PENDIENTES (desde integraciones conectadas) ══ */}
@@ -7148,33 +7148,50 @@ function AppArca({T, user, onHome}) {
                 )}
               </div>
 
-              {/* Sidebar */}
+              {/* Panel de emisión - ahora abajo, ancho completo */}
               {ordenes && (
-                <div style={{display:"flex",flexDirection:"column",gap:16,position:"sticky",top:80}}>
-                  {productos.length>0&&(
-                    <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
-                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:4}}>Nombre en factura</div>
-                      <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.4}}>Podés cambiar cómo aparece cada producto en el PDF del comprobante. Dejalo vacío para usar el nombre original.</div>
-                      {productos.map(p=>(
-                        <div key={p} style={{marginBottom:10}}>
-                          <div style={{fontSize:11,color:T.textSm,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p}</div>
-                          <input value={productMap[p]||""} onChange={e=>setProductMap(prev=>({...prev,[p]:e.target.value}))} placeholder={p.slice(0,35)+"..."} style={{...iS,fontSize:12}}/>
-                        </div>
-                      ))}
+                <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                  {/* Botón emitir / Re-emitir (queda arriba a la derecha del panel) */}
+                  {!resultados&&(
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 22px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:700,color:T.text}}>Todo listo para emitir</div>
+                        <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Revisá el resumen arriba y los nombres de productos abajo antes de emitir.</div>
+                      </div>
+                      <button onClick={handleEmit} disabled={emitting||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"12px 22px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",boxShadow:"0 4px 14px #16a34a40"}}>
+                        {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir facturas en ARCA"}
+                      </button>
                     </div>
                   )}
-                  {!resultados&&(
-                    <button onClick={handleEmit} disabled={emitting||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"13px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                      {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir facturas en ARCA"}
-                    </button>
+
+                  {productos.length>0&&(
+                    <details style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"4px 0"}}>
+                      <summary style={{cursor:"pointer",padding:"12px 18px",fontSize:13,fontWeight:600,color:T.text,listStyle:"none",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <span>📝 Nombre de productos en la factura <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>({productos.length} productos detectados)</span></span>
+                        <span style={{fontSize:11,color:T.textSm}}>Click para personalizar ▾</span>
+                      </summary>
+                      <div style={{padding:"4px 18px 16px"}}>
+                        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.4}}>Cambiá cómo aparece cada producto en el PDF. Dejalo vacío para usar el nombre original.</div>
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
+                          {productos.map(p=>(
+                            <div key={p}>
+                              <div style={{fontSize:11,color:T.textSm,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p}</div>
+                              <input value={productMap[p]||""} onChange={e=>setProductMap(prev=>({...prev,[p]:e.target.value}))} placeholder={p.slice(0,35)+"..."} style={{...iS,fontSize:12}}/>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </details>
                   )}
                   {pdfs.length>0&&(
                     <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
-                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:12}}>{pdfs.length} PDFs generados</div>
-                      <button onClick={downloadCurrentBatchZip} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:10}}>⬇ Descargar todos (.zip)</button>
-                      <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,gap:10,flexWrap:"wrap"}}>
+                        <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>{pdfs.length} PDFs generados</div>
+                        <button onClick={downloadCurrentBatchZip} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>⬇ Descargar todos (.zip)</button>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:6,maxHeight:240,overflowY:"auto"}}>
                         {pdfs.map((pdf,i)=>(
-                          <button key={i} onClick={()=>downloadPDF(pdf)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          <button key={i} onClick={()=>downloadPDF(pdf)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                             📄 {pdf.nombre}
                           </button>
                         ))}
@@ -7182,8 +7199,8 @@ function AppArca({T, user, onHome}) {
                     </div>
                   )}
                   {(ordenes||resultados)&&(
-                    <button onClick={()=>{setOrdenes(null);setResultados(null);setPdfs([]);setArchivo(null);}} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                      Nueva facturación
+                    <button onClick={()=>{setOrdenes(null);setResultados(null);setPdfs([]);setArchivo(null);}} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",alignSelf:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                      ↺ Nueva facturación
                     </button>
                   )}
                 </div>
