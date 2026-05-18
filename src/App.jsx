@@ -3378,25 +3378,39 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const esHop=nombre.includes("HOP");
     const sucs=locs.sucursales;
 
-    // ESTRATEGIA 1: PUNTO ANDREANI HOP
-    // Usa cl() existente para normalizar (elimina chars no ASCII incluyendo tildes)
-    // ESTRATEGIA 1: calle + número (funciona para HOP y sucursales normales)
-    if(calle&&numero){
+    // ESTRATEGIA 1: calle + número (alta confianza)
+    // Para que sea válido necesitamos: calle significativa (>=4 chars, no genérica) + número
+    const GENERICAS=new Set(["CALLE","AVENIDA","AVDA","AV","PASAJE","BULEVAR","BOULEVARD","RUTA","CAMINO","AUTOPISTA","ACCESO","DIAGONAL","ROTONDA","COLECTORA"]);
+    const calWordsRaw=calle.split(' ').filter(w=>w.length>=4&&!GENERICAS.has(w)&&!/^\d+$/.test(w));
+    const tieneCalleSignif=calWordsRaw.length>0;
+
+    if(tieneCalleSignif&&numero){
+      // Match exacto: calle completa + número como palabra separada
       const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.split(' ').includes(numero);});
       if(m) return m;
-      const calWords=calle.split(' ').filter(w=>w.length>=4);
-      for(const cw of calWords){
-        const candidates=sucs.filter(s=>{const su=cl(s);return su.includes(cw)&&su.includes(numero);});
+      // Match por palabras significativas + número
+      for(const cw of calWordsRaw){
+        const candidates=sucs.filter(s=>{const su=cl(s);return su.includes(cw)&&su.split(' ').includes(numero);});
         if(candidates.length===1) return candidates[0];
+        // Con múltiples, usar otra palabra de calle para desambiguar
+        if(candidates.length>1&&calWordsRaw.length>1){
+          for(const cw2 of calWordsRaw.filter(w=>w!==cw)){
+            const refined=candidates.filter(s=>cl(s).includes(cw2));
+            if(refined.length===1) return refined[0];
+          }
+        }
       }
     }
-    if(esHop&&calle){
-      const calWords=calle.split(' ').filter(w=>w.length>=4);
-      for(const cw of calWords){
+    // HOP sin calle significativa → modal (ej: "AV BOEDO 832" donde AV es genérica y BOEDO es la calle real)
+    if(esHop&&tieneCalleSignif){
+      for(const cw of calWordsRaw){
         const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(cw));
         if(candidates.length===1) return candidates[0];
+        if(candidates.length>1&&numero){
+          const refined=candidates.filter(s=>cl(s).split(' ').includes(numero));
+          if(refined.length===1) return refined[0];
+        }
       }
-      if(numero){const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(numero));if(candidates.length===1)return candidates[0];}
     }
     // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
     // Las sucursales clásicas tienen nombres propios que no podemos construir
