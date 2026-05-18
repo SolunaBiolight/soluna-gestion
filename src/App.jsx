@@ -371,8 +371,13 @@ function Spinner({size=14,color="#fff",style={}}) {
 // Animated page wrapper - triggers re-animation on key change
 function PageView({children, pageKey}) {
   return (
-    <div key={pageKey} className="gh-page" style={{flex:1}}>
-      {children}
+    <div key={pageKey} className="gh-page" style={{flex:1,position:"relative",overflow:"hidden"}}>
+      {/* Aurora background unificado para todas las paginas internas */}
+      <div aria-hidden style={{position:"absolute",top:-180,left:"50%",transform:"translateX(-50%)",width:1000,height:480,background:"radial-gradient(ellipse at center, rgba(139,92,246,0.10) 0%, transparent 65%)",pointerEvents:"none",filter:"blur(40px)",zIndex:0}}/>
+      <div aria-hidden style={{position:"absolute",top:80,right:-120,width:420,height:420,background:"radial-gradient(circle, rgba(74,222,128,0.07) 0%, transparent 70%)",pointerEvents:"none",filter:"blur(60px)",zIndex:0}}/>
+      <div style={{position:"relative",zIndex:1,display:"flex",flexDirection:"column",minHeight:"100%"}}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -388,17 +393,17 @@ function TabView({children, tabKey}) {
 // --- Shared AppTopbar ---
 function AppTopbar({T, section, onHome, children}) {
   return (
-    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
+    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"cc",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1400,margin:"0 auto"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button onClick={onHome} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",fontSize:13,fontWeight:500,borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease"}}
-            onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
-            onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textMd;}}>
+            onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;e.currentTarget.style.borderColor=T.accentSolid+"66";}}
+            onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textMd;e.currentTarget.style.borderColor=T.border;}}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Inicio
           </button>
-          <span style={{color:T.borderL,fontSize:16,fontWeight:200}}>|</span>
-          <span style={{fontWeight:700,fontSize:15,color:T.text,letterSpacing:-0.2}}>{section}</span>
+          <div style={{width:24,height:24,borderRadius:6,background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,boxShadow:`0 2px 8px ${T.accentSolid}40`}}>🌙</div>
+          <span style={{fontWeight:700,fontSize:15,color:T.text,letterSpacing:-0.2,background:`linear-gradient(135deg, ${T.text}, ${T.textMd})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{section}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {children}
@@ -4929,13 +4934,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
                   {CARD_ICONS[item.id]}
                 </div>
                 <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:4,letterSpacing:-0.2}}>{item.label}</div>
-                <div style={{fontSize:12,color:T.textSm,marginBottom:20,lineHeight:1.5}}>{item.desc}</div>
-                <div style={{marginTop:"auto",paddingTop:18,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"baseline",gap:6}}>
-                  {(item.id==="audio"||item.id==="meta")
-                    ? <span style={{fontSize:item.id==="audio"?20:15,fontWeight:800,color:item.accent,letterSpacing:-0.5,lineHeight:1}}>{item.id==="audio"?"30 voces":"Análisis · Reglas"}</span>
-                    : <><span style={{fontSize:36,fontWeight:800,color:item.accent,letterSpacing:-1.8,lineHeight:1}}>{item.stat??<Spinner size={16} color={item.accent}/>}</span><span style={{fontSize:12,color:T.textSm}}>{item.statLabel}</span></>
-                  }
-                </div>
+                <div style={{fontSize:12,color:T.textSm,lineHeight:1.5}}>{item.desc}</div>
               </button>
             ))}
           </div>
