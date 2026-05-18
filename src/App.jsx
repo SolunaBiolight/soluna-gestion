@@ -3378,39 +3378,25 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const esHop=nombre.includes("HOP");
     const sucs=locs.sucursales;
 
-    // ESTRATEGIA 1: calle + número (alta confianza)
-    // Para que sea válido necesitamos: calle significativa (>=4 chars, no genérica) + número
-    const GENERICAS=new Set(["CALLE","AVENIDA","AVDA","AV","PASAJE","BULEVAR","BOULEVARD","RUTA","CAMINO","AUTOPISTA","ACCESO","DIAGONAL","ROTONDA","COLECTORA"]);
-    const calWordsRaw=calle.split(' ').filter(w=>w.length>=4&&!GENERICAS.has(w)&&!/^\d+$/.test(w));
-    const tieneCalleSignif=calWordsRaw.length>0;
-
-    if(tieneCalleSignif&&numero){
-      // Match exacto: calle completa + número como palabra separada
+    // ESTRATEGIA 1: PUNTO ANDREANI HOP
+    // Usa cl() existente para normalizar (elimina chars no ASCII incluyendo tildes)
+    // ESTRATEGIA 1: calle + número (funciona para HOP y sucursales normales)
+    if(calle&&numero){
       const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.split(' ').includes(numero);});
       if(m) return m;
-      // Match por palabras significativas + número
-      for(const cw of calWordsRaw){
-        const candidates=sucs.filter(s=>{const su=cl(s);return su.includes(cw)&&su.split(' ').includes(numero);});
+      const calWords=calle.split(' ').filter(w=>w.length>=4);
+      for(const cw of calWords){
+        const candidates=sucs.filter(s=>{const su=cl(s);return su.includes(cw)&&su.includes(numero);});
         if(candidates.length===1) return candidates[0];
-        // Con múltiples, usar otra palabra de calle para desambiguar
-        if(candidates.length>1&&calWordsRaw.length>1){
-          for(const cw2 of calWordsRaw.filter(w=>w!==cw)){
-            const refined=candidates.filter(s=>cl(s).includes(cw2));
-            if(refined.length===1) return refined[0];
-          }
-        }
       }
     }
-    // HOP sin calle significativa → modal (ej: "AV BOEDO 832" donde AV es genérica y BOEDO es la calle real)
-    if(esHop&&tieneCalleSignif){
-      for(const cw of calWordsRaw){
+    if(esHop&&calle){
+      const calWords=calle.split(' ').filter(w=>w.length>=4);
+      for(const cw of calWords){
         const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(cw));
         if(candidates.length===1) return candidates[0];
-        if(candidates.length>1&&numero){
-          const refined=candidates.filter(s=>cl(s).split(' ').includes(numero));
-          if(refined.length===1) return refined[0];
-        }
       }
+      if(numero){const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(numero));if(candidates.length===1)return candidates[0];}
     }
     // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
     // Las sucursales clásicas tienen nombres propios que no podemos construir
@@ -3905,24 +3891,38 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     return pages.join('---PAGE---');
   }
 
-  async function sendTracking(result) {
+  async function sendTracking(result, retries=3) {
     if(!result.pedidoNum||!result.tracking) return;
     setSendingTracking(p=>({...p,[result.pedidoNum]:true}));
-    try {
-      const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
-      const data=await res.json();
-      if(res.ok&&!data.error) {
-        setTrackingSent(p=>({...p,[result.pedidoNum]:"ok"}));
-      } else {
-        // Marcar como error (no como enviado) y tirar excepción para que sendAllTracking lo cuente
-        setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
-        throw new Error(data.error||"Error al actualizar tracking en TN");
+    let lastErr;
+    for(let intento=0; intento<retries; intento++){
+      try {
+        const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
+        const data=await res.json();
+        // Rate limit de TN → esperar y reintentar
+        if(res.status===429){
+          const wait=2000*(intento+1);
+          await new Promise(r=>setTimeout(r,wait));
+          continue;
+        }
+        if(res.ok&&!data.error) {
+          setTrackingSent(p=>({...p,[result.pedidoNum]:"ok"}));
+          setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
+          return;
+        }
+        lastErr=new Error(data.error||`Error ${res.status} al actualizar tracking en TN`);
+        // Si es error 403 (permisos) no reintentar
+        if(res.status===403||res.status===401) break;
+        // Otros errores: esperar y reintentar
+        if(intento<retries-1) await new Promise(r=>setTimeout(r,1500*(intento+1)));
+      } catch(e){
+        lastErr=e;
+        if(intento<retries-1) await new Promise(r=>setTimeout(r,1500*(intento+1)));
       }
-    } catch(e){
-      setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
-      throw e; // re-throw para que sendAllTracking lo cuente como fail
     }
+    setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
     setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
+    throw lastErr||new Error("Error desconocido");
   }
 
   async function sendAllTracking() {
@@ -3943,6 +3943,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         errors.push({pedido:r.pedidoNum,msg:e.message});
         setSeguimientoProgress(p=>({...p,fail}));
       }
+      // Pausa entre pedidos para respetar rate limit de TN (~500ms)
+      if(i<pending.length-1) await new Promise(r=>setTimeout(r,500));
     }
     setSendBatchActive(false);
     setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors});
@@ -4733,17 +4735,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     <div style={{color:T.textSm}}>{order.pickupDetails.address?.locality}, {order.pickupDetails.address?.province}</div>
                   </div>
                 )}
-                {isSuc&&(()=>{
-                  // Verificar si el nombre de TN existe en la lista de Andreani
-                  const tnName=(order.pickupDetails?.name||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
-                  const existe=locs.sucursales?.some(s=>s.toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim()===tnName);
-                  if(existe) return null;
-                  return (
-                    <div style={{marginTop:8,background:"#7f1d1d22",border:"1px solid #ef444444",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#fca5a5"}}>
-                      ⚠ Esta sucursal puede estar cerrada o dada de baja en Andreani. Buscá una alternativa cercana.
-                    </div>
-                  );
-                })()}
                 {!isSuc&&<div style={{fontSize:12,color:T.textSm,marginTop:3}}>
                   {order.direccion} {order.dirNumero}, {order.localidad||order.ciudad}, {order.provincia} - CP {order.cp}
                 </div>}
