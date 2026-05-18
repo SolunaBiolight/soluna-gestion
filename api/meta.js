@@ -62,12 +62,52 @@ async function metaPost(path, payload, token) {
 }
 
 async function metaIntrospect(token) {
-  const [me, aa, pages] = await Promise.all([
-    metaGet("me", { fields: "id,name,email" }, token),
-    metaGet("me/adaccounts", { fields: "id,account_id,name,account_status,currency,timezone_name", limit: 200 }, token),
-    metaGet("me/accounts", { fields: "id,name,access_token,instagram_business_account{id,username},category", limit: 200 }, token),
-  ]);
-  return { me, ad_accounts: aa.data || [], pages: pages.data || [] };
+  const me = await metaGet("me", { fields: "id,name,email" }, token);
+
+  // Intento 1: /me/adaccounts (funciona con user tokens)
+  let adAccounts = [];
+  try {
+    const aa = await metaGet("me/adaccounts", { fields: "id,account_id,name,account_status,currency,timezone_name", limit: 200 }, token);
+    adAccounts = aa.data || [];
+  } catch (e) {
+    console.warn("[meta-introspect] /me/adaccounts failed:", e.message);
+  }
+
+  // Intento 2: si está vacío, traer businesses → owned_ad_accounts + client_ad_accounts
+  // (esto suele ser necesario para system user tokens donde /me/adaccounts viene vacío)
+  if (adAccounts.length === 0) {
+    try {
+      const businessesRes = await metaGet("me", {
+        fields: "businesses{id,name,owned_ad_accounts.limit(200){id,account_id,name,account_status,currency,timezone_name},client_ad_accounts.limit(200){id,account_id,name,account_status,currency,timezone_name}}",
+      }, token);
+      const businesses = businessesRes.businesses?.data || [];
+      const collected = [];
+      const seen = new Set();
+      for (const biz of businesses) {
+        for (const aa of (biz.owned_ad_accounts?.data || [])) {
+          if (!seen.has(aa.id)) { seen.add(aa.id); collected.push(aa); }
+        }
+        for (const aa of (biz.client_ad_accounts?.data || [])) {
+          if (!seen.has(aa.id)) { seen.add(aa.id); collected.push(aa); }
+        }
+      }
+      adAccounts = collected;
+      console.log(`[meta-introspect] fallback businesses → ${collected.length} ad_accounts`);
+    } catch (e) {
+      console.warn("[meta-introspect] businesses fallback failed:", e.message);
+    }
+  }
+
+  // Pages
+  let pages = [];
+  try {
+    const p = await metaGet("me/accounts", { fields: "id,name,access_token,instagram_business_account{id,username},category", limit: 200 }, token);
+    pages = p.data || [];
+  } catch (e) {
+    console.warn("[meta-introspect] /me/accounts failed:", e.message);
+  }
+
+  return { me, ad_accounts: adAccounts, pages };
 }
 
 // ─── Helpers Firestore ─────────────────────────────────
