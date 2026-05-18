@@ -5275,21 +5275,40 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
       }).then(r=>r.json());
       if(cr.error) { setMsg("Error: "+cr.error); setConnectingMeta(false); return; }
 
-      // 2. select: si trae al menos 1 ad_account, auto-seleccionar el primero
-      const aa = (cr.ad_accounts||[])[0];
-      const pg = (cr.pages||[])[0];
-      if(aa) {
-        const ig = pg?.instagram_business_account;
-        const sr = await fetch(`/api/meta?action=select&uid=${user.uid}&acc_id=${cr.id}`, {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({
-            ad_account_id: aa.id, ad_account_name: aa.name||"",
-            page_id: pg?.id||"", page_name: pg?.name||"",
-            page_access_token: pg?.access_token||metaToken.trim(),
-            ig_account_id: ig?.id||"", ig_username: ig?.username||"",
-          }),
-        }).then(r=>r.json());
-        if(sr.error) { setMsg("Conectó pero falló select: "+sr.error); }
+      const adAccounts = cr.ad_accounts || [];
+      const pages = cr.pages || [];
+
+      // Caso 0: no hay ad accounts → el token no tiene permisos suficientes
+      if(adAccounts.length === 0) {
+        // Aun así marco activa la cuenta para que el usuario pueda ir a Meta a configurar
+        await fetch(`/api/meta?action=set_active&uid=${user.uid}`,{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({id:cr.id}),
+        });
+        setMsg("Meta conectada, pero el token no devolvió cuentas publicitarias. Revisá que hayas marcado los permisos ads_management, ads_read y business_management al generar el token. O andá a Meta Ads → Cuenta para configurarlo manualmente.");
+        setShowMetaModal(false);
+        setMetaToken("");
+        return;
+      }
+
+      // Caso 1: hay 1 ad_account → auto-select
+      // Caso >1: tomamos el primero pero avisamos
+      const aa = adAccounts[0];
+      const pg = pages[0];
+      const ig = pg?.instagram_business_account;
+      const sr = await fetch(`/api/meta?action=select&uid=${user.uid}&acc_id=${cr.id}`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          ad_account_id: aa.id, ad_account_name: aa.name||"",
+          page_id: pg?.id||"", page_name: pg?.name||"",
+          page_access_token: pg?.access_token||metaToken.trim(),
+          ig_account_id: ig?.id||"", ig_username: ig?.username||"",
+        }),
+      }).then(r=>r.json());
+      if(sr.error) {
+        setMsg("Token conectado pero no se pudo seleccionar cuenta: "+sr.error+". Andá a Meta Ads → Cuenta para elegirla manualmente.");
+        setShowMetaModal(false); setMetaToken("");
+        return;
       }
 
       // 3. set_active
@@ -5298,7 +5317,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
         body: JSON.stringify({id: cr.id}),
       });
 
-      setMsg(`Meta conectada ✓${(cr.ad_accounts||[]).length>1?" — para cambiar de cuenta publicitaria andá a Meta Ads → Cuenta.":""}`);
+      setMsg(`Meta conectada ✓ (${aa.name || aa.id})${adAccounts.length>1?" — tenés "+adAccounts.length+" cuentas publicitarias, elegimos la primera. Cambiala desde Meta Ads → Cuenta si querés otra.":""}`);
       setShowMetaModal(false);
       setMetaToken("");
     } catch(e) {
@@ -8618,6 +8637,18 @@ function AppMetaAds({T, user, onHome}) {
         )}
       </AppTopbar>
       <AppTabs T={T} tabs={TABS} active={tab} onChange={setTab}/>
+
+      {/* Banner si la cuenta esta conectada pero falta seleccionar ad_account_id */}
+      {activeAcc && !activeAcc.ad_account_id && tab !== "cuenta" && (
+        <div style={{maxWidth:1280,margin:"16px auto 0",padding:"0 24px",width:"100%"}}>
+          <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,color:T.textMd,lineHeight:1.55,flex:1,minWidth:240}}>
+              ⚠ <strong style={{color:T.text}}>Falta elegir tu cuenta publicitaria.</strong> El token está conectado pero todavía no asociaste una cuenta. Andá al tab <strong style={{color:T.text}}>Cuenta</strong> para elegirla de la lista (o reconectate si la lista está vacía — significa que el token no tiene permisos <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:11,color:T.accent}}>ads_management</code> / <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:11,color:T.accent}}>business_management</code>).
+            </div>
+            <button onClick={()=>setTab("cuenta")} style={{padding:"8px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ir a Cuenta →</button>
+          </div>
+        </div>
+      )}
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
