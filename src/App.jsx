@@ -995,7 +995,10 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       const tel=(o.telefono||"").replace(/[^0-9]/g,'');
       const clean0=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
       // Quitar el 9 inicial de celulares argentinos (ej: 91156333118 → 1156333118)
-      const clean=clean0.startsWith('9')&&clean0.length===10?clean0.slice(1):clean0;
+      // 9+11+8dig (11 total) o 9+código+7dig (10 total) pero NO 911 (que es código válido de CABA)
+      const clean=(clean0.startsWith('9')&&(clean0.length===11||clean0.length===10)&&!clean0.startsWith('91'))?clean0.slice(1)
+                 :(clean0.startsWith('91')&&clean0.length===11)?clean0.slice(1)
+                 :clean0;
       let telCod='',telNum='';
       if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
       else if(clean.length>=8){telCod=clean.slice(0,clean.length-8)||'';telNum=clean.slice(clean.length-8);}
@@ -1013,7 +1016,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       const dirNum=String(o.dirNumero||"");
       const direccion=cl(o.direccion||"");
       const rn=3;
-      const cells=[sC('A'+rn,""),nC('B'+rn,200),nC('C'+rn,5),nC('D'+rn,5),nC('E'+rn,5),nC('F'+rn,6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
+      const cells=[sC('A'+rn,""),nC('B'+rn,200),nC('C'+rn,5),nC('D'+rn,5),nC('E'+rn,5),nC('F'+rn,6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,(()=>{const p=String(o.piso||'').trim();const m=p.match(/\d+/);return m?m[0]:'';})()),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
       const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
       const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
       const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
@@ -3368,6 +3371,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
     function cl(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
     function firstNum(s){ const m=String(s||"").match(/(\d+)/); return m?m[1]:""; }
+    // Detecta si una palabra de calle es muy genérica (número solo, o palabras comunes)
+    function esCalleGenerica(w){ return /^\d+$/.test(w)||["CALLE","AVENIDA","AV","PASAJE","BULEVAR","BOULEVARD","RUTA","CAMINO"].includes(w); }
 
     if(!pickupDetails) return null;
 
@@ -3378,42 +3383,56 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const esHop=nombre.includes("HOP");
     const sucs=locs.sucursales;
 
-    // ESTRATEGIA 1: PUNTO ANDREANI HOP
-    // Usa cl() existente para normalizar (elimina chars no ASCII incluyendo tildes)
-    // ESTRATEGIA 1: calle + número (funciona para HOP y sucursales normales)
-    if(calle&&numero){
-      const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.split(' ').includes(numero);});
-      if(m) return m;
-      const calWords=calle.split(' ').filter(w=>w.length>=4);
+    // ESTRATEGIA 1: calle + número exactos (alta confianza)
+    // Solo si la calle tiene palabras significativas (no solo números o palabras genéricas)
+    const calWords=calle.split(' ').filter(w=>w.length>=3&&!esCalleGenerica(w));
+    const tieneCalleSignificativa=calWords.length>0;
+
+    if(tieneCalleSignificativa&&numero){
+      // Match exacto: calle significativa + número como palabra separada
       for(const cw of calWords){
-        const candidates=sucs.filter(s=>{const su=cl(s);return su.includes(cw)&&su.includes(numero);});
+        const candidates=sucs.filter(s=>{const su=cl(s);return su.includes(cw)&&su.split(' ').includes(numero);});
         if(candidates.length===1) return candidates[0];
+        // Match exacto calle+número sin importar orden
+        const m=candidates.find(s=>{const su=cl(s);return su.includes(cw)&&su.includes(numero);});
+        if(m&&candidates.length<=2) return m;
       }
     }
-    if(esHop&&calle){
-      const calWords=calle.split(' ').filter(w=>w.length>=4);
-      for(const cw of calWords){
-        const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(cw));
-        if(candidates.length===1) return candidates[0];
+
+    // ESTRATEGIA 2: HOPs — solo con palabras de calle significativas
+    if(esHop){
+      if(tieneCalleSignificativa){
+        for(const cw of calWords){
+          const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(cw));
+          if(candidates.length===1) return candidates[0];
+          // Si hay número también, usarlo para desambiguar
+          if(candidates.length>1&&numero){
+            const refined=candidates.filter(s=>cl(s).includes(numero));
+            if(refined.length===1) return refined[0];
+          }
+        }
       }
-      if(numero){const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(numero));if(candidates.length===1)return candidates[0];}
+      // Para HOPs con calle genérica (ej: "CALLE 34") — NO intentar match por número solo
+      // ya que el número "100" puede aparecer en muchas sucursales → devolver null → modal
+      if(!tieneCalleSignificativa) return null;
     }
-    // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
-    // Las sucursales clásicas tienen nombres propios que no podemos construir
+
+    // ESTRATEGIA 3: Sucursales clásicas (no HOP)
     if(!esHop){
-      // Calle + número
-      if(calle&&numero){
-        const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.includes(numero);});
-        if(m) return m;
+      // Calle significativa + número
+      if(tieneCalleSignificativa&&numero){
+        for(const cw of calWords){
+          const m=sucs.find(s=>{const su=cl(s);return su.includes(cw)&&su.includes(numero)&&!cl(s).includes('HOP');});
+          if(m) return m;
+        }
       }
-      // Localidad sola
+      // Localidad sola (cuando no hay calle significativa)
       if(localidad){
         const locWords=localidad.split(' ').filter(w=>w.length>=3);
         for(const lw of locWords){
           const matches=sucs.filter(s=>cl(s).includes(lw)&&!cl(s).includes('HOP'));
           if(matches.length===1) return matches[0];
-          if(matches.length>1&&calle){
-            const calWords=calle.split(' ').filter(w=>w.length>=3);
+          if(matches.length>1&&tieneCalleSignificativa){
             for(const cw of calWords){
               const wc=matches.find(s=>cl(s).includes(cw));
               if(wc) return wc;
@@ -3421,23 +3440,23 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           }
         }
       }
-      // Palabras de calle
-      if(calle){
-        const words=calle.split(' ').filter(w=>w.length>=4);
-        for(const w of words){
-          const matches=sucs.filter(s=>cl(s).includes(w)&&!cl(s).includes('HOP'));
+      // Calle significativa sola
+      if(tieneCalleSignificativa){
+        for(const cw of calWords){
+          const matches=sucs.filter(s=>cl(s).includes(cw)&&!cl(s).includes('HOP'));
           if(matches.length===1) return matches[0];
         }
       }
     }
 
-    // 4. Número único en lista
-    if(numero&&numero.length>=3){
+    // ESTRATEGIA 4: Número único en lista (solo si es largo y específico ≥4 dígitos)
+    if(numero&&numero.length>=4){
       const byNum=sucs.filter(s=>cl(s).split(' ').includes(numero));
       if(byNum.length===1) return byNum[0];
     }
 
-    return null; // Mostrar modal solo para SUCURSAL ANDREANI sin match
+    // Sin match confiable → abrir modal
+    return null;
   }
 
   function searchSucursales(locs, query) {
@@ -3482,7 +3501,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const tel=(o.telefono||"").replace(/[^0-9]/g,'');
       const clean0=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
       // Quitar el 9 inicial de celulares argentinos (ej: 91156333118 → 1156333118)
-      const clean=clean0.startsWith('9')&&clean0.length===10?clean0.slice(1):clean0;
+      // Quitar el 9 inicial de celulares argentinos
+      // Casos: 9XXXXXXXXXX (11 dígitos) o 9XXXXXXXXX (10 dígitos con 9 de celular)
+      const clean=(clean0.startsWith('9')&&(clean0.length===11||clean0.length===10)&&!clean0.startsWith('91'))?clean0.slice(1)
+                 :(clean0.startsWith('91')&&clean0.length===11)?clean0.slice(1)
+                 :clean0;
       let telCod='',telNum='';
       if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
       else if(clean.length>=8){telCod=clean.slice(0,clean.length-8)||'';telNum=clean.slice(clean.length-8);}
