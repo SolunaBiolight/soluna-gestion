@@ -961,7 +961,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     const buf=await res.arrayBuffer();
     const zip=await window.JSZip.loadAsync(buf);
     const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
-    const strings=[];const rx=/<(?:x:)?t[^>]*>([\s\S]*?)<\/(?:x:)?t>/g;let m;while((m=rx.exec(ssXml))!==null)strings.push(m[1]);
+    const strings=[];const rx=/<t[^>]*>([\s\S]*?)<\/t>/g;let m;while((m=rx.exec(ssXml))!==null)strings.push(m[1]);
     const locPattern=/^[A-ZÁÉÍÓÚÑÜ\s]+ \/ [A-ZÁÉÍÓÚÑÜ\s0-9]+ \/ \d+$/;
     const list=strings.filter(s=>locPattern.test(s.trim()));
     const cpIndex={};list.forEach(loc=>{const parts=loc.split(' / ');if(parts.length===3){const cp=parts[2].trim();if(!cpIndex[cp])cpIndex[cp]=[];cpIndex[cp].push(loc);}});
@@ -970,7 +970,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     const configSheetFile=zip.file('xl/worksheets/sheet4.xml')||zip.file('xl/worksheets/sheet3.xml')||zip.file('xl/worksheets/sheet2.xml');
     if(!configSheetFile) throw new Error('No se encontró la hoja de configuración en el template de Andreani');
     const sheet4Xml=await configSheetFile.async('string');
-    const aCells=[...sheet4Xml.matchAll(/<(?:x:)?c r="A(\d+)"[^>]*t="s"[^>]*>[\s\S]*?<(?:x:)?v>(\d+)<\/(?:x:)?v>/g)];
+    const aCells=[...sheet4Xml.matchAll(/<c r="A(\d+)"[^>]*t="s"[^>]*><v>(\d+)<\/v>/g)];
     const sucursales=aCells.map(([,row,idx])=>strings[parseInt(idx)]||"").filter(s=>s.trim()&&s!=="Sucursal");
     _andreaniLocsCache.current={list,cpIndex,provIndex,sucursales};
     return _andreaniLocsCache.current;
@@ -3325,7 +3325,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const configSheetFile=zip.file('xl/worksheets/sheet4.xml')||zip.file('xl/worksheets/sheet3.xml')||zip.file('xl/worksheets/sheet2.xml');
     if(!configSheetFile) throw new Error('No se encontró la hoja de configuración en el template de Andreani');
     const sheet4Xml=await configSheetFile.async('string');
-    const aCells=[...sheet4Xml.matchAll(/<(?:x:)?c r="A(\d+)"[^>]*t="s"[^>]*>[\s\S]*?<(?:x:)?v>(\d+)<\/(?:x:)?v>/g)];
+    const aCells=[...sheet4Xml.matchAll(/<c r="A(\d+)"[^>]*t="s"[^>]*><v>(\d+)<\/v>/g)];
     const sucursales=aCells
       .map(([,row,idx])=>strings[parseInt(idx)]||"")
       .filter(s=>s.trim()&&s!=="Sucursal");
