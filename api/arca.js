@@ -802,16 +802,17 @@ async function generarPDF(factData, config) {
 
     // ─────── TABLA ITEMS ───────
     const TY = RY + 50;
-    // Columnas: [Cód, Producto/Servicio, Cant, Unidad, Precio Unit, Bonif%, Subtotal]
+    // Columnas: [Producto/Servicio, Cant, Unidad, Precio Unit, Bonif%, Subtotal]
+    // (Quitamos "Código" — no es obligatorio en facturas AR y nunca lo tenemos)
     // Si es A/C, se agrega IVA % al final
     const showIVA = !isMonotributo;
     let cols, hdrs;
     if (showIVA) {
-      cols = [38, 200, 38, 50, 65, 38, 60, 34];
-      hdrs = ["Código", "Producto / Servicio", "Cant.", "U. Medida", "Precio Unit.", "Bonif.", "Subtotal", "Alíc. IVA"];
+      cols = [238, 38, 50, 65, 38, 60, 34];
+      hdrs = ["Producto / Servicio", "Cant.", "U. Medida", "Precio Unit.", "Bonif.", "Subtotal", "Alíc. IVA"];
     } else {
-      cols = [40, 240, 40, 56, 70, 40, 76];
-      hdrs = ["Código", "Producto / Servicio", "Cant.", "U. Medida", "Precio Unit.", "Bonif.", "Subtotal"];
+      cols = [280, 40, 56, 70, 40, 76];
+      hdrs = ["Producto / Servicio", "Cant.", "U. Medida", "Precio Unit.", "Bonif.", "Subtotal"];
     }
     const totalColsW = cols.reduce((s,c)=>s+c, 0);
     const scale = UW / totalColsW;
@@ -825,8 +826,10 @@ async function generarPDF(factData, config) {
         x: cx, y: H - TY - headRowH, width: scaledCols[i], height: headRowH,
         color: COL_HEAD_BG, borderColor: COL_BLACK, borderWidth: 0.4,
       });
-      const align = i >= 2 ? "center" : "left";
-      draw(hdrs[i], align === "center" ? cx + scaledCols[i] / 2 : cx + 4, TY + 9, 7, true, align);
+      // Producto / Servicio (col 0) = left, Cant/U.Medida (1,2) = center, el resto (precios) = right
+      const align = i === 0 ? "left" : i >= 3 ? "right" : "center";
+      const xPos = align === "right" ? cx + scaledCols[i] - 4 : align === "center" ? cx + scaledCols[i] / 2 : cx + 4;
+      draw(hdrs[i], xPos, TY + 9, 7, true, align);
       cx += scaledCols[i];
     }
 
@@ -839,9 +842,9 @@ async function generarPDF(factData, config) {
       const precioUnit = isMonotributo ? precioBruto : Math.round((precioBruto / 1.21) * 100) / 100;
       const subtotal = Math.round(item.cantidad * precioUnit * 100) / 100;
       const bonif = item.descuento_item > 0 ? Math.round((item.descuento_item / (item.cantidad * item.precio)) * 10000) / 100 : 0;
+      const nombreItem = (item.nombre || "Producto").length > 60 ? (item.nombre || "Producto").slice(0, 60) + "…" : (item.nombre || "Producto");
       const cellData = [
-        item.sku || "—",
-        item.nombre,
+        nombreItem,
         String(item.cantidad),
         "unidades",
         precioUnit.toFixed(2),
@@ -849,14 +852,12 @@ async function generarPDF(factData, config) {
         subtotal.toFixed(2),
         ...(showIVA ? ["21,00%"] : []),
       ];
-      // Truncar nombre de producto largo
-      cellData[1] = cellData[1].length > 50 ? cellData[1].slice(0, 50) + "…" : cellData[1];
 
       const rowH = 12;
       let cx2 = MX;
       for (let i = 0; i < scaledCols.length; i++) {
         rect(cx2, iy, scaledCols[i], rowH, { borderWidth: 0.3 });
-        const align = i === 0 ? "left" : i === 1 ? "left" : i >= 4 ? "right" : "center";
+        const align = i === 0 ? "left" : i >= 3 ? "right" : "center";
         const xPos = align === "right" ? cx2 + scaledCols[i] - 4 : align === "center" ? cx2 + scaledCols[i] / 2 : cx2 + 4;
         draw(cellData[i], xPos, iy + 8, 7, false, align);
         cx2 += scaledCols[i];
@@ -1238,7 +1239,7 @@ export default async function handler(req, res) {
             cliente: orden.nombre || "Consumidor Final",
             doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || "",
             letra, tipo_cbte: tipoCbte,
-            domicilio: [orden.ciudad, orden.provincia].filter(Boolean).join(", "),
+            domicilio: [orden.direccion, orden.ciudad, orden.provincia].filter(Boolean).join(", "),
             total: orden.total, items: orden.items,
           };
           const pdfBytes = await generarPDF(factData, cfg);
@@ -1333,7 +1334,7 @@ export default async function handler(req, res) {
                   precio: parseFloat(it.precio) || 0,
                   descuento_item: parseFloat(it.descuento_item) || 0,
                 })),
-                domicilio: [orden.ciudad, orden.provincia].filter(Boolean).join(", "),
+                domicilio: [orden.direccion, orden.ciudad, orden.provincia].filter(Boolean).join(", "),
                 ml_uploaded: ml_uploaded || false,
                 ml_uploaded_at: ml_uploaded ? new Date().toISOString() : null,
               });
