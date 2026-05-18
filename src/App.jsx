@@ -5559,60 +5559,35 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
                 <div>
                   <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Meta Ads</div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Elegí cómo querés autorizar el acceso a tus campañas</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Pegá tu System User Token de Meta Business</div>
                 </div>
                 <button onClick={()=>!connectingMeta && setShowMetaModal(false)} disabled={connectingMeta} style={{background:"transparent",border:"none",color:T.textMd,cursor:connectingMeta?"wait":"pointer",fontSize:18,padding:4}}>✕</button>
               </div>
 
-              {/* Tabs OAuth / Token */}
-              <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`,marginBottom:16}}>
-                <button onClick={()=>setMetaMode("oauth")} style={{flex:1,padding:"9px 12px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:metaMode==="oauth"?T.card:"transparent",color:metaMode==="oauth"?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🔗 Facebook (1 clic)</button>
-                <button onClick={()=>setMetaMode("token")} style={{flex:1,padding:"9px 12px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:metaMode==="token"?T.card:"transparent",color:metaMode==="token"?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🔑 System Token</button>
+              <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:11,color:T.textMd,lineHeight:1.65,marginBottom:14}}>
+                <div style={{fontWeight:700,color:T.text,marginBottom:8}}>📋 Cómo generar tu System User Token (5 min)</div>
+                <ol style={{margin:0,paddingLeft:18}}>
+                  <li>Entrá a <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>business.facebook.com → Configuración del negocio → Usuarios → Usuarios del sistema</a></li>
+                  <li>Click en <strong style={{color:T.text}}>+ Agregar</strong> → ponele un nombre (ej: "Growith") → rol: <strong style={{color:T.text}}>Administrador</strong> → Crear usuario del sistema</li>
+                  <li>Click en los <strong style={{color:T.text}}>3 puntos</strong> del usuario que creaste → <strong style={{color:T.text}}>Asignar activos</strong> → seleccioná tu Ad Account y tu Página → <strong style={{color:T.text}}>permisos completos</strong> → Guardar</li>
+                  <li>Click en <strong style={{color:T.text}}>Generar token</strong> → elegí cualquier app tuya → permisos: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_management</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_read</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>pages_show_list</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>business_management</code> → vencimiento: <strong style={{color:T.text}}>Nunca</strong> → Generar token</li>
+                  <li>Copiá el token (empieza con <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>EAA...</code>) y pegalo abajo</li>
+                </ol>
+                <div style={{marginTop:10,padding:"8px 12px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,fontSize:11,color:T.green}}>
+                  ✓ El token "Nunca vence" — no vas a tener que renovarlo.
+                </div>
               </div>
-
-              {metaMode === "oauth" ? (
-                <div>
-                  <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:14}}>
-                    Te abre Facebook en una pestaña nueva → autorizás los permisos (ads_management, ads_read, etc.) → volvés conectado a Growith. <strong style={{color:T.text}}>Lo más simple si funciona.</strong>
-                  </div>
-                  <div style={{padding:"10px 14px",background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:8,fontSize:11,color:T.textMd,lineHeight:1.5,marginBottom:14}}>
-                    ⚠ Si te aparece <em>"La app no está activa"</em>, es porque la app de Meta de Growith todavía está en modo Development. Usá la opción <strong style={{color:T.text}}>System Token</strong> de al lado — funciona aunque la app no esté publicada.
-                  </div>
-                  <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
-                    <button onClick={()=>setShowMetaModal(false)} disabled={connectingMeta} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
-                    <button onClick={connectMetaOauth} disabled={connectingMeta} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px"}}>
-                      {connectingMeta?"Abriendo Facebook...":"Conectar con Facebook →"}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:11,color:T.textMd,lineHeight:1.65,marginBottom:14}}>
-                    <div style={{fontWeight:700,color:T.text,marginBottom:8}}>📋 Cómo generar tu System User Token (5 min)</div>
-                    <ol style={{margin:0,paddingLeft:18}}>
-                      <li>Entrá a <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>business.facebook.com → Configuración del negocio → Usuarios → Usuarios del sistema</a></li>
-                      <li>Click en <strong style={{color:T.text}}>+ Agregar</strong> → ponele un nombre (ej: "Growith") → rol: <strong style={{color:T.text}}>Administrador</strong> → Crear usuario del sistema</li>
-                      <li>Click en los <strong style={{color:T.text}}>3 puntos</strong> del usuario que creaste → <strong style={{color:T.text}}>Asignar activos</strong> → seleccioná tu Ad Account y tu Página → <strong style={{color:T.text}}>permisos completos</strong> → Guardar</li>
-                      <li>Click en <strong style={{color:T.text}}>Generar token</strong> → elegí cualquier app tuya (o pedile a Growith que cree una) → permisos: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_management</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_read</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>pages_show_list</code> <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>business_management</code> → vencimiento: <strong style={{color:T.text}}>Nunca</strong> → Generar token</li>
-                      <li>Copiá el token (empieza con <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>EAA...</code>) y pegalo abajo</li>
-                    </ol>
-                    <div style={{marginTop:10,padding:"8px 12px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,fontSize:11,color:T.green}}>
-                      ✓ El token "Nunca vence" — no vas a tener que renovarlo.
-                    </div>
-                  </div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>System User Token</div>
-                    <textarea value={metaToken} onChange={e=>setMetaToken(e.target.value)} placeholder="EAA..." rows={4} style={{...iS,fontFamily:"monospace",fontSize:11,resize:"vertical",minHeight:84}} disabled={connectingMeta}/>
-                    <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Se guarda cifrado en Firestore. Solo Growith lo usa para llamar a la API de Meta en tu nombre.</div>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
-                    <button onClick={()=>setShowMetaModal(false)} disabled={connectingMeta} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
-                    <button onClick={connectMetaWithToken} disabled={connectingMeta||!metaToken.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:metaToken.trim()?1:0.5}}>
-                      {connectingMeta?"Conectando...":"Conectar →"}
-                    </button>
-                  </div>
-                </div>
-              )}
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>System User Token</div>
+                <textarea value={metaToken} onChange={e=>setMetaToken(e.target.value)} placeholder="EAA..." rows={4} style={{...iS,fontFamily:"monospace",fontSize:11,resize:"vertical",minHeight:84}} disabled={connectingMeta} autoFocus/>
+                <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Se guarda cifrado en Firestore. Solo Growith lo usa para llamar a la API de Meta en tu nombre.</div>
+              </div>
+              <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+                <button onClick={()=>setShowMetaModal(false)} disabled={connectingMeta} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
+                <button onClick={connectMetaWithToken} disabled={connectingMeta||!metaToken.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px",opacity:metaToken.trim()?1:0.5}}>
+                  {connectingMeta?"Conectando...":"Conectar →"}
+                </button>
+              </div>
             </div>
           </div>
         )}
