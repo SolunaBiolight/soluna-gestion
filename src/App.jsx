@@ -4850,19 +4850,25 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const saludo = hora < 13 ? "Buenos días" : hora < 20 ? "Buenas tardes" : "Buenas noches";
   const notificacionesCanjes = alertas||[];
   const [notifCollapsed, setNotifCollapsed] = React.useState(false);
+  const fecha = new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
+  const fechaCap = fecha.charAt(0).toUpperCase()+fecha.slice(1);
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column"}}>
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column",position:"relative",overflow:"hidden"}}>
+
+      {/* Aurora background gradient (subtle) */}
+      <div aria-hidden style={{position:"absolute",top:-200,left:"50%",transform:"translateX(-50%)",width:1100,height:600,background:`radial-gradient(ellipse at center, ${T.accentSolid}18 0%, transparent 60%)`,pointerEvents:"none",filter:"blur(40px)"}}/>
+      <div aria-hidden style={{position:"absolute",top:100,right:-100,width:500,height:500,background:`radial-gradient(circle, ${T.green}10 0%, transparent 65%)`,pointerEvents:"none",filter:"blur(60px)"}}/>
 
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:1000,margin:"0 auto"}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"cc",backdropFilter:"blur(12px)",padding:"0 24px",position:"relative",zIndex:2}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:1200,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:28,height:28,borderRadius:7,background:T.accentSolid,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🌙</div>
+            <div style={{width:30,height:30,borderRadius:8,background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,boxShadow:`0 4px 14px ${T.accentSolid}33`}}>🌙</div>
             <span style={{fontWeight:800,fontSize:15,color:T.text,letterSpacing:-0.3}}>Growith</span>
-            <div style={{display:"flex",alignItems:"center",gap:5,marginLeft:4}}>
-              <span style={{width:6,height:6,borderRadius:"50%",background:fbDot}}/>
-              <span style={{fontSize:11,color:T.textSm}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
+            <div style={{display:"flex",alignItems:"center",gap:5,marginLeft:6,padding:"3px 9px",borderRadius:20,background:fbStatus==="ok"?T.green+"15":T.surface,border:`1px solid ${fbStatus==="ok"?T.green+"33":T.border}`}}>
+              <span style={{width:5,height:5,borderRadius:"50%",background:fbDot,boxShadow:fbStatus==="ok"?`0 0 6px ${T.green}`:"none"}}/>
+              <span style={{fontSize:10,color:fbStatus==="ok"?T.green:T.textSm,fontWeight:600}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -4877,13 +4883,14 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         </div>
       </div>
 
-      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"40px 24px 64px"}}>
-        <div style={{width:"100%",maxWidth:820}}>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"48px 24px 64px",position:"relative",zIndex:1}}>
+        <div style={{width:"100%",maxWidth:1100}}>
 
           {/* Saludo */}
-          <div style={{marginBottom:28}}>
-            <h1 style={{fontSize:28,fontWeight:800,margin:"0 0 5px",letterSpacing:-0.8,color:T.text}}>{saludo}, {nombre}</h1>
-            <p style={{fontSize:14,color:T.textSm,margin:0}}>
+          <div style={{marginBottom:32}}>
+            <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:1.2,marginBottom:8}}>{fechaCap}</div>
+            <h1 style={{fontSize:38,fontWeight:800,margin:"0 0 6px",letterSpacing:-1.2,color:T.text,lineHeight:1.1}}>{saludo}, <span style={{background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{nombre}</span></h1>
+            <p style={{fontSize:14,color:T.textSm,margin:0,marginTop:4}}>
               {reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}
               {notificacionesCanjes.length>0&&<> · <span style={{color:T.orange}}>{notificacionesCanjes.length} notificación{notificacionesCanjes.length>1?"es":""} en canjes</span></>}
             </p>
@@ -4900,29 +4907,33 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               arca:     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
             };
             return (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14,marginBottom:28}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:16,marginBottom:28}}>
             {[
               {id:"reclamos", label:"Reclamos", desc:"Cambios y devoluciones",   stat:reclamosCount, statLabel:"activos",  accent:"#f87171", accentBg:"rgba(248,113,113,0.08)"},
               {id:"canjes",   label:"Canjes",   desc:"Influencers y contenido",  stat:canjesCount,   statLabel:"canjes",   accent:"#c084fc", accentBg:"rgba(192,132,252,0.08)"},
               {id:"envios",   label:"Envíos",   desc:"Despachos y seguimientos", stat:ordersCount,   statLabel:"pedidos",  accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
               {id:"audio",    label:"Audio Studio", desc:"Voces TTS con IA",     stat:null,          statLabel:"voces",    accent:"#a78bfa", accentBg:"rgba(167,139,250,0.08)"},
-              {id:"meta",     label:"Meta Ads",      desc:"Campañas y creativos IA", stat:null, statLabel:"",       accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
+              {id:"meta",     label:"Meta Ads",      desc:"Análisis y optimizador IA", stat:null, statLabel:"",       accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
               {id:"arca",     label:"ARCA",          desc:"Facturación electrónica", stat:null, statLabel:"",       accent:"#4ade80", accentBg:"rgba(74,222,128,0.08)"},
             ].map(item=>(
               <button key={item.id} onClick={()=>onNavigate(item.id)}
-                style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"24px 24px 20px",textAlign:"left",cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column",position:"relative",overflow:"hidden"}}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor=item.accent+"88";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 24px ${item.accent}18`;}}
-                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
-                <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:item.accent,borderRadius:"14px 14px 0 0"}}/>
-                <div style={{width:40,height:40,borderRadius:10,background:item.accentBg,border:`1px solid ${item.accent}33`,display:"flex",alignItems:"center",justifyContent:"center",color:item.accent,marginBottom:14,marginTop:6}}>
+                className="gh-home-card"
+                style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"24px 24px 20px",textAlign:"left",cursor:"pointer",transition:"all 0.28s cubic-bezier(0.22,1,0.36,1)",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column",position:"relative",overflow:"hidden","--accent":item.accent}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=item.accent+"66";e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.boxShadow=`0 14px 40px ${item.accent}25, 0 0 0 1px ${item.accent}33`;const g=e.currentTarget.querySelector(".gh-glow");if(g) g.style.opacity="1";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";const g=e.currentTarget.querySelector(".gh-glow");if(g) g.style.opacity="0";}}>
+                {/* glow background */}
+                <div className="gh-glow" style={{position:"absolute",top:-40,right:-40,width:140,height:140,borderRadius:"50%",background:`radial-gradient(circle, ${item.accent}33, transparent 70%)`,filter:"blur(20px)",opacity:0,transition:"opacity 0.35s",pointerEvents:"none"}}/>
+                {/* gradient top border */}
+                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg, transparent, ${item.accent}, transparent)`}}/>
+                <div style={{width:42,height:42,borderRadius:11,background:item.accentBg,border:`1px solid ${item.accent}33`,display:"flex",alignItems:"center",justifyContent:"center",color:item.accent,marginBottom:16,marginTop:6,boxShadow:`inset 0 1px 0 ${item.accent}22`}}>
                   {CARD_ICONS[item.id]}
                 </div>
-                <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4}}>{item.label}</div>
+                <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:4,letterSpacing:-0.2}}>{item.label}</div>
                 <div style={{fontSize:12,color:T.textSm,marginBottom:20,lineHeight:1.5}}>{item.desc}</div>
                 <div style={{marginTop:"auto",paddingTop:18,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"baseline",gap:6}}>
                   {(item.id==="audio"||item.id==="meta")
-                    ? <span style={{fontSize:item.id==="audio"?20:16,fontWeight:800,color:item.accent,letterSpacing:-0.5,lineHeight:1}}>{item.id==="audio"?"30 voces":"Graph API"}</span>
-                    : <><span style={{fontSize:34,fontWeight:800,color:item.accent,letterSpacing:-1.5,lineHeight:1}}>{item.stat??<Spinner size={16} color={item.accent}/>}</span><span style={{fontSize:12,color:T.textSm}}>{item.statLabel}</span></>
+                    ? <span style={{fontSize:item.id==="audio"?20:15,fontWeight:800,color:item.accent,letterSpacing:-0.5,lineHeight:1}}>{item.id==="audio"?"30 voces":"Análisis · Reglas"}</span>
+                    : <><span style={{fontSize:36,fontWeight:800,color:item.accent,letterSpacing:-1.8,lineHeight:1}}>{item.stat??<Spinner size={16} color={item.accent}/>}</span><span style={{fontSize:12,color:T.textSm}}>{item.statLabel}</span></>
                   }
                 </div>
               </button>
