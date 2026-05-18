@@ -7263,14 +7263,30 @@ function AppArca({T, user, onHome}) {
             {/* ══ HISTORIAL DE BATCHES ══ */}
             {batches.length > 0 && (
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px",marginTop:24}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                   <div>
                     <div style={{fontSize:14,fontWeight:700,color:T.text}}>Facturaciones recientes</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Cada lote queda registrado. Tocá uno para ver el detalle o descargar de nuevo los PDFs.</div>
                   </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.4}}>Total facturado · histórico</div>
-                    <div style={{fontSize:16,fontWeight:800,color:T.text}}>$ {batches.reduce((s,b)=>s+(b.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:14}}>
+                    <button onClick={async()=>{
+                      if(!cuitSel) return;
+                      if(!window.confirm("Esto va a regenerar el PDF de cada factura de ML pendiente y subirla a la venta en Mercado Libre. ¿Continuar?")) return;
+                      setEmitting(true);
+                      const d = await api("attach_ml_pending","POST",{cuit:cuitSel});
+                      setEmitting(false);
+                      if(d.error){toast("Error: "+d.error,"error");return;}
+                      if(d.total === 0){toast(d.message||"Sin facturas pendientes","info");return;}
+                      const errMsg = d.errors?.length>0 ? ` · ${d.errors.length} con error` : "";
+                      toast(`${d.uploaded}/${d.total} facturas adjuntadas en ML${errMsg}`, d.errors?.length>0?"warning":"success");
+                      refreshDashboard();
+                    }} disabled={emitting||!cuitSel} title="Adjuntar a ML las facturas que todavía no se subieron" style={{background:"#FFE600",border:"1px solid #FFE60055",color:"#333",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:emitting?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
+                      🟡 Adjuntar pendientes a ML
+                    </button>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.4}}>Total facturado · histórico</div>
+                      <div style={{fontSize:16,fontWeight:800,color:T.text}}>$ {batches.reduce((s,b)=>s+(b.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                    </div>
                   </div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>

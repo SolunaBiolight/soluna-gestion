@@ -1334,6 +1334,8 @@ export default async function handler(req, res) {
                   descuento_item: parseFloat(it.descuento_item) || 0,
                 })),
                 domicilio: [orden.ciudad, orden.provincia].filter(Boolean).join(", "),
+                ml_uploaded: ml_uploaded || false,
+                ml_uploaded_at: ml_uploaded ? new Date().toISOString() : null,
               });
           } catch (e) {
             console.error("[arca] no se pudo guardar comprobante:", e.message);
@@ -1379,6 +1381,101 @@ export default async function handler(req, res) {
     // ── HISTORIAL: lista de batches del CUIT activo ──
     // Construido dinámicamente desde arca_comprobantes agrupando por timestamp cercano (±10 min).
     // Así incluye facturas emitidas antes de que existiera el sistema de batches.
+
+    // ── ADJUNTAR FACTURAS ML PENDIENTES (botón "adjuntar todas") ──
+    // Recorre arca_comprobantes con orden_id ML-* y ml_uploaded != true.
+    // Por cada uno: regenera el PDF, consigue pack_id real, sube a ML, marca uploaded.
+    if (action === "attach_ml_pending" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const cuitParam = String(body.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+
+      const cfg = await loadCuitConfig(db, uid, cuitParam);
+      if (!cfg) return res.status(404).json({ error: "CUIT no encontrado" });
+
+      const ml = await getValidMLToken(db, uid);
+      if (!ml?.accessToken) return res.status(400).json({ error: "No hay cuenta ML conectada o el token expiró" });
+
+      const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+        .where("cuit_emisor", "==", cuitParam).get();
+
+      const pending = snap.docs
+        .map(d => ({ ref: d.ref, ...d.data() }))
+        .filter(c => c.orden_id?.startsWith("ML-") && !c.ml_uploaded);
+
+      if (pending.length === 0) {
+        return res.json({ ok: true, total: 0, uploaded: 0, errors: [], message: "No hay facturas pendientes de adjuntar a ML" });
+      }
+
+      let uploaded = 0;
+      const errors = [];
+
+      for (const c of pending) {
+        try {
+          // 1) Regenerar PDF
+          const factData = {
+            comprobante: c.nro, cae: c.cae, cae_vto: c.cae_vto,
+            fecha: c.fecha_str, fecha_iso: c.emitido_at?.slice(0, 10),
+            cliente: c.cliente || "Consumidor Final",
+            doc_tipo: c.doc_tipo, doc_nro: c.doc_nro || "",
+            letra: c.letra, tipo_cbte: c.tipo_cbte,
+            domicilio: c.domicilio || "",
+            total: c.total,
+            items: (Array.isArray(c.items) && c.items.length > 0)
+              ? c.items
+              : [{ nombre: "(Detalle no disponible)", cantidad: 1, precio: c.total, descuento_item: 0 }],
+          };
+          const pdfBytes = await generarPDF(factData, cfg);
+
+          // 2) Conseguir pack_id real
+          const orderIdRaw = c.orden_id.replace(/^ML-/, "");
+          let packId = orderIdRaw;
+          try {
+            const oRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdRaw}?fields=pack_id`, {
+              headers: { Authorization: `Bearer ${ml.accessToken}` },
+            });
+            if (oRes.ok) {
+              const oData = await oRes.json();
+              if (oData.pack_id) packId = String(oData.pack_id);
+            }
+          } catch (_) { /* fallback */ }
+
+          // 3) Subir multipart
+          const boundary = "----GrowithBoundary" + Date.now() + "_" + uploaded;
+          const pdfBuf = Buffer.from(pdfBytes);
+          const filename = `F${c.letra}-${String(c.nro).padStart(8, "0")}.pdf`;
+          const head = Buffer.from(
+            `--${boundary}\r\n` +
+            `Content-Disposition: form-data; name="fiscal_document"; filename="${filename}"\r\n` +
+            `Content-Type: application/pdf\r\n\r\n`
+          );
+          const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+          const reqBody = Buffer.concat([head, pdfBuf, tail]);
+
+          const upRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${ml.accessToken}`,
+              "Content-Type": `multipart/form-data; boundary=${boundary}`,
+              "Content-Length": String(reqBody.length),
+            },
+            body: reqBody,
+          });
+
+          if (upRes.ok) {
+            await c.ref.set({ ml_uploaded: true, ml_uploaded_at: new Date().toISOString() }, { merge: true });
+            uploaded++;
+          } else {
+            const txt = await upRes.text().catch(() => "");
+            errors.push({ orden_id: c.orden_id, error: `HTTP ${upRes.status}: ${txt.slice(0, 180)}` });
+          }
+        } catch (e) {
+          errors.push({ orden_id: c.orden_id, error: e.message });
+        }
+      }
+
+      return res.json({ ok: true, total: pending.length, uploaded, errors });
+    }
 
     if (action === "list_batches" && req.method === "GET") {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
