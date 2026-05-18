@@ -3891,24 +3891,34 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     return pages.join('---PAGE---');
   }
 
-  async function sendTracking(result) {
+  async function sendTracking(result, retries=3) {
     if(!result.pedidoNum||!result.tracking) return;
     setSendingTracking(p=>({...p,[result.pedidoNum]:true}));
-    try {
-      const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
-      const data=await res.json();
-      if(res.ok&&!data.error) {
-        setTrackingSent(p=>({...p,[result.pedidoNum]:"ok"}));
-      } else {
-        // Marcar como error (no como enviado) y tirar excepción para que sendAllTracking lo cuente
-        setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
-        throw new Error(data.error||"Error al actualizar tracking en TN");
+    let lastErr;
+    for(let intento=0; intento<retries; intento++){
+      try {
+        const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
+        const data=await res.json();
+        if(res.status===429){
+          await new Promise(r=>setTimeout(r,2000*(intento+1)));
+          continue;
+        }
+        if(res.ok&&!data.error) {
+          setTrackingSent(p=>({...p,[result.pedidoNum]:"ok"}));
+          setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
+          return;
+        }
+        lastErr=new Error(data.error||`Error ${res.status} al actualizar tracking en TN`);
+        if(res.status===403||res.status===401) break;
+        if(intento<retries-1) await new Promise(r=>setTimeout(r,1500*(intento+1)));
+      } catch(e){
+        lastErr=e;
+        if(intento<retries-1) await new Promise(r=>setTimeout(r,1500*(intento+1)));
       }
-    } catch(e){
-      setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
-      throw e; // re-throw para que sendAllTracking lo cuente como fail
     }
+    setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
     setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
+    throw lastErr||new Error("Error desconocido");
   }
 
   async function sendAllTracking() {
@@ -3929,6 +3939,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         errors.push({pedido:r.pedidoNum,msg:e.message});
         setSeguimientoProgress(p=>({...p,fail}));
       }
+      // Pausa entre pedidos para respetar rate limit de TN
+      if(i<pending.length-1) await new Promise(r=>setTimeout(r,500));
     }
     setSendBatchActive(false);
     setSeguimientoProgress({active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors});
@@ -6849,7 +6861,7 @@ function AppArca({T, user, onHome}) {
                       <input type="number" placeholder="min" value={montoMin} onChange={e=>setMontoMin(e.target.value)} style={{...iS,width:78,padding:"6px 8px",fontSize:12}}/>
                       <span style={{fontSize:11,color:T.textSm}}>–</span>
                       <input type="number" placeholder="max" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:78,padding:"6px 8px",fontSize:12}}/>
-                      <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar" style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:tnLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar" style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:tnLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                         {tnLoading ? <Spinner size={12} color={T.textMd}/> : "🔄"}
                       </button>
                     </div>
@@ -7208,7 +7220,7 @@ function AppArca({T, user, onHome}) {
                       </div>
                       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:6,maxHeight:240,overflowY:"auto"}}>
                         {pdfs.map((pdf,i)=>(
-                          <button key={i} onClick={()=>downloadPDF(pdf)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          <button key={i} onClick={()=>downloadPDF(pdf)} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                             📄 {pdf.nombre}
                           </button>
                         ))}
@@ -7216,7 +7228,7 @@ function AppArca({T, user, onHome}) {
                     </div>
                   )}
                   {(ordenes||resultados)&&(
-                    <button onClick={()=>{setOrdenes(null);setResultados(null);setPdfs([]);setArchivo(null);}} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",alignSelf:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                    <button onClick={()=>{setOrdenes(null);setResultados(null);setPdfs([]);setArchivo(null);}} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",alignSelf:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
                       ↺ Nueva facturación
                     </button>
                   )}
@@ -7240,7 +7252,7 @@ function AppArca({T, user, onHome}) {
                   <button onClick={()=>setShowManual(true)} disabled={!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:cuitSel?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:cuitSel?1:0.5}}>
                     + Factura manual
                   </button>
-                  <button onClick={handleTestConnection} disabled={!cuitSel||testingConn} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:500,cursor:(!cuitSel||testingConn)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:(!cuitSel||testingConn)?0.5:1}}>
+                  <button onClick={handleTestConnection} disabled={!cuitSel||testingConn} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:500,cursor:(!cuitSel||testingConn)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:(!cuitSel||testingConn)?0.5:1}}>
                     {testingConn ? <><Spinner size={11} color={T.textMd}/> Probando...</> : "🔌 Probar conexión"}
                   </button>
                 </div>
@@ -7355,7 +7367,7 @@ function AppArca({T, user, onHome}) {
                                   if(!list) return;
                                   const pdf = list[i];
                                   if(pdf) downloadPDF(pdf);
-                                }} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+                                }} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
                                   ⬇ PDF
                                 </button>
                               </div>
@@ -7605,7 +7617,7 @@ function AppArca({T, user, onHome}) {
                     {testResult.ok?"✅ Conexión exitosa con ARCA":"❌ Error al conectar con ARCA"} — {testResult.msg}
                   </div>
                 )}
-                <button onClick={handleTestCuitWiz} disabled={testingCuit||!certText.trim()||!keyText.trim()} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:12,opacity:(!certText.trim()||!keyText.trim())?0.5:1}}>
+                <button onClick={handleTestCuitWiz} disabled={testingCuit||!certText.trim()||!keyText.trim()} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:12,opacity:(!certText.trim()||!keyText.trim())?0.5:1}}>
                   {testingCuit?<><Spinner size={12} color={T.textMd}/> Testeando conexión...</>:"🔌 Testear conexión con ARCA (opcional)"}
                 </button>
                 <div style={{fontSize:11,color:T.textSm,textAlign:"center",lineHeight:1.5}}>
@@ -7617,11 +7629,11 @@ function AppArca({T, user, onHome}) {
             {/* Nav buttons */}
             <div style={{display:"flex",gap:10,marginTop:24}}>
               {wizStep>0?(
-                <button onClick={()=>setWizStep(s=>s-1)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <button onClick={()=>setWizStep(s=>s-1)} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                   ← Atrás
                 </button>
               ):(
-                <button onClick={resetWizard} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <button onClick={resetWizard} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                   Cancelar
                 </button>
               )}
@@ -7695,7 +7707,7 @@ function AppArca({T, user, onHome}) {
               </div>
             </div>
             <div style={{display:"flex",gap:10,marginTop:22}}>
-              <button onClick={()=>setShowEditCuit(false)} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <button onClick={()=>setShowEditCuit(false)} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 Cancelar
               </button>
               <div style={{flex:1}}/>
@@ -7775,7 +7787,7 @@ function AppArca({T, user, onHome}) {
                 </div>
 
                 <div style={{display:"flex",gap:10}}>
-                  <button onClick={resetManual} disabled={emittingManual} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <button onClick={resetManual} disabled={emittingManual} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     Cancelar
                   </button>
                   <div style={{flex:1}}/>
@@ -7802,7 +7814,7 @@ function AppArca({T, user, onHome}) {
                   </div>
                 )}
                 <div style={{display:"flex",gap:10}}>
-                  <button onClick={resetManual} style={{background:"transparent",border:"1px solid "+T.border,color:T.textMd,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <button onClick={resetManual} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     Cerrar
                   </button>
                   <div style={{flex:1}}/>
@@ -7884,6 +7896,7 @@ function AppArca({T, user, onHome}) {
         </div>,
         document.body
       )}
+    </div>
   );
 }
 
@@ -8018,7 +8031,7 @@ function AppAudioStudio({T, user, onHome}) {
   }
 
   const iS={width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"10px 14px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
-  const BtnSec={background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
+  const BtnSec={background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
   const BtnPri={background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"11px 20px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8};
   const TONO_DOT={calma:T.blue,neutra:T.textSm,energica:T.orange};
 
@@ -8405,7 +8418,7 @@ function AppMetaAds({T, user, onHome}) {
 
   const iS={width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
   const BtnPri={background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
-  const BtnSec={background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
+  const BtnSec={background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
   const Card={background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16};
   const Label={fontSize:11,color:T.textSm,fontWeight:500,marginBottom:5,display:"block"};
 
@@ -8806,7 +8819,7 @@ function AppMetaAds({T, user, onHome}) {
                     </select>
                     {/* Búsqueda */}
                     <input type="text" placeholder="🔍 Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:160,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                    <button onClick={loadInsights} disabled={aLoading} title="Refrescar" style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <button onClick={loadInsights} disabled={aLoading} title="Refrescar" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       {aLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}
                     </button>
                   </div>
@@ -8959,7 +8972,7 @@ function AppMetaAds({T, user, onHome}) {
                         <option value="roas">Mejor ROAS 7d</option>
                         <option value="recent">Recién analizados</option>
                       </select>
-                      <button onClick={loadLibrary} disabled={libLoading} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
+                      <button onClick={loadLibrary} disabled={libLoading} style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
                     </div>
                   </div>
                 </div>
