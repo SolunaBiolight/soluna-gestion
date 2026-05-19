@@ -329,6 +329,18 @@ async function evaluateRulesForAccount(db, uid, accId) {
       if (rule.action === "pause") {
         try { await metaPost(nodeId, { status: "PAUSED" }, cfg.access_token); }
         catch (e) { ok = false; errMsg = e.message; }
+      } else if (rule.action === "reduce_budget") {
+        try {
+          const node = await metaGet(nodeId, { fields: "daily_budget,lifetime_budget" }, cfg.access_token);
+          const dailyOld = parseInt(node.daily_budget) || 0;
+          const lifetimeOld = parseInt(node.lifetime_budget) || 0;
+          const oldBudget = dailyOld || lifetimeOld;
+          if (oldBudget <= 0) throw new Error("Sin presupuesto editable");
+          const pctNum = parseFloat(rule.action_pct) || 20;
+          const newBudget = Math.max(100, Math.round(oldBudget * (100 - pctNum) / 100));
+          const field = dailyOld > 0 ? "daily_budget" : "lifetime_budget";
+          await metaPost(nodeId, { [field]: String(newBudget) }, cfg.access_token);
+        } catch (e) { ok = false; errMsg = e.message; }
       }
 
       const logRef = logCol.doc();
@@ -584,25 +596,33 @@ export default async function handler(req, res) {
         "date_start", "date_stop",
       ].join(",");
 
+      // Filtro opcional por parent (drill-down): campaign_id (para adsets) o adset_id (para ads)
+      const parentId = req.query.parent_id ? String(req.query.parent_id) : null;
+      const parentType = req.query.parent_type ? String(req.query.parent_type) : null; // "campaign" | "adset"
+      const filteringParam = parentId && parentType
+        ? JSON.stringify([{ field: `${parentType}.id`, operator: "IN", value: [parentId] }])
+        : null;
+
       try {
-        const data = await metaGet(`${cfg.ad_account_id}/insights`, {
+        const insightsParams = {
           level,
           time_range: JSON.stringify({ since, until }),
           fields,
           limit: 500,
-        }, cfg.access_token);
+        };
+        if (filteringParam) insightsParams.filtering = filteringParam;
+        const data = await metaGet(`${cfg.ad_account_id}/insights`, insightsParams, cfg.access_token);
 
         // También necesitamos el status de cada nodo (que insights no devuelve).
-        // Una sola llamada al endpoint correspondiente con id+status+effective_status.
+        // Filtrar la lista de nodos por parent si aplica.
         const nodeMap = {};
         const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget"
                          : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id"
                          : "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,object_story_spec}";
         try {
-          const nodes = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads"}`, {
-            fields: nodeFields,
-            limit: 500,
-          }, cfg.access_token);
+          const nodesParams = { fields: nodeFields, limit: 500 };
+          if (filteringParam) nodesParams.filtering = filteringParam;
+          const nodes = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads"}`, nodesParams, cfg.access_token);
           for (const n of (nodes.data || [])) nodeMap[n.id] = n;
         } catch (e) { /* seguimos sin status */ }
 
@@ -823,7 +843,8 @@ export default async function handler(req, res) {
           value: parseFloat(c.value) || 0,
           window_days: parseInt(c.window_days) || 7,
         })),
-        action: rule.action === "notify" ? "notify" : "pause",
+        action: ["pause", "notify", "reduce_budget"].includes(rule.action) ? rule.action : "pause",
+        action_pct: rule.action === "reduce_budget" ? (parseFloat(rule.action_pct) || 20) : null,
         active: rule.active !== false,
         acc_id: rule.acc_id,
         updated_at: new Date().toISOString(),
@@ -854,6 +875,33 @@ export default async function handler(req, res) {
       if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
       const result = await evaluateRulesForAccount(db, uid, accIdQ);
       return res.json(result);
+    }
+
+    // ── REDUCE BUDGET (bajar % del presupuesto de un node) ──
+    // POST { node_id, pct } (pct = % a reducir, ej 20 = bajar 20%)
+    if (action === "reduce_budget" && req.method === "POST") {
+      const { node_id, pct } = req.body || {};
+      if (!node_id || !pct) return res.status(400).json({ error: "Faltan node_id o pct" });
+      const pctNum = parseFloat(pct);
+      if (isNaN(pctNum) || pctNum <= 0 || pctNum >= 100) return res.status(400).json({ error: "pct debe estar entre 1 y 99" });
+      const accIdQ = acc_id || req.query.acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, accIdQ);
+      if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
+      try {
+        const node = await metaGet(node_id, { fields: "daily_budget,lifetime_budget,name" }, cfg.access_token);
+        const dailyOld = parseInt(node.daily_budget) || 0;
+        const lifetimeOld = parseInt(node.lifetime_budget) || 0;
+        const oldBudget = dailyOld || lifetimeOld;
+        if (oldBudget <= 0) return res.status(400).json({ error: "El node no tiene presupuesto editable" });
+        const factor = (100 - pctNum) / 100;
+        const newBudget = Math.max(100, Math.round(oldBudget * factor)); // mínimo 1 (cents)
+        const field = dailyOld > 0 ? "daily_budget" : "lifetime_budget";
+        await metaPost(node_id, { [field]: String(newBudget) }, cfg.access_token);
+        return res.json({ ok: true, node_id, field, old_budget: oldBudget / 100, new_budget: newBudget / 100, pct: pctNum });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
     }
 
     // ── SET STATUS (pausar/activar campaña, adset o ad) ──

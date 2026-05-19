@@ -8359,6 +8359,7 @@ function RuleEditor({T, initialRule, onSave, onCancel}) {
   const [level,setLevel]=useState(initialRule?.level||"ad");
   const [logic,setLogic]=useState(initialRule?.logic||"AND");
   const [action,setAction]=useState(initialRule?.action||"pause");
+  const [actionPct,setActionPct]=useState(initialRule?.action_pct||20);
   const [active,setActive]=useState(initialRule?.active!==false);
   const [conditions,setConditions]=useState(initialRule?.conditions?.length?[...initialRule.conditions]:[{metric:"spend",op:">=",value:"",window_days:7}]);
   const [saving,setSaving]=useState(false);
@@ -8377,6 +8378,7 @@ function RuleEditor({T, initialRule, onSave, onCancel}) {
     const ok = await onSave({
       ...(initialRule?{id:initialRule.id}:{}),
       name:name.trim(), level, logic, action, active,
+      action_pct: action === "reduce_budget" ? (parseFloat(actionPct) || 20) : null,
       conditions: validConds.map(c=>({metric:c.metric,op:c.op,value:parseFloat(c.value),window_days:parseInt(c.window_days)||7})),
     });
     setSaving(false);
@@ -8450,21 +8452,35 @@ function RuleEditor({T, initialRule, onSave, onCancel}) {
           <button onClick={addCond} style={{marginTop:8,padding:"7px 12px",fontSize:11,border:`1px dashed ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Agregar condición</button>
         </div>
 
-        {/* Acción + Estado */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
-          <div>
-            <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Acción</div>
-            <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
-              <button onClick={()=>setAction("pause")} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:action==="pause"?T.card:"transparent",color:action==="pause"?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⏸ Pausar</button>
-              <button onClick={()=>setAction("notify")} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:action==="notify"?T.card:"transparent",color:action==="notify"?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>📢 Solo notificar</button>
-            </div>
+        {/* Acción */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Acción</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {[
+              {id:"pause", l:"⏸ Pausar"},
+              {id:"reduce_budget", l:"💰 Bajar presupuesto"},
+              {id:"notify", l:"📢 Solo notificar"},
+            ].map(a=>(
+              <button key={a.id} onClick={()=>setAction(a.id)} style={{flex:1,minWidth:140,padding:"9px 12px",fontSize:12,fontWeight:600,border:`1px solid ${action===a.id?T.accentSolid+"88":T.border}`,borderRadius:8,background:action===a.id?T.accentSolid+"15":"transparent",color:action===a.id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{a.l}</button>
+            ))}
           </div>
-          <div>
-            <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Estado</div>
-            <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
-              <button onClick={()=>setActive(true)} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:active?T.green+"33":"transparent",color:active?T.green:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>● Activa</button>
-              <button onClick={()=>setActive(false)} style={{flex:1,padding:"7px 10px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:!active?T.textSm+"33":"transparent",color:!active?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⏸ Pausada</button>
+          {action === "reduce_budget" && (
+            <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
+              <span style={{fontSize:12,color:T.textMd}}>Bajar el presupuesto un</span>
+              <input type="number" min="1" max="99" value={actionPct} onChange={e=>setActionPct(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"6px 10px",fontSize:13,color:T.text,width:70,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700,textAlign:"center"}}/>
+              <span style={{fontSize:12,color:T.textMd}}>% cuando se cumpla la regla</span>
             </div>
+          )}
+        </div>
+
+        {/* Estado (toggle switch) */}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18,padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.text}}>Regla activa</div>
+            <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{active ? "Se evaluará automáticamente cada 6 hs y aplicará la acción cuando se cumpla." : "Está pausada — no se evalúa hasta que la actives."}</div>
+          </div>
+          <div onClick={()=>setActive(a=>!a)} style={{width:44,height:24,borderRadius:20,background:active?T.green:T.borderL,cursor:"pointer",position:"relative",transition:"background 0.2s",flexShrink:0}}>
+            <div style={{position:"absolute",top:3,left:active?22:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.3)"}}/>
           </div>
         </div>
 
@@ -8507,6 +8523,14 @@ function AppMetaAds({T, user, onHome}) {
   const [aRows,setARows]=useState([]);
   const [aLoading,setALoading]=useState(false);
   const [aError,setAError]=useState(null);
+  // Drill-down: array de breadcrumbs [{level, id, name}]
+  const [aDrill,setADrill]=useState([]); // ej [{level:"campaign",id:"123",name:"Camp 1"}]
+  // ROAS break-even configurable (persiste en localStorage)
+  const [aRoasBe,setARoasBe]=useState(()=>{ try { return parseFloat(localStorage.getItem("growith_meta_roas_be"))||2; } catch(_) { return 2; } });
+  // Columnas visibles (persiste)
+  const DEFAULT_COLS = ["spend","purchases","purchase_value","roas","cpa","ctr","cpm","cpc","frequency","impressions","reach"];
+  const [aCols,setACols]=useState(()=>{ try { const s=JSON.parse(localStorage.getItem("growith_meta_cols")||"null"); return Array.isArray(s)&&s.length?s:DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
+  const [aColsOpen,setAColsOpen]=useState(false);
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
   const [aFilterStatus,setAFilterStatus]=useState("all"); // all | active | paused
@@ -8691,7 +8715,7 @@ function AppMetaAds({T, user, onHome}) {
   useEffect(()=>{
     if(tab==="analisis"&&activeAccId) loadInsights();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[aLevel,aSince,aUntil]);
+  },[aLevel,aSince,aUntil,aDrill]);
 
   useEffect(()=>{
     if(tab==="biblioteca"&&activeAccId) loadLibrary();
@@ -8703,13 +8727,43 @@ function AppMetaAds({T, user, onHome}) {
     setALoading(true);
     setAError(null);
     try {
-      const d = await metaApi("insights","GET",null,{acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil});
+      const params = {acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil};
+      // Si hay drill-down, filtrar por el último parent del breadcrumb
+      const lastParent = aDrill[aDrill.length-1];
+      if (lastParent) {
+        params.parent_id = lastParent.id;
+        params.parent_type = lastParent.level;
+      }
+      const d = await metaApi("insights","GET",null,params);
       if(d.error) { setAError(d.error); setARows([]); }
       else setARows(d.rows||[]);
     } catch(e) {
       setAError(e.message || "Error de red");
     } finally { setALoading(false); }
   }
+
+  // Drill down: cuando se hace click en una row, entrar a sus hijos
+  function drillInto(row) {
+    if (aLevel === "campaign") {
+      setADrill([{level:"campaign", id:row.id, name:row.name}]);
+      setALevel("adset");
+    } else if (aLevel === "adset") {
+      setADrill(prev=>[...prev, {level:"adset", id:row.id, name:row.name}]);
+      setALevel("ad");
+    }
+  }
+  // Volver a un nivel del breadcrumb
+  function drillTo(index) {
+    if (index === -1) { setADrill([]); setALevel("campaign"); return; }
+    const newDrill = aDrill.slice(0, index+1);
+    setADrill(newDrill);
+    const last = newDrill[newDrill.length-1];
+    setALevel(last.level === "campaign" ? "adset" : "ad");
+  }
+
+  // Persistir ROAS BE y columnas
+  useEffect(()=>{ try { localStorage.setItem("growith_meta_roas_be", String(aRoasBe)); } catch(_) {} }, [aRoasBe]);
+  useEffect(()=>{ try { localStorage.setItem("growith_meta_cols", JSON.stringify(aCols)); } catch(_) {} }, [aCols]);
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" ? "PAUSED" : "ACTIVE";
@@ -8886,9 +8940,8 @@ function AppMetaAds({T, user, onHome}) {
     {id:"analisis",label:"📊 Análisis"},
     {id:"biblioteca",label:"📚 Biblioteca"},
     {id:"reglas",label:"⚡ Reglas"},
-    {id:"cuenta",label:"Cuenta"},
-    {id:"campanas",label:"Campañas & AdSets"},
-    {id:"creativos",label:"Creativos"},
+    {id:"creativos",label:"🚀 Publicar"},
+    {id:"cuenta",label:"⚙ Cuenta"},
   ];
 
   // Guía paso a paso para obtener System User Token
@@ -8946,15 +8999,36 @@ function AppMetaAds({T, user, onHome}) {
               </div>
             ) : (
               <>
+                {/* Breadcrumb de drill-down */}
+                {aDrill.length > 0 && (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",fontSize:12}}>
+                    <button onClick={()=>drillTo(-1)} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:"2px 4px"}}>← Todas las campañas</button>
+                    {aDrill.map((b,i)=>(
+                      <React.Fragment key={i}>
+                        <span style={{color:T.textSm}}>›</span>
+                        {i < aDrill.length-1
+                          ? <button onClick={()=>drillTo(i)} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:"2px 4px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</button>
+                          : <span style={{color:T.text,fontWeight:600,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</span>}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+
                 {/* Header con controles */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    {/* Sub-tabs nivel */}
-                    <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
-                      {[{id:"campaign",label:"Campañas"},{id:"adset",label:"Adsets"},{id:"ad",label:"Ads"}].map(l=>(
-                        <button key={l.id} onClick={()=>setALevel(l.id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:aLevel===l.id?T.card:"transparent",color:aLevel===l.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l.label}</button>
-                      ))}
-                    </div>
+                    {/* Sub-tabs nivel (solo cambia si NO hay drill activo, sino se desactivan) */}
+                    {aDrill.length === 0 ? (
+                      <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+                        {[{id:"campaign",label:"Campañas"},{id:"adset",label:"Todos los adsets"},{id:"ad",label:"Todos los ads"}].map(l=>(
+                          <button key={l.id} onClick={()=>{setALevel(l.id);setADrill([]);}} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:aLevel===l.id?T.card:"transparent",color:aLevel===l.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l.label}</button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{padding:"6px 12px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`,fontSize:12,fontWeight:600,color:T.text}}>
+                        {aLevel === "adset" ? "Adsets" : "Ads"} de {aDrill[aDrill.length-1].name.slice(0,30)}{aDrill[aDrill.length-1].name.length>30?"…":""}
+                      </div>
+                    )}
                     {/* Date range */}
                     <span style={{fontSize:11,color:T.textSm,marginLeft:8}}>Período</span>
                     <input type="date" value={aSince} max={aUntil} onChange={e=>setASince(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
@@ -8962,9 +9036,31 @@ function AppMetaAds({T, user, onHome}) {
                     <input type="date" value={aUntil} min={aSince} max={new Date().toISOString().slice(0,10)} onChange={e=>setAUntil(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     {/* Presets rápidos */}
                     <div style={{display:"flex",gap:4}}>
-                      {[{d:7,l:"7d"},{d:14,l:"14d"},{d:30,l:"30d"}].map(p=>(
+                      {[{d:7,l:"7d"},{d:14,l:"14d"},{d:30,l:"30d"},{d:90,l:"90d"}].map(p=>(
                         <button key={p.d} onClick={()=>{setASince(new Date(Date.now()-p.d*86400000).toISOString().slice(0,10));setAUntil(new Date().toISOString().slice(0,10));}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
                       ))}
+                    </div>
+                    <span style={{fontSize:11,color:T.textSm,marginLeft:6}} title="ROAS break-even: arriba verde, abajo rojo">ROAS BE</span>
+                    <input type="number" step="0.1" min="0.5" max="20" value={aRoasBe} onChange={e=>setARoasBe(parseFloat(e.target.value)||1)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,width:64,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    {/* Columnas */}
+                    <div style={{position:"relative"}}>
+                      <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⚙ Columnas</button>
+                      {aColsOpen && (
+                        <div style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
+                          {[
+                            {k:"spend",l:"Gasto"},{k:"purchases",l:"Compras"},{k:"purchase_value",l:"Valor compras"},
+                            {k:"roas",l:"ROAS"},{k:"cpa",l:"CPA"},{k:"ctr",l:"CTR"},{k:"cpm",l:"CPM"},{k:"cpc",l:"CPC"},
+                            {k:"frequency",l:"Frecuencia"},{k:"impressions",l:"Impresiones"},{k:"reach",l:"Alcance"},{k:"clicks",l:"Clicks"},
+                          ].map(c=>(
+                            <label key={c.k} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",fontSize:11,color:T.text,cursor:"pointer"}}>
+                              <input type="checkbox" checked={aCols.includes(c.k)} onChange={e=>{
+                                setACols(prev=>e.target.checked?[...prev,c.k]:prev.filter(x=>x!==c.k));
+                              }}/>
+                              {c.l}
+                            </label>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     {/* Filtro estado */}
                     <select value={aFilterStatus} onChange={e=>setAFilterStatus(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -8973,7 +9069,7 @@ function AppMetaAds({T, user, onHome}) {
                       <option value="paused">Solo pausados</option>
                     </select>
                     {/* Búsqueda */}
-                    <input type="text" placeholder="🔍 Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:160,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <input type="text" placeholder="🔍 Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     <button onClick={loadInsights} disabled={aLoading} title="Refrescar" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       {aLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}
                     </button>
@@ -9052,6 +9148,24 @@ function AppMetaAds({T, user, onHome}) {
                     </th>
                   );
 
+                  // Mapa de columnas configurables
+                  const COL_META = {
+                    spend:          { label:"Gasto",          render: r => "$"+fmt(r.spend),            total: () => "$"+fmt(sumSpend), bold:true },
+                    purchases:      { label:"Compras",        render: r => r.purchases,                 total: () => sumPurchases },
+                    purchase_value: { label:"Valor compras",  render: r => "$"+fmt(r.purchase_value),   total: () => "$"+fmt(sumPurchaseValue) },
+                    roas:           { label:"ROAS",           render: r => fmt(r.roas)+"x",             total: () => fmt(totalRoas)+"x", color: r => r.roas >= aRoasBe ? T.green : (r.roas > 0 ? T.red : T.textSm), totalColor: () => totalRoas >= aRoasBe ? T.green : (totalRoas > 0 ? T.red : T.textSm), bold:true },
+                    cpa:            { label:"CPA",            render: r => r.cpa ? "$"+fmt(r.cpa) : "—", total: () => totalCpa ? "$"+fmt(totalCpa) : "—" },
+                    ctr:            { label:"CTR",            render: r => fmt(r.ctr)+"%",              total: () => fmt(totalCtr)+"%" },
+                    cpm:            { label:"CPM",            render: r => "$"+fmt(r.cpm),              total: () => "—" },
+                    cpc:            { label:"CPC",            render: r => "$"+fmt(r.cpc),              total: () => "—" },
+                    frequency:      { label:"Frec.",          render: r => fmt(r.frequency),            total: () => "—" },
+                    impressions:    { label:"Impr.",          render: r => fmtInt(r.impressions),       total: () => fmtInt(sumImpr) },
+                    reach:          { label:"Alcance",        render: r => fmtInt(r.reach),             total: () => "—" },
+                    clicks:         { label:"Clicks",          render: r => fmtInt(r.clicks),            total: () => fmtInt(sumClicks) },
+                  };
+                  const visibleCols = aCols.filter(k => COL_META[k]);
+                  const canDrill = aLevel !== "ad";
+
                   return (
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                       <div style={{overflowX:"auto"}}>
@@ -9060,17 +9174,7 @@ function AppMetaAds({T, user, onHome}) {
                             <tr>
                               <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.border}`,width:54}}>Acción</th>
                               {headerCell("name", aLevel==="campaign"?"Campaña":aLevel==="adset"?"AdSet":"Ad", "left")}
-                              {headerCell("spend","Gasto")}
-                              {headerCell("purchases","Compras")}
-                              {headerCell("purchase_value","Valor compras")}
-                              {headerCell("roas","ROAS")}
-                              {headerCell("cpa","CPA")}
-                              {headerCell("ctr","CTR")}
-                              {headerCell("cpm","CPM")}
-                              {headerCell("cpc","CPC")}
-                              {headerCell("frequency","Frec.")}
-                              {headerCell("impressions","Impr.")}
-                              {headerCell("reach","Alcance")}
+                              {visibleCols.map(k => headerCell(k, COL_META[k].label))}
                             </tr>
                           </thead>
                           <tbody>
@@ -9078,30 +9182,31 @@ function AppMetaAds({T, user, onHome}) {
                               const busy = !!aBusyIds[r.id];
                               const isActive = r.effective_status === "ACTIVE";
                               return (
-                                <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6}}>
-                                  <td style={{padding:"10px 12px"}}>
+                                <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6,cursor:canDrill?"pointer":"default"}}
+                                    onClick={(e)=>{ if(canDrill && e.target.tagName!=="BUTTON") drillInto(r); }}
+                                    title={canDrill?"Click para ver "+(aLevel==="campaign"?"adsets":"ads"):""}>
+                                  <td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}>
                                     <button onClick={()=>toggleStatus(r)} disabled={busy} title={isActive?"Pausar":"Activar"} style={{background:isActive?T.green+"22":T.red+"22",border:`1px solid ${isActive?T.green:T.red}55`,color:isActive?T.green:T.red,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:busy?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
                                       {busy?<Spinner size={10} color={isActive?T.green:T.red}/>:isActive?"⏸":"▶"}
                                     </button>
                                   </td>
                                   <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                                    <div style={{fontWeight:600}}>{r.name||"(sin nombre)"}</div>
+                                    <div style={{fontWeight:600}}>
+                                      {r.name||"(sin nombre)"}
+                                      {canDrill && <span style={{fontSize:10,color:T.accent,marginLeft:6}}>↓</span>}
+                                    </div>
                                     <div style={{fontSize:10,color:T.textSm,marginTop:1}}>
                                       <span style={{padding:"1px 6px",borderRadius:4,background:isActive?T.green+"22":T.red+"22",color:isActive?T.green:T.red,fontWeight:600}}>{r.effective_status||"—"}</span>
                                       {r.daily_budget && <span style={{marginLeft:6}}>· ${fmt(r.daily_budget)}/día</span>}
                                     </div>
                                   </td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,fontWeight:600,whiteSpace:"nowrap"}}>${fmt(r.spend)}</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{r.purchases}</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,whiteSpace:"nowrap"}}>${fmt(r.purchase_value)}</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:r.roas>=2?T.green:r.roas>=1?T.text:T.red,fontWeight:700}}>{fmt(r.roas)}x</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,whiteSpace:"nowrap"}}>{r.cpa?"$"+fmt(r.cpa):"—"}</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{fmt(r.ctr)}%</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,whiteSpace:"nowrap"}}>${fmt(r.cpm)}</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,whiteSpace:"nowrap"}}>${fmt(r.cpc)}</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{fmt(r.frequency)}</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{fmtInt(r.impressions)}</td>
-                                  <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text}}>{fmtInt(r.reach)}</td>
+                                  {visibleCols.map(k => {
+                                    const col = COL_META[k];
+                                    const color = col.color ? col.color(r) : T.text;
+                                    return (
+                                      <td key={k} style={{padding:"10px 12px",textAlign:"right",fontSize:12,color,fontWeight:col.bold?700:400,whiteSpace:"nowrap"}}>{col.render(r)}</td>
+                                    );
+                                  })}
                                 </tr>
                               );
                             })}
@@ -9110,13 +9215,11 @@ function AppMetaAds({T, user, onHome}) {
                             <tr>
                               <td style={{padding:"10px 12px"}}></td>
                               <td style={{padding:"10px 12px",fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Totales · {filtered.length} {aLevel}{filtered.length===1?"":"s"}</td>
-                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>${fmt(sumSpend)}</td>
-                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text}}>{sumPurchases}</td>
-                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>${fmt(sumPurchaseValue)}</td>
-                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:totalRoas>=2?T.green:totalRoas>=1?T.text:T.red}}>{fmt(totalRoas)}x</td>
-                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>{totalCpa?"$"+fmt(totalCpa):"—"}</td>
-                              <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:T.text}}>{fmt(totalCtr)}%</td>
-                              <td colSpan="5"></td>
+                              {visibleCols.map(k => {
+                                const col = COL_META[k];
+                                const color = col.totalColor ? col.totalColor() : T.text;
+                                return <td key={k} style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color,whiteSpace:"nowrap"}}>{col.total()}</td>;
+                              })}
                             </tr>
                           </tfoot>
                         </table>
@@ -9208,27 +9311,21 @@ function AppMetaAds({T, user, onHome}) {
                         const previewImage = ad.creative_image_hd || ad.creative_thumbnail;
                         return (
                           <div key={ad.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-                            {/* Preview: imagen HD o video con play */}
-                            <div
-                              onClick={()=>setPreviewingAd(ad)}
-                              style={{width:"100%",aspectRatio:"16/9",background:T.bg,position:"relative",overflow:"hidden",cursor:"pointer"}}
-                              title={hasVideo ? "Click para reproducir en HD" : "Click para ver en HD"}>
-                              {previewImage
-                                ? <img src={previewImage} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
-                                : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>🖼️</div>
+                            {/* Preview: video inline (autoload metadata) o imagen HD */}
+                            <div style={{width:"100%",aspectRatio:"16/9",background:"#000",position:"relative",overflow:"hidden"}}>
+                              {hasVideo
+                                ? <video src={ad.creative_video_url} controls preload="metadata" poster={previewImage || undefined} style={{width:"100%",height:"100%",objectFit:"contain",background:"#000"}}>
+                                    Tu navegador no soporta video HTML5.
+                                  </video>
+                                : previewImage
+                                  ? <img src={previewImage} alt="" loading="lazy" onClick={()=>setPreviewingAd(ad)} style={{width:"100%",height:"100%",objectFit:"cover",cursor:"pointer"}} onError={e=>{e.target.style.display="none";}}/>
+                                  : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>🖼️</div>
                               }
-                              {hasVideo && (
-                                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
-                                  <div style={{width:54,height:54,borderRadius:"50%",background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)",border:"2px solid rgba(255,255,255,0.85)"}}>
-                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
-                                  </div>
-                                </div>
-                              )}
-                              <span style={{position:"absolute",top:8,right:8,fontSize:10,padding:"3px 8px",borderRadius:5,background:isActive?T.green:T.red,color:"#fff",fontWeight:700,letterSpacing:0.3}}>
+                              <span style={{position:"absolute",top:8,right:8,fontSize:10,padding:"3px 8px",borderRadius:5,background:isActive?T.green:T.red,color:"#fff",fontWeight:700,letterSpacing:0.3,zIndex:2,pointerEvents:"none"}}>
                                 {isActive ? "ACTIVO" : (ad.effective_status||"PAUSADO")}
                               </span>
                               {hasVideo && (
-                                <span style={{position:"absolute",top:8,left:8,fontSize:9,padding:"2px 7px",borderRadius:4,background:"rgba(0,0,0,0.6)",color:"#fff",fontWeight:600}}>VIDEO</span>
+                                <span style={{position:"absolute",top:8,left:8,fontSize:9,padding:"2px 7px",borderRadius:4,background:"rgba(0,0,0,0.6)",color:"#fff",fontWeight:600,zIndex:2,pointerEvents:"none"}}>VIDEO</span>
                               )}
                             </div>
 
