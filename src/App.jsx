@@ -90,6 +90,198 @@ const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
 const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Futbolista","Streamer","Otro"];
 const PRODUCTOS_CANJE = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Kit Completo","A elección"];
 
+// --- In-app modal de confirm/alert (reemplaza window.confirm/alert) ---
+let _appPromptState = null; // { kind:"confirm"|"alert", title, message, danger, okLabel, cancelLabel }
+let _appPromptResolver = null;
+const _appPromptListeners = new Set();
+function _appPromptNotify() { _appPromptListeners.forEach(fn => fn()); }
+function appConfirm(message, opts = {}) {
+  return new Promise(res => {
+    _appPromptState = { kind:"confirm", message, title: opts.title || "Confirmar", danger: !!opts.danger, okLabel: opts.okLabel || "Confirmar", cancelLabel: opts.cancelLabel || "Cancelar" };
+    _appPromptResolver = res;
+    _appPromptNotify();
+  });
+}
+function appAlert(message, opts = {}) {
+  return new Promise(res => {
+    _appPromptState = { kind:"alert", message, title: opts.title || "Aviso", okLabel: opts.okLabel || "Entendido" };
+    _appPromptResolver = res;
+    _appPromptNotify();
+  });
+}
+function _appPromptClose(val) {
+  const r = _appPromptResolver;
+  _appPromptState = null;
+  _appPromptResolver = null;
+  _appPromptNotify();
+  if (r) r(val);
+}
+
+function AppPromptHost({ T }) {
+  const [, force] = React.useState(0);
+  React.useEffect(() => {
+    const fn = () => force(n => n + 1);
+    _appPromptListeners.add(fn);
+    return () => _appPromptListeners.delete(fn);
+  }, []);
+  const s = _appPromptState;
+  if (!s) return null;
+  const isConfirm = s.kind === "confirm";
+  const danger = s.danger;
+  return ReactDOM.createPortal(
+    <div style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
+      onClick={() => isConfirm ? _appPromptClose(false) : _appPromptClose(true)}>
+      <div onClick={e => e.stopPropagation()}
+        style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:440,boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+        <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
+          {danger ? <span style={{color:T.red}}>⚠</span> : isConfirm ? <span style={{color:T.accent}}>?</span> : <span style={{color:T.blue||T.accent}}>ℹ</span>}
+          {s.title}
+        </div>
+        <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:18,whiteSpace:"pre-wrap"}}>{s.message}</div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          {isConfirm && (
+            <button onClick={() => _appPromptClose(false)} style={{padding:"9px 16px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:9,background:T.surface,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.cancelLabel}</button>
+          )}
+          <button autoFocus onClick={() => _appPromptClose(true)}
+            style={{padding:"9px 18px",fontSize:13,fontWeight:700,border:"none",borderRadius:9,background:danger ? T.red : (T.accentSolid || T.accent),color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.okLabel}</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// --- DateRangePicker (dropdown con calendario inline + presets) ---
+function DateRangePicker({ T, since, until, onChange, presets }) {
+  const [open, setOpen] = React.useState(false);
+  const wrapRef = React.useRef(null);
+  const [tmpStart, setTmpStart] = React.useState(null); // primera fecha al elegir custom
+  const initialMonth = (() => {
+    const d = since ? new Date(since + "T00:00:00") : new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  })();
+  const [viewMonth, setViewMonth] = React.useState(initialMonth);
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const PRESETS = presets || [
+    { id:"today", label:"Hoy", days:0 },
+    { id:"yest", label:"Ayer", days:-1 },
+    { id:"7d", label:"Últimos 7 días", days:7 },
+    { id:"14d", label:"Últimos 14 días", days:14 },
+    { id:"30d", label:"Últimos 30 días", days:30 },
+    { id:"90d", label:"Últimos 90 días", days:90 },
+  ];
+  function applyPreset(p) {
+    const today = new Date();
+    const fmt = (d) => d.toISOString().slice(0,10);
+    if (p.days === 0) onChange(fmt(today), fmt(today));
+    else if (p.days === -1) {
+      const y = new Date(today.getTime() - 86400000);
+      onChange(fmt(y), fmt(y));
+    } else {
+      onChange(fmt(new Date(today.getTime() - p.days*86400000)), fmt(today));
+    }
+    setOpen(false);
+  }
+  function clickDay(dateStr) {
+    if (!tmpStart) { setTmpStart(dateStr); return; }
+    let s = tmpStart, u = dateStr;
+    if (s > u) [s, u] = [u, s];
+    onChange(s, u);
+    setTmpStart(null);
+    setOpen(false);
+  }
+  // Build month grid (Su..Sa)
+  const year = viewMonth.getFullYear();
+  const month = viewMonth.getMonth();
+  const firstDow = new Date(year, month, 1).getDay(); // 0=Su
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const daysInPrev = new Date(year, month, 0).getDate();
+  const cells = [];
+  for (let i=0; i<firstDow; i++) cells.push({ y:year, m:month-1, d:daysInPrev - firstDow + 1 + i, out:true });
+  for (let d=1; d<=daysInMonth; d++) cells.push({ y:year, m:month, d, out:false });
+  while (cells.length % 7 !== 0 || cells.length < 42) {
+    const last = cells[cells.length-1];
+    let yy = last.y, mm = last.m, dd = last.d + 1;
+    if (last.out && mm === month-1) { /* prev month overflow before start */ }
+    if (mm === month && dd > daysInMonth) { mm = month+1; dd = 1; }
+    cells.push({ y:yy, m:mm, d:dd, out: mm !== month });
+    if (cells.length >= 42) break;
+  }
+  const today = new Date(); today.setHours(0,0,0,0);
+  const fmtCell = (c) => {
+    const y = c.m < 0 ? c.y-1 : c.m > 11 ? c.y+1 : c.y;
+    const m = ((c.m % 12) + 12) % 12;
+    return `${y}-${String(m+1).padStart(2,"0")}-${String(c.d).padStart(2,"0")}`;
+  };
+  function inRange(str) {
+    if (!since || !until) return false;
+    return str >= since && str <= until;
+  }
+  const monthName = viewMonth.toLocaleDateString("es-AR", { month:"long", year:"numeric" });
+  const label = since && until
+    ? (since === until
+        ? new Date(since+"T00:00:00").toLocaleDateString("es-AR", { day:"numeric", month:"short", year:"numeric" })
+        : `${new Date(since+"T00:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short"})} – ${new Date(until+"T00:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short",year:"numeric"})}`)
+    : "Período";
+  return (
+    <div ref={wrapRef} style={{position:"relative",display:"inline-block",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 14px",background:T.input,border:`1px solid ${open?T.accent+"66":T.inputBorder}`,borderRadius:10,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        📅 <span>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
+      </button>
+      {open && (
+        <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",minWidth:340}}>
+          {/* Presets */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:6,marginBottom:10}}>
+            {PRESETS.map(p => (
+              <button key={p.id} onClick={()=>applyPreset(p)} style={{padding:"6px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:7,background:T.surface,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.label}</button>
+            ))}
+          </div>
+          {/* Month nav */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <button onClick={()=>setViewMonth(new Date(year, month-1, 1))} style={{background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"4px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>‹</button>
+            <span style={{fontSize:13,fontWeight:700,color:T.text,textTransform:"capitalize"}}>{monthName}</span>
+            <button onClick={()=>setViewMonth(new Date(year, month+1, 1))} style={{background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"4px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>›</button>
+          </div>
+          {/* Day labels */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7, 1fr)",gap:2,marginBottom:4}}>
+            {["Do","Lu","Ma","Mi","Ju","Vi","Sa"].map(d=> <div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:T.textSm,letterSpacing:0.3,padding:4}}>{d}</div>)}
+          </div>
+          {/* Day grid */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7, 1fr)",gap:2}}>
+            {cells.map((c,i)=>{
+              const str = fmtCell(c);
+              const isToday = (()=>{ const d=new Date(str+"T00:00:00"); return d.toDateString() === today.toDateString(); })();
+              const isStart = str === since;
+              const isEnd = str === until;
+              const isInRange = inRange(str);
+              const isTmp = tmpStart && str === tmpStart;
+              const dis = c.out;
+              return (
+                <button key={i} disabled={dis} onClick={()=>!dis && clickDay(str)} style={{
+                  padding:"7px 0",fontSize:12,borderRadius:6,
+                  border: isToday ? `1px solid ${T.accent}55` : "1px solid transparent",
+                  background: isStart||isEnd||isTmp ? T.accent : isInRange ? T.accent+"22" : "transparent",
+                  color: isStart||isEnd||isTmp ? "#fff" : dis ? T.textSm+"77" : T.text,
+                  cursor: dis ? "default" : "pointer",
+                  fontWeight: isStart||isEnd||isTmp ? 700 : 500,
+                  fontFamily:"'Inter',system-ui,sans-serif",
+                  opacity: dis ? 0.3 : 1,
+                }}>{c.d}</button>
+              );
+            })}
+          </div>
+          {tmpStart && <div style={{marginTop:8,padding:"6px 10px",background:T.accent+"15",border:`1px solid ${T.accent}33`,borderRadius:7,fontSize:11,color:T.textMd}}>Inicio: {new Date(tmpStart+"T00:00:00").toLocaleDateString("es-AR")} — elegí la fecha final</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Helpers ---
 function fmtMoney(v) { const n=parseFloat(v); if(isNaN(n)) return '--'; return '$'+n.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
 function fmtDate(d) { if(!d) return '--'; const p=d.split(' ')[0].split('/'); if(p.length===3) return `${p[0]}/${p[1]}/${p[2]}`; return d; }
@@ -369,7 +561,7 @@ function Spinner({size=14,color="#fff",style={}}) {
 }
 
 // Animated page wrapper - triggers re-animation on key change
-function PageView({children, pageKey}) {
+function PageView({children, pageKey, T}) {
   return (
     <div key={pageKey} className="gh-page" style={{flex:1,position:"relative",overflow:"hidden"}}>
       {/* Aurora background unificado para todas las paginas internas */}
@@ -378,6 +570,7 @@ function PageView({children, pageKey}) {
       <div style={{position:"relative",zIndex:1,display:"flex",flexDirection:"column",minHeight:"100%"}}>
         {children}
       </div>
+      {T && <AppPromptHost T={T}/>}
     </div>
   );
 }
@@ -755,7 +948,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         await addDoc(collection(db,"reclamos"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),resolvedAt:null,historial:[{accion:"Reclamo creado",fecha:new Date().toISOString()}]});
       }
       setReclamoForm(null);
-    } catch(e){alert("Error al guardar.");}
+    } catch(e){appAlert("Error al guardar.");}
     setSaving(false);
   }
 
@@ -974,7 +1167,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   }
 
   async function generarEtiquetaAndreani(o) {
-    if(!o) return alert("No se encontró el pedido");
+    if(!o) return appAlert("No se encontró el pedido");
     try {
       const locs=await loadAndreaniLocations();
       // Use the same xlsx generation from AppEnvios - simplified version
@@ -1022,7 +1215,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+newSS.length+'" uniqueCount="'+newSS.length+'">'+newSsItems+'</sst>');
       const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
       const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`EnvioMasivoExcelPaquetes-${o.numero}.xlsx`;a.click();
-    } catch(e){ alert("Error al generar etiqueta: "+e.message); }
+    } catch(e){ appAlert("Error al generar etiqueta: "+e.message); }
   }
   const activeOrder=activeR?(orders.find(o=>o.numero===activeR.orderNum)||activeOrderCache[activeR.orderNum]||null):null;
 
@@ -1643,8 +1836,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                           <AsyncButton onClick={async()=>{
                             const r=await fetch(`/api/update-shipping?uid=${user?.uid}&orderId=${activeR.orderNum}&tracking=${activeR.trackingCambio}`);
                             const d=await r.json();
-                            if(r.ok) alert("✅ Tracking actualizado en Tienda Nube");
-                            else alert("Error: "+(d.error||"no se pudo actualizar"));
+                            if(r.ok) appAlert("✅ Tracking actualizado en Tienda Nube");
+                            else appAlert("Error: "+(d.error||"no se pudo actualizar"));
                           }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,alignSelf:"flex-start"}}>
                             ↑ Subir tracking a Tienda Nube
                           </AsyncButton>
@@ -2326,7 +2519,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const editedId=form._docId;
       setForm(null);
       if(editedId) setTimeout(()=>setDetail(editedId),50);
-    } catch(e){alert("Error al guardar.");}
+    } catch(e){appAlert("Error al guardar.");}
     setSaving(false);
   }
 
@@ -5356,7 +5549,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   }
 
   async function disconnectMeta() {
-    if(!window.confirm("¿Desvincular Meta? Vas a perder el acceso a las cuentas conectadas.")) return;
+    if(!await appConfirm("¿Desvincular Meta? Vas a perder el acceso a las cuentas conectadas.",{danger:true,okLabel:"Desvincular"})) return;
     setSaving(true);
     try {
       await fetch(`/api/meta?action=disconnect&uid=${user.uid}`, {method:"POST"});
@@ -5393,7 +5586,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
   }
 
   async function disconnectStore(storeType) {
-    if(!window.confirm(`¿Desvincular ${storeType}?`)) return;
+    if(!await appConfirm(`¿Desvincular ${storeType}?`,{danger:true,okLabel:"Desvincular"})) return;
     setSaving(true);
     const stores=(userDoc?.stores||[]).filter(s=>s.type!==storeType);
     await updateDoc(doc(db,"users",user.uid),{stores});
@@ -5774,7 +5967,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                 ))}
               </div>
               {userDoc?.plan==="total"
-                ?<AsyncButton onClick={async()=>{if(window.confirm("¿Cancelar suscripción Total?"))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:13}}>Cancelar suscripción</AsyncButton>
+                ?<AsyncButton onClick={async()=>{if(await appConfirm("¿Cancelar suscripción Total?",{danger:true,okLabel:"Cancelar plan"}))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:13}}>Cancelar suscripción</AsyncButton>
                 :<button onClick={()=>{setMsg("Próximamente podrás suscribirte al plan Total. Te avisaremos cuando esté disponible! 🚀");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>Quiero el plan Total</button>
               }
             </div>
@@ -5809,7 +6002,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   const planSelecc=PLANES.find(p=>p.id===planSel);
 
   async function enviarComprobante() {
-    if(!txHash&&!comprobante) return alert("Completá el hash de transacción o adjuntá comprobante");
+    if(!txHash&&!comprobante) return appAlert("Completá el hash de transacción o adjuntá comprobante");
     setSending(true);
     try {
       // Guardar solicitud en Firestore
@@ -5823,7 +6016,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         createdAt: serverTimestamp(),
       });
       setStep("enviado");
-    } catch(e){ alert("Error: "+e.message); }
+    } catch(e){ appAlert("Error: "+e.message); }
     setSending(false);
   }
 
@@ -5972,7 +6165,7 @@ function AppAdmin({T, user, onBack}) {
       // Load all users
       const usSnap=await getDocs(collection(db,"users"));
       setUsuarios(usSnap.docs.map(d=>({_id:d.id,...d.data()})));
-    } catch(e){ alert("Error: "+e.message); }
+    } catch(e){ appAlert("Error: "+e.message); }
     setLoading(false);
   }
 
@@ -5986,11 +6179,11 @@ function AppAdmin({T, user, onBack}) {
       planActivadoAt: serverTimestamp(),
     });
     setUsuarios(u=>u.map(u2=>u2._id===uid?{...u2,plan,planExpiry:expiry}:u2));
-    alert(`✅ Plan ${plan} activado para ${meses} mes${meses>1?"es":""}`);
+    appAlert(`✅ Plan ${plan} activado para ${meses} mes${meses>1?"es":""}`);
   }
 
   async function desactivarPlan(uid) {
-    if(!window.confirm("¿Desactivar plan?")) return;
+    if(!await appConfirm("¿Desactivar plan?",{danger:true,okLabel:"Desactivar"})) return;
     await updateDoc(doc(db,"users",uid),{plan:"free",planExpiry:null});
     setUsuarios(u=>u.map(u2=>u2._id===uid?{...u2,plan:"free",planExpiry:null}:u2));
   }
@@ -6002,7 +6195,7 @@ function AppAdmin({T, user, onBack}) {
   }
 
   async function rechazarPago(pagoId) {
-    if(!window.confirm("¿Rechazar pago?")) return;
+    if(!await appConfirm("¿Rechazar pago?",{danger:true,okLabel:"Rechazar"})) return;
     await updateDoc(doc(db,"pagos",pagoId),{estado:"rechazado"});
     setPagos(p=>p.map(p2=>p2._id===pagoId?{...p2,estado:"rechazado"}:p2));
   }
@@ -6388,7 +6581,7 @@ function AppArca({T, user, onHome}) {
   }
 
   async function handleDeleteCuit(cuitNum) {
-    if(!window.confirm("¿Eliminar CUIT "+cuitNum+"? Se borra de Growith pero el certificado en ARCA queda activo.")) return;
+    if(!await appConfirm(`¿Eliminar CUIT ${cuitNum}?\nSe borra de Growith pero el certificado en ARCA queda activo.`,{danger:true,okLabel:"Eliminar"})) return;
     await fetch(`/api/arca?action=delete_cuit&uid=${uid}&cuit=${cuitNum}`,{method:"DELETE"}).then(r=>r.json());
     setCuits(prev=>prev.filter(c=>c.cuit!==cuitNum));
     if(cuitSel===cuitNum) setCuitSel(cuits.find(c=>c.cuit!==cuitNum)?.cuit||null);
@@ -6605,7 +6798,7 @@ function AppArca({T, user, onHome}) {
       const masMsg = duplicates.length > 5 ? `\n…y ${duplicates.length - 5} más` : "";
       msg = `⚠ Hay ${duplicates.length} órden${duplicates.length>1?"es":""} ya facturada${duplicates.length>1?"s":""} este mes:\n${ids}${masMsg}\n\n¿Querés refacturarla${duplicates.length>1?"s":""} igual? Se van a emitir nuevos comprobantes (los anteriores no se anulan).`;
     }
-    if(!window.confirm(msg)) return;
+    if(!await appConfirm(msg,{okLabel:"Continuar"})) return;
     const total = orderIds.length;
     setEmitting(true);
     setEmitProgress({active:true,current:0,total,ok:0,fail:0,done:false,errors:[]});
@@ -7375,7 +7568,7 @@ function AppArca({T, user, onHome}) {
                   <div style={{display:"flex",alignItems:"center",gap:14}}>
                     <button onClick={async()=>{
                       if(!cuitSel) return;
-                      if(!window.confirm("Esto va a regenerar el PDF de cada factura de ML pendiente y subirla a la venta en Mercado Libre. ¿Continuar?")) return;
+                      if(!await appConfirm("Esto va a regenerar el PDF de cada factura de ML pendiente y subirla a la venta en Mercado Libre. ¿Continuar?",{okLabel:"Continuar"})) return;
                       setEmitting(true);
                       const d = await api("attach_ml_pending","POST",{cuit:cuitSel});
                       setEmitting(false);
@@ -8287,7 +8480,7 @@ function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked}) {
       currency: aa?.currency || "", timezone_name: aa?.timezone_name || "",
     }, {acc_id: accId});
     setSaving(false);
-    if (d.error) { alert("Error: " + d.error); return; }
+    if (d.error) { appAlert("Error: " + d.error); return; }
     onPicked?.();
   }
 
@@ -8372,9 +8565,9 @@ function RuleEditor({T, initialRule, onSave, onCancel}) {
   const removeCond=i=>setConditions(prev=>prev.filter((_,idx)=>idx!==i));
 
   async function handleSave() {
-    if(!name.trim()){alert("Ponele un nombre");return;}
+    if(!name.trim()){appAlert("Ponele un nombre");return;}
     const validConds = conditions.filter(c=>c.value!==""&&c.value!==null);
-    if(validConds.length===0){alert("Necesita al menos 1 condición con valor");return;}
+    if(validConds.length===0){appAlert("Necesita al menos 1 condición con valor");return;}
     setSaving(true);
     const ok = await onSave({
       ...(initialRule?{id:initialRule.id}:{}),
@@ -8710,10 +8903,44 @@ function AppMetaAds({T, user, onHome}) {
       const d = await metaApi("analyze_ad","POST",{ad},{acc_id:activeAccId});
       if(d.error) { toast("Error IA: "+d.error,"error"); return; }
       setLibAds(prev => prev.map(a => a.id === ad.id ? {...a, analysis: d.analysis, analyzed_at: new Date().toISOString()} : a));
-      setExpandedAdId(ad.id);
       toast("Análisis listo ✓","success");
     } finally { setAnalyzingId(null); }
   }
+
+  // Cola de análisis automático para toda la Biblioteca
+  const libAutoAnalyzeRef = React.useRef({ running: false, cancelled: false });
+  const [autoAnalyzeStatus, setAutoAnalyzeStatus] = React.useState({ active: false, done: 0, total: 0 });
+  async function autoAnalyzeAll(ads) {
+    if (libAutoAnalyzeRef.current.running) return;
+    const pending = ads.filter(a => !a.analysis);
+    if (pending.length === 0) return;
+    libAutoAnalyzeRef.current = { running: true, cancelled: false };
+    setAutoAnalyzeStatus({ active: true, done: 0, total: pending.length });
+    for (let i = 0; i < pending.length; i++) {
+      if (libAutoAnalyzeRef.current.cancelled) break;
+      const ad = pending[i];
+      setAnalyzingId(ad.id);
+      try {
+        const d = await metaApi("analyze_ad","POST",{ad},{acc_id:activeAccId});
+        if (!d.error && d.analysis) {
+          setLibAds(prev => prev.map(a => a.id === ad.id ? {...a, analysis: d.analysis, analyzed_at: new Date().toISOString()} : a));
+        }
+      } catch (_) {}
+      setAnalyzingId(null);
+      setAutoAnalyzeStatus({ active: true, done: i+1, total: pending.length });
+    }
+    setAutoAnalyzeStatus({ active: false, done: 0, total: 0 });
+    libAutoAnalyzeRef.current = { running: false, cancelled: false };
+  }
+  // Cuando cargan ads nuevos, dispara auto-análisis en background
+  useEffect(() => {
+    if (libAds.length === 0) return;
+    if (libAutoAnalyzeRef.current.running) return;
+    const pending = libAds.filter(a => !a.analysis);
+    if (pending.length === 0) return;
+    autoAnalyzeAll(libAds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [libAds]);
 
   // ── Reglas ──
   async function loadRules() {
@@ -8739,7 +8966,7 @@ function AppMetaAds({T, user, onHome}) {
   }
 
   async function deleteRule(ruleId) {
-    if(!window.confirm("¿Borrar esta regla?")) return;
+    if(!await appConfirm("¿Borrar esta regla?",{danger:true,okLabel:"Borrar"})) return;
     const params=new URLSearchParams({action:"rule_delete",uid,rule_id:ruleId});
     const d=await fetch(`/api/meta?${params}`,{method:"DELETE"}).then(r=>r.json());
     if(d.error) { toast("Error: "+d.error,"error"); return; }
@@ -8896,7 +9123,7 @@ function AppMetaAds({T, user, onHome}) {
   }
 
   async function handleDisconnect(accId) {
-    if(!window.confirm("¿Desconectar esta cuenta de Meta?")) return;
+    if(!await appConfirm("¿Desconectar esta cuenta de Meta?",{danger:true,okLabel:"Desconectar"})) return;
     await fetch(`/api/meta?action=delete_account&uid=${uid}&acc_id=${accId}`,{method:"DELETE"});
     setAccounts(prev=>prev.filter(a=>a.id!==accId));
     if(activeAccId===accId) setActiveAccId(null);
@@ -9108,7 +9335,7 @@ function AppMetaAds({T, user, onHome}) {
     }
     const queue = creatives.filter(c => c.copy?.trim() && (studioMode === "perAd" ? c.adset_id : true));
     if (queue.length === 0) return toast("No hay creativos con copy listos para publicar","warning");
-    if (!window.confirm(`Publicar ${queue.length} ad${queue.length===1?"":"s"} en Meta ${publishActiveByDefault?"ACTIVE":"PAUSED"}?`)) return;
+    if (!await appConfirm(`Publicar ${queue.length} ad${queue.length===1?"":"s"} en Meta ${publishActiveByDefault?"ACTIVE":"PAUSED"}?`,{okLabel:"🚀 Publicar"})) return;
     setBulkPublishing(true);
     setBulkProgress({done:0,total:queue.length,errors:[]});
     const errs = [];
@@ -9134,7 +9361,7 @@ function AppMetaAds({T, user, onHome}) {
   // ── Studio: limpiar cola (borra creatives de Growith) ──
   async function handleClearQueue() {
     if (!creatives.length) return;
-    if (!window.confirm(`Borrar los ${creatives.length} creativos de la cola? (no afecta los ya publicados en Meta)`)) return;
+    if (!await appConfirm(`¿Borrar los ${creatives.length} creativos de la cola?\n(no afecta los ya publicados en Meta)`,{danger:true,okLabel:"Borrar todo"})) return;
     for (const c of creatives) {
       try { await fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${c.id}`,{method:"DELETE"}); } catch (_) {}
     }
@@ -9281,11 +9508,11 @@ function AppMetaAds({T, user, onHome}) {
                     {aDrill.map((b,i)=>(
                       <React.Fragment key={i}>
                         <span style={{color:T.textSm}}>›</span>
-                        {i < aDrill.length-1
-                          ? <button onClick={()=>drillTo(i)} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:"2px 4px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</button>
-                          : <span style={{color:T.text,fontWeight:600,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</span>}
+                        <button onClick={()=>drillTo(i)} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:"2px 4px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</button>
                       </React.Fragment>
                     ))}
+                    <span style={{color:T.textSm}}>›</span>
+                    <span style={{padding:"3px 9px",borderRadius:6,fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",background:aLevel==="adset"?T.green+"22":T.yellow+"22",color:aLevel==="adset"?T.green:T.yellow,border:`1px solid ${aLevel==="adset"?T.green:T.yellow}55`}}>{aLevel==="adset"?"Adsets":"Ads"}</span>
                   </div>
                 )}
 
@@ -9304,19 +9531,8 @@ function AppMetaAds({T, user, onHome}) {
                         {aLevel === "adset" ? "Adsets" : "Ads"} de {aDrill[aDrill.length-1].name.slice(0,30)}{aDrill[aDrill.length-1].name.length>30?"…":""}
                       </div>
                     )}
-                    {/* Date range */}
-                    <span style={{fontSize:11,color:T.textSm,marginLeft:8}}>Período</span>
-                    <input type="date" value={aSince} max={aUntil} onChange={e=>setASince(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                    <span style={{fontSize:11,color:T.textSm}}>a</span>
-                    <input type="date" value={aUntil} min={aSince} max={new Date().toISOString().slice(0,10)} onChange={e=>setAUntil(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                    {/* Presets rápidos */}
-                    <div style={{display:"flex",gap:4}}>
-                      <button onClick={()=>{const today=new Date().toISOString().slice(0,10);setASince(today);setAUntil(today);}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Hoy</button>
-                      <button onClick={()=>{const d=new Date(Date.now()-86400000).toISOString().slice(0,10);setASince(d);setAUntil(d);}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ayer</button>
-                      {[{d:7,l:"7d"},{d:14,l:"14d"},{d:30,l:"30d"},{d:90,l:"90d"}].map(p=>(
-                        <button key={p.d} onClick={()=>{setASince(new Date(Date.now()-p.d*86400000).toISOString().slice(0,10));setAUntil(new Date().toISOString().slice(0,10));}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
-                      ))}
-                    </div>
+                    {/* Date range con calendario inline */}
+                    <DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/>
                     <span style={{fontSize:11,color:T.textSm,marginLeft:6}} title="ROAS break-even: arriba verde, abajo rojo">ROAS BE</span>
                     <input type="number" step="0.1" min="0.5" max="20" value={aRoasBe} onChange={e=>setARoasBe(parseFloat(e.target.value)||1)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,width:64,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     {/* Columnas */}
@@ -9529,24 +9745,16 @@ function AppMetaAds({T, user, onHome}) {
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:10}}>
                     <div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Biblioteca de anuncios</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Métricas reales del período seleccionado. Tocá "Analizar con IA" para que Gemini desglose cada anuncio.</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Métricas reales del período + Gemini analiza cada anuncio en background apenas se cargan.{autoAnalyzeStatus.active && <> · <strong style={{color:T.accent}}>Analizando {autoAnalyzeStatus.done}/{autoAnalyzeStatus.total}…</strong></>}</div>
                     </div>
                     <button onClick={loadLibrary} disabled={libLoading} style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
                   </div>
-                  {/* Filtros: fecha + búsqueda + sort */}
+                  {/* Filtros: calendario + búsqueda + sort */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <span style={{fontSize:11,color:T.textSm}}>Período</span>
-                    <input type="date" value={libSince} max={libUntil} onChange={e=>setLibSince(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                    <span style={{fontSize:11,color:T.textSm}}>a</span>
-                    <input type="date" value={libUntil} min={libSince} max={new Date().toISOString().slice(0,10)} onChange={e=>setLibUntil(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                    <div style={{display:"flex",gap:4}}>
-                      {[{d:7,l:"7d"},{d:14,l:"14d"},{d:30,l:"30d"},{d:90,l:"90d"}].map(p=>(
-                        <button key={p.d} onClick={()=>{setLibSince(new Date(Date.now()-p.d*86400000).toISOString().slice(0,10));setLibUntil(new Date().toISOString().slice(0,10));}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
-                      ))}
-                    </div>
+                    <DateRangePicker T={T} since={libSince} until={libUntil} onChange={(s,u)=>{setLibSince(s);setLibUntil(u);}}/>
                     <span style={{flex:1}}/>
-                    <input type="text" placeholder="🔍 Buscar…" value={libQuery} onChange={e=>setLibQuery(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,minWidth:160,fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                    <select value={libSort} onChange={e=>setLibSort(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <input type="text" placeholder="🔍 Buscar…" value={libQuery} onChange={e=>setLibQuery(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,minWidth:160,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <select value={libSort} onChange={e=>setLibSort(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
                       <option value="spend">Más gasto</option>
                       <option value="roas">Mejor ROAS</option>
                       <option value="recent">Recién analizados</option>
@@ -9685,9 +9893,11 @@ function AppMetaAds({T, user, onHome}) {
                                   </div>
                                 </>
                               ) : (
-                                <button onClick={()=>analyzeAd(ad)} disabled={analyzing} style={{marginTop:"auto",padding:"9px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:analyzing?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                                  {analyzing ? <><Spinner size={12} color="#fff"/>Analizando con Gemini...</> : "🤖 Analizar con IA"}
-                                </button>
+                                <div style={{marginTop:"auto",padding:"10px 14px",borderRadius:8,border:`1px dashed ${T.accent}44`,background:T.accent+"08",fontSize:11,color:T.textMd,textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8,minHeight:36}}>
+                                  {analyzing
+                                    ? <><Spinner size={12} color={T.accent}/> Analizando con Gemini…</>
+                                    : <>⏳ Análisis IA en cola — Gemini ya está procesando los anuncios.</>}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -9788,26 +9998,11 @@ function AppMetaAds({T, user, onHome}) {
                   </div>
                 )}
 
-                {/* Tip: cron 24/7 sin Growith abierto */}
-                <details style={{marginTop:16,background:T.card,border:`1px solid ${T.border}`,borderRadius:12}}>
-                  <summary style={{cursor:"pointer",padding:"12px 16px",fontSize:12,fontWeight:600,color:T.text,listStyle:"none"}}>
-                    ⏰ ¿Querés que las reglas se evalúen aunque no abras Growith?
-                  </summary>
-                  <div style={{padding:"0 16px 16px",fontSize:12,color:T.textMd,lineHeight:1.7}}>
-                    Hoy las reglas se evalúan automáticamente <strong style={{color:T.text}}>cada 30 minutos cuando entrás a Meta Ads</strong> en Growith. Si querés que corran 24/7 sin tener que abrir la app, configurá un cron externo gratis:
-                    <ol style={{margin:"10px 0",paddingLeft:18}}>
-                      <li>Andá a <a href="https://cron-job.org" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>cron-job.org</a> y crea una cuenta gratis</li>
-                      <li>Click en <strong style={{color:T.text}}>"Create cronjob"</strong></li>
-                      <li>URL: <code style={{background:T.surface,padding:"2px 6px",borderRadius:4,fontSize:11,color:T.accent,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/meta?action=evaluate_rules&uid=${uid}&acc_id=${activeAccId||"TU_ACC_ID"}`}</code></li>
-                      <li>Schedule: cada 30 minutos</li>
-                      <li>Method: <strong style={{color:T.text}}>POST</strong></li>
-                      <li>Guardar</li>
-                    </ol>
-                    <div style={{padding:"10px 12px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:8,fontSize:11}}>
-                      ✓ Listo. Cron-job.org va a llamar a Growith en el schedule que pongas y disparar la evaluación automática. <strong style={{color:T.green}}>Sin tocar Vercel ni nada</strong>.
-                    </div>
-                  </div>
-                </details>
+                {/* Estado del auto-eval — ya no hay setup externo, corre en la nube via la integracion Meta */}
+                <div style={{marginTop:14,padding:"10px 14px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:10,fontSize:11,color:T.textMd,display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{color:T.green,fontWeight:700}}>✓</span>
+                  Las reglas activas se evalúan <strong style={{color:T.green}}>automáticamente cada 30 minutos</strong> en la nube usando la integración con Meta. No hace falta tener Growith abierto.
+                </div>
 
                 {/* Editor de regla (modal) */}
                 {editingRule && <RuleEditor T={T} initialRule={editingRule==="new"?null:editingRule} onSave={saveRule} onCancel={()=>setEditingRule(null)}/>}
@@ -11153,23 +11348,23 @@ export default function App() {
   );
 
   // Not logged in
-  if(!user) return <AuthScreen T={T} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
+  if(!user) return <><AuthScreen T={T} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/><AppPromptHost T={T}/></>;
 
   // Config
-  if(page==="planes") return <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
-  if(page==="admin"&&isAdmin) return <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
-  if(page==="config") return <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
+  if(page==="planes") return <><AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>;
+  if(page==="admin"&&isAdmin) return <><AppAdmin T={T} user={user} onBack={()=>setPage("home")}/><AppPromptHost T={T}/></>;
+  if(page==="config") return <><ConfigScreen T={T} user={user} onBack={()=>setPage("home")} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/><AppPromptHost T={T}/></>;
 
   // App
-  if(page==="arca") return <PageView pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
-  if(page==="meta") return <PageView pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
-  if(page==="stock") return <PageView pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
-  if(page==="audio") return <PageView pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
-  if(page==="reclamos") return <PageView pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
-  if(page==="canjes") return <PageView pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/><ToastContainer T={T}/></PageView>;
-  if(page==="envios") return <PageView pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
-  return <HomeScreen T={T} onNavigate={(page, docId)=>{
+  if(page==="arca") return <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
+  if(page==="meta") return <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
+  if(page==="stock") return <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
+  if(page==="audio") return <PageView T={T} pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
+  if(page==="reclamos") return <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
+  if(page==="canjes") return <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/><ToastContainer T={T}/></PageView>;
+  if(page==="envios") return <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
+  return <><HomeScreen T={T} onNavigate={(page, docId)=>{
     if(page==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     setPage(page);
-  }} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
+  }} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/><AppPromptHost T={T}/></>;
 }
