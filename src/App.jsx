@@ -9578,6 +9578,14 @@ function AppStock({T, user, onHome}) {
     setLoading(false);
   }
 
+  // Sincronizar ventas en background (descuenta stock según publicaciones vinculadas)
+  async function syncSalesBackground() {
+    try {
+      const d = await api("sync_sales", "POST", {});
+      if (d?.sales_logged > 0) loadItems(); // refresca si hubo descuentos
+    } catch (e) { /* silencioso */ }
+  }
+
   async function loadMovements() {
     const d = await api("list_movements");
     if (!d.error) setMovements(d.movements || []);
@@ -9596,7 +9604,13 @@ function AppStock({T, user, onHome}) {
     if (!d.error) setProjectionData(d);
   }
 
-  useEffect(() => { if(uid) loadItems(); /* eslint-disable-next-line */ }, [uid]);
+  useEffect(() => {
+    if (!uid) return;
+    loadItems();
+    // Disparar sync de ventas al entrar al módulo (background, no bloquea UI)
+    syncSalesBackground();
+    /* eslint-disable-next-line */
+  }, [uid]);
   useEffect(() => {
     if (uid && tab === "historial") loadMovements();
     if (uid && tab === "estadisticas") loadStats();
@@ -9926,7 +9940,7 @@ function AppStock({T, user, onHome}) {
 
       {/* Modal crear/editar item */}
       {editingItem && (
-        <ItemEditor T={T} initial={editingItem === "new" ? null : editingItem} onSave={handleSaveItem} onCancel={()=>setEditingItem(null)}/>
+        <ItemEditor T={T} user={user} initial={editingItem === "new" ? null : editingItem} onSave={handleSaveItem} onCancel={()=>setEditingItem(null)}/>
       )}
 
       {/* Modal de proyección */}
@@ -9990,14 +10004,49 @@ function AppStock({T, user, onHome}) {
 // ===========================================
 // ITEM EDITOR (modal crear/editar item de stock)
 // ===========================================
-function ItemEditor({T, initial, onSave, onCancel}) {
+function ItemEditor({T, user, initial, onSave, onCancel}) {
   const [nombre, setNombre] = useState(initial?.nombre || "");
   const [sku, setSku] = useState(initial?.sku || "");
   const [stock, setStock] = useState(initial?.stock_total ?? 0);
-  const [sales30d, setSales30d] = useState(initial?.sales_30d ?? 0);
   const [image, setImage] = useState(initial?.image || "");
+  const [links, setLinks] = useState(Array.isArray(initial?.product_links) ? initial.product_links : []);
+  const [platformFilter, setPlatformFilter] = useState("all"); // all | tiendanube | shopify | mercadolibre
+  const [searchQuery, setSearchQuery] = useState("");
+  const [products, setProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [saving, setSaving] = useState(false);
   const iS = InputStyle(T);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    setLoadingProducts(true);
+    fetch(`/api/inventory?action=list_platform_products&uid=${user.uid}`)
+      .then(r => r.json())
+      .then(d => { if (!d.error) setProducts(d.products || []); })
+      .catch(()=>{})
+      .finally(() => setLoadingProducts(false));
+  }, [user?.uid]);
+
+  const linkedIds = new Set(links.map(l => l.product_id));
+  const filteredProducts = products.filter(p => {
+    if (platformFilter !== "all" && p.platform !== platformFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      if (!(p.title || "").toLowerCase().includes(q) && !(p.sku || "").toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  const addLink = (p) => {
+    if (linkedIds.has(p.id)) return;
+    setLinks(prev => [...prev, { product_id: p.id, platform: p.platform, title: p.title, image: p.image, quantity: 1 }]);
+  };
+  const removeLink = (productId) => {
+    setLinks(prev => prev.filter(l => l.product_id !== productId));
+  };
+  const updateQty = (productId, qty) => {
+    setLinks(prev => prev.map(l => l.product_id === productId ? { ...l, quantity: parseInt(qty) || 1 } : l));
+  };
 
   async function handleSave() {
     if (!nombre.trim()) { alert("Falta el nombre"); return; }
@@ -10007,38 +10056,48 @@ function ItemEditor({T, initial, onSave, onCancel}) {
       nombre: nombre.trim(),
       sku: sku.trim(),
       stock_total: parseInt(stock) || 0,
-      sales_30d: parseInt(sales30d) || 0,
       image: image.trim() || null,
+      product_links: links,
     });
     setSaving(false);
     if (!ok) return;
   }
 
+  const platformBadge = (plat) => {
+    const map = {
+      tiendanube:   { bg: "#1d8fce", color: "#fff", label: "TN" },
+      shopify:      { bg: "#96BF48", color: "#fff", label: "SH" },
+      mercadolibre: { bg: "#FFE600", color: "#333", label: "ML" },
+    };
+    const m = map[plat] || { bg: T.surface, color: T.textMd, label: "?" };
+    return <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:m.bg,color:m.color,fontWeight:700,letterSpacing:0.3}}>{m.label}</span>;
+  };
+
   return ReactDOM.createPortal(
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving && onCancel()}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:780,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-          <div style={{fontSize:17,fontWeight:700,color:T.text}}>{initial ? "Editar item" : "Nuevo item"}</div>
+          <div>
+            <div style={{fontSize:17,fontWeight:700,color:T.text}}>{initial ? "Editar item" : "Nuevo item"}</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Las ventas de 30 días se calculan automáticamente desde las publicaciones vinculadas.</div>
+          </div>
           <button onClick={onCancel} disabled={saving} style={{background:"transparent",border:"none",color:T.textMd,fontSize:18,cursor:"pointer"}}>✕</button>
         </div>
 
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {/* Datos básicos */}
+        <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
           <div>
-            <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Nombre</label>
-            <input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Gomitas de Azul de Metileno" style={iS} disabled={saving} autoFocus/>
-          </div>
-          <div>
-            <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>SKU (opcional)</label>
-            <input value={sku} onChange={e=>setSku(e.target.value)} placeholder="GOMITAS-001" style={{...iS,fontFamily:"monospace"}} disabled={saving}/>
+            <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Nombre del item</label>
+            <input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Ej. Producto A — unidad base" style={iS} disabled={saving} autoFocus/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
             <div>
-              <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Stock actual</label>
-              <input type="number" min="0" value={stock} onChange={e=>setStock(e.target.value)} style={iS} disabled={saving}/>
+              <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>SKU (opcional)</label>
+              <input value={sku} onChange={e=>setSku(e.target.value)} placeholder="SKU-001" style={{...iS,fontFamily:"monospace"}} disabled={saving}/>
             </div>
             <div>
-              <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Ventas últimos 30 días</label>
-              <input type="number" min="0" value={sales30d} onChange={e=>setSales30d(e.target.value)} style={iS} disabled={saving}/>
+              <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Stock actual</label>
+              <input type="number" min="0" value={stock} onChange={e=>setStock(e.target.value)} style={iS} disabled={saving}/>
             </div>
           </div>
           <div>
@@ -10047,7 +10106,83 @@ function ItemEditor({T, initial, onSave, onCancel}) {
           </div>
         </div>
 
-        <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:22}}>
+        {/* Publicaciones vinculadas */}
+        <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:18,marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Publicaciones vinculadas <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>({links.length})</span></div>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>
+            Vinculá las publicaciones de TN / Shopify / ML que descuentan este item al venderse. <strong style={{color:T.text}}>Cantidad</strong> = cuántas unidades del item se descuentan por cada venta de esa publicación (ej. pack x2 → poner 2).
+          </div>
+
+          {links.length > 0 && (
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
+              {links.map(l => (
+                <div key={l.product_id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
+                  {l.image
+                    ? <img src={l.image} alt="" style={{width:32,height:32,borderRadius:4,objectFit:"cover",flexShrink:0}}/>
+                    : <div style={{width:32,height:32,borderRadius:4,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:T.textSm,flexShrink:0}}>🖼</div>
+                  }
+                  {platformBadge(l.platform)}
+                  <div style={{flex:1,fontSize:12,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{l.title || l.product_id}</div>
+                  <span style={{fontSize:10,color:T.textSm}}>Cantidad</span>
+                  <input type="number" min="1" max="999" value={l.quantity} onChange={e=>updateQty(l.product_id, e.target.value)} style={{...iS,width:64,padding:"4px 6px",fontSize:12,textAlign:"center"}} disabled={saving}/>
+                  <button onClick={()=>removeLink(l.product_id)} style={{background:"transparent",border:`1px solid ${T.red}33`,color:T.red,borderRadius:5,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Buscador */}
+          <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+            <select value={platformFilter} onChange={e=>setPlatformFilter(e.target.value)} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
+              <option value="all">Todas las plataformas</option>
+              <option value="tiendanube">Tienda Nube</option>
+              <option value="shopify">Shopify</option>
+              <option value="mercadolibre">Mercado Libre</option>
+            </select>
+            <input type="text" placeholder="🔍 Buscar publicación por título o SKU..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
+          </div>
+
+          <div style={{maxHeight:240,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:8}}>
+            {loadingProducts ? (
+              <div style={{padding:"30px 20px",textAlign:"center"}}>
+                <Spinner size={14} color={T.accent}/>
+                <div style={{fontSize:11,color:T.textSm,marginTop:8}}>Cargando publicaciones de tus tiendas...</div>
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div style={{padding:"30px 20px",textAlign:"center",fontSize:12,color:T.textSm}}>
+                {products.length === 0
+                  ? "No hay publicaciones disponibles. Conectá TN / Shopify / ML en Config."
+                  : "Ninguna publicación coincide con la búsqueda."}
+              </div>
+            ) : (
+              filteredProducts.map(p => {
+                const linked = linkedIds.has(p.id);
+                return (
+                  <div key={p.id} onClick={()=>!linked && addLink(p)}
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,cursor:linked?"default":"pointer",opacity:linked?0.5:1,transition:"background 0.12s"}}
+                    onMouseEnter={e=>{if(!linked) e.currentTarget.style.background=T.surface;}}
+                    onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                    {p.image
+                      ? <img src={p.image} alt="" style={{width:30,height:30,borderRadius:4,objectFit:"cover",flexShrink:0}}/>
+                      : <div style={{width:30,height:30,borderRadius:4,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:T.textSm,flexShrink:0}}>🖼</div>
+                    }
+                    {platformBadge(p.platform)}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontWeight:500}}>{p.title}</div>
+                      {p.sku && <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:1}}>SKU: {p.sku}</div>}
+                    </div>
+                    {linked
+                      ? <span style={{fontSize:10,color:T.green,fontWeight:600}}>✓ Vinculada</span>
+                      : <span style={{fontSize:14,color:T.accent}}>+</span>
+                    }
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
           <button onClick={onCancel} disabled={saving} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
           <button onClick={handleSave} disabled={saving||!nombre.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px"}}>
             {saving?"Guardando...":(initial?"Guardar cambios":"Crear item")}

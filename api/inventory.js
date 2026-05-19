@@ -5,6 +5,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getValidMLToken } from "./integrations.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -66,14 +67,28 @@ export default async function handler(req, res) {
   const db = initAdmin();
 
   try {
-    // ── LIST ITEMS con KPIs y status calculado ──────────────
+    // ── LIST ITEMS con KPIs, status y sales_30d calculados desde movements ──
     if (action === "list_items" && req.method === "GET") {
       const snap = await db.collection("users").doc(uid).collection("inventory_items").get();
       const settings = await getSettings(db, uid);
+
+      // Calcular sales_30d agrupando movements de ventas de los últimos 30 días
+      const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+      const movSnap = await db.collection("users").doc(uid).collection("inventory_movements")
+        .where("ts", ">=", cutoff).get();
+      const sales30dByItem = {};
+      for (const m of movSnap.docs) {
+        const md = m.data();
+        if (md.change < 0 && md.source !== "manual") {
+          sales30dByItem[md.item_id] = (sales30dByItem[md.item_id] || 0) + Math.abs(md.change);
+        }
+      }
+
       const items = snap.docs.map(d => {
         const data = d.data();
-        const { days_left, status } = computeStatus(data.stock_total, data.sales_30d, settings);
-        return { id: d.id, ...data, days_left, status };
+        const sales_30d = sales30dByItem[d.id] || 0;
+        const { days_left, status } = computeStatus(data.stock_total, sales_30d, settings);
+        return { id: d.id, ...data, sales_30d, days_left, status };
       });
       items.sort((a, b) => (a.status === "empty" ? -1 : 1) - (b.status === "empty" ? -1 : 1));
       const kpis = {
@@ -83,6 +98,261 @@ export default async function handler(req, res) {
         empty: items.filter(i => i.status === "empty").length,
       };
       return res.json({ items, kpis, settings });
+    }
+
+    // ── LIST PLATFORM PRODUCTS — todas las publicaciones de TN/Shopify/ML conectadas ──
+    if (action === "list_platform_products" && req.method === "GET") {
+      const platform = req.query.platform || "all";
+      const userSnap = await db.collection("users").doc(uid).get();
+      const stores = userSnap.data()?.stores || [];
+      const products = [];
+
+      // TN
+      if (platform === "all" || platform === "tiendanube") {
+        const tn = stores.find(s => s.type === "tiendanube");
+        if (tn?.accessToken && tn?.storeId) {
+          for (let page = 1; page <= 5; page++) {
+            try {
+              const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/products?per_page=200&page=${page}`, {
+                headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },
+              });
+              if (!r.ok) break;
+              const batch = await r.json();
+              if (!Array.isArray(batch) || batch.length === 0) break;
+              for (const p of batch) {
+                const titleObj = p.name || {};
+                const title = typeof titleObj === "string" ? titleObj : (titleObj.es || titleObj.en || Object.values(titleObj)[0] || "(sin nombre)");
+                products.push({
+                  id: `TN-${p.id}`,
+                  platform: "tiendanube",
+                  platform_label: "TN",
+                  title,
+                  sku: p.variants?.[0]?.sku || "",
+                  image: p.images?.[0]?.src || null,
+                  price: parseFloat(p.variants?.[0]?.price) || 0,
+                });
+              }
+              if (batch.length < 200) break;
+            } catch (e) { break; }
+          }
+        }
+      }
+
+      // Shopify
+      if (platform === "all" || platform === "shopify") {
+        const sh = stores.find(s => s.type === "shopify");
+        if (sh?.accessToken && sh?.shop) {
+          let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/products.json?limit=250`;
+          for (let i = 0; i < 4 && pageInfoUrl; i++) {
+            try {
+              const r = await fetch(pageInfoUrl, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+              if (!r.ok) break;
+              const data = await r.json();
+              for (const p of (data.products || [])) {
+                products.push({
+                  id: `SH-${p.id}`,
+                  platform: "shopify",
+                  platform_label: "SH",
+                  title: p.title,
+                  sku: p.variants?.[0]?.sku || "",
+                  image: p.image?.src || null,
+                  price: parseFloat(p.variants?.[0]?.price) || 0,
+                });
+              }
+              const linkHeader = r.headers.get("link") || "";
+              const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+              pageInfoUrl = nextMatch ? nextMatch[1] : null;
+            } catch (e) { break; }
+          }
+        }
+      }
+
+      // ML
+      if (platform === "all" || platform === "mercadolibre") {
+        const ml = stores.find(s => s.type === "mercadolibre");
+        if (ml?.userId) {
+          try {
+            const tokenInfo = await getValidMLToken(db, uid);
+            if (tokenInfo?.accessToken) {
+              for (let offset = 0; offset < 500; offset += 50) {
+                const idsRes = await fetch(`https://api.mercadolibre.com/users/${tokenInfo.userId}/items/search?status=active&limit=50&offset=${offset}`, {
+                  headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+                });
+                if (!idsRes.ok) break;
+                const idsData = await idsRes.json();
+                const ids = idsData.results || [];
+                if (ids.length === 0) break;
+                const detailsRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(",")}&attributes=id,title,thumbnail,price,seller_custom_field`, {
+                  headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+                });
+                if (!detailsRes.ok) break;
+                const details = await detailsRes.json();
+                for (const d of details) {
+                  if (d.body) {
+                    products.push({
+                      id: `ML-${d.body.id}`,
+                      platform: "mercadolibre",
+                      platform_label: "ML",
+                      title: d.body.title,
+                      sku: d.body.seller_custom_field || "",
+                      image: d.body.thumbnail,
+                      price: parseFloat(d.body.price) || 0,
+                    });
+                  }
+                }
+                if (ids.length < 50) break;
+              }
+            }
+          } catch (e) { /* ignorar */ }
+        }
+      }
+
+      return res.json({ products });
+    }
+
+    // ── SYNC SALES — recorre ordenes recientes, descuenta stock de items vinculados ──
+    if (action === "sync_sales" && req.method === "POST") {
+      const itemsSnap = await db.collection("users").doc(uid).collection("inventory_items").get();
+      const items = itemsSnap.docs.map(d => ({ ref: d.ref, ...d.data() }));
+      const linkedItems = items.filter(i => Array.isArray(i.product_links) && i.product_links.length > 0);
+      if (linkedItems.length === 0) return res.json({ ok: true, processed_orders: 0, items_updated: 0 });
+
+      const userSnap = await db.collection("users").doc(uid).get();
+      const stores = userSnap.data()?.stores || [];
+
+      // Acumular órdenes recientes de las plataformas
+      const recentOrders = [];
+      const sinceISO = new Date(Date.now() - 30 * 86400000).toISOString();
+      const sinceDate = sinceISO.slice(0, 10);
+
+      // TN
+      const tn = stores.find(s => s.type === "tiendanube");
+      if (tn?.accessToken && tn?.storeId) {
+        for (let page = 1; page <= 5; page++) {
+          try {
+            const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}`, {
+              headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },
+            });
+            if (!r.ok) break;
+            const batch = await r.json();
+            if (!Array.isArray(batch) || batch.length === 0) break;
+            for (const o of batch) {
+              if ((o.status || "").toLowerCase() === "cancelled") continue;
+              recentOrders.push({
+                order_id: `TN-ORD-${o.id}`,
+                platform: "tiendanube",
+                ts: o.paid_at || o.created_at,
+                products: (o.products || []).map(p => ({ id: `TN-${p.product_id || p.id}`, quantity: parseInt(p.quantity) || 1 })),
+              });
+            }
+            if (batch.length < 200) break;
+          } catch (e) { break; }
+        }
+      }
+
+      // Shopify
+      const sh = stores.find(s => s.type === "shopify");
+      if (sh?.accessToken && sh?.shop) {
+        let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&created_at_min=${sinceISO}`;
+        for (let i = 0; i < 4 && pageInfoUrl; i++) {
+          try {
+            const r = await fetch(pageInfoUrl, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+            if (!r.ok) break;
+            const data = await r.json();
+            for (const o of (data.orders || [])) {
+              if (o.cancelled_at) continue;
+              if ((o.financial_status || "").toLowerCase() !== "paid") continue;
+              recentOrders.push({
+                order_id: `SH-ORD-${o.id}`,
+                platform: "shopify",
+                ts: o.processed_at || o.created_at,
+                products: (o.line_items || []).map(li => ({ id: `SH-${li.product_id}`, quantity: parseInt(li.quantity) || 1 })),
+              });
+            }
+            const linkHeader = r.headers.get("link") || "";
+            const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+            pageInfoUrl = nextMatch ? nextMatch[1] : null;
+          } catch (e) { break; }
+        }
+      }
+
+      // ML
+      const ml = stores.find(s => s.type === "mercadolibre");
+      if (ml?.userId) {
+        try {
+          const tokenInfo = await getValidMLToken(db, uid);
+          if (tokenInfo?.accessToken) {
+            const untilISO = new Date().toISOString();
+            for (let offset = 0; offset < 500; offset += 50) {
+              const r = await fetch(`https://api.mercadolibre.com/orders/search?seller=${tokenInfo.userId}&order.status=paid&order.date_created.from=${sinceISO}&order.date_created.to=${untilISO}&limit=50&offset=${offset}&sort=date_desc`, {
+                headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+              });
+              if (!r.ok) break;
+              const data = await r.json();
+              const orders = data.results || [];
+              for (const o of orders) {
+                if (["cancelled", "invalid"].includes((o.status || "").toLowerCase())) continue;
+                recentOrders.push({
+                  order_id: `ML-ORD-${o.id}`,
+                  platform: "mercadolibre",
+                  ts: o.date_closed || o.date_created,
+                  products: (o.order_items || []).map(it => ({ id: `ML-${it.item?.id}`, quantity: parseInt(it.quantity) || 1 })),
+                });
+              }
+              if (orders.length < 50) break;
+            }
+          }
+        } catch (e) { /* ignorar */ }
+      }
+
+      // Procesar cada item con links y descontar
+      let itemsUpdated = 0;
+      let salesLogged = 0;
+      for (const item of linkedItems) {
+        const linkMap = new Map(item.product_links.map(l => [l.product_id, parseInt(l.quantity) || 1]));
+        const processed = new Set(item.processed_orders || []);
+        let stockChange = 0;
+        const newProcessed = [];
+
+        for (const ord of recentOrders) {
+          if (processed.has(ord.order_id)) continue;
+          let unitsForItem = 0;
+          for (const prod of ord.products) {
+            const linkedQty = linkMap.get(prod.id);
+            if (linkedQty) unitsForItem += prod.quantity * linkedQty;
+          }
+          if (unitsForItem > 0) {
+            const oldStock = (item.stock_total || 0) + stockChange;
+            stockChange -= unitsForItem;
+            const newStock = oldStock - unitsForItem;
+            await logMovement(db, uid, {
+              item_id: item.id, item_name: item.nombre,
+              change: -unitsForItem,
+              old_stock: oldStock, new_stock: Math.max(0, newStock),
+              source: ord.platform, event: `venta ${ord.order_id}`,
+              ts: ord.ts,
+            });
+            newProcessed.push(ord.order_id);
+            salesLogged++;
+          }
+        }
+
+        if (stockChange !== 0) {
+          const finalStock = Math.max(0, (item.stock_total || 0) + stockChange);
+          const allProcessed = Array.from(new Set([...(item.processed_orders || []), ...newProcessed])).slice(-2000);
+          await item.ref.update({
+            stock_total: finalStock,
+            processed_orders: allProcessed,
+            last_sync_at: new Date().toISOString(),
+          });
+          itemsUpdated++;
+        } else if (newProcessed.length === 0 && !item.last_sync_at) {
+          // primer sync sin ventas — solo marcamos timestamp
+          await item.ref.update({ last_sync_at: new Date().toISOString() });
+        }
+      }
+
+      return res.json({ ok: true, processed_orders: recentOrders.length, items_updated: itemsUpdated, sales_logged: salesLogged });
     }
 
     // ── CREATE/UPDATE ITEM ──────────────────────────────────
@@ -100,9 +370,18 @@ export default async function handler(req, res) {
         sku: String(body.sku || "").slice(0, 80),
         image: body.image || null,
         stock_total: parseInt(body.stock_total) || 0,
-        sales_30d: parseInt(body.sales_30d) || 0,
         canales: Array.isArray(body.canales) ? body.canales : [],
-        product_links: Array.isArray(body.product_links) ? body.product_links : (existing?.product_links || []),
+        // product_links: [{ product_id, platform, title, image, quantity }] — cantidad descuento por venta
+        product_links: Array.isArray(body.product_links) ? body.product_links.map(l => ({
+          product_id: String(l.product_id || ""),
+          platform: String(l.platform || ""),
+          title: String(l.title || ""),
+          image: l.image || null,
+          quantity: parseInt(l.quantity) || 1,
+        })) : (existing?.product_links || []),
+        // Mantenemos el set de orders procesadas para no descontar 2 veces
+        processed_orders: existing?.processed_orders || [],
+        last_sync_at: existing?.last_sync_at || null,
         created_at: existing?.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
