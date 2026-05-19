@@ -106,17 +106,24 @@ export default async function handler(req, res) {
       const userSnap = await db.collection("users").doc(uid).get();
       const stores = userSnap.data()?.stores || [];
       const products = [];
+      const errors = []; // mensajes por plataforma para mostrar en UI
 
       // TN
       if (platform === "all" || platform === "tiendanube") {
         const tn = stores.find(s => s.type === "tiendanube");
         if (tn?.accessToken && tn?.storeId) {
+          let tnFailed = false, tnFirstError = null;
           for (let page = 1; page <= 5; page++) {
             try {
               const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/products?per_page=200&page=${page}`, {
-                headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },
+                headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp (soluna.biolight@gmail.com)" },
               });
-              if (!r.ok) break;
+              if (!r.ok) {
+                const txt = await r.text().catch(()=>"");
+                tnFailed = page === 1;
+                tnFirstError = `HTTP ${r.status}: ${txt.slice(0, 150)}`;
+                break;
+              }
               const batch = await r.json();
               if (!Array.isArray(batch) || batch.length === 0) break;
               for (const p of batch) {
@@ -133,8 +140,13 @@ export default async function handler(req, res) {
                 });
               }
               if (batch.length < 200) break;
-            } catch (e) { break; }
+            } catch (e) {
+              tnFailed = page === 1;
+              tnFirstError = e.message;
+              break;
+            }
           }
+          if (tnFailed) errors.push({ platform: "tiendanube", error: tnFirstError });
         }
       }
 
@@ -143,10 +155,19 @@ export default async function handler(req, res) {
         const sh = stores.find(s => s.type === "shopify");
         if (sh?.accessToken && sh?.shop) {
           let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/products.json?limit=250`;
+          let shFailed = false, shFirstError = null;
           for (let i = 0; i < 4 && pageInfoUrl; i++) {
             try {
               const r = await fetch(pageInfoUrl, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
-              if (!r.ok) break;
+              if (!r.ok) {
+                const txt = await r.text().catch(()=>"");
+                shFailed = i === 0;
+                shFirstError = `HTTP ${r.status}: ${txt.slice(0, 200)}`;
+                if (r.status === 403 || r.status === 401) {
+                  shFirstError = "Falta el scope read_products en el token de Shopify. Desvinculá y volvé a conectar Shopify para autorizar el nuevo permiso.";
+                }
+                break;
+              }
               const data = await r.json();
               for (const p of (data.products || [])) {
                 products.push({
@@ -162,8 +183,13 @@ export default async function handler(req, res) {
               const linkHeader = r.headers.get("link") || "";
               const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
               pageInfoUrl = nextMatch ? nextMatch[1] : null;
-            } catch (e) { break; }
+            } catch (e) {
+              shFailed = i === 0;
+              shFirstError = e.message;
+              break;
+            }
           }
+          if (shFailed) errors.push({ platform: "shopify", error: shFirstError });
         }
       }
 
@@ -173,19 +199,32 @@ export default async function handler(req, res) {
         if (ml?.userId) {
           try {
             const tokenInfo = await getValidMLToken(db, uid);
-            if (tokenInfo?.accessToken) {
+            if (!tokenInfo?.accessToken) {
+              errors.push({ platform: "mercadolibre", error: "No se pudo obtener un access_token válido (probá reconectar ML)." });
+            } else {
+              let mlFailed = false, mlFirstError = null;
               for (let offset = 0; offset < 500; offset += 50) {
                 const idsRes = await fetch(`https://api.mercadolibre.com/users/${tokenInfo.userId}/items/search?status=active&limit=50&offset=${offset}`, {
                   headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
                 });
-                if (!idsRes.ok) break;
+                if (!idsRes.ok) {
+                  const txt = await idsRes.text().catch(()=>"");
+                  mlFailed = offset === 0;
+                  mlFirstError = `HTTP ${idsRes.status}: ${txt.slice(0, 200)}`;
+                  break;
+                }
                 const idsData = await idsRes.json();
                 const ids = idsData.results || [];
                 if (ids.length === 0) break;
                 const detailsRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(",")}&attributes=id,title,thumbnail,price,seller_custom_field`, {
                   headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
                 });
-                if (!detailsRes.ok) break;
+                if (!detailsRes.ok) {
+                  const txt = await detailsRes.text().catch(()=>"");
+                  mlFailed = offset === 0;
+                  mlFirstError = `HTTP ${detailsRes.status} (details): ${txt.slice(0, 200)}`;
+                  break;
+                }
                 const details = await detailsRes.json();
                 for (const d of details) {
                   if (d.body) {
@@ -202,12 +241,15 @@ export default async function handler(req, res) {
                 }
                 if (ids.length < 50) break;
               }
+              if (mlFailed) errors.push({ platform: "mercadolibre", error: mlFirstError });
             }
-          } catch (e) { /* ignorar */ }
+          } catch (e) {
+            errors.push({ platform: "mercadolibre", error: e.message });
+          }
         }
       }
 
-      return res.json({ products });
+      return res.json({ products, errors });
     }
 
     // ── SYNC SALES — recorre ordenes recientes, descuenta stock de items vinculados ──

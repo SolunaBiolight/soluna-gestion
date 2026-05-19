@@ -10013,6 +10013,7 @@ function ItemEditor({T, user, initial, onSave, onCancel}) {
   const [platformFilter, setPlatformFilter] = useState("all"); // all | tiendanube | shopify | mercadolibre
   const [searchQuery, setSearchQuery] = useState("");
   const [products, setProducts] = useState([]);
+  const [platformErrors, setPlatformErrors] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [saving, setSaving] = useState(false);
   const iS = InputStyle(T);
@@ -10022,7 +10023,12 @@ function ItemEditor({T, user, initial, onSave, onCancel}) {
     setLoadingProducts(true);
     fetch(`/api/inventory?action=list_platform_products&uid=${user.uid}`)
       .then(r => r.json())
-      .then(d => { if (!d.error) setProducts(d.products || []); })
+      .then(d => {
+        if (!d.error) {
+          setProducts(d.products || []);
+          setPlatformErrors(d.errors || []);
+        }
+      })
       .catch(()=>{})
       .finally(() => setLoadingProducts(false));
   }, [user?.uid]);
@@ -10142,6 +10148,20 @@ function ItemEditor({T, user, initial, onSave, onCancel}) {
             <input type="text" placeholder="🔍 Buscar publicación por título o SKU..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
           </div>
 
+          {/* Errores por plataforma (token sin permisos, etc) */}
+          {platformErrors.length > 0 && (
+            <div style={{marginBottom:10,display:"flex",flexDirection:"column",gap:6}}>
+              {platformErrors.map(err => {
+                const platName = {tiendanube:"Tienda Nube",shopify:"Shopify",mercadolibre:"Mercado Libre"}[err.platform] || err.platform;
+                return (
+                  <div key={err.platform} style={{padding:"8px 12px",background:T.red+"15",border:`1px solid ${T.red}33`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5}}>
+                    <strong style={{color:T.red}}>⚠ {platName}:</strong> {err.error}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <div style={{maxHeight:240,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:8}}>
             {loadingProducts ? (
               <div style={{padding:"30px 20px",textAlign:"center"}}>
@@ -10151,7 +10171,9 @@ function ItemEditor({T, user, initial, onSave, onCancel}) {
             ) : filteredProducts.length === 0 ? (
               <div style={{padding:"30px 20px",textAlign:"center",fontSize:12,color:T.textSm}}>
                 {products.length === 0
-                  ? "No hay publicaciones disponibles. Conectá TN / Shopify / ML en Config."
+                  ? (platformErrors.length > 0
+                      ? "No se pudieron cargar publicaciones — revisá los errores arriba."
+                      : "No hay publicaciones disponibles. Conectá TN / Shopify / ML en Config.")
                   : "Ninguna publicación coincide con la búsqueda."}
               </div>
             ) : (

@@ -33,7 +33,7 @@ async function readBody(req) {
 // Cada cliente trae SU client_id + client_secret de SU app de Shopify Partners.
 // Growith no necesita env vars — solo orquesta el flujo OAuth con esos datos.
 
-const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders";
+const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products";
 const SHOPIFY_APP_URL = "https://www.growithapp.com";
 const SHOPIFY_REDIRECT_URI = `${SHOPIFY_APP_URL}/api/integrations?platform=shopify&action=callback`;
 
