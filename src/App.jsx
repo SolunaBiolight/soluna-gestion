@@ -8517,8 +8517,11 @@ function AppMetaAds({T, user, onHome}) {
   const [libLoading,setLibLoading]=useState(false);
   const [libQuery,setLibQuery]=useState("");
   const [libSort,setLibSort]=useState("spend"); // spend | roas | recent
+  const [libSince,setLibSince]=useState(()=>new Date(Date.now()-7*86400000).toISOString().slice(0,10));
+  const [libUntil,setLibUntil]=useState(()=>new Date().toISOString().slice(0,10));
   const [analyzingId,setAnalyzingId]=useState(null);
   const [expandedAdId,setExpandedAdId]=useState(null);
+  const [previewingAd,setPreviewingAd]=useState(null); // ad object para modal HD
 
   // Estado del tab Reglas
   const [rules,setRules]=useState([]);
@@ -8622,7 +8625,7 @@ function AppMetaAds({T, user, onHome}) {
     if(!activeAccId) return;
     setLibLoading(true);
     try {
-      const d = await metaApi("ads_library","GET",null,{acc_id:activeAccId});
+      const d = await metaApi("ads_library","GET",null,{acc_id:activeAccId,since:libSince,until:libUntil});
       if(d.error) { toast("Error: "+d.error,"error"); setLibAds([]); }
       else setLibAds(d.ads||[]);
     } finally { setLibLoading(false); }
@@ -8689,6 +8692,11 @@ function AppMetaAds({T, user, onHome}) {
     if(tab==="analisis"&&activeAccId) loadInsights();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[aLevel,aSince,aUntil]);
+
+  useEffect(()=>{
+    if(tab==="biblioteca"&&activeAccId) loadLibrary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[libSince,libUntil]);
 
   async function loadInsights() {
     if(!activeAccId) return;
@@ -9131,20 +9139,31 @@ function AppMetaAds({T, user, onHome}) {
             ) : (
               <>
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:10}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:10}}>
                     <div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Biblioteca de anuncios</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Tus anuncios con métricas reales de los últimos 7 días. Tocá "Analizar con IA" para que Gemini desglose qué hace cada uno.</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Métricas reales del período seleccionado. Tocá "Analizar con IA" para que Gemini desglose cada anuncio.</div>
                     </div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                      <input type="text" placeholder="🔍 Buscar…" value={libQuery} onChange={e=>setLibQuery(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,minWidth:180,fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                      <select value={libSort} onChange={e=>setLibSort(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        <option value="spend">Más gasto 7d</option>
-                        <option value="roas">Mejor ROAS 7d</option>
-                        <option value="recent">Recién analizados</option>
-                      </select>
-                      <button onClick={loadLibrary} disabled={libLoading} style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
+                    <button onClick={loadLibrary} disabled={libLoading} style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
+                  </div>
+                  {/* Filtros: fecha + búsqueda + sort */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,color:T.textSm}}>Período</span>
+                    <input type="date" value={libSince} max={libUntil} onChange={e=>setLibSince(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <span style={{fontSize:11,color:T.textSm}}>a</span>
+                    <input type="date" value={libUntil} min={libSince} max={new Date().toISOString().slice(0,10)} onChange={e=>setLibUntil(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <div style={{display:"flex",gap:4}}>
+                      {[{d:7,l:"7d"},{d:14,l:"14d"},{d:30,l:"30d"},{d:90,l:"90d"}].map(p=>(
+                        <button key={p.d} onClick={()=>{setLibSince(new Date(Date.now()-p.d*86400000).toISOString().slice(0,10));setLibUntil(new Date().toISOString().slice(0,10));}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
+                      ))}
                     </div>
+                    <span style={{flex:1}}/>
+                    <input type="text" placeholder="🔍 Buscar…" value={libQuery} onChange={e=>setLibQuery(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,minWidth:160,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <select value={libSort} onChange={e=>setLibSort(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <option value="spend">Más gasto</option>
+                      <option value="roas">Mejor ROAS</option>
+                      <option value="recent">Recién analizados</option>
+                    </select>
                   </div>
                 </div>
 
@@ -9185,17 +9204,32 @@ function AppMetaAds({T, user, onHome}) {
                         const analyzing = analyzingId === ad.id;
                         const A = ad.analysis;
                         const roasColor = ad.roas >= 2 ? T.green : ad.roas >= 1 ? T.text : ad.roas > 0 ? T.red : T.textSm;
+                        const hasVideo = !!ad.creative_video_url;
+                        const previewImage = ad.creative_image_hd || ad.creative_thumbnail;
                         return (
                           <div key={ad.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-                            {/* Thumbnail */}
-                            <div style={{width:"100%",aspectRatio:"16/9",background:T.bg,position:"relative",overflow:"hidden"}}>
-                              {ad.creative_thumbnail
-                                ? <img src={ad.creative_thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
+                            {/* Preview: imagen HD o video con play */}
+                            <div
+                              onClick={()=>setPreviewingAd(ad)}
+                              style={{width:"100%",aspectRatio:"16/9",background:T.bg,position:"relative",overflow:"hidden",cursor:"pointer"}}
+                              title={hasVideo ? "Click para reproducir en HD" : "Click para ver en HD"}>
+                              {previewImage
+                                ? <img src={previewImage} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
                                 : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>🖼️</div>
                               }
+                              {hasVideo && (
+                                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+                                  <div style={{width:54,height:54,borderRadius:"50%",background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)",border:"2px solid rgba(255,255,255,0.85)"}}>
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
+                                  </div>
+                                </div>
+                              )}
                               <span style={{position:"absolute",top:8,right:8,fontSize:10,padding:"3px 8px",borderRadius:5,background:isActive?T.green:T.red,color:"#fff",fontWeight:700,letterSpacing:0.3}}>
                                 {isActive ? "ACTIVO" : (ad.effective_status||"PAUSADO")}
                               </span>
+                              {hasVideo && (
+                                <span style={{position:"absolute",top:8,left:8,fontSize:9,padding:"2px 7px",borderRadius:4,background:"rgba(0,0,0,0.6)",color:"#fff",fontWeight:600}}>VIDEO</span>
+                              )}
                             </div>
 
                             {/* Cuerpo */}
@@ -9670,6 +9704,28 @@ function AppMetaAds({T, user, onHome}) {
           </div>
         )}
       </div>
+
+      {/* Modal preview HD del creative */}
+      {previewingAd && ReactDOM.createPortal(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.85)",backdropFilter:"blur(6px)",padding:16}} onClick={()=>setPreviewingAd(null)}>
+          <div style={{position:"relative",maxWidth:"90vw",maxHeight:"90vh",display:"flex",flexDirection:"column",gap:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setPreviewingAd(null)} style={{position:"absolute",top:-8,right:-8,zIndex:2,width:32,height:32,borderRadius:"50%",background:"#000",border:"2px solid #fff",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+            {previewingAd.creative_video_url ? (
+              <video src={previewingAd.creative_video_url} controls autoPlay style={{maxWidth:"90vw",maxHeight:"82vh",borderRadius:12,background:"#000"}}>
+                Tu navegador no soporta video HTML5.
+              </video>
+            ) : previewingAd.creative_image_hd ? (
+              <img src={previewingAd.creative_image_hd} alt="" style={{maxWidth:"90vw",maxHeight:"82vh",borderRadius:12,objectFit:"contain"}}/>
+            ) : (
+              <div style={{padding:"60px 40px",background:T.card,borderRadius:12,fontSize:13,color:T.textMd}}>No hay preview disponible para este anuncio.</div>
+            )}
+            {previewingAd.creative_permalink && (
+              <a href={previewingAd.creative_permalink} target="_blank" rel="noopener" style={{fontSize:12,color:"#fff",textDecoration:"underline",opacity:0.85}}>Abrir en Facebook ↗</a>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

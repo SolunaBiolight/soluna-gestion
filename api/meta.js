@@ -669,18 +669,32 @@ export default async function handler(req, res) {
       if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
       if (!cfg.ad_account_id) return res.status(400).json({ error: "Falta seleccionar ad_account_id" });
 
-      const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-      const until = new Date().toISOString().slice(0, 10);
+      // Aceptar rango de fechas (default últimos 7 días)
+      const since = String(req.query.since || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
+      const until = String(req.query.until || new Date().toISOString().slice(0, 10));
 
       try {
-        // 1) Ads con creative detallado
+        // 1) Ads con creative detallado — pedimos image_url HD + video_id si lo tiene
         const adsData = await metaGet(`${cfg.ad_account_id}/ads`, {
-          fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,image_url,object_story_spec,object_type,body,title}",
+          fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,image_url,image_hash,video_id,object_story_spec,object_type,body,title,asset_feed_spec}",
           limit: 300,
         }, cfg.access_token);
         const ads = adsData.data || [];
 
-        // 2) Insights de últimos 7 días por ad
+        // 1.b) Para los ads que tienen video_id, resolver la URL del MP4 source en una sola tanda
+        const videoIds = [...new Set(ads.map(a => a.creative?.video_id).filter(Boolean))];
+        const videoSources = {};
+        if (videoIds.length > 0) {
+          // Llamar uno por uno (FB no permite batch fácil sin tokens distintos)
+          await Promise.all(videoIds.slice(0, 100).map(async vid => {
+            try {
+              const v = await metaGet(vid, { fields: "source,picture,permalink_url" }, cfg.access_token);
+              videoSources[vid] = { source: v.source || null, picture: v.picture || null, permalink: v.permalink_url || null };
+            } catch (_) { /* ignorar */ }
+          }));
+        }
+
+        // 2) Insights del rango por ad
         let insightsRows = [];
         try {
           const ins = await metaGet(`${cfg.ad_account_id}/insights`, {
@@ -706,6 +720,7 @@ export default async function handler(req, res) {
           const creative = ad.creative || {};
           const oss = creative.object_story_spec || {};
           const linkData = oss.link_data || oss.video_data || {};
+          const vidInfo = creative.video_id ? videoSources[creative.video_id] : null;
           return {
             id: ad.id,
             name: ad.name,
@@ -713,13 +728,19 @@ export default async function handler(req, res) {
             effective_status: ad.effective_status,
             campaign_id: ad.campaign_id,
             adset_id: ad.adset_id,
-            creative_thumbnail: creative.thumbnail_url || creative.image_url || null,
+            // Imagen HD (image_url) + thumbnail como fallback
+            creative_thumbnail: creative.thumbnail_url || creative.image_url || vidInfo?.picture || null,
+            creative_image_hd: creative.image_url || vidInfo?.picture || creative.thumbnail_url || null,
+            // Video reproducible si existe
+            creative_video_url: vidInfo?.source || null,
+            creative_video_id: creative.video_id || null,
+            creative_permalink: vidInfo?.permalink || null,
             creative_body: creative.body || linkData.message || "",
             creative_title: creative.title || linkData.name || "",
             creative_description: linkData.description || "",
             creative_link: linkData.link || "",
             creative_cta: linkData.call_to_action?.type || "",
-            creative_type: creative.object_type || "image",
+            creative_type: creative.video_id ? "video" : (creative.object_type || "image"),
             spend: parseFloat(ins.spend) || 0,
             impressions: parseInt(ins.impressions) || 0,
             clicks: parseInt(ins.clicks) || 0,
