@@ -7009,10 +7009,10 @@ function AppArca({T, user, onHome}) {
                 <div style={{padding:"0 20px 20px",borderTop:"1px solid "+T.border}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
                     {[
-                      {step:"1",title:"Conectá tu CUIT",desc:"Tocá el selector de CUIT arriba a la derecha → '+ Conectar nuevo CUIT'. El wizard tiene 3 pasos: tus datos fiscales, generación del certificado (Growith genera el par RSA y te da el CSR para subir a ARCA → ARCA te devuelve un .crt que subís acá), y verificación. Si ya tenés un certificado de ARCA con su clave privada, hay un modo manual para subir ambos archivos directo.",color:T.accent},
-                      {step:"2",title:"Subí tu archivo de ventas",desc:"Descargá el Excel de ventas de Mercado Libre (.xlsx) desde Ventas → Facturación, o el CSV de Shopify desde Orders → Export. Arrastrá el archivo en la zona de carga de abajo. Growith lee las órdenes automáticamente y prepara cada factura con los datos del comprador (nombre, CUIT/DNI, monto, productos).",color:T.blue},
-                      {step:"3",title:"Revisá y ajustá",desc:"Antes de emitir podés revisar cada orden: el sistema muestra el tipo de comprobante que va a generar (Factura A, B o C según tu condición fiscal y los datos del cliente). También podés cambiar el nombre de los productos para que aparezcan distinto en el PDF final del comprobante.",color:T.yellow},
-                      {step:"4",title:"Emití y descargá PDFs",desc:"Tocá 'Emitir facturas en ARCA' y el sistema se comunica directo con ARCA para generar cada comprobante con CAE válido. En segundos tenés los resultados: facturas exitosas con su número de comprobante y CAE. Descargá los PDFs uno por uno o todos juntos.",color:T.green},
+                      {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre — Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá) y verificación. Si ya tenés un certificado emitido con su clave privada, hay un modo manual para pegarlos directo.",color:T.accent},
+                      {step:"2",title:"Revisá las ventas pendientes",desc:"En la pestaña 'Pendientes' aparecen unificadas todas las ventas de TN, Shopify y ML que todavía no facturaste. Filtrá por canal, período (mes actual o anterior, retroactivo), rango de monto o estado de pago. Growith ya detectó CUIT/DNI, dirección, productos y armó la condición IVA del receptor (RG 5616, obligatorio desde 01/06/2026). Tildá las que querés facturar — el ✓ verde marca las que ya están emitidas.",color:T.blue},
+                      {step:"3",title:"Ajustá lo que necesites",desc:"Antes de emitir podés cambiar el nombre de los productos como van a aparecer en el PDF, editar la dirección del cliente, sobreescribir el tipo de comprobante (A/B/C) o imputar al mes anterior si llegaste tarde. Para Mercado Libre, el PDF se sube automáticamente como documento fiscal de la venta apenas se emite (también desde 'Adjuntar pendientes en ML' en el historial).",color:T.yellow},
+                      {step:"4",title:"Emití y descargá",desc:"Tocá 'Emitir' y Growith se conecta directo con ARCA por WSAA+WSFE: comprobante con CAE válido en segundos. Resultados con número y CAE de cada factura, y descarga de PDFs uno por uno o en zip. Las de ML quedan adjuntadas automáticamente. Todo el lote queda en el historial para descargar de nuevo cuando quieras.",color:T.green},
                     ].map(s=>(
                       <div key={s.step} style={{display:"flex",gap:12,padding:16,background:T.bg,borderRadius:10,border:"1px solid "+T.border}}>
                         <div style={{width:32,height:32,borderRadius:8,background:s.color+"18",border:"1px solid "+s.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
@@ -8827,6 +8827,12 @@ function AppMetaAds({T, user, onHome}) {
   const [dragOver,setDragOver]=useState(false);
   // Picker desde biblioteca
   const [showLibraryPicker,setShowLibraryPicker]=useState(false);
+  // Modal "Cambiar recursos" — todos los assets del token
+  const [showResourcesModal,setShowResourcesModal]=useState(false);
+  const [resourcesLoading,setResourcesLoading]=useState(false);
+  const [resourcesData,setResourcesData]=useState(null); // {ad_accounts, pages, ig_accounts, pixels_by_account, active}
+  const [resSel,setResSel]=useState({ad_account_id:"",page_id:"",ig_account_id:"",pixel_id:""});
+  const [resSaving,setResSaving]=useState(false);
 
   const uid=user?.uid;
   const activeAcc=accounts.find(a=>a.id===activeAccId)||null;
@@ -9246,6 +9252,53 @@ function AppMetaAds({T, user, onHome}) {
     setSelCreative(d.creative);
   }
 
+  // ── Studio: abrir modal "Cambiar recursos" — trae todos los assets del token ──
+  async function openResourcesModal() {
+    if (!activeAccId) { toast("Conectá Meta primero","warning"); return; }
+    setShowResourcesModal(true);
+    setResourcesLoading(true);
+    setResourcesData(null);
+    try {
+      const d = await metaApi("all_assets","GET",null,{acc_id:activeAccId});
+      if (d.error) { toast("Error: "+d.error,"error"); setResourcesLoading(false); return; }
+      setResourcesData(d);
+      setResSel({
+        ad_account_id: d.active?.ad_account_id || "",
+        page_id: d.active?.page_id || "",
+        ig_account_id: d.active?.ig_account_id || "",
+        pixel_id: d.active?.pixel_id || "",
+      });
+    } finally { setResourcesLoading(false); }
+  }
+  async function saveResources() {
+    if (!resourcesData) return;
+    if (!resSel.ad_account_id) return toast("Elegí una cuenta publicitaria","warning");
+    setResSaving(true);
+    try {
+      const aa = resourcesData.ad_accounts.find(a => a.id === resSel.ad_account_id);
+      const pg = resourcesData.pages.find(p => p.id === resSel.page_id);
+      const ig = resourcesData.ig_accounts.find(i => i.id === resSel.ig_account_id);
+      const d = await metaApi("select","POST",{
+        ad_account_id: resSel.ad_account_id,
+        ad_account_name: aa?.name || "",
+        page_id: resSel.page_id,
+        page_name: pg?.name || "",
+        page_access_token: pg?.access_token || "",
+        ig_account_id: resSel.ig_account_id,
+        ig_username: ig?.username || "",
+        pixel_id: resSel.pixel_id,
+        currency: aa?.currency || "",
+        timezone_name: aa?.timezone_name || "",
+      },{acc_id:activeAccId});
+      if (d.error) { toast(d.error,"error"); setResSaving(false); return; }
+      // Refrescar la cuenta activa en memoria
+      const newAcc = { ...activeAcc, ...(d.account||{}) };
+      setAccounts(prev => prev.map(a => a.id === activeAccId ? newAcc : a));
+      toast("Recursos guardados ✓","success");
+      setShowResourcesModal(false);
+    } finally { setResSaving(false); }
+  }
+
   // ── Studio: subida múltiple (drag-drop o file picker con multiple) ────
   async function handleUploadMultiple(fileList) {
     if (!fileList || fileList.length === 0) return;
@@ -9555,9 +9608,6 @@ function AppMetaAds({T, user, onHome}) {
                     <input type="text" placeholder="🔍 Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     <button onClick={loadInsights} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       {aLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}
-                    </button>
-                    <button onClick={()=>{const today=new Date().toISOString().slice(0,10); const s=new Date(Date.now()-30*86400000).toISOString().slice(0,10); setASince(s); setAUntil(today); setADrill([]);}} disabled={aLoading} title="Setea el rango a los últimos 30 días y refresca toda la data — incluye reglas activas que reprocesan ese período" style={{background:T.accent+"12",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}>
-                      🔄 Reprocesar 30d
                     </button>
                   </div>
                 </div>
@@ -10279,7 +10329,7 @@ function AppMetaAds({T, user, onHome}) {
                       )}
                     </div>
                   )}
-                  <button onClick={()=>setTab("cuenta")} style={BtnSec}>Cambiar recursos</button>
+                  <button onClick={openResourcesModal} style={BtnSec}>🔧 Cambiar recursos</button>
                 </div>
                 );
               })()}
@@ -10649,6 +10699,148 @@ function AppMetaAds({T, user, onHome}) {
                         {savingAdset?<><Spinner size={12} color="#fff"/>Creando...</>:"Crear"}
                       </button>
                     </div>
+                  </div>
+                </div>,
+                document.body
+              )}
+
+              {/* ── Modal: Cambiar recursos (ad accounts, pages, IG, pixels) ── */}
+              {showResourcesModal && ReactDOM.createPortal(
+                <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowResourcesModal(false)}>
+                  <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:760,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                      <h3 style={{margin:0,fontSize:18,fontWeight:800,background:`linear-gradient(90deg, ${T.text}, ${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Cambiar recursos</h3>
+                      <button onClick={()=>setShowResourcesModal(false)} style={{...BtnSec,padding:"4px 8px"}}>✕</button>
+                    </div>
+                    <div style={{fontSize:12,color:T.textSm,marginBottom:14,lineHeight:1.5}}>Todos los activos visibles para tu token de Meta. Elegí los que quieras usar para publicar.</div>
+
+                    {resourcesLoading && (
+                      <div style={{padding:"40px 0",textAlign:"center"}}>
+                        <Spinner size={20} color={T.accent}/>
+                        <div style={{fontSize:12,color:T.textSm,marginTop:10}}>Trayendo recursos desde Meta…</div>
+                      </div>
+                    )}
+
+                    {!resourcesLoading && resourcesData && (
+                      <div style={{display:"flex",flexDirection:"column",gap:18}}>
+                        {/* AD ACCOUNTS */}
+                        <div>
+                          <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                            <span>📊 Cuentas publicitarias ({resourcesData.ad_accounts?.length||0})</span>
+                          </div>
+                          {(resourcesData.ad_accounts||[]).length === 0 ? (
+                            <div style={{fontSize:12,color:T.textSm,padding:"12px 14px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`}}>El token no ve ninguna cuenta publicitaria. Asignala desde Business Settings.</div>
+                          ) : (
+                            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:240,overflowY:"auto"}}>
+                              {resourcesData.ad_accounts.map(a => {
+                                const sel = resSel.ad_account_id === a.id;
+                                const pixCount = (resourcesData.pixels_by_account?.[a.id] || []).length;
+                                return (
+                                  <button key={a.id} onClick={()=>setResSel(p=>({...p, ad_account_id: a.id, pixel_id: ""}))} style={{textAlign:"left",padding:"10px 12px",border:`1px solid ${sel?T.green+"99":T.borderL}`,background:sel?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                      <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
+                                      <div style={{flex:1,minWidth:0}}>
+                                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{a.name||"(sin nombre)"} <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:T.bg,color:T.textSm,fontWeight:500,marginLeft:6}}>{a.currency||"USD"}</span></div>
+                                        <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:2}}>{a.id} · {a.account_status===1?"activa":"inactiva"} · {pixCount} píxel{pixCount===1?"":"es"}</div>
+                                      </div>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* PIXELES de la cuenta seleccionada */}
+                        {resSel.ad_account_id && (
+                          <div>
+                            <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>🎯 Píxeles de esta cuenta ({(resourcesData.pixels_by_account?.[resSel.ad_account_id]||[]).length})</div>
+                            {(!resourcesData.pixels_by_account?.[resSel.ad_account_id] || resourcesData.pixels_by_account[resSel.ad_account_id].length === 0) ? (
+                              <div style={{fontSize:11,color:T.yellow,padding:"10px 12px",background:T.yellow+"10",borderRadius:8,border:`1px solid ${T.yellow}33`}}>⚠ La cuenta no tiene píxeles asignados. Asignalo desde Events Manager.</div>
+                            ) : (
+                              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                <button onClick={()=>setResSel(p=>({...p, pixel_id: ""}))} style={{textAlign:"left",padding:"8px 12px",border:`1px solid ${!resSel.pixel_id?T.green+"99":T.borderL}`,background:!resSel.pixel_id?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,color:T.textSm}}>
+                                  <span style={{width:12,height:12,borderRadius:"50%",border:`2px solid ${!resSel.pixel_id?T.green:T.border}`,background:!resSel.pixel_id?T.green:"transparent",display:"inline-block",marginRight:8,verticalAlign:"middle"}}/>
+                                  Sin píxel (no recomendado)
+                                </button>
+                                {resourcesData.pixels_by_account[resSel.ad_account_id].map(p => {
+                                  const sel = resSel.pixel_id === p.id;
+                                  return (
+                                    <button key={p.id} onClick={()=>setResSel(s=>({...s, pixel_id: p.id}))} style={{textAlign:"left",padding:"10px 12px",border:`1px solid ${sel?T.green+"99":T.borderL}`,background:sel?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                        <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
+                                        <div style={{flex:1,minWidth:0}}>
+                                          <div style={{fontSize:13,fontWeight:600,color:T.text}}>{p.name||"(sin nombre)"} {p.last_fired_time && <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:T.green+"22",color:T.green,fontWeight:600,marginLeft:6}}>Activo</span>}</div>
+                                          <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:2}}>{p.id}{p.last_fired_time?` · último evento: ${new Date(p.last_fired_time).toLocaleDateString("es-AR")}`:""}</div>
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* PAGES */}
+                        <div>
+                          <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>📘 Páginas de Facebook ({resourcesData.pages?.length||0})</div>
+                          {(resourcesData.pages||[]).length === 0 ? (
+                            <div style={{fontSize:12,color:T.textSm,padding:"12px 14px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`}}>El token no ve páginas de FB.</div>
+                          ) : (
+                            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
+                              {resourcesData.pages.map(p => {
+                                const sel = resSel.page_id === p.id;
+                                const ig = p.instagram_business_account;
+                                return (
+                                  <button key={p.id} onClick={()=>setResSel(s=>({...s, page_id: p.id, ig_account_id: ig?.id || ""}))} style={{textAlign:"left",padding:"10px 12px",border:`1px solid ${sel?T.green+"99":T.borderL}`,background:sel?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                      <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
+                                      <div style={{flex:1,minWidth:0}}>
+                                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{p.name||"(sin nombre)"} {ig&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"#dd2a7b22",color:"#dd2a7b",fontWeight:600,marginLeft:6}}>📸 @{ig.username}</span>}</div>
+                                        <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:2}}>{p.id}{p.category?` · ${p.category}`:""}</div>
+                                      </div>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* IG ACCOUNTS independiente (si hay) */}
+                        {resourcesData.ig_accounts?.length > 0 && (
+                          <div>
+                            <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>📸 Cuentas Instagram vinculadas ({resourcesData.ig_accounts.length})</div>
+                            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:160,overflowY:"auto"}}>
+                              {resourcesData.ig_accounts.map(i => {
+                                const sel = resSel.ig_account_id === i.id;
+                                return (
+                                  <button key={i.id} onClick={()=>setResSel(s=>({...s, ig_account_id: i.id, page_id: i.page_id}))} style={{textAlign:"left",padding:"10px 12px",border:`1px solid ${sel?T.green+"99":T.borderL}`,background:sel?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                      <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
+                                      <div style={{flex:1,minWidth:0}}>
+                                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>@{i.username}</div>
+                                        <div style={{fontSize:10,color:T.textSm,marginTop:2}}>vinculado a {i.page_name}</div>
+                                      </div>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!resourcesLoading && (
+                      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:18,paddingTop:14,borderTop:`1px solid ${T.border}`}}>
+                        <button onClick={()=>setShowResourcesModal(false)} style={BtnSec}>Cancelar</button>
+                        <button onClick={saveResources} disabled={resSaving || !resSel.ad_account_id} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:(!resSel.ad_account_id?T.border:`linear-gradient(135deg, ${T.green}, ${T.accent})`),color:!resSel.ad_account_id?T.textSm:"#fff",cursor:resSaving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:!resSel.ad_account_id?0.6:1}}>
+                          {resSaving?<><Spinner size={12} color="#fff"/>Guardando…</>:"💾 Guardar selección"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>,
                 document.body

@@ -602,6 +602,50 @@ export default async function handler(req, res) {
       }
     }
 
+    // Trae TODOS los recursos accesibles por el token activo: ad accounts +
+    // pixeles por ad account + pages con IG anidado. Usado por el modal
+    // "Cambiar recursos" en el Publicar.
+    if (action === "all_assets" && req.method === "GET") {
+      if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.access_token) return res.status(400).json({ error: "Sin access_token" });
+      try {
+        const intros = await metaIntrospect(cfg.access_token);
+        const ad_accounts = intros.ad_accounts || [];
+        const pages = intros.pages || [];
+        // Pixeles por ad_account (paralelo, max 30 cuentas para no explotar)
+        const pixelsByAccount = {};
+        await Promise.all(ad_accounts.slice(0, 30).map(async aa => {
+          try {
+            const px = await metaGet(`${aa.id}/adspixels`, { fields: "id,name,creation_time,last_fired_time,is_unavailable", limit: 50 }, cfg.access_token);
+            pixelsByAccount[aa.id] = px.data || [];
+          } catch (_) { pixelsByAccount[aa.id] = []; }
+        }));
+        // Aplastar pages con IG separado para que la UI lo pueda mostrar como dos tablas
+        const ig_accounts = pages.filter(p => p.instagram_business_account).map(p => ({
+          id: p.instagram_business_account.id,
+          username: p.instagram_business_account.username,
+          page_id: p.id,
+          page_name: p.name,
+        }));
+        return res.json({
+          me: intros.me,
+          ad_accounts,
+          pages,
+          ig_accounts,
+          pixels_by_account: pixelsByAccount,
+          active: {
+            ad_account_id: cfg.ad_account_id || null,
+            page_id: cfg.page_id || null,
+            ig_account_id: cfg.ig_account_id || null,
+            pixel_id: cfg.pixel_id || null,
+          },
+        });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
     if (action === "connect" && req.method === "POST") {
       const { access_token } = req.body || {};
       if (!access_token) return res.status(400).json({ error: "Falta access_token" });
