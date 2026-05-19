@@ -8907,40 +8907,9 @@ function AppMetaAds({T, user, onHome}) {
     } finally { setAnalyzingId(null); }
   }
 
-  // Cola de análisis automático para toda la Biblioteca
-  const libAutoAnalyzeRef = React.useRef({ running: false, cancelled: false });
-  const [autoAnalyzeStatus, setAutoAnalyzeStatus] = React.useState({ active: false, done: 0, total: 0 });
-  async function autoAnalyzeAll(ads) {
-    if (libAutoAnalyzeRef.current.running) return;
-    const pending = ads.filter(a => !a.analysis);
-    if (pending.length === 0) return;
-    libAutoAnalyzeRef.current = { running: true, cancelled: false };
-    setAutoAnalyzeStatus({ active: true, done: 0, total: pending.length });
-    for (let i = 0; i < pending.length; i++) {
-      if (libAutoAnalyzeRef.current.cancelled) break;
-      const ad = pending[i];
-      setAnalyzingId(ad.id);
-      try {
-        const d = await metaApi("analyze_ad","POST",{ad},{acc_id:activeAccId});
-        if (!d.error && d.analysis) {
-          setLibAds(prev => prev.map(a => a.id === ad.id ? {...a, analysis: d.analysis, analyzed_at: new Date().toISOString()} : a));
-        }
-      } catch (_) {}
-      setAnalyzingId(null);
-      setAutoAnalyzeStatus({ active: true, done: i+1, total: pending.length });
-    }
-    setAutoAnalyzeStatus({ active: false, done: 0, total: 0 });
-    libAutoAnalyzeRef.current = { running: false, cancelled: false };
-  }
-  // Cuando cargan ads nuevos, dispara auto-análisis en background
-  useEffect(() => {
-    if (libAds.length === 0) return;
-    if (libAutoAnalyzeRef.current.running) return;
-    const pending = libAds.filter(a => !a.analysis);
-    if (pending.length === 0) return;
-    autoAnalyzeAll(libAds);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [libAds]);
+  // Auto-análisis deshabilitado: tomaba demasiado tiempo y bloqueaba la UI.
+  // El usuario puede disparar análisis individual con el botón "Analizar con IA".
+  const [autoAnalyzeStatus] = React.useState({ active: false, done: 0, total: 0 });
 
   // ── Reglas ──
   async function loadRules() {
@@ -9745,7 +9714,7 @@ function AppMetaAds({T, user, onHome}) {
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:10}}>
                     <div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Biblioteca de anuncios</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Métricas reales del período + Gemini analiza cada anuncio en background apenas se cargan.{autoAnalyzeStatus.active && <> · <strong style={{color:T.accent}}>Analizando {autoAnalyzeStatus.done}/{autoAnalyzeStatus.total}…</strong></>}</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Métricas reales del período. Filtrá, ordená y tocá "Analizar con IA" solo si querés desglose detallado de un anuncio.</div>
                     </div>
                     <button onClick={loadLibrary} disabled={libLoading} style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
                   </div>
@@ -9803,16 +9772,18 @@ function AppMetaAds({T, user, onHome}) {
                         const previewImage = ad.creative_image_hd || ad.creative_thumbnail;
                         return (
                           <div key={ad.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-                            {/* Preview: video inline (autoload metadata) o imagen HD */}
-                            <div style={{width:"100%",aspectRatio:"16/9",background:"#000",position:"relative",overflow:"hidden"}}>
-                              {hasVideo
-                                ? <video src={ad.creative_video_url} controls preload="metadata" poster={previewImage || undefined} style={{width:"100%",height:"100%",objectFit:"contain",background:"#000"}}>
-                                    Tu navegador no soporta video HTML5.
-                                  </video>
-                                : previewImage
-                                  ? <img src={previewImage} alt="" loading="lazy" onClick={()=>setPreviewingAd(ad)} style={{width:"100%",height:"100%",objectFit:"cover",cursor:"pointer"}} onError={e=>{e.target.style.display="none";}}/>
-                                  : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>🖼️</div>
+                            {/* Preview: imagen/poster en HD, click abre modal con video grande */}
+                            <div onClick={()=>setPreviewingAd(ad)} style={{width:"100%",aspectRatio:"1/1",background:"#000",position:"relative",overflow:"hidden",cursor:"pointer"}}>
+                              {previewImage
+                                ? <img src={previewImage} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
+                                : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>{hasVideo?"🎬":"🖼️"}</div>
                               }
+                              {/* Play button overlay para videos */}
+                              {hasVideo && (
+                                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+                                  <div style={{width:60,height:60,borderRadius:"50%",background:"rgba(0,0,0,0.55)",border:"2px solid rgba(255,255,255,0.9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,color:"#fff",paddingLeft:4,backdropFilter:"blur(2px)"}}>▶</div>
+                                </div>
+                              )}
                               <span style={{position:"absolute",top:8,right:8,fontSize:10,padding:"3px 8px",borderRadius:5,background:isActive?T.green:T.red,color:"#fff",fontWeight:700,letterSpacing:0.3,zIndex:2,pointerEvents:"none"}}>
                                 {isActive ? "ACTIVO" : (ad.effective_status||"PAUSADO")}
                               </span>
@@ -9893,11 +9864,9 @@ function AppMetaAds({T, user, onHome}) {
                                   </div>
                                 </>
                               ) : (
-                                <div style={{marginTop:"auto",padding:"10px 14px",borderRadius:8,border:`1px dashed ${T.accent}44`,background:T.accent+"08",fontSize:11,color:T.textMd,textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8,minHeight:36}}>
-                                  {analyzing
-                                    ? <><Spinner size={12} color={T.accent}/> Analizando con Gemini…</>
-                                    : <>⏳ Análisis IA en cola — Gemini ya está procesando los anuncios.</>}
-                                </div>
+                                <button onClick={()=>analyzeAd(ad)} disabled={analyzing} style={{marginTop:"auto",padding:"9px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.accent}44`,borderRadius:8,background:T.accent+"12",color:T.accent,cursor:analyzing?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                                  {analyzing ? <><Spinner size={12} color={T.accent}/>Analizando…</> : <>🤖 Analizar con IA</>}
+                                </button>
                               )}
                             </div>
                           </div>
@@ -10815,21 +10784,24 @@ function AppMetaAds({T, user, onHome}) {
 
       {/* Modal preview HD del creative */}
       {previewingAd && ReactDOM.createPortal(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.85)",backdropFilter:"blur(6px)",padding:16}} onClick={()=>setPreviewingAd(null)}>
-          <div style={{position:"relative",maxWidth:"90vw",maxHeight:"90vh",display:"flex",flexDirection:"column",gap:10,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
-            <button onClick={()=>setPreviewingAd(null)} style={{position:"absolute",top:-8,right:-8,zIndex:2,width:32,height:32,borderRadius:"50%",background:"#000",border:"2px solid #fff",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.9)",backdropFilter:"blur(6px)",padding:24}} onClick={()=>setPreviewingAd(null)}>
+          <div style={{position:"relative",width:"min(900px, 90vw)",maxHeight:"92vh",display:"flex",flexDirection:"column",gap:12,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setPreviewingAd(null)} style={{position:"absolute",top:-14,right:-14,zIndex:3,width:36,height:36,borderRadius:"50%",background:"#000",border:"2px solid #fff",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>✕</button>
             {previewingAd.creative_video_url ? (
-              <video src={previewingAd.creative_video_url} controls autoPlay style={{maxWidth:"90vw",maxHeight:"82vh",borderRadius:12,background:"#000"}}>
+              <video src={previewingAd.creative_video_url} controls autoPlay playsInline style={{width:"100%",maxHeight:"82vh",borderRadius:12,background:"#000",display:"block"}}>
                 Tu navegador no soporta video HTML5.
               </video>
             ) : previewingAd.creative_image_hd ? (
-              <img src={previewingAd.creative_image_hd} alt="" style={{maxWidth:"90vw",maxHeight:"82vh",borderRadius:12,objectFit:"contain"}}/>
+              <img src={previewingAd.creative_image_hd} alt="" style={{width:"100%",maxHeight:"82vh",borderRadius:12,objectFit:"contain",background:"#000",display:"block"}}/>
             ) : (
-              <div style={{padding:"60px 40px",background:T.card,borderRadius:12,fontSize:13,color:T.textMd}}>No hay preview disponible para este anuncio.</div>
+              <div style={{padding:"60px 40px",background:T.card,borderRadius:12,fontSize:13,color:T.textMd,textAlign:"center"}}>No hay preview disponible para este anuncio.</div>
             )}
-            {previewingAd.creative_permalink && (
-              <a href={previewingAd.creative_permalink} target="_blank" rel="noopener" style={{fontSize:12,color:"#fff",textDecoration:"underline",opacity:0.85}}>Abrir en Facebook ↗</a>
-            )}
+            <div style={{display:"flex",alignItems:"center",gap:16,color:"#fff",fontSize:12,opacity:0.9}}>
+              {previewingAd.name && <span style={{fontWeight:600}}>{previewingAd.name}</span>}
+              {previewingAd.creative_permalink && (
+                <a href={previewingAd.creative_permalink} target="_blank" rel="noopener" style={{color:"#fff",textDecoration:"underline"}}>Abrir en Facebook ↗</a>
+              )}
+            </div>
           </div>
         </div>,
         document.body

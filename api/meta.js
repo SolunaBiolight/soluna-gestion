@@ -775,15 +775,30 @@ export default async function handler(req, res) {
         }, cfg.access_token);
         const ads = adsData.data || [];
 
-        // 1.b) Para los ads que tienen video_id, resolver la URL del MP4 source en una sola tanda
+        // 1.b) Para los ads que tienen video_id, resolver el MP4 source + thumbnail HD
         const videoIds = [...new Set(ads.map(a => a.creative?.video_id).filter(Boolean))];
         const videoSources = {};
         if (videoIds.length > 0) {
-          // Llamar uno por uno (FB no permite batch fácil sin tokens distintos)
           await Promise.all(videoIds.slice(0, 100).map(async vid => {
             try {
-              const v = await metaGet(vid, { fields: "source,picture,permalink_url" }, cfg.access_token);
-              videoSources[vid] = { source: v.source || null, picture: v.picture || null, permalink: v.permalink_url || null };
+              // Pedimos source + picture base, y tambien la lista de thumbnails (Meta tiene varias resoluciones)
+              const [v, thumbs] = await Promise.all([
+                metaGet(vid, { fields: "source,picture,permalink_url" }, cfg.access_token),
+                metaGet(`${vid}/thumbnails`, { fields: "uri,is_preferred,height,width", limit: 20 }, cfg.access_token).catch(() => ({ data: [] })),
+              ]);
+              // Elegimos el thumbnail mas grande (mejor resolucion) o el preferred si tiene tamano decente
+              let bestThumb = null;
+              const ts = Array.isArray(thumbs.data) ? thumbs.data : [];
+              if (ts.length > 0) {
+                const sized = ts.filter(t => t.uri).map(t => ({ ...t, area: (t.width || 0) * (t.height || 0) }));
+                sized.sort((a, b) => b.area - a.area);
+                bestThumb = sized[0]?.uri || ts.find(t => t.is_preferred)?.uri || ts[0]?.uri || null;
+              }
+              videoSources[vid] = {
+                source: v.source || null,
+                picture: bestThumb || v.picture || null,
+                permalink: v.permalink_url || null,
+              };
             } catch (_) { /* ignorar */ }
           }));
         }
