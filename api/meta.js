@@ -25,7 +25,43 @@ function initAdmin() {
 const META_V = "v21.0";
 const META_BASE = `https://graph.facebook.com/${META_V}`;
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const GEMINI_UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash";
+
+// Sube un archivo binario a Gemini Files API y espera a que esté ACTIVE.
+// Devuelve { uri, name, mimeType, state }
+async function geminiUploadFileAndWait(apiKey, buf, mime, displayName) {
+  const startRes = await fetch(`${GEMINI_UPLOAD_BASE}?key=${apiKey}`, {
+    method: "POST",
+    headers: {
+      "X-Goog-Upload-Command": "start, upload, finalize",
+      "X-Goog-Upload-Header-Content-Length": String(buf.length),
+      "X-Goog-Upload-Header-Content-Type": mime,
+      "Content-Type": mime,
+    },
+    body: buf,
+  });
+  if (!startRes.ok) {
+    const t = await startRes.text().catch(()=> "");
+    throw new Error(`Gemini upload HTTP ${startRes.status}: ${t.slice(0, 240)}`);
+  }
+  const startJson = await startRes.json();
+  let file = startJson.file;
+  if (!file?.uri || !file?.name) throw new Error("Gemini upload: respuesta inesperada");
+  let state = file.state;
+  // Wait up to ~45s for ACTIVE (videos suelen tardar 5-20s)
+  for (let i = 0; i < 30 && state !== "ACTIVE"; i++) {
+    await new Promise(r => setTimeout(r, 1500));
+    const pollRes = await fetch(`${GEMINI_BASE}/${file.name}?key=${apiKey}`);
+    if (!pollRes.ok) break;
+    const poll = await pollRes.json();
+    file = poll;
+    state = poll.state;
+    if (state === "FAILED") throw new Error("Gemini procesó el archivo y falló");
+  }
+  if (state !== "ACTIVE") throw new Error("Timeout esperando que Gemini procese el archivo");
+  return file;
+}
 
 export const CAMPAIGN_OBJECTIVES = [
   { id: "OUTCOME_SALES",      label: "Ventas" },
@@ -152,35 +188,49 @@ async function listCreatives(db, uid, accId) {
 
 // ─── Gemini copy generation ────────────────────────────
 
-const COPY_SYSTEM = `Sos un copywriter experto en Facebook/Instagram Ads para ecommerce argentino.
-Escribís en español rioplatense con voseo, tono directo y empático.
-Devolvé SOLO un JSON con estas claves exactas, sin explicaciones ni backticks:
-{"copy":"texto principal del ad (2-4 líneas, hook fuerte al inicio)","title":"titular corto máx 40 chars","description":"descripción secundaria máx 30 chars"}`;
+const COPY_SYSTEM = `Sos un copywriter top de Meta Ads para ecommerce con +10 años de experiencia.
+ESCRIBÍS EN ESPAÑOL RIOPLATENSE con voseo (vos/tenés/podés), nunca tú/tienes/puedes.
+REGLA #1: La primera línea del copy es un HOOK SCROLL-STOPPER (curiosidad, contraintuitivo, dolor real o promesa fuerte). Nada de "¿Sabías que…?" ni preguntas tibias.
+REGLA #2: El copy fluye como historia/conversación, no como folleto. Usá saltos de línea reales (\n) entre párrafos. Emojis sólo si suman, máximo 4 en todo el copy.
+REGLA #3: Cerrá con un CTA claro y un link suave al producto.
+Devolvé SOLO un JSON sin backticks ni explicaciones:
+{"copy":"texto principal con saltos de línea reales","title":"titular ≤40 chars que combina con el creativo","description":"descripción ≤30 chars"}`;
 
-async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes, filename, word_min, word_max, product_data }) {
+async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes, filename, word_min, word_max, product_data, url }) {
   const apiKey = process.env.GOOGLE_AI_KEY;
   if (!apiKey) throw new Error("Falta GOOGLE_AI_KEY en env");
-  const toneDesc = { directo:"directo y al grano", emocional:"empático y emocional", urgencia:"con urgencia y escasez", educativo:"educativo e informativo" }[tone] || tone;
-  const lengthDesc = { corto:"máximo 3 líneas (~25-40 palabras)", medio:"4-6 líneas (~50-90 palabras)", largo:"7-10 líneas (~100-160 palabras)" }[length] || length;
-  const formatDesc = { storytelling:"storytelling (problema → agitación → solución)", directo:"propuesta de valor directa", pregunta:"arranca con una pregunta al target", testimonial:"en primera persona como testimonio" }[format] || format;
+  const toneDesc = { directo:"directo y al grano", emocional:"empático y emocional", urgencia:"con urgencia y escasez", educativo:"educativo e informativo", empatico:"empático y emocional", experto:"voz de experto/profesional con autoridad", ugc:"como UGC real de cliente, casual y honesto", dramatico:"dramático y emocional fuerte", informativo:"informativo y educativo" }[tone] || tone || "directo";
+  // Default + soporte "nativo" (+400 palabras) y "nativo+500"
+  const lengthDesc = {
+    corto:"máximo 3 líneas (~25-40 palabras)",
+    medio:"4-6 líneas (~50-90 palabras)",
+    largo:"7-10 líneas (~100-160 palabras)",
+    nativo:"formato nativo Facebook: MÁS de 400 palabras, hook fuerte en la primera línea, varios párrafos cortos, storytelling completo, problema → agitación → solución → prueba social → CTA",
+  }[length] || "formato nativo Facebook: MÁS de 400 palabras, hook fuerte en la primera línea, varios párrafos, storytelling completo";
+  const formatDesc = { storytelling:"storytelling (problema → agitación → solución)", directo:"propuesta de valor directa", pregunta:"arranca con una pregunta al target", "pregunta-hook":"arranca con una pregunta hook al target", testimonial:"en primera persona como testimonio", "lista":"lista de beneficios numerados o con bullets", "lista de beneficios":"lista de beneficios numerados o con bullets", testimonio:"en primera persona como testimonio", "experto/medico":"voz de experto/médico explicando con autoridad", "ugc casual":"como UGC casual de cliente real" }[format] || format || "storytelling";
   const wMin = parseInt(word_min, 10);
   const wMax = parseInt(word_max, 10);
   const hasWordRange = !Number.isNaN(wMin) && !Number.isNaN(wMax) && wMin > 0 && wMax >= wMin;
-  const lengthLine = hasWordRange
-    ? `- Largo: entre ${wMin} y ${wMax} palabras EXACTAS (no menos, no más)`
+  // Si length === "nativo" y no hay rango explícito, forzamos mínimo 400
+  const isNativo = length === "nativo";
+  const effectiveMin = hasWordRange ? wMin : (isNativo ? 400 : 0);
+  const effectiveMax = hasWordRange ? wMax : (isNativo ? 700 : 0);
+  const lengthLine = effectiveMin > 0
+    ? `- Largo: entre ${effectiveMin} y ${effectiveMax} palabras (mínimo ${effectiveMin}, NO menos)`
     : `- Largo: ${lengthDesc}`;
   const userPrompt = [
     brand ? `## Contexto de marca:\n${brand}` : "",
-    product_data ? `## Data del producto (usar SI o SI):\n${product_data}` : "",
-    analysis ? `## Análisis del creativo:\n${JSON.stringify(analysis, null, 2)}` : `## Creativo: ${filename || "sin nombre"}`,
+    product_data ? `## Data específica del producto (usar SI o SI):\n${product_data}` : "",
+    url ? `## URL del producto (mencionar al final como CTA):\n${url}` : "",
+    analysis ? `## Análisis profundo del creativo (Gemini Vision):\n${JSON.stringify(analysis, null, 2)}` : `## Creativo: ${filename || "sin nombre"}`,
     `## Parámetros:\n- Tono: ${toneDesc}\n${lengthLine}\n- Formato: ${formatDesc}`,
-    notes ? `- Notas: ${notes}` : "",
-    `\nGenerá el copy siguiendo el formato JSON exacto.`,
-  ].filter(Boolean).join("\n");
+    notes ? `- Notas extra: ${notes}` : "",
+    `\nGenerá el copy según el JSON exacto. La PRIMERA línea = hook scroll-stopper.`,
+  ].filter(Boolean).join("\n\n");
   const payload = {
     system_instruction: { parts: [{ text: COPY_SYSTEM }] },
     contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    generationConfig: { response_mime_type: "application/json", temperature: 0.7, max_output_tokens: 600 },
+    generationConfig: { response_mime_type: "application/json", temperature: 0.7, max_output_tokens: 3000 },
   };
   const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -563,8 +613,18 @@ export default async function handler(req, res) {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const cfg = await loadMetaAccount(db, uid, acc_id);
       if (!cfg) return res.status(404).json({ error: "Cuenta no encontrada" });
-      const { ad_account_id, ad_account_name, page_id, page_name, page_access_token, ig_account_id, ig_username, pixel_id } = req.body || {};
-      const updated = { ...cfg, ad_account_id, ad_account_name, page_id, page_name, page_access_token, ig_account_id, ig_username, pixel_id };
+      const { ad_account_id, ad_account_name, page_id, page_name, page_access_token, ig_account_id, ig_username, pixel_id, currency, timezone_name } = req.body || {};
+      // Si no nos pasaron currency, intentamos pedírsela a Meta
+      let resolvedCurrency = currency;
+      let resolvedTz = timezone_name;
+      if (ad_account_id && (!resolvedCurrency || !resolvedTz)) {
+        try {
+          const info = await metaGet(ad_account_id, { fields: "currency,timezone_name" }, cfg.access_token);
+          if (!resolvedCurrency) resolvedCurrency = info.currency || "USD";
+          if (!resolvedTz) resolvedTz = info.timezone_name || null;
+        } catch (_) { if (!resolvedCurrency) resolvedCurrency = "USD"; }
+      }
+      const updated = { ...cfg, ad_account_id, ad_account_name, page_id, page_name, page_access_token, ig_account_id, ig_username, pixel_id, currency: resolvedCurrency || cfg.currency || "USD", timezone_name: resolvedTz || cfg.timezone_name || null };
       await saveMetaAccount(db, uid, acc_id, updated);
       await db.collection("users").doc(uid).set({ meta_active_account: acc_id }, { merge: true });
       return res.json({ ok: true, account: safeAccount(updated) });
@@ -1011,6 +1071,64 @@ export default async function handler(req, res) {
       return res.json({ ok: true, id: result.id, name: payload.name, campaign_id, start_time: start_time || null });
     }
 
+    // ── CREAR CAMPAÑA + N ADSETS DE UN SAQUE ─────────────
+    // POST { name, objective, mode: "abo"|"cbo", daily_budget, adsets: [{name, daily_budget, start_time}] }
+    // El budget va a nivel campaign si CBO, o por adset si ABO.
+    if (action === "create_full" && req.method === "POST") {
+      if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.ad_account_id) return res.status(400).json({ error: "Cuenta sin ad_account_id" });
+      const { name, objective, mode, daily_budget, adsets } = req.body || {};
+      if (!name?.trim()) return res.status(400).json({ error: "Falta nombre de campaña" });
+      if (!Array.isArray(adsets) || adsets.length === 0) return res.status(400).json({ error: "Necesitás al menos 1 adset" });
+      const isCbo = mode === "cbo";
+      // 1) Campaign
+      const campPayload = {
+        name: name.trim(),
+        objective: objective || "OUTCOME_SALES",
+        status: "PAUSED",
+        special_ad_categories: JSON.stringify([]),
+        buying_type: "AUCTION",
+      };
+      if (isCbo) {
+        const cbo = parseFloat(daily_budget);
+        if (!cbo || cbo <= 0) return res.status(400).json({ error: "CBO necesita presupuesto > 0" });
+        campPayload.daily_budget = String(Math.round(cbo * 100));
+        campPayload.bid_strategy = "LOWEST_COST_WITHOUT_CAP";
+      }
+      let campRes;
+      try { campRes = await metaPost(`${cfg.ad_account_id}/campaigns`, campPayload, cfg.access_token); }
+      catch (e) { return res.status(502).json({ error: `Falló crear campaña: ${e.message}` }); }
+      // 2) Adsets en cascada
+      const createdAdsets = [];
+      const adsetErrors = [];
+      for (const a of adsets) {
+        const adPayload = {
+          name: (a.name || "").trim() || `AdSet ${createdAdsets.length+1}`,
+          campaign_id: campRes.id,
+          billing_event: "IMPRESSIONS",
+          optimization_goal: "OFFSITE_CONVERSIONS",
+          status: "PAUSED",
+          targeting: JSON.stringify({ geo_locations: { countries: ["AR"] }, age_min: 25, age_max: 65, publisher_platforms: ["facebook","instagram"] }),
+        };
+        if (!isCbo) {
+          const b = parseFloat(a.daily_budget);
+          if (!b || b <= 0) { adsetErrors.push(`AdSet "${adPayload.name}": presupuesto inválido`); continue; }
+          adPayload.daily_budget = String(Math.round(b * 100));
+          adPayload.bid_strategy = "LOWEST_COST_WITHOUT_CAP";
+        }
+        if (a.start_time) adPayload.start_time = a.start_time;
+        if (cfg.pixel_id) adPayload.promoted_object = JSON.stringify({ pixel_id: cfg.pixel_id, custom_event_type: "PURCHASE" });
+        try {
+          const r = await metaPost(`${cfg.ad_account_id}/adsets`, adPayload, cfg.access_token);
+          createdAdsets.push({ id: r.id, name: adPayload.name, start_time: a.start_time || null });
+        } catch (e) {
+          adsetErrors.push(`AdSet "${adPayload.name}": ${e.message}`);
+        }
+      }
+      return res.json({ ok: true, campaign_id: campRes.id, campaign_name: campPayload.name, adsets: createdAdsets, errors: adsetErrors });
+    }
+
     // ── UPLOAD IMAGEN/VIDEO A META ────────────────────────
     // POST JSON { filename, contentType, data_base64 } — el cliente lo lee como FileReader y manda base64.
     // Devuelve { kind, url, hash (img), id (video) }
@@ -1054,67 +1172,137 @@ export default async function handler(req, res) {
     }
 
     // ── ANALIZAR CREATIVE CON GEMINI VISION ───────────────
-    // POST { cid } o { url } → analiza la imagen/video y devuelve análisis estructurado
+    // POST { cid?, url?, data_base64?, contentType?, filename?, auto_copy? }
+    // Soporta imagen Y video. Para video manda el cliente data_base64 (lo subimos a Gemini Files API).
+    // Si auto_copy=true (default true) y el creative no tiene copy, dispara generate_copy automáticamente.
     if (action === "analyze_creative" && req.method === "POST") {
-      const { cid: cidBody, url: urlBody } = req.body || {};
-      let imageUrl = urlBody;
+      const { cid: cidBody, url: urlBody, data_base64, contentType, filename, auto_copy } = req.body || {};
+      const apiKey = process.env.GOOGLE_AI_KEY;
+      if (!apiKey) return res.status(500).json({ error: "Falta GOOGLE_AI_KEY en env" });
+
       let creativeRef = null;
       if (cidBody) {
         const c = await loadCreative(db, uid, cidBody);
         if (!c) return res.status(404).json({ error: "Creativo no encontrado" });
-        imageUrl = c.url;
         creativeRef = c;
       }
-      if (!imageUrl) return res.status(400).json({ error: "Falta cid o url" });
-
-      const apiKey = process.env.GOOGLE_AI_KEY;
-      if (!apiKey) return res.status(500).json({ error: "Falta GOOGLE_AI_KEY en env" });
 
       try {
-        // Descargar imagen y convertir a base64 (Gemini soporta inline_data)
-        const imgRes = await fetch(imageUrl);
-        if (!imgRes.ok) return res.status(500).json({ error: `No se pudo descargar la imagen (HTTP ${imgRes.status})` });
-        const buf = Buffer.from(await imgRes.arrayBuffer());
-        const mime = imgRes.headers.get("content-type") || "image/jpeg";
-        const isImageMime = mime.startsWith("image/");
-        if (!isImageMime) return res.status(400).json({ error: `El análisis con IA soporta solo imágenes por ahora (recibí ${mime})` });
+        // Bytes + mime
+        let buf = null, mime = contentType || null;
+        if (data_base64) {
+          buf = Buffer.from(data_base64, "base64");
+          if (!mime) mime = (filename || "").match(/\.(mp4|mov|m4v|webm|avi)$/i) ? "video/mp4" : "image/jpeg";
+        } else if (creativeRef && creativeRef.url && !creativeRef.url.startsWith("meta-video://")) {
+          const r = await fetch(creativeRef.url);
+          if (!r.ok) return res.status(500).json({ error: `No se pudo descargar el creativo (HTTP ${r.status})` });
+          buf = Buffer.from(await r.arrayBuffer());
+          mime = r.headers.get("content-type") || mime || "image/jpeg";
+        } else if (urlBody) {
+          const r = await fetch(urlBody);
+          if (!r.ok) return res.status(500).json({ error: `No se pudo descargar la URL (HTTP ${r.status})` });
+          buf = Buffer.from(await r.arrayBuffer());
+          mime = r.headers.get("content-type") || mime || "image/jpeg";
+        } else {
+          return res.status(400).json({ error: "Falta cid+data_base64 (video) o cid con URL accesible (imagen)" });
+        }
 
-        const SYSTEM = `Sos un experto en Meta Ads de ecommerce argentino. Analizás creativos (imágenes) para que un copywriter pueda generar un anuncio efectivo. Devolvés SIEMPRE un JSON con esta estructura exacta:
+        const isVideo = (mime || "").startsWith("video/");
+        const isImage = (mime || "").startsWith("image/");
+        if (!isVideo && !isImage) return res.status(400).json({ error: `Tipo no soportado: ${mime}` });
+
+        // Contexto: brand + product_data + url + filename
+        const userSnap = await db.collection("users").doc(uid).get();
+        const brand = userSnap.data()?.meta_brand || "";
+        const productData = creativeRef?.product_data || "";
+        const link = creativeRef?.link || "";
+        const fname = filename || creativeRef?.filename || "";
+
+        // Media part: video → Files API; imagen → inline_data
+        let mediaPart;
+        if (isVideo) {
+          const file = await geminiUploadFileAndWait(apiKey, buf, mime, fname || "creative.mp4");
+          mediaPart = { file_data: { mime_type: mime, file_uri: file.uri } };
+        } else {
+          mediaPart = { inline_data: { mime_type: mime, data: buf.toString("base64") } };
+        }
+
+        const SYSTEM = `Sos un experto top en Meta Ads de ecommerce. Análisis PROFUNDO Y HONESTO de creativos (imagen o video) para que un copywriter genere un anuncio que CONVIERTA. Mirá todo: texto en pantalla, gestos, escenografía, paleta, ángulo emocional, demografía visual. Devolvé SOLO JSON con esta estructura exacta (no agregues claves extra ni backticks):
 {
-  "que_se_ve": "1-2 líneas describiendo qué muestra la imagen",
-  "producto_inferido": "qué producto/servicio parece estar promocionando",
-  "audiencia_target": "a quién apunta visualmente (edad, género, intereses, etapa de vida)",
-  "tono_visual": "tono que transmite la imagen (aspiracional, urgente, profesional, casual, etc.)",
-  "elementos_destacados": ["3-5 elementos visuales clave"],
-  "angulo_sugerido": "qué ángulo de copy aprovecharía mejor esta imagen",
-  "headline_sugerido": "headline corto (max 40 chars) que combine bien con esta imagen"
+  "angulo": "ángulo principal del creativo en 1 línea (qué historia/promesa/dolor cuenta)",
+  "target": "a quién apunta (edad, género, situación, dolor específico)",
+  "escena": "qué se ve / qué pasa en 2-3 líneas — incluí gestos, escenografía y elementos clave",
+  "transcripcion": "TODO el texto visible/dicho en el creativo (video: cada frase; imagen: cada palabra que se lee). String, no array.",
+  "angulos_detectados": ["3-6 ángulos comunicacionales fuertes que detectaste (ej: 'dolor crónico de tendones', 'autoridad médica', 'urgencia por edad')"],
+  "angulos_secundarios": ["2-4 ángulos secundarios que se podrían explotar"],
+  "tono_detectado": "1 palabra: directo | empático | dramático | informativo | ugc | experto | inspirador",
+  "sentiment_detectado": "1 palabra: esperanza | miedo | alegría | urgencia | confianza | curiosidad | empatía",
+  "headline_sugerido": "headline corto (max 60 chars) que pegue con este creativo"
 }`;
+
+        const userMsg = [
+          brand ? `## Contexto de marca:\n${brand}` : "",
+          productData ? `## Data del producto (este creativo):\n${productData}` : "",
+          link ? `## URL del ad: ${link}` : "",
+          fname ? `## Nombre del archivo: ${fname}` : "",
+          `Analizá PROFUNDAMENTE este ${isVideo ? "video" : "imagen"} y devolvé el JSON exacto.`,
+        ].filter(Boolean).join("\n\n");
+
         const payload = {
           system_instruction: { parts: [{ text: SYSTEM }] },
-          contents: [{ role: "user", parts: [
-            { inline_data: { mime_type: mime, data: buf.toString("base64") } },
-            { text: "Analizá esta imagen para usarla en un anuncio de Meta Ads. Devolvé el JSON." },
-          ] }],
-          generationConfig: { response_mime_type: "application/json", temperature: 0.4, max_output_tokens: 1200 },
+          contents: [{ role: "user", parts: [mediaPart, { text: userMsg }] }],
+          generationConfig: { response_mime_type: "application/json", temperature: 0.4, max_output_tokens: 2500 },
         };
 
         const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
         });
-        const data = await r.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        if (!text) return res.status(500).json({ error: "Gemini devolvió respuesta vacía" });
+        const dataResp = await r.json();
+        const text = dataResp.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (!text) return res.status(500).json({ error: "Gemini devolvió respuesta vacía", raw: dataResp });
         let cleaned = text;
         if (cleaned.includes("```")) { cleaned = cleaned.split("```")[1]; if (cleaned.startsWith("json")) cleaned = cleaned.slice(4); }
         const s = cleaned.indexOf("{"), e = cleaned.lastIndexOf("}");
         if (s >= 0 && e > s) cleaned = cleaned.slice(s, e + 1);
-        const analysis = JSON.parse(cleaned);
+        let analysis;
+        try { analysis = JSON.parse(cleaned); } catch (_) { return res.status(502).json({ error: "Gemini devolvió JSON inválido", raw: text.slice(0, 500) }); }
 
+        // Guardar análisis
+        let updatedRef = creativeRef;
         if (creativeRef) {
-          await saveCreative(db, uid, { ...creativeRef, analysis, ia_status: "analyzed" });
+          updatedRef = { ...creativeRef, analysis, ia_status: "analyzed" };
+          await saveCreative(db, uid, updatedRef);
         }
-        return res.json({ ok: true, analysis });
+
+        // Auto-fire copy si el creative no tiene copy todavía (default: true)
+        const wantsAutoCopy = auto_copy !== false;
+        let autoCopy = null;
+        if (wantsAutoCopy && updatedRef && !updatedRef.copy?.trim()) {
+          try {
+            const r2 = await geminiGenerateCopy({
+              brand,
+              analysis,
+              tone: updatedRef.tone || analysis?.tono_detectado || "directo",
+              length: updatedRef.length || "nativo",
+              format: updatedRef.format || "storytelling",
+              notes: updatedRef.notes || "",
+              filename: updatedRef.filename_base || fname,
+              word_min: updatedRef.word_min || "",
+              word_max: updatedRef.word_max || "",
+              product_data: productData,
+              url: link,
+            });
+            updatedRef = { ...updatedRef, copy: r2.copy, title: r2.title, description: r2.description, ia_status: "ok" };
+            await saveCreative(db, uid, updatedRef);
+            autoCopy = r2;
+          } catch (copyErr) {
+            console.error("[auto-copy] failed:", copyErr.message);
+          }
+        }
+
+        return res.json({ ok: true, analysis, auto_copy: autoCopy, creative: updatedRef });
       } catch (e) {
+        console.error("[analyze_creative] error:", e.message);
         return res.status(500).json({ error: e.message });
       }
     }
@@ -1168,10 +1356,10 @@ export default async function handler(req, res) {
       if (!c) return res.status(404).json({ error: "Creativo no encontrado" });
       const userSnap = await db.collection("users").doc(uid).get();
       const brand = userSnap.data()?.meta_brand || "";
-      const { tone, length, format, notes, word_min, word_max, product_data } = req.body || {};
-      const merged = { ...c, ...(tone && { tone }), ...(length && { length }), ...(format && { format }), ...(notes && { notes }), ...(word_min && { word_min }), ...(word_max && { word_max }), ...(product_data && { product_data }) };
+      const { tone, length, format, notes, word_min, word_max, product_data, url } = req.body || {};
+      const merged = { ...c, ...(tone && { tone }), ...(length && { length }), ...(format && { format }), ...(notes !== undefined && { notes }), ...(word_min && { word_min }), ...(word_max && { word_max }), ...(product_data !== undefined && { product_data }), ...(url !== undefined && { link: url }) };
       let result;
-      try { result = await geminiGenerateCopy({ brand, analysis: merged.analysis, tone: merged.tone, length: merged.length, format: merged.format, notes: merged.notes, filename: merged.filename_base, word_min: merged.word_min, word_max: merged.word_max, product_data: merged.product_data }); }
+      try { result = await geminiGenerateCopy({ brand, analysis: merged.analysis, tone: merged.tone, length: merged.length || "nativo", format: merged.format, notes: merged.notes, filename: merged.filename_base, word_min: merged.word_min, word_max: merged.word_max, product_data: merged.product_data, url: merged.link }); }
       catch (e) { return res.status(502).json({ error: e.message }); }
       const updated = { ...merged, copy: result.copy, title: result.title, description: result.description, ia_status: "ok" };
       await saveCreative(db, uid, updated);

@@ -8284,6 +8284,7 @@ function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked}) {
       page_id: pg?.id || "", page_name: pg?.name || "",
       page_access_token: pg?.access_token || "",
       ig_account_id: ig?.id || "", ig_username: ig?.username || "",
+      currency: aa?.currency || "", timezone_name: aa?.timezone_name || "",
     }, {acc_id: accId});
     setSaving(false);
     if (d.error) { alert("Error: " + d.error); return; }
@@ -8477,7 +8478,7 @@ function RuleEditor({T, initialRule, onSave, onCancel}) {
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18,padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
           <div style={{flex:1}}>
             <div style={{fontSize:12,fontWeight:600,color:T.text}}>Regla activa</div>
-            <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{active ? "Se evaluará automáticamente cada 6 hs y aplicará la acción cuando se cumpla." : "Está pausada — no se evalúa hasta que la actives."}</div>
+            <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{active ? "Se evaluará automáticamente cada 30 minutos y aplicará la acción cuando se cumpla." : "Está pausada — no se evalúa hasta que la actives."}</div>
           </div>
           <div onClick={()=>setActive(a=>!a)} style={{width:44,height:24,borderRadius:20,background:active?T.green:T.borderL,cursor:"pointer",position:"relative",transition:"background 0.2s",flexShrink:0}}>
             <div style={{position:"absolute",top:3,left:active?22:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.3)"}}/>
@@ -8507,9 +8508,14 @@ function AppMetaAds({T, user, onHome}) {
     {id:"OUTCOME_AWARENESS",label:"Reconocimiento"},
   ];
   const CTAS=["LEARN_MORE","SHOP_NOW","SIGN_UP","GET_OFFER","ORDER_NOW","BUY_NOW","CONTACT_US","WHATSAPP_MESSAGE"];
-  const TONOS=["directo","emocional","urgencia","educativo"];
-  const LARGOS=["corto","medio","largo"];
-  const FORMATOS=["storytelling","directo","pregunta","testimonial"];
+  const CTAS_LABELS={LEARN_MORE:"Más información",SHOP_NOW:"Comprar ahora",SIGN_UP:"Suscribirse",GET_OFFER:"Obtener oferta",ORDER_NOW:"Pedir ahora",BUY_NOW:"Comprar",CONTACT_US:"Contactar",WHATSAPP_MESSAGE:"WhatsApp"};
+  const TONOS=["directo","empático","experto","ugc","dramático","informativo","inspirador"];
+  const LARGOS=[{id:"corto",label:"Corto"},{id:"medio",label:"Medio"},{id:"largo",label:"Largo"},{id:"nativo",label:"Nativo +500"}];
+  const FORMATOS=["storytelling","pregunta-hook","lista de beneficios","testimonio","experto/médico","ugc casual"];
+  // Símbolo de moneda según la cuenta publicitaria activa
+  function currencySymbol(code) {
+    return ({ARS:"$",USD:"US$",BRL:"R$",MXN:"MX$",EUR:"€",CLP:"CLP$",PEN:"S/",UYU:"$U",COP:"COL$",GBP:"£"})[code] || code || "$";
+  }
 
   const [tab,setTab]=useState("analisis");
   const [loading,setLoading]=useState(true);
@@ -8591,7 +8597,7 @@ function AppMetaAds({T, user, onHome}) {
   const [brand,setBrand]=useState("");
   const [brandSaving,setBrandSaving]=useState(false);
 
-  // Publicar: destino del ad
+  // Publicar: destino del ad (flujo viejo, todavía usado para crear campaña inline)
   const [pubDest,setPubDest]=useState("existing"); // existing | newCamp
   const [pubForm,setPubForm]=useState({
     camp_name:"",
@@ -8602,6 +8608,31 @@ function AppMetaAds({T, user, onHome}) {
     adset_name:"",
   });
   const [pubCreating,setPubCreating]=useState(false);
+
+  // ── Meta Ads Studio (rediseño Publicar tab) ───────────
+  const [studioMode,setStudioMode]=useState("shared"); // "shared" | "perAd"
+  const [sharedDest,setSharedDest]=useState({campaign_id:"",adset_id:"",link:"",cta:"LEARN_MORE"});
+  const [publishActiveByDefault,setPublishActiveByDefault]=useState(false);
+  const [bulkPublishing,setBulkPublishing]=useState(false);
+  const [bulkProgress,setBulkProgress]=useState({done:0,total:0,errors:[]});
+  const [showBrandEdit,setShowBrandEdit]=useState(false);
+  // Modal Nueva campaña + adsets
+  const [showNewCampModal,setShowNewCampModal]=useState(false);
+  const [showNewAdsetModal,setShowNewAdsetModal]=useState(false);
+  const [newCampMulti,setNewCampMulti]=useState({
+    name:`Campaña ${new Date().toLocaleDateString("es-AR")}`,
+    objective:"OUTCOME_SALES",
+    mode:"abo", // "abo" | "cbo"
+    daily_budget:"5000",
+    adsets:[{name:`AdSet 1 · ${new Date().toLocaleDateString("es-AR")}`,daily_budget:"3000",start_time:""}],
+  });
+  const [creatingMulti,setCreatingMulti]=useState(false);
+  const [newAdsetForm,setNewAdsetForm]=useState({campaign_id:"",name:"",daily_budget:"3000",start_time:""});
+  const [savingAdset,setSavingAdset]=useState(false);
+  // Drop zone state
+  const [dragOver,setDragOver]=useState(false);
+  // Picker desde biblioteca
+  const [showLibraryPicker,setShowLibraryPicker]=useState(false);
 
   const uid=user?.uid;
   const activeAcc=accounts.find(a=>a.id===activeAccId)||null;
@@ -8632,21 +8663,25 @@ function AppMetaAds({T, user, onHome}) {
     }).catch(()=>{}).finally(()=>setLoading(false));
   },[uid]);
 
-  // Auto-evaluación de reglas en background al entrar al módulo Meta.
-  // Si pasaron >6h desde la última eval, se dispara automaticamente.
-  // No requiere cron de Vercel ni nada externo — corre del lado del navegador.
+  // Auto-evaluación de reglas en background mientras se tiene abierto el modulo Meta.
+  // Frecuencia: cada 30 minutos. Estado por cuenta en localStorage.
+  // No requiere cron de Vercel — el cliente lo dispara.
   useEffect(()=>{
     if(!activeAccId) return;
     const key = `growith_meta_lasteval_${activeAccId}`;
-    const last = parseInt(localStorage.getItem(key) || "0");
-    const sixHours = 6 * 3600 * 1000;
-    if (Date.now() - last < sixHours) return;
-    // Dispara en background sin bloquear UI
-    metaApi("evaluate_rules","POST",null,{acc_id:activeAccId}).then(d=>{
-      if(d?.error) return;
-      localStorage.setItem(key, Date.now().toString());
-      if(d?.actions > 0) toast(`Auto-eval: ${d.actions} acción${d.actions===1?"":"es"} aplicada${d.actions===1?"":"s"}`,"success");
-    }).catch(()=>{});
+    const thirtyMin = 30 * 60 * 1000;
+    const fire = () => {
+      const last = parseInt(localStorage.getItem(key) || "0");
+      if (Date.now() - last < thirtyMin) return;
+      metaApi("evaluate_rules","POST",null,{acc_id:activeAccId}).then(d=>{
+        if(d?.error) return;
+        localStorage.setItem(key, Date.now().toString());
+        if(d?.actions > 0) toast(`Auto-eval: ${d.actions} acción${d.actions===1?"":"es"} aplicada${d.actions===1?"":"s"}`,"success");
+      }).catch(()=>{});
+    };
+    fire();
+    const t = setInterval(fire, thirtyMin);
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[activeAccId]);
 
@@ -8820,6 +8855,7 @@ function AppMetaAds({T, user, onHome}) {
         page_id:pg.id, page_name:pg.name||"",
         page_access_token:pg.access_token||tokenInput.trim(),
         ig_account_id:ig?.id||"", ig_username:ig?.username||"",
+        currency:aa.currency||"", timezone_name:aa.timezone_name||"",
       },{acc_id:d.id});
       if(s.error){toast(s.error,"error");setConnecting(false);return;}
       const newAcc={...d.account,...(s.account||{})};
@@ -8848,6 +8884,7 @@ function AppMetaAds({T, user, onHome}) {
       page_id:selPage||"", page_name:pg?.name||"",
       page_access_token:pg?.access_token||tokenInput||"",
       ig_account_id:ig?.id||"", ig_username:ig?.username||"",
+      currency:aa?.currency||"", timezone_name:aa?.timezone_name||"",
     },{acc_id:connectData.id});
     if(d.error){toast(d.error,"error");setSavingSetup(false);return;}
     setAccounts(prev=>[...prev.filter(a=>a.id!==connectData.id),{...connectData,...(d.account||{})}]);
@@ -8916,7 +8953,7 @@ function AppMetaAds({T, user, onHome}) {
     toast("Creativo agregado ✓","success");
   }
 
-  // Sube archivo a Meta (/adimages o /advideos) y crea el creative en Growith
+  // Sube archivo a Meta y dispara analisis+copy automatico con Gemini
   async function handleUploadFile(file) {
     if(!file) return;
     if(!activeAccId) return toast("Conectá una cuenta Meta primero","warning");
@@ -8924,7 +8961,7 @@ function AppMetaAds({T, user, onHome}) {
     if(file.size > MAX) return toast(`Archivo muy grande (max 40MB, tiene ${(file.size/1024/1024).toFixed(1)}MB)`,"error");
     setUploadingFile(true);
     try {
-      // Convertir a base64
+      // Convertir a base64 (lo usamos para Meta Y para Gemini Vision si es video)
       const data_base64 = await new Promise((res,rej)=>{
         const reader = new FileReader();
         reader.onload = () => res(String(reader.result).split(",")[1]);
@@ -8934,34 +8971,41 @@ function AppMetaAds({T, user, onHome}) {
       // Subir a Meta
       const up = await metaApi("upload_to_meta","POST",{filename:file.name, contentType:file.type, data_base64},{acc_id:activeAccId});
       if(up.error){toast("Error subiendo a Meta: "+up.error,"error");setUploadingFile(false);return;}
-      // Crear creative en Growith con la URL/hash
+      // Crear creative en Growith con la URL/hash + link compartido si hay shared dest
       const fileUrl = up.url || (up.id ? `meta-video://${up.id}` : "");
       const cr = await metaApi("add_creative","POST",{filename:file.name, kind:up.kind, url:fileUrl, size:file.size},{acc_id:activeAccId});
       if(cr.error){toast("Error guardando creative: "+cr.error,"error");setUploadingFile(false);return;}
-      // Guardar también el hash/id de Meta en el creative
       const cWithMeta = {...cr.creative, meta_hash: up.hash || null, meta_video_id: up.id || null};
-      await metaApi("patch_creative","PATCH",{analysis:null},{cid:cWithMeta.id}); // toca la entrada
-      setCreatives(prev=>[cWithMeta,...prev]);
-      setSelCreative(cWithMeta);
-      toast(`Subido ✓ (${up.kind})`,"success");
-      // Si es imagen, disparar análisis IA automáticamente
-      if(up.kind === "image") {
-        handleAnalyzeCreative(cWithMeta);
+      // Si está en modo shared, pre-asignamos el link/cta para que después se publique con eso
+      if (studioMode === "shared" && (sharedDest.link || sharedDest.cta)) {
+        await metaApi("patch_creative","PATCH",{link:sharedDest.link||"", cta:sharedDest.cta||"LEARN_MORE"},{cid:cWithMeta.id});
+        cWithMeta.link = sharedDest.link || "";
+        cWithMeta.cta = sharedDest.cta || "LEARN_MORE";
       }
+      setCreatives(prev=>[cWithMeta,...prev]);
+      toast(`Subido ✓ (${up.kind === "video" ? "video" : "imagen"})`,"success");
+      // Disparar análisis IA + auto-copy en background (sin await)
+      handleAnalyzeCreative(cWithMeta, { data_base64, contentType: file.type });
     } catch(e){
       toast("Error: "+(e.message||"upload falló"),"error");
     } finally { setUploadingFile(false); }
   }
 
-  async function handleAnalyzeCreative(c) {
+  // analyze_creative ahora soporta video (mandando base64) y auto-genera copy en el backend
+  async function handleAnalyzeCreative(c, opts = {}) {
     if(!c?.id) return;
     setAnalyzingCreative(c.id);
     try {
-      const d = await metaApi("analyze_creative","POST",{cid:c.id});
-      if(d.error){toast("Error IA: "+d.error,"error");return;}
-      setCreatives(prev=>prev.map(x=>x.id===c.id?{...x, analysis:d.analysis, ia_status:"analyzed"}:x));
-      if(selCreative?.id === c.id) setSelCreative(prev=>({...prev, analysis:d.analysis, ia_status:"analyzed"}));
-      toast("Análisis listo ✓","success");
+      const body = { cid: c.id, auto_copy: true };
+      if (opts.data_base64) body.data_base64 = opts.data_base64;
+      if (opts.contentType) body.contentType = opts.contentType;
+      if (c.filename) body.filename = c.filename;
+      const d = await metaApi("analyze_creative","POST",body);
+      if(d.error){ toast("Error IA: "+d.error,"error"); return; }
+      const updated = d.creative || { ...c, analysis: d.analysis, ia_status: d.auto_copy ? "ok" : "analyzed", ...(d.auto_copy ? { copy: d.auto_copy.copy, title: d.auto_copy.title, description: d.auto_copy.description } : {}) };
+      setCreatives(prev=>prev.map(x=>x.id===c.id?updated:x));
+      if(selCreative?.id === c.id) setSelCreative(updated);
+      toast(d.auto_copy ? "Análisis + copy ✓" : "Análisis listo ✓","success");
     } finally { setAnalyzingCreative(null); }
   }
 
@@ -8983,6 +9027,126 @@ function AppMetaAds({T, user, onHome}) {
     if(d.error){toast(d.error,"error");return;}
     setCreatives(prev=>prev.map(x=>x.id===c.id?d.creative:x));
     setSelCreative(d.creative);
+  }
+
+  // ── Studio: subida múltiple (drag-drop o file picker con multiple) ────
+  async function handleUploadMultiple(fileList) {
+    if (!fileList || fileList.length === 0) return;
+    if (!activeAccId) return toast("Conectá una cuenta Meta primero","warning");
+    for (const f of Array.from(fileList)) {
+      await handleUploadFile(f); // secuencial para no saturar Meta
+    }
+  }
+
+  // ── Studio: crear campaña + N adsets (con bulk endpoint create_full) ──
+  async function handleCreateCampaignMulti() {
+    if (!newCampMulti.name.trim()) return toast("Poné nombre de campaña","warning");
+    if (!Array.isArray(newCampMulti.adsets) || newCampMulti.adsets.length === 0) return toast("Agregá al menos un AdSet","warning");
+    if (newCampMulti.mode === "cbo" && (!newCampMulti.daily_budget || parseFloat(newCampMulti.daily_budget) <= 0)) return toast("CBO necesita presupuesto","warning");
+    if (newCampMulti.mode === "abo") {
+      for (const a of newCampMulti.adsets) {
+        if (!a.daily_budget || parseFloat(a.daily_budget) <= 0) return toast(`AdSet "${a.name||"sin nombre"}" sin presupuesto`,"warning");
+      }
+    }
+    setCreatingMulti(true);
+    try {
+      const body = {
+        name: newCampMulti.name.trim(),
+        objective: newCampMulti.objective,
+        mode: newCampMulti.mode,
+        daily_budget: newCampMulti.mode === "cbo" ? newCampMulti.daily_budget : "",
+        adsets: newCampMulti.adsets.map(a => ({
+          name: a.name?.trim() || "",
+          daily_budget: a.daily_budget || "",
+          start_time: a.start_time || "",
+        })),
+      };
+      const d = await metaApi("create_full","POST",body,{acc_id:activeAccId});
+      if (d.error) { toast("Error: "+d.error,"error"); setCreatingMulti(false); return; }
+      const adsetCount = d.adsets?.length || 0;
+      toast(`Campaña "${d.campaign_name}" + ${adsetCount} AdSet${adsetCount===1?"":"s"} ✓`,"success");
+      if (d.errors?.length) toast(d.errors.join(" · "),"warning");
+      // Auto-seleccionar la campaña y el primer adset creado en shared dest
+      if (d.campaign_id) {
+        setSharedDest(p=>({...p, campaign_id:d.campaign_id, adset_id: d.adsets?.[0]?.id || ""}));
+      }
+      setShowNewCampModal(false);
+      loadCampaigns();
+    } catch (e) {
+      toast("Error: "+(e.message||"falló"),"error");
+    } finally { setCreatingMulti(false); }
+  }
+
+  // ── Studio: crear adset en campaña existente ──
+  async function handleCreateAdsetOnly() {
+    if (!newAdsetForm.campaign_id) return toast("Elegí una campaña","warning");
+    if (!newAdsetForm.name.trim()) return toast("Poné nombre de AdSet","warning");
+    setSavingAdset(true);
+    try {
+      const camp = campaigns.find(c=>c.id===newAdsetForm.campaign_id);
+      const isCbo = camp && Number(camp.daily_budget) > 0;
+      const d = await metaApi("create_adset","POST",{
+        name: newAdsetForm.name.trim(),
+        campaign_id: newAdsetForm.campaign_id,
+        is_cbo: isCbo,
+        daily_budget_ars: isCbo ? "" : newAdsetForm.daily_budget,
+        start_time: newAdsetForm.start_time || "",
+      },{acc_id:activeAccId});
+      if (d.error) { toast(d.error,"error"); setSavingAdset(false); return; }
+      toast(`AdSet "${d.name}" creado ✓`,"success");
+      setSharedDest(p=>({...p, campaign_id:newAdsetForm.campaign_id, adset_id:d.id}));
+      setShowNewAdsetModal(false);
+      loadCampaigns();
+    } finally { setSavingAdset(false); }
+  }
+
+  // ── Studio: publicar todos los creatives en cola con el shared dest ──
+  async function handleBulkPublish() {
+    if (studioMode === "shared") {
+      if (!sharedDest.adset_id) return toast("Elegí o creá un AdSet","warning");
+      if (!sharedDest.link?.trim()) return toast("Falta URL destino","warning");
+    }
+    const queue = creatives.filter(c => c.copy?.trim() && (studioMode === "perAd" ? c.adset_id : true));
+    if (queue.length === 0) return toast("No hay creativos con copy listos para publicar","warning");
+    if (!window.confirm(`Publicar ${queue.length} ad${queue.length===1?"":"s"} en Meta ${publishActiveByDefault?"ACTIVE":"PAUSED"}?`)) return;
+    setBulkPublishing(true);
+    setBulkProgress({done:0,total:queue.length,errors:[]});
+    const errs = [];
+    for (let i = 0; i < queue.length; i++) {
+      const c = queue[i];
+      const adsetId = studioMode === "shared" ? sharedDest.adset_id : c.adset_id;
+      const link = studioMode === "shared" ? sharedDest.link : c.link;
+      const cta = studioMode === "shared" ? sharedDest.cta : (c.cta || "LEARN_MORE");
+      try {
+        if (studioMode === "shared") {
+          await metaApi("patch_creative","PATCH",{adset_id:adsetId,link,cta},{cid:c.id});
+        }
+        const d = await metaApi("publish","POST",{creative_id:c.id, activate: publishActiveByDefault, default_link: link, default_cta: cta},{acc_id:activeAccId});
+        if (d.error) errs.push(`${c.filename}: ${d.error}`);
+      } catch (e) { errs.push(`${c.filename}: ${e.message}`); }
+      setBulkProgress({done:i+1,total:queue.length,errors:errs});
+    }
+    setBulkPublishing(false);
+    if (errs.length === 0) toast(`${queue.length} ads publicados ✓`,"success");
+    else toast(`${queue.length-errs.length}/${queue.length} ok, ${errs.length} con error`,"warning");
+  }
+
+  // ── Studio: limpiar cola (borra creatives de Growith) ──
+  async function handleClearQueue() {
+    if (!creatives.length) return;
+    if (!window.confirm(`Borrar los ${creatives.length} creativos de la cola? (no afecta los ya publicados en Meta)`)) return;
+    for (const c of creatives) {
+      try { await fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${c.id}`,{method:"DELETE"}); } catch (_) {}
+    }
+    setCreatives([]);
+    setSelCreative(null);
+  }
+
+  // ── Studio: borrar un solo creative de la cola ──
+  async function handleDeleteCreative(c) {
+    try { await fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${c.id}`,{method:"DELETE"}); } catch (_) {}
+    setCreatives(prev => prev.filter(x => x.id !== c.id));
+    if (selCreative?.id === c.id) setSelCreative(null);
   }
 
   // Crea Campaña + AdSet inline desde el Publicador, y asigna el adset al creative
@@ -9549,7 +9713,7 @@ function AppMetaAds({T, user, onHome}) {
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>Reglas de optimización</div>
-                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Se auto-evalúan cada 6 hs mientras tengas Growith abierto. También podés disparar manualmente.</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Se auto-evalúan cada 30 minutos mientras tengas Growith abierto. También podés disparar manualmente.</div>
                   </div>
                   <div style={{display:"flex",gap:8}}>
                     <button onClick={evaluateRulesNow} disabled={evaluatingNow||rules.filter(r=>r.active).length===0} style={{padding:"8px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:evaluatingNow?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
@@ -9630,12 +9794,12 @@ function AppMetaAds({T, user, onHome}) {
                     ⏰ ¿Querés que las reglas se evalúen aunque no abras Growith?
                   </summary>
                   <div style={{padding:"0 16px 16px",fontSize:12,color:T.textMd,lineHeight:1.7}}>
-                    Hoy las reglas se evalúan automáticamente <strong style={{color:T.text}}>cada 6 horas cuando entrás a Meta Ads</strong> en Growith. Si querés que corran 24/7 sin tener que abrir la app, configurá un cron externo gratis:
+                    Hoy las reglas se evalúan automáticamente <strong style={{color:T.text}}>cada 30 minutos cuando entrás a Meta Ads</strong> en Growith. Si querés que corran 24/7 sin tener que abrir la app, configurá un cron externo gratis:
                     <ol style={{margin:"10px 0",paddingLeft:18}}>
                       <li>Andá a <a href="https://cron-job.org" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>cron-job.org</a> y crea una cuenta gratis</li>
                       <li>Click en <strong style={{color:T.text}}>"Create cronjob"</strong></li>
                       <li>URL: <code style={{background:T.surface,padding:"2px 6px",borderRadius:4,fontSize:11,color:T.accent,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/meta?action=evaluate_rules&uid=${uid}&acc_id=${activeAccId||"TU_ACC_ID"}`}</code></li>
-                      <li>Schedule: cada 6 horas (o lo que prefieras)</li>
+                      <li>Schedule: cada 30 minutos</li>
                       <li>Method: <strong style={{color:T.text}}>POST</strong></li>
                       <li>Guardar</li>
                     </ol>
@@ -9827,6 +9991,427 @@ function AppMetaAds({T, user, onHome}) {
 
         {/* ── CREATIVOS ────────────────────────────────── */}
         {tab==="creativos"&&(
+          !activeAcc
+          ? <div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero</div>
+          : (() => {
+            const cur = currencySymbol(activeAcc?.currency);
+            const curCode = activeAcc?.currency || "USD";
+            const queueWithCopy = creatives.filter(c => c.copy?.trim());
+            const dotFor = (status) => status === "ACTIVE" ? "🟢" : "⏸";
+            const SectionHeader = ({n,title}) => (
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                <div style={{width:30,height:30,borderRadius:8,background:`linear-gradient(135deg, ${T.accent}, ${T.blue||T.accentSolid})`,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:14}}>{n}</div>
+                <div style={{fontSize:11,fontWeight:700,letterSpacing:1.2,color:T.textSm,textTransform:"uppercase"}}>{title}</div>
+              </div>
+            );
+            const ConfigCard = ({icon,label,value,sub}) => {
+              const filled = Boolean(value);
+              return (
+                <div style={{background:T.card,border:`2px solid ${filled?T.green+"66":T.border}`,borderRadius:12,padding:"14px 16px",minHeight:78,boxShadow:filled?`0 0 0 1px ${T.green}22`:"none"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>{icon} {label}</div>
+                  <div style={{fontSize:12,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value || <span style={{color:T.textSm}}>— sin asignar —</span>}</div>
+                  {sub && <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</div>}
+                </div>
+              );
+            };
+            return (
+            <div>
+              {/* Studio Header */}
+              <div style={{marginBottom:24}}>
+                <h1 style={{fontSize:38,fontWeight:800,margin:0,letterSpacing:-1,background:`linear-gradient(90deg, ${T.text}, ${T.accent}, ${T.blue||"#3b82f6"}, #ec4899)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>Meta Ads <span style={{fontWeight:800}}>Studio</span></h1>
+                <div style={{fontSize:13,color:T.textMd,marginTop:8}}>📘 Facebook conectado: <strong style={{color:T.text}}>{activeAcc?.user_name || "—"}</strong></div>
+              </div>
+
+              {/* ── Sección 1: CONFIGURACIÓN ACTIVA ─────────── */}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+                <SectionHeader n="1" title="Configuración activa"/>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:14}}>
+                  <ConfigCard icon="📊" label="Cuenta publicitaria" value={`${activeAcc?.ad_account_name||""} (${curCode})`} sub={activeAcc?.ad_account_id}/>
+                  <ConfigCard icon="📘" label="Página Facebook" value={activeAcc?.page_name} sub={activeAcc?.page_id}/>
+                  <ConfigCard icon="📸" label="Instagram" value={activeAcc?.ig_username ? `@${activeAcc.ig_username}` : ""} sub={activeAcc?.ig_account_id}/>
+                  <ConfigCard icon="🎯" label="Píxel" value={activeAcc?.pixel_id ? "Conectado" : ""} sub={activeAcc?.pixel_id}/>
+                </div>
+                <button onClick={()=>setTab("cuenta")} style={BtnSec}>Cambiar recursos</button>
+              </div>
+
+              {/* ── Sección 2: MARCA Y PRODUCTOS ─────────────── */}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+                <SectionHeader n="2" title="Marca y productos"/>
+                {!showBrandEdit ? (
+                  brand?.trim() ? (
+                    <div style={{background:T.surface,border:`1px solid ${T.green}33`,borderRadius:10,padding:"14px 16px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                        <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,letterSpacing:0.5}}>✓ CONFIGURADO</span>
+                        <span style={{fontSize:11,color:T.textSm}}>{(new Blob([brand]).size/1024).toFixed(1)} KB</span>
+                      </div>
+                      <div style={{fontSize:12,fontFamily:"monospace",color:T.textMd,lineHeight:1.55,maxHeight:60,overflow:"hidden",position:"relative"}}>
+                        {brand.slice(0,260)}{brand.length>260?" …":""}
+                      </div>
+                      <div style={{textAlign:"right",marginTop:10}}>
+                        <button onClick={()=>setShowBrandEdit(true)} style={BtnSec}>✏️ Editar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{textAlign:"center",padding:30,border:`1px dashed ${T.border}`,borderRadius:10}}>
+                      <div style={{fontSize:13,color:T.textMd,marginBottom:12,lineHeight:1.6}}>Todavía no cargaste el contexto de marca. Gemini necesita saber qué vendés para escribir el copy.</div>
+                      <button onClick={()=>setShowBrandEdit(true)} style={BtnPri}>+ Configurar marca</button>
+                    </div>
+                  )
+                ) : (
+                  <div>
+                    <textarea value={brand} onChange={e=>setBrand(e.target.value)} placeholder="Producto, beneficios principales, target, precio, USP, link, etc."
+                      style={{...iS,minHeight:200,resize:"vertical",lineHeight:1.6,marginBottom:10,fontFamily:"monospace",fontSize:12}}/>
+                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                      <button onClick={()=>setShowBrandEdit(false)} style={BtnSec}>Cancelar</button>
+                      <button onClick={async()=>{await handleSaveBrand(); setShowBrandEdit(false);}} disabled={brandSaving} style={BtnPri}>
+                        {brandSaving?<><Spinner size={12} color="#fff"/>Guardando...</>:"💾 Guardar"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Sección 3: PUBLICAR ADS ──────────────────── */}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+                <SectionHeader n="3" title="Publicar ads"/>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos. Gemini analiza cada uno (imagen o video) y escribe el copy usando el contexto de tu marca.</div>
+
+                {/* Mode toggle */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
+                  {[
+                    {id:"shared",icon:"📌",title:"Mismo destino para todos",sub:"campaña, AdSet, link y CTA compartidos"},
+                    {id:"perAd",icon:"🎯",title:"Distinto por ad",sub:"cada ad su propia campaña y link"},
+                  ].map(m => (
+                    <button key={m.id} onClick={()=>setStudioMode(m.id)} style={{textAlign:"left",padding:"14px 16px",borderRadius:10,border:`2px solid ${studioMode===m.id?T.green+"99":T.border}`,background:studioMode===m.id?T.green+"10":"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>{m.icon} {m.title}</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{m.sub}</div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Shared destination fields */}
+                {studioMode==="shared" && (
+                  <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"14px 16px",marginBottom:14}}>
+                    {/* Campaña */}
+                    <div style={{display:"grid",gridTemplateColumns:"110px 1fr auto",gap:10,alignItems:"center",marginBottom:10}}>
+                      <span style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase"}}>Campaña</span>
+                      <select value={sharedDest.campaign_id} onChange={e=>setSharedDest(p=>({...p,campaign_id:e.target.value,adset_id:""}))} style={iS}>
+                        <option value="">— Elegí una campaña —</option>
+                        {campaigns.map(c=>(<option key={c.id} value={c.id}>{dotFor(c.effective_status)} {c.name}</option>))}
+                      </select>
+                      <button onClick={()=>{loadCampaigns(); setShowNewCampModal(true);}} style={BtnSec}>+ Campaña</button>
+                    </div>
+                    {/* AdSet */}
+                    <div style={{display:"grid",gridTemplateColumns:"110px 1fr auto",gap:10,alignItems:"center",marginBottom:10}}>
+                      <span style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase"}}>AdSet</span>
+                      <select value={sharedDest.adset_id} onChange={e=>setSharedDest(p=>({...p,adset_id:e.target.value}))} style={iS} disabled={!sharedDest.campaign_id}>
+                        <option value="">— Elegí un AdSet —</option>
+                        {adsets.filter(a=>!sharedDest.campaign_id || a.campaign_id===sharedDest.campaign_id).map(a=>(<option key={a.id} value={a.id}>{dotFor(a.effective_status)} {a.name}</option>))}
+                      </select>
+                      <button onClick={()=>{setNewAdsetForm(p=>({...p,campaign_id:sharedDest.campaign_id||""})); setShowNewAdsetModal(true);}} style={BtnSec} disabled={!sharedDest.campaign_id}>+ AdSet</button>
+                    </div>
+                    {/* URL destino */}
+                    <div style={{display:"grid",gridTemplateColumns:"110px 1fr",gap:10,alignItems:"center",marginBottom:10}}>
+                      <span style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase"}}>URL destino</span>
+                      <input value={sharedDest.link} onChange={e=>setSharedDest(p=>({...p,link:e.target.value}))} placeholder="https://..." style={iS}/>
+                    </div>
+                    {/* CTA */}
+                    <div style={{display:"grid",gridTemplateColumns:"110px 1fr",gap:10,alignItems:"center"}}>
+                      <span style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase"}}>CTA</span>
+                      <select value={sharedDest.cta} onChange={e=>setSharedDest(p=>({...p,cta:e.target.value}))} style={iS}>
+                        {CTAS.map(c=><option key={c} value={c}>{CTAS_LABELS[c]||c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Upload buttons */}
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  <label style={{...BtnPri,padding:"8px 14px",cursor:uploadingFile?"wait":"pointer",margin:0,background:"transparent",color:T.green,border:`1px solid ${T.green}66`}}>
+                    {uploadingFile?<><Spinner size={12} color={T.green}/> Subiendo...</>:"📤 Subir nuevo"}
+                    <input type="file" accept="image/*,video/*" multiple disabled={uploadingFile} style={{display:"none"}} onChange={e=>{const fs=e.target.files; if(fs?.length){handleUploadMultiple(fs); e.target.value="";}}}/>
+                  </label>
+                  <button onClick={()=>setShowLibraryPicker(s=>!s)} style={BtnSec}>📚 De biblioteca</button>
+                </div>
+
+                {/* Drop zone */}
+                <div
+                  onDragOver={e=>{e.preventDefault(); setDragOver(true);}}
+                  onDragLeave={e=>{e.preventDefault(); setDragOver(false);}}
+                  onDrop={e=>{e.preventDefault(); setDragOver(false); if(e.dataTransfer.files?.length) handleUploadMultiple(e.dataTransfer.files);}}
+                  onClick={()=>document.getElementById("growith-studio-fallback-input")?.click()}
+                  style={{border:`2px dashed ${dragOver?T.green:T.borderL}`,borderRadius:12,padding:"40px 20px",textAlign:"center",cursor:"pointer",background:dragOver?T.green+"08":"transparent",transition:"all 0.15s",marginBottom:16}}>
+                  <input id="growith-studio-fallback-input" type="file" accept="image/*,video/*" multiple style={{display:"none"}} onChange={e=>{const fs=e.target.files; if(fs?.length){handleUploadMultiple(fs); e.target.value="";}}}/>
+                  <div style={{fontSize:32,marginBottom:6}}>📥</div>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:4}}>Arrastrá tus creativos acá</div>
+                  <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>o tocá para elegir desde tu Mac</div>
+                  <div style={{fontSize:10,color:T.textSm,letterSpacing:0.3}}>.mp4 · .mov · .jpg · .png — sin límite, uno por ad</div>
+                </div>
+
+                {/* Library picker */}
+                {showLibraryPicker && (
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>Pegá una URL pública del archivo (ej. CDN, Drive público) — Growith lo trae a la cola.</div>
+                    <div style={{display:"flex",gap:6}}>
+                      <input value={newCUrl} onChange={e=>setNewCUrl(e.target.value)} placeholder="https://..." style={{...iS,flex:2}}/>
+                      <input value={newCName} onChange={e=>setNewCName(e.target.value)} placeholder="nombre.jpg" style={{...iS,flex:1}}/>
+                      <select value={newCKind} onChange={e=>setNewCKind(e.target.value)} style={{...iS,width:100}}>
+                        <option value="image">Imagen</option>
+                        <option value="video">Video</option>
+                      </select>
+                      <button onClick={async()=>{await handleAddCreative(); setShowLibraryPicker(false);}} style={BtnPri}>+</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Queue */}
+                {creatives.length > 0 && (
+                  <>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                      <div style={{fontSize:11,color:T.textSm,fontWeight:700,letterSpacing:0.6,textTransform:"uppercase"}}>{creatives.length} creativo{creatives.length===1?"":"s"} en cola</div>
+                      <button onClick={handleClearQueue} style={BtnSec}>Limpiar todo</button>
+                    </div>
+                    {creatives.map(c => (
+                      <div key={c.id} style={{background:T.surface,border:`1px solid ${selCreative?.id===c.id?T.green+"66":T.borderL}`,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
+                        {/* Top row: thumbnail + filename + badges + remove */}
+                        <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:10}}>
+                          <div style={{width:90,height:90,flexShrink:0,borderRadius:8,background:T.bg,border:`1px solid ${T.border}`,overflow:"hidden",position:"relative"}}>
+                            {c.url && c.kind === "image" && !c.url.startsWith("meta-video://")
+                              ? <img src={c.url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
+                              : <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:"100%",height:"100%",fontSize:28}}>{c.kind==="video"?"🎬":"🖼️"}</div>
+                            }
+                            <span style={{position:"absolute",bottom:4,left:4,fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(0,0,0,0.7)",color:"#fff",fontWeight:700,letterSpacing:0.3}}>{c.kind==="video"?"🎬 VID":"🖼️ IMG"}</span>
+                          </div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                              <span style={{fontSize:14,fontWeight:700,color:T.text,wordBreak:"break-all"}}>{c.filename}</span>
+                              {c.copy?.trim()
+                                ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
+                                : c.ia_status === "analyzed"
+                                  ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
+                                  : analyzingCreative===c.id
+                                    ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}><Spinner size={9} color={T.accent}/> Analizando…</span>
+                                    : <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,border:`1px solid ${T.border}`}}>PENDIENTE</span>
+                              }
+                            </div>
+                          </div>
+                          <button onClick={()=>handleDeleteCreative(c)} title="Quitar de la cola" style={{background:"transparent",border:"none",color:T.textSm,fontSize:18,cursor:"pointer",padding:"0 4px"}}>✕</button>
+                        </div>
+
+                        {/* Análisis profundo */}
+                        {c.analysis && (
+                          <div style={{padding:"12px 14px",background:T.card,border:`1px solid ${T.green}22`,borderRadius:10,marginBottom:10}}>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                              <div style={{fontSize:11,color:T.green,fontWeight:700,letterSpacing:0.4}}>👁 Gemini vio: {c.analysis.tono_detectado||"—"} · {c.analysis.sentiment_detectado||"—"}</div>
+                              <button onClick={()=>handleAnalyzeCreative(c)} disabled={analyzingCreative===c.id} style={{...BtnSec,fontSize:10,padding:"4px 9px"}}>{analyzingCreative===c.id?<><Spinner size={9}/> Re-analizando</>:"↻ Re-analizar"}</button>
+                            </div>
+                            <div style={{fontSize:12,lineHeight:1.6,color:T.textMd}}>
+                              <div><strong style={{color:T.text}}>Ángulo:</strong> {c.analysis.angulo}</div>
+                              <div><strong style={{color:T.text}}>Target:</strong> {c.analysis.target}</div>
+                              <div><strong style={{color:T.text}}>Escena:</strong> {c.analysis.escena}</div>
+                              {c.analysis.transcripcion && (
+                                <details style={{marginTop:6}}>
+                                  <summary style={{cursor:"pointer",fontSize:11,color:T.accent,fontWeight:600}}>▸ Transcripción / texto</summary>
+                                  <div style={{padding:"6px 0 0 12px",fontSize:11,color:T.textSm,whiteSpace:"pre-wrap"}}>{c.analysis.transcripcion}</div>
+                                </details>
+                              )}
+                              {Array.isArray(c.analysis.angulos_detectados)&&c.analysis.angulos_detectados.length>0 && (
+                                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
+                                  {c.analysis.angulos_detectados.map((a,i)=>(<span key={i} style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.green+"15",color:T.green,fontWeight:600,border:`1px solid ${T.green}33`}}>{a}</span>))}
+                                </div>
+                              )}
+                              {Array.isArray(c.analysis.angulos_secundarios)&&c.analysis.angulos_secundarios.length>0 && (
+                                <details style={{marginTop:8}}>
+                                  <summary style={{cursor:"pointer",fontSize:11,color:T.accent,fontWeight:600}}>▸ Ángulos secundarios</summary>
+                                  <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6}}>
+                                    {c.analysis.angulos_secundarios.map((a,i)=>(<span key={i} style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.border}`}}>{a}</span>))}
+                                  </div>
+                                </details>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Selectores de override */}
+                        <div style={{marginBottom:8}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                            <span style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.5,minWidth:60,textTransform:"uppercase"}}>Tono</span>
+                            <div style={{display:"flex",flexWrap:"wrap",gap:5,flex:1}}>
+                              {TONOS.map(t=>(
+                                <button key={t} onClick={()=>{const u={...c,tone:t};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));handlePatch(c,{tone:t});}} style={{padding:"4px 11px",fontSize:11,borderRadius:18,border:`1px solid ${c.tone===t?T.green+"99":T.border}`,background:c.tone===t?T.green+"15":"transparent",color:c.tone===t?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:c.tone===t?700:400}}>{t}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                            <span style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.5,minWidth:60,textTransform:"uppercase"}}>Largo</span>
+                            <div style={{display:"flex",flexWrap:"wrap",gap:5,flex:1}}>
+                              {LARGOS.map(L=>{
+                                const isSel = (c.length||"nativo")===L.id;
+                                return <button key={L.id} onClick={()=>{const u={...c,length:L.id};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));handlePatch(c,{length:L.id});}} style={{padding:"4px 11px",fontSize:11,borderRadius:18,border:`1px solid ${isSel?T.green+"99":T.border}`,background:isSel?T.green+"15":"transparent",color:isSel?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:isSel?700:400}}>{L.label}</button>;
+                              })}
+                            </div>
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <span style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.5,minWidth:60,textTransform:"uppercase"}}>Formato</span>
+                            <div style={{display:"flex",flexWrap:"wrap",gap:5,flex:1}}>
+                              {FORMATOS.map(f=>(
+                                <button key={f} onClick={()=>{const u={...c,format:f};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));handlePatch(c,{format:f});}} style={{padding:"4px 11px",fontSize:11,borderRadius:18,border:`1px solid ${c.format===f?T.green+"99":T.border}`,background:c.format===f?T.green+"15":"transparent",color:c.format===f?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:c.format===f?700:400,textTransform:"capitalize"}}>{f}</button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Notas */}
+                        <input value={c.notes||""} onChange={e=>{const u={...c,notes:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{notes:e.target.value})} placeholder="Notas extra opcionales (override / detalles que Gemini no vio)" style={{...iS,marginBottom:10,fontSize:12}}/>
+
+                        {/* Regenerar copy + explicación */}
+                        <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                          <button onClick={()=>handleGenerateCopy(c)} disabled={generatingCopy===c.id} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:`linear-gradient(135deg, ${T.accent}, ${T.purple||"#a855f7"})`,color:"#fff",cursor:generatingCopy===c.id?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
+                            {generatingCopy===c.id?<><Spinner size={12} color="#fff"/>Generando...</>:"♻ Regenerar copy"}
+                          </button>
+                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.55,flex:1}}>Gemini usa el ángulo que detectó del creativo + el estilo que elegiste. Si no querés esperar al análisis, podés tocar igual y la IA usa solo el nombre del archivo (ej: "anticelulitis prevenir video 1") como referencia.</div>
+                        </div>
+
+                        {/* Copy preview (si hay) */}
+                        {c.copy?.trim() && (
+                          <details style={{marginTop:12,background:T.card,border:`1px solid ${T.green}33`,borderRadius:8}} open>
+                            <summary style={{cursor:"pointer",padding:"8px 12px",fontSize:11,color:T.green,fontWeight:700,letterSpacing:0.4}}>📝 COPY GENERADO ({c.copy.split(/\s+/).filter(Boolean).length} palabras) — click para editar</summary>
+                            <div style={{padding:"10px 12px",borderTop:`1px solid ${T.green}22`}}>
+                              <textarea value={c.copy} onChange={e=>{const u={...c,copy:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{copy:e.target.value})} style={{...iS,minHeight:120,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap"}}/>
+                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
+                                <input value={c.title||""} onChange={e=>{const u={...c,title:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{title:e.target.value})} placeholder="Titular (≤40 chars)" style={iS}/>
+                                <input value={c.description||""} onChange={e=>{const u={...c,description:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{description:e.target.value})} placeholder="Descripción (≤30 chars)" style={iS}/>
+                              </div>
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Footer publicar */}
+                {creatives.length > 0 && (
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginTop:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                    <div style={{fontSize:12,color:T.textSm}}>{studioMode==="shared" ? "📌 Destino compartido configurado arriba" : "🎯 Cada ad tiene su propio destino"}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer"}}>
+                        <input type="checkbox" checked={publishActiveByDefault} onChange={e=>setPublishActiveByDefault(e.target.checked)} style={{width:14,height:14}}/>
+                        Publicar ACTIVE (default: PAUSED)
+                      </label>
+                      <button onClick={handleBulkPublish} disabled={bulkPublishing || queueWithCopy.length===0} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:`linear-gradient(135deg, ${T.accent}, ${T.purple||"#a855f7"}, #ec4899)`,color:"#fff",cursor:bulkPublishing?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
+                        {bulkPublishing
+                          ? <><Spinner size={13} color="#fff"/>Publicando {bulkProgress.done}/{bulkProgress.total}…</>
+                          : <>🚀 Publicar {queueWithCopy.length} ad{queueWithCopy.length===1?"":"s"}</>
+                        }
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Modal: Nueva campaña + AdSets ───────────── */}
+              {showNewCampModal && ReactDOM.createPortal(
+                <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewCampModal(false)}>
+                  <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:560,maxHeight:"88vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                      <h3 style={{margin:0,fontSize:18,fontWeight:800,background:`linear-gradient(90deg, ${T.green}, ${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Nueva campaña + AdSets</h3>
+                      <button onClick={()=>setShowNewCampModal(false)} style={{...BtnSec,padding:"4px 8px"}}>✕</button>
+                    </div>
+
+                    <label style={Label}>Nombre de la campaña</label>
+                    <input value={newCampMulti.name} onChange={e=>setNewCampMulti(p=>({...p,name:e.target.value}))} style={{...iS,marginBottom:12}}/>
+
+                    <label style={Label}>Objetivo</label>
+                    <select value={newCampMulti.objective} onChange={e=>setNewCampMulti(p=>({...p,objective:e.target.value}))} style={{...iS,marginBottom:12}}>
+                      {OBJECTIVES.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}
+                    </select>
+
+                    <label style={Label}>Tipo de presupuesto</label>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
+                      <button onClick={()=>setNewCampMulti(p=>({...p,mode:"abo"}))} style={{padding:"10px 12px",fontSize:12,fontWeight:700,borderRadius:8,border:`2px solid ${newCampMulti.mode==="abo"?T.green+"99":T.border}`,background:newCampMulti.mode==="abo"?T.green+"15":"transparent",color:newCampMulti.mode==="abo"?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>ABO (presupuesto por adset)</button>
+                      <button onClick={()=>setNewCampMulti(p=>({...p,mode:"cbo"}))} style={{padding:"10px 12px",fontSize:12,fontWeight:700,borderRadius:8,border:`2px solid ${newCampMulti.mode==="cbo"?T.green+"99":T.border}`,background:newCampMulti.mode==="cbo"?T.green+"15":"transparent",color:newCampMulti.mode==="cbo"?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>CBO (presupuesto a nivel campaña)</button>
+                    </div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>ABO: cada adset gasta su propio presupuesto. CBO: Meta distribuye un presupuesto total entre todos los adsets.</div>
+
+                    {newCampMulti.mode==="cbo" && (
+                      <>
+                        <label style={Label}>Presupuesto diario campaña ({curCode})</label>
+                        <input type="number" value={newCampMulti.daily_budget} onChange={e=>setNewCampMulti(p=>({...p,daily_budget:e.target.value}))} style={{...iS,marginBottom:14}}/>
+                      </>
+                    )}
+
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",margin:"14px 0 10px"}}>
+                      <strong style={{fontSize:13,color:T.text}}>AdSets</strong>
+                      <button onClick={()=>setNewCampMulti(p=>({...p,adsets:[...p.adsets,{name:`AdSet ${p.adsets.length+1} · ${new Date().toLocaleDateString("es-AR")}`,daily_budget:"3000",start_time:""}]}))} style={BtnSec}>+ Agregar AdSet</button>
+                    </div>
+
+                    {newCampMulti.adsets.map((a,idx)=>(
+                      <div key={idx} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                          <strong style={{fontSize:12,color:T.blue||T.accent}}>AdSet #{idx+1}</strong>
+                          {newCampMulti.adsets.length>1 && <button onClick={()=>setNewCampMulti(p=>({...p,adsets:p.adsets.filter((_,i)=>i!==idx)}))} style={{...BtnSec,padding:"2px 8px"}}>✕</button>}
+                        </div>
+                        <label style={Label}>Nombre</label>
+                        <input value={a.name} onChange={e=>setNewCampMulti(p=>({...p,adsets:p.adsets.map((x,i)=>i===idx?{...x,name:e.target.value}:x)}))} style={{...iS,marginBottom:8}}/>
+                        {newCampMulti.mode==="abo" && (
+                          <>
+                            <label style={Label}>Presupuesto diario ({curCode})</label>
+                            <input type="number" value={a.daily_budget} onChange={e=>setNewCampMulti(p=>({...p,adsets:p.adsets.map((x,i)=>i===idx?{...x,daily_budget:e.target.value}:x)}))} style={{...iS,marginBottom:8}}/>
+                          </>
+                        )}
+                        <label style={Label}>Inicio (opcional, vacío = ahora)</label>
+                        <input type="datetime-local" value={a.start_time} onChange={e=>setNewCampMulti(p=>({...p,adsets:p.adsets.map((x,i)=>i===idx?{...x,start_time:e.target.value}:x)}))} style={iS}/>
+                        <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Hora local — Meta lo programa para arrancar a esta fecha.</div>
+                      </div>
+                    ))}
+
+                    <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+                      <button onClick={()=>setShowNewCampModal(false)} style={BtnSec}>Cancelar</button>
+                      <button onClick={handleCreateCampaignMulti} disabled={creatingMulti} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:`linear-gradient(135deg, ${T.green}, ${T.accent})`,color:"#fff",cursor:creatingMulti?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                        {creatingMulti?<><Spinner size={12} color="#fff"/>Creando...</>:<>🚀 Crear todo</>}
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
+
+              {/* ── Modal: Nuevo AdSet (en campaña existente) ───────── */}
+              {showNewAdsetModal && ReactDOM.createPortal(
+                <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewAdsetModal(false)}>
+                  <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:460,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                      <h3 style={{margin:0,fontSize:18,fontWeight:800}}>Nuevo AdSet</h3>
+                      <button onClick={()=>setShowNewAdsetModal(false)} style={{...BtnSec,padding:"4px 8px"}}>✕</button>
+                    </div>
+                    <label style={Label}>Campaña</label>
+                    <select value={newAdsetForm.campaign_id} onChange={e=>setNewAdsetForm(p=>({...p,campaign_id:e.target.value}))} style={{...iS,marginBottom:10}}>
+                      <option value="">— Elegí —</option>
+                      {campaigns.map(c=><option key={c.id} value={c.id}>{dotFor(c.effective_status)} {c.name}</option>)}
+                    </select>
+                    <label style={Label}>Nombre</label>
+                    <input value={newAdsetForm.name} onChange={e=>setNewAdsetForm(p=>({...p,name:e.target.value}))} style={{...iS,marginBottom:10}}/>
+                    <label style={Label}>Presupuesto diario ({curCode}) — ignorado si la campaña es CBO</label>
+                    <input type="number" value={newAdsetForm.daily_budget} onChange={e=>setNewAdsetForm(p=>({...p,daily_budget:e.target.value}))} style={{...iS,marginBottom:10}}/>
+                    <label style={Label}>Inicio (opcional)</label>
+                    <input type="datetime-local" value={newAdsetForm.start_time} onChange={e=>setNewAdsetForm(p=>({...p,start_time:e.target.value}))} style={iS}/>
+                    <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+                      <button onClick={()=>setShowNewAdsetModal(false)} style={BtnSec}>Cancelar</button>
+                      <button onClick={handleCreateAdsetOnly} disabled={savingAdset} style={BtnPri}>
+                        {savingAdset?<><Spinner size={12} color="#fff"/>Creando...</>:"Crear"}
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
+            </div>
+            );
+          })()
+        )}
+        {/* OLD CREATIVOS LAYOUT REMOVED IN STUDIO REDESIGN ─────── */}
+        {false && (
           !activeAcc
           ?<div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero</div>
           :<div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:20,alignItems:"start"}}>
