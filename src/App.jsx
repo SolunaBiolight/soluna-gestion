@@ -4922,6 +4922,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               audio:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>,
               meta:     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>,
               arca:     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+              stock:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>,
             };
             return (
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:16,marginBottom:28}}>
@@ -4932,6 +4933,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               {id:"audio",    label:"Audio Studio", desc:"Voces TTS con IA",     stat:null,          statLabel:"voces",    accent:"#a78bfa", accentBg:"rgba(167,139,250,0.08)"},
               {id:"meta",     label:"Meta Ads",      desc:"Análisis y optimizador IA", stat:null, statLabel:"",       accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
               {id:"arca",     label:"ARCA",          desc:"Facturación electrónica", stat:null, statLabel:"",       accent:"#4ade80", accentBg:"rgba(74,222,128,0.08)"},
+              {id:"stock",    label:"Stock",         desc:"Inventario y proyección",  stat:null, statLabel:"",       accent:"#f97316", accentBg:"rgba(249,115,22,0.08)"},
             ].map(item=>(
               <button key={item.id} onClick={()=>onNavigate(item.id)}
                 className="gh-home-card"
@@ -9534,13 +9536,536 @@ function AppMetaAds({T, user, onHome}) {
 }
 
 
+// ===========================================
+// APP STOCK / INVENTARIO
+// ===========================================
+function AppStock({T, user, onHome}) {
+  const uid = user?.uid;
+  const [tab, setTab] = useState("inventario"); // inventario | estadisticas | historial | ajustes
+  const [items, setItems] = useState([]);
+  const [kpis, setKpis] = useState({total:0, ok:0, low:0, empty:0});
+  const [settings, setSettings] = useState({multiplier:1, low_days:15, empty_days:5, alert_email:false});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all"); // all | ok | low | empty
+  const [editingItem, setEditingItem] = useState(null); // null | "new" | item object
+  const [movements, setMovements] = useState([]);
+  const [movFilter, setMovFilter] = useState({source:"all", event:"all"});
+  const [stats, setStats] = useState(null);
+  const [statsRange, setStatsRange] = useState("30"); // "7" | "14" | "30" | "60" | "90" | "custom"
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [projectionItem, setProjectionItem] = useState(null);
+  const [projectionData, setProjectionData] = useState(null);
+  const iS = InputStyle(T);
+
+  const api = (action, method="GET", body=null, extra={}) => {
+    const params = new URLSearchParams({action, uid, ...extra});
+    return fetch(`/api/inventory?${params}`, {
+      method,
+      headers: method !== "GET" ? {"Content-Type":"application/json"} : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(r => r.json());
+  };
+
+  async function loadItems() {
+    setLoading(true);
+    const d = await api("list_items");
+    if (!d.error) {
+      setItems(d.items || []);
+      setKpis(d.kpis || {total:0, ok:0, low:0, empty:0});
+      setSettings(d.settings || settings);
+    }
+    setLoading(false);
+  }
+
+  async function loadMovements() {
+    const d = await api("list_movements");
+    if (!d.error) setMovements(d.movements || []);
+  }
+
+  async function loadStats() {
+    setStatsLoading(true);
+    const d = await api("stats", "GET", null, {days: statsRange === "custom" ? 30 : statsRange});
+    if (!d.error) setStats(d);
+    setStatsLoading(false);
+  }
+
+  async function loadProjection(itemId) {
+    setProjectionItem(itemId);
+    const d = await api("stock_projection", "GET", null, {item_id: itemId, days: 90});
+    if (!d.error) setProjectionData(d);
+  }
+
+  useEffect(() => { if(uid) loadItems(); /* eslint-disable-next-line */ }, [uid]);
+  useEffect(() => {
+    if (uid && tab === "historial") loadMovements();
+    if (uid && tab === "estadisticas") loadStats();
+    /* eslint-disable-next-line */
+  }, [tab, statsRange]);
+
+  async function handleSaveItem(item) {
+    const d = await api("save_item", "POST", item);
+    if (d.error) { alert("Error: "+d.error); return false; }
+    setEditingItem(null);
+    loadItems();
+    return true;
+  }
+
+  async function handleDeleteItem(id) {
+    if (!window.confirm("¿Eliminar este item del inventario?")) return;
+    const params = new URLSearchParams({action:"delete_item", uid, item_id:id});
+    const d = await fetch(`/api/inventory?${params}`, {method:"DELETE"}).then(r=>r.json());
+    if (d.error) return alert("Error: "+d.error);
+    loadItems();
+  }
+
+  async function handleSaveSettings() {
+    const d = await api("settings_save", "POST", settings);
+    if (d.error) return alert("Error: "+d.error);
+    alert("Ajustes guardados ✓");
+    loadItems();
+  }
+
+  // ── Filtro de items en frontend ──
+  const filteredItems = items.filter(it => {
+    if (statusFilter !== "all" && it.status !== statusFilter) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      if (!(it.nombre||"").toLowerCase().includes(q) && !(it.sku||"").toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  const fmtInt = n => (n||0).toLocaleString("es-AR");
+  const statusBg = s => s === "empty" ? T.red+"22" : s === "low" ? T.yellow+"22" : T.green+"22";
+  const statusColor = s => s === "empty" ? T.red : s === "low" ? T.yellow : T.green;
+  const statusLabel = s => s === "empty" ? "Sin stock" : s === "low" ? "Bajo stock" : "OK";
+
+  const TABS = [
+    {id:"inventario", label:"📦 Inventario"},
+    {id:"estadisticas", label:"📊 Estadísticas"},
+    {id:"historial", label:"📜 Historial"},
+    {id:"ajustes", label:"⚙ Ajustes"},
+  ];
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      <AppTopbar T={T} section="Stock" onHome={onHome}/>
+      <AppTabs T={T} tabs={TABS} active={tab} onChange={setTab}/>
+
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
+
+        {/* ── INVENTARIO ──────────────────────── */}
+        {tab === "inventario" && (
+          <>
+            {/* KPIs */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))",gap:14,marginBottom:20}}>
+              {[
+                {label:"Items totales", val:kpis.total, color:T.accentSolid, icon:"📦"},
+                {label:"OK", val:kpis.ok, color:T.green, icon:"✓"},
+                {label:"Bajo stock", val:kpis.low, color:T.yellow||"#eab308", icon:"⚠"},
+                {label:"Sin stock", val:kpis.empty, color:T.red, icon:"⛔"},
+              ].map(k => (
+                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px",display:"flex",alignItems:"center",gap:14}}>
+                  <div style={{width:44,height:44,borderRadius:10,background:k.color+"22",border:`1px solid ${k.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:k.color,fontWeight:700}}>{k.icon}</div>
+                  <div>
+                    <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>{k.label}</div>
+                    <div style={{fontSize:24,fontWeight:800,color:T.text,letterSpacing:-0.8,marginTop:2}}>{k.val}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Toolbar */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flex:1,flexWrap:"wrap"}}>
+                <input type="text" placeholder="🔍 Buscar producto, SKU..." value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,maxWidth:280,fontSize:12,padding:"7px 12px"}}/>
+                <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
+                  <option value="all">Todos los estados</option>
+                  <option value="ok">OK</option>
+                  <option value="low">Bajo stock</option>
+                  <option value="empty">Sin stock</option>
+                </select>
+                <button onClick={loadItems} disabled={loading} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:loading?"wait":"pointer"}}>{loading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
+              </div>
+              <button onClick={()=>setEditingItem("new")} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>+ Nuevo item</button>
+            </div>
+
+            {/* Tabla */}
+            {loading && items.length === 0 ? (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+                <Spinner size={18} color={T.accent}/>
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                <div style={{fontSize:32,marginBottom:8}}>📭</div>
+                <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:6}}>{items.length === 0 ? "Sin items todavía" : "Sin resultados"}</div>
+                <div style={{fontSize:12,color:T.textSm,maxWidth:380,margin:"0 auto"}}>{items.length === 0 ? "Creá tu primer item para empezar a controlar stock." : "Probá con otra búsqueda o cambiá el filtro de estado."}</div>
+              </div>
+            ) : (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    <thead style={{background:T.bg}}>
+                      <tr>
+                        <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Producto</th>
+                        <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Stock</th>
+                        <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Ventas 30d</th>
+                        <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Días restantes</th>
+                        <th style={{textAlign:"center",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Estado</th>
+                        <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredItems.map(it => (
+                        <tr key={it.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                          <td style={{padding:"12px 14px"}}>
+                            <div style={{fontWeight:600,color:T.text}}>{it.nombre}</div>
+                            {it.sku && <div style={{fontSize:10,color:T.textSm,marginTop:2}}>SKU: {it.sku}</div>}
+                          </td>
+                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:T.text}}>{fmtInt(it.stock_total)}</td>
+                          <td style={{padding:"12px 14px",textAlign:"right",color:T.textMd}}>{fmtInt(it.sales_30d)}</td>
+                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:600,color:statusColor(it.status)}}>
+                            {it.days_left == null ? "—" : it.days_left > 999 ? "999+" : it.days_left + " días"}
+                          </td>
+                          <td style={{padding:"12px 14px",textAlign:"center"}}>
+                            <span style={{fontSize:10,padding:"3px 9px",borderRadius:5,background:statusBg(it.status),color:statusColor(it.status),fontWeight:700,letterSpacing:0.3}}>{statusLabel(it.status)}</span>
+                          </td>
+                          <td style={{padding:"12px 14px",textAlign:"right"}}>
+                            <button onClick={()=>loadProjection(it.id)} title="Ver proyección" style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",marginRight:4}}>📈</button>
+                            <button onClick={()=>setEditingItem(it)} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",marginRight:4}}>✎</button>
+                            <button onClick={()=>handleDeleteItem(it.id)} style={{background:"transparent",border:`1px solid ${T.red}33`,color:T.red,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>🗑</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── ESTADÍSTICAS ───────────────────── */}
+        {tab === "estadisticas" && (
+          <>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:700,color:T.text}}>Estadísticas de ventas</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Unidades vendidas y top productos en el período seleccionado</div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                {[
+                  {id:"7", l:"7 días"}, {id:"14", l:"14 días"}, {id:"30", l:"30 días"}, {id:"60", l:"60 días"}, {id:"90", l:"90 días"},
+                ].map(p => (
+                  <button key={p.id} onClick={()=>setStatsRange(p.id)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,border:`1px solid ${statsRange===p.id?T.accentSolid:T.border}`,borderRadius:8,background:statsRange===p.id?T.accentSolid+"22":"transparent",color:statsRange===p.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
+                ))}
+              </div>
+            </div>
+
+            {statsLoading ? (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}><Spinner size={18} color={T.accent}/></div>
+            ) : stats ? (
+              <>
+                {/* Gráfico de ventas por día */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Unidades vendidas por día <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>· Total: {fmtInt(stats.total_units)}</span></div>
+                  {(() => {
+                    const W = 1000, H = 220, P = 30;
+                    const series = stats.series || [];
+                    const maxY = Math.max(1, ...series.map(d => d.units));
+                    const stepX = (W - P*2) / Math.max(1, series.length - 1);
+                    const pathD = series.map((d,i) => {
+                      const x = P + i*stepX;
+                      const y = H - P - (d.units / maxY) * (H - P*2);
+                      return `${i===0?"M":"L"}${x.toFixed(1)},${y.toFixed(1)}`;
+                    }).join(" ");
+                    const areaD = pathD + ` L${(P + (series.length-1)*stepX).toFixed(1)},${H-P} L${P},${H-P} Z`;
+                    return (
+                      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}}>
+                        <defs>
+                          <linearGradient id="stockChartGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={T.accentSolid} stopOpacity="0.3"/>
+                            <stop offset="100%" stopColor={T.accentSolid} stopOpacity="0"/>
+                          </linearGradient>
+                        </defs>
+                        {/* Grid lines */}
+                        {[0.25, 0.5, 0.75].map(p => (
+                          <line key={p} x1={P} y1={P + p*(H-P*2)} x2={W-P} y2={P + p*(H-P*2)} stroke={T.borderL} strokeWidth="0.5" strokeDasharray="3"/>
+                        ))}
+                        <path d={areaD} fill="url(#stockChartGrad)"/>
+                        <path d={pathD} stroke={T.accentSolid} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                        {series.map((d,i) => {
+                          const x = P + i*stepX;
+                          const y = H - P - (d.units / maxY) * (H - P*2);
+                          return <circle key={d.date} cx={x} cy={y} r="2.5" fill={T.accentSolid}><title>{d.date}: {d.units} unidades</title></circle>;
+                        })}
+                        {/* Labels Y */}
+                        <text x={5} y={P+5} fontSize="9" fill={T.textSm}>{maxY}</text>
+                        <text x={5} y={H-P+3} fontSize="9" fill={T.textSm}>0</text>
+                        {/* Labels X (primero y último) */}
+                        {series.length > 0 && <text x={P} y={H-10} fontSize="9" fill={T.textSm}>{series[0].date.slice(5)}</text>}
+                        {series.length > 0 && <text x={W-P-30} y={H-10} fontSize="9" fill={T.textSm}>{series[series.length-1].date.slice(5)}</text>}
+                      </svg>
+                    );
+                  })()}
+                </div>
+
+                {/* Top vendidos / No vendidos */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>🔥 Más vendidos</div>
+                    {stats.ranking?.length === 0 && <div style={{fontSize:12,color:T.textSm}}>Sin ventas en el período.</div>}
+                    {stats.ranking?.map((r,i) => (
+                      <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<stats.ranking.length-1?`1px solid ${T.borderL}`:"none"}}>
+                        <span style={{fontSize:11,fontWeight:700,color:i<3?T.accent:T.textSm,width:18}}>#{i+1}</span>
+                        <span style={{flex:1,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}</span>
+                        <span style={{fontSize:12,fontWeight:700,color:T.green}}>{fmtInt(r.units)} u.</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>💤 Sin movimiento</div>
+                    {stats.no_sale?.length === 0 && <div style={{fontSize:12,color:T.textSm}}>Todos los items tienen ventas. 👏</div>}
+                    {stats.no_sale?.map(r => (
+                      <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                        <span style={{flex:1,fontSize:12,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}</span>
+                        <span style={{fontSize:11,color:T.textSm}}>0 ventas</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"40px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>Cargando estadísticas...</div>
+            )}
+          </>
+        )}
+
+        {/* ── HISTORIAL ──────────────────────── */}
+        {tab === "historial" && (
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+            <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Historial de movimientos</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimas {movements.length} entradas</div>
+              </div>
+              <button onClick={loadMovements} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:"pointer"}}>🔄</button>
+            </div>
+            {movements.length === 0 ? (
+              <div style={{padding:"50px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>No hay movimientos todavía.</div>
+            ) : (
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead style={{background:T.bg}}>
+                    <tr>
+                      <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Fecha</th>
+                      <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Origen</th>
+                      <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Evento</th>
+                      <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Item</th>
+                      <th style={{textAlign:"right",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Cambio</th>
+                      <th style={{textAlign:"right",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movements.map(m => (
+                      <tr key={m.id} style={{borderTop:`1px solid ${T.borderL}`}}>
+                        <td style={{padding:"10px 14px",color:T.textMd,whiteSpace:"nowrap"}}>{new Date(m.ts).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</td>
+                        <td style={{padding:"10px 14px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:600}}>{m.source}</span></td>
+                        <td style={{padding:"10px 14px",color:T.textMd}}>{m.event}</td>
+                        <td style={{padding:"10px 14px",color:T.text}}>{m.item_name || m.item_id}</td>
+                        <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:m.change > 0 ? T.green : T.red}}>{m.change > 0 ? "+" : ""}{m.change}</td>
+                        <td style={{padding:"10px 14px",textAlign:"right",color:T.textMd}}>{fmtInt(m.new_stock)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── AJUSTES ────────────────────────── */}
+        {tab === "ajustes" && (
+          <div style={{maxWidth:680}}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:14}}>Proyección de ventas</div>
+              <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6,textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Multiplicador de ventas (últ. 30d)</label>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:18,fontWeight:700,color:T.text}}>×</span>
+                <input type="number" step="0.1" min="0.1" max="10" value={settings.multiplier} onChange={e=>setSettings({...settings, multiplier:parseFloat(e.target.value)||1})} style={{...iS,maxWidth:140}}/>
+              </div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Ajusta la velocidad de venta proyectada. Si esperás vender 20% más, ponelo en 1.2.</div>
+            </div>
+
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:14}}>Umbrales de alerta</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                <div>
+                  <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6,textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Sin stock cuando faltan</label>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <input type="number" min="1" max="60" value={settings.empty_days} onChange={e=>setSettings({...settings, empty_days:parseInt(e.target.value)||5})} style={{...iS,maxWidth:80}}/>
+                    <span style={{fontSize:13,color:T.textMd}}>días o menos</span>
+                  </div>
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6,textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Bajo stock cuando faltan</label>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <input type="number" min="1" max="180" value={settings.low_days} onChange={e=>setSettings({...settings, low_days:parseInt(e.target.value)||15})} style={{...iS,maxWidth:80}}/>
+                    <span style={{fontSize:13,color:T.textMd}}>días o menos</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Las alertas se muestran cuando quedan menos días de stock disponible que el umbral.</div>
+            </div>
+
+            <button onClick={handleSaveSettings} style={{...BtnPrimary(T),fontSize:14,padding:"12px 28px"}}>💾 Guardar ajustes</button>
+          </div>
+        )}
+      </div>
+
+      {/* Modal crear/editar item */}
+      {editingItem && (
+        <ItemEditor T={T} initial={editingItem === "new" ? null : editingItem} onSave={handleSaveItem} onCancel={()=>setEditingItem(null)}/>
+      )}
+
+      {/* Modal de proyección */}
+      {projectionItem && projectionData && ReactDOM.createPortal(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>{setProjectionItem(null);setProjectionData(null);}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:720,padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:700,color:T.text}}>Proyección de stock</div>
+                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{projectionData.item_name}</div>
+              </div>
+              <button onClick={()=>{setProjectionItem(null);setProjectionData(null);}} style={{background:"transparent",border:"none",color:T.textMd,fontSize:18,cursor:"pointer"}}>✕</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+              <div style={{padding:"10px 14px",background:T.bg,borderRadius:8}}>
+                <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",fontWeight:600}}>Stock actual</div>
+                <div style={{fontSize:18,fontWeight:800,color:T.text}}>{fmtInt(projectionData.stock_total)}</div>
+              </div>
+              <div style={{padding:"10px 14px",background:T.bg,borderRadius:8}}>
+                <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",fontWeight:600}}>Velocidad / día</div>
+                <div style={{fontSize:18,fontWeight:800,color:T.text}}>{projectionData.sales_per_day.toFixed(2)}</div>
+              </div>
+              <div style={{padding:"10px 14px",background:projectionData.empty_in_days && projectionData.empty_in_days < 30 ? T.red+"22" : T.green+"22",borderRadius:8}}>
+                <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",fontWeight:600}}>Quiebra en</div>
+                <div style={{fontSize:18,fontWeight:800,color:projectionData.empty_in_days && projectionData.empty_in_days < 30 ? T.red : T.green}}>{projectionData.empty_in_days ?? "—"} días</div>
+              </div>
+            </div>
+            {(() => {
+              const data = projectionData.projection || [];
+              if (data.length === 0) return null;
+              const W = 660, H = 200, P = 30;
+              const maxY = Math.max(1, projectionData.stock_total);
+              const maxX = data.length - 1;
+              const stepX = (W - P*2) / Math.max(1, maxX);
+              const path = data.map((d,i) => `${i===0?"M":"L"}${(P+i*stepX).toFixed(1)},${(H - P - (d.stock/maxY)*(H-P*2)).toFixed(1)}`).join(" ");
+              return (
+                <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto"}}>
+                  <defs>
+                    <linearGradient id="projGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={T.green} stopOpacity="0.3"/>
+                      <stop offset="100%" stopColor={T.green} stopOpacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <path d={path + ` L${(P+maxX*stepX).toFixed(1)},${H-P} L${P},${H-P} Z`} fill="url(#projGrad)"/>
+                  <path d={path} stroke={T.green} strokeWidth="2.5" fill="none"/>
+                  <text x={5} y={P+5} fontSize="9" fill={T.textSm}>{maxY}</text>
+                  <text x={5} y={H-P+3} fontSize="9" fill={T.textSm}>0</text>
+                  <text x={P} y={H-10} fontSize="9" fill={T.textSm}>Hoy</text>
+                  <text x={W-P-40} y={H-10} fontSize="9" fill={T.textSm}>+{data.length-1}d</text>
+                </svg>
+              );
+            })()}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+// ===========================================
+// ITEM EDITOR (modal crear/editar item de stock)
+// ===========================================
+function ItemEditor({T, initial, onSave, onCancel}) {
+  const [nombre, setNombre] = useState(initial?.nombre || "");
+  const [sku, setSku] = useState(initial?.sku || "");
+  const [stock, setStock] = useState(initial?.stock_total ?? 0);
+  const [sales30d, setSales30d] = useState(initial?.sales_30d ?? 0);
+  const [image, setImage] = useState(initial?.image || "");
+  const [saving, setSaving] = useState(false);
+  const iS = InputStyle(T);
+
+  async function handleSave() {
+    if (!nombre.trim()) { alert("Falta el nombre"); return; }
+    setSaving(true);
+    const ok = await onSave({
+      ...(initial?{id:initial.id}:{}),
+      nombre: nombre.trim(),
+      sku: sku.trim(),
+      stock_total: parseInt(stock) || 0,
+      sales_30d: parseInt(sales30d) || 0,
+      image: image.trim() || null,
+    });
+    setSaving(false);
+    if (!ok) return;
+  }
+
+  return ReactDOM.createPortal(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving && onCancel()}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+          <div style={{fontSize:17,fontWeight:700,color:T.text}}>{initial ? "Editar item" : "Nuevo item"}</div>
+          <button onClick={onCancel} disabled={saving} style={{background:"transparent",border:"none",color:T.textMd,fontSize:18,cursor:"pointer"}}>✕</button>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div>
+            <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Nombre</label>
+            <input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Gomitas de Azul de Metileno" style={iS} disabled={saving} autoFocus/>
+          </div>
+          <div>
+            <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>SKU (opcional)</label>
+            <input value={sku} onChange={e=>setSku(e.target.value)} placeholder="GOMITAS-001" style={{...iS,fontFamily:"monospace"}} disabled={saving}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+            <div>
+              <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Stock actual</label>
+              <input type="number" min="0" value={stock} onChange={e=>setStock(e.target.value)} style={iS} disabled={saving}/>
+            </div>
+            <div>
+              <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Ventas últimos 30 días</label>
+              <input type="number" min="0" value={sales30d} onChange={e=>setSales30d(e.target.value)} style={iS} disabled={saving}/>
+            </div>
+          </div>
+          <div>
+            <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>URL imagen (opcional)</label>
+            <input value={image} onChange={e=>setImage(e.target.value)} placeholder="https://..." style={iS} disabled={saving}/>
+          </div>
+        </div>
+
+        <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:22}}>
+          <button onClick={onCancel} disabled={saving} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving||!nombre.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px"}}>
+            {saving?"Guardando...":(initial?"Guardar cambios":"Crear item")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ROOT APP
 // ===========================================
 export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","arca","meta","audio","reclamos","canjes","envios","config","planes","admin","cupones","contenido"];
+  const VALID_PAGES = ["home","arca","meta","audio","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock"];
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
   const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "home");
   const setPage = (p) => {
@@ -9772,6 +10297,7 @@ export default function App() {
   // App
   if(page==="arca") return <PageView pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
   if(page==="meta") return <PageView pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
+  if(page==="stock") return <PageView pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
   if(page==="audio") return <PageView pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
   if(page==="reclamos") return <PageView pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
   if(page==="canjes") return <PageView pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/><ToastContainer T={T}/></PageView>;
