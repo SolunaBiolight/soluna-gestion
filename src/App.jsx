@@ -6413,9 +6413,13 @@ function AppArca({T, user, onHome}) {
     // Normalizar para mantener compat: connections es array, agregamos flag connected si hay al menos 1
     d.connected = (d.connections||[]).some(c => c.connected);
     setTnData(d);
-    // Mantener selecciones previas si las órdenes siguen ahí; las nuevas quedan deseleccionadas por default
+    // Mantener selecciones previas si las órdenes siguen ahí; las nuevas quedan deseleccionadas
+    // por default. Si una orden ya fue facturada (_billed), forzar deselección — así no
+    // aparece tildada cuando el usuario quiera facturar otra distinta.
     const newSel = {};
-    Object.keys(d.ordenes||{}).forEach(id => { newSel[id] = tnSelected[id] || false; });
+    Object.entries(d.ordenes||{}).forEach(([id,o]) => {
+      newSel[id] = !o._billed && (tnSelected[id] || false);
+    });
     setTnSelected(newSel);
   }
 
@@ -6423,7 +6427,8 @@ function AppArca({T, user, onHome}) {
     if(!tnData?.ordenes) return;
     const filtered = {};
     Object.entries(tnData.ordenes).forEach(([id,o])=>{
-      if(tnSelected[id]) filtered[id] = o;
+      // Doble check: nunca incluir órdenes ya facturadas, aunque el estado tenga tnSelected=true
+      if(tnSelected[id] && !o._billed) filtered[id] = o;
     });
     if(Object.keys(filtered).length === 0) return toast("Tildá al menos una venta","warning");
     setOrdenes(filtered);
@@ -7036,7 +7041,10 @@ function AppArca({T, user, onHome}) {
                             const bord = billed ? "1px solid "+T.green+"33" : "1px solid "+T.borderL;
                             return (
                               <div key={id} onClick={()=>{ if(!billed) setTnSelected(prev=>({...prev,[id]:!prev[id]})); }} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,cursor:billed?"default":"pointer",background:bg,borderBottom:bord,opacity:billed?0.85:1}}>
-                                <input type="checkbox" checked={billed?true:sel} disabled={billed} readOnly style={{cursor:billed?"not-allowed":"pointer",accentColor:billed?T.green:undefined}}/>
+                                {billed
+                                  ? <span title="Ya facturada" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
+                                  : <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
+                                }
                                 <span style={{fontSize:10,color:T.textSm,minWidth:74}}>{fechaHora}</span>
                                 <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:badgeColor(plat),color:badgeTextColor(plat),fontWeight:700,minWidth:24,textAlign:"center"}}>{label}</span>
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
