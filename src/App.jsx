@@ -8414,6 +8414,7 @@ function AppMetaAds({T, user, onHome}) {
   const [aUntil,setAUntil]=useState(()=>new Date().toISOString().slice(0,10));
   const [aRows,setARows]=useState([]);
   const [aLoading,setALoading]=useState(false);
+  const [aError,setAError]=useState(null);
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
   const [aFilterStatus,setAFilterStatus]=useState("all"); // all | active | paused
@@ -8600,10 +8601,13 @@ function AppMetaAds({T, user, onHome}) {
   async function loadInsights() {
     if(!activeAccId) return;
     setALoading(true);
+    setAError(null);
     try {
       const d = await metaApi("insights","GET",null,{acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil});
-      if(d.error) { toast("Error: "+d.error,"error"); setARows([]); }
+      if(d.error) { setAError(d.error); setARows([]); }
       else setARows(d.rows||[]);
+    } catch(e) {
+      setAError(e.message || "Error de red");
     } finally { setALoading(false); }
   }
 
@@ -8880,6 +8884,30 @@ function AppMetaAds({T, user, onHome}) {
                     </button>
                   </div>
                 </div>
+
+                {/* Banner de error de Meta API */}
+                {aError && (() => {
+                  const errLower = String(aError).toLowerCase();
+                  let hint = null;
+                  if (errLower.includes("(#10)") || errLower.includes("does not have permission") || errLower.includes("does not have the capability")) {
+                    hint = <>El token no tiene permiso para leer estadísticas. <strong>Revisá que tu System User tenga "Ver rendimiento" y "Administrar campañas" sobre la cuenta publicitaria</strong> en Business Manager → Usuarios del sistema → tu user → Asignar activos.</>;
+                  } else if (errLower.includes("(#100)") || errLower.includes("unsupported get request") || errLower.includes("nonexistent field")) {
+                    hint = <>La cuenta publicitaria seleccionada no existe o el token no tiene acceso. <strong>Probá reconectar Meta o seleccionar otra cuenta</strong> desde el tab Cuenta.</>;
+                  } else if (errLower.includes("(#200)") || errLower.includes("permissions error")) {
+                    hint = <>Falta un permiso clave en el token. Generá un nuevo System User Token con <strong>ads_management + ads_read + business_management</strong> marcados, y reconectá.</>;
+                  } else if (errLower.includes("expired") || errLower.includes("session has expired") || errLower.includes("(#190)")) {
+                    hint = <>El token de Meta expiró. Generá uno nuevo desde Business Manager y reconectá Meta.</>;
+                  } else {
+                    hint = <>Error técnico devuelto por la API de Meta. Probá refrescar; si persiste, reconectá Meta desde Config.</>;
+                  }
+                  return (
+                    <div style={{background:T.red+"15",border:`1px solid ${T.red}33`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.red,marginBottom:6}}>⚠ No se pudieron cargar las analíticas</div>
+                      <div style={{fontSize:12,color:T.textMd,lineHeight:1.6}}>{hint}</div>
+                      <div style={{fontSize:10,color:T.textSm,marginTop:8,fontFamily:"monospace",background:T.surface,padding:"6px 10px",borderRadius:6,wordBreak:"break-all"}}>{aError}</div>
+                    </div>
+                  );
+                })()}
 
                 {/* Tabla de insights */}
                 {aLoading && aRows.length === 0 ? (
