@@ -8843,13 +8843,24 @@ function AppMetaAds({T, user, onHome}) {
   const Card={background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16};
   const Label={fontSize:11,color:T.textSm,fontWeight:500,marginBottom:5,display:"block"};
 
-  const metaApi=(action,method="GET",body=null,extra={})=>{
+  const metaApi=async(action,method="GET",body=null,extra={})=>{
     const params=new URLSearchParams({action,uid,...extra});
-    return fetch(`/api/meta?${params}`,{
+    const r=await fetch(`/api/meta?${params}`,{
       method,
       headers:method!=="GET"?{"Content-Type":"application/json"}:undefined,
       body:body?JSON.stringify(body):undefined,
-    }).then(r=>r.json());
+    });
+    // El response puede no ser JSON cuando Vercel rechaza por size (HTML 413),
+    // timeout (504), etc. Leemos como texto y luego parseamos para devolver
+    // un error util en lugar de "Unexpected token < in JSON".
+    const txt = await r.text();
+    try {
+      return JSON.parse(txt);
+    } catch (_) {
+      if (r.status === 413) return { error: "Archivo demasiado grande (límite Vercel ~4.5MB en el request). Para videos pesados usá una URL pública." };
+      if (r.status === 504) return { error: "Timeout del servidor (60s). Probá con un archivo más liviano." };
+      return { error: `HTTP ${r.status}: ${txt.slice(0, 200).replace(/<[^>]+>/g, " ").trim() || "respuesta no-JSON"}` };
+    }
   };
 
   useEffect(()=>{
@@ -9176,30 +9187,50 @@ function AppMetaAds({T, user, onHome}) {
     toast("Creativo agregado ✓","success");
   }
 
-  // Sube archivo a Meta y dispara analisis+copy automatico con Gemini
+  // Sube archivo DIRECTO a Meta desde el browser (sin pasar por Vercel) y
+  // dispara analisis+copy automatico con Gemini. La razon de subir directo
+  // es que Vercel tiene hard limit de ~4.5MB en request body, asi que un
+  // video de 5-40MB no entra. Meta acepta multipart hasta 1GB.
   async function handleUploadFile(file) {
     if(!file) return;
     if(!activeAccId) return toast("Conectá una cuenta Meta primero","warning");
-    const MAX = 40 * 1024 * 1024; // 40MB
-    if(file.size > MAX) return toast(`Archivo muy grande (max 40MB, tiene ${(file.size/1024/1024).toFixed(1)}MB)`,"error");
+    const MAX = 200 * 1024 * 1024; // 200MB (Meta soporta hasta 1GB pero damos margen)
+    if(file.size > MAX) return toast(`Archivo muy grande (max 200MB, tiene ${(file.size/1024/1024).toFixed(1)}MB)`,"error");
     setUploadingFile(true);
     try {
-      // Convertir a base64 (lo usamos para Meta Y para Gemini Vision si es video)
-      const data_base64 = await new Promise((res,rej)=>{
-        const reader = new FileReader();
-        reader.onload = () => res(String(reader.result).split(",")[1]);
-        reader.onerror = rej;
-        reader.readAsDataURL(file);
-      });
-      // Subir a Meta
-      const up = await metaApi("upload_to_meta","POST",{filename:file.name, contentType:file.type, data_base64},{acc_id:activeAccId});
-      if(up.error){toast("Error subiendo a Meta: "+up.error,"error");setUploadingFile(false);return;}
-      // Crear creative en Growith con la URL/hash + link compartido si hay shared dest
+      // 1) Pedir credenciales al backend (access_token + ad_account_id)
+      const creds = await metaApi("upload_creds","GET",null,{acc_id:activeAccId});
+      if(creds.error){ toast("Error: "+creds.error,"error"); setUploadingFile(false); return; }
+      const accIdStr = creds.ad_account_id.startsWith("act_") ? creds.ad_account_id : `act_${creds.ad_account_id}`;
+      const isVideo = (file.type||"").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(file.name);
+
+      // 2) Upload directo a Meta via FormData (NO pasa por Vercel)
+      const fd = new FormData();
+      fd.append("access_token", creds.access_token);
+      fd.append(isVideo ? "source" : "filename", file, file.name);
+      const metaUrl = `https://graph.facebook.com/${creds.api_version}/${accIdStr}/${isVideo?"advideos":"adimages"}`;
+      let up;
+      try {
+        const r = await fetch(metaUrl, { method: "POST", body: fd });
+        const j = await r.json();
+        if (!r.ok || j.error) throw new Error(j.error?.message || `HTTP ${r.status}`);
+        if (isVideo) up = { kind: "video", id: j.id, url: null };
+        else {
+          const img = Object.values(j.images || {})[0];
+          if (!img) throw new Error("Meta no devolvió image hash");
+          up = { kind: "image", hash: img.hash, url: img.url, width: img.width, height: img.height };
+        }
+      } catch (e) {
+        toast("Error subiendo a Meta: "+e.message,"error");
+        setUploadingFile(false);
+        return;
+      }
+
+      // 3) Registrar creative en Growith
       const fileUrl = up.url || (up.id ? `meta-video://${up.id}` : "");
       const cr = await metaApi("add_creative","POST",{filename:file.name, kind:up.kind, url:fileUrl, size:file.size},{acc_id:activeAccId});
       if(cr.error){toast("Error guardando creative: "+cr.error,"error");setUploadingFile(false);return;}
       const cWithMeta = {...cr.creative, meta_hash: up.hash || null, meta_video_id: up.id || null};
-      // Si está en modo shared, pre-asignamos el link/cta para que después se publique con eso
       if (studioMode === "shared" && (sharedDest.link || sharedDest.cta)) {
         await metaApi("patch_creative","PATCH",{link:sharedDest.link||"", cta:sharedDest.cta||"LEARN_MORE"},{cid:cWithMeta.id});
         cWithMeta.link = sharedDest.link || "";
@@ -9207,18 +9238,44 @@ function AppMetaAds({T, user, onHome}) {
       }
       setCreatives(prev=>[cWithMeta,...prev]);
       toast(`Subido ✓ (${up.kind === "video" ? "video" : "imagen"})`,"success");
-      // Disparar análisis IA + auto-copy en background (sin await)
-      handleAnalyzeCreative(cWithMeta, { data_base64, contentType: file.type });
+
+      // 4) Análisis IA + auto-copy en background (sin await)
+      // Para imagen: backend baja el url publico de Meta. Para video: skip
+      // vision (la base64 no entra por Vercel) — pero genera copy con
+      // filename + brand + url igual.
+      if (up.kind === "image") {
+        handleAnalyzeCreative(cWithMeta);
+      } else {
+        // Video: solo generar copy text-only desde brand + filename + url
+        handleAnalyzeCreative(cWithMeta, { skip_vision: true });
+      }
     } catch(e){
       toast("Error: "+(e.message||"upload falló"),"error");
     } finally { setUploadingFile(false); }
   }
 
-  // analyze_creative ahora soporta video (mandando base64) y auto-genera copy en el backend
+  // analyze_creative: si skip_vision=true (videos pesados que no entran a
+  // Vercel), solo genera copy text-only via generate_copy con brand/url/
+  // filename. Si no, hace vision completa via analyze_creative endpoint.
   async function handleAnalyzeCreative(c, opts = {}) {
     if(!c?.id) return;
     setAnalyzingCreative(c.id);
     try {
+      if (opts.skip_vision) {
+        // Video pesado: skip vision, generar copy text-only.
+        const r = await fetch(`/api/meta?action=generate_copy&uid=${uid}&cid=${c.id}`,{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({tone:c.tone||"directo",length:c.length||"nativo",format:c.format||"storytelling",notes:c.notes||""})
+        });
+        const txt = await r.text();
+        let d; try { d = JSON.parse(txt); } catch(_){ d = {error:`HTTP ${r.status}`}; }
+        if(d.error){ toast("Error copy: "+d.error,"error"); return; }
+        const updated = d.creative || c;
+        setCreatives(prev=>prev.map(x=>x.id===c.id?updated:x));
+        if(selCreative?.id === c.id) setSelCreative(updated);
+        toast("Copy generado ✓ (sin vision por tamaño)","success");
+        return;
+      }
       const body = { cid: c.id, auto_copy: true };
       if (opts.data_base64) body.data_base64 = opts.data_base64;
       if (opts.contentType) body.contentType = opts.contentType;
@@ -9336,11 +9393,34 @@ function AppMetaAds({T, user, onHome}) {
       const adsetCount = d.adsets?.length || 0;
       toast(`Campaña "${d.campaign_name}" + ${adsetCount} AdSet${adsetCount===1?"":"s"} ✓`,"success");
       if (d.errors?.length) toast(d.errors.join(" · "),"warning");
+      // Update optimista del state local — los dropdowns ven los nuevos al toque
+      // sin esperar a que loadCampaigns sincronice con Meta (que tiene un delay
+      // de eventual consistency en /adsets).
+      const newCampObj = {
+        id: d.campaign_id,
+        name: d.campaign_name,
+        objective: newCampMulti.objective,
+        status: "PAUSED",
+        effective_status: "PAUSED",
+        daily_budget: newCampMulti.mode === "cbo" ? Math.round(parseFloat(newCampMulti.daily_budget) * 100) : null,
+      };
+      const newAdsetObjs = (d.adsets || []).map((a, i) => ({
+        id: a.id,
+        name: a.name || newCampMulti.adsets[i]?.name || `AdSet ${i+1}`,
+        campaign_id: d.campaign_id,
+        status: "PAUSED",
+        effective_status: "PAUSED",
+        daily_budget: newCampMulti.mode === "abo" ? Math.round(parseFloat(newCampMulti.adsets[i]?.daily_budget || 0) * 100) : null,
+      }));
+      setCampaigns(prev => [newCampObj, ...prev.filter(c => c.id !== d.campaign_id)]);
+      setAdsets(prev => [...newAdsetObjs, ...prev.filter(a => !newAdsetObjs.some(n => n.id === a.id))]);
       // Auto-seleccionar la campaña y el primer adset creado en shared dest
       if (d.campaign_id) {
-        setSharedDest(p=>({...p, campaign_id:d.campaign_id, adset_id: d.adsets?.[0]?.id || ""}));
+        setSharedDest(p=>({...p, campaign_id:d.campaign_id, adset_id: newAdsetObjs[0]?.id || ""}));
       }
       setShowNewCampModal(false);
+      // Sincronizar con Meta en background — si los IDs ya estaban localmente
+      // se mergean sin pisar nada porque filtramos por id arriba.
       loadCampaigns();
     } catch (e) {
       toast("Error: "+(e.message||"falló"),"error");
@@ -9364,6 +9444,16 @@ function AppMetaAds({T, user, onHome}) {
       },{acc_id:activeAccId});
       if (d.error) { toast(d.error,"error"); setSavingAdset(false); return; }
       toast(`AdSet "${d.name}" creado ✓`,"success");
+      // Update optimista del state local — el adset nuevo aparece al toque
+      const newAdsetObj = {
+        id: d.id,
+        name: d.name || newAdsetForm.name,
+        campaign_id: newAdsetForm.campaign_id,
+        status: "PAUSED",
+        effective_status: "PAUSED",
+        daily_budget: isCbo ? null : Math.round(parseFloat(newAdsetForm.daily_budget || 0) * 100),
+      };
+      setAdsets(prev => [newAdsetObj, ...prev.filter(a => a.id !== d.id)]);
       setSharedDest(p=>({...p, campaign_id:newAdsetForm.campaign_id, adset_id:d.id}));
       setShowNewAdsetModal(false);
       loadCampaigns();

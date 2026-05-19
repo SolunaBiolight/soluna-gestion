@@ -585,6 +585,23 @@ export default async function handler(req, res) {
       return res.json({ accounts: accounts.map(safeAccount), active });
     }
 
+    // Credenciales mínimas para upload directo a Meta desde el browser.
+    // Necesario porque Vercel impone hard limit de ~4.5MB en request body,
+    // así que el browser sube directo a /act_{id}/adimages o /advideos via
+    // FormData sin pasar por Vercel.
+    // El token es de la propia cuenta del usuario — equivalente a lo que ya
+    // se usa server-side.
+    if (action === "upload_creds" && req.method === "GET") {
+      if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.access_token || !cfg?.ad_account_id) return res.status(400).json({ error: "Cuenta sin token o ad_account_id" });
+      return res.json({
+        access_token: cfg.access_token,
+        ad_account_id: cfg.ad_account_id,
+        api_version: META_V,
+      });
+    }
+
     // Reintroseccionar las ad accounts/pages disponibles del token guardado
     // (usado cuando la cuenta Meta esta conectada pero sin ad_account_id seleccionado).
     if (action === "available_ad_accounts" && req.method === "GET") {
