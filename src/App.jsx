@@ -7081,11 +7081,18 @@ function AppArca({T, user, onHome}) {
                   const ivaTotal = esMono ? 0 : Math.round((totalGeneral - netoTotal) * 100) / 100;
                   return (
                   <div id="arca-preview-ordenes" style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginBottom:16}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-                      <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.green}}>2</span>
-                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>
-                        {Object.keys(ordenes).length} órdenes a facturar
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.green}}>2</span>
+                        <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>
+                          {Object.keys(ordenes).length} órdenes a facturar
+                        </div>
                       </div>
+                      {!resultados && (
+                        <button onClick={handleEmit} disabled={emitting||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:14,fontWeight:700,cursor:emitting?"wait":(!cuitSel?"not-allowed":"pointer"),fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",boxShadow:"0 4px 14px #16a34a40"}}>
+                          {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir facturas en ARCA"}
+                        </button>
+                      )}
                     </div>
 
                     {/* Resumen totales */}
@@ -7185,22 +7192,9 @@ function AppArca({T, user, onHome}) {
                 )}
               </div>
 
-              {/* Panel de emisión - ahora abajo, ancho completo */}
+              {/* Panel de productos / PDFs / Nueva facturación */}
               {ordenes && (
                 <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                  {/* Botón emitir / Re-emitir (queda arriba a la derecha del panel) */}
-                  {!resultados&&(
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 22px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
-                      <div>
-                        <div style={{fontSize:13,fontWeight:700,color:T.text}}>Todo listo para emitir</div>
-                        <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Revisá el resumen arriba y los nombres de productos abajo antes de emitir.</div>
-                      </div>
-                      <button onClick={handleEmit} disabled={emitting||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"12px 22px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",boxShadow:"0 4px 14px #16a34a40"}}>
-                        {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir facturas en ARCA"}
-                      </button>
-                    </div>
-                  )}
-
                   {productos.length>0&&(
                     <details style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"4px 0"}}>
                       <summary style={{cursor:"pointer",padding:"12px 18px",fontSize:13,fontWeight:600,color:T.text,listStyle:"none",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
