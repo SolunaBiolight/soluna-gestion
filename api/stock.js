@@ -49,20 +49,14 @@ async function tnFetchAllProducts(storeId, token) {
 
 async function tnFetchSales(storeId, token, days) {
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  let orders = [], page = 1;
-  while (true) {
-    const r = await fetch(
+  // Traer las primeras 3 páginas en paralelo para velocidad
+  const pages = await Promise.all([1,2,3].map(page =>
+    fetch(
       `https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&page=${page}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`,
       { headers: TN_HEADERS(token) }
-    );
-    if (!r.ok) break;
-    const data = await r.json();
-    if (!Array.isArray(data) || data.length === 0) break;
-    orders = orders.concat(data);
-    if (data.length < 200) break;
-    page++;
-  }
-  return orders;
+    ).then(r => r.ok ? r.json() : []).catch(() => [])
+  ));
+  return pages.flat().filter(o => Array.isArray([o]) && o.id);
 }
 
 // ── Shopify helpers ─────────────────────────────────────────────────
@@ -84,19 +78,12 @@ async function shFetchAllProducts(shop, token) {
 
 async function shFetchSales(shop, token, days) {
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  let orders = [], sinceId = null;
-  while (true) {
-    let url = `${SH_API(shop)}/orders.json?limit=250&status=any&financial_status=paid,partially_paid,partially_refunded&created_at_min=${since}&fields=id,line_items,created_at`;
-    if (sinceId) url += `&since_id=${sinceId}`;
-    const r = await fetch(url, { headers: SH_HEADERS(token) });
-    if (!r.ok) break;
-    const { orders: batch } = await r.json();
-    if (!batch || batch.length === 0) break;
-    orders = orders.concat(batch);
-    if (batch.length < 250) break;
-    sinceId = batch[batch.length - 1].id;
-  }
-  return orders;
+  // Solo primera página para velocidad
+  const url = `${SH_API(shop)}/orders.json?limit=250&status=any&financial_status=paid,partially_paid,partially_refunded&created_at_min=${since}&fields=id,line_items,created_at`;
+  const r = await fetch(url, { headers: SH_HEADERS(token) });
+  if (!r.ok) return [];
+  const { orders } = await r.json();
+  return orders || [];
 }
 
 // ── Procesar ventas TN → mapa variantId → {units, revenue} ─────────

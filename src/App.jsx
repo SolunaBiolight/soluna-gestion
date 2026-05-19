@@ -9576,12 +9576,15 @@ function AppStock({T, user, onHome}) {
   const iS = InputStyle(T);
 
   async function loadStock(d = days) {
+    if (!uid) return;
     setLoading(true);
+    setData(null);
     try {
       const r = await fetch(`/api/stock?action=products&uid=${uid}&days=${d}`);
       const json = await r.json();
       if (json.error) { toast(json.error, "error"); setLoading(false); return; }
-      setData(json);
+      if (json.products) setData(json);
+      else { toast("Sin datos del servidor", "error"); }
     } catch(e) { toast(e.message, "error"); }
     setLoading(false);
   }
