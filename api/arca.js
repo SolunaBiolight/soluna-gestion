@@ -43,6 +43,30 @@ function extractTNDoc(o) {
   return "";
 }
 
+// Extrae DNI/CUIT del comprador de una orden de Shopify.
+// El truco es: Shopify no tiene campo nativo de DNI, así que reutilizamos el campo "Company"
+// (Empresa) del checkout, que el vendedor renombra a "DNI o CUIT" en las traducciones.
+function extractShopifyDoc(o) {
+  // 1) Campos donde puede venir el doc según configuración del checkout
+  const candidates = [
+    o.billing_address?.company,
+    o.shipping_address?.company,
+    o.customer?.note,
+    o.note_attributes?.find(a => /(dni|cuit|cuil|tax)/i.test(a?.name||""))?.value,
+  ];
+  for (const c of candidates) {
+    const clean = String(c || "").replace(/[.\-\s]/g, "");
+    if (/^\d{7,11}$/.test(clean)) return clean;
+  }
+  // 2) Fallback: regex sobre la nota completa del pedido
+  const noteText = String(o.note || "");
+  if (noteText) {
+    const m = noteText.match(/\b(\d{7,11})\b/);
+    if (m) return m[1];
+  }
+  return "";
+}
+
 // ─── Inicialización Firebase ───────────────────────────
 
 function initAdmin() {
@@ -1735,8 +1759,9 @@ export default async function handler(req, res) {
           if (o.cancelled_at) continue;
           // Filtros estrictos: solo pagadas (no pending, refunded, voided)
           if ((o.financial_status || "").toLowerCase() !== "paid") continue;
-          // Shopify: el CUIT/DNI puede venir en billing_address.company (igual que ya hacíamos)
-          const docRaw = String(o.billing_address?.company || o.customer?.note || "").replace(/[.\-]/g, "");
+          // Shopify: extrae DNI/CUIT del campo "Empresa" (renombrado a "DNI o CUIT") o nota.
+          // Si es CUIT válido de 11 dígitos → Factura A. Si es DNI (7-8 dígitos) → Factura B.
+          const docRaw = extractShopifyDoc(o);
           const clas = clasificarDoc(docRaw);
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
             || o.billing_address?.name || o.shipping_address?.name || "";
