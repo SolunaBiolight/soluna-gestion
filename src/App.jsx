@@ -3378,26 +3378,40 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     const esHop=nombre.includes("HOP");
     const sucs=locs.sucursales;
 
-    // ESTRATEGIA 1: PUNTO ANDREANI HOP
-    // Usa cl() existente para normalizar (elimina chars no ASCII incluyendo tildes)
-    // ESTRATEGIA 1: calle + número (funciona para HOP y sucursales normales)
-    if(calle&&numero){
+    // Palabras significativas de la calle (no genéricas ni números)
+    const GENERICAS=new Set(["CALLE","AVENIDA","AVDA","AV","PASAJE","BULEVAR","BOULEVARD","RUTA","CAMINO","AUTOPISTA","ACCESO","DIAGONAL","ROTONDA","COLECTORA"]);
+    const calWordsRaw=calle.split(' ').filter(w=>w.length>=4&&!GENERICAS.has(w)&&!/^\d+$/.test(w));
+    const tieneCalleSignif=calWordsRaw.length>0;
+
+    // ESTRATEGIA 1: calle significativa + número como PALABRA SEPARADA (alta confianza)
+    // El número debe ser palabra exacta para evitar falsos positivos (ej: 832 dentro de 3832)
+    if(tieneCalleSignif&&numero){
       const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.split(' ').includes(numero);});
       if(m) return m;
-      const calWords=calle.split(' ').filter(w=>w.length>=4);
-      for(const cw of calWords){
-        const candidates=sucs.filter(s=>{const su=cl(s);return su.includes(cw)&&su.includes(numero);});
+      for(const cw of calWordsRaw){
+        const candidates=sucs.filter(s=>{const su=cl(s);return su.includes(cw)&&su.split(' ').includes(numero);});
         if(candidates.length===1) return candidates[0];
+        if(candidates.length>1&&calWordsRaw.length>1){
+          for(const cw2 of calWordsRaw.filter(w=>w!==cw)){
+            const refined=candidates.filter(s=>cl(s).includes(cw2));
+            if(refined.length===1) return refined[0];
+          }
+        }
       }
     }
-    if(esHop&&calle){
-      const calWords=calle.split(' ').filter(w=>w.length>=4);
-      for(const cw of calWords){
+    // HOP con calle significativa → buscar por palabras
+    if(esHop&&tieneCalleSignif){
+      for(const cw of calWordsRaw){
         const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(cw));
         if(candidates.length===1) return candidates[0];
+        if(candidates.length>1&&numero){
+          const refined=candidates.filter(s=>cl(s).split(' ').includes(numero));
+          if(refined.length===1) return refined[0];
+        }
       }
-      if(numero){const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(numero));if(candidates.length===1)return candidates[0];}
     }
+    // HOP sin calle significativa (ej: "Av Boedo 832") → null → modal obligatorio
+    if(esHop&&!tieneCalleSignif) return null;
     // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
     // Las sucursales clásicas tienen nombres propios que no podemos construir
     if(!esHop){
@@ -9551,680 +9565,278 @@ function AppMetaAds({T, user, onHome}) {
 // ===========================================
 function AppStock({T, user, onHome}) {
   const uid = user?.uid;
-  const [tab, setTab] = useState("inventario"); // inventario | estadisticas | historial | ajustes
-  const [items, setItems] = useState([]);
-  const [kpis, setKpis] = useState({total:0, ok:0, low:0, empty:0});
-  const [settings, setSettings] = useState({multiplier:1, low_days:15, empty_days:5, alert_email:false});
+  const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null); // {platform, products, total_*, daily_series}
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all"); // all | ok | low | empty
-  const [editingItem, setEditingItem] = useState(null); // null | "new" | item object
-  const [movements, setMovements] = useState([]);
-  const [movFilter, setMovFilter] = useState({source:"all", event:"all"});
-  const [stats, setStats] = useState(null);
-  const [statsRange, setStatsRange] = useState("30"); // "7" | "14" | "30" | "60" | "90" | "custom"
-  const [statsLoading, setStatsLoading] = useState(false);
-  const [projectionItem, setProjectionItem] = useState(null);
-  const [projectionData, setProjectionData] = useState(null);
+  const [sortBy, setSortBy] = useState("units"); // units | stock | days_left | revenue
+  const [expandedId, setExpandedId] = useState(null);
+  const [filterStatus, setFilterStatus] = useState("all"); // all | low | empty | ok
+
   const iS = InputStyle(T);
 
-  const api = (action, method="GET", body=null, extra={}) => {
-    const params = new URLSearchParams({action, uid, ...extra});
-    return fetch(`/api/inventory?${params}`, {
-      method,
-      headers: method !== "GET" ? {"Content-Type":"application/json"} : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    }).then(r => r.json());
-  };
-
-  async function loadItems() {
+  async function loadStock(d = days) {
     setLoading(true);
-    const d = await api("list_items");
-    if (!d.error) {
-      setItems(d.items || []);
-      setKpis(d.kpis || {total:0, ok:0, low:0, empty:0});
-      setSettings(d.settings || settings);
-    }
+    try {
+      const r = await fetch(`/api/stock?action=products&uid=${uid}&days=${d}`);
+      const json = await r.json();
+      if (json.error) { toast(json.error, "error"); setLoading(false); return; }
+      setData(json);
+    } catch(e) { toast(e.message, "error"); }
     setLoading(false);
   }
 
-  // Sincronizar ventas en background (descuenta stock según publicaciones vinculadas)
-  async function syncSalesBackground() {
-    try {
-      const d = await api("sync_sales", "POST", {});
-      if (d?.sales_logged > 0) loadItems(); // refresca si hubo descuentos
-    } catch (e) { /* silencioso */ }
-  }
+  useEffect(() => { if (uid) loadStock(); }, [uid]);
 
-  async function loadMovements() {
-    const d = await api("list_movements");
-    if (!d.error) setMovements(d.movements || []);
-  }
+  const fmtInt  = n => (n||0).toLocaleString("es-AR");
+  const fmtARS  = n => "$" + Math.round(n||0).toLocaleString("es-AR");
+  const statusOf = p => {
+    if (p.stock_total === 0) return "empty";
+    if (p.days_left !== null && p.days_left < 15) return "low";
+    return "ok";
+  };
+  const statusColor = s => s==="empty"?T.red:s==="low"?(T.yellow||"#eab308"):T.green;
+  const statusLabel = s => s==="empty"?"Sin stock":s==="low"?"Stock bajo":"OK";
+  const statusBg    = s => statusColor(s)+"22";
 
-  async function loadStats() {
-    setStatsLoading(true);
-    const d = await api("stats", "GET", null, {days: statsRange === "custom" ? 30 : statsRange});
-    if (!d.error) setStats(d);
-    setStatsLoading(false);
-  }
-
-  async function loadProjection(itemId) {
-    setProjectionItem(itemId);
-    const d = await api("stock_projection", "GET", null, {item_id: itemId, days: 90});
-    if (!d.error) setProjectionData(d);
-  }
-
-  useEffect(() => {
-    if (!uid) return;
-    loadItems();
-    // Disparar sync de ventas al entrar al módulo (background, no bloquea UI)
-    syncSalesBackground();
-    /* eslint-disable-next-line */
-  }, [uid]);
-  useEffect(() => {
-    if (uid && tab === "historial") loadMovements();
-    if (uid && tab === "estadisticas") loadStats();
-    /* eslint-disable-next-line */
-  }, [tab, statsRange]);
-
-  async function handleSaveItem(item) {
-    const d = await api("save_item", "POST", item);
-    if (d.error) { alert("Error: "+d.error); return false; }
-    setEditingItem(null);
-    loadItems();
+  const products = (data?.products || []).filter(p => {
+    const q = search.trim().toLowerCase();
+    if (q && !(p.nombre||"").toLowerCase().includes(q) &&
+             !p.variants.some(v => (v.sku||"").toLowerCase().includes(q))) return false;
+    if (filterStatus !== "all" && statusOf(p) !== filterStatus) return false;
     return true;
-  }
-
-  async function handleDeleteItem(id) {
-    if (!window.confirm("¿Eliminar este item del inventario?")) return;
-    const params = new URLSearchParams({action:"delete_item", uid, item_id:id});
-    const d = await fetch(`/api/inventory?${params}`, {method:"DELETE"}).then(r=>r.json());
-    if (d.error) return alert("Error: "+d.error);
-    loadItems();
-  }
-
-  async function handleSaveSettings() {
-    const d = await api("settings_save", "POST", settings);
-    if (d.error) return alert("Error: "+d.error);
-    alert("Ajustes guardados ✓");
-    loadItems();
-  }
-
-  // ── Filtro de items en frontend ──
-  const filteredItems = items.filter(it => {
-    if (statusFilter !== "all" && it.status !== statusFilter) return false;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      if (!(it.nombre||"").toLowerCase().includes(q) && !(it.sku||"").toLowerCase().includes(q)) return false;
+  }).sort((a, b) => {
+    if (sortBy === "units")     return b.units_sold - a.units_sold;
+    if (sortBy === "stock")     return b.stock_total - a.stock_total;
+    if (sortBy === "revenue")   return b.revenue - a.revenue;
+    if (sortBy === "days_left") {
+      if (a.days_left === null) return 1;
+      if (b.days_left === null) return -1;
+      return a.days_left - b.days_left;
     }
-    return true;
+    return 0;
   });
 
-  const fmtInt = n => (n||0).toLocaleString("es-AR");
-  const statusBg = s => s === "empty" ? T.red+"22" : s === "low" ? T.yellow+"22" : T.green+"22";
-  const statusColor = s => s === "empty" ? T.red : s === "low" ? T.yellow : T.green;
-  const statusLabel = s => s === "empty" ? "Sin stock" : s === "low" ? "Bajo stock" : "OK";
+  // KPIs
+  const kpiEmpty = products.filter(p => statusOf(p) === "empty").length;
+  const kpiLow   = products.filter(p => statusOf(p) === "low").length;
+  const kpiOk    = products.filter(p => statusOf(p) === "ok").length;
 
-  const TABS = [
-    {id:"inventario", label:"📦 Inventario"},
-    {id:"estadisticas", label:"📊 Estadísticas"},
-    {id:"historial", label:"📜 Historial"},
-    {id:"ajustes", label:"⚙ Ajustes"},
-  ];
+  // Mini sparkline SVG
+  function Sparkline({daily, color}) {
+    const entries = Object.entries(daily||{}).sort(([a],[b])=>a.localeCompare(b)).slice(-30);
+    if (entries.length < 2) return null;
+    const vals = entries.map(([,v])=>v);
+    const max  = Math.max(1,...vals);
+    const W=120, H=30, P=2;
+    const pts = vals.map((v,i) => {
+      const x = P + (i/(vals.length-1))*(W-2*P);
+      const y = H-P - ((v/max)*(H-2*P));
+      return `${x},${y}`;
+    }).join(" ");
+    return (
+      <svg width={W} height={H} style={{display:"block"}}>
+        <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  }
+
+  const platform = data?.platform || "tiendanube";
+  const platformLabel = platform === "shopify" ? "Shopify" : "Tienda Nube";
+  const platformColor = platform === "shopify" ? "#95bf47" : "#3483fa";
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Stock" onHome={onHome}/>
-      <AppTabs T={T} tabs={TABS} active={tab} onChange={setTab}/>
+      <AppTopbar T={T} section="Stock" onHome={onHome}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,color:T.textSm,background:platformColor+"22",border:`1px solid ${platformColor}44`,borderRadius:6,padding:"3px 8px",fontWeight:600,color:platformColor}}>{platformLabel}</span>
+          <button onClick={()=>loadStock()} disabled={loading} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+            {loading?<Spinner size={11} color={T.textMd}/>:"↻"} Actualizar
+          </button>
+        </div>
+      </AppTopbar>
 
-      <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
 
-        {/* ── INVENTARIO ──────────────────────── */}
-        {tab === "inventario" && (
+        {/* Selector de período */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
+          <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período de ventas:</span>
+          {[7,14,30,60,90].map(d=>(
+            <button key={d} onClick={()=>{setDays(d);loadStock(d);}}
+              style={{padding:"5px 12px",fontSize:12,fontWeight:600,border:`1px solid ${days===d?T.accentSolid:T.border}`,borderRadius:8,background:days===d?T.accentSolid+"22":"transparent",color:days===d?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              {d}d
+            </button>
+          ))}
+        </div>
+
+        {loading && !data ? (
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"80px 20px",textAlign:"center"}}>
+            <Spinner size={24} color={T.accent}/>
+            <div style={{fontSize:13,color:T.textSm,marginTop:12}}>Cargando productos desde {platformLabel}...</div>
+          </div>
+        ) : data ? (
           <>
             {/* KPIs */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))",gap:14,marginBottom:20}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
               {[
-                {label:"Items totales", val:kpis.total, color:T.accentSolid, icon:"📦"},
-                {label:"OK", val:kpis.ok, color:T.green, icon:"✓"},
-                {label:"Bajo stock", val:kpis.low, color:T.yellow||"#eab308", icon:"⚠"},
-                {label:"Sin stock", val:kpis.empty, color:T.red, icon:"⛔"},
-              ].map(k => (
-                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px",display:"flex",alignItems:"center",gap:14}}>
-                  <div style={{width:44,height:44,borderRadius:10,background:k.color+"22",border:`1px solid ${k.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:k.color,fontWeight:700}}>{k.icon}</div>
+                {label:"Productos",   val:data.total_products, color:T.accentSolid, icon:"📦"},
+                {label:"Stock total", val:fmtInt(data.total_stock), color:T.blue||"#3b82f6", icon:"🔢"},
+                {label:`Vendidas ${days}d`, val:fmtInt(data.total_units), color:T.green, icon:"📈"},
+                {label:"Sin stock",   val:kpiEmpty, color:T.red, icon:"⛔"},
+              ].map(k=>(
+                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px",display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:40,height:40,borderRadius:10,background:k.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{k.icon}</div>
                   <div>
                     <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>{k.label}</div>
-                    <div style={{fontSize:24,fontWeight:800,color:T.text,letterSpacing:-0.8,marginTop:2}}>{k.val}</div>
+                    <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:-0.5,marginTop:1}}>{k.val}</div>
                   </div>
                 </div>
               ))}
             </div>
+
+            {/* Sparkline general */}
+            {data.daily_series && Object.keys(data.daily_series).length > 1 && (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:20}}>
+                <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8}}>UNIDADES VENDIDAS POR DÍA — últimos {days} días</div>
+                {(() => {
+                  const entries = Object.entries(data.daily_series).sort(([a],[b])=>a.localeCompare(b));
+                  const vals = entries.map(([,v])=>v);
+                  const max  = Math.max(1,...vals);
+                  const W=1100, H=60, P=4;
+                  const pts = vals.map((v,i)=>{
+                    const x = P+(i/(Math.max(1,vals.length-1)))*(W-2*P);
+                    const y = H-P-((v/max)*(H-2*P));
+                    return `${x},${y}`;
+                  }).join(" ");
+                  return (
+                    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block"}}>
+                      <defs>
+                        <linearGradient id="sfill" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor={T.accentSolid} stopOpacity="0.2"/>
+                          <stop offset="100%" stopColor={T.accentSolid} stopOpacity="0"/>
+                        </linearGradient>
+                      </defs>
+                      <polygon points={`${P},${H} ${pts} ${W-P},${H}`} fill="url(#sfill)"/>
+                      <polyline points={pts} fill="none" stroke={T.accentSolid} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  );
+                })()}
+              </div>
+            )}
 
             {/* Toolbar */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,flex:1,flexWrap:"wrap"}}>
-                <input type="text" placeholder="🔍 Buscar producto, SKU..." value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,maxWidth:280,fontSize:12,padding:"7px 12px"}}/>
-                <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
-                  <option value="all">Todos los estados</option>
-                  <option value="ok">OK</option>
-                  <option value="low">Bajo stock</option>
-                  <option value="empty">Sin stock</option>
-                </select>
-                <button onClick={loadItems} disabled={loading} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:loading?"wait":"pointer"}}>{loading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
-              </div>
-              <button onClick={()=>setEditingItem("new")} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>+ Nuevo item</button>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"12px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <input type="text" placeholder="🔍 Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
+                style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
+              <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
+                <option value="all">Todos ({data.total_products})</option>
+                <option value="ok">OK ({kpiOk})</option>
+                <option value="low">Stock bajo ({kpiLow})</option>
+                <option value="empty">Sin stock ({kpiEmpty})</option>
+              </select>
+              <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
+                <option value="units">Ordenar: Más vendidos</option>
+                <option value="revenue">Ordenar: Mayor revenue</option>
+                <option value="stock">Ordenar: Más stock</option>
+                <option value="days_left">Ordenar: Menos días</option>
+              </select>
+              <span style={{fontSize:12,color:T.textSm,flexShrink:0}}>{products.length} producto{products.length!==1?"s":""}</span>
             </div>
 
-            {/* Tabla */}
-            {loading && items.length === 0 ? (
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
-                <Spinner size={18} color={T.accent}/>
-              </div>
-            ) : filteredItems.length === 0 ? (
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
-                <div style={{fontSize:32,marginBottom:8}}>📭</div>
-                <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:6}}>{items.length === 0 ? "Sin items todavía" : "Sin resultados"}</div>
-                <div style={{fontSize:12,color:T.textSm,maxWidth:380,margin:"0 auto"}}>{items.length === 0 ? "Creá tu primer item para empezar a controlar stock." : "Probá con otra búsqueda o cambiá el filtro de estado."}</div>
-              </div>
-            ) : (
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                    <thead style={{background:T.bg}}>
-                      <tr>
-                        <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Producto</th>
-                        <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Stock</th>
-                        <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Ventas 30d</th>
-                        <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Días restantes</th>
-                        <th style={{textAlign:"center",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Estado</th>
-                        <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredItems.map(it => (
-                        <tr key={it.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
-                          <td style={{padding:"12px 14px"}}>
-                            <div style={{fontWeight:600,color:T.text}}>{it.nombre}</div>
-                            {it.sku && <div style={{fontSize:10,color:T.textSm,marginTop:2}}>SKU: {it.sku}</div>}
-                          </td>
-                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:T.text}}>{fmtInt(it.stock_total)}</td>
-                          <td style={{padding:"12px 14px",textAlign:"right",color:T.textMd}}>{fmtInt(it.sales_30d)}</td>
-                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:600,color:statusColor(it.status)}}>
-                            {it.days_left == null ? "—" : it.days_left > 999 ? "999+" : it.days_left + " días"}
-                          </td>
-                          <td style={{padding:"12px 14px",textAlign:"center"}}>
-                            <span style={{fontSize:10,padding:"3px 9px",borderRadius:5,background:statusBg(it.status),color:statusColor(it.status),fontWeight:700,letterSpacing:0.3}}>{statusLabel(it.status)}</span>
-                          </td>
-                          <td style={{padding:"12px 14px",textAlign:"right"}}>
-                            <button onClick={()=>loadProjection(it.id)} title="Ver proyección" style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",marginRight:4}}>📈</button>
-                            <button onClick={()=>setEditingItem(it)} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",marginRight:4}}>✎</button>
-                            <button onClick={()=>handleDeleteItem(it.id)} style={{background:"transparent",border:`1px solid ${T.red}33`,color:T.red,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>🗑</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ── ESTADÍSTICAS ───────────────────── */}
-        {tab === "estadisticas" && (
-          <>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
-              <div>
-                <div style={{fontSize:15,fontWeight:700,color:T.text}}>Estadísticas de ventas</div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Unidades vendidas y top productos en el período seleccionado</div>
-              </div>
-              <div style={{display:"flex",gap:6}}>
-                {[
-                  {id:"7", l:"7 días"}, {id:"14", l:"14 días"}, {id:"30", l:"30 días"}, {id:"60", l:"60 días"}, {id:"90", l:"90 días"},
-                ].map(p => (
-                  <button key={p.id} onClick={()=>setStatsRange(p.id)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,border:`1px solid ${statsRange===p.id?T.accentSolid:T.border}`,borderRadius:8,background:statsRange===p.id?T.accentSolid+"22":"transparent",color:statsRange===p.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
+            {/* Tabla de productos */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+              {/* Header */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 90px 90px 90px 90px 100px 36px",gap:0,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"10px 16px"}}>
+                {["Producto","Stock","Vendidas","Revenue","Días rest.","Estado",""].map((h,i)=>(
+                  <div key={i} style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,textAlign:i===0?"left":"right"}}>{h}</div>
                 ))}
               </div>
-            </div>
 
-            {statsLoading ? (
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}><Spinner size={18} color={T.accent}/></div>
-            ) : stats ? (
-              <>
-                {/* Gráfico de ventas por día */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Unidades vendidas por día <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>· Total: {fmtInt(stats.total_units)}</span></div>
-                  {(() => {
-                    const W = 1000, H = 220, P = 30;
-                    const series = stats.series || [];
-                    const maxY = Math.max(1, ...series.map(d => d.units));
-                    const stepX = (W - P*2) / Math.max(1, series.length - 1);
-                    const pathD = series.map((d,i) => {
-                      const x = P + i*stepX;
-                      const y = H - P - (d.units / maxY) * (H - P*2);
-                      return `${i===0?"M":"L"}${x.toFixed(1)},${y.toFixed(1)}`;
-                    }).join(" ");
-                    const areaD = pathD + ` L${(P + (series.length-1)*stepX).toFixed(1)},${H-P} L${P},${H-P} Z`;
-                    return (
-                      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}}>
-                        <defs>
-                          <linearGradient id="stockChartGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={T.accentSolid} stopOpacity="0.3"/>
-                            <stop offset="100%" stopColor={T.accentSolid} stopOpacity="0"/>
-                          </linearGradient>
-                        </defs>
-                        {/* Grid lines */}
-                        {[0.25, 0.5, 0.75].map(p => (
-                          <line key={p} x1={P} y1={P + p*(H-P*2)} x2={W-P} y2={P + p*(H-P*2)} stroke={T.borderL} strokeWidth="0.5" strokeDasharray="3"/>
-                        ))}
-                        <path d={areaD} fill="url(#stockChartGrad)"/>
-                        <path d={pathD} stroke={T.accentSolid} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                        {series.map((d,i) => {
-                          const x = P + i*stepX;
-                          const y = H - P - (d.units / maxY) * (H - P*2);
-                          return <circle key={d.date} cx={x} cy={y} r="2.5" fill={T.accentSolid}><title>{d.date}: {d.units} unidades</title></circle>;
-                        })}
-                        {/* Labels Y */}
-                        <text x={5} y={P+5} fontSize="9" fill={T.textSm}>{maxY}</text>
-                        <text x={5} y={H-P+3} fontSize="9" fill={T.textSm}>0</text>
-                        {/* Labels X (primero y último) */}
-                        {series.length > 0 && <text x={P} y={H-10} fontSize="9" fill={T.textSm}>{series[0].date.slice(5)}</text>}
-                        {series.length > 0 && <text x={W-P-30} y={H-10} fontSize="9" fill={T.textSm}>{series[series.length-1].date.slice(5)}</text>}
-                      </svg>
-                    );
-                  })()}
+              {products.length === 0 ? (
+                <div style={{padding:"50px 20px",textAlign:"center"}}>
+                  <div style={{fontSize:32,marginBottom:8}}>📭</div>
+                  <div style={{fontSize:14,color:T.textSm}}>Sin resultados</div>
                 </div>
-
-                {/* Top vendidos / No vendidos */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>🔥 Más vendidos</div>
-                    {stats.ranking?.length === 0 && <div style={{fontSize:12,color:T.textSm}}>Sin ventas en el período.</div>}
-                    {stats.ranking?.map((r,i) => (
-                      <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<stats.ranking.length-1?`1px solid ${T.borderL}`:"none"}}>
-                        <span style={{fontSize:11,fontWeight:700,color:i<3?T.accent:T.textSm,width:18}}>#{i+1}</span>
-                        <span style={{flex:1,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}</span>
-                        <span style={{fontSize:12,fontWeight:700,color:T.green}}>{fmtInt(r.units)} u.</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>💤 Sin movimiento</div>
-                    {stats.no_sale?.length === 0 && <div style={{fontSize:12,color:T.textSm}}>Todos los items tienen ventas. 👏</div>}
-                    {stats.no_sale?.map(r => (
-                      <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                        <span style={{flex:1,fontSize:12,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}</span>
-                        <span style={{fontSize:11,color:T.textSm}}>0 ventas</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"40px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>Cargando estadísticas...</div>
-            )}
-          </>
-        )}
-
-        {/* ── HISTORIAL ──────────────────────── */}
-        {tab === "historial" && (
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-            <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-              <div>
-                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Historial de movimientos</div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimas {movements.length} entradas</div>
-              </div>
-              <button onClick={loadMovements} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:"pointer"}}>🔄</button>
-            </div>
-            {movements.length === 0 ? (
-              <div style={{padding:"50px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>No hay movimientos todavía.</div>
-            ) : (
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                  <thead style={{background:T.bg}}>
-                    <tr>
-                      <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Fecha</th>
-                      <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Origen</th>
-                      <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Evento</th>
-                      <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Item</th>
-                      <th style={{textAlign:"right",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Cambio</th>
-                      <th style={{textAlign:"right",padding:"10px 14px",fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Stock</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {movements.map(m => (
-                      <tr key={m.id} style={{borderTop:`1px solid ${T.borderL}`}}>
-                        <td style={{padding:"10px 14px",color:T.textMd,whiteSpace:"nowrap"}}>{new Date(m.ts).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</td>
-                        <td style={{padding:"10px 14px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:600}}>{m.source}</span></td>
-                        <td style={{padding:"10px 14px",color:T.textMd}}>{m.event}</td>
-                        <td style={{padding:"10px 14px",color:T.text}}>{m.item_name || m.item_id}</td>
-                        <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:m.change > 0 ? T.green : T.red}}>{m.change > 0 ? "+" : ""}{m.change}</td>
-                        <td style={{padding:"10px 14px",textAlign:"right",color:T.textMd}}>{fmtInt(m.new_stock)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── AJUSTES ────────────────────────── */}
-        {tab === "ajustes" && (
-          <div style={{maxWidth:680}}>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
-              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:14}}>Proyección de ventas</div>
-              <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6,textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Multiplicador de ventas (últ. 30d)</label>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:18,fontWeight:700,color:T.text}}>×</span>
-                <input type="number" step="0.1" min="0.1" max="10" value={settings.multiplier} onChange={e=>setSettings({...settings, multiplier:parseFloat(e.target.value)||1})} style={{...iS,maxWidth:140}}/>
-              </div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Ajusta la velocidad de venta proyectada. Si esperás vender 20% más, ponelo en 1.2.</div>
-            </div>
-
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
-              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:14}}>Umbrales de alerta</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-                <div>
-                  <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6,textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Sin stock cuando faltan</label>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <input type="number" min="1" max="60" value={settings.empty_days} onChange={e=>setSettings({...settings, empty_days:parseInt(e.target.value)||5})} style={{...iS,maxWidth:80}}/>
-                    <span style={{fontSize:13,color:T.textMd}}>días o menos</span>
-                  </div>
-                </div>
-                <div>
-                  <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6,textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Bajo stock cuando faltan</label>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <input type="number" min="1" max="180" value={settings.low_days} onChange={e=>setSettings({...settings, low_days:parseInt(e.target.value)||15})} style={{...iS,maxWidth:80}}/>
-                    <span style={{fontSize:13,color:T.textMd}}>días o menos</span>
-                  </div>
-                </div>
-              </div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Las alertas se muestran cuando quedan menos días de stock disponible que el umbral.</div>
-            </div>
-
-            <button onClick={handleSaveSettings} style={{...BtnPrimary(T),fontSize:14,padding:"12px 28px"}}>💾 Guardar ajustes</button>
-          </div>
-        )}
-      </div>
-
-      {/* Modal crear/editar item */}
-      {editingItem && (
-        <ItemEditor T={T} user={user} initial={editingItem === "new" ? null : editingItem} onSave={handleSaveItem} onCancel={()=>setEditingItem(null)}/>
-      )}
-
-      {/* Modal de proyección */}
-      {projectionItem && projectionData && ReactDOM.createPortal(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>{setProjectionItem(null);setProjectionData(null);}}>
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:720,padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-              <div>
-                <div style={{fontSize:16,fontWeight:700,color:T.text}}>Proyección de stock</div>
-                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{projectionData.item_name}</div>
-              </div>
-              <button onClick={()=>{setProjectionItem(null);setProjectionData(null);}} style={{background:"transparent",border:"none",color:T.textMd,fontSize:18,cursor:"pointer"}}>✕</button>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
-              <div style={{padding:"10px 14px",background:T.bg,borderRadius:8}}>
-                <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",fontWeight:600}}>Stock actual</div>
-                <div style={{fontSize:18,fontWeight:800,color:T.text}}>{fmtInt(projectionData.stock_total)}</div>
-              </div>
-              <div style={{padding:"10px 14px",background:T.bg,borderRadius:8}}>
-                <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",fontWeight:600}}>Velocidad / día</div>
-                <div style={{fontSize:18,fontWeight:800,color:T.text}}>{projectionData.sales_per_day.toFixed(2)}</div>
-              </div>
-              <div style={{padding:"10px 14px",background:projectionData.empty_in_days && projectionData.empty_in_days < 30 ? T.red+"22" : T.green+"22",borderRadius:8}}>
-                <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",fontWeight:600}}>Quiebra en</div>
-                <div style={{fontSize:18,fontWeight:800,color:projectionData.empty_in_days && projectionData.empty_in_days < 30 ? T.red : T.green}}>{projectionData.empty_in_days ?? "—"} días</div>
-              </div>
-            </div>
-            {(() => {
-              const data = projectionData.projection || [];
-              if (data.length === 0) return null;
-              const W = 660, H = 200, P = 30;
-              const maxY = Math.max(1, projectionData.stock_total);
-              const maxX = data.length - 1;
-              const stepX = (W - P*2) / Math.max(1, maxX);
-              const path = data.map((d,i) => `${i===0?"M":"L"}${(P+i*stepX).toFixed(1)},${(H - P - (d.stock/maxY)*(H-P*2)).toFixed(1)}`).join(" ");
-              return (
-                <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto"}}>
-                  <defs>
-                    <linearGradient id="projGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={T.green} stopOpacity="0.3"/>
-                      <stop offset="100%" stopColor={T.green} stopOpacity="0"/>
-                    </linearGradient>
-                  </defs>
-                  <path d={path + ` L${(P+maxX*stepX).toFixed(1)},${H-P} L${P},${H-P} Z`} fill="url(#projGrad)"/>
-                  <path d={path} stroke={T.green} strokeWidth="2.5" fill="none"/>
-                  <text x={5} y={P+5} fontSize="9" fill={T.textSm}>{maxY}</text>
-                  <text x={5} y={H-P+3} fontSize="9" fill={T.textSm}>0</text>
-                  <text x={P} y={H-10} fontSize="9" fill={T.textSm}>Hoy</text>
-                  <text x={W-P-40} y={H-10} fontSize="9" fill={T.textSm}>+{data.length-1}d</text>
-                </svg>
-              );
-            })()}
-          </div>
-        </div>,
-        document.body
-      )}
-    </div>
-  );
-}
-
-// ===========================================
-// ITEM EDITOR (modal crear/editar item de stock)
-// ===========================================
-function ItemEditor({T, user, initial, onSave, onCancel}) {
-  const [nombre, setNombre] = useState(initial?.nombre || "");
-  const [sku, setSku] = useState(initial?.sku || "");
-  const [stock, setStock] = useState(initial?.stock_total ?? 0);
-  const [image, setImage] = useState(initial?.image || "");
-  const [links, setLinks] = useState(Array.isArray(initial?.product_links) ? initial.product_links : []);
-  const [platformFilter, setPlatformFilter] = useState("all"); // all | tiendanube | shopify | mercadolibre
-  const [searchQuery, setSearchQuery] = useState("");
-  const [products, setProducts] = useState([]);
-  const [platformErrors, setPlatformErrors] = useState([]);
-  const [loadingProducts, setLoadingProducts] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const iS = InputStyle(T);
-
-  useEffect(() => {
-    if (!user?.uid) return;
-    setLoadingProducts(true);
-    fetch(`/api/inventory?action=list_platform_products&uid=${user.uid}`)
-      .then(r => r.json())
-      .then(d => {
-        if (!d.error) {
-          setProducts(d.products || []);
-          setPlatformErrors(d.errors || []);
-        }
-      })
-      .catch(()=>{})
-      .finally(() => setLoadingProducts(false));
-  }, [user?.uid]);
-
-  const linkedIds = new Set(links.map(l => l.product_id));
-  const filteredProducts = products.filter(p => {
-    if (platformFilter !== "all" && p.platform !== platformFilter) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      if (!(p.title || "").toLowerCase().includes(q) && !(p.sku || "").toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
-
-  const addLink = (p) => {
-    if (linkedIds.has(p.id)) return;
-    setLinks(prev => [...prev, { product_id: p.id, platform: p.platform, title: p.title, image: p.image, quantity: 1 }]);
-  };
-  const removeLink = (productId) => {
-    setLinks(prev => prev.filter(l => l.product_id !== productId));
-  };
-  const updateQty = (productId, qty) => {
-    setLinks(prev => prev.map(l => l.product_id === productId ? { ...l, quantity: parseInt(qty) || 1 } : l));
-  };
-
-  async function handleSave() {
-    if (!nombre.trim()) { alert("Falta el nombre"); return; }
-    setSaving(true);
-    const ok = await onSave({
-      ...(initial?{id:initial.id}:{}),
-      nombre: nombre.trim(),
-      sku: sku.trim(),
-      stock_total: parseInt(stock) || 0,
-      image: image.trim() || null,
-      product_links: links,
-    });
-    setSaving(false);
-    if (!ok) return;
-  }
-
-  const platformBadge = (plat) => {
-    const map = {
-      tiendanube:   { bg: "#1d8fce", color: "#fff", label: "TN" },
-      shopify:      { bg: "#96BF48", color: "#fff", label: "SH" },
-      mercadolibre: { bg: "#FFE600", color: "#333", label: "ML" },
-    };
-    const m = map[plat] || { bg: T.surface, color: T.textMd, label: "?" };
-    return <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:m.bg,color:m.color,fontWeight:700,letterSpacing:0.3}}>{m.label}</span>;
-  };
-
-  return ReactDOM.createPortal(
-    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving && onCancel()}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:780,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-          <div>
-            <div style={{fontSize:17,fontWeight:700,color:T.text}}>{initial ? "Editar item" : "Nuevo item"}</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Las ventas de 30 días se calculan automáticamente desde las publicaciones vinculadas.</div>
-          </div>
-          <button onClick={onCancel} disabled={saving} style={{background:"transparent",border:"none",color:T.textMd,fontSize:18,cursor:"pointer"}}>✕</button>
-        </div>
-
-        {/* Datos básicos */}
-        <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
-          <div>
-            <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Nombre del item</label>
-            <input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Ej. Producto A — unidad base" style={iS} disabled={saving} autoFocus/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-            <div>
-              <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>SKU (opcional)</label>
-              <input value={sku} onChange={e=>setSku(e.target.value)} placeholder="SKU-001" style={{...iS,fontFamily:"monospace"}} disabled={saving}/>
-            </div>
-            <div>
-              <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>Stock actual</label>
-              <input type="number" min="0" value={stock} onChange={e=>setStock(e.target.value)} style={iS} disabled={saving}/>
-            </div>
-          </div>
-          <div>
-            <label style={{fontSize:11,color:T.textSm,marginBottom:6,display:"block",textTransform:"uppercase",fontWeight:600,letterSpacing:0.5}}>URL imagen (opcional)</label>
-            <input value={image} onChange={e=>setImage(e.target.value)} placeholder="https://..." style={iS} disabled={saving}/>
-          </div>
-        </div>
-
-        {/* Publicaciones vinculadas */}
-        <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:18,marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Publicaciones vinculadas <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>({links.length})</span></div>
-          <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>
-            Vinculá las publicaciones de TN / Shopify / ML que descuentan este item al venderse. <strong style={{color:T.text}}>Cantidad</strong> = cuántas unidades del item se descuentan por cada venta de esa publicación (ej. pack x2 → poner 2).
-          </div>
-
-          {links.length > 0 && (
-            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
-              {links.map(l => (
-                <div key={l.product_id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
-                  {l.image
-                    ? <img src={l.image} alt="" style={{width:32,height:32,borderRadius:4,objectFit:"cover",flexShrink:0}}/>
-                    : <div style={{width:32,height:32,borderRadius:4,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:T.textSm,flexShrink:0}}>🖼</div>
-                  }
-                  {platformBadge(l.platform)}
-                  <div style={{flex:1,fontSize:12,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{l.title || l.product_id}</div>
-                  <span style={{fontSize:10,color:T.textSm}}>Cantidad</span>
-                  <input type="number" min="1" max="999" value={l.quantity} onChange={e=>updateQty(l.product_id, e.target.value)} style={{...iS,width:64,padding:"4px 6px",fontSize:12,textAlign:"center"}} disabled={saving}/>
-                  <button onClick={()=>removeLink(l.product_id)} style={{background:"transparent",border:`1px solid ${T.red}33`,color:T.red,borderRadius:5,padding:"4px 8px",fontSize:11,cursor:"pointer"}}>✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Buscador */}
-          <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-            <select value={platformFilter} onChange={e=>setPlatformFilter(e.target.value)} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
-              <option value="all">Todas las plataformas</option>
-              <option value="tiendanube">Tienda Nube</option>
-              <option value="shopify">Shopify</option>
-              <option value="mercadolibre">Mercado Libre</option>
-            </select>
-            <input type="text" placeholder="🔍 Buscar publicación por título o SKU..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
-          </div>
-
-          {/* Errores por plataforma (token sin permisos, etc) */}
-          {platformErrors.length > 0 && (
-            <div style={{marginBottom:10,display:"flex",flexDirection:"column",gap:6}}>
-              {platformErrors.map(err => {
-                const platName = {tiendanube:"Tienda Nube",shopify:"Shopify",mercadolibre:"Mercado Libre"}[err.platform] || err.platform;
+              ) : products.map(p => {
+                const st = statusOf(p);
+                const expanded = expandedId === p.id;
                 return (
-                  <div key={err.platform} style={{padding:"8px 12px",background:T.red+"15",border:`1px solid ${T.red}33`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5}}>
-                    <strong style={{color:T.red}}>⚠ {platName}:</strong> {err.error}
+                  <div key={p.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                    {/* Fila producto */}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 90px 90px 90px 90px 100px 36px",gap:0,padding:"12px 16px",alignItems:"center",cursor:p.variants.length>1?"pointer":"default",transition:"background 0.1s",background:expanded?T.surface:"transparent"}}
+                      onClick={()=>p.variants.length>1&&setExpandedId(expanded?null:p.id)}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                        {p.imagen
+                          ? <img src={p.imagen} alt="" style={{width:36,height:36,borderRadius:8,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
+                          : <div style={{width:36,height:36,borderRadius:8,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,border:`1px solid ${T.border}`}}>📦</div>
+                        }
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                          <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{p.variants.length} variante{p.variants.length!==1?"s":""}</div>
+                        </div>
+                      </div>
+                      <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.text}}>{fmtInt(p.stock_total)}</div>
+                      <div style={{textAlign:"right",fontSize:13,color:T.textMd}}>{fmtInt(p.units_sold)}</div>
+                      <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmtARS(p.revenue)}</div>
+                      <div style={{textAlign:"right",fontSize:13,fontWeight:600,color:statusColor(st)}}>
+                        {p.days_left===null?"—":p.days_left>999?"999+":p.days_left+"d"}
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:statusBg(st),color:statusColor(st),fontWeight:700}}>{statusLabel(st)}</span>
+                      </div>
+                      <div style={{textAlign:"right",fontSize:14,color:T.textSm,transition:"transform 0.2s",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>
+                        {p.variants.length > 1 ? "›" : ""}
+                      </div>
+                    </div>
+
+                    {/* Variantes expandidas */}
+                    {expanded && (
+                      <div style={{background:T.surface,borderTop:`1px solid ${T.borderL}`}}>
+                        {/* Header variantes */}
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px 80px 80px 90px",gap:0,padding:"7px 16px 7px 62px",borderBottom:`1px solid ${T.borderL}`}}>
+                          {["Variante / SKU","Stock","Vendidas","Revenue","Días","Estado"].map((h,i)=>(
+                            <div key={i} style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,textAlign:i===0?"left":"right"}}>{h}</div>
+                          ))}
+                        </div>
+                        {p.variants.map(v => {
+                          const vst = v.stock===0?"empty":v.days_left!==null&&v.days_left<15?"low":"ok";
+                          return (
+                            <div key={v.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px 80px 80px 90px",gap:0,padding:"9px 16px 9px 62px",borderBottom:`1px solid ${T.borderL}`,alignItems:"center"}}>
+                              <div>
+                                <div style={{fontSize:12,fontWeight:500,color:T.text}}>{v.nombre}</div>
+                                {v.sku&&<div style={{fontSize:10,color:T.textSm}}>SKU: {v.sku}</div>}
+                              </div>
+                              <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:T.text}}>{fmtInt(v.stock)}</div>
+                              <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmtInt(v.units_sold)}</div>
+                              <div style={{textAlign:"right",fontSize:11,color:T.textMd}}>{fmtARS(v.revenue)}</div>
+                              <div style={{textAlign:"right",fontSize:12,fontWeight:600,color:statusColor(vst)}}>
+                                {v.days_left===null?"—":v.days_left>999?"999+":v.days_left+"d"}
+                              </div>
+                              <div style={{textAlign:"right"}}>
+                                <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:statusBg(vst),color:statusColor(vst),fontWeight:700}}>{statusLabel(vst)}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
-          )}
-
-          <div style={{maxHeight:240,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:8}}>
-            {loadingProducts ? (
-              <div style={{padding:"30px 20px",textAlign:"center"}}>
-                <Spinner size={14} color={T.accent}/>
-                <div style={{fontSize:11,color:T.textSm,marginTop:8}}>Cargando publicaciones de tus tiendas...</div>
-              </div>
-            ) : filteredProducts.length === 0 ? (
-              <div style={{padding:"30px 20px",textAlign:"center",fontSize:12,color:T.textSm}}>
-                {products.length === 0
-                  ? (platformErrors.length > 0
-                      ? "No se pudieron cargar publicaciones — revisá los errores arriba."
-                      : "No hay publicaciones disponibles. Conectá TN / Shopify / ML en Config.")
-                  : "Ninguna publicación coincide con la búsqueda."}
-              </div>
-            ) : (
-              filteredProducts.map(p => {
-                const linked = linkedIds.has(p.id);
-                return (
-                  <div key={p.id} onClick={()=>!linked && addLink(p)}
-                    style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,cursor:linked?"default":"pointer",opacity:linked?0.5:1,transition:"background 0.12s"}}
-                    onMouseEnter={e=>{if(!linked) e.currentTarget.style.background=T.surface;}}
-                    onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-                    {p.image
-                      ? <img src={p.image} alt="" style={{width:30,height:30,borderRadius:4,objectFit:"cover",flexShrink:0}}/>
-                      : <div style={{width:30,height:30,borderRadius:4,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:T.textSm,flexShrink:0}}>🖼</div>
-                    }
-                    {platformBadge(p.platform)}
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontWeight:500}}>{p.title}</div>
-                      {p.sku && <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:1}}>SKU: {p.sku}</div>}
-                    </div>
-                    {linked
-                      ? <span style={{fontSize:10,color:T.green,fontWeight:600}}>✓ Vinculada</span>
-                      : <span style={{fontSize:14,color:T.accent}}>+</span>
-                    }
-                  </div>
-                );
-              })
-            )}
+          </>
+        ) : (
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:12}}>🔌</div>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Conectá tu tienda</div>
+            <div style={{fontSize:13,color:T.textSm}}>Conectá Tienda Nube o Shopify desde Configuración para ver tu stock.</div>
           </div>
-        </div>
-
-        <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
-          <button onClick={onCancel} disabled={saving} style={{...BtnSecondary(T),fontSize:13,padding:"10px 18px"}}>Cancelar</button>
-          <button onClick={handleSave} disabled={saving||!nombre.trim()} style={{...BtnPrimary(T),fontSize:13,padding:"10px 24px"}}>
-            {saving?"Guardando...":(initial?"Guardar cambios":"Crear item")}
-          </button>
-        </div>
+        )}
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }
+
 
 // ROOT APP
 // ===========================================
