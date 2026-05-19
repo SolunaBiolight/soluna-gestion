@@ -210,7 +210,14 @@ export default async function handler(req, res) {
                 if (!idsRes.ok) {
                   const txt = await idsRes.text().catch(()=>"");
                   mlFailed = offset === 0;
-                  mlFirstError = `HTTP ${idsRes.status}: ${txt.slice(0, 200)}`;
+                  // Detectar error de permisos de la app ML (no del token)
+                  if (idsRes.status === 403 && (txt.includes("PolicyAgent") || txt.includes("UNAUTHORIZED"))) {
+                    mlFirstError = "Tu app de Mercado Libre no tiene el permiso 'Publicación y sincronización'. Entrá a developers.mercadolibre.com → tu app → editar → Permisos → marcá 'Publicación y sincronización' (Lectura) → Guardar. Después reconectá ML en Config.";
+                  } else if (idsRes.status === 401) {
+                    mlFirstError = "El token de ML expiró o no es válido. Reconectá Mercado Libre desde Config.";
+                  } else {
+                    mlFirstError = `HTTP ${idsRes.status}: ${txt.slice(0, 200)}`;
+                  }
                   break;
                 }
                 const idsData = await idsRes.json();
