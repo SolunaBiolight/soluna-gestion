@@ -8245,6 +8245,98 @@ function AppAudioStudio({T, user, onHome}) {
 
 
 // ===========================================
+// META ADS · Ad Account Picker (cuando falta ad_account_id)
+// ===========================================
+function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [adAccounts, setAdAccounts] = useState([]);
+  const [pages, setPages] = useState([]);
+  const [selAdAcc, setSelAdAcc] = useState("");
+  const [selPage, setSelPage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!accId) return;
+    setLoading(true); setError(null);
+    metaApi("available_ad_accounts", "GET", null, {acc_id: accId})
+      .then(d => {
+        if (d.error) { setError(d.error); return; }
+        const aas = d.ad_accounts || [];
+        const pgs = d.pages || [];
+        setAdAccounts(aas);
+        setPages(pgs);
+        if (aas.length > 0) setSelAdAcc(aas[0].id);
+        if (pgs.length > 0) setSelPage(pgs[0].id);
+      })
+      .catch(e => setError(e.message || "Error de red"))
+      .finally(() => setLoading(false));
+  }, [accId]);
+
+  async function handleSave() {
+    if (!selAdAcc) return;
+    setSaving(true);
+    const aa = adAccounts.find(a => a.id === selAdAcc);
+    const pg = pages.find(p => p.id === selPage);
+    const ig = pg?.instagram_business_account;
+    const d = await metaApi("select", "POST", {
+      ad_account_id: selAdAcc, ad_account_name: aa?.name || "",
+      page_id: pg?.id || "", page_name: pg?.name || "",
+      page_access_token: pg?.access_token || "",
+      ig_account_id: ig?.id || "", ig_username: ig?.username || "",
+    }, {acc_id: accId});
+    setSaving(false);
+    if (d.error) { alert("Error: " + d.error); return; }
+    onPicked?.();
+  }
+
+  return (
+    <div style={{maxWidth:1280,margin:"16px auto 0",padding:"0 24px",width:"100%"}}>
+      <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"16px 18px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>⚠ Falta elegir tu cuenta publicitaria</div>
+        <div style={{fontSize:11,color:T.textMd,lineHeight:1.55,marginBottom:12}}>
+          Tenés Meta conectada (token OK) pero no asociaste todavía qué cuenta publicitaria querés analizar. Elegila de la lista de abajo y dale Guardar.
+        </div>
+
+        {loading ? (
+          <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}><Spinner size={12} color={T.accent}/> Buscando cuentas disponibles en tu token...</div>
+        ) : error ? (
+          <div style={{padding:"10px 12px",background:T.red+"15",border:`1px solid ${T.red}33`,borderRadius:8,fontSize:11,color:T.textMd}}>
+            <strong style={{color:T.red}}>Error:</strong> {error}
+            <div style={{marginTop:6,color:T.textSm}}>Probá reconectar Meta desde Config o verificá que el token tenga los permisos ads_management + business_management.</div>
+          </div>
+        ) : adAccounts.length === 0 ? (
+          <div style={{padding:"10px 12px",background:T.red+"15",border:`1px solid ${T.red}33`,borderRadius:8,fontSize:11,color:T.textMd}}>
+            <strong style={{color:T.red}}>No hay cuentas publicitarias visibles</strong> con este token. Asegurate que el system user GROWITH tenga asignada al menos una cuenta publicitaria en Business Manager → Usuarios del sistema → GROWITH → Asignar activos.
+          </div>
+        ) : (
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:240}}>
+              <div style={{fontSize:10,color:T.textSm,marginBottom:4,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Cuenta publicitaria</div>
+              <select value={selAdAcc} onChange={e=>setSelAdAcc(e.target.value)} disabled={saving} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"8px 10px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                {adAccounts.map(a => <option key={a.id} value={a.id}>{a.name || a.id} ({a.currency || "—"})</option>)}
+              </select>
+            </div>
+            {pages.length > 0 && (
+              <div style={{flex:1,minWidth:240}}>
+                <div style={{fontSize:10,color:T.textSm,marginBottom:4,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Página (opcional)</div>
+                <select value={selPage} onChange={e=>setSelPage(e.target.value)} disabled={saving} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"8px 10px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <option value="">— Sin página —</option>
+                  {pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            )}
+            <button onClick={handleSave} disabled={saving||!selAdAcc} style={{padding:"9px 18px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:saving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",alignSelf:"flex-end"}}>
+              {saving?"Guardando...":"Guardar y continuar →"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===========================================
 // META ADS · Rule Editor (Fase 3 optimizador)
 // ===========================================
 function RuleEditor({T, initialRule, onSave, onCancel}) {
@@ -8829,15 +8921,10 @@ function AppMetaAds({T, user, onHome}) {
       <AppTabs T={T} tabs={TABS} active={tab} onChange={setTab}/>
 
       {/* Banner si la cuenta esta conectada pero falta seleccionar ad_account_id */}
-      {activeAcc && !activeAcc.ad_account_id && tab !== "cuenta" && (
-        <div style={{maxWidth:1280,margin:"16px auto 0",padding:"0 24px",width:"100%"}}>
-          <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
-            <div style={{fontSize:12,color:T.textMd,lineHeight:1.55,flex:1,minWidth:240}}>
-              ⚠ <strong style={{color:T.text}}>Falta elegir tu cuenta publicitaria.</strong> El token está conectado pero todavía no asociaste una cuenta. Andá al tab <strong style={{color:T.text}}>Cuenta</strong> para elegirla de la lista (o reconectate si la lista está vacía — significa que el token no tiene permisos <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:11,color:T.accent}}>ads_management</code> / <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:11,color:T.accent}}>business_management</code>).
-            </div>
-            <button onClick={()=>setTab("cuenta")} style={{padding:"8px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ir a Cuenta →</button>
-          </div>
-        </div>
+      {activeAcc && !activeAcc.ad_account_id && (
+        <AdAccountPicker T={T} accId={activeAccId} activeAcc={activeAcc} metaApi={metaApi} onPicked={()=>{
+          metaApi("accounts").then(d=>{ if(d.accounts) setAccounts(d.accounts); });
+        }}/>
       )}
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>

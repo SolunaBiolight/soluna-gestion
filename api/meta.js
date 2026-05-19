@@ -505,6 +505,23 @@ export default async function handler(req, res) {
       return res.json({ accounts: accounts.map(safeAccount), active });
     }
 
+    // Reintroseccionar las ad accounts/pages disponibles del token guardado
+    // (usado cuando la cuenta Meta esta conectada pero sin ad_account_id seleccionado).
+    if (action === "available_ad_accounts" && req.method === "GET") {
+      if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.access_token) return res.status(400).json({ error: "Sin access_token" });
+      try {
+        const intros = await metaIntrospect(cfg.access_token);
+        return res.json({
+          ad_accounts: intros.ad_accounts || [],
+          pages: intros.pages || [],
+        });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
     if (action === "connect" && req.method === "POST") {
       const { access_token } = req.body || {};
       if (!access_token) return res.status(400).json({ error: "Falta access_token" });
