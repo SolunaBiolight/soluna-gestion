@@ -8591,6 +8591,18 @@ function AppMetaAds({T, user, onHome}) {
   const [brand,setBrand]=useState("");
   const [brandSaving,setBrandSaving]=useState(false);
 
+  // Publicar: destino del ad
+  const [pubDest,setPubDest]=useState("existing"); // existing | newCamp
+  const [pubForm,setPubForm]=useState({
+    camp_name:"",
+    objective:"OUTCOME_SALES",
+    mode:"cbo", // cbo | abo
+    daily_budget_ars:"3000",
+    start_time:"", // datetime-local
+    adset_name:"",
+  });
+  const [pubCreating,setPubCreating]=useState(false);
+
   const uid=user?.uid;
   const activeAcc=accounts.find(a=>a.id===activeAccId)||null;
 
@@ -8947,7 +8959,8 @@ function AppMetaAds({T, user, onHome}) {
   async function handleGenerateCopy(c) {
     setGeneratingCopy(c.id);
     const params=new URLSearchParams({action:"generate_copy",uid,cid:c.id});
-    const d=await fetch(`/api/meta?${params}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tone:c.tone,length:c.length,format:c.format,notes:c.notes||""})}).then(r=>r.json());
+    const body={tone:c.tone,length:c.length,format:c.format,notes:c.notes||"",word_min:c.word_min||"",word_max:c.word_max||"",product_data:c.product_data||""};
+    const d=await fetch(`/api/meta?${params}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(r=>r.json());
     if(d.error){toast(d.error,"error");setGeneratingCopy(null);return;}
     setCreatives(prev=>prev.map(x=>x.id===c.id?d.creative:x));
     setSelCreative(d.creative);
@@ -8961,6 +8974,44 @@ function AppMetaAds({T, user, onHome}) {
     if(d.error){toast(d.error,"error");return;}
     setCreatives(prev=>prev.map(x=>x.id===c.id?d.creative:x));
     setSelCreative(d.creative);
+  }
+
+  // Crea Campaña + AdSet inline desde el Publicador, y asigna el adset al creative
+  async function handleCreateCampAndAdsetInline(c) {
+    if(!pubForm.camp_name.trim()) return toast("Poné un nombre para la campaña","warning");
+    if(!pubForm.adset_name.trim()) return toast("Poné un nombre para el adset","warning");
+    if(!pubForm.daily_budget_ars || parseFloat(pubForm.daily_budget_ars)<=0) return toast("Poné un presupuesto diario válido","warning");
+    setPubCreating(true);
+    try {
+      const isCbo = pubForm.mode === "cbo";
+      // 1) Campaña
+      const cBody = {
+        name: pubForm.camp_name.trim(),
+        objective: pubForm.objective,
+        is_cbo: isCbo,
+        cbo_daily_budget_ars: isCbo ? pubForm.daily_budget_ars : "",
+      };
+      const campRes = await metaApi("create_campaign","POST",cBody,{acc_id:activeAccId});
+      if(campRes.error){toast("Error creando campaña: "+campRes.error,"error");setPubCreating(false);return;}
+      // 2) AdSet
+      const aBody = {
+        name: pubForm.adset_name.trim(),
+        campaign_id: campRes.id,
+        is_cbo: isCbo,
+        daily_budget_ars: isCbo ? "" : pubForm.daily_budget_ars,
+        start_time: pubForm.start_time || "",
+      };
+      const asRes = await metaApi("create_adset","POST",aBody,{acc_id:activeAccId});
+      if(asRes.error){toast("Campaña creada pero falló el adset: "+asRes.error,"error");setPubCreating(false);loadCampaigns();return;}
+      // 3) Asignar al creativo
+      await handlePatch(c,{adset_id:asRes.id});
+      toast(`Campaña + AdSet creados ✓ (${isCbo?"CBO":"ABO"})`,"success");
+      // Refrescar lista
+      loadCampaigns();
+      setPubDest("existing");
+    } catch(e){
+      toast("Error: "+(e.message||"falló creación"),"error");
+    } finally { setPubCreating(false); }
   }
 
   async function handlePublish(c) {
@@ -9861,8 +9912,26 @@ function AppMetaAds({T, user, onHome}) {
                     </div>
                   </div>
                 ))}
+
+                {/* Largo exacto en palabras (override del corto/medio/largo) */}
+                <div style={{marginBottom:10}}>
+                  <label style={Label}>Palabras (opcional, sobreescribe el largo)</label>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <input type="number" min="5" max="500" value={selCreative.word_min||""} onChange={e=>setSelCreative(p=>({...p,word_min:e.target.value}))} onBlur={()=>handlePatch(selCreative,{word_min:selCreative.word_min||""})} placeholder="min" style={{...iS,width:80}}/>
+                    <span style={{fontSize:11,color:T.textSm}}>a</span>
+                    <input type="number" min="5" max="500" value={selCreative.word_max||""} onChange={e=>setSelCreative(p=>({...p,word_max:e.target.value}))} onBlur={()=>handlePatch(selCreative,{word_max:selCreative.word_max||""})} placeholder="max" style={{...iS,width:80}}/>
+                    <span style={{fontSize:11,color:T.textSm}}>palabras</span>
+                  </div>
+                </div>
+
+                {/* Data específica del producto (este creative en particular) */}
+                <label style={Label}>Data del producto (este anuncio)</label>
+                <textarea value={selCreative.product_data||""} onChange={e=>setSelCreative(p=>({...p,product_data:e.target.value}))} onBlur={()=>handlePatch(selCreative,{product_data:selCreative.product_data||""})}
+                  placeholder="Características, beneficios, precio actual, descuento, garantía, casos de uso, link a producto. La IA lo usa SÍ o SÍ."
+                  style={{...iS,minHeight:80,resize:"vertical",marginBottom:10,lineHeight:1.5}}/>
+
                 <label style={Label}>Notas para la IA</label>
-                <textarea value={selCreative.notes||""} onChange={e=>setSelCreative(p=>({...p,notes:e.target.value}))} onBlur={()=>handlePatch(selCreative,{notes:selCreative.notes})} placeholder="Indicaciones extras..." style={{...iS,minHeight:60,resize:"vertical",marginBottom:12}}/>
+                <textarea value={selCreative.notes||""} onChange={e=>setSelCreative(p=>({...p,notes:e.target.value}))} onBlur={()=>handlePatch(selCreative,{notes:selCreative.notes})} placeholder="Indicaciones extras (ej: que use emojis, que mencione envío gratis, etc)" style={{...iS,minHeight:60,resize:"vertical",marginBottom:12}}/>
                 <button onClick={()=>handleGenerateCopy(selCreative)} disabled={!!generatingCopy} style={{...BtnPri,width:"100%",justifyContent:"center",marginBottom:14}}>
                   {generatingCopy===selCreative.id?<><Spinner size={13} color="#fff"/>Generando...</>:"✨ Generar copy con Gemini"}
                 </button>
@@ -9880,11 +9949,66 @@ function AppMetaAds({T, user, onHome}) {
                         <input value={selCreative.description||""} onChange={e=>{const u={...selCreative,description:e.target.value};setSelCreative(u);}} onBlur={()=>handlePatch(selCreative,{description:selCreative.description})} style={iS}/>
                       </div>
                     </div>
-                    <label style={Label}>AdSet</label>
-                    <select value={selCreative.adset_id||""} onChange={e=>{const u={...selCreative,adset_id:e.target.value};setSelCreative(u);handlePatch(selCreative,{adset_id:e.target.value});}} style={{...iS,marginBottom:10}}>
-                      <option value="">— Elegí un AdSet —</option>
-                      {adsets.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
+                    {/* Destino del ad */}
+                    <div style={{padding:"10px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,marginBottom:10}}>
+                      <div style={{fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>📍 Destino del anuncio</div>
+                      <div style={{display:"flex",gap:6,marginBottom:10}}>
+                        <button onClick={()=>setPubDest("existing")} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${pubDest==="existing"?T.accentSolid+"88":T.border}`,background:pubDest==="existing"?T.accentSolid+"18":"transparent",color:pubDest==="existing"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Campaña activa</button>
+                        <button onClick={()=>{setPubDest("newCamp"); if(campaigns.length===0) loadCampaigns();}} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${pubDest==="newCamp"?T.accentSolid+"88":T.border}`,background:pubDest==="newCamp"?T.accentSolid+"18":"transparent",color:pubDest==="newCamp"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Nueva campaña</button>
+                      </div>
+
+                      {pubDest==="existing"&&(
+                        <>
+                          <label style={Label}>AdSet existente</label>
+                          {adsets.length===0
+                            ? <div style={{fontSize:11,color:T.textSm,padding:"8px 0",lineHeight:1.5}}>No hay AdSets cargados. <button onClick={loadCampaigns} style={{background:"none",border:"none",color:T.accent,padding:0,cursor:"pointer",textDecoration:"underline",fontSize:11}}>Recargar</button> o crear una nueva campaña.</div>
+                            : <select value={selCreative.adset_id||""} onChange={e=>{const u={...selCreative,adset_id:e.target.value};setSelCreative(u);handlePatch(selCreative,{adset_id:e.target.value});}} style={iS}>
+                                <option value="">— Elegí un AdSet —</option>
+                                {adsets.map(a=>{ const camp=campaigns.find(c=>c.id===a.campaign_id); return <option key={a.id} value={a.id}>{camp?camp.name+" → ":""}{a.name}</option>; })}
+                              </select>
+                          }
+                        </>
+                      )}
+
+                      {pubDest==="newCamp"&&(
+                        <div>
+                          <label style={Label}>Nombre de la campaña</label>
+                          <input value={pubForm.camp_name} onChange={e=>setPubForm(p=>({...p,camp_name:e.target.value}))} placeholder="Ej: BlackFriday-VentasAR" style={{...iS,marginBottom:8}}/>
+
+                          <label style={Label}>Objetivo</label>
+                          <select value={pubForm.objective} onChange={e=>setPubForm(p=>({...p,objective:e.target.value}))} style={{...iS,marginBottom:10}}>
+                            {OBJECTIVES.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}
+                          </select>
+
+                          <label style={Label}>Modo de budget</label>
+                          <div style={{display:"flex",gap:6,marginBottom:6}}>
+                            <button onClick={()=>setPubForm(p=>({...p,mode:"cbo"}))} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${pubForm.mode==="cbo"?T.accentSolid+"88":T.border}`,background:pubForm.mode==="cbo"?T.accentSolid+"18":"transparent",color:pubForm.mode==="cbo"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>CBO</button>
+                            <button onClick={()=>setPubForm(p=>({...p,mode:"abo"}))} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${pubForm.mode==="abo"?T.accentSolid+"88":T.border}`,background:pubForm.mode==="abo"?T.accentSolid+"18":"transparent",color:pubForm.mode==="abo"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>ABO</button>
+                          </div>
+                          <div style={{fontSize:10,color:T.textSm,lineHeight:1.5,marginBottom:10,padding:"6px 8px",background:T.bg,border:`1px solid ${T.border}`,borderRadius:5}}>
+                            {pubForm.mode==="cbo"
+                              ? <>🧠 <strong style={{color:T.text}}>CBO</strong>: el presupuesto vive en la campaña. Meta decide cuánto darle a cada adset según rendimiento. Recomendado.</>
+                              : <>🎯 <strong style={{color:T.text}}>ABO</strong>: cada adset tiene su propio presupuesto fijo. Más control, menos automático.</>
+                            }
+                          </div>
+
+                          <label style={Label}>Presupuesto diario (ARS)</label>
+                          <input type="number" min="100" value={pubForm.daily_budget_ars} onChange={e=>setPubForm(p=>({...p,daily_budget_ars:e.target.value}))} placeholder="3000" style={{...iS,marginBottom:10}}/>
+
+                          <label style={Label}>Fecha de activación (opcional)</label>
+                          <input type="datetime-local" value={pubForm.start_time} onChange={e=>setPubForm(p=>({...p,start_time:e.target.value}))} style={{...iS,marginBottom:4}}/>
+                          <div style={{fontSize:10,color:T.textSm,marginBottom:10}}>Vacío = arranca cuando le des "Activar" (queda en PAUSED).</div>
+
+                          <label style={Label}>Nombre del AdSet</label>
+                          <input value={pubForm.adset_name} onChange={e=>setPubForm(p=>({...p,adset_name:e.target.value}))} placeholder="Ej: AR-30a55-PantallasMucho" style={{...iS,marginBottom:10}}/>
+
+                          <button onClick={()=>handleCreateCampAndAdsetInline(selCreative)} disabled={pubCreating} style={{...BtnPri,width:"100%",justifyContent:"center"}}>
+                            {pubCreating?<><Spinner size={12} color="#fff"/>Creando...</>:"➕ Crear campaña + adset y asignar"}
+                          </button>
+                          {selCreative.adset_id&&pubDest==="newCamp"&&<div style={{fontSize:11,color:T.green,marginTop:8,fontWeight:600}}>✓ Asignado al AdSet recién creado</div>}
+                        </div>
+                      )}
+                    </div>
                     <label style={Label}>CTA</label>
                     <select value={selCreative.cta||"LEARN_MORE"} onChange={e=>{const u={...selCreative,cta:e.target.value};setSelCreative(u);handlePatch(selCreative,{cta:e.target.value});}} style={{...iS,marginBottom:14}}>
                       {CTAS.map(c=><option key={c} value={c}>{c}</option>)}

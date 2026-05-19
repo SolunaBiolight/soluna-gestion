@@ -157,16 +157,23 @@ Escribís en español rioplatense con voseo, tono directo y empático.
 Devolvé SOLO un JSON con estas claves exactas, sin explicaciones ni backticks:
 {"copy":"texto principal del ad (2-4 líneas, hook fuerte al inicio)","title":"titular corto máx 40 chars","description":"descripción secundaria máx 30 chars"}`;
 
-async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes, filename }) {
+async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes, filename, word_min, word_max, product_data }) {
   const apiKey = process.env.GOOGLE_AI_KEY;
   if (!apiKey) throw new Error("Falta GOOGLE_AI_KEY en env");
   const toneDesc = { directo:"directo y al grano", emocional:"empático y emocional", urgencia:"con urgencia y escasez", educativo:"educativo e informativo" }[tone] || tone;
-  const lengthDesc = { corto:"máximo 3 líneas", medio:"4-6 líneas", largo:"7-10 líneas" }[length] || length;
+  const lengthDesc = { corto:"máximo 3 líneas (~25-40 palabras)", medio:"4-6 líneas (~50-90 palabras)", largo:"7-10 líneas (~100-160 palabras)" }[length] || length;
   const formatDesc = { storytelling:"storytelling (problema → agitación → solución)", directo:"propuesta de valor directa", pregunta:"arranca con una pregunta al target", testimonial:"en primera persona como testimonio" }[format] || format;
+  const wMin = parseInt(word_min, 10);
+  const wMax = parseInt(word_max, 10);
+  const hasWordRange = !Number.isNaN(wMin) && !Number.isNaN(wMax) && wMin > 0 && wMax >= wMin;
+  const lengthLine = hasWordRange
+    ? `- Largo: entre ${wMin} y ${wMax} palabras EXACTAS (no menos, no más)`
+    : `- Largo: ${lengthDesc}`;
   const userPrompt = [
     brand ? `## Contexto de marca:\n${brand}` : "",
+    product_data ? `## Data del producto (usar SI o SI):\n${product_data}` : "",
     analysis ? `## Análisis del creativo:\n${JSON.stringify(analysis, null, 2)}` : `## Creativo: ${filename || "sin nombre"}`,
-    `## Parámetros:\n- Tono: ${toneDesc}\n- Largo: ${lengthDesc}\n- Formato: ${formatDesc}`,
+    `## Parámetros:\n- Tono: ${toneDesc}\n${lengthLine}\n- Formato: ${formatDesc}`,
     notes ? `- Notas: ${notes}` : "",
     `\nGenerá el copy siguiendo el formato JSON exacto.`,
   ].filter(Boolean).join("\n");
@@ -1141,7 +1148,7 @@ export default async function handler(req, res) {
       if (!cid) return res.status(400).json({ error: "Falta cid" });
       const c = await loadCreative(db, uid, cid);
       if (!c) return res.status(404).json({ error: "Creativo no encontrado" });
-      const EDITABLE = ["tone","length","format","notes","copy","title","description","link","cta","campaign_id","adset_id","analysis"];
+      const EDITABLE = ["tone","length","format","notes","copy","title","description","link","cta","campaign_id","adset_id","analysis","word_min","word_max","product_data"];
       const updates = {};
       EDITABLE.forEach(k => { if (req.body?.[k] !== undefined) updates[k] = req.body[k]; });
       const updated = { ...c, ...updates };
@@ -1161,10 +1168,10 @@ export default async function handler(req, res) {
       if (!c) return res.status(404).json({ error: "Creativo no encontrado" });
       const userSnap = await db.collection("users").doc(uid).get();
       const brand = userSnap.data()?.meta_brand || "";
-      const { tone, length, format, notes } = req.body || {};
-      const merged = { ...c, ...(tone && { tone }), ...(length && { length }), ...(format && { format }), ...(notes && { notes }) };
+      const { tone, length, format, notes, word_min, word_max, product_data } = req.body || {};
+      const merged = { ...c, ...(tone && { tone }), ...(length && { length }), ...(format && { format }), ...(notes && { notes }), ...(word_min && { word_min }), ...(word_max && { word_max }), ...(product_data && { product_data }) };
       let result;
-      try { result = await geminiGenerateCopy({ brand, analysis: merged.analysis, tone: merged.tone, length: merged.length, format: merged.format, notes: merged.notes, filename: merged.filename_base }); }
+      try { result = await geminiGenerateCopy({ brand, analysis: merged.analysis, tone: merged.tone, length: merged.length, format: merged.format, notes: merged.notes, filename: merged.filename_base, word_min: merged.word_min, word_max: merged.word_max, product_data: merged.product_data }); }
       catch (e) { return res.status(502).json({ error: e.message }); }
       const updated = { ...merged, copy: result.copy, title: result.title, description: result.description, ia_status: "ok" };
       await saveCreative(db, uid, updated);
