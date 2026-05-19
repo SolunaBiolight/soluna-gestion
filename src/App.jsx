@@ -5532,7 +5532,9 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_customers</code>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_orders</code>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>write_orders</code>
+                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_products</code>
                     </div>
+                    <div style={{fontSize:9,color:T.textSm,marginTop:3}}>El último es para el módulo Stock (leer publicaciones).</div>
                   </li>
                   <li>⚠ En esa misma versión, agregá esta <strong style={{color:T.text}}>URL de redireccionamiento</strong>:
                     <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=shopify&action=callback`}</div>
@@ -5589,7 +5591,15 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                   <li><strong style={{color:T.text}}>"Crear aplicación"</strong> → completá nombre, descripción, propósito "Negocios"</li>
                   <li>En <strong style={{color:T.text}}>Flujos OAuth</strong> marcá: <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>Authorization Code</code> y <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>Refresh Token</code></li>
                   <li>En <strong style={{color:T.text}}>Negocios</strong> marcá <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>Mercado Libre</code></li>
-                  <li>En <strong style={{color:T.text}}>Permisos</strong> dale "Lectura y escritura" a: Usuarios, Facturación, Venta y envíos. Y "Lectura" a Métricas del negocio.</li>
+                  <li>En <strong style={{color:T.text}}>Permisos</strong> marcá:
+                    <ul style={{margin:"4px 0 0",paddingLeft:18}}>
+                      <li><strong style={{color:T.text}}>Usuarios</strong> · Lectura y escritura</li>
+                      <li><strong style={{color:T.text}}>Facturación de una venta</strong> · Lectura y escritura</li>
+                      <li><strong style={{color:T.text}}>Venta y envíos de un producto</strong> · Lectura y escritura</li>
+                      <li><strong style={{color:T.text}}>Métricas del negocio</strong> · Lectura</li>
+                      <li><strong style={{color:T.text}}>Publicación y sincronización</strong> · Lectura <span style={{fontSize:10,color:T.yellow||"#eab308"}}>← necesario para el módulo Stock</span></li>
+                    </ul>
+                  </li>
                   <li>⚠ En <strong style={{color:T.text}}>Redirect URIs</strong> agregá exactamente:
                     <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=mercadolibre&action=callback`}</div>
                   </li>
