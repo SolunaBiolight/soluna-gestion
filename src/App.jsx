@@ -8736,24 +8736,33 @@ function AppMetaAds({T, user, onHome}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[libSince,libUntil]);
 
+  const loadInsightsReqIdRef = React.useRef(0);
   async function loadInsights() {
     if(!activeAccId) return;
+    const myReqId = ++loadInsightsReqIdRef.current;
     setALoading(true);
     setAError(null);
+    // Limpiar rows YA — sino al cambiar de nivel (ads → campaña) se ven los
+    // datos viejos del nivel anterior mientras carga.
+    setARows([]);
     try {
       const params = {acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil};
-      // Si hay drill-down, filtrar por el último parent del breadcrumb
       const lastParent = aDrill[aDrill.length-1];
       if (lastParent) {
         params.parent_id = lastParent.id;
         params.parent_type = lastParent.level;
       }
       const d = await metaApi("insights","GET",null,params);
+      // Si dispararon otra carga después de esta, descartamos.
+      if (myReqId !== loadInsightsReqIdRef.current) return;
       if(d.error) { setAError(d.error); setARows([]); }
       else setARows(d.rows||[]);
     } catch(e) {
+      if (myReqId !== loadInsightsReqIdRef.current) return;
       setAError(e.message || "Error de red");
-    } finally { setALoading(false); }
+    } finally {
+      if (myReqId === loadInsightsReqIdRef.current) setALoading(false);
+    }
   }
 
   // Drill down: cuando se hace click en una row, entrar a sus hijos
