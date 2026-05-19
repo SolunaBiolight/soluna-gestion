@@ -8927,11 +8927,17 @@ function AppMetaAds({T, user, onHome}) {
   }
 
   async function saveRule(rule) {
+    const isNew = !rule.id;
     const d = await metaApi("rule_save","POST",{rule:{...rule, acc_id:activeAccId}});
     if(d.error) { toast("Error: "+d.error,"error"); return false; }
     toast("Regla guardada ✓","success");
     await loadRules();
     setEditingRule(null);
+    // Si es regla nueva y está activa, ofrecer reprocesar últimos 30 días al instante
+    if (isNew && rule.active !== false) {
+      const ok = await appConfirm("¿Aplicarla ahora sobre los últimos 30 días?\n\nGrowith va a evaluar tus ads/adsets/campañas con la métrica de los últimos 30 días y ejecutar la acción (pausar / bajar presupuesto / notificar) si cumplen las condiciones.", {okLabel:"🔄 Reprocesar 30 días", cancelLabel:"Después"});
+      if (ok) reprocessRules(30);
+    }
     return true;
   }
 
@@ -8954,6 +8960,20 @@ function AppMetaAds({T, user, onHome}) {
       const d = await metaApi("evaluate_rules","POST",null,{acc_id:activeAccId});
       if(d.error) { toast("Error: "+d.error,"error"); return; }
       toast(`Evaluación lista · ${d.actions||0} acciones aplicadas`,"success");
+      loadRules();
+    } finally { setEvaluatingNow(false); }
+  }
+
+  // Reprocesa todas las reglas activas usando los últimos N días como window
+  // (override de la window propia de cada condición). Útil cuando se acaba
+  // de crear una regla y se quiere que actúe sobre data histórica al toque.
+  async function reprocessRules(days = 30) {
+    setEvaluatingNow(true);
+    try {
+      const d = await metaApi("evaluate_rules","POST",{force_window_days: days},{acc_id:activeAccId});
+      if(d.error) { toast("Error: "+d.error,"error"); return; }
+      const acts = d.actions || 0;
+      toast(`Reprocesado ${days}d · ${acts} acción${acts===1?"":"es"} aplicada${acts===1?"":"s"}`,"success");
       loadRules();
     } finally { setEvaluatingNow(false); }
   }
@@ -9533,8 +9553,11 @@ function AppMetaAds({T, user, onHome}) {
                     </select>
                     {/* Búsqueda */}
                     <input type="text" placeholder="🔍 Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                    <button onClick={loadInsights} disabled={aLoading} title="Refrescar" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <button onClick={loadInsights} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       {aLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}
+                    </button>
+                    <button onClick={()=>{const today=new Date().toISOString().slice(0,10); const s=new Date(Date.now()-30*86400000).toISOString().slice(0,10); setASince(s); setAUntil(today); setADrill([]);}} disabled={aLoading} title="Setea el rango a los últimos 30 días y refresca toda la data — incluye reglas activas que reprocesan ese período" style={{background:T.accent+"12",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}>
+                      🔄 Reprocesar 30d
                     </button>
                   </div>
                 </div>
@@ -9878,9 +9901,12 @@ function AppMetaAds({T, user, onHome}) {
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>Reglas de optimización</div>
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Se auto-evalúan cada 30 minutos mientras tengas Growith abierto. También podés disparar manualmente.</div>
                   </div>
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={evaluateRulesNow} disabled={evaluatingNow||rules.filter(r=>r.active).length===0} style={{padding:"8px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:evaluatingNow?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    <button onClick={evaluateRulesNow} disabled={evaluatingNow||rules.filter(r=>r.active).length===0} style={{padding:"8px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:evaluatingNow?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}} title="Evalúa ahora con la window de cada regla">
                       {evaluatingNow ? <><Spinner size={12} color={T.textMd}/>Evaluando...</> : "▶ Evaluar ahora"}
+                    </button>
+                    <button onClick={()=>reprocessRules(30)} disabled={evaluatingNow||rules.filter(r=>r.active).length===0} style={{padding:"8px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.accent}55`,borderRadius:8,background:T.accent+"12",color:T.accent,cursor:evaluatingNow?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}} title="Aplica todas las reglas activas usando los últimos 30 días como ventana (override). Ideal cuando recién creaste una regla para que actúe sobre data histórica.">
+                      {evaluatingNow ? <><Spinner size={12} color={T.accent}/>Reprocesando...</> : "🔄 Reprocesar 30 días"}
                     </button>
                     <button onClick={()=>setEditingRule("new")} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nueva regla</button>
                   </div>
@@ -10963,6 +10989,9 @@ function AppStock({T, user, onHome}) {
           <span style={{fontSize:11,color:T.textSm,background:platformColor+"22",border:`1px solid ${platformColor}44`,borderRadius:6,padding:"3px 8px",fontWeight:600,color:platformColor}}>{platformLabel}</span>
           <button onClick={()=>loadStock()} disabled={loading} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
             {loading?<Spinner size={11} color={T.textMd}/>:"↻"} Actualizar
+          </button>
+          <button onClick={()=>{setDays(30);loadStock(30);}} disabled={loading} title="Trae ventas de los últimos 30 días desde tu tienda y recalcula stock, ranking y proyecciones" style={{background:T.accent+"12",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:600,cursor:loading?"wait":"pointer",display:"flex",alignItems:"center",gap:4}}>
+            🔄 Reprocesar 30d
           </button>
         </div>
       </AppTopbar>

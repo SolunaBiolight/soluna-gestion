@@ -330,7 +330,10 @@ function evalCondition(actual, op, target) {
 
 // Evalúa todas las reglas activas del usuario para esa cuenta.
 // Aplica acciones (pause) sobre nodos que matcheen y loguea cada disparo.
-async function evaluateRulesForAccount(db, uid, accId) {
+// opts.force_window_days: si está, sobreescribe la window de cada condition
+//   con ese valor (usado en "Reprocesar últimos N días"). Útil para que una
+//   regla recién creada pueda accionar sobre data histórica al instante.
+async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
   const cfg = await loadMetaAccount(db, uid, accId);
   if (!cfg?.access_token || !cfg.ad_account_id) return { error: "Cuenta no configurada" };
 
@@ -339,10 +342,14 @@ async function evaluateRulesForAccount(db, uid, accId) {
   const rules = rulesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (rules.length === 0) return { evaluated: 0, actions: 0 };
 
+  const forceWindow = parseInt(opts.force_window_days, 10);
+  const useForcedWindow = Number.isFinite(forceWindow) && forceWindow > 0;
+  const effectiveWindow = (cond) => useForcedWindow ? forceWindow : (cond.window_days || 7);
+
   // Pre-fetch insights por cada combinación única (level, window) que use alguna regla
   const combos = new Set();
   for (const rule of rules) {
-    for (const cond of rule.conditions || []) combos.add(`${rule.level}|${cond.window_days || 7}`);
+    for (const cond of rule.conditions || []) combos.add(`${rule.level}|${effectiveWindow(cond)}`);
   }
   const cache = new Map(); // "level|window" -> Map<nodeId, row>
   for (const combo of combos) {
@@ -365,17 +372,17 @@ async function evaluateRulesForAccount(db, uid, accId) {
     if (!rule.conditions?.length) continue;
     // Usamos la window de la PRIMERA condition como referencia para listar nodos.
     // Cada condition se evalúa con su propia window cache.
-    const refCombo = `${rule.level}|${rule.conditions[0].window_days || 7}`;
+    const refCombo = `${rule.level}|${effectiveWindow(rule.conditions[0])}`;
     const refMap = cache.get(refCombo) || new Map();
 
     for (const [nodeId, refRow] of refMap) {
       if (refRow.effective_status !== "ACTIVE") continue;
 
       const results = rule.conditions.map(c => {
-        const combo = `${rule.level}|${c.window_days || 7}`;
+        const combo = `${rule.level}|${effectiveWindow(c)}`;
         const row = cache.get(combo)?.get(nodeId) || {};
         const v = row[c.metric] ?? 0;
-        return { matched: evalCondition(v, c.op, c.value), actual: v, cond: c };
+        return { matched: evalCondition(v, c.op, c.value), actual: v, cond: c, effective_window: effectiveWindow(c) };
       });
       const matched = rule.logic === "OR"
         ? results.some(r => r.matched)
@@ -408,7 +415,9 @@ async function evaluateRulesForAccount(db, uid, accId) {
         node_id: nodeId, node_name: refRow.name || "",
         level: rule.level, logic: rule.logic,
         action_taken: rule.action, ok, error: errMsg || null,
-        triggered: results.map(r => ({ metric: r.cond.metric, op: r.cond.op, target: r.cond.value, window_days: r.cond.window_days, actual: r.actual })),
+        triggered: results.map(r => ({ metric: r.cond.metric, op: r.cond.op, target: r.cond.value, window_days: r.effective_window || r.cond.window_days, actual: r.actual })),
+        reprocessed: useForcedWindow,
+        forced_window_days: useForcedWindow ? forceWindow : null,
         ts: new Date().toISOString(),
       });
       totalActions++;
@@ -961,10 +970,13 @@ export default async function handler(req, res) {
     }
 
     // Evaluar reglas ahora (manualmente desde la UI)
+    // Acepta force_window_days en body o query — override de la window de cada condition.
+    // Sirve para "Reprocesar últimos N días" desde la UI.
     if (action === "evaluate_rules" && req.method === "POST") {
       const accIdQ = acc_id || req.query.acc_id;
       if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
-      const result = await evaluateRulesForAccount(db, uid, accIdQ);
+      const force = req.body?.force_window_days ?? req.query.force_window_days;
+      const result = await evaluateRulesForAccount(db, uid, accIdQ, force ? { force_window_days: force } : {});
       return res.json(result);
     }
 
