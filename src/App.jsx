@@ -9191,18 +9191,22 @@ function AppMetaAds({T, user, onHome}) {
                                       {busy?<Spinner size={10} color={isActive?T.green:T.red}/>:isActive?"⏸":"▶"}
                                     </button>
                                   </td>
-                                  <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:280,overflow:"hidden",whiteSpace:"nowrap"}}>
+                                  <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:320,overflow:"hidden",whiteSpace:"nowrap"}}>
                                     <div style={{fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
-                                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{r.name||"(sin nombre)"}</span>
-                                      {drillLabel && (
-                                        <button onClick={(e)=>{e.stopPropagation();drillInto(r);}} title={`Ver ${drillLabel}`} style={{flexShrink:0,background:T.accentSolid+"22",border:`1px solid ${T.accentSolid}55`,color:T.accent,borderRadius:5,padding:"2px 8px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                          {drillLabel} →
+                                      {drillLabel ? (
+                                        <button onClick={()=>drillInto(r)} title={`Click para ver sus ${drillLabel}`} style={{flex:1,minWidth:0,background:"transparent",border:"none",color:T.text,fontSize:13,fontWeight:600,cursor:"pointer",padding:0,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}
+                                          onMouseEnter={e=>{e.currentTarget.style.color=T.accent;e.currentTarget.style.textDecoration="underline";}}
+                                          onMouseLeave={e=>{e.currentTarget.style.color=T.text;e.currentTarget.style.textDecoration="none";}}>
+                                          {r.name||"(sin nombre)"} <span style={{fontSize:10,color:T.accent,fontWeight:700}}>↓ {drillLabel}</span>
                                         </button>
+                                      ) : (
+                                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{r.name||"(sin nombre)"}</span>
                                       )}
                                     </div>
-                                    <div style={{fontSize:10,color:T.textSm,marginTop:2}}>
+                                    <div style={{fontSize:10,color:T.textSm,marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                      <span style={{padding:"1px 6px",borderRadius:4,background:aLevel==="campaign"?T.accent+"22":aLevel==="adset"?T.green+"22":T.yellow+"22",color:aLevel==="campaign"?T.accent:aLevel==="adset"?T.green:T.yellow,fontWeight:700,letterSpacing:0.3,textTransform:"uppercase"}}>{aLevel==="campaign"?"Camp":aLevel==="adset"?"Adset":"Ad"}</span>
                                       <span style={{padding:"1px 6px",borderRadius:4,background:isActive?T.green+"22":T.red+"22",color:isActive?T.green:T.red,fontWeight:600}}>{r.effective_status||"—"}</span>
-                                      {r.daily_budget && <span style={{marginLeft:6}}>· ${fmt(r.daily_budget)}/día</span>}
+                                      {r.daily_budget && <span>· ${fmt(r.daily_budget)}/día</span>}
                                     </div>
                                   </td>
                                   {visibleCols.map(k => {
