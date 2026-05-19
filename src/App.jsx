@@ -8887,7 +8887,7 @@ function AppMetaAds({T, user, onHome}) {
 
   useEffect(()=>{
     if(tab==="campanas"&&activeAccId) loadCampaigns();
-    if(tab==="creativos"&&activeAccId) loadCreatives();
+    if(tab==="creativos"&&activeAccId) { loadCreatives(); loadCampaigns(); }
     if(tab==="analisis"&&activeAccId) loadInsights();
     if(tab==="biblioteca"&&activeAccId) loadLibrary();
     if(tab==="reglas"&&activeAccId) loadRules();
