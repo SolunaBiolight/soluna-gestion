@@ -6600,6 +6600,32 @@ function AppArca({T, user, onHome}) {
     setResultados(res); setPdfs(d.pdfs||[]);
     setEmitProgress({active:false,current:total,total,ok,fail,done:true,errors});
     setEmitting(false);
+
+    // ── Marcar inmediatamente las recién facturadas como _billed en el state local ──
+    // así aparecen verdes y NO seleccionables sin esperar al refetch del listado.
+    const billedOk = new Map();
+    res.filter(r=>r.ok).forEach(r=>{
+      billedOk.set(r.orden_id, { letra: r.letra, nro: r.comprobante });
+    });
+    if(billedOk.size > 0) {
+      setTnData(prev => {
+        if(!prev?.ordenes) return prev;
+        const next = {...prev, ordenes: {...prev.ordenes}};
+        for(const [id, info] of billedOk) {
+          if(next.ordenes[id]) {
+            next.ordenes[id] = {...next.ordenes[id], _billed: true, _billed_info: info};
+          }
+        }
+        return next;
+      });
+      // Destildar las recién facturadas
+      setTnSelected(prev => {
+        const next = {...prev};
+        for(const id of billedOk.keys()) next[id] = false;
+        return next;
+      });
+    }
+
     refreshDashboard();
   }
 
