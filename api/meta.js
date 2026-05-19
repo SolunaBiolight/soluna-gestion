@@ -434,7 +434,7 @@ Analizá el anuncio FULL y devolvé el JSON. Sé específico y útil — no des 
 
 // ─── Handler ───────────────────────────────────────────
 
-export const config = { api: { bodyParser: true } };
+export const config = { api: { bodyParser: { sizeLimit: "50mb" } } };
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -1002,6 +1002,114 @@ export default async function handler(req, res) {
       }
       const result = await metaPost(`${cfg.ad_account_id}/adsets`, payload, cfg.access_token);
       return res.json({ ok: true, id: result.id, name: payload.name, campaign_id, start_time: start_time || null });
+    }
+
+    // ── UPLOAD IMAGEN/VIDEO A META ────────────────────────
+    // POST JSON { filename, contentType, data_base64 } — el cliente lo lee como FileReader y manda base64.
+    // Devuelve { kind, url, hash (img), id (video) }
+    if (action === "upload_to_meta" && req.method === "POST") {
+      if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg?.access_token || !cfg?.ad_account_id) return res.status(400).json({ error: "Cuenta Meta sin ad_account_id" });
+
+      const { filename, contentType, data_base64 } = req.body || {};
+      if (!filename || !data_base64) return res.status(400).json({ error: "Faltan filename o data_base64" });
+
+      const fileBuffer = Buffer.from(data_base64, "base64");
+      const isVideo = (contentType || "").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(filename);
+      const accIdStr = cfg.ad_account_id.startsWith("act_") ? cfg.ad_account_id : `act_${cfg.ad_account_id}`;
+
+      try {
+        if (isVideo) {
+          const fd = new FormData();
+          const blob = new Blob([fileBuffer], { type: contentType || "video/mp4" });
+          fd.append("access_token", cfg.access_token);
+          fd.append("source", blob, filename);
+          const r = await fetch(`${META_BASE}/${accIdStr}/advideos`, { method: "POST", body: fd });
+          const j = await r.json();
+          if (!r.ok || j.error) return res.status(500).json({ error: j.error?.message || `HTTP ${r.status}` });
+          return res.json({ ok: true, kind: "video", id: j.id, url: null });
+        } else {
+          const fd = new FormData();
+          const blob = new Blob([fileBuffer], { type: contentType || "image/jpeg" });
+          fd.append("access_token", cfg.access_token);
+          fd.append("filename", blob, filename);
+          const r = await fetch(`${META_BASE}/${accIdStr}/adimages`, { method: "POST", body: fd });
+          const j = await r.json();
+          if (!r.ok || j.error) return res.status(500).json({ error: j.error?.message || `HTTP ${r.status}` });
+          const img = Object.values(j.images || {})[0];
+          if (!img) return res.status(500).json({ error: "Respuesta inesperada de Meta" });
+          return res.json({ ok: true, kind: "image", hash: img.hash, url: img.url, width: img.width, height: img.height });
+        }
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
+    // ── ANALIZAR CREATIVE CON GEMINI VISION ───────────────
+    // POST { cid } o { url } → analiza la imagen/video y devuelve análisis estructurado
+    if (action === "analyze_creative" && req.method === "POST") {
+      const { cid: cidBody, url: urlBody } = req.body || {};
+      let imageUrl = urlBody;
+      let creativeRef = null;
+      if (cidBody) {
+        const c = await loadCreative(db, uid, cidBody);
+        if (!c) return res.status(404).json({ error: "Creativo no encontrado" });
+        imageUrl = c.url;
+        creativeRef = c;
+      }
+      if (!imageUrl) return res.status(400).json({ error: "Falta cid o url" });
+
+      const apiKey = process.env.GOOGLE_AI_KEY;
+      if (!apiKey) return res.status(500).json({ error: "Falta GOOGLE_AI_KEY en env" });
+
+      try {
+        // Descargar imagen y convertir a base64 (Gemini soporta inline_data)
+        const imgRes = await fetch(imageUrl);
+        if (!imgRes.ok) return res.status(500).json({ error: `No se pudo descargar la imagen (HTTP ${imgRes.status})` });
+        const buf = Buffer.from(await imgRes.arrayBuffer());
+        const mime = imgRes.headers.get("content-type") || "image/jpeg";
+        const isImageMime = mime.startsWith("image/");
+        if (!isImageMime) return res.status(400).json({ error: `El análisis con IA soporta solo imágenes por ahora (recibí ${mime})` });
+
+        const SYSTEM = `Sos un experto en Meta Ads de ecommerce argentino. Analizás creativos (imágenes) para que un copywriter pueda generar un anuncio efectivo. Devolvés SIEMPRE un JSON con esta estructura exacta:
+{
+  "que_se_ve": "1-2 líneas describiendo qué muestra la imagen",
+  "producto_inferido": "qué producto/servicio parece estar promocionando",
+  "audiencia_target": "a quién apunta visualmente (edad, género, intereses, etapa de vida)",
+  "tono_visual": "tono que transmite la imagen (aspiracional, urgente, profesional, casual, etc.)",
+  "elementos_destacados": ["3-5 elementos visuales clave"],
+  "angulo_sugerido": "qué ángulo de copy aprovecharía mejor esta imagen",
+  "headline_sugerido": "headline corto (max 40 chars) que combine bien con esta imagen"
+}`;
+        const payload = {
+          system_instruction: { parts: [{ text: SYSTEM }] },
+          contents: [{ role: "user", parts: [
+            { inline_data: { mime_type: mime, data: buf.toString("base64") } },
+            { text: "Analizá esta imagen para usarla en un anuncio de Meta Ads. Devolvé el JSON." },
+          ] }],
+          generationConfig: { response_mime_type: "application/json", temperature: 0.4, max_output_tokens: 1200 },
+        };
+
+        const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+        const data = await r.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (!text) return res.status(500).json({ error: "Gemini devolvió respuesta vacía" });
+        let cleaned = text;
+        if (cleaned.includes("```")) { cleaned = cleaned.split("```")[1]; if (cleaned.startsWith("json")) cleaned = cleaned.slice(4); }
+        const s = cleaned.indexOf("{"), e = cleaned.lastIndexOf("}");
+        if (s >= 0 && e > s) cleaned = cleaned.slice(s, e + 1);
+        const analysis = JSON.parse(cleaned);
+
+        if (creativeRef) {
+          await saveCreative(db, uid, { ...creativeRef, analysis, ia_status: "analyzed" });
+        }
+        return res.json({ ok: true, analysis });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
     }
 
     // ── CREATIVOS ─────────────────────────────────────────

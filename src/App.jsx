@@ -8584,6 +8584,8 @@ function AppMetaAds({T, user, onHome}) {
   const [newCKind,setNewCKind]=useState("image");
   const [generatingCopy,setGeneratingCopy]=useState(null);
   const [publishing,setPublishing]=useState(null);
+  const [uploadingFile,setUploadingFile]=useState(false);
+  const [analyzingCreative,setAnalyzingCreative]=useState(null);
 
   // Brand
   const [brand,setBrand]=useState("");
@@ -8891,6 +8893,55 @@ function AppMetaAds({T, user, onHome}) {
     setCreatives(prev=>[d.creative,...prev]);
     setNewCUrl("");setNewCName("");setAddingUrl(false);
     toast("Creativo agregado ✓","success");
+  }
+
+  // Sube archivo a Meta (/adimages o /advideos) y crea el creative en Growith
+  async function handleUploadFile(file) {
+    if(!file) return;
+    if(!activeAccId) return toast("Conectá una cuenta Meta primero","warning");
+    const MAX = 40 * 1024 * 1024; // 40MB
+    if(file.size > MAX) return toast(`Archivo muy grande (max 40MB, tiene ${(file.size/1024/1024).toFixed(1)}MB)`,"error");
+    setUploadingFile(true);
+    try {
+      // Convertir a base64
+      const data_base64 = await new Promise((res,rej)=>{
+        const reader = new FileReader();
+        reader.onload = () => res(String(reader.result).split(",")[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      // Subir a Meta
+      const up = await metaApi("upload_to_meta","POST",{filename:file.name, contentType:file.type, data_base64},{acc_id:activeAccId});
+      if(up.error){toast("Error subiendo a Meta: "+up.error,"error");setUploadingFile(false);return;}
+      // Crear creative en Growith con la URL/hash
+      const fileUrl = up.url || (up.id ? `meta-video://${up.id}` : "");
+      const cr = await metaApi("add_creative","POST",{filename:file.name, kind:up.kind, url:fileUrl, size:file.size},{acc_id:activeAccId});
+      if(cr.error){toast("Error guardando creative: "+cr.error,"error");setUploadingFile(false);return;}
+      // Guardar también el hash/id de Meta en el creative
+      const cWithMeta = {...cr.creative, meta_hash: up.hash || null, meta_video_id: up.id || null};
+      await metaApi("patch_creative","PATCH",{analysis:null},{cid:cWithMeta.id}); // toca la entrada
+      setCreatives(prev=>[cWithMeta,...prev]);
+      setSelCreative(cWithMeta);
+      toast(`Subido ✓ (${up.kind})`,"success");
+      // Si es imagen, disparar análisis IA automáticamente
+      if(up.kind === "image") {
+        handleAnalyzeCreative(cWithMeta);
+      }
+    } catch(e){
+      toast("Error: "+(e.message||"upload falló"),"error");
+    } finally { setUploadingFile(false); }
+  }
+
+  async function handleAnalyzeCreative(c) {
+    if(!c?.id) return;
+    setAnalyzingCreative(c.id);
+    try {
+      const d = await metaApi("analyze_creative","POST",{cid:c.id});
+      if(d.error){toast("Error IA: "+d.error,"error");return;}
+      setCreatives(prev=>prev.map(x=>x.id===c.id?{...x, analysis:d.analysis, ia_status:"analyzed"}:x));
+      if(selCreative?.id === c.id) setSelCreative(prev=>({...prev, analysis:d.analysis, ia_status:"analyzed"}));
+      toast("Análisis listo ✓","success");
+    } finally { setAnalyzingCreative(null); }
   }
 
   async function handleGenerateCopy(c) {
@@ -9720,12 +9771,19 @@ function AppMetaAds({T, user, onHome}) {
           ?<div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero</div>
           :<div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:20,alignItems:"start"}}>
             <div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:10,flexWrap:"wrap"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.text}}>Creativos ({creatives.length})</div>
-                <button onClick={()=>setAddingUrl(s=>!s)} style={{...BtnSec,fontSize:12,padding:"6px 12px"}}>+ Agregar por URL</button>
+                <div style={{display:"flex",gap:6}}>
+                  <label style={{...BtnPri,fontSize:12,padding:"8px 14px",cursor:uploadingFile?"wait":"pointer",margin:0}}>
+                    {uploadingFile?<><Spinner size={12} color="#fff"/> Subiendo a Meta...</>:"📤 Subir imagen/video"}
+                    <input type="file" accept="image/*,video/*" disabled={uploadingFile} style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0]; if(f){handleUploadFile(f); e.target.value="";}}}/>
+                  </label>
+                  <button onClick={()=>setAddingUrl(s=>!s)} style={{...BtnSec,fontSize:12,padding:"6px 12px"}}>📎 URL</button>
+                </div>
               </div>
               {addingUrl&&(
                 <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:8,lineHeight:1.5}}>Agregar un creativo desde una URL pública (sin subirlo a Meta todavía). Útil si ya tenés el archivo en otro lado.</div>
                   <input value={newCUrl} onChange={e=>setNewCUrl(e.target.value)} placeholder="URL pública del archivo" style={{...iS,marginBottom:10}}/>
                   <input value={newCName} onChange={e=>setNewCName(e.target.value)} placeholder="Nombre (ej: reel_dolor.mp4)" style={{...iS,marginBottom:10}}/>
                   <select value={newCKind} onChange={e=>setNewCKind(e.target.value)} style={{...iS,marginBottom:12}}>
@@ -9758,7 +9816,38 @@ function AppMetaAds({T, user, onHome}) {
             </div>
             {selCreative&&(
               <div style={{...Card,position:"sticky",top:80}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>{selCreative.filename_base}</div>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>{selCreative.filename_base}</div>
+
+                {/* Preview del creative */}
+                {selCreative.url && selCreative.kind === "image" && !selCreative.url.startsWith("meta-video://") && (
+                  <img src={selCreative.url} alt="" style={{width:"100%",borderRadius:8,marginBottom:10,maxHeight:200,objectFit:"cover",background:T.bg}} onError={e=>{e.target.style.display="none";}}/>
+                )}
+
+                {/* Análisis IA del creative */}
+                <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:8,marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,marginBottom:6}}>
+                    <span style={{fontSize:10,color:T.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>🤖 Análisis IA</span>
+                    {selCreative.kind === "image" && (
+                      <button onClick={()=>handleAnalyzeCreative(selCreative)} disabled={analyzingCreative===selCreative.id} style={{padding:"3px 8px",fontSize:10,fontWeight:600,border:`1px solid ${T.accent}55`,borderRadius:5,background:"transparent",color:T.accent,cursor:analyzingCreative===selCreative.id?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        {analyzingCreative===selCreative.id?<><Spinner size={9} color={T.accent}/> Analizando…</>:(selCreative.analysis?"🔄 Re-analizar":"Analizar")}
+                      </button>
+                    )}
+                  </div>
+                  {selCreative.analysis ? (
+                    <div style={{fontSize:11,color:T.textMd,lineHeight:1.55}}>
+                      <div><strong style={{color:T.text}}>Qué se ve:</strong> {selCreative.analysis.que_se_ve}</div>
+                      <div style={{marginTop:4}}><strong style={{color:T.text}}>Audiencia:</strong> {selCreative.analysis.audiencia_target}</div>
+                      <div style={{marginTop:4}}><strong style={{color:T.text}}>Tono visual:</strong> {selCreative.analysis.tono_visual}</div>
+                      <div style={{marginTop:4}}><strong style={{color:T.text}}>Ángulo sugerido:</strong> {selCreative.analysis.angulo_sugerido}</div>
+                      {selCreative.analysis.headline_sugerido && <div style={{marginTop:6,padding:"6px 10px",background:T.surface,borderRadius:5,fontStyle:"italic"}}>💡 "{selCreative.analysis.headline_sugerido}"</div>}
+                    </div>
+                  ) : selCreative.kind === "image" ? (
+                    <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Tocá "Analizar" — la IA va a mirar la imagen y sugerir audiencia, ángulo y headline.</div>
+                  ) : (
+                    <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>El análisis con IA solo funciona en imágenes por ahora. Para videos, agregá notas manualmente abajo.</div>
+                  )}
+                </div>
+
                 {[{label:"Tono",key:"tone",opts:TONOS},{label:"Largo",key:"length",opts:LARGOS},{label:"Formato",key:"format",opts:FORMATOS}].map(({label,key,opts})=>(
                   <div key={key} style={{marginBottom:10}}>
                     <label style={Label}>{label}</label>
