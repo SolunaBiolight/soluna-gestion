@@ -8749,6 +8749,7 @@ function AppMetaAds({T, user, onHome}) {
   // Estado del tab Reglas
   const [rules,setRules]=useState([]);
   const [ruleLog,setRuleLog]=useState([]);
+  const [expandedRuleId,setExpandedRuleId]=useState(null);
   const [rulesLoading,setRulesLoading]=useState(false);
   const [editingRule,setEditingRule]=useState(null); // null | "new" | rule object
   const [evaluatingNow,setEvaluatingNow]=useState(false);
@@ -9726,6 +9727,10 @@ function AppMetaAds({T, user, onHome}) {
                     <select value={libSort} onChange={e=>setLibSort(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
                       <option value="spend">Más gasto</option>
                       <option value="roas">Mejor ROAS</option>
+                      <option value="purchases">Más ventas</option>
+                      <option value="frequency">Mejor frecuencia (más baja)</option>
+                      <option value="cpc">Mejor CPC (más bajo)</option>
+                      <option value="ctr">Mejor CTR</option>
                       <option value="recent">Recién analizados</option>
                     </select>
                   </div>
@@ -9745,6 +9750,20 @@ function AppMetaAds({T, user, onHome}) {
                   filtered = [...filtered].sort((a,b) => {
                     if (libSort === "spend") return (b.spend||0) - (a.spend||0);
                     if (libSort === "roas") return (b.roas||0) - (a.roas||0);
+                    if (libSort === "purchases") return (b.purchases||0) - (a.purchases||0);
+                    if (libSort === "frequency") {
+                      // mejor frecuencia = mas baja (pero ignorar los que no gastaron)
+                      const af = a.spend > 0 ? (a.frequency||999) : 999;
+                      const bf = b.spend > 0 ? (b.frequency||999) : 999;
+                      return af - bf;
+                    }
+                    if (libSort === "cpc") {
+                      // mejor cpc = mas bajo, ignorar los que no tienen clicks
+                      const ac = a.clicks > 0 ? (a.cpc||9999) : 9999;
+                      const bc = b.clicks > 0 ? (b.cpc||9999) : 9999;
+                      return ac - bc;
+                    }
+                    if (libSort === "ctr") return (b.ctr||0) - (a.ctr||0);
                     if (libSort === "recent") return (b.analyzed_at||"").localeCompare(a.analyzed_at||"");
                     return 0;
                   });
@@ -9818,56 +9837,21 @@ function AppMetaAds({T, user, onHome}) {
                                 </div>
                               </div>
 
-                              {/* Análisis IA */}
-                              {A ? (
-                                <>
-                                  <div style={{fontSize:11,color:T.textMd,lineHeight:1.55,padding:"8px 10px",background:T.accent+"10",borderLeft:`2px solid ${T.accent}`,borderRadius:4,marginTop:4}}>
-                                    <span style={{fontSize:9,color:T.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>🤖 Resumen IA</span>
-                                    <div style={{marginTop:4}}>{A.descripcion_corta}</div>
-                                  </div>
-                                  {isExpanded && (
-                                    <div style={{fontSize:11,color:T.textMd,lineHeight:1.65,padding:"10px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8,marginTop:2,display:"flex",flexDirection:"column",gap:8}}>
-                                      <div><strong style={{color:T.text}}>Audiencia:</strong> {A.audiencia_target}</div>
-                                      <div><strong style={{color:T.text}}>Hook:</strong> "{A.hook}"</div>
-                                      <div><strong style={{color:T.text}}>Ángulos:</strong> {(A.angulos||[]).join(" · ")}</div>
-                                      <div><strong style={{color:T.text}}>Tono / Formato:</strong> {A.tono} · {A.formato}</div>
-                                      <div><strong style={{color:T.text}}>Estrategia:</strong> {A.estrategia}</div>
-                                      {A.fortalezas?.length>0 && (
-                                        <div>
-                                          <strong style={{color:T.green}}>Fortalezas:</strong>
-                                          <ul style={{margin:"4px 0 0",paddingLeft:16}}>{A.fortalezas.map((f,i)=><li key={i}>{f}</li>)}</ul>
-                                        </div>
-                                      )}
-                                      {A.oportunidades?.length>0 && (
-                                        <div>
-                                          <strong style={{color:T.yellow||"#eab308"}}>Mejoras:</strong>
-                                          <ul style={{margin:"4px 0 0",paddingLeft:16}}>{A.oportunidades.map((o,i)=><li key={i}>{o}</li>)}</ul>
-                                        </div>
-                                      )}
-                                      <div style={{padding:"8px 10px",background:T.surface,borderRadius:6,marginTop:2}}>
-                                        <strong style={{color:T.text}}>📈 Performance:</strong>
-                                        <div style={{marginTop:3}}>{A.performance_takeaway}</div>
-                                      </div>
-                                      <div style={{padding:"8px 10px",background:A.accion_recomendada==="escalar"?T.green+"15":A.accion_recomendada==="pausar"?T.red+"15":T.yellow+"15",border:`1px solid ${A.accion_recomendada==="escalar"?T.green+"55":A.accion_recomendada==="pausar"?T.red+"55":T.yellow+"55"}`,borderRadius:6,marginTop:2}}>
-                                        <strong style={{color:T.text,textTransform:"uppercase",fontSize:10,letterSpacing:0.5}}>Acción recomendada: {A.accion_recomendada}</strong>
-                                        <div style={{marginTop:3}}>{A.razon_accion}</div>
-                                      </div>
-                                    </div>
-                                  )}
-                                  <div style={{display:"flex",gap:8,marginTop:6}}>
-                                    <button onClick={()=>setExpandedAdId(isExpanded?null:ad.id)} style={{flex:1,padding:"7px 12px",fontSize:11,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:7,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                      {isExpanded ? "− Cerrar análisis" : "+ Ver análisis FULL"}
-                                    </button>
-                                    <button onClick={()=>analyzeAd(ad)} disabled={analyzing} title="Re-analizar" style={{padding:"7px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:7,background:"transparent",color:T.textMd,cursor:analyzing?"wait":"pointer"}}>
-                                      {analyzing ? <Spinner size={10} color={T.textMd}/> : "🔄"}
-                                    </button>
-                                  </div>
-                                </>
-                              ) : (
-                                <button onClick={()=>analyzeAd(ad)} disabled={analyzing} style={{marginTop:"auto",padding:"9px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.accent}44`,borderRadius:8,background:T.accent+"12",color:T.accent,cursor:analyzing?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                                  {analyzing ? <><Spinner size={12} color={T.accent}/>Analizando…</> : <>🤖 Analizar con IA</>}
-                                </button>
-                              )}
+                              {/* CTR / CPC / Frecuencia */}
+                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginTop:6,fontSize:11}}>
+                                <div>
+                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>CTR</div>
+                                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginTop:2}}>{fmt(ad.ctr)}%</div>
+                                </div>
+                                <div>
+                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>CPC</div>
+                                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginTop:2}}>${fmt(ad.cpc)}</div>
+                                </div>
+                                <div>
+                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Frec.</div>
+                                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginTop:2}}>{fmt(ad.frequency)}</div>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         );
@@ -9917,6 +9901,9 @@ function AppMetaAds({T, user, onHome}) {
                   <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:24}}>
                     {rules.map(r => {
                       const fmtVal = (m, v) => m==="spend"||m==="cpa"||m==="purchase_value"||m==="cpm"||m==="cpc"?`$${v}`:m==="ctr"?`${v}%`:m==="roas"?`${v}x`:v;
+                      const ruleEvents = (ruleLog||[]).filter(ev => ev.rule_id === r.id);
+                      const isExpanded = expandedRuleId === r.id;
+                      const actionLabel = r.action==="pause" ? "⏸ Pausar" : r.action==="reduce_budget" ? `💰 Bajar presupuesto ${r.action_pct||20}%` : "📢 Notificar";
                       return (
                         <div key={r.id} style={{background:T.card,border:`1px solid ${r.active?T.green+"44":T.border}`,borderRadius:12,padding:"14px 18px"}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
@@ -9924,7 +9911,7 @@ function AppMetaAds({T, user, onHome}) {
                               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
                                 <span style={{fontSize:14,fontWeight:700,color:T.text}}>{r.name}</span>
                                 <span style={{fontSize:9,padding:"2px 8px",borderRadius:4,background:r.active?T.green+"22":T.textSm+"22",color:r.active?T.green:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase"}}>{r.active?"Activa":"Pausada"}</span>
-                                <span style={{fontSize:10,color:T.textSm}}>· {r.level==="campaign"?"Campañas":r.level==="adset"?"Adsets":"Ads"} · {r.action==="pause"?"⏸ Pausar":"📢 Notificar"}</span>
+                                <span style={{fontSize:10,color:T.textSm}}>· {r.level==="campaign"?"Campañas":r.level==="adset"?"Adsets":"Ads"} · {actionLabel}</span>
                               </div>
                               <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>
                                 <strong>{r.logic==="AND"?"Si TODAS estas condiciones son ciertas":"Si AL MENOS UNA condición es cierta"}:</strong>
@@ -9935,6 +9922,10 @@ function AppMetaAds({T, user, onHome}) {
                                 </ul>
                               </div>
                               {r.last_evaluated_at && <div style={{fontSize:10,color:T.textSm,marginTop:6}}>Última eval: {new Date(r.last_evaluated_at).toLocaleString("es-AR")}</div>}
+                              {/* Toggle historial de ejecuciones de ESTA regla */}
+                              <button onClick={()=>setExpandedRuleId(isExpanded?null:r.id)} style={{marginTop:10,padding:"6px 12px",fontSize:11,fontWeight:600,border:`1px solid ${ruleEvents.length>0?T.accent+"44":T.border}`,borderRadius:7,background:ruleEvents.length>0?T.accent+"10":"transparent",color:ruleEvents.length>0?T.accent:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                {isExpanded ? "▾ Cerrar historial" : `📋 Historial de acciones (${ruleEvents.length})`}
+                              </button>
                             </div>
                             <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
                               <button onClick={()=>toggleRuleActive(r)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{r.active?"Pausar":"Activar"}</button>
@@ -9942,30 +9933,60 @@ function AppMetaAds({T, user, onHome}) {
                               <button onClick={()=>deleteRule(r.id)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar</button>
                             </div>
                           </div>
+
+                          {/* Historial expandido de esta regla */}
+                          {isExpanded && (
+                            <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+                              {ruleEvents.length === 0 ? (
+                                <div style={{fontSize:11,color:T.textSm,padding:"12px 0",textAlign:"center"}}>Esta regla todavía no se ejecutó. Cuando dispare una acción, vas a ver acá el detalle exacto.</div>
+                              ) : (
+                                <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:380,overflowY:"auto"}}>
+                                  {ruleEvents.map(ev => {
+                                    const date = new Date(ev.ts);
+                                    const fechaLabel = date.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});
+                                    const horaLabel = date.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+                                    const actionIcon = ev.ok ? (ev.action_taken==="pause" ? "⏸" : ev.action_taken==="reduce_budget" ? "💰" : "📢") : "❌";
+                                    const actionTxt = !ev.ok ? "Falló:" : ev.action_taken==="pause" ? "Pausó" : ev.action_taken==="reduce_budget" ? "Redujo presupuesto de" : "Notificó sobre";
+                                    return (
+                                      <div key={ev.id} style={{padding:"10px 12px",background:ev.ok?T.bg:T.red+"08",borderRadius:8,border:`1px solid ${ev.ok?T.borderL:T.red+"33"}`}}>
+                                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+                                          <span style={{fontSize:16}}>{actionIcon}</span>
+                                          <span style={{fontSize:12,fontWeight:700,color:T.text}}>{actionTxt}</span>
+                                          <span style={{fontSize:12,color:T.accent,fontWeight:600}}>{ev.node_name || ev.node_id}</span>
+                                          <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,textTransform:"uppercase"}}>{ev.level}</span>
+                                          <span style={{marginLeft:"auto",fontSize:10,color:T.textSm,fontFamily:"monospace"}}>{fechaLabel} · {horaLabel}</span>
+                                        </div>
+                                        {ev.error && <div style={{fontSize:11,color:T.red,marginBottom:6,fontFamily:"monospace"}}>{ev.error}</div>}
+                                        <div style={{fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",marginBottom:5}}>Métricas que dispararon la regla:</div>
+                                        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                                          {(ev.triggered||[]).map((t,i) => {
+                                            const opLabel = ({ ">=":"≥", "<=":"≤", ">":">", "<":"<", "==":"=" })[t.op] || t.op;
+                                            const actualFmt = fmtVal(t.metric, Number(t.actual).toFixed(2));
+                                            const targetFmt = fmtVal(t.metric, t.target);
+                                            return (
+                                              <div key={i} style={{padding:"6px 10px",background:T.red+"15",border:`1px solid ${T.red}55`,borderRadius:6,fontSize:11,fontFamily:"monospace"}}>
+                                                <span style={{color:T.red,fontWeight:700,textTransform:"uppercase"}}>{t.metric}</span>
+                                                <span style={{color:T.textMd}}> = </span>
+                                                <span style={{color:T.red,fontWeight:700,fontSize:13}}>{actualFmt}</span>
+                                                <span style={{color:T.textSm,marginLeft:6}}>(regla: {opLabel} {targetFmt}, últimos {t.window_days||7}d)</span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                 )}
 
-                {/* Log de acciones */}
-                {ruleLog.length > 0 && (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Historial de acciones <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>· {ruleLog.length} eventos</span></div>
-                    <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:420,overflowY:"auto"}}>
-                      {ruleLog.map(ev => (
-                        <div key={ev.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`,fontSize:11}}>
-                          <span style={{fontSize:14}}>{ev.ok?(ev.action_taken==="pause"?"⏸":"📢"):"❌"}</span>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{color:T.text,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ev.node_name||"(sin nombre)"} <span style={{color:T.textSm,fontWeight:400}}>· {ev.rule_name}</span></div>
-                            <div style={{color:T.textSm,marginTop:2}}>{(ev.triggered||[]).map((t,i)=><span key={i}>{i>0?" · ":""}<code style={{background:T.surface,padding:"0 4px",borderRadius:2,color:T.accent}}>{t.metric}={Number(t.actual).toFixed(2)}</code></span>)}</div>
-                          </div>
-                          <span style={{fontSize:10,color:T.textSm,whiteSpace:"nowrap"}}>{new Date(ev.ts).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* El historial de acciones ahora vive dentro de cada regla (boton "Historial de acciones") */}
 
                 {/* Estado del auto-eval — ya no hay setup externo, corre en la nube via la integracion Meta */}
                 <div style={{marginTop:14,padding:"10px 14px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:10,fontSize:11,color:T.textMd,display:"flex",alignItems:"center",gap:8}}>
@@ -10187,16 +10208,55 @@ function AppMetaAds({T, user, onHome}) {
               </div>
 
               {/* ── Sección 1: CONFIGURACIÓN ACTIVA ─────────── */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
-                <SectionHeader n="1" title="Configuración activa"/>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:14}}>
-                  <ConfigCard icon="📊" label="Cuenta publicitaria" value={`${activeAcc?.ad_account_name||""} (${curCode})`} sub={activeAcc?.ad_account_id}/>
-                  <ConfigCard icon="📘" label="Página Facebook" value={activeAcc?.page_name} sub={activeAcc?.page_id}/>
-                  <ConfigCard icon="📸" label="Instagram" value={activeAcc?.ig_username ? `@${activeAcc.ig_username}` : ""} sub={activeAcc?.ig_account_id}/>
-                  <ConfigCard icon="🎯" label="Píxel" value={activeAcc?.pixel_id ? "Conectado" : ""} sub={activeAcc?.pixel_id}/>
+              {(() => {
+                const hasAd = Boolean(activeAcc?.ad_account_id);
+                const hasPage = Boolean(activeAcc?.page_id);
+                const hasIg = Boolean(activeAcc?.ig_account_id);
+                const hasPixel = Boolean(activeAcc?.pixel_id);
+                const missing = [];
+                if (!hasAd) missing.push("cuenta publicitaria");
+                if (!hasPage) missing.push("página de Facebook");
+                if (!hasIg) missing.push("Instagram");
+                if (!hasPixel) missing.push("píxel");
+                const allReady = missing.length === 0;
+                return (
+                <div style={{background:T.card,border:`1px solid ${allReady?T.green+"44":T.yellow+"44"}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+                  <SectionHeader n="1" title="Configuración activa"/>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:14}}>
+                    <ConfigCard icon="📊" label="Cuenta publicitaria" value={hasAd?`${activeAcc?.ad_account_name||""} (${curCode})`:""} sub={activeAcc?.ad_account_id}/>
+                    <ConfigCard icon="📘" label="Página Facebook" value={activeAcc?.page_name} sub={activeAcc?.page_id}/>
+                    <ConfigCard icon="📸" label="Instagram" value={activeAcc?.ig_username ? `@${activeAcc.ig_username}` : ""} sub={activeAcc?.ig_account_id}/>
+                    <ConfigCard icon="🎯" label="Píxel" value={hasPixel ? "Conectado" : ""} sub={activeAcc?.pixel_id}/>
+                  </div>
+                  {!allReady && (
+                    <div style={{background:T.yellow+"10",border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"12px 14px",marginBottom:12,fontSize:12,color:T.textMd,lineHeight:1.6}}>
+                      <div style={{fontWeight:700,color:T.yellow,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span>⚠</span> Te falta vincular: <span style={{color:T.text}}>{missing.join(", ")}</span></div>
+                      {!hasAd && (
+                        <div style={{padding:"8px 10px",background:T.surface,borderRadius:7,marginBottom:6}}>
+                          <strong style={{color:T.text}}>📊 Cuenta publicitaria:</strong> tu System User Token necesita acceso a una ad account. Andá a <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Business Settings → System Users</a>, asignale tu cuenta publicitaria con permiso "Manage" y volvé a tocar "Cambiar recursos".
+                        </div>
+                      )}
+                      {!hasPage && (
+                        <div style={{padding:"8px 10px",background:T.surface,borderRadius:7,marginBottom:6}}>
+                          <strong style={{color:T.text}}>📘 Página Facebook:</strong> sin página no se pueden crear ads. En <a href="https://business.facebook.com/settings/pages" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Business Settings → Pages</a>, asigná la página al System User y dale rol "Advertiser".
+                        </div>
+                      )}
+                      {!hasIg && (
+                        <div style={{padding:"8px 10px",background:T.surface,borderRadius:7,marginBottom:6}}>
+                          <strong style={{color:T.text}}>📸 Instagram:</strong> conectá tu cuenta Profesional/Business a la página de Facebook (Configuración de la página → Vinculación con Instagram). Sin esto los ads sólo salen por Facebook.
+                        </div>
+                      )}
+                      {!hasPixel && (
+                        <div style={{padding:"8px 10px",background:T.surface,borderRadius:7}}>
+                          <strong style={{color:T.text}}>🎯 Píxel:</strong> sin píxel Meta no puede atribuir compras ni optimizar por conversiones. En <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Events Manager</a> creá uno (o usá el existente), instalalo en tu tienda (Shopify/TN tienen apps oficiales), y asignalo a la ad account desde <a href="https://business.facebook.com/settings/pixels" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Business Settings → Data Sources → Pixels</a>. Volvé a tocar "Cambiar recursos" para refrescar.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <button onClick={()=>setTab("cuenta")} style={BtnSec}>Cambiar recursos</button>
                 </div>
-                <button onClick={()=>setTab("cuenta")} style={BtnSec}>Cambiar recursos</button>
-              </div>
+                );
+              })()}
 
               {/* ── Sección 2: MARCA Y PRODUCTOS ─────────────── */}
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
@@ -10289,13 +10349,12 @@ function AppMetaAds({T, user, onHome}) {
                   </div>
                 )}
 
-                {/* Upload buttons */}
+                {/* Upload button */}
                 <div style={{display:"flex",gap:8,marginBottom:10}}>
                   <label style={{...BtnPri,padding:"8px 14px",cursor:uploadingFile?"wait":"pointer",margin:0,background:"transparent",color:T.green,border:`1px solid ${T.green}66`}}>
                     {uploadingFile?<><Spinner size={12} color={T.green}/> Subiendo...</>:"📤 Subir nuevo"}
                     <input type="file" accept="image/*,video/*" multiple disabled={uploadingFile} style={{display:"none"}} onChange={e=>{const fs=e.target.files; if(fs?.length){handleUploadMultiple(fs); e.target.value="";}}}/>
                   </label>
-                  <button onClick={()=>setShowLibraryPicker(s=>!s)} style={BtnSec}>📚 De biblioteca</button>
                 </div>
 
                 {/* Drop zone */}
@@ -10311,22 +10370,6 @@ function AppMetaAds({T, user, onHome}) {
                   <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>o tocá para elegir desde tu Mac</div>
                   <div style={{fontSize:10,color:T.textSm,letterSpacing:0.3}}>.mp4 · .mov · .jpg · .png — sin límite, uno por ad</div>
                 </div>
-
-                {/* Library picker */}
-                {showLibraryPicker && (
-                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-                    <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>Pegá una URL pública del archivo (ej. CDN, Drive público) — Growith lo trae a la cola.</div>
-                    <div style={{display:"flex",gap:6}}>
-                      <input value={newCUrl} onChange={e=>setNewCUrl(e.target.value)} placeholder="https://..." style={{...iS,flex:2}}/>
-                      <input value={newCName} onChange={e=>setNewCName(e.target.value)} placeholder="nombre.jpg" style={{...iS,flex:1}}/>
-                      <select value={newCKind} onChange={e=>setNewCKind(e.target.value)} style={{...iS,width:100}}>
-                        <option value="image">Imagen</option>
-                        <option value="video">Video</option>
-                      </select>
-                      <button onClick={async()=>{await handleAddCreative(); setShowLibraryPicker(false);}} style={BtnPri}>+</button>
-                    </div>
-                  </div>
-                )}
 
                 {/* Queue */}
                 {creatives.length > 0 && (
@@ -10454,24 +10497,38 @@ function AppMetaAds({T, user, onHome}) {
                   </>
                 )}
 
-                {/* Footer publicar */}
-                {creatives.length > 0 && (
-                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginTop:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-                    <div style={{fontSize:12,color:T.textSm}}>{studioMode==="shared" ? "📌 Destino compartido configurado arriba" : "🎯 Cada ad tiene su propio destino"}</div>
-                    <div style={{display:"flex",alignItems:"center",gap:12}}>
-                      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer"}}>
-                        <input type="checkbox" checked={publishActiveByDefault} onChange={e=>setPublishActiveByDefault(e.target.checked)} style={{width:14,height:14}}/>
-                        Publicar ACTIVE (default: PAUSED)
-                      </label>
-                      <button onClick={handleBulkPublish} disabled={bulkPublishing || queueWithCopy.length===0} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:`linear-gradient(135deg, ${T.accent}, ${T.purple||"#a855f7"}, #ec4899)`,color:"#fff",cursor:bulkPublishing?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
-                        {bulkPublishing
-                          ? <><Spinner size={13} color="#fff"/>Publicando {bulkProgress.done}/{bulkProgress.total}…</>
-                          : <>🚀 Publicar {queueWithCopy.length} ad{queueWithCopy.length===1?"":"s"}</>
+                {/* Footer publicar - gate por setup completo */}
+                {creatives.length > 0 && (() => {
+                  const setupMissing = [];
+                  if (!activeAcc?.ad_account_id) setupMissing.push("cuenta publicitaria");
+                  if (!activeAcc?.page_id) setupMissing.push("página de Facebook");
+                  if (!activeAcc?.pixel_id) setupMissing.push("píxel");
+                  const setupOk = setupMissing.length === 0;
+                  return (
+                    <div style={{background:T.surface,border:`1px solid ${setupOk?T.border:T.red+"55"}`,borderRadius:10,padding:"14px 16px",marginTop:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                      <div style={{fontSize:12,color:T.textSm,flex:1,minWidth:240}}>
+                        {!setupOk
+                          ? <span style={{color:T.red}}>⚠ No podés publicar hasta vincular: <strong>{setupMissing.join(", ")}</strong>. Subí arriba a la sección Configuración para ver cómo.</span>
+                          : (studioMode==="shared" ? "📌 Destino compartido configurado arriba" : "🎯 Cada ad tiene su propio destino")
                         }
-                      </button>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:12}}>
+                        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer"}}>
+                          <input type="checkbox" checked={publishActiveByDefault} onChange={e=>setPublishActiveByDefault(e.target.checked)} style={{width:14,height:14}}/>
+                          Publicar ACTIVE (default: PAUSED)
+                        </label>
+                        <button onClick={handleBulkPublish} disabled={bulkPublishing || queueWithCopy.length===0 || !setupOk} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:!setupOk?T.border:`linear-gradient(135deg, ${T.accent}, ${T.purple||"#a855f7"}, #ec4899)`,color:!setupOk?T.textSm:"#fff",cursor:(!setupOk||bulkPublishing)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,opacity:!setupOk?0.6:1}}>
+                          {bulkPublishing
+                            ? <><Spinner size={13} color="#fff"/>Publicando {bulkProgress.done}/{bulkProgress.total}…</>
+                            : !setupOk
+                              ? <>🔒 Falta setup</>
+                              : <>🚀 Publicar {queueWithCopy.length} ad{queueWithCopy.length===1?"":"s"}</>
+                          }
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
 
               {/* ── Modal: Nueva campaña + AdSets ───────────── */}
