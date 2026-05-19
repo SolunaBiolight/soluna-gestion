@@ -9036,6 +9036,8 @@ function AppMetaAds({T, user, onHome}) {
                     <input type="date" value={aUntil} min={aSince} max={new Date().toISOString().slice(0,10)} onChange={e=>setAUntil(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,colorScheme:"dark",fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     {/* Presets rápidos */}
                     <div style={{display:"flex",gap:4}}>
+                      <button onClick={()=>{const today=new Date().toISOString().slice(0,10);setASince(today);setAUntil(today);}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Hoy</button>
+                      <button onClick={()=>{const d=new Date(Date.now()-86400000).toISOString().slice(0,10);setASince(d);setAUntil(d);}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ayer</button>
                       {[{d:7,l:"7d"},{d:14,l:"14d"},{d:30,l:"30d"},{d:90,l:"90d"}].map(p=>(
                         <button key={p.d} onClick={()=>{setASince(new Date(Date.now()-p.d*86400000).toISOString().slice(0,10));setAUntil(new Date().toISOString().slice(0,10));}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
                       ))}
@@ -9181,21 +9183,24 @@ function AppMetaAds({T, user, onHome}) {
                             {filtered.map(r => {
                               const busy = !!aBusyIds[r.id];
                               const isActive = r.effective_status === "ACTIVE";
+                              const drillLabel = aLevel==="campaign" ? "adsets" : aLevel==="adset" ? "ads" : null;
                               return (
-                                <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6,cursor:canDrill?"pointer":"default"}}
-                                    onClick={(e)=>{ if(canDrill && e.target.tagName!=="BUTTON") drillInto(r); }}
-                                    title={canDrill?"Click para ver "+(aLevel==="campaign"?"adsets":"ads"):""}>
-                                  <td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}>
+                                <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6}}>
+                                  <td style={{padding:"10px 12px",display:"flex",gap:4}}>
                                     <button onClick={()=>toggleStatus(r)} disabled={busy} title={isActive?"Pausar":"Activar"} style={{background:isActive?T.green+"22":T.red+"22",border:`1px solid ${isActive?T.green:T.red}55`,color:isActive?T.green:T.red,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:busy?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
                                       {busy?<Spinner size={10} color={isActive?T.green:T.red}/>:isActive?"⏸":"▶"}
                                     </button>
                                   </td>
-                                  <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                                    <div style={{fontWeight:600}}>
-                                      {r.name||"(sin nombre)"}
-                                      {canDrill && <span style={{fontSize:10,color:T.accent,marginLeft:6}}>↓</span>}
+                                  <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:280,overflow:"hidden",whiteSpace:"nowrap"}}>
+                                    <div style={{fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{r.name||"(sin nombre)"}</span>
+                                      {drillLabel && (
+                                        <button onClick={(e)=>{e.stopPropagation();drillInto(r);}} title={`Ver ${drillLabel}`} style={{flexShrink:0,background:T.accentSolid+"22",border:`1px solid ${T.accentSolid}55`,color:T.accent,borderRadius:5,padding:"2px 8px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                          {drillLabel} →
+                                        </button>
+                                      )}
                                     </div>
-                                    <div style={{fontSize:10,color:T.textSm,marginTop:1}}>
+                                    <div style={{fontSize:10,color:T.textSm,marginTop:2}}>
                                       <span style={{padding:"1px 6px",borderRadius:4,background:isActive?T.green+"22":T.red+"22",color:isActive?T.green:T.red,fontWeight:600}}>{r.effective_status||"—"}</span>
                                       {r.daily_budget && <span style={{marginLeft:6}}>· ${fmt(r.daily_budget)}/día</span>}
                                     </div>

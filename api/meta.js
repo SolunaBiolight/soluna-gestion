@@ -198,7 +198,9 @@ async function fetchInsightsRows(cfg, level, since, until) {
   ].join(",");
   const data = await metaGet(`${cfg.ad_account_id}/insights`, {
     level,
-    time_range: JSON.stringify({ since, until }),
+    "time_range[since]": since,
+    "time_range[until]": until,
+    action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]),
     fields,
     limit: 500,
   }, cfg.access_token);
@@ -604,11 +606,16 @@ export default async function handler(req, res) {
         : null;
 
       try {
+        // Meta acepta time_range[since]/[until] como params separados — mas confiable
+        // que JSON.stringify (que con URL-encoding agresivo a veces es ignorado y devuelve "lifetime").
         const insightsParams = {
           level,
-          time_range: JSON.stringify({ since, until }),
+          "time_range[since]": since,
+          "time_range[until]": until,
           fields,
           limit: 500,
+          // Atribucion estricta al rango (sin look-back 7d posterior)
+          action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]),
         };
         if (filteringParam) insightsParams.filtering = filteringParam;
         const data = await metaGet(`${cfg.ad_account_id}/insights`, insightsParams, cfg.access_token);
@@ -719,7 +726,9 @@ export default async function handler(req, res) {
         try {
           const ins = await metaGet(`${cfg.ad_account_id}/insights`, {
             level: "ad",
-            time_range: JSON.stringify({ since, until }),
+            "time_range[since]": since,
+            "time_range[until]": until,
+            action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]),
             fields: "ad_id,spend,impressions,clicks,ctr,cpm,cpc,frequency,reach,actions,action_values,purchase_roas,cost_per_action_type",
             limit: 500,
           }, cfg.access_token);
