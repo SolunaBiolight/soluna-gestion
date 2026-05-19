@@ -6432,6 +6432,10 @@ function AppArca({T, user, onHome}) {
     });
     if(Object.keys(filtered).length === 0) return toast("Tildá al menos una venta","warning");
     setOrdenes(filtered);
+    // Limpiar resultados / pdfs de la tanda anterior — sino el boton verde no aparece
+    // en la segunda tanda porque `!resultados` queda false.
+    setResultados(null);
+    setPdfs([]);
     const productos = [...new Set(Object.values(filtered).flatMap(o => o.items.map(i => i.nombre_original)))];
     setProductos(productos);
     setProductMap(Object.fromEntries(productos.map(p=>[p,""])));
