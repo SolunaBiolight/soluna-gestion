@@ -5074,6 +5074,37 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const saludo = hora < 13 ? "Buenos días" : hora < 20 ? "Buenas tardes" : "Buenas noches";
   const notificacionesCanjes = alertas||[];
   const [notifCollapsed, setNotifCollapsed] = React.useState(false);
+  const [stockAlertas, setStockAlertas] = React.useState([]);
+  const [stockAlertCollapsed, setStockAlertCollapsed] = React.useState(false);
+
+  // Cargar alertas de stock al montar
+  React.useEffect(()=>{
+    if(!user?.uid) return;
+    const uid=user.uid;
+    // Leer config de alertas guardada
+    let cfg={}, global=14;
+    try{ cfg=JSON.parse(localStorage.getItem(`growith_alert_config_${uid}`)||"{}"); }catch(e){}
+    try{ global=parseInt(localStorage.getItem(`growith_alert_global_${uid}`))||14; }catch(e){}
+    // Traer datos de stock (rápido — solo 7 días)
+    fetch(`/api/stock?action=products&uid=${uid}&days=7`)
+      .then(r=>r.json()).then(data=>{
+        if(!data.products) return;
+        const alertas=(data.products||[]).filter(p=>(cfg[p.id]?.enabled)!==false).flatMap(p=>{
+          const thr=cfg[p.id]?.threshold??global;
+          const rate=p.units_sold>0?p.units_sold/7:0;
+          return p.variants.filter(v=>{
+            const vrate=v.units_sold>0?v.units_sold/7:0;
+            const vd=vrate>0?Math.round(v.stock/vrate):null;
+            return v.stock===0||(vd!==null&&vd<=thr);
+          }).map(v=>{
+            const vrate=v.units_sold>0?v.units_sold/7:0;
+            const vd=vrate>0?Math.round(v.stock/vrate):null;
+            return {producto:p.nombre,variante:v.nombre,stock:v.stock,daysLeft:vd,status:v.stock===0?"empty":vd<=7?"critical":"low"};
+          });
+        }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1)).slice(0,5);
+        setStockAlertas(alertas);
+      }).catch(()=>{});
+  },[user?.uid]);
   const fecha = new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   const fechaCap = fecha.charAt(0).toUpperCase()+fecha.slice(1);
 
@@ -5161,6 +5192,44 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           </div>
             );
           })()}
+
+          {/* -- ALERTAS DE STOCK -- */}
+          {stockAlertas.length>0&&(
+            <div style={{background:T.card,border:`1px solid ${T.red}44`,borderRadius:12,overflow:"hidden",marginBottom:8}}>
+              <div onClick={()=>setStockAlertCollapsed(c=>!c)}
+                style={{padding:"10px 18px",display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}
+                onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:T.red,flexShrink:0}}/>
+                <span style={{fontSize:11,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Alertas de Stock</span>
+                <span style={{fontSize:11,background:T.red+"22",color:T.red,borderRadius:4,padding:"1px 7px",fontWeight:600,border:`1px solid ${T.red}33`,marginLeft:2}}>{stockAlertas.length}</span>
+                <button onClick={e=>{e.stopPropagation();onNavigate("stock");}} style={{marginLeft:"auto",fontSize:11,color:T.accent,background:"transparent",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>Ver todo →</button>
+                <span style={{fontSize:13,color:T.textSm,display:"inline-block",transition:"transform 0.25s",transform:stockAlertCollapsed?"rotate(-90deg)":"rotate(0deg)"}}>▾</span>
+              </div>
+              <div style={{maxHeight:stockAlertCollapsed?"0px":`${stockAlertas.length*52}px`,overflow:"hidden",transition:"max-height 0.28s cubic-bezier(0.4,0,0.2,1)",borderTop:stockAlertCollapsed?"none":`1px solid ${T.borderL}`}}>
+                {stockAlertas.map((a,i)=>{
+                  const c2=a.status==="empty"?T.red:a.status==="critical"?T.red+"cc":(T.yellow||"#eab308");
+                  const icon=a.status==="empty"?"⛔":a.status==="critical"?"🔴":"⚠️";
+                  return (
+                    <div key={i} onClick={()=>onNavigate("stock")} style={{padding:"10px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<stockAlertas.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                        <span style={{fontSize:14,flexShrink:0}}>{icon}</span>
+                        <div style={{minWidth:0}}>
+                          <span style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>{a.producto}</span>
+                          <span style={{fontSize:11,color:T.textSm}}>{a.variante} · {a.stock===0?"Sin stock":`${a.daysLeft}d restantes`}</span>
+                        </div>
+                      </div>
+                      <span style={{fontSize:11,padding:"2px 8px",borderRadius:4,background:c2+"22",color:c2,fontWeight:700,flexShrink:0,marginLeft:8}}>
+                        {a.status==="empty"?"Sin stock":a.status==="critical"?"Crítico":"Reponer"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* -- NOTIFICACIONES DE CANJES -- */}
           {notificacionesCanjes.length>0&&(
@@ -11806,15 +11875,16 @@ function AppStock({T, user, onHome}) {
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
-  const [tab, setTab] = useState("resumen"); // resumen | productos | alertas
+  const [tab, setTab] = useState("ventas");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("units");
   const [sortDir, setSortDir] = useState("desc");
   const [expandedId, setExpandedId] = useState(null);
-  const [alertThreshold, setAlertThreshold] = useState(14);
-  const [groupVariants, setGroupVariants] = useState(true);
   const [tooltip, setTooltip] = useState(null);
-  const chartRef = React.useRef(null);
+  // Alertas configurables por producto
+  const [alertConfig, setAlertConfig] = useState({}); // {productId: {threshold, enabled}}
+  const [globalThreshold, setGlobalThreshold] = useState(14);
+  const [editingAlert, setEditingAlert] = useState(null); // productId en edición
 
   const iS = InputStyle(T);
 
@@ -11830,91 +11900,118 @@ function AppStock({T, user, onHome}) {
     setLoading(false);
   }
 
-  useEffect(()=>{if(uid) loadStock();},[uid]);
+  // Cargar config de alertas desde localStorage
+  useEffect(()=>{
+    if(!uid) return;
+    loadStock();
+    try{
+      const saved = localStorage.getItem(`growith_alert_config_${uid}`);
+      if(saved) setAlertConfig(JSON.parse(saved));
+      const savedGlobal = localStorage.getItem(`growith_alert_global_${uid}`);
+      if(savedGlobal) setGlobalThreshold(parseInt(savedGlobal)||14);
+    }catch(e){}
+  },[uid]);
+
+  function saveAlertConfig(config) {
+    setAlertConfig(config);
+    try{ localStorage.setItem(`growith_alert_config_${uid}`, JSON.stringify(config)); }catch(e){}
+  }
+  function saveGlobalThreshold(val) {
+    setGlobalThreshold(val);
+    try{ localStorage.setItem(`growith_alert_global_${uid}`, String(val)); }catch(e){}
+  }
 
   const fmt    = n => (n||0).toLocaleString("es-AR");
   const fmtARS = n => "$\u00a0"+Math.round(n||0).toLocaleString("es-AR");
-  const rate   = p => p.units_sold>0?p.units_sold/days:0;
-  const dLeft  = (stock,r) => r>0?Math.round(stock/r):null;
+  const rate   = p => p.units_sold>0 ? p.units_sold/days : 0;
+  const vrate  = v => v.units_sold>0 ? v.units_sold/days : 0;
+  const dLeft  = (stock,r) => r>0 ? Math.round(stock/r) : null;
 
-  const stColor = d => d===null?T.textSm:d===0?T.red:d<=alertThreshold?(T.yellow||"#eab308"):T.green;
-  const stLabel = (stock,d) => stock===0?"Sin stock":d===null?"Sin ventas":d<=alertThreshold?"Reponer":"OK";
+  // Umbral por producto (individual o global)
+  const thresholdFor = p => alertConfig[p.id]?.threshold ?? globalThreshold;
+  const enabledFor   = p => alertConfig[p.id]?.enabled   ?? true;
+
+  const stColor = d => d===null?T.textSm:d===0?T.red:d<=7?(T.red+"cc"):(d<=14?(T.yellow||"#eab308"):T.green);
+  const stLabel = (stock,d) => stock===0?"Sin stock":d===null?"Sin ventas":d<=7?"Crítico":d<=14?"Reponer":"OK";
   const stBg    = d => stColor(d)+"22";
 
-  // Tabla de productos
   const allProducts = data?.products||[];
-  const filtered = allProducts.filter(p=>{
-    const q=search.trim().toLowerCase();
-    return !q||(p.nombre||"").toLowerCase().includes(q)||p.variants.some(v=>(v.sku||"").toLowerCase().includes(q));
-  }).sort((a,b)=>{
-    let va,vb;
-    if(sortBy==="units")  {va=a.units_sold; vb=b.units_sold;}
-    else if(sortBy==="stock")  {va=a.stock_total;vb=b.stock_total;}
-    else if(sortBy==="days")   {va=dLeft(a.stock_total,rate(a))??99999;vb=dLeft(b.stock_total,rate(b))??99999;}
-    else if(sortBy==="rate")   {va=rate(a);vb=rate(b);}
-    else if(sortBy==="revenue"){va=a.revenue;vb=b.revenue;}
-    else{va=a.units_sold;vb=b.units_sold;}
-    return sortDir==="desc"?vb-va:va-vb;
-  });
 
-  const toggleSort=col=>{if(sortBy===col)setSortDir(d=>d==="desc"?"asc":"desc");else{setSortBy(col);setSortDir("desc");}};
-  const SH=({col})=><span style={{marginLeft:3,opacity:sortBy===col?1:0.3,fontSize:9}}>{sortBy===col?(sortDir==="desc"?"↓":"↑"):"↕"}</span>;
+  // Alertas activas
+  const alertas = allProducts.filter(p=>enabledFor(p)).flatMap(p=>{
+    const thr = thresholdFor(p);
+    return p.variants.filter(v=>{
+      const vd = dLeft(v.stock, vrate(v));
+      return enabledFor(p) && (v.stock===0||(vd!==null&&vd<=thr));
+    }).map(v=>({
+      producto:p.nombre, productoId:p.id, imagen:p.imagen,
+      variante:v.nombre, sku:v.sku, stock:v.stock,
+      daysLeft:dLeft(v.stock,vrate(v)), rate:vrate(v),
+      threshold:thr,
+      status:v.stock===0?"empty":((dLeft(v.stock,vrate(v))??99)<=7?"critical":"low"),
+      suggested: vrate(v)>0 ? Math.ceil(vrate(v)*30) : 0, // sugerencia: stock para 30 días
+    }));
+  }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1));
 
+  // KPIs globales
   const totalUnits  = allProducts.reduce((a,p)=>a+p.units_sold,0);
   const totalStock  = allProducts.reduce((a,p)=>a+p.stock_total,0);
   const totalRev    = allProducts.reduce((a,p)=>a+p.revenue,0);
   const avgRate     = days>0?(totalUnits/days):0;
   const avgDays     = (()=>{const v=allProducts.filter(p=>rate(p)>0).map(p=>dLeft(p.stock_total,rate(p))).filter(d=>d!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;})();
   const kpiEmpty    = allProducts.filter(p=>p.stock_total===0).length;
-  const kpiLow      = allProducts.filter(p=>p.stock_total>0&&(dLeft(p.stock_total,rate(p))??99)<=alertThreshold).length;
+  const kpiCritical = allProducts.filter(p=>{const d=dLeft(p.stock_total,rate(p));return p.stock_total>0&&d!==null&&d<=7;}).length;
+  const kpiLow      = allProducts.filter(p=>{const d=dLeft(p.stock_total,rate(p));return p.stock_total>0&&d!==null&&d>7&&d<=globalThreshold;}).length;
+  const kpiDead     = allProducts.filter(p=>p.units_sold===0).length;
 
-  // Alertas
-  const alertas = allProducts.flatMap(p=>
-    p.variants.filter(v=>v.stock===0||(dLeft(v.stock,v.units_sold/days)??99)<=alertThreshold)
-    .map(v=>({producto:p.nombre,imagen:p.imagen,variante:v.nombre,sku:v.sku,stock:v.stock,daysLeft:dLeft(v.stock,v.units_sold/days),rate:v.units_sold/days,status:v.stock===0?"empty":"low"}))
-  ).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1));
+  // Período anterior (simulado — comparar con mitad del período)
+  const dailyEntries = Object.entries(data?.daily_series||{}).sort(([a],[b])=>a.localeCompare(b));
+  const half = Math.floor(dailyEntries.length/2);
+  const prevUnits = dailyEntries.slice(0,half).reduce((a,[,v])=>a+v,0);
+  const currUnits = dailyEntries.slice(half).reduce((a,[,v])=>a+v,0);
+  const trend = prevUnits>0 ? ((currUnits-prevUnits)/prevUnits*100).toFixed(1) : null;
+  const trendUp = trend!==null && parseFloat(trend)>=0;
 
   const platform      = data?.platform||"tiendanube";
   const platformLabel = platform==="shopify"?"Shopify":"Tienda Nube";
   const platformColor = platform==="shopify"?"#95bf47":"#3483fa";
 
-  // ── Donut chart SVG ──
-  function DonutChart({data:raw, colors, size=160, thickness=34}) {
-    const entries=Object.entries(raw||{}).sort(([,a],[,b])=>b-a).slice(0,6);
-    if(!entries.length) return null;
+  // ── Donut SVG ──────────────────────────────────────────────────────
+  function DonutChart({data:raw, colors, size=150, thickness=32, centerLabel}) {
+    const entries=Object.entries(raw||{}).sort(([,a],[,b])=>b-a).slice(0,7);
+    if(!entries.length) return <div style={{color:T.textSm,fontSize:12,textAlign:"center",padding:16}}>Sin datos</div>;
     const total=entries.reduce((a,[,v])=>a+v,0)||1;
-    const defaultColors=["#6366f1","#22c55e","#f59e0b","#ef4444","#3b82f6","#ec4899"];
-    const r=size/2, ri=r-thickness, cx=r, cy=r;
+    const C=["#6366f1","#22c55e","#f59e0b","#ef4444","#3b82f6","#ec4899","#14b8a6"];
+    const r=size/2,ri=r-thickness,cx=r,cy=r;
     let angle=-Math.PI/2;
     const slices=entries.map(([label,val],i)=>{
-      const pct=val/total;
-      const a1=angle, a2=angle+pct*2*Math.PI;
-      angle=a2;
+      const pct=val/total, a1=angle, a2=angle+pct*2*Math.PI; angle=a2;
       const x1=cx+r*Math.cos(a1),y1=cy+r*Math.sin(a1);
       const x2=cx+r*Math.cos(a2),y2=cy+r*Math.sin(a2);
       const xi1=cx+ri*Math.cos(a1),yi1=cy+ri*Math.sin(a1);
       const xi2=cx+ri*Math.cos(a2),yi2=cy+ri*Math.sin(a2);
       const large=pct>0.5?1:0;
-      const path=`M${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} L${xi2},${yi2} A${ri},${ri} 0 ${large},0 ${xi1},${yi1} Z`;
-      return {path,label,val,pct,color:colors?.[i]||defaultColors[i%defaultColors.length]};
+      return {path:`M${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} L${xi2},${yi2} A${ri},${ri} 0 ${large},0 ${xi1},${yi1} Z`,label,val,pct,color:colors?.[i]||C[i%C.length]};
     });
     return (
       <div>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{display:"block",margin:"0 auto"}}>
           {slices.map((s,i)=>(
-            <path key={i} d={s.path} fill={s.color} stroke={T.card} strokeWidth={2}
-              onMouseEnter={e=>{const r2=e.currentTarget.getBoundingClientRect();setTooltip({x:r2.left+r2.width/2,y:r2.top-8,label:`${s.label}: ${fmt(s.val)} (${(s.pct*100).toFixed(1)}%)`});}}
+            <path key={i} d={s.path} fill={s.color} stroke={T.card} strokeWidth={1.5}
+              onMouseEnter={e=>{const rc=e.currentTarget.getBoundingClientRect();setTooltip({x:rc.left+rc.width/2,y:rc.top-8,label:`${s.label}: ${fmt(s.val)} uds (${(s.pct*100).toFixed(1)}%)`});}}
               onMouseLeave={()=>setTooltip(null)}/>
           ))}
-          <text x={cx} y={cy-6} textAnchor="middle" fontSize={20} fontWeight="800" fill={T.text}>{fmt(total)}</text>
-          <text x={cx} y={cy+12} textAnchor="middle" fontSize={9} fill={T.textSm}>uds</text>
+          {centerLabel&&<>
+            <text x={cx} y={cy-4} textAnchor="middle" fontSize={16} fontWeight="800" fill={T.text}>{centerLabel.val}</text>
+            <text x={cx} y={cy+12} textAnchor="middle" fontSize={9} fill={T.textSm}>{centerLabel.label}</text>
+          </>}
         </svg>
-        <div style={{marginTop:10}}>
+        <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:4}}>
           {slices.map((s,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-              <div style={{width:10,height:10,borderRadius:2,background:s.color,flexShrink:0}}/>
+            <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
+              <div style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
               <div style={{fontSize:11,color:T.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.label}</div>
-              <div style={{fontSize:11,fontWeight:700,color:T.textMd,flexShrink:0}}>({(s.pct*100).toFixed(1)}%)</div>
+              <div style={{fontSize:11,fontWeight:600,color:T.textMd,flexShrink:0}}>{(s.pct*100).toFixed(1)}%</div>
             </div>
           ))}
         </div>
@@ -11922,28 +12019,31 @@ function AppStock({T, user, onHome}) {
     );
   }
 
-  // ── Bar chart interactivo ──
-  function BarChart({daily, height=110}) {
+  // ── Bar chart ──────────────────────────────────────────────────────
+  function BarChart({daily, height=110, showComparison}) {
     const entries=Object.entries(daily||{}).sort(([a],[b])=>a.localeCompare(b));
     if(!entries.length) return <div style={{color:T.textSm,fontSize:12,textAlign:"center",padding:20}}>Sin datos</div>;
     const vals=entries.map(([,v])=>v);
     const max=Math.max(1,...vals);
-    const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+    const avg=vals.reduce((a,b)=>a+b,0)/Math.max(1,vals.length);
+    const top5=vals.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v).slice(0,5).map(x=>x.i);
     return (
       <div>
         <div style={{display:"flex",alignItems:"flex-end",gap:2,height,position:"relative"}}>
-          {/* Línea promedio */}
           <div style={{position:"absolute",left:0,right:0,top:`${(1-avg/max)*height}px`,borderTop:`1.5px dashed ${T.accentSolid}55`,pointerEvents:"none"}}>
-            <span style={{position:"absolute",right:0,top:-14,fontSize:9,color:T.accent,background:T.card,padding:"1px 4px",borderRadius:3}}>prom {avg.toFixed(1)}</span>
+            <span style={{position:"absolute",right:0,top:-14,fontSize:9,color:T.accent,background:T.card,padding:"1px 5px",borderRadius:3}}>prom {avg.toFixed(1)}</span>
           </div>
-          {entries.map(([date,val])=>{
+          {entries.map(([date,val],i)=>{
             const pct=val/max;
             const isToday=date===new Date().toISOString().slice(0,10);
+            const isTop=top5.includes(i);
             return (
               <div key={date} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",cursor:"default"}}
-                onMouseEnter={e=>{const r=e.currentTarget.getBoundingClientRect();setTooltip({x:r.left+r.width/2,y:r.top-8,label:`${date.slice(5).replace("-","/")}: ${fmt(val)} uds`});}}
+                onMouseEnter={e=>{const rc=e.currentTarget.getBoundingClientRect();setTooltip({x:rc.left+rc.width/2,y:rc.top-8,label:`${date.slice(5).replace("-","/")} · ${fmt(val)} uds`});}}
                 onMouseLeave={()=>setTooltip(null)}>
-                <div style={{width:"100%",background:isToday?T.accentSolid:T.accentSolid+"77",borderRadius:"3px 3px 0 0",height:`${Math.max(4,pct*height)}px`,transition:"height 0.3s"}}/>
+                <div style={{width:"100%",background:isToday?T.accentSolid:isTop?T.accentSolid+"aa":T.accentSolid+"55",borderRadius:"3px 3px 0 0",height:`${Math.max(4,pct*height)}px`,transition:"height 0.3s",position:"relative"}}>
+                  {isToday&&<div style={{position:"absolute",top:-16,left:"50%",transform:"translateX(-50%)",fontSize:8,color:T.accent,background:T.card,padding:"1px 3px",borderRadius:3,whiteSpace:"nowrap"}}>hoy</div>}
+                </div>
               </div>
             );
           })}
@@ -11957,49 +12057,182 @@ function AppStock({T, user, onHome}) {
     );
   }
 
-  // ── Gráfico de horas (línea) ──
-  function HourChart({byHour, height=70}) {
+  // ── Hour line chart ────────────────────────────────────────────────
+  function HourChart({byHour,height=60}) {
     const hours=Array.from({length:24},(_,i)=>String(i).padStart(2,"0"));
     const vals=hours.map(h=>byHour?.[h]||0);
     const max=Math.max(1,...vals);
-    const W=400,H=height,P=4;
-    const pts=vals.map((v,i)=>{
-      const x=P+(i/23)*(W-2*P);
-      const y=H-P-((v/max)*(H-2*P));
-      return `${x},${y}`;
-    }).join(" ");
-    const area=`M${P},${H} `+vals.map((v,i)=>{
-      const x=P+(i/23)*(W-2*P);
-      const y=H-P-((v/max)*(H-2*P));
-      return `L${x},${y}`;
-    }).join(" ")+` L${W-P},${H} Z`;
+    const W=500,H=height,P=4;
+    const pts=vals.map((v,i)=>`${P+(i/23)*(W-2*P)},${H-P-((v/max)*(H-2*P))}`).join(" ");
+    const area=`M${P},${H} `+vals.map((v,i)=>`L${P+(i/23)*(W-2*P)},${H-P-((v/max)*(H-2*P))}`).join(" ")+` L${W-P},${H} Z`;
     const peakH=hours[vals.indexOf(max)];
     return (
       <div>
         <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block"}}>
-          <defs>
-            <linearGradient id="hgrad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor={T.accentSolid} stopOpacity="0.25"/>
-              <stop offset="100%" stopColor={T.accentSolid} stopOpacity="0"/>
-            </linearGradient>
-          </defs>
-          <path d={area} fill="url(#hgrad)"/>
+          <defs><linearGradient id="hg2" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor={T.accentSolid} stopOpacity="0.3"/><stop offset="100%" stopColor={T.accentSolid} stopOpacity="0"/></linearGradient></defs>
+          <path d={area} fill="url(#hg2)"/>
           <polyline points={pts} fill="none" stroke={T.accentSolid} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
         <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:T.textSm,marginTop:2}}>
-          {["00","06","12","18","23"].map(h=><span key={h}>{h}h</span>)}
+          {["00h","06h","12h","18h","23h"].map(h=><span key={h}>{h}</span>)}
         </div>
-        {peakH&&<div style={{fontSize:11,color:T.textSm,marginTop:6,textAlign:"center"}}>Pico de ventas: <strong style={{color:T.accent}}>{peakH}:00 hs</strong> ({fmt(max)} uds)</div>}
+        {peakH&&<div style={{fontSize:11,color:T.textSm,marginTop:6,textAlign:"center"}}>Pico: <strong style={{color:T.accent}}>{peakH}:00 hs</strong> · {fmt(max)} uds</div>}
       </div>
     );
   }
 
-  const TABS=[{id:"resumen",label:"📊 Resumen"},{id:"productos",label:"📦 Productos"},{id:"alertas",label:`🚨 Alertas${alertas.length>0?` (${alertas.length})`:""}`}];
+  // ── Tabla productos (reutilizable para todos los tabs) ─────────────
+  function ProductTable({products, showDead}) {
+    const filtered = products.filter(p=>{
+      const q=search.trim().toLowerCase();
+      if(showDead && p.units_sold>0) return false;
+      return !q||(p.nombre||"").toLowerCase().includes(q)||p.variants.some(v=>(v.sku||"").toLowerCase().includes(q));
+    }).sort((a,b)=>{
+      let va,vb;
+      if(sortBy==="units")  {va=a.units_sold;vb=b.units_sold;}
+      else if(sortBy==="stock")  {va=a.stock_total;vb=b.stock_total;}
+      else if(sortBy==="days")   {va=dLeft(a.stock_total,rate(a))??99999;vb=dLeft(b.stock_total,rate(b))??99999;}
+      else if(sortBy==="rate")   {va=rate(a);vb=rate(b);}
+      else if(sortBy==="revenue"){va=a.revenue;vb=b.revenue;}
+      else{va=a.units_sold;vb=b.units_sold;}
+      return sortDir==="desc"?vb-va:va-vb;
+    });
+
+    const SH=({col})=><span style={{marginLeft:3,opacity:sortBy===col?1:0.25,fontSize:9}}>{sortBy===col?(sortDir==="desc"?"↓":"↑"):"↕"}</span>;
+    const toggleSort=col=>{if(sortBy===col)setSortDir(d=>d==="desc"?"asc":"desc");else{setSortBy(col);setSortDir("desc");}};
+
+    const tU=filtered.reduce((a,p)=>a+p.units_sold,0);
+    const tS=filtered.reduce((a,p)=>a+p.stock_total,0);
+    const tR=filtered.reduce((a,p)=>a+p.revenue,0);
+
+    return (
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"9px 16px",alignItems:"center"}}>
+          {[{l:"Producto",c:null},{l:"Stock",c:"stock"},{l:"Vendidos",c:"units"},{l:"Tasa/día",c:"rate"},{l:"Días",c:"days"},{l:"Facturación",c:"revenue"},{l:"Proyección",c:null},{l:"",c:null}].map((h,i)=>(
+            <div key={i} onClick={()=>h.c&&toggleSort(h.c)}
+              style={{fontSize:10,textTransform:"uppercase",color:h.c?T.accent:T.textSm,fontWeight:700,letterSpacing:0.5,textAlign:i===0?"left":"right",cursor:h.c?"pointer":"default",userSelect:"none"}}>
+              {h.l}{h.c&&<SH col={h.c}/>}
+            </div>
+          ))}
+        </div>
+        {/* Totales */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",background:T.surface,borderBottom:`2px solid ${T.border}`,padding:"8px 16px",alignItems:"center"}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.textSm}}>TOTAL ({filtered.length})</div>
+          <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.text}}>{fmt(tS)}</div>
+          <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.text}}>{fmt(tU)}</div>
+          <div style={{textAlign:"right",fontSize:11,color:T.accent,fontWeight:700}}>{days>0?(tU/days).toFixed(1):"—"}</div>
+          <div style={{textAlign:"right",fontSize:11,color:T.textSm}}>—</div>
+          <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.text}}>{fmtARS(tR)}</div>
+          <div/><div/>
+        </div>
+        {filtered.length===0?(
+          <div style={{padding:"40px 20px",textAlign:"center"}}><div style={{fontSize:28,marginBottom:8}}>📭</div><div style={{fontSize:13,color:T.textSm}}>Sin resultados</div></div>
+        ):filtered.map(p=>{
+          const r2=rate(p), dl=dLeft(p.stock_total,r2), sc=stColor(dl), exp=expandedId===p.id;
+          const pct=totalUnits>0?(p.units_sold/totalUnits*100).toFixed(1):0;
+          const projPct=dl===null?0:Math.min(100,(dl/90)*100);
+          const cfg=alertConfig[p.id]||{};
+          return (
+            <div key={p.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
+              <div onClick={()=>setExpandedId(exp?null:p.id)}
+                style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",padding:"11px 16px",alignItems:"center",cursor:"pointer",background:exp?T.surface+"99":"transparent",transition:"background 0.1s"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                  {p.imagen?<img src={p.imagen} alt="" style={{width:32,height:32,borderRadius:7,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
+                    :<div style={{width:32,height:32,borderRadius:7,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,border:`1px solid ${T.border}`}}>📦</div>}
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                    <div style={{fontSize:10,color:T.textSm,display:"flex",alignItems:"center",gap:6}}>
+                      <span>{p.variants.length} var. · {pct}%</span>
+                      {cfg.threshold&&<span style={{background:T.accentSolid+"22",color:T.accent,borderRadius:4,padding:"0 4px",fontSize:9,fontWeight:600}}>alerta {cfg.threshold}d</span>}
+                    </div>
+                  </div>
+                </div>
+                <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:p.stock_total===0?T.red:T.text}}>{fmt(p.stock_total)}</div>
+                <div style={{textAlign:"right",fontSize:13,color:T.textMd}}>{fmt(p.units_sold)}</div>
+                <div style={{textAlign:"right",fontSize:12,fontWeight:600,color:T.accent}}>{r2>0?r2.toFixed(1):"—"}</div>
+                <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:sc}}>{dl===null?"—":dl+"d"}</div>
+                <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmtARS(p.revenue)}</div>
+                <div style={{display:"flex",alignItems:"center",gap:5}}>
+                  <div style={{flex:1,height:6,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${projPct}%`,background:sc,borderRadius:10,transition:"width 0.4s"}}/>
+                  </div>
+                  <span style={{fontSize:9,color:T.textSm,minWidth:22,textAlign:"right"}}>{dl===null?"—":dl>90?"+90":dl+"d"}</span>
+                </div>
+                <div style={{textAlign:"right",fontSize:13,color:T.textSm,transition:"transform 0.2s",transform:exp?"rotate(90deg)":"rotate(0deg)"}}>›</div>
+              </div>
+
+              {exp&&(
+                <div style={{background:T.surface,borderTop:`1px solid ${T.borderL}`}}>
+                  {/* Config alerta por producto */}
+                  <div style={{padding:"10px 16px 10px 58px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>⚙ Alerta para este producto:</span>
+                    <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.text,cursor:"pointer"}}>
+                      <input type="checkbox" checked={cfg.enabled!==false} onChange={e=>{const nc={...alertConfig,[p.id]:{...cfg,enabled:e.target.checked}};saveAlertConfig(nc);}} style={{cursor:"pointer"}}/>
+                      Activa
+                    </label>
+                    <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.text}}>
+                      Avisar con menos de
+                      <select value={cfg.threshold||""} onChange={e=>{const v=e.target.value?parseInt(e.target.value):undefined;const nc={...alertConfig,[p.id]:{...cfg,threshold:v,enabled:cfg.enabled!==false}};saveAlertConfig(nc);}}
+                        style={{...iS,width:"auto",padding:"3px 6px",fontSize:11}}>
+                        <option value="">Global ({globalThreshold}d)</option>
+                        {[3,5,7,10,14,21,30,45,60].map(d=><option key={d} value={d}>{d} días</option>)}
+                      </select>
+                      de stock
+                    </label>
+                    {cfg.threshold&&<button onClick={()=>{const nc={...alertConfig};delete nc[p.id];saveAlertConfig(nc);}} style={{fontSize:10,color:T.red,background:"transparent",border:"none",cursor:"pointer",padding:0}}>Resetear</button>}
+                  </div>
+                  {/* Header variantes */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",padding:"6px 16px 6px 58px",borderBottom:`1px solid ${T.borderL}`,background:T.bg+"88"}}>
+                    {["Variante","Stock","Vendidos","Tasa","Días","Revenue","Proyección",""].map((h,i)=>(
+                      <div key={i} style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,textAlign:i===0?"left":"right"}}>{h}</div>
+                    ))}
+                  </div>
+                  {p.variants.map(v=>{
+                    const vr2=vrate(v), vd=dLeft(v.stock,vr2), vc=stColor(vd), vPct=Math.min(100,(vd??0)/90*100);
+                    return (
+                      <div key={v.id} style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",padding:"8px 16px 8px 58px",borderBottom:`1px solid ${T.borderL}`,alignItems:"center"}}>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:500,color:T.text}}>{v.nombre}</div>
+                          {v.sku&&<div style={{fontSize:10,color:T.textSm}}>SKU: {v.sku}</div>}
+                        </div>
+                        <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:v.stock===0?T.red:T.text}}>{fmt(v.stock)}</div>
+                        <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmt(v.units_sold)}</div>
+                        <div style={{textAlign:"right",fontSize:11,color:T.accent,fontWeight:600}}>{vr2>0?vr2.toFixed(1):"—"}</div>
+                        <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:vc}}>{vd===null?"—":vd+"d"}</div>
+                        <div style={{textAlign:"right",fontSize:11,color:T.textMd}}>{fmtARS(v.revenue)}</div>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}>
+                          <div style={{flex:1,height:5,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${vPct}%`,background:vc,borderRadius:10}}/>
+                          </div>
+                          <span style={{fontSize:9,color:T.textSm,minWidth:20,textAlign:"right"}}>{vd===null?"—":vd>90?"+90":vd+"d"}</span>
+                        </div>
+                        <div/>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div style={{padding:"8px 16px",fontSize:10,color:T.textSm,borderTop:`1px solid ${T.borderL}`}}>
+          Stock actualizado: {new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}h · Proyección basada en velocidad de venta de los últimos {days} días
+        </div>
+      </div>
+    );
+  }
+
+  const TABS=[
+    {id:"ventas",label:"📈 Ventas"},
+    {id:"productos",label:"📦 Productos"},
+    {id:"facturacion",label:"💰 Facturación"},
+    {id:"alertas",label:`🚨 Alertas${alertas.length>0?` (${alertas.length})`:""}`},
+  ];
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       {tooltip&&ReactDOM.createPortal(
-        <div style={{position:"fixed",left:tooltip.x,top:tooltip.y,transform:"translateX(-50%) translateY(-100%)",background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,color:T.text,pointerEvents:"none",zIndex:9999,whiteSpace:"nowrap",boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
+        <div style={{position:"fixed",left:tooltip.x,top:tooltip.y,transform:"translateX(-50%) translateY(-100%)",background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:600,color:T.text,pointerEvents:"none",zIndex:9999,whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(0,0,0,0.25)"}}>
           {tooltip.label}
         </div>,document.body
       )}
@@ -12017,23 +12250,23 @@ function AppStock({T, user, onHome}) {
 
       <div style={{maxWidth:1200,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
 
-        {/* Período + umbral */}
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período:</span>
-            {[7,14,30,60,90].map(d=>(
-              <button key={d} onClick={()=>{setDays(d);loadStock(d);}}
-                style={{padding:"5px 11px",fontSize:12,fontWeight:600,border:`1px solid ${days===d?T.accentSolid:T.border}`,borderRadius:7,background:days===d?T.accentSolid+"22":"transparent",color:days===d?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                {d}d
-              </button>
-            ))}
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:"auto"}}>
-            <span style={{fontSize:12,color:T.textSm}}>Alertar &lt;</span>
-            <select value={alertThreshold} onChange={e=>setAlertThreshold(Number(e.target.value))} style={{...iS,width:"auto",padding:"5px 8px",fontSize:12}}>
-              {[5,7,10,14,21,30].map(d=><option key={d} value={d}>{d} días</option>)}
-            </select>
-          </div>
+        {/* Período */}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período de análisis:</span>
+          {[7,14,30,60,90].map(d=>(
+            <button key={d} onClick={()=>{setDays(d);loadStock(d);}}
+              style={{padding:"5px 12px",fontSize:12,fontWeight:600,border:`1px solid ${days===d?T.accentSolid:T.border}`,borderRadius:7,background:days===d?T.accentSolid+"22":"transparent",color:days===d?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              {d===7?"1 sem":d===14?"2 sem":d===30?"1 mes":d===60?"2 meses":"3 meses"}
+            </button>
+          ))}
+          {trend!==null&&(
+            <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,background:trendUp?T.greenBg:T.redBg,border:`1px solid ${trendUp?T.green+"44":T.red+"44"}`,borderRadius:8,padding:"5px 10px"}}>
+              <span style={{fontSize:16}}>{trendUp?"📈":"📉"}</span>
+              <span style={{fontSize:12,fontWeight:700,color:trendUp?T.green:T.red}}>
+                {trendUp?"+":""}{trend}% vs primera mitad del período
+              </span>
+            </div>
+          )}
         </div>
 
         {loading&&!data?(
@@ -12043,279 +12276,265 @@ function AppStock({T, user, onHome}) {
           </div>
         ):data?(
           <>
-            {/* KPIs */}
+            {/* KPIs siempre visibles */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:20}}>
               {[
-                {label:`Vendidos ${days}d`,val:fmt(totalUnits),    color:T.accentSolid,icon:"📦"},
-                {label:"Por día",          val:avgRate.toFixed(1), color:T.blue||"#3b82f6",icon:"📅",sub:"uds/día"},
-                {label:"Stock total",      val:fmt(totalStock),    color:T.green,icon:"🔢"},
-                {label:"Días prom.",       val:avgDays??  "—",     color:avgDays&&avgDays<=alertThreshold?(T.yellow||"#eab308"):T.green,icon:"⏳",sub:"de stock"},
-                {label:"Por reponer",      val:kpiLow,             color:T.yellow||"#eab308",icon:"⚠️"},
-                {label:"Sin stock",        val:kpiEmpty,           color:T.red,icon:"⛔"},
+                {label:`Unidades vendidas`,val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"📦"},
+                {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||"#3b82f6",icon:"🔢"},
+                {label:"Facturación",val:fmtARS(totalRev),sub:`${fmtARS(totalRev/(days||1))}/día`,color:T.green,icon:"💰"},
+                {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||"#eab308"):T.green,icon:"⏳"},
+                {label:"Críticos",val:kpiCritical+kpiEmpty,sub:`${kpiEmpty} sin stock`,color:T.red,icon:"⛔"},
+                {label:"Sin ventas",val:kpiDead,sub:"prod. inactivos",color:T.textSm,icon:"💤"},
               ].map(k=>(
-                <div key={k.label} style={{background:T.card,border:`1px solid ${k.val>0&&(k.label==="Sin stock"||k.label==="Por reponer")?k.color+"44":T.border}`,borderRadius:12,padding:"14px 14px",cursor:"default"}}>
-                  <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>{k.icon} {k.label}</div>
-                  <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
-                  {k.sub&&<div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.sub}</div>}
+                <div key={k.label} style={{background:T.card,border:`1px solid ${(k.label==="Críticos"&&k.val>0)?T.red+"55":T.border}`,borderRadius:12,padding:"13px 14px"}}>
+                  <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:5}}>{k.icon} {k.label}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
+                  <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.sub}</div>
                 </div>
               ))}
             </div>
 
             {/* Tabs */}
-            <div style={{display:"flex",gap:2,marginBottom:16,background:T.surface,borderRadius:10,padding:3,width:"fit-content"}}>
+            <div style={{display:"flex",gap:2,marginBottom:20,background:T.surface,borderRadius:10,padding:3,width:"fit-content"}}>
               {TABS.map(t=>(
                 <button key={t.id} onClick={()=>setTab(t.id)}
-                  style={{padding:"7px 18px",fontSize:12,fontWeight:tab===t.id?700:500,border:"none",borderRadius:8,background:tab===t.id?T.card:"transparent",color:tab===t.id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===t.id?"0 1px 4px rgba(0,0,0,0.15)":"none",transition:"all 0.15s"}}>
+                  style={{padding:"8px 20px",fontSize:13,fontWeight:tab===t.id?700:500,border:"none",borderRadius:8,background:tab===t.id?T.card:"transparent",color:tab===t.id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===t.id?"0 1px 4px rgba(0,0,0,0.15)":"none",transition:"all 0.15s",whiteSpace:"nowrap"}}>
                   {t.label}
                 </button>
               ))}
             </div>
 
-            {/* ── TAB RESUMEN ── */}
-            {tab==="resumen"&&(
+            {/* ── TAB VENTAS ── */}
+            {tab==="ventas"&&(
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                {/* Gráfico diario */}
+                {/* Gráfico principal */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 20px 14px"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                  <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
                     <div>
-                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>Productos vendidos por día</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimos {days} días · {platformLabel}{data.ml_data?" + ML":""}</div>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>Productos vendidos por día</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimos {days} días · {platformLabel}{data.ml_data?" + Mercado Libre":""}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:22,fontWeight:800,color:T.accentSolid}}>{fmt(totalUnits)}</div>
+                      <div style={{fontSize:24,fontWeight:800,color:T.accentSolid}}>{fmt(totalUnits)}</div>
                       <div style={{fontSize:10,color:T.textSm}}>unidades totales</div>
                     </div>
                   </div>
-                  <BarChart daily={data.daily_series} height={120}/>
-                  {/* ML overlay si aplica */}
+                  <BarChart daily={data.daily_series} height={130}/>
                   {data.ml_data&&Object.keys(data.ml_data.daily||{}).length>0&&(
-                    <div style={{marginTop:12,padding:"10px 12px",background:T.surface,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{marginTop:12,padding:"8px 12px",background:T.surface,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
                       <span style={{fontSize:11,color:"#f0c14b",fontWeight:700}}>🛒 Mercado Libre:</span>
-                      <span style={{fontSize:11,color:T.textMd}}>{fmt(data.ml_data.total_units)} uds vendidas en el período</span>
+                      <span style={{fontSize:11,color:T.textMd}}>{fmt(data.ml_data.total_units)} uds adicionales en el período</span>
                     </div>
                   )}
                 </div>
 
-                {/* Donuts grid */}
+                {/* 3 columnas: Variantes + Provincias + Hora */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
-                  {/* Por variante */}
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Variantes</div>
-                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Productos vendidos por variante</div>
-                    <DonutChart data={data.by_variant||{}} colors={["#6366f1","#f59e0b","#ef4444","#22c55e","#3b82f6","#ec4899"]}/>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Variantes más vendidas</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Por tipo de producto</div>
+                    <DonutChart data={data.by_variant||{}} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
                   </div>
-                  {/* Por provincia */}
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Provincias</div>
-                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Productos vendidos por provincia</div>
-                    <DonutChart data={data.by_province||{}} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899"]}/>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Distribución geográfica</div>
+                    <DonutChart data={data.by_province||{}} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(data.by_province||{}).length,label:"provincias"}}/>
                   </div>
-                  {/* Por método de pago */}
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Método de pago</div>
-                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Productos vendidos por plataforma</div>
-                    <DonutChart data={data.by_payment||{}} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1","#ef4444","#ec4899"]}/>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Hora del día</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Cuándo comprás más</div>
+                    <HourChart byHour={data.by_hour||{}}/>
+                    <div style={{marginTop:14}}>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:8}}>Método de pago</div>
+                      <DonutChart data={data.by_payment||{}} size={120} thickness={26} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1"]}/>
+                    </div>
                   </div>
                 </div>
 
-                {/* Hora del día */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
-                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Hora del día</div>
-                  <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Productos vendidos según la hora</div>
-                  <HourChart byHour={data.by_hour||{}}/>
-                </div>
-
-                {/* Resumen facturación */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
-                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>Resumen del período</div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
-                    {[
-                      {label:"Total facturado",val:fmtARS(totalRev),color:T.green},
-                      {label:"Ticket promedio",val:fmtARS(totalRev/Math.max(1,totalUnits)),color:T.accent},
-                      {label:"Uds/día promedio",val:avgRate.toFixed(1),color:T.blue||"#3b82f6"},
-                      {label:"Días prom. stock",val:avgDays??  "—",color:avgDays&&avgDays<=alertThreshold?(T.yellow||"#eab308"):T.green},
-                    ].map(k=>(
-                      <div key={k.label} style={{background:T.surface,borderRadius:10,padding:"14px 16px",textAlign:"center"}}>
-                        <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
-                        <div style={{fontSize:18,fontWeight:800,color:k.color}}>{k.val}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                {/* Top 5 días */}
+                {(()=>{
+                  const entries=Object.entries(data.daily_series||{}).sort(([,a],[,b])=>b-a).slice(0,5);
+                  if(!entries.length) return null;
+                  const maxV=entries[0][1];
+                  return (
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>🏆 Top 5 mejores días del período</div>
+                      {entries.map(([date,val],i)=>(
+                        <div key={date} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+                          <div style={{width:20,fontSize:11,fontWeight:700,color:T.textSm,textAlign:"right",flexShrink:0}}>{i+1}</div>
+                          <div style={{fontSize:12,color:T.text,minWidth:60,flexShrink:0}}>{date.slice(5).replace("-","/")}</div>
+                          <div style={{flex:1,height:8,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${(val/maxV)*100}%`,background:i===0?T.accentSolid:T.accentSolid+"77",borderRadius:10}}/>
+                          </div>
+                          <div style={{fontSize:12,fontWeight:700,color:i===0?T.accentSolid:T.text,minWidth:60,textAlign:"right",flexShrink:0}}>{fmt(val)} uds</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
             {/* ── TAB PRODUCTOS ── */}
             {tab==="productos"&&(
-              <>
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                   <input type="text" placeholder="🔍 Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
                     style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
-                  <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd}}>
-                    <input type="checkbox" id="gv" checked={groupVariants} onChange={e=>setGroupVariants(e.target.checked)} style={{cursor:"pointer"}}/>
-                    <label htmlFor="gv" style={{cursor:"pointer"}}>Agrupar variantes</label>
+                  <span style={{fontSize:11,color:T.textSm}}>{allProducts.length} productos</span>
+                </div>
+                <ProductTable products={allProducts}/>
+                {kpiDead>0&&(
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                    <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:14}}>💤</span>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>Productos sin ventas en el período</div>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Tienen stock pero no se vendieron en los últimos {days} días</span>
+                    </div>
+                    <ProductTable products={allProducts} showDead/>
                   </div>
-                  <span style={{fontSize:11,color:T.textSm}}>{filtered.length} productos</span>
+                )}
+              </div>
+            )}
+
+            {/* ── TAB FACTURACIÓN ── */}
+            {tab==="facturacion"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                {/* Cards */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+                  {[
+                    {label:"Total facturado",val:fmtARS(totalRev),sub:`${days} días`,color:T.green},
+                    {label:"Facturación/día",val:fmtARS(totalRev/Math.max(1,days)),sub:"promedio",color:T.accent},
+                    {label:"Ticket promedio",val:fmtARS(totalRev/Math.max(1,totalUnits)),sub:"por unidad",color:T.blue||"#3b82f6"},
+                    {label:"Proyección mensual",val:fmtARS((totalRev/Math.max(1,days))*30),sub:"a ritmo actual",color:T.green},
+                  ].map(k=>(
+                    <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px",textAlign:"center"}}>
+                      <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
+                      <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{k.val}</div>
+                      <div style={{fontSize:10,color:T.textSm,marginTop:3}}>{k.sub}</div>
+                    </div>
+                  ))}
                 </div>
 
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                  {/* Header */}
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"9px 16px",alignItems:"center"}}>
-                    {[
-                      {label:"Producto",col:null},
-                      {label:"Stock",col:"stock"},
-                      {label:"Vendidos",col:"units"},
-                      {label:"Tasa/día",col:"rate"},
-                      {label:"Días",col:"days"},
-                      {label:"Facturación",col:"revenue"},
-                      {label:"Proyección",col:null},
-                      {label:"",col:null},
-                    ].map((h,i)=>(
-                      <div key={i} onClick={()=>h.col&&toggleSort(h.col)}
-                        style={{fontSize:10,textTransform:"uppercase",color:h.col?T.accent:T.textSm,fontWeight:700,letterSpacing:0.5,textAlign:i===0?"left":"right",cursor:h.col?"pointer":"default",userSelect:"none"}}>
-                        {h.label}{h.col&&<SH col={h.col}/>}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Totales */}
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,background:T.surface,borderBottom:`2px solid ${T.border}`,padding:"8px 16px",alignItems:"center"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm}}>TOTAL</div>
-                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.text}}>{fmt(totalStock)}</div>
-                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.text}}>{fmt(totalUnits)}</div>
-                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.accent}}>{avgRate.toFixed(1)}</div>
-                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:avgDays&&avgDays<=alertThreshold?(T.yellow||"#eab308"):T.green}}>{avgDays??  "—"}</div>
-                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.text}}>{fmtARS(totalRev)}</div>
-                    <div/>
-                    <div/>
-                  </div>
-
-                  {filtered.length===0?(
-                    <div style={{padding:"50px 20px",textAlign:"center"}}><div style={{fontSize:32,marginBottom:8}}>📭</div><div style={{fontSize:14,color:T.textSm}}>Sin resultados</div></div>
-                  ):filtered.map(p=>{
-                    const r=rate(p);
-                    const dl=dLeft(p.stock_total,r);
-                    const sc=stColor(dl);
-                    const expanded=expandedId===p.id;
-                    const pctTotal=totalUnits>0?(p.units_sold/totalUnits*100).toFixed(1):0;
-                    // Barra proyección
-                    const projPct=dl===null?0:Math.min(100,(dl/90)*100);
+                {/* Ranking revenue por producto */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>Revenue por producto</div>
+                  {allProducts.sort((a,b)=>b.revenue-a.revenue).map((p,i)=>{
+                    const pct=totalRev>0?(p.revenue/totalRev*100).toFixed(1):0;
                     return (
-                      <div key={p.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
-                        <div onClick={()=>setExpandedId(expanded?null:p.id)}
-                          style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,padding:"11px 16px",alignItems:"center",cursor:"pointer",background:expanded?T.surface+"99":"transparent",transition:"background 0.1s"}}>
-                          {/* Producto */}
-                          <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-                            {p.imagen?<img src={p.imagen} alt="" style={{width:32,height:32,borderRadius:7,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
-                              :<div style={{width:32,height:32,borderRadius:7,background:T.surface,flexShrink:0,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>📦</div>}
-                            <div style={{minWidth:0}}>
-                              <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
-                              <div style={{fontSize:10,color:T.textSm}}>{p.variants.length} variante{p.variants.length!==1?"s":""} · {pctTotal}% del total</div>
-                            </div>
+                      <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                        <div style={{fontSize:11,fontWeight:700,color:T.textSm,width:18,textAlign:"right",flexShrink:0}}>{i+1}</div>
+                        {p.imagen?<img src={p.imagen} alt="" style={{width:28,height:28,borderRadius:6,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
+                          :<div style={{width:28,height:28,borderRadius:6,background:T.surface,flexShrink:0,border:`1px solid ${T.border}`}}/>}
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:500,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3}}>{p.nombre}</div>
+                          <div style={{height:6,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${pct}%`,background:T.accentSolid,borderRadius:10}}/>
                           </div>
-                          <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:p.stock_total===0?T.red:T.text}}>{fmt(p.stock_total)}</div>
-                          <div style={{textAlign:"right",fontSize:13,color:T.textMd}}>{fmt(p.units_sold)}</div>
-                          <div style={{textAlign:"right",fontSize:12,fontWeight:600,color:T.accent}}>{r>0?r.toFixed(1):"—"}</div>
-                          <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:sc}}>{dl===null?"—":dl===0?"0":dl+"d"}</div>
-                          <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmtARS(p.revenue)}</div>
-                          {/* Barra proyección */}
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <div style={{flex:1,height:6,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
-                              <div style={{height:"100%",width:`${projPct}%`,background:sc,borderRadius:10,transition:"width 0.4s"}}/>
-                            </div>
-                            <span style={{fontSize:9,color:T.textSm,flexShrink:0,minWidth:24,textAlign:"right"}}>{dl===null?"—":dl>90?"+90d":dl+"d"}</span>
-                          </div>
-                          <div style={{textAlign:"right",fontSize:13,color:T.textSm,transition:"transform 0.2s",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>›</div>
                         </div>
-
-                        {/* Variantes */}
-                        {expanded&&(
-                          <div style={{background:T.surface,borderTop:`1px solid ${T.borderL}`}}>
-                            <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,padding:"6px 16px 6px 58px",borderBottom:`1px solid ${T.borderL}`,background:T.bg+"88"}}>
-                              {["Variante","Stock","Vendidos","Tasa","Días","Revenue","Proyección",""].map((h,i)=>(
-                                <div key={i} style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,textAlign:i===0?"left":"right"}}>{h}</div>
-                              ))}
-                            </div>
-                            {p.variants.map(v=>{
-                              const vr=v.units_sold/days;
-                              const vd=dLeft(v.stock,vr);
-                              const vc=stColor(vd);
-                              const vPct=Math.min(100,(vd??0)/90*100);
-                              return (
-                                <div key={v.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,padding:"8px 16px 8px 58px",borderBottom:`1px solid ${T.borderL}`,alignItems:"center"}}>
-                                  <div>
-                                    <div style={{fontSize:12,fontWeight:500,color:T.text}}>{v.nombre}</div>
-                                    {v.sku&&<div style={{fontSize:10,color:T.textSm}}>SKU: {v.sku}</div>}
-                                  </div>
-                                  <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:v.stock===0?T.red:T.text}}>{fmt(v.stock)}</div>
-                                  <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmt(v.units_sold)}</div>
-                                  <div style={{textAlign:"right",fontSize:11,color:T.accent,fontWeight:600}}>{vr>0?vr.toFixed(1):"—"}</div>
-                                  <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:vc}}>{vd===null?"—":vd+"d"}</div>
-                                  <div style={{textAlign:"right",fontSize:11,color:T.textMd}}>{fmtARS(v.revenue)}</div>
-                                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                    <div style={{flex:1,height:5,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
-                                      <div style={{height:"100%",width:`${vPct}%`,background:vc,borderRadius:10}}/>
-                                    </div>
-                                    <span style={{fontSize:9,color:T.textSm,minWidth:20,textAlign:"right"}}>{vd===null?"—":vd>90?"+90":vd+"d"}</span>
-                                  </div>
-                                  <div/>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontSize:13,fontWeight:700,color:T.green}}>{fmtARS(p.revenue)}</div>
+                          <div style={{fontSize:10,color:T.textSm}}>{pct}%</div>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:10,padding:"0 4px"}}>
-                  Stock actual: última actualización {new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}h · Días de stock calculado en base a la velocidad de venta de los últimos {days} días
-                </div>
-              </>
+
+                {/* Tabla completa con revenue */}
+                <ProductTable products={allProducts}/>
+              </div>
             )}
 
             {/* ── TAB ALERTAS ── */}
             {tab==="alertas"&&(
-              alertas.length===0?(
-                <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
-                  <div style={{fontSize:36,marginBottom:10}}>✅</div>
-                  <div style={{fontSize:15,fontWeight:700,color:T.green}}>Todo el stock está OK</div>
-                  <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Ningún producto tiene menos de {alertThreshold} días de stock</div>
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                {/* Config global */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,fontWeight:600,color:T.text}}>⚙ Configuración global de alertas:</span>
+                  <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.text}}>
+                    Avisar cuando queden menos de
+                    <select value={globalThreshold} onChange={e=>saveGlobalThreshold(parseInt(e.target.value))}
+                      style={{...iS,width:"auto",padding:"5px 8px",fontSize:12}}>
+                      {[3,5,7,10,14,21,30,45,60].map(d=><option key={d} value={d}>{d} días</option>)}
+                    </select>
+                    de stock (aplica a todos salvo que configures por producto)
+                  </label>
                 </div>
-              ):(
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  <div style={{fontSize:12,color:T.textSm,marginBottom:4}}>
-                    <strong style={{color:T.red}}>{alertas.filter(a=>a.status==="empty").length}</strong> sin stock ·{" "}
-                    <strong style={{color:T.yellow||"#eab308"}}>{alertas.filter(a=>a.status==="low").length}</strong> para reponer en menos de {alertThreshold} días
+
+                {alertas.length===0?(
+                  <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                    <div style={{fontSize:36,marginBottom:10}}>✅</div>
+                    <div style={{fontSize:15,fontWeight:700,color:T.green}}>Todo el stock está OK</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Ningún producto supera el umbral de alerta configurado</div>
                   </div>
-                  {alertas.map((a,i)=>{
-                    const c=a.status==="empty"?T.red:(T.yellow||"#eab308");
+                ):(
+                  <>
+                    <div style={{fontSize:12,color:T.textSm}}>
+                      <strong style={{color:T.red}}>{alertas.filter(a=>a.status==="empty").length}</strong> sin stock ·{" "}
+                      <strong style={{color:T.red+"cc"}}>{alertas.filter(a=>a.status==="critical").length}</strong> críticos ·{" "}
+                      <strong style={{color:T.yellow||"#eab308"}}>{alertas.filter(a=>a.status==="low").length}</strong> para reponer
+                    </div>
+                    {alertas.map((a,i)=>{
+                      const c=a.status==="empty"?T.red:a.status==="critical"?T.red+"cc":(T.yellow||"#eab308");
+                      const icon=a.status==="empty"?"⛔":a.status==="critical"?"🔴":"⚠️";
+                      return (
+                        <div key={i} style={{background:T.card,border:`1.5px solid ${c}44`,borderRadius:12,padding:"16px 18px",display:"flex",alignItems:"center",gap:14}}>
+                          {a.imagen?<img src={a.imagen} alt="" style={{width:48,height:48,borderRadius:10,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
+                            :<div style={{width:48,height:48,borderRadius:10,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>📦</div>}
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.producto}</div>
+                            <div style={{fontSize:12,color:T.textMd,marginTop:2}}>{a.variante}{a.sku?` · SKU: ${a.sku}`:""}</div>
+                            <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",gap:12,flexWrap:"wrap"}}>
+                              <span>Stock: <strong style={{color:a.stock===0?T.red:T.text}}>{fmt(a.stock)} uds</strong></span>
+                              {a.rate>0&&<span>Tasa: <strong style={{color:T.accent}}>{a.rate.toFixed(1)}/día</strong></span>}
+                              {a.suggested>0&&<span>Pedido sugerido: <strong style={{color:T.green}}>{a.suggested} uds (30d)</strong></span>}
+                            </div>
+                          </div>
+                          <div style={{textAlign:"right",flexShrink:0}}>
+                            <div style={{fontSize:28,fontWeight:800,color:c,letterSpacing:-1,lineHeight:1}}>
+                              {a.status==="empty"?"0":a.daysLeft??"?"}
+                            </div>
+                            <div style={{fontSize:10,color:T.textSm,marginBottom:6}}>días restantes</div>
+                            <span style={{fontSize:10,padding:"3px 10px",borderRadius:5,background:c+"22",color:c,fontWeight:700}}>
+                              {icon} {a.status==="empty"?"Sin stock":a.status==="critical"?"Crítico":"Reponer pronto"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+
+                {/* Config por producto */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Configuración por producto</div>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Personalizá el umbral de alerta para cada producto. Si no configurás uno, usa el global ({globalThreshold}d).</div>
+                  {allProducts.map(p=>{
+                    const cfg=alertConfig[p.id]||{};
                     return (
-                      <div key={i} style={{background:T.card,border:`1.5px solid ${c}44`,borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",gap:14}}>
-                        {a.imagen?<img src={a.imagen} alt="" style={{width:48,height:48,borderRadius:10,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
-                          :<div style={{width:48,height:48,borderRadius:10,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,border:`1px solid ${T.border}`}}>📦</div>}
+                      <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                        {p.imagen?<img src={p.imagen} alt="" style={{width:32,height:32,borderRadius:7,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
+                          :<div style={{width:32,height:32,borderRadius:7,background:T.surface,flexShrink:0}}/>}
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.producto}</div>
-                          <div style={{fontSize:12,color:T.textMd,marginTop:2}}>{a.variante}{a.sku?` · SKU: ${a.sku}`:""}</div>
-                          <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",gap:12}}>
-                            <span>Stock: <strong style={{color:a.stock===0?T.red:T.text}}>{fmt(a.stock)} uds</strong></span>
-                            {a.rate>0&&<span>Tasa: <strong style={{color:T.accent}}>{a.rate.toFixed(1)}/día</strong></span>}
-                          </div>
+                          <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                          <div style={{fontSize:10,color:T.textSm}}>{p.variants.length} variantes</div>
                         </div>
-                        <div style={{textAlign:"right",flexShrink:0}}>
-                          <div style={{fontSize:26,fontWeight:800,color:c,letterSpacing:-1,lineHeight:1}}>
-                            {a.status==="empty"?"0":a.daysLeft??  "?"}
-                          </div>
-                          <div style={{fontSize:10,color:T.textSm,marginBottom:6}}>días restantes</div>
-                          <span style={{fontSize:10,padding:"3px 9px",borderRadius:5,background:c+"22",color:c,fontWeight:700}}>
-                            {a.status==="empty"?"⛔ Sin stock":"⚠️ Reponer pronto"}
-                          </span>
-                        </div>
+                        <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,cursor:"pointer"}}>
+                          <input type="checkbox" checked={cfg.enabled!==false} onChange={e=>{saveAlertConfig({...alertConfig,[p.id]:{...cfg,enabled:e.target.checked}});}}/>
+                          <span style={{color:T.textMd}}>Activa</span>
+                        </label>
+                        <select value={cfg.threshold||""} onChange={e=>{const v=e.target.value?parseInt(e.target.value):undefined;saveAlertConfig({...alertConfig,[p.id]:{...cfg,threshold:v,enabled:cfg.enabled!==false}});}}
+                          style={{...iS,width:"auto",padding:"4px 8px",fontSize:11}}>
+                          <option value="">Global ({globalThreshold}d)</option>
+                          {[3,5,7,10,14,21,30,45,60].map(d=><option key={d} value={d}>{d} días</option>)}
+                        </select>
+                        {cfg.threshold&&<button onClick={()=>{const nc={...alertConfig};delete nc[p.id];saveAlertConfig(nc);}} style={{fontSize:10,color:T.red,background:"transparent",border:"none",cursor:"pointer",padding:"0 4px"}}>✕</button>}
                       </div>
                     );
                   })}
                 </div>
-              )
+              </div>
             )}
           </>
         ):(
