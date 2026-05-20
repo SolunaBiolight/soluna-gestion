@@ -2115,12 +2115,14 @@ export default async function handler(req, res) {
           videoId = uploadRes.id;
           if (!videoId) return res.status(502).json({ error: "Meta no devolvió video_id" });
         }
-        // Si el frontend ya verifico ready en background, saltamos polling.
-        // Si no, polling con backoff hasta ~50s.
+        // Si el frontend ya verifico ready (polling background), saltamos.
+        // Si no, polling rapido — max ~12s (el user no quiere esperar).
+        // Si tras 12s sigue procesando, devolvemos error que va al lote de
+        // fallados — el user puede tocar "Reintentar" en el historial.
         let ready = skipPolling;
         let lastStatus = skipPolling ? "ready" : null;
         if (!skipPolling) {
-          const delays = [1000, 1500, 2000, 3000, 3000, 4000, 4000, 5000, 5000, 5000, 5000, 5000, 5000];
+          const delays = [500, 1000, 1500, 2000, 2500, 2500, 2500];
           for (let i = 0; i < delays.length && !ready; i++) {
             await new Promise(r => setTimeout(r, delays[i]));
             try {
@@ -2133,7 +2135,7 @@ export default async function handler(req, res) {
           }
         }
         if (!ready) {
-          return res.status(409).json({ error: `Video aún procesándose en Meta (status: ${lastStatus||"unknown"}). Reintentá en 30s.`, code: "VIDEO_NOT_READY", video_id: videoId });
+          return res.status(409).json({ error: `Video aún procesándose en Meta. Tocá "Reintentar fallados" en el lote del historial en 30s.`, code: "VIDEO_NOT_READY", video_id: videoId });
         }
         let thumb;
         try { const tr = await metaGet(`${videoId}/thumbnails`, { fields: "uri,is_preferred" }, token); thumb = (tr.data?.find(t => t.is_preferred) || tr.data?.[0])?.uri; } catch (_) {}

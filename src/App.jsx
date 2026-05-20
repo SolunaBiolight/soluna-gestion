@@ -11107,15 +11107,13 @@ LONGITUD Y FORMATO
                                 ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo a Meta…</span>
                                 : c._error || c.video_error
                                   ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>✗ ERROR</span>
-                                  : (c._processing && !c.video_ready && c.kind === "video")
-                                    ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Procesando en Meta…</span>
-                                    : c.copy?.trim()
-                                      ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
-                                      : c.ia_status === "analyzed"
-                                        ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
-                                        : analyzingCreative===c.id
-                                          ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}><Spinner size={9} color={T.accent}/> Generando copy…</span>
-                                          : <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,border:`1px solid ${T.border}`}}>PENDIENTE</span>
+                                  : c.copy?.trim()
+                                    ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
+                                    : c.ia_status === "analyzed"
+                                      ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
+                                      : analyzingCreative===c.id
+                                        ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}><Spinner size={9} color={T.accent}/> Generando copy…</span>
+                                        : <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,border:`1px solid ${T.border}`}}>PENDIENTE</span>
                               }
                             </div>
                           </div>
