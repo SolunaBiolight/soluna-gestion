@@ -2061,7 +2061,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
         {/* -- RECLAMOS LIST + PANEL UNIFICADO -- */}
         {view==="reclamos"&&(
-          <div key="reclamos" className="gh-tab-content" style={{display:"grid",gridTemplateColumns:activeR?"1fr 420px":"1fr",gap:20,padding:"20px 0 48px",alignItems:"start"}}>
+          <div key="reclamos" className="gh-tab-content stack-mobile" style={{display:"grid",gridTemplateColumns:activeR?"1fr 420px":"1fr",gap:20,padding:"20px 0 48px",alignItems:"start"}}>
             {/* Lista */}
             <div>
               {/* Filters */}
@@ -3065,7 +3065,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         </div>
 
         {/* LISTA */}
-        {viewTab==="lista"&&<div key="lista" className="gh-tab-content" style={{paddingBottom:48}}>
+        {viewTab==="lista"&&<div key="lista" className="gh-tab-content" style={{paddingBottom:48,overflowX:"auto"}}>
           {filtered.length===0?(
             <EmptyState T={T}
               icon="🤝"
@@ -3322,8 +3322,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   </div>
 
                   {/* Tabla principal */}
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
-                    <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflowY:"hidden",overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:16}}>
+                    <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,minWidth:800}}>
                       <span style={{fontSize:12,fontWeight:700,color:T.text}}>Codigos detectados en pedidos · mayor a menor usos</span>
                       <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{rows.length} codigos · {comData.totalPedidos} pedidos analizados</span>
                     </div>
@@ -4536,7 +4536,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Seguimientos batch progress modal */}
       {seguimientoProgress.active&&ReactDOM.createPortal(
         <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)",fontFamily:"'Inter',system-ui,sans-serif"}}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:360,maxWidth:440,boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.green}44`}}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:360,maxWidth:"min(440px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.green}44`}}>
             <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
               <div style={{width:44,height:44,borderRadius:12,background:T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                 <div style={{width:22,height:22,border:`3px solid ${T.green}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
@@ -4574,7 +4574,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {seguimientoProgress.done&&!seguimientoProgress.active&&ReactDOM.createPortal(
         <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)",fontFamily:"'Inter',system-ui,sans-serif"}}
           onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:360,maxWidth:440,boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.fail>0?T.orange:T.green}44`}}
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:360,maxWidth:"min(440px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.fail>0?T.orange:T.green}44`}}
             onClick={e=>e.stopPropagation()}>
             <div style={{textAlign:"center",marginBottom:24}}>
               <div style={{fontSize:52,marginBottom:10}}>{seguimientoProgress.fail===0?"✅":seguimientoProgress.ok===0?"❌":"⚠️"}</div>
@@ -4618,7 +4618,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Export progress - overlay prominente centrado via portal */}
       {exporting&&ReactDOM.createPortal(
         <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)"}}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:340,maxWidth:420,boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.blue}44`,fontFamily:"'Inter',system-ui,sans-serif"}}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:340,maxWidth:"min(420px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.blue}44`,fontFamily:"'Inter',system-ui,sans-serif"}}>
             {/* Spinner + título */}
             <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
               <div style={{width:44,height:44,borderRadius:12,background:T.blue+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
@@ -8483,7 +8483,7 @@ function AppArca({T, user, onHome}) {
       {/* ── MODAL PROGRESO EMISIÓN ARCA ── */}
       {(emitProgress.active||emitProgress.done)&&ReactDOM.createPortal(
         <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:460,boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${emitProgress.done?(emitProgress.fail>0?T.orange+"55":T.green+"55"):T.accentSolid+"44"}`}}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${emitProgress.done?(emitProgress.fail>0?T.orange+"55":T.green+"55"):T.accentSolid+"44"}`}}>
             {!emitProgress.done?(
               <>
                 <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
@@ -8687,7 +8687,7 @@ function AppAudioStudio({T, user, onHome}) {
         </div>
       </AppTopbar>
 
-      <div style={{flex:1,maxWidth:1280,margin:"0 auto",padding:"24px 24px",width:"100%",display:"grid",gridTemplateColumns:"1fr 370px",gap:24,alignItems:"start"}}>
+      <div className="stack-mobile" style={{flex:1,maxWidth:1280,margin:"0 auto",padding:"24px 24px",width:"100%",display:"grid",gridTemplateColumns:"1fr 370px",gap:24,alignItems:"start"}}>
 
         {/* IZQUIERDA — selector de voces */}
         <div>
@@ -12511,8 +12511,8 @@ function AppStock({T, user, onHome}) {
     const tR=filtered.reduce((a,p)=>a+p.revenue,0);
 
     return (
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"9px 16px",alignItems:"center"}}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflowY:"hidden",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"9px 16px",alignItems:"center",minWidth:640}}>
           {[{l:"Producto",c:null},{l:"Stock",c:"stock"},{l:"Vendidos",c:"units"},{l:"Tasa/día",c:"rate"},{l:"Días",c:"days"},{l:"Facturación",c:"revenue"},{l:"Proyección",c:null},{l:"",c:null}].map((h,i)=>(
             <div key={i} onClick={()=>h.c&&toggleSort(h.c)}
               style={{fontSize:10,textTransform:"uppercase",color:h.c?T.accent:T.textSm,fontWeight:700,letterSpacing:0.5,textAlign:i===0?"left":"right",cursor:h.c?"pointer":"default",userSelect:"none"}}>
