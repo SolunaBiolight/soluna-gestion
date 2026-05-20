@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react"; // v2
 import ReactDOM from "react-dom";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs, orderBy } from "firebase/firestore";
