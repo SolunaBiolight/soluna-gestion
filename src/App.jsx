@@ -202,15 +202,29 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
   return (
     <div style={{
       width:W, minWidth:W, height:"100vh", background:T.surface, borderRight:`1px solid ${T.border}`,
-      display:"flex", flexDirection:"column", position:"sticky", top:0, transition:`width 0.2s ${DS.ease}`,
+      display:"flex", flexDirection:"column", position:"sticky", top:0,
+      transition:`width 0.22s ${DS.ease}, min-width 0.22s ${DS.ease}`,
+      overflow:"hidden",
       zIndex:50,
     }} className="hide-mobile">
       {/* Logo */}
       <div style={{padding:DS.sp.lg, display:"flex", alignItems:"center", gap:10, borderBottom:`1px solid ${T.border}`, height:60}}>
         <div style={{width:28, height:28, borderRadius:DS.r.md, background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, boxShadow:`0 2px 8px ${T.accentSolid}40`, flexShrink:0}}>🌙</div>
         {!collapsed && <span style={{fontWeight:DS.w.bold, fontSize:DS.font.xl, color:T.text, letterSpacing:-0.3}}>Growith</span>}
-        {!collapsed && <button onClick={()=>setCollapsed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",padding:4,fontSize:14}}>‹</button>}
-        {collapsed && <button onClick={()=>setCollapsed(false)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",padding:4,fontSize:14,marginLeft:-4}}>›</button>}
+        {!collapsed && (
+          <button onClick={()=>setCollapsed(true)} title="Colapsar" style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,color:T.textSm,cursor:"pointer",padding:"3px 5px",display:"flex",alignItems:"center",justifyContent:"center",transition:`all 0.15s ${DS.ease}`}}
+            onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
+            onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textSm;}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+        )}
+        {collapsed && (
+          <button onClick={()=>setCollapsed(false)} title="Expandir" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,color:T.textSm,cursor:"pointer",padding:"3px 5px",display:"flex",alignItems:"center",justifyContent:"center",transition:`all 0.15s ${DS.ease}`,marginLeft:-2}}
+            onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
+            onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textSm;}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        )}
       </div>
 
       {/* Nav */}
@@ -222,13 +236,16 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
             <button key={item.id} onClick={()=>setPage(item.id)} title={collapsed?item.label:undefined}
               style={{
                 display:"flex", alignItems:"center", gap:10, padding:collapsed?"10px 14px":"9px 12px",
-                background: active ? T.accentSolid+"18" : "transparent",
-                border:"none", borderRadius:DS.r.md, cursor:"pointer", textAlign:"left",
+                background: active ? T.accentSolid+"15" : "transparent",
+                border:"none",
+                borderLeft: active ? `2px solid ${T.accentSolid}` : "2px solid transparent",
+                borderRadius: DS.r.md, cursor:"pointer", textAlign:"left",
                 color: active ? T.accent : T.textMd,
                 fontWeight: active ? DS.w.semibold : DS.w.medium,
                 fontSize: DS.font.base, fontFamily:"'Inter',system-ui,sans-serif",
                 transition:`all 0.15s ${DS.ease}`,
                 justifyContent: collapsed ? "center" : "flex-start",
+                position:"relative",
               }}
               onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.card;}}
               onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
@@ -968,7 +985,7 @@ function AppTopbar({T, section, onHome, children}) {
 function AppTabs({T, tabs, active, onChange, size="normal"}) {
   const isLarge = size==="large";
   return (
-    <div style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:60,zIndex:99}}>
+    <div style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:105,zIndex:20}}>
       <div style={{display:"inline-flex",background:T.bg,borderRadius:isLarge?12:10,padding:3,border:"1px solid "+T.border,gap:isLarge?3:2}}>
         {tabs.map(t=>{
           const isActive=active===t.id;
@@ -2102,7 +2119,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
             {/* Panel unificado */}
             {activeR&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",position:"sticky",top:76}}>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",position:"sticky",top:105}}>
                 {/* Header panel */}
                 <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"16px 18px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
@@ -3318,7 +3335,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         <div key={r.code} style={{display:"grid",gridTemplateColumns:"120px 85px 60px 130px 110px 110px 80px 110px",gap:8,padding:"12px 18px",borderBottom:i<rows.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",background:r.usosPeriodo>0?T.green+"05":"transparent",transition:"background 0.15s"}}
                           onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                           onMouseLeave={e=>e.currentTarget.style.background=r.usosPeriodo>0?T.green+"05":"transparent"}>
-                          <div style={{fontFamily:"monospace",fontSize:13,fontWeight:700,color:T.accent}}>{r.code}</div>
+                          <div style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:13,fontWeight:700,color:T.accent}}>{r.code}</div>
                           <div style={{fontSize:12,color:T.textMd,fontWeight:500}}>{descLabel}</div>
                           <div style={{fontSize:14,fontWeight:700,color:r.usosPeriodo>0?T.text:T.textSm}}>{r.usosPeriodo||"--"}</div>
                           <div>
@@ -3366,7 +3383,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       {conComision.map((r,i)=>(
                         <div key={r.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",borderBottom:i<conComision.length-1?`1px solid ${T.borderL}`:"none"}}>
                           <div>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.influencer} <span style={{fontFamily:"monospace",fontSize:12,color:T.accent}}>({r.code})</span></div>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.influencer} <span style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:12,color:T.accent}}>({r.code})</span></div>
                             <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{r.usosPeriodo} uso{r.usosPeriodo!==1?"s":""} · neto {fmtARS(r.netoRecibido||0)} (MP -{mpComision}%) · {r.comisionPct}% sobre neto</div>
                           </div>
                           <div style={{fontSize:18,fontWeight:800,color:T.orange}}>{fmtARS(r.comisionPagar)}</div>
@@ -5010,7 +5027,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
                       {Object.entries(skuTotals).sort((a,b)=>b[1]-a[1]).map(([sku,qty])=>(
                         <div key={sku} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 12px",display:"flex",alignItems:"center",gap:8}}>
-                          <span style={{fontFamily:"monospace",fontSize:13,fontWeight:700,color:T.accent}}>{sku}</span>
+                          <span style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:13,fontWeight:700,color:T.accent}}>{sku}</span>
                           <span style={{fontSize:12,fontWeight:700,color:"#fff",background:T.accentSolid,padding:"2px 7px",borderRadius:4}}>{qty}u</span>
                         </div>
                       ))}
@@ -5035,7 +5052,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         {r.found
                           ? <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                               {(r.skuLines||[]).map((s,j)=>(
-                                <span key={j} style={{fontFamily:"monospace",fontSize:12,background:T.accentSolid+"18",color:T.accent,border:`1px solid ${T.accentSolid}33`,borderRadius:5,padding:"2px 7px"}}>{s}</span>
+                                <span key={j} style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:12,background:T.accentSolid+"18",color:T.accent,border:`1px solid ${T.accentSolid}33`,borderRadius:5,padding:"2px 7px"}}>{s}</span>
                               ))}
                             </div>
                           : <span style={{fontSize:12,color:T.red}}>No encontrado en TN</span>
@@ -5165,7 +5182,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{r.pedidoNum||"--"}</span>
                         <div>
                           {r.destinatario&&<div style={{fontSize:13,color:T.text,fontWeight:500,marginBottom:2}}>{r.destinatario}</div>}
-                          <div style={{fontSize:11,color:T.textSm,fontFamily:"monospace",letterSpacing:"0.02em"}}>{r.tracking||"Sin tracking"}</div>
+                          <div style={{fontSize:11,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",letterSpacing:"0.02em"}}>{r.tracking||"Sin tracking"}</div>
                         </div>
                         <div style={{display:"flex",justifyContent:"flex-end"}}>
                           {sentState==="ok"
@@ -5257,7 +5274,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Productos</div>
                 {o.productos.map((p,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<o.productos.length-1?`1px solid ${T.borderL}`:"none",fontSize:13}}>
-                    <div><div style={{fontWeight:500,color:T.text}}>{p.nombre}</div>{p.sku&&<div style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>{p.sku}</div>}</div>
+                    <div><div style={{fontWeight:500,color:T.text}}>{p.nombre}</div>{p.sku&&<div style={{fontSize:11,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{p.sku}</div>}</div>
                     <div style={{display:"flex",gap:12,alignItems:"center"}}><span style={{fontSize:12,color:T.textSm}}>x{p.cantidad}</span><span style={{fontWeight:600,color:T.text}}>{fmtMoney(p.precio)}</span></div>
                   </div>
                 ))}
@@ -6132,7 +6149,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                     <div style={{fontSize:9,color:T.textSm,marginTop:3}}>El último es para el módulo Stock (leer publicaciones).</div>
                   </li>
                   <li>⚠ En esa misma versión, agregá esta <strong style={{color:T.text}}>URL de redireccionamiento</strong>:
-                    <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=shopify&action=callback`}</div>
+                    <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=shopify&action=callback`}</div>
                   </li>
                   <li>Publicar la versión</li>
                   <li>"Configuración" → copiá el <strong style={{color:T.text}}>ID de cliente</strong> y el <strong style={{color:T.text}}>Secreto</strong> (tocá el ojito) → pegalos abajo</li>
@@ -6147,11 +6164,11 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                 </div>
                 <div>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Client ID</div>
-                  <input value={shopifyClientId} onChange={e=>setShopifyClientId(e.target.value)} placeholder="8a3b6810ff78..." style={{...iS,fontFamily:"monospace"}} disabled={connectingShopify}/>
+                  <input value={shopifyClientId} onChange={e=>setShopifyClientId(e.target.value)} placeholder="8a3b6810ff78..." style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingShopify}/>
                 </div>
                 <div>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Client Secret</div>
-                  <input value={shopifySecret} onChange={e=>setShopifySecret(e.target.value)} placeholder="..." type="password" style={{...iS,fontFamily:"monospace"}} disabled={connectingShopify}/>
+                  <input value={shopifySecret} onChange={e=>setShopifySecret(e.target.value)} placeholder="..." type="password" style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingShopify}/>
                   <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Se usa una sola vez para autorizar. Se guarda cifrado.</div>
                 </div>
               </div>
@@ -6196,7 +6213,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                     </ul>
                   </li>
                   <li>⚠ En <strong style={{color:T.text}}>Redirect URIs</strong> agregá exactamente:
-                    <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=mercadolibre&action=callback`}</div>
+                    <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=mercadolibre&action=callback`}</div>
                   </li>
                   <li>Guardá → te aparece el <strong style={{color:T.text}}>App ID</strong> (Client ID) y el <strong style={{color:T.text}}>Secret Key</strong> (Client Secret) → pegalos abajo</li>
                 </ol>
@@ -6205,11 +6222,11 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>App ID (Client ID)</div>
-                  <input value={mlClientId} onChange={e=>setMlClientId(e.target.value)} placeholder="6123377008994979" style={{...iS,fontFamily:"monospace"}} disabled={connectingML} autoFocus/>
+                  <input value={mlClientId} onChange={e=>setMlClientId(e.target.value)} placeholder="6123377008994979" style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingML} autoFocus/>
                 </div>
                 <div>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Secret Key (Client Secret)</div>
-                  <input value={mlSecret} onChange={e=>setMlSecret(e.target.value)} placeholder="..." type="password" style={{...iS,fontFamily:"monospace"}} disabled={connectingML}/>
+                  <input value={mlSecret} onChange={e=>setMlSecret(e.target.value)} placeholder="..." type="password" style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} disabled={connectingML}/>
                   <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Se guarda cifrado para refrescar el token automáticamente cada 6 hs.</div>
                 </div>
               </div>
@@ -6269,7 +6286,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                     <strong style={{color:T.text}}>Permisos a marcar en el dropdown</strong> (buscá cada uno con el cuadro de búsqueda):
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}}>
                       {["ads_management","ads_read","business_management","pages_show_list","pages_read_engagement","read_insights","instagram_basic"].map(p=>(
-                        <code key={p} style={{background:T.surface,padding:"2px 7px",borderRadius:4,fontSize:10,color:T.accent,fontFamily:"monospace"}}>{p}</code>
+                        <code key={p} style={{background:T.surface,padding:"2px 7px",borderRadius:4,fontSize:10,color:T.accent,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{p}</code>
                       ))}
                     </div>
                     <div style={{marginTop:6,fontSize:10,color:T.textSm}}>Los primeros 3 son <strong style={{color:T.text}}>obligatorios</strong>. El resto suma funcionalidad. <strong style={{color:T.text}}>NO marques</strong> permisos de threads, messaging o paid_marketing — no los usamos.</div>
@@ -6282,7 +6299,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
               </div>
               <div style={{marginBottom:14}}>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>System User Token</div>
-                <textarea value={metaToken} onChange={e=>setMetaToken(e.target.value)} placeholder="EAA..." rows={4} style={{...iS,fontFamily:"monospace",fontSize:11,resize:"vertical",minHeight:84}} disabled={connectingMeta} autoFocus/>
+                <textarea value={metaToken} onChange={e=>setMetaToken(e.target.value)} placeholder="EAA..." rows={4} style={{...iS,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:11,resize:"vertical",minHeight:84}} disabled={connectingMeta} autoFocus/>
                 <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Se guarda cifrado en Firestore. Solo Growith lo usa para llamar a la API de Meta en tu nombre.</div>
               </div>
               <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
@@ -6436,7 +6453,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         <div style={{marginBottom:24}}>
           <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Enviá exactamente ${planSelecc?.precio} USDT (TRC20) a esta dirección:</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
-            <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"monospace"}}>{USDT_ADDRESS}</code>
+            <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{USDT_ADDRESS}</code>
             <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>📋 Copiar</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8,padding:"8px 12px",background:T.yellowBg,border:`0.5px solid ${T.yellow}44`,borderRadius:8}}>
@@ -6448,7 +6465,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         {/* Comprobante */}
         <div style={{marginBottom:20}}>
           <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Hash de transacción (TxID)</div>
-          <input style={{...iS,fontSize:13,fontFamily:"monospace"}} placeholder="Pegá el hash de la transacción aquí..." value={txHash} onChange={e=>setTxHash(e.target.value)}/>
+          <input style={{...iS,fontSize:13,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} placeholder="Pegá el hash de la transacción aquí..." value={txHash} onChange={e=>setTxHash(e.target.value)}/>
           <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Lo encontrás en tu wallet después de enviar. Ejemplo: abc123def456...</div>
         </div>
         <div style={{marginBottom:28}}>
@@ -6643,7 +6660,7 @@ function AppAdmin({T, user, onBack}) {
                         <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:p.estado==="pendiente"?T.yellowBg:p.estado==="confirmado"?T.greenBg:T.redBg,color:p.estado==="pendiente"?T.yellow:p.estado==="confirmado"?T.green:T.red}}>{p.estado}</span>
                       </div>
                       <div style={{fontSize:13,color:T.textMd}}>Plan solicitado: <strong style={{color:PLAN_C[p.plan]||T.text}}>{p.plan}</strong> · {fecha}</div>
-                      {p.txHash&&<div style={{fontSize:12,color:T.textSm,fontFamily:"monospace",marginTop:4,wordBreak:"break-all"}}>TxID: {p.txHash}</div>}
+                      {p.txHash&&<div style={{fontSize:12,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:4,wordBreak:"break-all"}}>TxID: {p.txHash}</div>}
                       {p.comprobante&&<div style={{fontSize:12,color:T.textSm,marginTop:4}}>Nota: {p.comprobante}</div>}
                     </div>
                     {p.estado==="pendiente"&&(
@@ -8740,7 +8757,7 @@ function AppAudioStudio({T, user, onHome}) {
         </div>
 
         {/* DERECHA — editor + historial */}
-        <div style={{display:"flex",flexDirection:"column",gap:16,position:"sticky",top:80}}>
+        <div style={{display:"flex",flexDirection:"column",gap:16,position:"sticky",top:105}}>
 
           {/* Panel generación */}
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:20}}>
@@ -8965,7 +8982,7 @@ function ProductEditor({T, initialProduct, onSave, onCancel}) {
           <div style={{fontSize:10,color:T.textSm,marginBottom:8,lineHeight:1.5}}>Pegá las URLs exactas a las que dirigen tus ads (página del producto, landing, etc). Cualquier ad cuyo link empiece con alguna de estas URLs se considera "de este producto".</div>
           {urls.map((u,i)=>(
             <div key={i} style={{display:"flex",gap:6,marginBottom:6}}>
-              <input value={u} onChange={e=>update(i,e.target.value)} placeholder="https://mitienda.com/products/..." style={{flex:1,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:12,color:T.text,fontFamily:"monospace",boxSizing:"border-box"}}/>
+              <input value={u} onChange={e=>update(i,e.target.value)} placeholder="https://mitienda.com/products/..." style={{flex:1,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:12,color:T.text,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",boxSizing:"border-box"}}/>
               {urls.length>1 && <button onClick={()=>removeUrl(i)} style={{padding:"6px 10px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
             </div>
           ))}
@@ -10493,7 +10510,7 @@ function AppMetaAds({T, user, onHome}) {
                         {(p.urls||[]).length>0 && (
                           <div style={{display:"flex",flexDirection:"column",gap:4,padding:"8px 10px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`}}>
                             {p.urls.slice(0,4).map((u,i) => (
-                              <div key={i} style={{fontSize:10,color:T.textMd,fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u}</div>
+                              <div key={i} style={{fontSize:10,color:T.textMd,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u}</div>
                             ))}
                             {p.urls.length > 4 && <div style={{fontSize:10,color:T.textSm}}>+{p.urls.length-4} más</div>}
                           </div>
@@ -10602,7 +10619,7 @@ function AppMetaAds({T, user, onHome}) {
                     <div style={{background:T.red+"15",border:`1px solid ${T.red}33`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
                       <div style={{fontSize:13,fontWeight:700,color:T.red,marginBottom:6}}>⚠ No se pudieron cargar las analíticas</div>
                       <div style={{fontSize:12,color:T.textMd,lineHeight:1.6}}>{hint}</div>
-                      <div style={{fontSize:10,color:T.textSm,marginTop:8,fontFamily:"monospace",background:T.surface,padding:"6px 10px",borderRadius:6,wordBreak:"break-all"}}>{aError}</div>
+                      <div style={{fontSize:10,color:T.textSm,marginTop:8,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",background:T.surface,padding:"6px 10px",borderRadius:6,wordBreak:"break-all"}}>{aError}</div>
                     </div>
                   );
                 })()}
@@ -10982,7 +10999,7 @@ function AppMetaAds({T, user, onHome}) {
                                 <strong>{r.logic==="AND"?"Si TODAS estas condiciones son ciertas":"Si AL MENOS UNA condición es cierta"}:</strong>
                                 <ul style={{margin:"4px 0 0",paddingLeft:18}}>
                                   {(r.conditions||[]).map((c,i)=>(
-                                    <li key={i}><code style={{background:T.surface,padding:"1px 5px",borderRadius:3,color:T.accent,fontFamily:"monospace",fontSize:11}}>{c.metric}</code> {c.op} {fmtVal(c.metric,c.value)} <span style={{color:T.textSm}}>(últimos {c.window_days||7}d)</span></li>
+                                    <li key={i}><code style={{background:T.surface,padding:"1px 5px",borderRadius:3,color:T.accent,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:11}}>{c.metric}</code> {c.op} {fmtVal(c.metric,c.value)} <span style={{color:T.textSm}}>(últimos {c.window_days||7}d)</span></li>
                                   ))}
                                 </ul>
                               </div>
@@ -11019,9 +11036,9 @@ function AppMetaAds({T, user, onHome}) {
                                           <span style={{fontSize:12,fontWeight:700,color:T.text}}>{actionTxt}</span>
                                           <span style={{fontSize:12,color:T.accent,fontWeight:600}}>{ev.node_name || ev.node_id}</span>
                                           <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,textTransform:"uppercase"}}>{ev.level}</span>
-                                          <span style={{marginLeft:"auto",fontSize:10,color:T.textSm,fontFamily:"monospace"}}>{fechaLabel} · {horaLabel}</span>
+                                          <span style={{marginLeft:"auto",fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{fechaLabel} · {horaLabel}</span>
                                         </div>
-                                        {ev.error && <div style={{fontSize:11,color:T.red,marginBottom:6,fontFamily:"monospace"}}>{ev.error}</div>}
+                                        {ev.error && <div style={{fontSize:11,color:T.red,marginBottom:6,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{ev.error}</div>}
                                         <div style={{fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",marginBottom:5}}>Métricas que dispararon la regla:</div>
                                         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                                           {(ev.triggered||[]).map((t,i) => {
@@ -11029,7 +11046,7 @@ function AppMetaAds({T, user, onHome}) {
                                             const actualFmt = fmtVal(t.metric, Number(t.actual).toFixed(2));
                                             const targetFmt = fmtVal(t.metric, t.target);
                                             return (
-                                              <div key={i} style={{padding:"6px 10px",background:T.red+"15",border:`1px solid ${T.red}55`,borderRadius:6,fontSize:11,fontFamily:"monospace"}}>
+                                              <div key={i} style={{padding:"6px 10px",background:T.red+"15",border:`1px solid ${T.red}55`,borderRadius:6,fontSize:11,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>
                                                 <span style={{color:T.red,fontWeight:700,textTransform:"uppercase"}}>{t.metric}</span>
                                                 <span style={{color:T.textMd}}> = </span>
                                                 <span style={{color:T.red,fontWeight:700,fontSize:13}}>{actualFmt}</span>
@@ -11135,7 +11152,7 @@ function AppMetaAds({T, user, onHome}) {
                     value={tokenInput}
                     onChange={e=>setTokenInput(e.target.value)}
                     placeholder="Pegá tu System User Token acá..."
-                    style={{...iS,minHeight:80,resize:"none",fontFamily:"monospace",fontSize:11,marginBottom:12,lineHeight:1.5}}
+                    style={{...iS,minHeight:80,resize:"none",fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:11,marginBottom:12,lineHeight:1.5}}
                   />
                   <button onClick={handleConnect} disabled={connecting||!tokenInput.trim()} style={{...BtnPri,width:"100%",justifyContent:"center"}}>
                     {connecting?<><Spinner size={13} color="#fff"/>Verificando...</>:"Conectar cuenta →"}
@@ -11261,7 +11278,7 @@ function AppMetaAds({T, user, onHome}) {
                 <div style={{background:T.card,border:`2px solid ${filled?T.green+"66":T.border}`,borderRadius:12,padding:"14px 16px",minHeight:78,boxShadow:filled?`0 0 0 1px ${T.green}22`:"none"}}>
                   <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>{icon} {label}</div>
                   <div style={{fontSize:12,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value || <span style={{color:T.textSm}}>— sin asignar —</span>}</div>
-                  {sub && <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</div>}
+                  {sub && <div style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</div>}
                 </div>
               );
             };
@@ -11334,7 +11351,7 @@ function AppMetaAds({T, user, onHome}) {
                         <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,letterSpacing:0.5}}>✓ CONFIGURADO</span>
                         <span style={{fontSize:11,color:T.textSm}}>{(new Blob([brand]).size/1024).toFixed(1)} KB</span>
                       </div>
-                      <div style={{fontSize:12,fontFamily:"monospace",color:T.textMd,lineHeight:1.55,maxHeight:60,overflow:"hidden",position:"relative"}}>
+                      <div style={{fontSize:12,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",color:T.textMd,lineHeight:1.55,maxHeight:60,overflow:"hidden",position:"relative"}}>
                         {brand.slice(0,260)}{brand.length>260?" …":""}
                       </div>
                       <div style={{textAlign:"right",marginTop:10}}>
@@ -11350,7 +11367,7 @@ function AppMetaAds({T, user, onHome}) {
                 ) : (
                   <div>
                     <textarea value={brand} onChange={e=>setBrand(e.target.value)} placeholder="Producto, beneficios principales, target, precio, USP, link, etc."
-                      style={{...iS,minHeight:200,resize:"vertical",lineHeight:1.6,marginBottom:10,fontFamily:"monospace",fontSize:12}}/>
+                      style={{...iS,minHeight:200,resize:"vertical",lineHeight:1.6,marginBottom:10,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:12}}/>
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                       <button onClick={()=>setShowBrandEdit(false)} style={BtnSec}>Cancelar</button>
                       <button onClick={async()=>{await handleSaveBrand(); setShowBrandEdit(false);}} disabled={brandSaving} style={BtnPri}>
@@ -11372,7 +11389,7 @@ function AppMetaAds({T, user, onHome}) {
                         <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,letterSpacing:0.5}}>✓ CONFIGURADO</span>
                         <span style={{fontSize:11,color:T.textSm}}>{(new Blob([copyAgent]).size/1024).toFixed(1)} KB</span>
                       </div>
-                      <div style={{fontSize:12,fontFamily:"monospace",color:T.textMd,lineHeight:1.55,maxHeight:80,overflow:"hidden",whiteSpace:"pre-wrap"}}>
+                      <div style={{fontSize:12,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",color:T.textMd,lineHeight:1.55,maxHeight:80,overflow:"hidden",whiteSpace:"pre-wrap"}}>
                         {copyAgent.slice(0,320)}{copyAgent.length>320?" …":""}
                       </div>
                       <div style={{textAlign:"right",marginTop:10}}>
@@ -11417,7 +11434,7 @@ LONGITUD Y FORMATO
 - Entre 300 y 500 palabras
 - Párrafos cortos, mucho espacio en blanco
 - Hook scroll-stopper en la primera línea`}
-                      style={{...iS,minHeight:340,resize:"vertical",lineHeight:1.6,marginBottom:10,fontFamily:"monospace",fontSize:12,whiteSpace:"pre-wrap"}}/>
+                      style={{...iS,minHeight:340,resize:"vertical",lineHeight:1.6,marginBottom:10,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:12,whiteSpace:"pre-wrap"}}/>
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                       <button onClick={()=>setShowCopyAgentEdit(false)} style={BtnSec}>Cancelar</button>
                       <button onClick={async()=>{await handleSaveCopyAgent(); setShowCopyAgentEdit(false);}} disabled={copyAgentSaving} style={BtnPri}>
@@ -11693,10 +11710,10 @@ LONGITUD Y FORMATO
                                 {it.ok ? (
                                   <>
                                     <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:it.status==="ACTIVE"?T.green+"22":T.textSm+"22",color:it.status==="ACTIVE"?T.green:T.textSm,fontWeight:600,letterSpacing:0.3}}>{it.status}</span>
-                                    {it.ad_id && <span style={{fontSize:10,color:T.textSm,fontFamily:"monospace"}}>{it.ad_id}</span>}
+                                    {it.ad_id && <span style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{it.ad_id}</span>}
                                   </>
                                 ) : (
-                                  <span style={{fontSize:10,color:T.red,fontFamily:"monospace"}}>{it.error?.slice(0,80)}</span>
+                                  <span style={{fontSize:10,color:T.red,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{it.error?.slice(0,80)}</span>
                                 )}
                               </div>
                             ))}
@@ -11842,7 +11859,7 @@ LONGITUD Y FORMATO
                                       <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
                                       <div style={{flex:1,minWidth:0}}>
                                         <div style={{fontSize:13,fontWeight:600,color:T.text}}>{a.name||"(sin nombre)"} <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:T.bg,color:T.textSm,fontWeight:500,marginLeft:6}}>{a.currency||"USD"}</span></div>
-                                        <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:2}}>{a.id} · {a.account_status===1?"activa":"inactiva"} · {pixCount} píxel{pixCount===1?"":"es"}</div>
+                                        <div style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:2}}>{a.id} · {a.account_status===1?"activa":"inactiva"} · {pixCount} píxel{pixCount===1?"":"es"}</div>
                                       </div>
                                     </div>
                                   </button>
@@ -11872,7 +11889,7 @@ LONGITUD Y FORMATO
                                         <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
                                         <div style={{flex:1,minWidth:0}}>
                                           <div style={{fontSize:13,fontWeight:600,color:T.text}}>{p.name||"(sin nombre)"} {p.last_fired_time && <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:T.green+"22",color:T.green,fontWeight:600,marginLeft:6}}>Activo</span>}</div>
-                                          <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:2}}>{p.id}{p.last_fired_time?` · último evento: ${new Date(p.last_fired_time).toLocaleDateString("es-AR")}`:""}</div>
+                                          <div style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:2}}>{p.id}{p.last_fired_time?` · último evento: ${new Date(p.last_fired_time).toLocaleDateString("es-AR")}`:""}</div>
                                         </div>
                                       </div>
                                     </button>
@@ -11899,7 +11916,7 @@ LONGITUD Y FORMATO
                                       <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
                                       <div style={{flex:1,minWidth:0}}>
                                         <div style={{fontSize:13,fontWeight:600,color:T.text}}>{p.name||"(sin nombre)"} {ig&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"#dd2a7b22",color:"#dd2a7b",fontWeight:600,marginLeft:6}}>📸 @{ig.username}</span>}</div>
-                                        <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:2}}>{p.id}{p.category?` · ${p.category}`:""}</div>
+                                        <div style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:2}}>{p.id}{p.category?` · ${p.category}`:""}</div>
                                       </div>
                                     </div>
                                   </button>
@@ -12000,7 +12017,7 @@ LONGITUD Y FORMATO
               ))}
             </div>
             {selCreative&&(
-              <div style={{...Card,position:"sticky",top:80}}>
+              <div style={{...Card,position:"sticky",top:105}}>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>{selCreative.filename_base}</div>
 
                 {/* Preview del creative */}
@@ -13192,7 +13209,14 @@ export default function App() {
     const style=document.createElement("style");
     style.textContent=`
       *{box-sizing:border-box;}
-      body{margin:0;overflow-x:hidden;}
+      body{
+        margin:0;overflow-x:hidden;
+        font-family:'Inter',system-ui,sans-serif;
+        -webkit-font-smoothing:antialiased;
+        -moz-osx-font-smoothing:grayscale;
+        text-rendering:optimizeLegibility;
+      }
+      input,button,select,textarea{font-family:inherit;}
       .mobile-only{display:none!important;}
       @media(max-width:768px){
         .hide-mobile{display:none!important;}
@@ -13206,11 +13230,11 @@ export default function App() {
       @media(min-width:769px){
         .main-content{padding-bottom:0!important;}
       }
-      /* Scrollbar thin */
-      ::-webkit-scrollbar{width:8px;height:8px;}
+      /* Scrollbar delgado y discreto */
+      ::-webkit-scrollbar{width:5px;height:5px;}
       ::-webkit-scrollbar-track{background:transparent;}
-      ::-webkit-scrollbar-thumb{background:rgba(127,127,127,0.2);border-radius:8px;}
-      ::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,0.35);}
+      ::-webkit-scrollbar-thumb{background:rgba(127,127,127,0.18);border-radius:99px;}
+      ::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,0.32);}
     `;
     document.head.appendChild(style);
   },[]);
