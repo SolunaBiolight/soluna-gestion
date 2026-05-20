@@ -38,10 +38,11 @@ async function tnProducts(sid, tok) {
   return all;
 }
 
-async function tnOrders(sid, tok, days) {
-  const since=new Date(Date.now()-days*86400000).toISOString();
+async function tnOrders(sid, tok, days, since, until) {
+  let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=200&page=PAGE&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
+  if(until) url+=`&created_at_max=${until}`;
   const pages=await Promise.all([1,2,3,4,5].map(p=>
-    fetch(`https://api.tiendanube.com/v1/${sid}/orders?per_page=200&page=${p}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`,{headers:TN_H(tok)})
+    fetch(url.replace("PAGE",p),{headers:TN_H(tok)})
     .then(r=>r.ok?r.json():[]).catch(()=>[])
   ));
   return pages.flat().filter(o=>o?.id);
@@ -64,11 +65,11 @@ async function shProducts(shop, tok) {
   return all;
 }
 
-async function shOrders(shop, tok, days) {
-  const since=new Date(Date.now()-days*86400000).toISOString();
-  const pages=await Promise.all([1,2].map(async (p)=>{
-    const url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid,partially_paid,partially_refunded&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway`;
-    const r=await fetch(url,{headers:SH_H(tok)});
+async function shOrders(shop, tok, days, since, until) {
+  let base=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid,partially_paid,partially_refunded&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway`;
+  if(until) base+=`&created_at_max=${until}`;
+  const pages=await Promise.all([1,2].map(async ()=>{
+    const r=await fetch(base,{headers:SH_H(tok)});
     return r.ok?(await r.json()).orders||[]:[];
   }));
   return pages.flat();
@@ -238,8 +239,17 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods","GET, OPTIONS");
   if(req.method==="OPTIONS") return res.status(200).end();
 
-  const {uid, action, days:dRaw}=req.query;
+  const {uid, action, days:dRaw, date_from, date_to}=req.query;
   const days=parseInt(dRaw)||30;
+  // Si hay fechas personalizadas, calcular días equivalentes
+  const hasCustomDate = date_from && date_to;
+  const effectiveDays = hasCustomDate
+    ? Math.max(1, Math.round((new Date(date_to)-new Date(date_from))/86400000)+1)
+    : days;
+  const sinceDate = hasCustomDate
+    ? new Date(date_from).toISOString()
+    : new Date(Date.now()-effectiveDays*86400000).toISOString();
+  const untilDate = hasCustomDate ? new Date(date_to).toISOString() : null;
 
   let platform="tiendanube", storeId=FALLBACK_STORE_ID, accessToken=FALLBACK_TOKEN, shop, mlSellerId, mlToken;
 
@@ -263,12 +273,12 @@ export default async function handler(req, res) {
   try{
     if(action==="products"){
       if(platform==="shopify"){
-        const [products,orders]=await Promise.all([shProducts(shop,accessToken),shOrders(shop,accessToken,days)]);
+        const [products,orders]=await Promise.all([shProducts(shop,accessToken),shOrders(shop,accessToken,effectiveDays,sinceDate,untilDate)]);
         const analytics=processSH(orders);
         const normalized=products.map(p=>normSH(p,analytics.map,days));
-        return res.status(200).json(buildResponse("shopify",normalized,analytics,days));
+        return res.status(200).json(buildResponse("shopify",normalized,analytics,effectiveDays));
       } else {
-        const [products,orders]=await Promise.all([tnProducts(storeId,accessToken),tnOrders(storeId,accessToken,days)]);
+        const [products,orders]=await Promise.all([tnProducts(storeId,accessToken),tnOrders(storeId,accessToken,effectiveDays,sinceDate,untilDate)]);
         const analytics=processTN(orders);
         const normalized=products.map(p=>normTN(p,analytics.map,days));
         // Si también tiene ML conectado, obtener ventas ML
@@ -279,7 +289,7 @@ export default async function handler(req, res) {
             mlAnalytics=processML(mlOrd);
           }catch(e){}
         }
-        const resp=buildResponse("tiendanube",normalized,analytics,days);
+        const resp=buildResponse("tiendanube",normalized,analytics,effectiveDays);
         if(mlAnalytics) resp.ml_data={daily:mlAnalytics.daily,by_variant:mlAnalytics.byVariant,total_units:Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units,0)};
         return res.status(200).json(resp);
       }

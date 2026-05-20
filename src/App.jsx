@@ -772,6 +772,49 @@ function OrderSearchField({T, orders, onSelect, uid}) {
   const [loading,setLoading]=useState(false);
   const inputRef=useRef(null);
   const iS = InputStyle(T);
+
+  // Exportar tabla a CSV
+  function exportCSV() {
+    const products = allProducts;
+    const rows = [["Producto","SKU","Stock","Vendidos","Tasa/día","Días restantes","Revenue","Estado"]];
+    products.forEach(p => {
+      p.variants.forEach(v => {
+        const vr = v.units_sold/Math.max(1,days);
+        const vd = vr>0 ? Math.round(v.stock/vr) : null;
+        const st = v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
+        rows.push([p.nombre, v.sku||"", v.stock, v.units_sold, vr.toFixed(2), vd??"-", Math.round(v.revenue), st]);
+      });
+    });
+    const csv = rows.map(r=>r.map(c=>(`"${String(c).replace(/"/g,'""')}"`)).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url; a.download=`growith-stock-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    toast("CSV exportado ✓","success");
+  }
+
+  // Registrar agotados en historial
+  function registrarAgotado(productName, variantName, date) {
+    try{
+      const key=`growith_stockouts_${uid}`;
+      const hist=JSON.parse(localStorage.getItem(key)||"[]");
+      hist.unshift({producto:productName,variante:variantName,fecha:date,ts:Date.now()});
+      localStorage.setItem(key, JSON.stringify(hist.slice(0,200)));
+    }catch(e){}
+  }
+  function getHistorialAgotados() {
+    try{ return JSON.parse(localStorage.getItem(`growith_stockouts_${uid}`)||"[]"); }catch(e){ return []; }
+  }
+
+  // Detectar agotados nuevos cuando llegan datos
+  React.useEffect(()=>{
+    if(!data?.products) return;
+    const today=new Date().toISOString().slice(0,10);
+    data.products.forEach(p=>p.variants.forEach(v=>{
+      if(v.stock===0) registrarAgotado(p.nombre,v.nombre,today);
+    }));
+  },[data]);
   // Primero buscar en órdenes locales
   const localResults=useMemo(()=>{
     if(!q||q.length<2) return [];
@@ -7973,9 +8016,9 @@ function AppArca({T, user, onHome}) {
       )}
 
       {/* ══ MODAL EDITAR CUIT ══ */}
-      {showEditCuit && editCuit && (
-        <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={()=>setShowEditCuit(false)}>
-          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+      {showEditCuit && editCuit && ReactDOM.createPortal(
+        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",overflowY:"auto",padding:"24px 16px"}} onClick={()=>setShowEditCuit(false)}>
+          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:520,padding:"24px 28px",marginTop:"auto",marginBottom:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
               <div>
                 <div style={{fontSize:16,fontWeight:700,color:T.text}}>Editar datos del CUIT</div>
@@ -8027,7 +8070,7 @@ function AppArca({T, user, onHome}) {
               </div>
             </div>
             <div style={{display:"flex",gap:10,marginTop:22}}>
-              <button onClick={()=>setShowEditCuit(false)} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <button onClick={()=>setShowEditCuit(false)} style={{background:T.surface,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 Cancelar
               </button>
               <div style={{flex:1}}/>
@@ -8036,7 +8079,8 @@ function AppArca({T, user, onHome}) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ══ MODAL FACTURACIÓN MANUAL ══ */}
@@ -11875,29 +11919,68 @@ function AppStock({T, user, onHome}) {
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  const [dataPrev, setDataPrev] = useState(null);
   const [tab, setTab] = useState("ventas");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("units");
   const [sortDir, setSortDir] = useState("desc");
   const [expandedId, setExpandedId] = useState(null);
   const [tooltip, setTooltip] = useState(null);
+  const [useCustomDate, setUseCustomDate] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
   // Alertas configurables por producto
-  const [alertConfig, setAlertConfig] = useState({}); // {productId: {threshold, enabled}}
+  const [alertConfig, setAlertConfig] = useState({});
   const [globalThreshold, setGlobalThreshold] = useState(14);
-  const [editingAlert, setEditingAlert] = useState(null); // productId en edición
+  const [editingAlert, setEditingAlert] = useState(null);
+  const [viewMode, setViewMode] = useState("tabla"); // tabla | kanban
+  const [analysisMode, setAnalysisMode] = useState("ventas"); // ventas | productos (para tab análisis)
+  const [leadTime, setLeadTime] = useState({}); // {productId: days} tiempo de entrega por producto
 
   const iS = InputStyle(T);
 
-  async function loadStock(d=days) {
+  async function loadStock(d=days, from="", to="") {
     if(!uid) return;
-    setLoading(true); setData(null);
+    setLoading(true); setData(null); setDataPrev(null);
     try {
-      const r = await fetch(`/api/stock?action=products&uid=${uid}&days=${d}`);
-      const json = await r.json();
+      let params = `action=products&uid=${uid}`;
+      let prevParams = `action=products&uid=${uid}`;
+      if(from && to) {
+        params += `&date_from=${from}&date_to=${to}`;
+        const diff = Math.round((new Date(to)-new Date(from))/86400000);
+        const prevTo   = new Date(new Date(from).getTime()-86400000).toISOString().slice(0,10);
+        const prevFrom = new Date(new Date(from).getTime()-(diff+1)*86400000).toISOString().slice(0,10);
+        prevParams += `&date_from=${prevFrom}&date_to=${prevTo}`;
+      } else {
+        params += `&days=${d}`;
+        prevParams += `&days=${d}`;
+      }
+      const [r, rPrev] = await Promise.all([
+        fetch(`/api/stock?${params}`),
+        fetch(`/api/stock?${prevParams}`),
+      ]);
+      const [json, jsonPrev] = await Promise.all([r.json(), rPrev.json()]);
       if(json.error){toast(json.error,"error");setLoading(false);return;}
       if(json.products) setData(json);
+      if(jsonPrev?.products) setDataPrev(jsonPrev);
     } catch(e){toast(e.message,"error");}
     setLoading(false);
+  }
+
+  function applyCustomDate() {
+    if(!dateFrom||!dateTo){toast("Elegí fecha desde y hasta","warning");return;}
+    if(new Date(dateFrom)>new Date(dateTo)){toast("La fecha inicio debe ser anterior a la final","warning");return;}
+    setUseCustomDate(true);
+    setShowDatePicker(false);
+    loadStock(0, dateFrom, dateTo);
+  }
+
+  function applyQuickPeriod(d) {
+    setDays(d);
+    setUseCustomDate(false);
+    setDateFrom(""); setDateTo("");
+    loadStock(d, "", "");
   }
 
   // Cargar config de alertas desde localStorage
@@ -11909,6 +11992,8 @@ function AppStock({T, user, onHome}) {
       if(saved) setAlertConfig(JSON.parse(saved));
       const savedGlobal = localStorage.getItem(`growith_alert_global_${uid}`);
       if(savedGlobal) setGlobalThreshold(parseInt(savedGlobal)||14);
+      const savedLT = localStorage.getItem(`growith_lead_time_${uid}`);
+      if(savedLT) setLeadTime(JSON.parse(savedLT));
     }catch(e){}
   },[uid]);
 
@@ -11919,6 +12004,11 @@ function AppStock({T, user, onHome}) {
   function saveGlobalThreshold(val) {
     setGlobalThreshold(val);
     try{ localStorage.setItem(`growith_alert_global_${uid}`, String(val)); }catch(e){}
+  }
+  function saveLeadTime(pid, days) {
+    const updated = {...leadTime, [pid]: days};
+    setLeadTime(updated);
+    try{ localStorage.setItem(`growith_lead_time_${uid}`, JSON.stringify(updated)); }catch(e){}
   }
 
   const fmt    = n => (n||0).toLocaleString("es-AR");
@@ -12182,6 +12272,21 @@ function AppStock({T, user, onHome}) {
                     </label>
                     {cfg.threshold&&<button onClick={()=>{const nc={...alertConfig};delete nc[p.id];saveAlertConfig(nc);}} style={{fontSize:10,color:T.red,background:"transparent",border:"none",cursor:"pointer",padding:0}}>Resetear</button>}
                   </div>
+                  {/* Lead time configurable */}
+                  <div style={{padding:"8px 16px 8px 58px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,background:T.bg+"44"}}>
+                    <span style={{fontSize:11,color:T.textSm}}>🚛 Tiempo de entrega del proveedor:</span>
+                    <select value={leadTime[p.id]||""} onChange={e=>{const v=e.target.value?parseInt(e.target.value):undefined;if(v) saveLeadTime(p.id,v); else {const n={...leadTime};delete n[p.id];setLeadTime(n);try{localStorage.setItem(`growith_lead_time_${uid}`,JSON.stringify(n));}catch(err){}};}}
+                      style={{...iS,width:"auto",padding:"3px 8px",fontSize:11}}>
+                      <option value="">Sin configurar</option>
+                      {[3,5,7,10,14,21,30].map(d=><option key={d} value={d}>{d} días</option>)}
+                    </select>
+                    {leadTime[p.id]&&r2>0&&(()=>{
+                      const orderIn=Math.max(0,(dl??0)-leadTime[p.id]);
+                      return <span style={{fontSize:11,fontWeight:600,color:orderIn<=3?T.red:orderIn<=7?(T.yellow||"#eab308"):T.green}}>
+                        {orderIn<=0?"⚠ Pedí ahora":`Pedido en ${orderIn}d`}
+                      </span>;
+                    })()}
+                  </div>
                   {/* Header variantes */}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",padding:"6px 16px 6px 58px",borderBottom:`1px solid ${T.borderL}`,background:T.bg+"88"}}>
                     {["Variante","Stock","Vendidos","Tasa","Días","Revenue","Proyección",""].map((h,i)=>(
@@ -12224,7 +12329,7 @@ function AppStock({T, user, onHome}) {
   }
 
   const TABS=[
-    {id:"ventas",label:"📈 Ventas"},
+    {id:"analisis",label:"📊 Análisis"},
     {id:"productos",label:"📦 Productos"},
     {id:"facturacion",label:"💰 Facturación"},
     {id:"alertas",label:`🚨 Alertas${alertas.length>0?` (${alertas.length})`:""}`},
@@ -12242,7 +12347,11 @@ function AppStock({T, user, onHome}) {
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:11,background:platformColor+"22",border:`1px solid ${platformColor}44`,borderRadius:6,padding:"3px 8px",fontWeight:600,color:platformColor}}>{platformLabel}</span>
           {data?.ml_data&&<span style={{fontSize:11,background:"#f0c14b22",border:"1px solid #f0c14b44",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#f0c14b"}}>+ML</span>}
-          <button onClick={()=>loadStock()} disabled={loading}
+          <button onClick={exportCSV} disabled={!data}
+            style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
+            ⬇ CSV
+          </button>
+          <button onClick={()=>loadStock(days, useCustomDate?dateFrom:"", useCustomDate?dateTo:"")} disabled={loading}
             style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
             {loading?<Spinner size={11} color={T.textMd}/>:"↻"} Actualizar
           </button>
@@ -12251,23 +12360,64 @@ function AppStock({T, user, onHome}) {
 
       <div style={{maxWidth:1200,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
 
-        {/* Período */}
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-          <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período de análisis:</span>
+        {/* Período + date picker */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período:</span>
           {[7,14,30,60,90].map(d=>(
-            <button key={d} onClick={()=>{setDays(d);loadStock(d);}}
-              style={{padding:"5px 12px",fontSize:12,fontWeight:600,border:`1px solid ${days===d?T.accentSolid:T.border}`,borderRadius:7,background:days===d?T.accentSolid+"22":"transparent",color:days===d?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-              {d===7?"1 sem":d===14?"2 sem":d===30?"1 mes":d===60?"2 meses":"3 meses"}
+            <button key={d} onClick={()=>applyQuickPeriod(d)}
+              style={{padding:"5px 11px",fontSize:12,fontWeight:600,border:`1px solid ${!useCustomDate&&days===d?T.accentSolid:T.border}`,borderRadius:7,background:!useCustomDate&&days===d?T.accentSolid+"22":"transparent",color:!useCustomDate&&days===d?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              {d}d
             </button>
           ))}
-          {trend!==null&&(
-            <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,background:trendUp?T.greenBg:T.redBg,border:`1px solid ${trendUp?T.green+"44":T.red+"44"}`,borderRadius:8,padding:"5px 10px"}}>
-              <span style={{fontSize:16}}>{trendUp?"📈":"📉"}</span>
-              <span style={{fontSize:12,fontWeight:700,color:trendUp?T.green:T.red}}>
-                {trendUp?"+":""}{trend}% vs primera mitad del período
-              </span>
-            </div>
-          )}
+          <span style={{fontSize:11,color:T.textSm,marginLeft:2}}>
+            {useCustomDate&&dateFrom&&dateTo
+              ? `${Math.round((new Date(dateTo)-new Date(dateFrom))/86400000)+1} días seleccionados`
+              : `últimos ${days} días`}
+          </span>
+          {/* Date picker personalizado */}
+          <div style={{position:"relative"}}>
+            <button onClick={()=>setShowDatePicker(s=>!s)}
+              style={{padding:"5px 12px",fontSize:12,fontWeight:600,border:`1px solid ${useCustomDate?T.accentSolid:T.border}`,borderRadius:7,background:useCustomDate?T.accentSolid+"22":"transparent",color:useCustomDate?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}>
+              📅 {useCustomDate&&dateFrom&&dateTo?`${dateFrom.slice(5).replace("-","/")} → ${dateTo.slice(5).replace("-","/")}` :"Fechas"}
+            </button>
+            {showDatePicker&&(
+              <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:200,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",minWidth:280,boxShadow:"0 8px 32px rgba(0,0,0,0.3)"}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>Rango personalizado</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+                  <div>
+                    <label style={{fontSize:11,color:T.textSm,display:"block",marginBottom:3}}>Desde</label>
+                    <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{...iS,fontSize:12,padding:"6px 10px"}}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:T.textSm,display:"block",marginBottom:3}}>Hasta</label>
+                    <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} max={new Date().toISOString().slice(0,10)} style={{...iS,fontSize:12,padding:"6px 10px"}}/>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>setShowDatePicker(false)} style={{flex:1,padding:"7px",fontSize:12,background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,cursor:"pointer",fontWeight:500}}>Cancelar</button>
+                  <button onClick={applyCustomDate} style={{flex:1,padding:"7px",fontSize:12,background:T.accentSolid,border:"none",color:"#fff",borderRadius:7,cursor:"pointer",fontWeight:600}}>Aplicar</button>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Comparativa */}
+          {dataPrev&&(()=>{
+            const prevU=dataPrev.total_units||0, currU=data?.total_units||0;
+            const prevR=dataPrev.total_revenue||0, currR=data?.total_revenue||0;
+            const diffU=prevU>0?((currU-prevU)/prevU*100).toFixed(1):null;
+            const diffR=prevR>0?((currR-prevR)/prevR*100).toFixed(1):null;
+            const up=diffU!==null&&parseFloat(diffU)>=0;
+            return (
+              <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,background:up?T.greenBg:T.redBg,border:`1px solid ${up?T.green+"44":T.red+"44"}`,borderRadius:8,padding:"5px 12px"}}>
+                <span style={{fontSize:14}}>{up?"📈":"📉"}</span>
+                <div style={{fontSize:11,fontWeight:600,color:up?T.green:T.red}}>
+                  {diffU!==null&&<span>{up?"+":""}{diffU}% uds</span>}
+                  {diffR!==null&&<span style={{marginLeft:8}}>{parseFloat(diffR)>=0?"+":""}{diffR}% rev.</span>}
+                  <span style={{fontSize:10,fontWeight:400,color:T.textSm,marginLeft:6}}>vs período anterior</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {loading&&!data?(
@@ -12308,26 +12458,25 @@ function AppStock({T, user, onHome}) {
             {/* ── BLOQUE COMÚN: Gráfico + Resumen + Donuts ── */}
             {(()=>{
               // Config por tab — cada uno con sus propios datos
-              const isVentas     = tab==="ventas";
+              const isAnalisis  = tab==="analisis";
               const isProductos  = tab==="productos";
               const isFact       = tab==="facturacion";
+              // En tab Análisis hay subtoggle ventas/productos
+              const showingVentas = isAnalisis && analysisMode==="ventas";
+              const showingProd   = isAnalisis && analysisMode==="productos";
 
-              // Ventas: órdenes por día · Productos: unidades por día · Facturación: unidades (revenue no disponible por día)
-              const tabDaily     = isVentas ? (data.daily_orders||{}) : data.daily_series||{};
-              const tabTotal     = isVentas ? totalOrders : isProductos ? totalUnits : totalRev;
+              const tabDaily     = showingVentas ? (data.daily_orders||{}) : data.daily_series||{};
+              const tabTotal     = showingVentas ? totalOrders : isProductos ? totalUnits : totalRev;
               const tabAvg       = Object.keys(tabDaily).length>0 ? (Object.values(tabDaily).reduce((a,b)=>a+b,0)/Math.max(1,Object.keys(tabDaily).length)) : 0;
-              const tabTitle     = isVentas?"Ventas por día":isProductos?"Productos vendidos por día":"Facturación por día";
-              const tabSubtitle  = isVentas?"Cantidad de órdenes pagadas":isProductos?"Unidades despachadas":"Revenue generado";
-              const tabMainVal   = isVentas?fmt(totalOrders):isProductos?fmt(totalUnits):fmtARS(totalRev);
-              const tabMainLabel = isVentas?"órdenes totales":isProductos?"unidades vendidas":"facturado total";
-
-              // Donuts específicos por tab
-              // Ventas: provincias por órdenes (mismo dato) · Productos: variantes por unidades · Facturación: variantes por revenue
+              const tabTitle     = showingVentas?"Ventas por día":isProductos||showingProd?"Productos vendidos por día":"Facturación por día";
+              const tabSubtitle  = showingVentas?"Cantidad de órdenes pagadas":isProductos||showingProd?"Unidades despachadas":"Revenue generado";
+              const tabMainVal   = showingVentas?fmt(totalOrders):isProductos?fmt(totalUnits):isFact?fmtARS(totalRev):fmt(totalUnits);
+              const tabMainLabel = showingVentas?"órdenes totales":isProductos?"unidades vendidas":isFact?"facturado total":"unidades vendidas";
               const tabDonutVariante = isFact
                 ? (()=>{const m={};allProducts.forEach(p=>p.variants.forEach(v=>{m[v.nombre]=(m[v.nombre]||0)+v.revenue;}));return m;})()
                 : (data.by_variant||{});
 
-              if(!["ventas","productos","facturacion"].includes(tab)) return null;
+              if(!["analisis","productos","facturacion"].includes(tab)) return null;
               const dailyEntries2=Object.entries(tabDaily).sort(([a],[b])=>a.localeCompare(b));
 
               return (
@@ -12336,8 +12485,22 @@ function AppStock({T, user, onHome}) {
                   <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:16,alignItems:"start"}}>
                     {/* Gráfico barras */}
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 20px 14px"}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>{tabTitle}</div>
-                      <div style={{fontSize:11,color:T.textSm,marginBottom:16}}>{tabSubtitle} · Últimos {days} días · {platformLabel}</div>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text}}>{tabTitle}</div>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{tabSubtitle} · {platformLabel}</div>
+                        </div>
+                        {isAnalisis&&(
+                          <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
+                            {[{v:"ventas",l:"Ventas"},{v:"productos",l:"Productos"}].map(o=>(
+                              <button key={o.v} onClick={()=>setAnalysisMode(o.v)}
+                                style={{padding:"4px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:analysisMode===o.v?T.card:"transparent",color:analysisMode===o.v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:analysisMode===o.v?"0 1px 3px rgba(0,0,0,0.2)":"none"}}>
+                                {o.l}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <BarChart daily={tabDaily} height={130}/>
                     </div>
                     {/* Resumen período */}
@@ -12345,12 +12508,12 @@ function AppStock({T, user, onHome}) {
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
                         <div style={{fontSize:11,color:T.textSm,marginBottom:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Resumen del período</div>
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                          {(isVentas?[
+                          {(showingVentas?[
                             {val:fmt(totalOrders),label:"órdenes pagadas",color:T.accentSolid},
                             {val:tabAvg.toFixed(1),label:"órdenes por día",color:T.accentSolid},
                             {val:fmt(allProducts.filter(p=>p.units_sold>0).length),label:"productos vendidos",color:T.accentSolid},
                             {val:fmtARS(totalRev/Math.max(1,totalOrders)),label:"ticket por orden",color:T.accentSolid},
-                          ]:isProductos?[
+                          ]:(isProductos||showingProd)?[
                             {val:fmt(totalUnits),label:"unidades vendidas",color:T.accentSolid},
                             {val:avgRate.toFixed(1),label:"unidades por día",color:T.accentSolid},
                             {val:fmt(allProducts.length),label:"productos en catálogo",color:T.accentSolid},
@@ -12395,12 +12558,12 @@ function AppStock({T, user, onHome}) {
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>
-                        {isFact?"Revenue por variante":isVentas?"Variantes más vendidas":"Unidades por variante"}
+                        {isFact?"Revenue por variante":showingVentas?"Variantes más vendidas":"Unidades por variante"}
                       </div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>
-                        {isFact?"Distribución del revenue":isVentas?"Órdenes por tipo de producto":"Unidades vendidas por variante"}
+                        {isFact?"Distribución del revenue":showingVentas?"Órdenes por tipo de producto":"Unidades vendidas por variante"}
                       </div>
-                      <DonutChart data={tabDonutVariante} centerLabel={isFact?{val:fmtARS(totalRev),label:"revenue"}:isVentas?{val:fmt(totalOrders),label:"órdenes"}:{val:fmt(totalUnits),label:"uds"}}/>
+                      <DonutChart data={tabDonutVariante} centerLabel={isFact?{val:fmtARS(totalRev),label:"revenue"}:showingVentas?{val:fmt(totalOrders),label:"órdenes"}:{val:fmt(totalUnits),label:"uds"}}/>
                     </div>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
@@ -12421,13 +12584,54 @@ function AppStock({T, user, onHome}) {
                   {/* Detalle específico por tab */}
                   {(tab==="productos"||tab==="facturacion")&&(
                     <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                         <input type="text" placeholder="🔍 Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
                           style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
+                        {tab==="productos"&&(
+                          <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
+                            {[{v:"tabla",l:"☰ Tabla"},{v:"kanban",l:"⬛ Kanban"}].map(o=>(
+                              <button key={o.v} onClick={()=>setViewMode(o.v)}
+                                style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:viewMode===o.v?T.card:"transparent",color:viewMode===o.v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewMode===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>
+                                {o.l}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <span style={{fontSize:11,color:T.textSm}}>{allProducts.length} productos</span>
                       </div>
-                      <ProductTable products={allProducts}/>
-                      {tab==="productos"&&kpiDead>0&&(
+
+                      {tab==="productos"&&viewMode==="kanban"&&(
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:10}}>
+                          {allProducts.filter(p=>{const q=search.trim().toLowerCase();return !q||(p.nombre||"").toLowerCase().includes(q)||p.variants.some(v=>(v.sku||"").toLowerCase().includes(q));}).flatMap(p=>p.variants.map(v=>{
+                            const vr=v.units_sold/Math.max(1,days);
+                            const vd=vr>0?Math.round(v.stock/vr):null;
+                            const sc=v.stock===0?T.red:vd===null?T.textSm:vd<=7?T.red:vd<=globalThreshold?(T.yellow||"#eab308"):T.green;
+                            const sl=v.stock===0?"⛔ Sin stock":vd===null?"💤 Sin ventas":vd<=7?"🔴 Crítico":vd<=globalThreshold?"⚠️ Reponer":"✅ OK";
+                            const lt=leadTime[p.id];
+                            const daysToOrder=lt&&vd!==null?vd-lt:null;
+                            return (
+                              <div key={v.id} style={{background:T.card,border:`1.5px solid ${sc}44`,borderRadius:12,padding:"13px 13px",display:"flex",flexDirection:"column",gap:5}}>
+                                {p.imagen&&<img src={p.imagen} alt="" style={{width:"100%",height:72,objectFit:"cover",borderRadius:7,marginBottom:2}}/>}
+                                <div style={{fontSize:11,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                                <div style={{fontSize:10,color:T.textSm}}>{v.nombre}{v.sku?` · ${v.sku}`:""}</div>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginTop:3}}>
+                                  <div><div style={{fontSize:22,fontWeight:800,color:sc,lineHeight:1}}>{v.stock}</div><div style={{fontSize:9,color:T.textSm}}>en stock</div></div>
+                                  <div style={{textAlign:"right"}}><div style={{fontSize:16,fontWeight:700,color:sc}}>{vd===null?"—":vd+"d"}</div><div style={{fontSize:9,color:T.textSm}}>restantes</div></div>
+                                </div>
+                                <div style={{height:4,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                                  <div style={{height:"100%",width:`${Math.min(100,((vd??0)/90)*100)}%`,background:sc,borderRadius:10}}/>
+                                </div>
+                                <div style={{fontSize:10,fontWeight:600,color:sc,textAlign:"center",background:sc+"18",borderRadius:5,padding:"2px 0"}}>{sl}</div>
+                                {vr>0&&<div style={{fontSize:9,color:T.textSm,textAlign:"center"}}>{vr.toFixed(1)} uds/día</div>}
+                                {daysToOrder!==null&&daysToOrder<=7&&<div style={{fontSize:9,color:T.accent,fontWeight:700,textAlign:"center",background:T.accentSolid+"18",borderRadius:4,padding:"2px 4px"}}>🚛 Pedir en {Math.max(0,daysToOrder)}d</div>}
+                              </div>
+                            );
+                          }))}
+                        </div>
+                      )}
+
+                      {(tab==="facturacion"||viewMode==="tabla")&&<ProductTable products={allProducts}/>}
+                      {tab==="productos"&&viewMode==="tabla"&&kpiDead>0&&(
                         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                           <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
                             <span>💤</span>
@@ -12527,6 +12731,27 @@ function AppStock({T, user, onHome}) {
                     })}
                   </>
                 )}
+
+                {/* Historial de agotados */}
+                {(()=>{
+                  const hist=getHistorialAgotados().slice(0,20);
+                  if(!hist.length) return null;
+                  return (
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>📋 Historial de agotados</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
+                        {hist.map((h,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
+                            <span style={{color:T.red,flexShrink:0}}>⛔</span>
+                            <span style={{flex:1,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.producto} · {h.variante}</span>
+                            <span style={{color:T.textSm,flexShrink:0,fontSize:11}}>{h.fecha}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={()=>{try{localStorage.removeItem(`growith_stockouts_${uid}`);}catch(e){}toast("Historial borrado","success");}} style={{marginTop:10,fontSize:11,color:T.red,background:"transparent",border:"none",cursor:"pointer",padding:0}}>Borrar historial</button>
+                    </div>
+                  );
+                })()}
 
                 {/* Config por producto */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
