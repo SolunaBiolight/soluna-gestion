@@ -9413,9 +9413,25 @@ function AppMetaAds({T, user, onHome}) {
       const metaUrl = `https://graph.facebook.com/${creds.api_version}/${accIdStr}/${isVideo?"advideos":"adimages"}`;
       let up;
       try {
-        const r = await fetch(metaUrl, { method: "POST", body: fd });
-        const j = await r.json();
-        if (!r.ok || j.error) throw new Error(j.error?.message || `HTTP ${r.status}`);
+        const j = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", metaUrl, true);
+          xhr.upload.onprogress = (e) => {
+            if (!e.lengthComputable) return;
+            const pct = Math.round((e.loaded / e.total) * 100);
+            if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? { ...c, _uploadPct: pct } : c));
+          };
+          xhr.onload = () => {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (xhr.status >= 200 && xhr.status < 300 && !data.error) resolve(data);
+              else reject(new Error(data.error?.message || `HTTP ${xhr.status}`));
+            } catch (e) { reject(new Error(`HTTP ${xhr.status}: respuesta no-JSON`)); }
+          };
+          xhr.onerror = () => reject(new Error("Network error"));
+          xhr.ontimeout = () => reject(new Error("Timeout"));
+          xhr.send(fd);
+        });
         if (isVideo) up = { kind: "video", id: j.id, url: localPreviewUrl || null };
         else {
           const img = Object.values(j.images || {})[0];
@@ -9638,17 +9654,31 @@ function AppMetaAds({T, user, onHome}) {
       return;
     }
 
-    const MAX_CONCURRENT = 2;
-    let i = 0;
-    const worker = async () => {
-      while (i < files.length) {
-        const idx = i++;
-        // Marcar este como "subiendo" (sale de la cola)
-        setCreatives(prev => prev.map(c => c.id === temps[idx].id ? { ...c, _queued: false, _uploading: true } : c));
-        await handleUploadFile(files[idx], temps[idx].id, temps[idx].url, creds);
-      }
+    // Concurrencia adaptativa: imagenes 4 (chicas, no saturan bandwidth),
+    // videos 2 (grandes, mas concurrencia = cada video mas lento). Dos
+    // pools independientes corriendo al mismo tiempo.
+    const isVideoFile = (f) => (f.type||"").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(f.name);
+    const videoIndices = [];
+    const imageIndices = [];
+    files.forEach((f, idx) => { (isVideoFile(f) ? videoIndices : imageIndices).push(idx); });
+    const makeWorker = (indices) => {
+      let i = 0;
+      return async () => {
+        while (i < indices.length) {
+          const idx = indices[i++];
+          setCreatives(prev => prev.map(c => c.id === temps[idx].id ? { ...c, _queued: false, _uploading: true, _uploadPct: 0 } : c));
+          await handleUploadFile(files[idx], temps[idx].id, temps[idx].url, creds);
+        }
+      };
     };
-    await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT, files.length) }, () => worker()));
+    const VIDEO_CONCURRENT = 2;
+    const IMAGE_CONCURRENT = 4;
+    const videoWorker = makeWorker(videoIndices);
+    const imageWorker = makeWorker(imageIndices);
+    await Promise.all([
+      ...Array.from({ length: Math.min(VIDEO_CONCURRENT, videoIndices.length) }, () => videoWorker()),
+      ...Array.from({ length: Math.min(IMAGE_CONCURRENT, imageIndices.length) }, () => imageWorker()),
+    ]);
     setUploadingFile(false);
     toast(`${files.length} archivo${files.length===1?"":"s"} subido${files.length===1?"":"s"} ✓`,"success");
   }
@@ -11098,8 +11128,14 @@ LONGITUD Y FORMATO
                             })()}
                             <span style={{position:"absolute",bottom:4,left:4,fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(0,0,0,0.7)",color:"#fff",fontWeight:700,letterSpacing:0.3}}>{c.kind==="video"?"🎬 VID":"🖼️ IMG"}</span>
                             {c._uploading && (
-                              <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(2px)"}}>
+                              <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(2px)",flexDirection:"column",gap:6}}>
                                 <Spinner size={20} color="#fff"/>
+                                {typeof c._uploadPct === "number" && <div style={{fontSize:11,fontWeight:700,color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,0.5)"}}>{c._uploadPct}%</div>}
+                              </div>
+                            )}
+                            {c._uploading && typeof c._uploadPct === "number" && (
+                              <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:"rgba(0,0,0,0.4)"}}>
+                                <div style={{height:"100%",width:`${c._uploadPct}%`,background:T.blue,transition:"width 0.2s"}}/>
                               </div>
                             )}
                           </div>
@@ -11109,7 +11145,7 @@ LONGITUD Y FORMATO
                               {c._queued
                                 ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:700,letterSpacing:0.3,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:4}}>⏳ En cola</span>
                                 : c._uploading
-                                  ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo a Meta…</span>
+                                  ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo {typeof c._uploadPct === "number" ? `${c._uploadPct}%` : "a Meta…"}</span>
                                   : c._error || c.video_error
                                     ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>✗ ERROR</span>
                                     : c.copy?.trim()
