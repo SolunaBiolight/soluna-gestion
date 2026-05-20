@@ -11803,277 +11803,526 @@ LONGITUD Y FORMATO
 // ===========================================
 function AppStock({T, user, onHome}) {
   const uid = user?.uid;
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(null); // {platform, products, total_*, daily_series}
+  const [data, setData] = useState(null);
+  const [tab, setTab] = useState("resumen"); // resumen | productos | alertas
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("units"); // units | stock | days_left | revenue
+  const [sortBy, setSortBy] = useState("units");
+  const [sortDir, setSortDir] = useState("desc");
   const [expandedId, setExpandedId] = useState(null);
-  const [filterStatus, setFilterStatus] = useState("all"); // all | low | empty | ok
+  const [alertThreshold, setAlertThreshold] = useState(14);
+  const [groupVariants, setGroupVariants] = useState(true);
+  const [tooltip, setTooltip] = useState(null);
+  const chartRef = React.useRef(null);
 
   const iS = InputStyle(T);
 
-  async function loadStock(d = days) {
-    if (!uid) return;
-    setLoading(true);
-    setData(null);
+  async function loadStock(d=days) {
+    if(!uid) return;
+    setLoading(true); setData(null);
     try {
       const r = await fetch(`/api/stock?action=products&uid=${uid}&days=${d}`);
       const json = await r.json();
-      if (json.error) { toast(json.error, "error"); setLoading(false); return; }
-      if (json.products) setData(json);
-      else { toast("Sin datos del servidor", "error"); }
-    } catch(e) { toast(e.message, "error"); }
+      if(json.error){toast(json.error,"error");setLoading(false);return;}
+      if(json.products) setData(json);
+    } catch(e){toast(e.message,"error");}
     setLoading(false);
   }
 
-  useEffect(() => { if (uid) loadStock(); }, [uid]);
+  useEffect(()=>{if(uid) loadStock();},[uid]);
 
-  const fmtInt  = n => (n||0).toLocaleString("es-AR");
-  const fmtARS  = n => "$" + Math.round(n||0).toLocaleString("es-AR");
-  const statusOf = p => {
-    if (p.stock_total === 0) return "empty";
-    if (p.days_left !== null && p.days_left < 15) return "low";
-    return "ok";
-  };
-  const statusColor = s => s==="empty"?T.red:s==="low"?(T.yellow||"#eab308"):T.green;
-  const statusLabel = s => s==="empty"?"Sin stock":s==="low"?"Stock bajo":"OK";
-  const statusBg    = s => statusColor(s)+"22";
+  const fmt    = n => (n||0).toLocaleString("es-AR");
+  const fmtARS = n => "$\u00a0"+Math.round(n||0).toLocaleString("es-AR");
+  const rate   = p => p.units_sold>0?p.units_sold/days:0;
+  const dLeft  = (stock,r) => r>0?Math.round(stock/r):null;
 
-  const products = (data?.products || []).filter(p => {
-    const q = search.trim().toLowerCase();
-    if (q && !(p.nombre||"").toLowerCase().includes(q) &&
-             !p.variants.some(v => (v.sku||"").toLowerCase().includes(q))) return false;
-    if (filterStatus !== "all" && statusOf(p) !== filterStatus) return false;
-    return true;
-  }).sort((a, b) => {
-    if (sortBy === "units")     return b.units_sold - a.units_sold;
-    if (sortBy === "stock")     return b.stock_total - a.stock_total;
-    if (sortBy === "revenue")   return b.revenue - a.revenue;
-    if (sortBy === "days_left") {
-      if (a.days_left === null) return 1;
-      if (b.days_left === null) return -1;
-      return a.days_left - b.days_left;
-    }
-    return 0;
+  const stColor = d => d===null?T.textSm:d===0?T.red:d<=alertThreshold?(T.yellow||"#eab308"):T.green;
+  const stLabel = (stock,d) => stock===0?"Sin stock":d===null?"Sin ventas":d<=alertThreshold?"Reponer":"OK";
+  const stBg    = d => stColor(d)+"22";
+
+  // Tabla de productos
+  const allProducts = data?.products||[];
+  const filtered = allProducts.filter(p=>{
+    const q=search.trim().toLowerCase();
+    return !q||(p.nombre||"").toLowerCase().includes(q)||p.variants.some(v=>(v.sku||"").toLowerCase().includes(q));
+  }).sort((a,b)=>{
+    let va,vb;
+    if(sortBy==="units")  {va=a.units_sold; vb=b.units_sold;}
+    else if(sortBy==="stock")  {va=a.stock_total;vb=b.stock_total;}
+    else if(sortBy==="days")   {va=dLeft(a.stock_total,rate(a))??99999;vb=dLeft(b.stock_total,rate(b))??99999;}
+    else if(sortBy==="rate")   {va=rate(a);vb=rate(b);}
+    else if(sortBy==="revenue"){va=a.revenue;vb=b.revenue;}
+    else{va=a.units_sold;vb=b.units_sold;}
+    return sortDir==="desc"?vb-va:va-vb;
   });
 
-  // KPIs
-  const kpiEmpty = products.filter(p => statusOf(p) === "empty").length;
-  const kpiLow   = products.filter(p => statusOf(p) === "low").length;
-  const kpiOk    = products.filter(p => statusOf(p) === "ok").length;
+  const toggleSort=col=>{if(sortBy===col)setSortDir(d=>d==="desc"?"asc":"desc");else{setSortBy(col);setSortDir("desc");}};
+  const SH=({col})=><span style={{marginLeft:3,opacity:sortBy===col?1:0.3,fontSize:9}}>{sortBy===col?(sortDir==="desc"?"↓":"↑"):"↕"}</span>;
 
-  // Mini sparkline SVG
-  function Sparkline({daily, color}) {
-    const entries = Object.entries(daily||{}).sort(([a],[b])=>a.localeCompare(b)).slice(-30);
-    if (entries.length < 2) return null;
-    const vals = entries.map(([,v])=>v);
-    const max  = Math.max(1,...vals);
-    const W=120, H=30, P=2;
-    const pts = vals.map((v,i) => {
-      const x = P + (i/(vals.length-1))*(W-2*P);
-      const y = H-P - ((v/max)*(H-2*P));
-      return `${x},${y}`;
-    }).join(" ");
+  const totalUnits  = allProducts.reduce((a,p)=>a+p.units_sold,0);
+  const totalStock  = allProducts.reduce((a,p)=>a+p.stock_total,0);
+  const totalRev    = allProducts.reduce((a,p)=>a+p.revenue,0);
+  const avgRate     = days>0?(totalUnits/days):0;
+  const avgDays     = (()=>{const v=allProducts.filter(p=>rate(p)>0).map(p=>dLeft(p.stock_total,rate(p))).filter(d=>d!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;})();
+  const kpiEmpty    = allProducts.filter(p=>p.stock_total===0).length;
+  const kpiLow      = allProducts.filter(p=>p.stock_total>0&&(dLeft(p.stock_total,rate(p))??99)<=alertThreshold).length;
+
+  // Alertas
+  const alertas = allProducts.flatMap(p=>
+    p.variants.filter(v=>v.stock===0||(dLeft(v.stock,v.units_sold/days)??99)<=alertThreshold)
+    .map(v=>({producto:p.nombre,imagen:p.imagen,variante:v.nombre,sku:v.sku,stock:v.stock,daysLeft:dLeft(v.stock,v.units_sold/days),rate:v.units_sold/days,status:v.stock===0?"empty":"low"}))
+  ).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1));
+
+  const platform      = data?.platform||"tiendanube";
+  const platformLabel = platform==="shopify"?"Shopify":"Tienda Nube";
+  const platformColor = platform==="shopify"?"#95bf47":"#3483fa";
+
+  // ── Donut chart SVG ──
+  function DonutChart({data:raw, colors, size=160, thickness=34}) {
+    const entries=Object.entries(raw||{}).sort(([,a],[,b])=>b-a).slice(0,6);
+    if(!entries.length) return null;
+    const total=entries.reduce((a,[,v])=>a+v,0)||1;
+    const defaultColors=["#6366f1","#22c55e","#f59e0b","#ef4444","#3b82f6","#ec4899"];
+    const r=size/2, ri=r-thickness, cx=r, cy=r;
+    let angle=-Math.PI/2;
+    const slices=entries.map(([label,val],i)=>{
+      const pct=val/total;
+      const a1=angle, a2=angle+pct*2*Math.PI;
+      angle=a2;
+      const x1=cx+r*Math.cos(a1),y1=cy+r*Math.sin(a1);
+      const x2=cx+r*Math.cos(a2),y2=cy+r*Math.sin(a2);
+      const xi1=cx+ri*Math.cos(a1),yi1=cy+ri*Math.sin(a1);
+      const xi2=cx+ri*Math.cos(a2),yi2=cy+ri*Math.sin(a2);
+      const large=pct>0.5?1:0;
+      const path=`M${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} L${xi2},${yi2} A${ri},${ri} 0 ${large},0 ${xi1},${yi1} Z`;
+      return {path,label,val,pct,color:colors?.[i]||defaultColors[i%defaultColors.length]};
+    });
     return (
-      <svg width={W} height={H} style={{display:"block"}}>
-        <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
+      <div>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{display:"block",margin:"0 auto"}}>
+          {slices.map((s,i)=>(
+            <path key={i} d={s.path} fill={s.color} stroke={T.card} strokeWidth={2}
+              onMouseEnter={e=>{const r2=e.currentTarget.getBoundingClientRect();setTooltip({x:r2.left+r2.width/2,y:r2.top-8,label:`${s.label}: ${fmt(s.val)} (${(s.pct*100).toFixed(1)}%)`});}}
+              onMouseLeave={()=>setTooltip(null)}/>
+          ))}
+          <text x={cx} y={cy-6} textAnchor="middle" fontSize={20} fontWeight="800" fill={T.text}>{fmt(total)}</text>
+          <text x={cx} y={cy+12} textAnchor="middle" fontSize={9} fill={T.textSm}>uds</text>
+        </svg>
+        <div style={{marginTop:10}}>
+          {slices.map((s,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+              <div style={{width:10,height:10,borderRadius:2,background:s.color,flexShrink:0}}/>
+              <div style={{fontSize:11,color:T.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.label}</div>
+              <div style={{fontSize:11,fontWeight:700,color:T.textMd,flexShrink:0}}>({(s.pct*100).toFixed(1)}%)</div>
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 
-  const platform = data?.platform || "tiendanube";
-  const platformLabel = platform === "shopify" ? "Shopify" : "Tienda Nube";
-  const platformColor = platform === "shopify" ? "#95bf47" : "#3483fa";
+  // ── Bar chart interactivo ──
+  function BarChart({daily, height=110}) {
+    const entries=Object.entries(daily||{}).sort(([a],[b])=>a.localeCompare(b));
+    if(!entries.length) return <div style={{color:T.textSm,fontSize:12,textAlign:"center",padding:20}}>Sin datos</div>;
+    const vals=entries.map(([,v])=>v);
+    const max=Math.max(1,...vals);
+    const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:2,height,position:"relative"}}>
+          {/* Línea promedio */}
+          <div style={{position:"absolute",left:0,right:0,top:`${(1-avg/max)*height}px`,borderTop:`1.5px dashed ${T.accentSolid}55`,pointerEvents:"none"}}>
+            <span style={{position:"absolute",right:0,top:-14,fontSize:9,color:T.accent,background:T.card,padding:"1px 4px",borderRadius:3}}>prom {avg.toFixed(1)}</span>
+          </div>
+          {entries.map(([date,val])=>{
+            const pct=val/max;
+            const isToday=date===new Date().toISOString().slice(0,10);
+            return (
+              <div key={date} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",cursor:"default"}}
+                onMouseEnter={e=>{const r=e.currentTarget.getBoundingClientRect();setTooltip({x:r.left+r.width/2,y:r.top-8,label:`${date.slice(5).replace("-","/")}: ${fmt(val)} uds`});}}
+                onMouseLeave={()=>setTooltip(null)}>
+                <div style={{width:"100%",background:isToday?T.accentSolid:T.accentSolid+"77",borderRadius:"3px 3px 0 0",height:`${Math.max(4,pct*height)}px`,transition:"height 0.3s"}}/>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{display:"flex",gap:2,marginTop:3}}>
+          {entries.map(([date])=>(
+            <div key={date} style={{flex:1,textAlign:"center",fontSize:8,color:T.textSm}}>{date.slice(5).replace("-","/")}</div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Gráfico de horas (línea) ──
+  function HourChart({byHour, height=70}) {
+    const hours=Array.from({length:24},(_,i)=>String(i).padStart(2,"0"));
+    const vals=hours.map(h=>byHour?.[h]||0);
+    const max=Math.max(1,...vals);
+    const W=400,H=height,P=4;
+    const pts=vals.map((v,i)=>{
+      const x=P+(i/23)*(W-2*P);
+      const y=H-P-((v/max)*(H-2*P));
+      return `${x},${y}`;
+    }).join(" ");
+    const area=`M${P},${H} `+vals.map((v,i)=>{
+      const x=P+(i/23)*(W-2*P);
+      const y=H-P-((v/max)*(H-2*P));
+      return `L${x},${y}`;
+    }).join(" ")+` L${W-P},${H} Z`;
+    const peakH=hours[vals.indexOf(max)];
+    return (
+      <div>
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block"}}>
+          <defs>
+            <linearGradient id="hgrad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor={T.accentSolid} stopOpacity="0.25"/>
+              <stop offset="100%" stopColor={T.accentSolid} stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d={area} fill="url(#hgrad)"/>
+          <polyline points={pts} fill="none" stroke={T.accentSolid} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:T.textSm,marginTop:2}}>
+          {["00","06","12","18","23"].map(h=><span key={h}>{h}h</span>)}
+        </div>
+        {peakH&&<div style={{fontSize:11,color:T.textSm,marginTop:6,textAlign:"center"}}>Pico de ventas: <strong style={{color:T.accent}}>{peakH}:00 hs</strong> ({fmt(max)} uds)</div>}
+      </div>
+    );
+  }
+
+  const TABS=[{id:"resumen",label:"📊 Resumen"},{id:"productos",label:"📦 Productos"},{id:"alertas",label:`🚨 Alertas${alertas.length>0?` (${alertas.length})`:""}`}];
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Stock" onHome={onHome}>
+      {tooltip&&ReactDOM.createPortal(
+        <div style={{position:"fixed",left:tooltip.x,top:tooltip.y,transform:"translateX(-50%) translateY(-100%)",background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,color:T.text,pointerEvents:"none",zIndex:9999,whiteSpace:"nowrap",boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
+          {tooltip.label}
+        </div>,document.body
+      )}
+
+      <AppTopbar T={T} section="Stock & Estadísticas" onHome={onHome}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:11,color:T.textSm,background:platformColor+"22",border:`1px solid ${platformColor}44`,borderRadius:6,padding:"3px 8px",fontWeight:600,color:platformColor}}>{platformLabel}</span>
-          <button onClick={()=>loadStock()} disabled={loading} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+          <span style={{fontSize:11,background:platformColor+"22",border:`1px solid ${platformColor}44`,borderRadius:6,padding:"3px 8px",fontWeight:600,color:platformColor}}>{platformLabel}</span>
+          {data?.ml_data&&<span style={{fontSize:11,background:"#f0c14b22",border:"1px solid #f0c14b44",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#f0c14b"}}>+ML</span>}
+          <button onClick={()=>loadStock()} disabled={loading}
+            style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
             {loading?<Spinner size={11} color={T.textMd}/>:"↻"} Actualizar
-          </button>
-          <button onClick={()=>{setDays(30);loadStock(30);}} disabled={loading} title="Trae ventas de los últimos 30 días desde tu tienda y recalcula stock, ranking y proyecciones" style={{background:T.accent+"12",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:600,cursor:loading?"wait":"pointer",display:"flex",alignItems:"center",gap:4}}>
-            🔄 Reprocesar 30d
           </button>
         </div>
       </AppTopbar>
 
-      <div style={{maxWidth:1200,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
 
-        {/* Selector de período */}
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
-          <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período de ventas:</span>
-          {[7,14,30,60,90].map(d=>(
-            <button key={d} onClick={()=>{setDays(d);loadStock(d);}}
-              style={{padding:"5px 12px",fontSize:12,fontWeight:600,border:`1px solid ${days===d?T.accentSolid:T.border}`,borderRadius:8,background:days===d?T.accentSolid+"22":"transparent",color:days===d?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-              {d}d
-            </button>
-          ))}
+        {/* Período + umbral */}
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período:</span>
+            {[7,14,30,60,90].map(d=>(
+              <button key={d} onClick={()=>{setDays(d);loadStock(d);}}
+                style={{padding:"5px 11px",fontSize:12,fontWeight:600,border:`1px solid ${days===d?T.accentSolid:T.border}`,borderRadius:7,background:days===d?T.accentSolid+"22":"transparent",color:days===d?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                {d}d
+              </button>
+            ))}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:"auto"}}>
+            <span style={{fontSize:12,color:T.textSm}}>Alertar &lt;</span>
+            <select value={alertThreshold} onChange={e=>setAlertThreshold(Number(e.target.value))} style={{...iS,width:"auto",padding:"5px 8px",fontSize:12}}>
+              {[5,7,10,14,21,30].map(d=><option key={d} value={d}>{d} días</option>)}
+            </select>
+          </div>
         </div>
 
-        {loading && !data ? (
+        {loading&&!data?(
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"80px 20px",textAlign:"center"}}>
             <Spinner size={24} color={T.accent}/>
-            <div style={{fontSize:13,color:T.textSm,marginTop:12}}>Cargando productos desde {platformLabel}...</div>
+            <div style={{fontSize:13,color:T.textSm,marginTop:12}}>Cargando datos desde {platformLabel}...</div>
           </div>
-        ) : data ? (
+        ):data?(
           <>
             {/* KPIs */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:20}}>
               {[
-                {label:"Productos",   val:data.total_products, color:T.accentSolid, icon:"📦"},
-                {label:"Stock total", val:fmtInt(data.total_stock), color:T.blue||"#3b82f6", icon:"🔢"},
-                {label:`Vendidas ${days}d`, val:fmtInt(data.total_units), color:T.green, icon:"📈"},
-                {label:"Sin stock",   val:kpiEmpty, color:T.red, icon:"⛔"},
+                {label:`Vendidos ${days}d`,val:fmt(totalUnits),    color:T.accentSolid,icon:"📦"},
+                {label:"Por día",          val:avgRate.toFixed(1), color:T.blue||"#3b82f6",icon:"📅",sub:"uds/día"},
+                {label:"Stock total",      val:fmt(totalStock),    color:T.green,icon:"🔢"},
+                {label:"Días prom.",       val:avgDays??  "—",     color:avgDays&&avgDays<=alertThreshold?(T.yellow||"#eab308"):T.green,icon:"⏳",sub:"de stock"},
+                {label:"Por reponer",      val:kpiLow,             color:T.yellow||"#eab308",icon:"⚠️"},
+                {label:"Sin stock",        val:kpiEmpty,           color:T.red,icon:"⛔"},
               ].map(k=>(
-                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px",display:"flex",alignItems:"center",gap:12}}>
-                  <div style={{width:40,height:40,borderRadius:10,background:k.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{k.icon}</div>
-                  <div>
-                    <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>{k.label}</div>
-                    <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:-0.5,marginTop:1}}>{k.val}</div>
-                  </div>
+                <div key={k.label} style={{background:T.card,border:`1px solid ${k.val>0&&(k.label==="Sin stock"||k.label==="Por reponer")?k.color+"44":T.border}`,borderRadius:12,padding:"14px 14px",cursor:"default"}}>
+                  <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>{k.icon} {k.label}</div>
+                  <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
+                  {k.sub&&<div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.sub}</div>}
                 </div>
               ))}
             </div>
 
-            {/* Sparkline general */}
-            {data.daily_series && Object.keys(data.daily_series).length > 1 && (
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:20}}>
-                <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8}}>UNIDADES VENDIDAS POR DÍA — últimos {days} días</div>
-                {(() => {
-                  const entries = Object.entries(data.daily_series).sort(([a],[b])=>a.localeCompare(b));
-                  const vals = entries.map(([,v])=>v);
-                  const max  = Math.max(1,...vals);
-                  const W=1100, H=60, P=4;
-                  const pts = vals.map((v,i)=>{
-                    const x = P+(i/(Math.max(1,vals.length-1)))*(W-2*P);
-                    const y = H-P-((v/max)*(H-2*P));
-                    return `${x},${y}`;
-                  }).join(" ");
-                  return (
-                    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block"}}>
-                      <defs>
-                        <linearGradient id="sfill" x1="0" x2="0" y1="0" y2="1">
-                          <stop offset="0%" stopColor={T.accentSolid} stopOpacity="0.2"/>
-                          <stop offset="100%" stopColor={T.accentSolid} stopOpacity="0"/>
-                        </linearGradient>
-                      </defs>
-                      <polygon points={`${P},${H} ${pts} ${W-P},${H}`} fill="url(#sfill)"/>
-                      <polyline points={pts} fill="none" stroke={T.accentSolid} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  );
-                })()}
+            {/* Tabs */}
+            <div style={{display:"flex",gap:2,marginBottom:16,background:T.surface,borderRadius:10,padding:3,width:"fit-content"}}>
+              {TABS.map(t=>(
+                <button key={t.id} onClick={()=>setTab(t.id)}
+                  style={{padding:"7px 18px",fontSize:12,fontWeight:tab===t.id?700:500,border:"none",borderRadius:8,background:tab===t.id?T.card:"transparent",color:tab===t.id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===t.id?"0 1px 4px rgba(0,0,0,0.15)":"none",transition:"all 0.15s"}}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── TAB RESUMEN ── */}
+            {tab==="resumen"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                {/* Gráfico diario */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 20px 14px"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>Productos vendidos por día</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimos {days} días · {platformLabel}{data.ml_data?" + ML":""}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:22,fontWeight:800,color:T.accentSolid}}>{fmt(totalUnits)}</div>
+                      <div style={{fontSize:10,color:T.textSm}}>unidades totales</div>
+                    </div>
+                  </div>
+                  <BarChart daily={data.daily_series} height={120}/>
+                  {/* ML overlay si aplica */}
+                  {data.ml_data&&Object.keys(data.ml_data.daily||{}).length>0&&(
+                    <div style={{marginTop:12,padding:"10px 12px",background:T.surface,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:11,color:"#f0c14b",fontWeight:700}}>🛒 Mercado Libre:</span>
+                      <span style={{fontSize:11,color:T.textMd}}>{fmt(data.ml_data.total_units)} uds vendidas en el período</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Donuts grid */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
+                  {/* Por variante */}
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Variantes</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Productos vendidos por variante</div>
+                    <DonutChart data={data.by_variant||{}} colors={["#6366f1","#f59e0b","#ef4444","#22c55e","#3b82f6","#ec4899"]}/>
+                  </div>
+                  {/* Por provincia */}
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Provincias</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Productos vendidos por provincia</div>
+                    <DonutChart data={data.by_province||{}} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899"]}/>
+                  </div>
+                  {/* Por método de pago */}
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Método de pago</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Productos vendidos por plataforma</div>
+                    <DonutChart data={data.by_payment||{}} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1","#ef4444","#ec4899"]}/>
+                  </div>
+                </div>
+
+                {/* Hora del día */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>Hora del día</div>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Productos vendidos según la hora</div>
+                  <HourChart byHour={data.by_hour||{}}/>
+                </div>
+
+                {/* Resumen facturación */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>Resumen del período</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+                    {[
+                      {label:"Total facturado",val:fmtARS(totalRev),color:T.green},
+                      {label:"Ticket promedio",val:fmtARS(totalRev/Math.max(1,totalUnits)),color:T.accent},
+                      {label:"Uds/día promedio",val:avgRate.toFixed(1),color:T.blue||"#3b82f6"},
+                      {label:"Días prom. stock",val:avgDays??  "—",color:avgDays&&avgDays<=alertThreshold?(T.yellow||"#eab308"):T.green},
+                    ].map(k=>(
+                      <div key={k.label} style={{background:T.surface,borderRadius:10,padding:"14px 16px",textAlign:"center"}}>
+                        <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
+                        <div style={{fontSize:18,fontWeight:800,color:k.color}}>{k.val}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Toolbar */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"12px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              <input type="text" placeholder="🔍 Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
-                style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
-              <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
-                <option value="all">Todos ({data.total_products})</option>
-                <option value="ok">OK ({kpiOk})</option>
-                <option value="low">Stock bajo ({kpiLow})</option>
-                <option value="empty">Sin stock ({kpiEmpty})</option>
-              </select>
-              <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
-                <option value="units">Ordenar: Más vendidos</option>
-                <option value="revenue">Ordenar: Mayor revenue</option>
-                <option value="stock">Ordenar: Más stock</option>
-                <option value="days_left">Ordenar: Menos días</option>
-              </select>
-              <span style={{fontSize:12,color:T.textSm,flexShrink:0}}>{products.length} producto{products.length!==1?"s":""}</span>
-            </div>
-
-            {/* Tabla de productos */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-              {/* Header */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 90px 90px 90px 90px 100px 36px",gap:0,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"10px 16px"}}>
-                {["Producto","Stock","Vendidas","Revenue","Días rest.","Estado",""].map((h,i)=>(
-                  <div key={i} style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,textAlign:i===0?"left":"right"}}>{h}</div>
-                ))}
-              </div>
-
-              {products.length === 0 ? (
-                <div style={{padding:"50px 20px",textAlign:"center"}}>
-                  <div style={{fontSize:32,marginBottom:8}}>📭</div>
-                  <div style={{fontSize:14,color:T.textSm}}>Sin resultados</div>
-                </div>
-              ) : products.map(p => {
-                const st = statusOf(p);
-                const expanded = expandedId === p.id;
-                return (
-                  <div key={p.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
-                    {/* Fila producto */}
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 90px 90px 90px 90px 100px 36px",gap:0,padding:"12px 16px",alignItems:"center",cursor:p.variants.length>1?"pointer":"default",transition:"background 0.1s",background:expanded?T.surface:"transparent"}}
-                      onClick={()=>p.variants.length>1&&setExpandedId(expanded?null:p.id)}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-                        {p.imagen
-                          ? <img src={p.imagen} alt="" style={{width:36,height:36,borderRadius:8,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
-                          : <div style={{width:36,height:36,borderRadius:8,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,border:`1px solid ${T.border}`}}>📦</div>
-                        }
-                        <div style={{minWidth:0}}>
-                          <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
-                          <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{p.variants.length} variante{p.variants.length!==1?"s":""}</div>
-                        </div>
-                      </div>
-                      <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.text}}>{fmtInt(p.stock_total)}</div>
-                      <div style={{textAlign:"right",fontSize:13,color:T.textMd}}>{fmtInt(p.units_sold)}</div>
-                      <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmtARS(p.revenue)}</div>
-                      <div style={{textAlign:"right",fontSize:13,fontWeight:600,color:statusColor(st)}}>
-                        {p.days_left===null?"—":p.days_left>999?"999+":p.days_left+"d"}
-                      </div>
-                      <div style={{textAlign:"right"}}>
-                        <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:statusBg(st),color:statusColor(st),fontWeight:700}}>{statusLabel(st)}</span>
-                      </div>
-                      <div style={{textAlign:"right",fontSize:14,color:T.textSm,transition:"transform 0.2s",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>
-                        {p.variants.length > 1 ? "›" : ""}
-                      </div>
-                    </div>
-
-                    {/* Variantes expandidas */}
-                    {expanded && (
-                      <div style={{background:T.surface,borderTop:`1px solid ${T.borderL}`}}>
-                        {/* Header variantes */}
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px 80px 80px 90px",gap:0,padding:"7px 16px 7px 62px",borderBottom:`1px solid ${T.borderL}`}}>
-                          {["Variante / SKU","Stock","Vendidas","Revenue","Días","Estado"].map((h,i)=>(
-                            <div key={i} style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,textAlign:i===0?"left":"right"}}>{h}</div>
-                          ))}
-                        </div>
-                        {p.variants.map(v => {
-                          const vst = v.stock===0?"empty":v.days_left!==null&&v.days_left<15?"low":"ok";
-                          return (
-                            <div key={v.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px 80px 80px 90px",gap:0,padding:"9px 16px 9px 62px",borderBottom:`1px solid ${T.borderL}`,alignItems:"center"}}>
-                              <div>
-                                <div style={{fontSize:12,fontWeight:500,color:T.text}}>{v.nombre}</div>
-                                {v.sku&&<div style={{fontSize:10,color:T.textSm}}>SKU: {v.sku}</div>}
-                              </div>
-                              <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:T.text}}>{fmtInt(v.stock)}</div>
-                              <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmtInt(v.units_sold)}</div>
-                              <div style={{textAlign:"right",fontSize:11,color:T.textMd}}>{fmtARS(v.revenue)}</div>
-                              <div style={{textAlign:"right",fontSize:12,fontWeight:600,color:statusColor(vst)}}>
-                                {v.days_left===null?"—":v.days_left>999?"999+":v.days_left+"d"}
-                              </div>
-                              <div style={{textAlign:"right"}}>
-                                <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:statusBg(vst),color:statusColor(vst),fontWeight:700}}>{statusLabel(vst)}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+            {/* ── TAB PRODUCTOS ── */}
+            {tab==="productos"&&(
+              <>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <input type="text" placeholder="🔍 Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
+                    style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
+                  <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd}}>
+                    <input type="checkbox" id="gv" checked={groupVariants} onChange={e=>setGroupVariants(e.target.checked)} style={{cursor:"pointer"}}/>
+                    <label htmlFor="gv" style={{cursor:"pointer"}}>Agrupar variantes</label>
                   </div>
-                );
-              })}
-            </div>
+                  <span style={{fontSize:11,color:T.textSm}}>{filtered.length} productos</span>
+                </div>
+
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                  {/* Header */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"9px 16px",alignItems:"center"}}>
+                    {[
+                      {label:"Producto",col:null},
+                      {label:"Stock",col:"stock"},
+                      {label:"Vendidos",col:"units"},
+                      {label:"Tasa/día",col:"rate"},
+                      {label:"Días",col:"days"},
+                      {label:"Facturación",col:"revenue"},
+                      {label:"Proyección",col:null},
+                      {label:"",col:null},
+                    ].map((h,i)=>(
+                      <div key={i} onClick={()=>h.col&&toggleSort(h.col)}
+                        style={{fontSize:10,textTransform:"uppercase",color:h.col?T.accent:T.textSm,fontWeight:700,letterSpacing:0.5,textAlign:i===0?"left":"right",cursor:h.col?"pointer":"default",userSelect:"none"}}>
+                        {h.label}{h.col&&<SH col={h.col}/>}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Totales */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,background:T.surface,borderBottom:`2px solid ${T.border}`,padding:"8px 16px",alignItems:"center"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm}}>TOTAL</div>
+                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.text}}>{fmt(totalStock)}</div>
+                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.text}}>{fmt(totalUnits)}</div>
+                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.accent}}>{avgRate.toFixed(1)}</div>
+                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:avgDays&&avgDays<=alertThreshold?(T.yellow||"#eab308"):T.green}}>{avgDays??  "—"}</div>
+                    <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:T.text}}>{fmtARS(totalRev)}</div>
+                    <div/>
+                    <div/>
+                  </div>
+
+                  {filtered.length===0?(
+                    <div style={{padding:"50px 20px",textAlign:"center"}}><div style={{fontSize:32,marginBottom:8}}>📭</div><div style={{fontSize:14,color:T.textSm}}>Sin resultados</div></div>
+                  ):filtered.map(p=>{
+                    const r=rate(p);
+                    const dl=dLeft(p.stock_total,r);
+                    const sc=stColor(dl);
+                    const expanded=expandedId===p.id;
+                    const pctTotal=totalUnits>0?(p.units_sold/totalUnits*100).toFixed(1):0;
+                    // Barra proyección
+                    const projPct=dl===null?0:Math.min(100,(dl/90)*100);
+                    return (
+                      <div key={p.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                        <div onClick={()=>setExpandedId(expanded?null:p.id)}
+                          style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,padding:"11px 16px",alignItems:"center",cursor:"pointer",background:expanded?T.surface+"99":"transparent",transition:"background 0.1s"}}>
+                          {/* Producto */}
+                          <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                            {p.imagen?<img src={p.imagen} alt="" style={{width:32,height:32,borderRadius:7,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
+                              :<div style={{width:32,height:32,borderRadius:7,background:T.surface,flexShrink:0,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>📦</div>}
+                            <div style={{minWidth:0}}>
+                              <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                              <div style={{fontSize:10,color:T.textSm}}>{p.variants.length} variante{p.variants.length!==1?"s":""} · {pctTotal}% del total</div>
+                            </div>
+                          </div>
+                          <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:p.stock_total===0?T.red:T.text}}>{fmt(p.stock_total)}</div>
+                          <div style={{textAlign:"right",fontSize:13,color:T.textMd}}>{fmt(p.units_sold)}</div>
+                          <div style={{textAlign:"right",fontSize:12,fontWeight:600,color:T.accent}}>{r>0?r.toFixed(1):"—"}</div>
+                          <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:sc}}>{dl===null?"—":dl===0?"0":dl+"d"}</div>
+                          <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmtARS(p.revenue)}</div>
+                          {/* Barra proyección */}
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <div style={{flex:1,height:6,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                              <div style={{height:"100%",width:`${projPct}%`,background:sc,borderRadius:10,transition:"width 0.4s"}}/>
+                            </div>
+                            <span style={{fontSize:9,color:T.textSm,flexShrink:0,minWidth:24,textAlign:"right"}}>{dl===null?"—":dl>90?"+90d":dl+"d"}</span>
+                          </div>
+                          <div style={{textAlign:"right",fontSize:13,color:T.textSm,transition:"transform 0.2s",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>›</div>
+                        </div>
+
+                        {/* Variantes */}
+                        {expanded&&(
+                          <div style={{background:T.surface,borderTop:`1px solid ${T.borderL}`}}>
+                            <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,padding:"6px 16px 6px 58px",borderBottom:`1px solid ${T.borderL}`,background:T.bg+"88"}}>
+                              {["Variante","Stock","Vendidos","Tasa","Días","Revenue","Proyección",""].map((h,i)=>(
+                                <div key={i} style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,textAlign:i===0?"left":"right"}}>{h}</div>
+                              ))}
+                            </div>
+                            {p.variants.map(v=>{
+                              const vr=v.units_sold/days;
+                              const vd=dLeft(v.stock,vr);
+                              const vc=stColor(vd);
+                              const vPct=Math.min(100,(vd??0)/90*100);
+                              return (
+                                <div key={v.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px 70px 100px 130px 28px",gap:0,padding:"8px 16px 8px 58px",borderBottom:`1px solid ${T.borderL}`,alignItems:"center"}}>
+                                  <div>
+                                    <div style={{fontSize:12,fontWeight:500,color:T.text}}>{v.nombre}</div>
+                                    {v.sku&&<div style={{fontSize:10,color:T.textSm}}>SKU: {v.sku}</div>}
+                                  </div>
+                                  <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:v.stock===0?T.red:T.text}}>{fmt(v.stock)}</div>
+                                  <div style={{textAlign:"right",fontSize:12,color:T.textMd}}>{fmt(v.units_sold)}</div>
+                                  <div style={{textAlign:"right",fontSize:11,color:T.accent,fontWeight:600}}>{vr>0?vr.toFixed(1):"—"}</div>
+                                  <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:vc}}>{vd===null?"—":vd+"d"}</div>
+                                  <div style={{textAlign:"right",fontSize:11,color:T.textMd}}>{fmtARS(v.revenue)}</div>
+                                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                    <div style={{flex:1,height:5,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                                      <div style={{height:"100%",width:`${vPct}%`,background:vc,borderRadius:10}}/>
+                                    </div>
+                                    <span style={{fontSize:9,color:T.textSm,minWidth:20,textAlign:"right"}}>{vd===null?"—":vd>90?"+90":vd+"d"}</span>
+                                  </div>
+                                  <div/>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:10,padding:"0 4px"}}>
+                  Stock actual: última actualización {new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}h · Días de stock calculado en base a la velocidad de venta de los últimos {days} días
+                </div>
+              </>
+            )}
+
+            {/* ── TAB ALERTAS ── */}
+            {tab==="alertas"&&(
+              alertas.length===0?(
+                <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                  <div style={{fontSize:36,marginBottom:10}}>✅</div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.green}}>Todo el stock está OK</div>
+                  <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Ningún producto tiene menos de {alertThreshold} días de stock</div>
+                </div>
+              ):(
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  <div style={{fontSize:12,color:T.textSm,marginBottom:4}}>
+                    <strong style={{color:T.red}}>{alertas.filter(a=>a.status==="empty").length}</strong> sin stock ·{" "}
+                    <strong style={{color:T.yellow||"#eab308"}}>{alertas.filter(a=>a.status==="low").length}</strong> para reponer en menos de {alertThreshold} días
+                  </div>
+                  {alertas.map((a,i)=>{
+                    const c=a.status==="empty"?T.red:(T.yellow||"#eab308");
+                    return (
+                      <div key={i} style={{background:T.card,border:`1.5px solid ${c}44`,borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",gap:14}}>
+                        {a.imagen?<img src={a.imagen} alt="" style={{width:48,height:48,borderRadius:10,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
+                          :<div style={{width:48,height:48,borderRadius:10,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,border:`1px solid ${T.border}`}}>📦</div>}
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.producto}</div>
+                          <div style={{fontSize:12,color:T.textMd,marginTop:2}}>{a.variante}{a.sku?` · SKU: ${a.sku}`:""}</div>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",gap:12}}>
+                            <span>Stock: <strong style={{color:a.stock===0?T.red:T.text}}>{fmt(a.stock)} uds</strong></span>
+                            {a.rate>0&&<span>Tasa: <strong style={{color:T.accent}}>{a.rate.toFixed(1)}/día</strong></span>}
+                          </div>
+                        </div>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontSize:26,fontWeight:800,color:c,letterSpacing:-1,lineHeight:1}}>
+                            {a.status==="empty"?"0":a.daysLeft??  "?"}
+                          </div>
+                          <div style={{fontSize:10,color:T.textSm,marginBottom:6}}>días restantes</div>
+                          <span style={{fontSize:10,padding:"3px 9px",borderRadius:5,background:c+"22",color:c,fontWeight:700}}>
+                            {a.status==="empty"?"⛔ Sin stock":"⚠️ Reponer pronto"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
           </>
-        ) : (
+        ):(
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
             <div style={{fontSize:32,marginBottom:12}}>🔌</div>
             <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Conectá tu tienda</div>
-            <div style={{fontSize:13,color:T.textSm}}>Conectá Tienda Nube o Shopify desde Configuración para ver tu stock.</div>
+            <div style={{fontSize:13,color:T.textSm}}>Conectá Tienda Nube o Shopify desde Configuración para ver tu stock y estadísticas.</div>
           </div>
         )}
       </div>
