@@ -942,10 +942,12 @@ function Spinner({size=14,color="#fff",style={}}) {
 // Animated page wrapper - triggers re-animation on key change
 function PageView({children, pageKey, T}) {
   return (
-    <div key={pageKey} className="gh-page" style={{flex:1,position:"relative",overflow:"hidden"}}>
-      {/* Aurora background unificado para todas las paginas internas */}
-      <div aria-hidden style={{position:"absolute",top:-180,left:"50%",transform:"translateX(-50%)",width:1000,height:480,background:"radial-gradient(ellipse at center, rgba(139,92,246,0.10) 0%, transparent 65%)",pointerEvents:"none",filter:"blur(40px)",zIndex:0}}/>
-      <div aria-hidden style={{position:"absolute",top:80,right:-120,width:420,height:420,background:"radial-gradient(circle, rgba(74,222,128,0.07) 0%, transparent 70%)",pointerEvents:"none",filter:"blur(60px)",zIndex:0}}/>
+    <div key={pageKey} className="gh-page" style={{flex:1,position:"relative"}}>
+      {/* Aurora clipeada en su propio contenedor para no romper position:sticky de los hijos */}
+      <div aria-hidden style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none",zIndex:0}}>
+        <div style={{position:"absolute",top:-180,left:"50%",transform:"translateX(-50%)",width:1000,height:480,background:"radial-gradient(ellipse at center, rgba(139,92,246,0.10) 0%, transparent 65%)",filter:"blur(40px)"}}/>
+        <div style={{position:"absolute",top:80,right:-120,width:420,height:420,background:"radial-gradient(circle, rgba(74,222,128,0.07) 0%, transparent 70%)",filter:"blur(60px)"}}/>
+      </div>
       <div style={{position:"relative",zIndex:1,display:"flex",flexDirection:"column",minHeight:"100%"}}>
         {children}
       </div>
