@@ -384,7 +384,7 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
         const adsArr = [];
         let page = await metaGet(`${cfg.ad_account_id}/ads`, {
           limit: 500,
-          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec,template_url}",
+          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec,template_url,effective_object_story_id}",
         }, cfg.access_token);
         adsArr.push(...(page.data || []));
         let nextUrl = page.paging?.next || null;
@@ -398,7 +398,7 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
           nextUrl = j.paging?.next || null;
         }
         // Helper: extrae la URL de destino del creative (multiples fallbacks)
-        const linkOfAd = (ad) => {
+        const linkOfAdCreative = (ad) => {
           const cr = ad.creative || {};
           if (cr.link_url) return cr.link_url;
           if (cr.template_url) return cr.template_url;
@@ -417,6 +417,45 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
               if (lu?.url) return lu.url;
             }
           }
+          return null;
+        };
+        // Resolver URLs de ads que usan post existente (effective_object_story_id)
+        const extractLinkFromPost = (post) => {
+          if (!post) return null;
+          const atts = post.attachments?.data || [];
+          for (const att of atts) {
+            if (att.target?.url) return att.target.url;
+            if (att.url) return att.url;
+            const subs = att.subattachments?.data || [];
+            for (const sub of subs) {
+              if (sub.target?.url) return sub.target.url;
+              if (sub.url) return sub.url;
+            }
+          }
+          return null;
+        };
+        const adsWithPostNoLink = adsArr.filter(a => !linkOfAdCreative(a) && a.creative?.effective_object_story_id);
+        const postIds = [...new Set(adsWithPostNoLink.map(a => a.creative.effective_object_story_id))];
+        const postLinks = {};
+        for (let i = 0; i < postIds.length; i += 50) {
+          const chunk = postIds.slice(i, i + 50);
+          try {
+            const params = new URLSearchParams({ ids: chunk.join(","), fields: "attachments,permalink_url", access_token: cfg.access_token });
+            const r = await fetch(`${META_BASE}/?${params}`);
+            const j = await r.json();
+            if (r.ok && !j.error && typeof j === "object") {
+              for (const [pid, obj] of Object.entries(j)) {
+                const link = extractLinkFromPost(obj);
+                if (link) postLinks[pid] = link;
+              }
+            }
+          } catch (_) {}
+        }
+        const linkOfAd = (ad) => {
+          const direct = linkOfAdCreative(ad);
+          if (direct) return direct;
+          const pid = ad.creative?.effective_object_story_id;
+          if (pid && postLinks[pid]) return postLinks[pid];
           return null;
         };
         // Normaliza URL: minusculas, sin proto, sin www, sin query/hash, sin trailing slash.
@@ -1221,7 +1260,7 @@ export default async function handler(req, res) {
         return res.status(502).json({ error: `No se pudieron traer los ads para mapear: ${e.message}` });
       }
 
-      const linkOfAd = (ad) => {
+      const linkOfAdCreative = (ad) => {
         const cr = ad.creative || {};
         if (cr.link_url) return cr.link_url;
         if (cr.template_url) return cr.template_url;
@@ -1240,6 +1279,47 @@ export default async function handler(req, res) {
             if (lu?.url) return lu.url;
           }
         }
+        return null;
+      };
+      const extractLinkFromPost = (post) => {
+        if (!post) return null;
+        const atts = post.attachments?.data || [];
+        for (const att of atts) {
+          if (att.target?.url) return att.target.url;
+          if (att.url) return att.url;
+          const subs = att.subattachments?.data || [];
+          for (const sub of subs) {
+            if (sub.target?.url) return sub.target.url;
+            if (sub.url) return sub.url;
+          }
+        }
+        return null;
+      };
+      // Para ads que usan post existente (effective_object_story_id) sin link
+      // directo en creative, hay que fetchear el post para sacar la URL del
+      // attachment. Batched de a 50 ids para no morir.
+      const adsWithPostNoLink = ads.filter(a => !linkOfAdCreative(a) && a.creative?.effective_object_story_id);
+      const postIds = [...new Set(adsWithPostNoLink.map(a => a.creative.effective_object_story_id))];
+      const postLinks = {};
+      for (let i = 0; i < postIds.length; i += 50) {
+        const chunk = postIds.slice(i, i + 50);
+        try {
+          const params = new URLSearchParams({ ids: chunk.join(","), fields: "attachments,permalink_url", access_token: cfg.access_token });
+          const r = await fetch(`${META_BASE}/?${params}`);
+          const j = await r.json();
+          if (r.ok && !j.error && typeof j === "object") {
+            for (const [pid, obj] of Object.entries(j)) {
+              const link = extractLinkFromPost(obj);
+              if (link) postLinks[pid] = link;
+            }
+          }
+        } catch (_) { /* ignorar */ }
+      }
+      const linkOfAd = (ad) => {
+        const direct = linkOfAdCreative(ad);
+        if (direct) return direct;
+        const pid = ad.creative?.effective_object_story_id;
+        if (pid && postLinks[pid]) return postLinks[pid];
         return null;
       };
       // Normaliza URL para comparar: minusculas, sin protocolo, sin www,
