@@ -9615,7 +9615,8 @@ function AppMetaAds({T, user, onHome}) {
       return {
         id: `_temp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
         _isTemp: true,
-        _uploading: true,
+        _queued: true,    // empieza en cola
+        _uploading: false,
         filename: f.name,
         filename_base: f.name.replace(/\.[^.]+$/, ""),
         kind: isVideo ? "video" : "image",
@@ -9628,7 +9629,7 @@ function AppMetaAds({T, user, onHome}) {
     setCreatives(prev => [...temps, ...prev]);
     setUploadingFile(true);
 
-    // Pre-fetch creds una sola vez (era el cuello de botella: 500ms x N archivos)
+    // Pre-fetch creds una sola vez
     const creds = await metaApi("upload_creds","GET",null,{acc_id:activeAccId});
     if (creds.error) {
       toast("Error: "+creds.error,"error");
@@ -9642,6 +9643,8 @@ function AppMetaAds({T, user, onHome}) {
     const worker = async () => {
       while (i < files.length) {
         const idx = i++;
+        // Marcar este como "subiendo" (sale de la cola)
+        setCreatives(prev => prev.map(c => c.id === temps[idx].id ? { ...c, _queued: false, _uploading: true } : c));
         await handleUploadFile(files[idx], temps[idx].id, temps[idx].url, creds);
       }
     };
@@ -11077,8 +11080,8 @@ LONGITUD Y FORMATO
                       <button onClick={handleClearQueue} style={BtnSec}>Limpiar todo</button>
                     </div>
                     {creatives.map(c => (
-                      <div key={c.id} style={{background:T.card,border:`2px solid ${c._uploading?T.blue+"55":c._error?T.red+"55":c.copy?.trim()?T.green+"55":T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:18,boxShadow:c.copy?.trim()?`0 4px 14px ${T.green}10`:"0 2px 8px rgba(0,0,0,0.15)",position:"relative",opacity:c._uploading?0.85:1,transition:"all 0.2s"}}>
-                        <div style={{position:"absolute",top:-9,left:14,padding:"2px 10px",borderRadius:6,background:c._uploading?T.blue:c._error?T.red:c.copy?.trim()?T.green:T.borderL,color:c._uploading||c._error||c.copy?.trim()?"#fff":T.textSm,fontSize:9,fontWeight:800,letterSpacing:0.6,textTransform:"uppercase"}}>Ad #{creatives.indexOf(c)+1}</div>
+                      <div key={c.id} style={{background:T.card,border:`2px solid ${c._uploading?T.blue+"55":c._queued?T.borderL:c._error?T.red+"55":c.copy?.trim()?T.green+"55":T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:18,boxShadow:c.copy?.trim()?`0 4px 14px ${T.green}10`:"0 2px 8px rgba(0,0,0,0.15)",position:"relative",opacity:c._queued?0.65:(c._uploading?0.85:1),transition:"all 0.2s"}}>
+                        <div style={{position:"absolute",top:-9,left:14,padding:"2px 10px",borderRadius:6,background:c._uploading?T.blue:c._queued?T.borderL:c._error?T.red:c.copy?.trim()?T.green:T.borderL,color:c._uploading||c._error||c.copy?.trim()?"#fff":T.textSm,fontSize:9,fontWeight:800,letterSpacing:0.6,textTransform:"uppercase"}}>Ad #{creatives.indexOf(c)+1}</div>
                         {/* Top row: thumbnail + filename + badges + remove */}
                         <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:10}}>
                           <div style={{width:90,height:90,flexShrink:0,borderRadius:8,background:T.bg,border:`1px solid ${T.border}`,overflow:"hidden",position:"relative"}}>
@@ -11103,17 +11106,19 @@ LONGITUD Y FORMATO
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                               <span style={{fontSize:14,fontWeight:700,color:T.text,wordBreak:"break-all"}}>{c.filename}</span>
-                              {c._uploading
-                                ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo a Meta…</span>
-                                : c._error || c.video_error
-                                  ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>✗ ERROR</span>
-                                  : c.copy?.trim()
-                                    ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
-                                    : c.ia_status === "analyzed"
-                                      ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
-                                      : analyzingCreative===c.id
-                                        ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}><Spinner size={9} color={T.accent}/> Generando copy…</span>
-                                        : <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,border:`1px solid ${T.border}`}}>PENDIENTE</span>
+                              {c._queued
+                                ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:700,letterSpacing:0.3,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:4}}>⏳ En cola</span>
+                                : c._uploading
+                                  ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo a Meta…</span>
+                                  : c._error || c.video_error
+                                    ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>✗ ERROR</span>
+                                    : c.copy?.trim()
+                                      ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
+                                      : c.ia_status === "analyzed"
+                                        ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
+                                        : analyzingCreative===c.id
+                                          ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}><Spinner size={9} color={T.accent}/> Generando copy…</span>
+                                          : <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,border:`1px solid ${T.border}`}}>PENDIENTE</span>
                               }
                             </div>
                           </div>
