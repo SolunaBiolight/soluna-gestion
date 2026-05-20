@@ -231,10 +231,13 @@ async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes
   const systemText = copy_agent?.trim()
     ? `${COPY_SYSTEM}\n\n## INSTRUCCIONES DEL AGENTE (definidas por el dueño de la cuenta — PRIORIDAD MAXIMA, sobreescriben cualquier default):\n${copy_agent.trim()}`
     : COPY_SYSTEM;
+  // Variabilidad: temperature alta + seed que cambia cada vez para que copies
+  // del mismo creativo salgan distintos cada generacion.
+  const randSeed = Math.floor(Math.random() * 100000);
   const payload = {
     system_instruction: { parts: [{ text: systemText }] },
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    generationConfig: { response_mime_type: "application/json", temperature: 0.7, max_output_tokens: 3000 },
+    contents: [{ role: "user", parts: [{ text: userPrompt + `\n\n(seed: ${randSeed})` }] }],
+    generationConfig: { response_mime_type: "application/json", temperature: 0.95, top_p: 0.95, max_output_tokens: 3000 },
   };
   const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -1356,25 +1359,36 @@ export default async function handler(req, res) {
       const postIds = [...new Set(adsWithPostNoLink.map(a => a.creative.effective_object_story_id))];
       const postLinks = {};
       const postErrors = [];
+      const postRawSamples = []; // primeros 3 raw responses para diagnostico
+      // Helper: probar VARIAS estrategias para sacar el link del post.
       const fetchOnePost = async (pid, token) => {
+        // Estrategia 1: pedir attachments sin subfields explicitos
+        // (Meta devuelve subfields default que suelen incluir target/url).
         try {
-          const obj = await metaGet(pid, { fields: "attachments{target,url,unshimmed_url,subattachments,type,title,description},link,call_to_action,message,permalink_url" }, token);
+          const obj = await metaGet(pid, { fields: "attachments,link,call_to_action,message,permalink_url,source,picture" }, token);
+          if (postRawSamples.length < 3) postRawSamples.push({ pid, keys: Object.keys(obj), att_count: obj.attachments?.data?.length || 0 });
           const link = extractLinkFromPost(obj);
-          return { pid, link, raw: obj };
+          if (link) return { pid, link };
         } catch (e) {
-          return { pid, link: null, error: e.message };
+          postErrors.push(`${pid} (intento 1): ${e.message}`);
         }
+        // Estrategia 2: con subfields explicitos via {} syntax
+        try {
+          const obj = await metaGet(pid, { fields: "attachments{target,url,unshimmed_url,subattachments{target,url,unshimmed_url},type,title,description,media,description_tags},link,message" }, token);
+          const link = extractLinkFromPost(obj);
+          if (link) return { pid, link };
+        } catch (e) {
+          postErrors.push(`${pid} (intento 2): ${e.message}`);
+        }
+        return { pid, link: null };
       };
       // Parallel en lotes de 8 (cuidamos rate limit)
       for (let i = 0; i < postIds.length; i += 8) {
         const chunk = postIds.slice(i, i + 8);
         const results = await Promise.all(chunk.map(pid => fetchOnePost(pid, cfg.access_token)));
-        for (const r of results) {
-          if (r.link) postLinks[r.pid] = r.link;
-          else if (r.error) postErrors.push(`${r.pid}: ${r.error}`);
-        }
-        // Retry con page_access_token los que fallaron
-        if (cfg.page_access_token) {
+        for (const r of results) { if (r.link) postLinks[r.pid] = r.link; }
+        // Retry con page_access_token los que fallaron (page-owned posts requieren el page token)
+        if (cfg.page_access_token && cfg.page_access_token !== cfg.access_token) {
           const stillMissing = chunk.filter(pid => !postLinks[pid]);
           if (stillMissing.length) {
             const retries = await Promise.all(stillMissing.map(pid => fetchOnePost(pid, cfg.page_access_token)));
@@ -1486,7 +1500,9 @@ export default async function handler(req, res) {
           post_links_resolved: Object.keys(postLinks).length,
           creative_links_resolved: Object.keys(creativeLinks).length,
           post_errors_sample: postErrors.slice(0, 5),
+          post_raw_samples: postRawSamples,
           unmatched_sample: unmatchedAds,
+          has_page_token: Boolean(cfg.page_access_token),
         },
       });
     }

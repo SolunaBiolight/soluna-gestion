@@ -9407,16 +9407,11 @@ function AppMetaAds({T, user, onHome}) {
       setCreatives(prev=>[cWithMeta,...prev]);
       toast(`Subido ✓ (${up.kind === "video" ? "video" : "imagen"})`,"success");
 
-      // 4) Análisis IA + auto-copy en background (sin await)
-      // Para imagen: backend baja el url publico de Meta. Para video: skip
-      // vision (la base64 no entra por Vercel) — pero genera copy con
-      // filename + brand + url igual.
-      if (up.kind === "image") {
-        handleAnalyzeCreative(cWithMeta);
-      } else {
-        // Video: solo generar copy text-only desde brand + filename + url
-        handleAnalyzeCreative(cWithMeta, { skip_vision: true });
-      }
+      // 4) Generar copy rapido en background (text-only, sin Vision).
+      // Vision tarda mucho — el usuario prefiere copy rapido con randomness
+      // basada en brand + filename + url. Si quiere el analisis profundo,
+      // hay un boton "🤖 Analizar profundo" por card.
+      handleAnalyzeCreative(cWithMeta, { skip_vision: true });
     } catch(e){
       toast("Error: "+(e.message||"upload falló"),"error");
     } finally { setUploadingFile(false); }
