@@ -370,7 +370,7 @@ function buildOrdersFromAPI(data) {
       esSucursal:o.fulfillments?.some(f=>f.shipping?.option?.name?.toLowerCase().includes('sucursal'))||o.shipping_option==="Punto de retiro"||false,
       pickupDetails:o.shipping_pickup_details||null,
       canal:o.storefront||'', tracking:o.shipping_tracking_number||'',
-      linkOrden:`https://solunabiolight2.mitiendanube.com/admin/orders/${o.id}`,
+      linkOrden:o.id?`https://www.tiendanube.com/admin/orders/${o.id}`:"",
       fechaPago:o.paid_at||'', fechaEnvio:o.shipped_at||'',
       productos:Array.isArray(o.products)?o.products.map(p=>({
         nombre:p.name||p.product_name||'',
@@ -8568,7 +8568,7 @@ function ProductEditor({T, initialProduct, onSave, onCancel}) {
 
         <div style={{marginBottom:14}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Nombre</div>
-          <input value={name} onChange={e=>setName(e.target.value)} placeholder='Ej. "Gomitas Azul de Metileno"' style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"}}/>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder='Ej. "Producto A"' style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"}}/>
         </div>
 
         <div style={{marginBottom:14}}>
@@ -9947,8 +9947,6 @@ function AppMetaAds({T, user, onHome}) {
                     )}
                     {/* Date range con calendario inline */}
                     <DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/>
-                    <span style={{fontSize:11,color:T.textSm,marginLeft:6}} title="ROAS break-even: arriba verde, abajo rojo">ROAS BE</span>
-                    <input type="number" step="0.1" min="0.5" max="20" value={aRoasBe} onChange={e=>setARoasBe(parseFloat(e.target.value)||1)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,width:64,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     {/* Columnas */}
                     <div style={{position:"relative"}}>
                       <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⚙ Columnas</button>
@@ -10060,7 +10058,7 @@ function AppMetaAds({T, user, onHome}) {
                     spend:          { label:"Gasto",          render: r => "$"+fmt(r.spend),            total: () => "$"+fmt(sumSpend), bold:true },
                     purchases:      { label:"Compras",        render: r => r.purchases,                 total: () => sumPurchases },
                     purchase_value: { label:"Valor compras",  render: r => "$"+fmt(r.purchase_value),   total: () => "$"+fmt(sumPurchaseValue) },
-                    roas:           { label:"ROAS",           render: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); const c=r.roas>=be?T.green:(r.roas>0?T.red:T.textSm); return <span style={{color:c}}>{fmt(r.roas)}x{be!==aRoasBe?<span style={{fontSize:9,opacity:0.7,marginLeft:4}}>/{be.toFixed(1)}</span>:""}</span>;}, total: () => fmt(totalRoas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => totalRoas >= aRoasBe ? T.green : (totalRoas > 0 ? T.red : T.textSm), bold:true },
+                    roas:           { label:"ROAS",           render: r => {const be=effectiveBeForRow(r,aLevel,null); if(be==null){return <span style={{color:T.text}}>{fmt(r.roas)}x</span>;} const c=r.roas>=be?T.green:(r.roas>0?T.red:T.textSm); return <span style={{color:c}}>{fmt(r.roas)}x <span style={{fontSize:9,opacity:0.7,marginLeft:2}}>/{be.toFixed(1)}</span></span>;}, total: () => fmt(totalRoas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,null); if(be==null) return T.text; return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => T.text, bold:true },
                     cpa:            { label:"CPA",            render: r => r.cpa ? "$"+fmt(r.cpa) : "—", total: () => totalCpa ? "$"+fmt(totalCpa) : "—" },
                     ctr:            { label:"CTR",            render: r => fmt(r.ctr)+"%",              total: () => fmt(totalCtr)+"%" },
                     cpm:            { label:"CPM",            render: r => "$"+fmt(r.cpm),              total: () => "—" },
@@ -10549,7 +10547,7 @@ function AppMetaAds({T, user, onHome}) {
               <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Contexto de marca</div>
               <div style={{fontSize:12,color:T.textSm,marginBottom:12,lineHeight:1.5}}>La IA usa esta info para generar el copy. Producto, beneficios, target, precio, URL de destino.</div>
               <textarea value={brand} onChange={e=>setBrand(e.target.value)}
-                placeholder="Ej: Vendemos anteojos con filtro de luz azul. Colores: Rojo, Naranja, Amarillo. Target: 30-60 años con pantallas. Precio: $25.000. Link: mitienda.com"
+                placeholder="Ej: Describí tu marca y producto/s — qué vendés, beneficios principales, target (edad, género, ocupación), precio, USP, link de destino. Cuanto más detalle, mejor copy genera la IA."
                 style={{...iS,minHeight:200,resize:"vertical",lineHeight:1.6,marginBottom:12}}/>
               <button onClick={handleSaveBrand} disabled={brandSaving} style={{...BtnSec,width:"100%",justifyContent:"center"}}>
                 {brandSaving?<><Spinner size={12} color={T.textMd}/>Guardando...</>:"Guardar brand context"}
