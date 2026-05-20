@@ -122,16 +122,26 @@ function Card({T, children, hoverable, onClick, style={}, padding="lg"}) {
   );
 }
 
-function KPI({T, label, value, sub, color, icon, accent, onClick, compact}) {
+function Skeleton({T, width="72%", height=22, radius=6, style={}}) {
+  return <div style={{width,height,borderRadius:radius,background:T.border,animation:"growith-skeleton 1.4s ease-in-out infinite",...style}}/>;
+}
+
+function KPI({T, label, value, sub, color, icon, accent, onClick, compact, loading}) {
   const c = color||T.accentSolid;
   return (
     <Card T={T} hoverable={!!onClick} onClick={onClick} padding={compact?"md":"lg"} style={{borderColor:accent?c+"55":T.border}}>
       <div style={{display:"flex",alignItems:"flex-start",gap:DS.sp.md}}>
-        {icon&&<div style={{fontSize:compact?16:18,flexShrink:0,opacity:0.9}}>{icon}</div>}
+        {icon&&<div style={{fontSize:compact?16:18,flexShrink:0,opacity:loading?0.3:0.9}}>{icon}</div>}
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:DS.font.xs,textTransform:"uppercase",color:T.textSm,fontWeight:DS.w.semibold,letterSpacing:0.5,marginBottom:5}}>{label}</div>
-          <div style={{fontSize:compact?DS.font["2xl"]:DS.font["3xl"],fontWeight:DS.w.black,color:c,letterSpacing:-0.6,lineHeight:1}}>{value}</div>
-          {sub&&<div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:4}}>{sub}</div>}
+          {loading
+            ? <Skeleton T={T} height={compact?18:24} width="65%" style={{marginBottom:6}}/>
+            : <div style={{fontSize:compact?DS.font["2xl"]:DS.font["3xl"],fontWeight:DS.w.black,color:c,letterSpacing:-0.6,lineHeight:1}}>{value}</div>
+          }
+          {loading
+            ? <Skeleton T={T} height={11} width="45%" style={{marginTop:6}}/>
+            : sub&&<div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:4}}>{sub}</div>
+          }
         </div>
       </div>
     </Card>
@@ -186,39 +196,65 @@ function DSEmpty({T, icon="📭", title, subtitle, action}) {
   );
 }
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed}) {
-  const nav = [
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView}) {
+  const GROUPS = [
+    { group:"OPERACIONES" },
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
-    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count: alerts.envios},
-    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count: alerts.reclamos, badge:"red"},
-    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count: alerts.canjes, badge:"orange"},
-    {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count: alerts.stock, badge:"red"},
+    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
+      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
+    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red",
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"buscar",label:"Buscar pedido"},{id:"reclamos",label:"Lista"},{id:"config",label:"Plantillas"}]},
+    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
+    { group:"ANALYTICS" },
+    {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red"},
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
+    { group:"FINANZAS" },
     {id:"arca",     label:"ARCA",      icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
+    { group:"HERRAMIENTAS" },
     {id:"audio",    label:"Audio",     icon:"M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3zM19 10v2a7 7 0 01-14 0v-2M12 19v3"},
   ];
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
-  const W = collapsed ? 64 : 220;
+  const W = collapsed ? 64 : 224;
+
+  const NavBtn = ({item}) => {
+    const active = page === item.id;
+    const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
+    return (
+      <button onClick={()=>setPage(item.id)} title={collapsed?item.label:undefined}
+        style={{display:"flex",alignItems:"center",gap:10,padding:collapsed?"10px 14px":"9px 12px",
+          background:active?T.accentSolid+"15":"transparent",border:"none",
+          borderLeft:active?`2px solid ${T.accentSolid}`:"2px solid transparent",
+          borderRadius:DS.r.md,cursor:"pointer",textAlign:"left",
+          color:active?T.accent:T.textMd,fontWeight:active?DS.w.semibold:DS.w.medium,
+          fontSize:DS.font.base,fontFamily:"'Inter',system-ui,sans-serif",
+          transition:`all 0.15s ${DS.ease}`,justifyContent:collapsed?"center":"flex-start",position:"relative",width:"100%"}}
+        onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.card;}}
+        onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={item.icon}/></svg>
+        {!collapsed&&<span style={{flex:1}}>{item.label}</span>}
+        {!collapsed&&item.count>0&&<span style={{fontSize:DS.font.xs,fontWeight:DS.w.bold,padding:"1px 7px",borderRadius:DS.r.full,background:badgeColor+"22",color:badgeColor,lineHeight:1.4}}>{item.count>99?"99+":item.count}</span>}
+        {collapsed&&item.count>0&&<span style={{position:"absolute",marginLeft:18,marginTop:-12,width:6,height:6,borderRadius:DS.r.full,background:badgeColor}}/>}
+      </button>
+    );
+  };
+
   return (
-    <div style={{
-      width:W, minWidth:W, height:"100vh", background:T.surface, borderRight:`1px solid ${T.border}`,
-      display:"flex", flexDirection:"column", position:"sticky", top:0,
-      transition:`width 0.22s ${DS.ease}, min-width 0.22s ${DS.ease}`,
-      overflow:"hidden",
-      zIndex:50,
+    <div style={{width:W,minWidth:W,height:"100vh",background:T.surface,borderRight:`1px solid ${T.border}`,
+      display:"flex",flexDirection:"column",position:"sticky",top:0,
+      transition:`width 0.22s ${DS.ease}, min-width 0.22s ${DS.ease}`,overflow:"hidden",zIndex:50,
     }} className="hide-mobile">
       {/* Logo */}
-      <div style={{padding:DS.sp.lg, display:"flex", alignItems:"center", gap:10, borderBottom:`1px solid ${T.border}`, height:60}}>
-        <div style={{width:28, height:28, borderRadius:DS.r.md, background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, boxShadow:`0 2px 8px ${T.accentSolid}40`, flexShrink:0}}>🌙</div>
-        {!collapsed && <span style={{fontWeight:DS.w.bold, fontSize:DS.font.xl, color:T.text, letterSpacing:-0.3}}>Growith</span>}
-        {!collapsed && (
+      <div style={{padding:DS.sp.lg,display:"flex",alignItems:"center",gap:10,borderBottom:`1px solid ${T.border}`,height:60}}>
+        <div style={{width:28,height:28,borderRadius:DS.r.md,background:`linear-gradient(135deg,${T.accentSolid},#a78bfa)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,boxShadow:`0 2px 8px ${T.accentSolid}40`,flexShrink:0}}>🌙</div>
+        {!collapsed&&<span style={{fontWeight:DS.w.bold,fontSize:DS.font.xl,color:T.text,letterSpacing:-0.3}}>Growith</span>}
+        {!collapsed&&(
           <button onClick={()=>setCollapsed(true)} title="Colapsar" style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,color:T.textSm,cursor:"pointer",padding:"3px 5px",display:"flex",alignItems:"center",justifyContent:"center",transition:`all 0.15s ${DS.ease}`}}
             onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
             onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textSm;}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
         )}
-        {collapsed && (
+        {collapsed&&(
           <button onClick={()=>setCollapsed(false)} title="Expandir" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,color:T.textSm,cursor:"pointer",padding:"3px 5px",display:"flex",alignItems:"center",justifyContent:"center",transition:`all 0.15s ${DS.ease}`,marginLeft:-2}}
             onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
             onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textSm;}}>
@@ -228,67 +264,76 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
       </div>
 
       {/* Nav */}
-      <nav style={{flex:1, padding:DS.sp.sm, display:"flex", flexDirection:"column", gap:2, overflowY:"auto"}}>
-        {nav.map(item => {
-          const active = page === item.id;
-          const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
+      <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
+        {GROUPS.map((item,i)=>{
+          if(item.group) {
+            if(collapsed) return null;
+            return (
+              <div key={item.group+i} style={{padding:"10px 12px 3px",fontSize:DS.font.xs,fontWeight:DS.w.bold,color:T.textSm,letterSpacing:0.7,textTransform:"uppercase",opacity:0.55,userSelect:"none"}}>
+                {item.group}
+              </div>
+            );
+          }
+          const active = page===item.id;
+          const activeSub = active && item.subs && !collapsed;
           return (
-            <button key={item.id} onClick={()=>setPage(item.id)} title={collapsed?item.label:undefined}
-              style={{
-                display:"flex", alignItems:"center", gap:10, padding:collapsed?"10px 14px":"9px 12px",
-                background: active ? T.accentSolid+"15" : "transparent",
-                border:"none",
-                borderLeft: active ? `2px solid ${T.accentSolid}` : "2px solid transparent",
-                borderRadius: DS.r.md, cursor:"pointer", textAlign:"left",
-                color: active ? T.accent : T.textMd,
-                fontWeight: active ? DS.w.semibold : DS.w.medium,
-                fontSize: DS.font.base, fontFamily:"'Inter',system-ui,sans-serif",
-                transition:`all 0.15s ${DS.ease}`,
-                justifyContent: collapsed ? "center" : "flex-start",
-                position:"relative",
-              }}
-              onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.card;}}
-              onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={item.icon}/></svg>
-              {!collapsed && <span style={{flex:1}}>{item.label}</span>}
-              {!collapsed && item.count > 0 && (
-                <span style={{
-                  fontSize:DS.font.xs, fontWeight:DS.w.bold, padding:"1px 7px",
-                  borderRadius:DS.r.full, background:badgeColor+"22", color:badgeColor, lineHeight:1.4,
-                }}>{item.count > 99 ? "99+" : item.count}</span>
-              )}
-              {collapsed && item.count > 0 && (
-                <span style={{position:"absolute", marginLeft:18, marginTop:-12, width:6, height:6, borderRadius:DS.r.full, background:badgeColor}}/>
-              )}
-            </button>
+            <React.Fragment key={item.id}>
+              <NavBtn item={item}/>
+              {activeSub && item.subs.map(sub=>{
+                const subActive = (item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id);
+                return (
+                  <button key={sub.id}
+                    onClick={()=>{
+                      setPage(item.id);
+                      if(item.id==="envios") setEnviosTab&&setEnviosTab(sub.id);
+                      if(item.id==="reclamos") setReclamosView&&setReclamosView(sub.id);
+                    }}
+                    style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px 6px 38px",
+                      background:subActive?T.accentSolid+"10":"transparent",border:"none",
+                      borderLeft:subActive?`2px solid ${T.accentSolid}44`:"2px solid transparent",
+                      borderRadius:DS.r.md,cursor:"pointer",textAlign:"left",width:"100%",
+                      color:subActive?T.accent:T.textSm,fontWeight:subActive?DS.w.semibold:DS.w.medium,
+                      fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif",
+                      transition:`all 0.12s ${DS.ease}`}}
+                    onMouseEnter={e=>{if(!subActive)e.currentTarget.style.background=T.card;}}
+                    onMouseLeave={e=>{if(!subActive)e.currentTarget.style.background="transparent";}}>
+                    <span style={{width:4,height:4,borderRadius:"50%",background:subActive?T.accentSolid:T.textSm,opacity:subActive?1:0.4,flexShrink:0}}/>
+                    {sub.label}
+                  </button>
+                );
+              })}
+            </React.Fragment>
           );
         })}
       </nav>
 
       {/* User Section */}
-      <div style={{borderTop:`1px solid ${T.border}`, padding:DS.sp.sm}}>
-        {!collapsed && (
-          <div style={{display:"flex", alignItems:"center", gap:DS.sp.md, padding:DS.sp.sm, marginBottom:DS.sp.xs}}>
-            {user?.photoURL ?
-              <img src={user.photoURL} alt="" style={{width:28, height:28, borderRadius:DS.r.full, border:`1px solid ${T.border}`, flexShrink:0}}/> :
-              <div style={{width:28, height:28, borderRadius:DS.r.full, background:T.accentSolid+"33", color:T.accent, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:DS.w.bold, fontSize:DS.font.md, flexShrink:0}}>{initial}</div>
+      <div style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm}}>
+        {!collapsed&&(
+          <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:DS.sp.sm,marginBottom:DS.sp.xs}}>
+            {user?.photoURL
+              ?<img src={user.photoURL} alt="" style={{width:28,height:28,borderRadius:DS.r.full,border:`1px solid ${T.border}`,flexShrink:0}}/>
+              :<div style={{width:28,height:28,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:DS.font.md,flexShrink:0}}>{initial}</div>
             }
-            <div style={{flex:1, minWidth:0}}>
-              <div style={{fontSize:DS.font.md, fontWeight:DS.w.semibold, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{user?.displayName || user?.email?.split("@")[0]}</div>
-              <div style={{fontSize:DS.font.xs, color:T.textSm}}>{userPlan==="free"?"Plan Free":userPlan==="starter"?"Starter":userPlan==="pro"?"Pro":"Total"}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
+              <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="free"?"Plan Free":userPlan==="starter"?"Starter":userPlan==="pro"?"Pro":"Total"}</div>
             </div>
           </div>
         )}
-        <div style={{display:"flex", flexDirection:collapsed?"column":"row", gap:4}}>
-          <button onClick={()=>setPage("config")} title="Configuración" style={{flex:1, background:"transparent", border:`1px solid ${T.border}`, borderRadius:DS.r.md, color:T.textMd, cursor:"pointer", padding:"6px", fontSize:DS.font.sm, display:"flex", alignItems:"center", justifyContent:"center", gap:5}}>
+        <div style={{display:"flex",flexDirection:collapsed?"column":"row",gap:4}}>
+          <button onClick={()=>setPage("config")} title="Configuración" style={{flex:1,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textMd,cursor:"pointer",padding:"6px",fontSize:DS.font.sm,display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-            {!collapsed && "Config"}
+            {!collapsed&&"Config"}
           </button>
-          <button onClick={onToggleDark} title={darkMode?"Modo claro":"Modo oscuro"} style={{background:"transparent", border:`1px solid ${T.border}`, borderRadius:DS.r.md, color:T.textMd, cursor:"pointer", padding:"6px 9px", fontSize:DS.font.sm}}>
-            {darkMode?"☀":"◑"}
+          <button onClick={onToggleDark} title={darkMode?"Modo claro":"Modo oscuro"} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textMd,cursor:"pointer",padding:"6px 8px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {darkMode
+              ?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              :<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+            }
           </button>
-          {isAdmin && (
-            <button onClick={()=>setPage("admin")} title="Admin" style={{background:"transparent", border:`1px solid ${T.yellow}44`, borderRadius:DS.r.md, color:T.yellow, cursor:"pointer", padding:"6px 9px", fontSize:DS.font.sm}}>👑</button>
+          {isAdmin&&(
+            <button onClick={()=>setPage("admin")} title="Admin" style={{background:"transparent",border:`1px solid ${T.yellow}44`,borderRadius:DS.r.md,color:T.yellow,cursor:"pointer",padding:"6px 9px",fontSize:DS.font.sm}}>👑</button>
           )}
         </div>
       </div>
@@ -1214,10 +1259,12 @@ function OrderSearchField({T, orders, onSelect, uid}) {
 // ===========================================
 // APP RECLAMOS
 // ===========================================
-function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje}) {
+function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje, view:viewProp, setView:setViewProp}) {
   const [reclamos,setReclamos]=useState([]);
   const [plantillas,setPlantillas]=useState([]);
-  const [view,setView]=useState("dashboard"); // dashboard | buscar | reclamos | config
+  const [view,setViewState]=useState(viewProp||"dashboard"); // dashboard | buscar | reclamos | config
+  React.useEffect(()=>{ if(viewProp!==undefined&&viewProp!==view) setViewState(viewProp); },[viewProp]);
+  const setView=(v)=>{ setViewState(v); setViewProp&&setViewProp(v); };
   const [dashView,setDashView]=useState("kanban"); // kanban | pipeline
   const [kanbanTipo,setKanbanTipo]=useState("Todos");
   const [search,setSearch]=useState("");
@@ -1623,21 +1670,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
 
-      <div style={{padding:"24px 24px 64px",maxWidth:1200,margin:"0 auto",width:"100%"}}>
+      <AppTabs T={T} tabs={[
+        {id:"dashboard",label:"Dashboard"},
+        {id:"buscar",label:"Buscar pedido"},
+        {id:"reclamos",label:"Lista",badge:stats.urgentes,badgeColor:T.red},
+        {id:"config",label:"Plantillas"},
+      ]} active={view} onChange={(v)=>{setView(v);setActiveReclamo(null);}}/>
 
-        {/* Tabs de navegacion */}
-        <div style={{display:"inline-flex",background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:3,marginBottom:20,gap:2}}>
-          {[{id:"dashboard",label:"Dashboard"},{id:"buscar",label:"Buscar pedido"},{id:"reclamos",label:"Lista"},{id:"config",label:"Plantillas"}].map(t=>{
-            const isActive=view===t.id;
-            return (
-              <button key={t.id} onClick={()=>{setView(t.id);setActiveReclamo(null);}}
-                style={{padding:"7px 16px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",boxShadow:isActive?`0 1px 4px rgba(0,0,0,0.15)`:"none",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-                {t.label}
-                {t.id==="reclamos"&&stats.urgentes>0&&<span style={{fontSize:10,fontWeight:700,background:T.red,color:"#fff",borderRadius:4,padding:"1px 5px"}}>{stats.urgentes}</span>}
-              </button>
-            );
-          })}
-        </div>
+      <div style={{padding:"24px 24px 64px",maxWidth:1200,margin:"0 auto",width:"100%"}}>
 
         {/* BANNER ANDREANI - Paquetes listos para retirar */}
         {andreaniAlertas.length > 0 && (
@@ -3751,8 +3791,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 // ===========================================
 // APP ENVIOS
 // ===========================================
-function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenerarCanje}) {
-  const [tab,setTab]=useState("panel");
+function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenerarCanje, tab:tabProp, setTab:setTabProp}) {
+  const [tab,setTabState]=useState(tabProp||"panel");
+  React.useEffect(()=>{ if(tabProp!==undefined&&tabProp!==tab) setTabState(tabProp); },[tabProp]);
+  const setTab=(v)=>{ setTabState(v); setTabProp&&setTabProp(v); };
   const [selected,setSelected]=useState(new Set());
   const [exportModal,setExportModal]=useState(false);
   const [exporting,setExporting]=useState(false);
@@ -4695,14 +4737,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           ⟳ Sincronizar
         </AsyncButton>
       </AppTopbar>
-      <div style={{borderBottom:"1px solid "+T.border,background:T.surface}}>
-        <div style={{maxWidth:1100,margin:"0 auto",padding:"0 24px",display:"flex",gap:0}}>
-          {[{id:"panel",label:"📦  Panel de Envíos"},{id:"sku",label:"🔖  SKU en Rótulos"},{id:"seguimientos",label:"📮  Seguimientos"}].map(t=>{
-            const isActive=tab===t.id;
-            return <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"14px 20px",fontSize:13,fontWeight:isActive?700:500,border:"none",borderBottom:isActive?`2px solid ${T.accentSolid}`:"2px solid transparent",background:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",whiteSpace:"nowrap",marginBottom:"-1px"}}>{t.label}</button>;
-          })}
-        </div>
-      </div>
+      <AppTabs T={T} tabs={[
+        {id:"panel",label:"📦 Panel de Envíos"},
+        {id:"sku",label:"🔖 SKU en Rótulos"},
+        {id:"seguimientos",label:"📮 Seguimientos"},
+      ]} active={tab} onChange={setTab}/>
 
       <div style={{padding:"16px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
 
@@ -5489,42 +5528,41 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const fecha = new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   const fechaCap = fecha.charAt(0).toUpperCase()+fecha.slice(1);
 
-  // Feed unificado de pendientes, ordenado por urgencia
-  const pendientes = [
-    ...stockAlertas.filter(a=>a.status==="empty").map(a=>({
-      icon:"⛔", titulo:`Sin stock: ${a.producto}`, sub:a.variante,
-      badge:"Sin stock", badgeColor:T.red, accion:()=>onNavigate("stock"),
-    })),
-    ...(reclamosCount>0?[{
-      icon:"💬", titulo:`${reclamosCount} reclamo${reclamosCount!==1?"s":""} abierto${reclamosCount!==1?"s":""}`,
-      sub:"Requieren seguimiento", badge:String(reclamosCount), badgeColor:T.red, accion:()=>onNavigate("reclamos"),
-    }]:[]),
-    ...stockAlertas.filter(a=>a.status==="critical").map(a=>({
-      icon:"🔴", titulo:`Stock crítico: ${a.producto}`, sub:`${a.variante} · ${a.daysLeft}d restantes`,
-      badge:`${a.daysLeft}d`, badgeColor:T.red, accion:()=>onNavigate("stock"),
-    })),
-    ...notificacionesCanjes.slice(0,3).map(n=>({
-      icon:"🤝", titulo:n.canje.influencer, sub:n.msg,
-      badge:"Pendiente", badgeColor:T.orange, accion:()=>onNavigate("canjes",n.canje._docId),
-    })),
-    ...stockAlertas.filter(a=>a.status==="low").map(a=>({
-      icon:"⚠️", titulo:`Stock bajo: ${a.producto}`, sub:`${a.variante} · ${a.daysLeft}d restantes`,
-      badge:`${a.daysLeft}d`, badgeColor:T.yellow, accion:()=>onNavigate("stock"),
-    })),
-  ];
-
-  // Secciones con contexto real
-  const secciones = [
-    {id:"envios",   icon:"📦", label:"Envíos",    meta:`${fmt(ordersCount)} pedidos`,                                              color:T.accentSolid},
-    {id:"reclamos", icon:"💬", label:"Reclamos",  meta:reclamosCount>0?`${reclamosCount} abiertos`:"Todo OK",                     color:reclamosCount>0?T.red:T.green},
-    {id:"canjes",   icon:"🤝", label:"Canjes",    meta:`${fmt(canjesCount)} activos`,                                              color:T.orange},
-    {id:"stock",    icon:"📊", label:"Stock",     meta:stockAlertas.length>0?`${stockAlertas.length} alertas`:`${fmt(stockSummary?.total_products||0)} productos`, color:stockAlertas.length>0?T.red:T.blue},
-    {id:"arca",     icon:"📄", label:"ARCA",      meta:"Facturación AFIP",                                                        color:T.textMd},
-    {id:"meta",     icon:"📣", label:"Meta Ads",  meta:"Campañas",                                                                color:T.textMd},
-  ];
+  // Feed por categoría
+  const CAT_META = {
+    reclamos: {label:"Reclamos",icon:"💬",color:T.red,   nav:"reclamos"},
+    stock:    {label:"Stock",   icon:"📊",color:T.red,   nav:"stock"},
+    canjes:   {label:"Canjes", icon:"🤝",color:T.orange, nav:"canjes"},
+  };
+  const grouped = {
+    reclamos: reclamosCount>0?[{
+      icon:"💬",titulo:`${reclamosCount} reclamo${reclamosCount!==1?"s":""} abierto${reclamosCount!==1?"s":""}`,
+      sub:"Requieren seguimiento",badge:String(reclamosCount),badgeColor:T.red,accion:()=>onNavigate("reclamos"),
+    }]:[],
+    stock:[
+      ...stockAlertas.filter(a=>a.status==="empty").map(a=>({icon:"⛔",titulo:`Sin stock: ${a.producto}`,sub:a.variante,badge:"Sin stock",badgeColor:T.red,accion:()=>onNavigate("stock")})),
+      ...stockAlertas.filter(a=>a.status==="critical").map(a=>({icon:"🔴",titulo:`Stock crítico: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.red,accion:()=>onNavigate("stock")})),
+      ...stockAlertas.filter(a=>a.status==="low").map(a=>({icon:"⚠️",titulo:`Stock bajo: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.yellow,accion:()=>onNavigate("stock")})),
+    ],
+    canjes: notificacionesCanjes.slice(0,4).map(n=>({icon:"🤝",titulo:n.canje.influencer,sub:n.msg,badge:"Pendiente",badgeColor:T.orange,accion:()=>onNavigate("canjes",n.canje._docId)})),
+  };
+  const totalPendientes = Object.values(grouped).reduce((s,arr)=>s+arr.length,0);
+  const PendienteItem = ({p})=>(
+    <div onClick={p.accion}
+      style={{padding:"10px 12px",borderRadius:DS.r.md,background:T.surface,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,border:"1px solid transparent"}}
+      onMouseEnter={e=>{e.currentTarget.style.borderColor=p.badgeColor+"33";e.currentTarget.style.background=T.card;e.currentTarget.style.transform="scale(1.012)";}}
+      onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.background=T.surface;e.currentTarget.style.transform="scale(1)";}}>
+      <span style={{fontSize:15,flexShrink:0}}>{p.icon}</span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.titulo}</div>
+        <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1}}>{p.sub}</div>
+      </div>
+      <DSBadge T={T} color={p.badgeColor} size="sm">{p.badge}</DSBadge>
+    </div>
+  );
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"28px 32px 48px",maxWidth:1400,margin:"0 auto"}} className="home-wrap">
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"28px 32px 48px",maxWidth:1200,margin:"0 auto"}} className="home-wrap">
 
       {/* Hero */}
       <div style={{marginBottom:DS.sp["3xl"]}}>
@@ -5534,12 +5572,12 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         </h1>
       </div>
 
-      {/* KPIs — métricas accionables */}
+      {/* KPIs — con skeleton loader */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:DS.sp.md,marginBottom:DS.sp["2xl"]}} className="kpi-grid">
         <KPI T={T} label="Facturado (7d)" value={fmtARS(stockSummary?.total_revenue||0)} icon="💰" color={T.green}
-          sub={stockSummary?`${fmt(stockSummary.total_orders)} órdenes`:"cargando..."} onClick={()=>onNavigate("stock")}/>
+          loading={!stockSummary} sub={stockSummary?`${fmt(stockSummary.total_orders)} órdenes`:""} onClick={()=>onNavigate("stock")}/>
         <KPI T={T} label="Unidades vendidas (7d)" value={fmt(stockSummary?.total_units||0)} icon="📈" color={T.accentSolid}
-          sub="últimos 7 días" onClick={()=>onNavigate("stock")}/>
+          loading={!stockSummary} sub="últimos 7 días" onClick={()=>onNavigate("stock")}/>
         <KPI T={T} label="Reclamos abiertos" value={reclamosCount} icon="💬"
           color={reclamosCount>0?T.red:T.green} accent={reclamosCount>0}
           sub={reclamosCount>0?"Requieren atención":"Todo en orden"} onClick={()=>onNavigate("reclamos")}/>
@@ -5548,64 +5586,55 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           sub={stockAlertas.length>0?"Productos en alerta":"Sin alertas"} onClick={()=>onNavigate("stock")}/>
       </div>
 
-      {/* Layout principal */}
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:DS.sp.lg,alignItems:"start"}} className="stack-mobile">
-
-        {/* Columna izquierda: feed de pendientes unificado */}
-        <Card T={T} padding="lg">
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:DS.sp.lg}}>
-            <span style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.text}}>Pendientes</span>
-            {pendientes.length>0&&<DSBadge T={T} color={T.red} size="sm">{pendientes.length}</DSBadge>}
-          </div>
-          {pendientes.length===0?(
-            <div style={{textAlign:"center",padding:"28px 0"}}>
-              <div style={{fontSize:36,marginBottom:DS.sp.md}}>✅</div>
-              <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,marginBottom:4}}>Todo en orden</div>
-              <div style={{fontSize:DS.font.sm,color:T.textSm}}>Sin alertas ni pendientes por ahora</div>
-            </div>
-          ):(
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {pendientes.map((p,i)=>(
-                <div key={i} onClick={p.accion}
-                  style={{padding:"10px 12px",borderRadius:DS.r.md,background:T.surface,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,border:"1px solid transparent"}}
-                  onMouseEnter={e=>{e.currentTarget.style.borderColor=p.badgeColor+"33";e.currentTarget.style.background=T.card;}}
-                  onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.background=T.surface;}}>
-                  <span style={{fontSize:15,flexShrink:0}}>{p.icon}</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.titulo}</div>
-                    <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1}}>{p.sub}</div>
-                  </div>
-                  <DSBadge T={T} color={p.badgeColor} size="sm">{p.badge}</DSBadge>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* Columna derecha: secciones con contexto */}
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {secciones.map(s=>(
-            <div key={s.id} onClick={()=>onNavigate(s.id)}
-              style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"11px 14px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,cursor:"pointer",transition:`all 0.15s ${DS.ease}`}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor=s.color+"55";e.currentTarget.style.background=T.surface;}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background=T.card;}}>
-              <span style={{fontSize:15,flexShrink:0}}>{s.icon}</span>
-              <span style={{fontSize:DS.font.base,fontWeight:DS.w.medium,color:T.text,flex:1}}>{s.label}</span>
-              <span style={{fontSize:DS.font.sm,color:s.color,fontWeight:DS.w.semibold,whiteSpace:"nowrap"}}>{s.meta}</span>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M9 18l6-6-6-6"/></svg>
-            </div>
-          ))}
-          {userPlan==="free"&&(
-            <div onClick={()=>onNavigate("planes")}
-              style={{padding:"12px 14px",background:`linear-gradient(135deg,${T.accentSolid}15,transparent)`,border:`1px solid ${T.accentSolid}33`,borderRadius:DS.r.lg,cursor:"pointer",marginTop:4,transition:`all 0.15s ${DS.ease}`}}
-              onMouseEnter={e=>e.currentTarget.style.borderColor=T.accentSolid+"66"}
-              onMouseLeave={e=>e.currentTarget.style.borderColor=T.accentSolid+"33"}>
-              <div style={{fontSize:DS.font.xs,color:T.accent,fontWeight:DS.w.bold,marginBottom:3}}>💎 Plan Free</div>
-              <div style={{fontSize:DS.font.sm,color:T.textMd}}>Desbloqueá todas las funciones →</div>
-            </div>
-          )}
+      {/* Pendientes por categoría */}
+      <Card T={T} padding="lg">
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:DS.sp.lg}}>
+          <span style={{fontSize:DS.font.base,fontWeight:DS.w.bold,color:T.text}}>Pendientes</span>
+          {totalPendientes>0&&<DSBadge T={T} color={T.red} size="sm">{totalPendientes}</DSBadge>}
         </div>
-      </div>
+
+        {totalPendientes===0?(
+          <div style={{textAlign:"center",padding:"32px 0"}}>
+            <div style={{fontSize:40,marginBottom:DS.sp.md}}>✅</div>
+            <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,marginBottom:4}}>Todo en orden</div>
+            <div style={{fontSize:DS.font.sm,color:T.textSm}}>Sin alertas ni pendientes por ahora</div>
+          </div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:DS.sp["2xl"]}}>
+            {["reclamos","stock","canjes"].map(cat=>{
+              const items=grouped[cat];
+              if(!items||items.length===0) return null;
+              const meta=CAT_META[cat];
+              return (
+                <div key={cat}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:DS.sp.sm,cursor:"pointer"}} onClick={()=>onNavigate(meta.nav)}>
+                    <span style={{fontSize:12}}>{meta.icon}</span>
+                    <span style={{fontSize:DS.font.xs,fontWeight:DS.w.bold,color:meta.color,textTransform:"uppercase",letterSpacing:0.7}}>{meta.label}</span>
+                    <span style={{fontSize:DS.font.xs,color:T.textSm,marginLeft:2}}>({items.length})</span>
+                    <div style={{flex:1,height:1,background:meta.color+"22",marginLeft:4}}/>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    {items.map((p,i)=><PendienteItem key={i} p={p}/>)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {userPlan==="free"&&(
+          <div onClick={()=>onNavigate("planes")}
+            style={{marginTop:DS.sp.lg,padding:"11px 14px",background:`linear-gradient(135deg,${T.accentSolid}12,transparent)`,border:`1px solid ${T.accentSolid}33`,borderRadius:DS.r.md,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,display:"flex",alignItems:"center",gap:10}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=T.accentSolid+"66"}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=T.accentSolid+"33"}>
+            <span style={{fontSize:14}}>💎</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:DS.font.xs,color:T.accent,fontWeight:DS.w.bold}}>Plan Free activo</div>
+              <div style={{fontSize:DS.font.xs,color:T.textSm}}>Desbloqueá todas las funciones →</div>
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -13147,6 +13176,8 @@ export default function App() {
   const [pendingCanje,setPendingCanje]=useState(null);
   const [pendingCanjeDetail,setPendingCanjeDetail]=useState(null);
   const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{try{return localStorage.getItem("growith_sidebar")==="1";}catch(e){return false;}});
+  const [enviosTab,setEnviosTab]=useState("panel");
+  const [reclamosView,setReclamosView]=useState("dashboard");
   const [cmdOpen,setCmdOpen]=useState(false);
   const [onboardingDone,setOnboardingDone]=useState(()=>{try{return localStorage.getItem("growith_onb_done")==="1";}catch(e){return true;}});
   const [orders,setOrders]=useState([]);
@@ -13426,9 +13457,9 @@ export default function App() {
   else if(page==="meta") pageContent = <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="stock") pageContent = <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="audio") pageContent = <PageView T={T} pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
-  else if(page==="reclamos") pageContent = <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/></PageView>;
+  else if(page==="reclamos") pageContent = <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/></PageView>;
-  else if(page==="envios") pageContent = <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/></PageView>;
+  else if(page==="envios") pageContent = <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     setPage(p);
@@ -13444,7 +13475,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView}/>
         <div style={{flex:1,minWidth:0,paddingBottom:"68px"}} className="main-content">
           {/* Mini topbar global con Cmd+K hint */}
           <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:DS.sp.md,height:48}}>
