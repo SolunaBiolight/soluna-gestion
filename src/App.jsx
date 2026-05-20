@@ -279,29 +279,47 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
           return (
             <React.Fragment key={item.id}>
               <NavBtn item={item}/>
-              {activeSub && item.subs.map(sub=>{
-                const subActive = (item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id);
-                return (
-                  <button key={sub.id}
-                    onClick={()=>{
-                      setPage(item.id);
-                      if(item.id==="envios") setEnviosTab&&setEnviosTab(sub.id);
-                      if(item.id==="reclamos") setReclamosView&&setReclamosView(sub.id);
-                    }}
-                    style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px 6px 38px",
-                      background:subActive?T.accentSolid+"10":"transparent",border:"none",
-                      borderLeft:subActive?`2px solid ${T.accentSolid}44`:"2px solid transparent",
-                      borderRadius:DS.r.md,cursor:"pointer",textAlign:"left",width:"100%",
-                      color:subActive?T.accent:T.textSm,fontWeight:subActive?DS.w.semibold:DS.w.medium,
-                      fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif",
-                      transition:`all 0.12s ${DS.ease}`}}
-                    onMouseEnter={e=>{if(!subActive)e.currentTarget.style.background=T.card;}}
-                    onMouseLeave={e=>{if(!subActive)e.currentTarget.style.background="transparent";}}>
-                    <span style={{width:4,height:4,borderRadius:"50%",background:subActive?T.accentSolid:T.textSm,opacity:subActive?1:0.4,flexShrink:0}}/>
-                    {sub.label}
-                  </button>
-                );
-              })}
+              {activeSub && (
+                <div style={{
+                  marginLeft:22,
+                  paddingLeft:14,
+                  borderLeft:`1.5px solid ${T.border}`,
+                  marginTop:2,
+                  marginBottom:4,
+                  display:"flex",
+                  flexDirection:"column",
+                  gap:1,
+                }}>
+                  {item.subs.map(sub=>{
+                    const subActive = (item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id);
+                    return (
+                      <button key={sub.id}
+                        onClick={()=>{
+                          setPage(item.id);
+                          if(item.id==="envios") setEnviosTab&&setEnviosTab(sub.id);
+                          if(item.id==="reclamos") setReclamosView&&setReclamosView(sub.id);
+                        }}
+                        style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",
+                          background:"none",border:"none",
+                          borderRadius:DS.r.sm,cursor:"pointer",textAlign:"left",width:"100%",
+                          color:subActive?T.accent:T.textSm,
+                          fontWeight:subActive?DS.w.semibold:DS.w.regular,
+                          fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif",
+                          transition:`color 0.12s ${DS.ease}`,letterSpacing:subActive?0:-0.1}}
+                        onMouseEnter={e=>{if(!subActive)e.currentTarget.style.color=T.textMd;}}
+                        onMouseLeave={e=>{if(!subActive)e.currentTarget.style.color=T.textSm;}}>
+                        <span style={{
+                          width:subActive?14:6, height:1.5,
+                          background:subActive?T.accentSolid:T.textSm+"55",
+                          borderRadius:2, flexShrink:0,
+                          transition:`width 0.18s ${DS.ease}, background 0.18s`,
+                        }}/>
+                        {sub.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </React.Fragment>
           );
         })}
