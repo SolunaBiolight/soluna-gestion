@@ -9793,26 +9793,36 @@ function AppMetaAds({T, user, onHome}) {
     setBulkPublishing(true);
     setBulkProgress({done:0,total:queue.length,errors:[]});
     const errs = [];
-    const items = []; // resumen del batch para guardar al final
-    const publishedIds = []; // ids para borrar de la cola tras success
-    for (let i = 0; i < queue.length; i++) {
-      const c = queue[i];
-      const adsetId = studioMode === "shared" ? sharedDest.adset_id : c.adset_id;
-      const link = studioMode === "shared" ? sharedDest.link : c.link;
-      const cta = studioMode === "shared" ? sharedDest.cta : (c.cta || "LEARN_MORE");
-      let ok = false; let adId = null; let igStatus = null; let errMsg = null;
-      try {
-        if (studioMode === "shared") {
-          await metaApi("patch_creative","PATCH",{adset_id:adsetId,link,cta},{cid:c.id});
-        }
-        const d = await metaApi("publish","POST",{creative_id:c.id, activate: publishActiveByDefault, default_link: link, default_cta: cta},{acc_id:activeAccId});
-        if (d.error) { errs.push(`${c.filename}: ${d.error}`); errMsg = d.error; }
-        else { ok = true; adId = d.ad_id; igStatus = d.ig_status; }
-      } catch (e) { errs.push(`${c.filename}: ${e.message}`); errMsg = e.message; }
-      items.push({ ad_id: adId, ig_status: igStatus, filename: c.filename, kind: c.kind, status: publishActiveByDefault?"ACTIVE":"PAUSED", ok, error: errMsg, creative_id: c.id });
-      if (ok) publishedIds.push(c.id);
-      setBulkProgress({done:i+1,total:queue.length,errors:errs});
-    }
+    const items = new Array(queue.length); // resumen del batch (orden conservado)
+    const publishedIds = [];
+    let doneCount = 0;
+    // Publish en paralelo: 10 workers simultaneos. Cada Vercel invocation
+    // es independiente, asi que podemos mandar muchos al mismo tiempo.
+    const PUBLISH_CONCURRENT = 10;
+    let nextIdx = 0;
+    const publishWorker = async () => {
+      while (nextIdx < queue.length) {
+        const i = nextIdx++;
+        const c = queue[i];
+        const adsetId = studioMode === "shared" ? sharedDest.adset_id : c.adset_id;
+        const link = studioMode === "shared" ? sharedDest.link : c.link;
+        const cta = studioMode === "shared" ? sharedDest.cta : (c.cta || "LEARN_MORE");
+        let ok = false; let adId = null; let igStatus = null; let errMsg = null;
+        try {
+          if (studioMode === "shared") {
+            await metaApi("patch_creative","PATCH",{adset_id:adsetId,link,cta},{cid:c.id});
+          }
+          const d = await metaApi("publish","POST",{creative_id:c.id, activate: publishActiveByDefault, default_link: link, default_cta: cta},{acc_id:activeAccId});
+          if (d.error) { errs.push(`${c.filename}: ${d.error}`); errMsg = d.error; }
+          else { ok = true; adId = d.ad_id; igStatus = d.ig_status; }
+        } catch (e) { errs.push(`${c.filename}: ${e.message}`); errMsg = e.message; }
+        items[i] = { ad_id: adId, ig_status: igStatus, filename: c.filename, kind: c.kind, status: publishActiveByDefault?"ACTIVE":"PAUSED", ok, error: errMsg, creative_id: c.id };
+        if (ok) publishedIds.push(c.id);
+        doneCount++;
+        setBulkProgress({done:doneCount,total:queue.length,errors:errs});
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PUBLISH_CONCURRENT, queue.length) }, () => publishWorker()));
     // Borrar los publicados de la cola (en backend y en state local).
     if (publishedIds.length > 0) {
       await Promise.all(publishedIds.map(cid => fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${cid}`,{method:"DELETE"}).catch(()=>{})));
@@ -9855,26 +9865,32 @@ function AppMetaAds({T, user, onHome}) {
     }
     if (!await appConfirm(`Reintentar publicar ${found.length} ${found.length===1?"ad":"ads"}${missing>0?` (${missing} ya no están en la cola)`:""}?`,{okLabel:"🔄 Reintentar"})) return;
     setRetryingBatchId(batch.id);
-    const newItems = [];
+    const newItems = new Array(found.length);
     const newErrs = [];
     const newPublishedIds = [];
-    for (const { c } of found) {
-      const dest = batch.dest || {};
-      const adsetId = batch.dest_mode === "shared" ? dest.adset_id : c.adset_id;
-      const link = batch.dest_mode === "shared" ? dest.link : c.link;
-      const cta = batch.dest_mode === "shared" ? dest.cta : (c.cta || "LEARN_MORE");
-      let ok = false; let adId = null; let igStatus = null; let errMsg = null;
-      try {
-        if (batch.dest_mode === "shared") {
-          await metaApi("patch_creative","PATCH",{adset_id:adsetId,link,cta},{cid:c.id});
-        }
-        const d = await metaApi("publish","POST",{creative_id:c.id, activate: false, default_link: link, default_cta: cta},{acc_id:activeAccId});
-        if (d.error) { newErrs.push(`${c.filename}: ${d.error}`); errMsg = d.error; }
-        else { ok = true; adId = d.ad_id; igStatus = d.ig_status; }
-      } catch (e) { newErrs.push(`${c.filename}: ${e.message}`); errMsg = e.message; }
-      newItems.push({ ad_id: adId, ig_status: igStatus, filename: c.filename, kind: c.kind, status: "PAUSED", ok, error: errMsg, creative_id: c.id });
-      if (ok) newPublishedIds.push(c.id);
-    }
+    let retryIdx = 0;
+    const retryWorker = async () => {
+      while (retryIdx < found.length) {
+        const k = retryIdx++;
+        const { c } = found[k];
+        const dest = batch.dest || {};
+        const adsetId = batch.dest_mode === "shared" ? dest.adset_id : c.adset_id;
+        const link = batch.dest_mode === "shared" ? dest.link : c.link;
+        const cta = batch.dest_mode === "shared" ? dest.cta : (c.cta || "LEARN_MORE");
+        let ok = false; let adId = null; let igStatus = null; let errMsg = null;
+        try {
+          if (batch.dest_mode === "shared") {
+            await metaApi("patch_creative","PATCH",{adset_id:adsetId,link,cta},{cid:c.id});
+          }
+          const d = await metaApi("publish","POST",{creative_id:c.id, activate: false, default_link: link, default_cta: cta},{acc_id:activeAccId});
+          if (d.error) { newErrs.push(`${c.filename}: ${d.error}`); errMsg = d.error; }
+          else { ok = true; adId = d.ad_id; igStatus = d.ig_status; }
+        } catch (e) { newErrs.push(`${c.filename}: ${e.message}`); errMsg = e.message; }
+        newItems[k] = { ad_id: adId, ig_status: igStatus, filename: c.filename, kind: c.kind, status: "PAUSED", ok, error: errMsg, creative_id: c.id };
+        if (ok) newPublishedIds.push(c.id);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(10, found.length) }, () => retryWorker()));
     if (newPublishedIds.length > 0) {
       await Promise.all(newPublishedIds.map(cid => fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${cid}`,{method:"DELETE"}).catch(()=>{})));
       setCreatives(prev => prev.filter(x => !newPublishedIds.includes(x.id)));
