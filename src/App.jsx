@@ -8806,7 +8806,7 @@ function AppMetaAds({T, user, onHome}) {
     return ({ARS:"$",USD:"US$",BRL:"R$",MXN:"MX$",EUR:"€",CLP:"CLP$",PEN:"S/",UYU:"$U",COP:"COL$",GBP:"£"})[code] || code || "$";
   }
 
-  const [tab,setTab]=useState("analisis");
+  const [tab,setTab]=useState("productos");
   const [loading,setLoading]=useState(true);
   const [accounts,setAccounts]=useState([]);
   const [activeAccId,setActiveAccId]=useState(null);
@@ -8851,6 +8851,8 @@ function AppMetaAds({T, user, onHome}) {
   const [products,setProducts]=useState([]);
   const [productsLoading,setProductsLoading]=useState(false);
   const [editingProduct,setEditingProduct]=useState(null); // null | "new" | product
+  // Mapa de ads → product_ids para colorear el ROAS en Analisis con el BE efectivo
+  const [adProductsMap,setAdProductsMap]=useState({products:[],ad:{},adset:{},campaign:{}});
   const [editingRule,setEditingRule]=useState(null); // null | "new" | rule object
   const [evaluatingNow,setEvaluatingNow]=useState(false);
 
@@ -9007,7 +9009,9 @@ function AppMetaAds({T, user, onHome}) {
     if(tab==="creativos"&&activeAccId) { loadCreatives(); loadCampaigns(); loadPublishBatches(); }
     if(tab==="analisis"&&activeAccId) loadInsights();
     if(tab==="biblioteca"&&activeAccId) loadLibrary();
+    if(tab==="productos"&&activeAccId) loadProducts();
     if(tab==="reglas"&&activeAccId) { loadRules(); loadProducts(); }
+    if(tab==="analisis"&&activeAccId) loadAdProductsMap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab,activeAccId]);
 
@@ -9061,6 +9065,29 @@ function AppMetaAds({T, user, onHome}) {
     setEditingProduct(null);
     return true;
   }
+  async function loadAdProductsMap() {
+    if (!activeAccId) return;
+    try {
+      const d = await metaApi("ad_products_map","GET",null,{acc_id:activeAccId});
+      if (!d.error) setAdProductsMap({products:d.products||[], ad:d.ad||{}, adset:d.adset||{}, campaign:d.campaign||{}});
+    } catch (_) {}
+  }
+  // Calcula el BE efectivo de un row de Analisis segun los productos asociados
+  function effectiveBeForRow(row, level, fallback) {
+    if (!row || !row.id) return fallback;
+    const ids = adProductsMap[level]?.[row.id] || [];
+    if (ids.length === 0) return fallback;
+    const matched = adProductsMap.products.filter(p => ids.includes(p.id) && (p.roas_be||0) > 0);
+    if (matched.length === 0) return fallback;
+    const sum = matched.reduce((s,p)=>s+(p.roas_be||0),0);
+    return sum / matched.length;
+  }
+  function productsForRow(row, level) {
+    if (!row || !row.id) return [];
+    const ids = adProductsMap[level]?.[row.id] || [];
+    return adProductsMap.products.filter(p => ids.includes(p.id));
+  }
+
   async function deleteProduct(productId) {
     if (!await appConfirm("¿Borrar este producto? Las reglas que lo usaban pasarán a aplicar a todos.",{danger:true,okLabel:"Borrar"})) return;
     const params = new URLSearchParams({action:"product_delete",uid,product_id:productId});
@@ -9756,6 +9783,7 @@ function AppMetaAds({T, user, onHome}) {
   );
 
   const TABS=[
+    {id:"productos",label:"🎯 Productos"},
     {id:"analisis",label:"📊 Análisis"},
     {id:"biblioteca",label:"📚 Biblioteca"},
     {id:"reglas",label:"⚡ Reglas"},
@@ -9808,6 +9836,75 @@ function AppMetaAds({T, user, onHome}) {
       )}
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
+
+        {/* ── PRODUCTOS (clasificador URL → producto con ROAS BE) ── */}
+        {tab==="productos"&&(
+          <div>
+            {!activeAccId ? (
+              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd}}>
+                ⚠ Conectá tu cuenta de Meta primero desde Config.
+              </div>
+            ) : (
+              <>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 22px",marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                    <div>
+                      <div style={{fontSize:17,fontWeight:800,color:T.text}}>🎯 Productos</div>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:4,lineHeight:1.5,maxWidth:720}}>Asociá cada producto a sus URLs de destino y a su ROAS break-even. Growith clasifica automáticamente cada ad/adset/campaña según el link al que dirige, y usa el BE del producto para colorear el ROAS en Análisis y filtrar reglas. Si un adset/campaña tiene varios productos, se promedia el BE.</div>
+                    </div>
+                    <button onClick={()=>setEditingProduct("new")} style={{padding:"9px 18px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:`linear-gradient(135deg, ${T.green}, ${T.accent})`,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo producto</button>
+                  </div>
+                </div>
+
+                {productsLoading ? (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+                    <Spinner size={20} color={T.accent}/>
+                    <div style={{fontSize:13,color:T.textSm,marginTop:14}}>Cargando productos...</div>
+                  </div>
+                ) : products.length === 0 ? (
+                  <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+                    <div style={{fontSize:36,marginBottom:8}}>🎯</div>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Todavía no clasificaste productos</div>
+                    <div style={{fontSize:12,color:T.textSm,maxWidth:480,margin:"0 auto 16px",lineHeight:1.6}}>Creá un producto con sus URLs de destino (página de producto, landing, etc) y su ROAS BE. Después Growith puede colorear cada anuncio según ese BE y aplicar reglas por producto.</div>
+                    <button onClick={()=>setEditingProduct("new")} style={{padding:"10px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:`linear-gradient(135deg, ${T.green}, ${T.accent})`,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear primer producto</button>
+                  </div>
+                ) : (
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(360px, 1fr))",gap:14}}>
+                    {products.map(p => (
+                      <div key={p.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",gap:10}}>
+                        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:15,fontWeight:700,color:T.text,wordBreak:"break-word"}}>{p.name}</div>
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6,flexWrap:"wrap"}}>
+                              {p.roas_be > 0
+                                ? <span style={{fontSize:10,padding:"3px 9px",borderRadius:6,background:T.green+"22",color:T.green,fontWeight:700,letterSpacing:0.3}}>BE {p.roas_be}x</span>
+                                : <span style={{fontSize:10,padding:"3px 9px",borderRadius:6,background:T.yellow+"22",color:T.yellow,fontWeight:700,letterSpacing:0.3}}>SIN BE</span>
+                              }
+                              <span style={{fontSize:11,color:T.textSm}}>{(p.urls||[]).length} URL{(p.urls||[]).length===1?"":"s"}</span>
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:5,flexShrink:0}}>
+                            <button onClick={()=>setEditingProduct(p)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                            <button onClick={()=>deleteProduct(p.id)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                          </div>
+                        </div>
+                        {(p.urls||[]).length>0 && (
+                          <div style={{display:"flex",flexDirection:"column",gap:4,padding:"8px 10px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+                            {p.urls.slice(0,4).map((u,i) => (
+                              <div key={i} style={{fontSize:10,color:T.textMd,fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u}</div>
+                            ))}
+                            {p.urls.length > 4 && <div style={{fontSize:10,color:T.textSm}}>+{p.urls.length-4} más</div>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {editingProduct && <ProductEditor T={T} initialProduct={editingProduct==="new"?null:editingProduct} onSave={saveProduct} onCancel={()=>setEditingProduct(null)}/>}
+              </>
+            )}
+          </div>
+        )}
 
         {/* ── ANÁLISIS (Ads Manager) ──────────────────── */}
         {tab==="analisis"&&(
@@ -9963,7 +10060,7 @@ function AppMetaAds({T, user, onHome}) {
                     spend:          { label:"Gasto",          render: r => "$"+fmt(r.spend),            total: () => "$"+fmt(sumSpend), bold:true },
                     purchases:      { label:"Compras",        render: r => r.purchases,                 total: () => sumPurchases },
                     purchase_value: { label:"Valor compras",  render: r => "$"+fmt(r.purchase_value),   total: () => "$"+fmt(sumPurchaseValue) },
-                    roas:           { label:"ROAS",           render: r => fmt(r.roas)+"x",             total: () => fmt(totalRoas)+"x", color: r => r.roas >= aRoasBe ? T.green : (r.roas > 0 ? T.red : T.textSm), totalColor: () => totalRoas >= aRoasBe ? T.green : (totalRoas > 0 ? T.red : T.textSm), bold:true },
+                    roas:           { label:"ROAS",           render: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); const c=r.roas>=be?T.green:(r.roas>0?T.red:T.textSm); return <span style={{color:c}}>{fmt(r.roas)}x{be!==aRoasBe?<span style={{fontSize:9,opacity:0.7,marginLeft:4}}>/{be.toFixed(1)}</span>:""}</span>;}, total: () => fmt(totalRoas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => totalRoas >= aRoasBe ? T.green : (totalRoas > 0 ? T.red : T.textSm), bold:true },
                     cpa:            { label:"CPA",            render: r => r.cpa ? "$"+fmt(r.cpa) : "—", total: () => totalCpa ? "$"+fmt(totalCpa) : "—" },
                     ctr:            { label:"CTR",            render: r => fmt(r.ctr)+"%",              total: () => fmt(totalCtr)+"%" },
                     cpm:            { label:"CPM",            render: r => "$"+fmt(r.cpm),              total: () => "—" },
@@ -10015,6 +10112,17 @@ function AppMetaAds({T, user, onHome}) {
                                       <span style={{padding:"1px 6px",borderRadius:4,background:aLevel==="campaign"?T.accent+"22":aLevel==="adset"?T.green+"22":T.yellow+"22",color:aLevel==="campaign"?T.accent:aLevel==="adset"?T.green:T.yellow,fontWeight:700,letterSpacing:0.3,textTransform:"uppercase"}}>{aLevel==="campaign"?"Camp":aLevel==="adset"?"Adset":"Ad"}</span>
                                       <span style={{padding:"1px 6px",borderRadius:4,background:isActive?T.green+"22":T.red+"22",color:isActive?T.green:T.red,fontWeight:600}}>{r.effective_status||"—"}</span>
                                       {r.daily_budget && <span>· ${fmt(r.daily_budget)}/día</span>}
+                                      {(() => {
+                                        const prods = productsForRow(r, aLevel);
+                                        if (prods.length === 0) return null;
+                                        const avgBe = prods.filter(p=>p.roas_be>0).reduce((s,p,_,arr)=>s+p.roas_be/arr.length,0);
+                                        return <>
+                                          <span style={{color:T.borderL}}>·</span>
+                                          {prods.slice(0,2).map(p => <span key={p.id} style={{padding:"1px 6px",borderRadius:4,background:T.accent+"15",color:T.accent,fontWeight:600,fontSize:9,letterSpacing:0.2}}>🎯 {p.name}</span>)}
+                                          {prods.length > 2 && <span style={{color:T.textSm,fontSize:9}}>+{prods.length-2}</span>}
+                                          {avgBe > 0 && <span style={{padding:"1px 6px",borderRadius:4,background:T.green+"15",color:T.green,fontWeight:700,fontSize:9,letterSpacing:0.2}}>BE {avgBe.toFixed(2)}x{prods.length>1?" (avg)":""}</span>}
+                                        </>;
+                                      })()}
                                     </div>
                                   </td>
                                   {visibleCols.map(k => {
@@ -10220,42 +10328,12 @@ function AppMetaAds({T, user, onHome}) {
               </div>
             ) : (
               <>
-                {/* Productos (clasificador URL → producto con ROAS BE) */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:10}}>
-                    <div>
-                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>🎯 Productos</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Asociá cada producto a sus URLs y su ROAS break-even. Las reglas pueden filtrar por producto.</div>
-                    </div>
-                    <button onClick={()=>setEditingProduct("new")} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo producto</button>
+                {/* Acceso rapido: Productos vive en su propio tab arriba */}
+                {products.length === 0 && (
+                  <div style={{background:T.yellow+"10",border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.textMd,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                    <span><span style={{color:T.yellow,fontWeight:700}}>💡</span> Las reglas pueden filtrar por producto. <button onClick={()=>setTab("productos")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",fontSize:12,padding:0}}>Andá a Productos</button> para crear el primero.</span>
                   </div>
-                  {productsLoading ? (
-                    <div style={{padding:"20px 0",textAlign:"center"}}><Spinner size={16} color={T.accent}/></div>
-                  ) : products.length === 0 ? (
-                    <div style={{padding:"16px",background:T.bg,border:`1px dashed ${T.borderL}`,borderRadius:8,fontSize:12,color:T.textSm,textAlign:"center",lineHeight:1.5}}>
-                      Sin productos clasificados. Las reglas aplican a TODOS los anuncios por defecto.<br/>Creá productos si querés escribir reglas que apliquen solo a algunos.
-                    </div>
-                  ) : (
-                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                      {products.map(p => (
-                        <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                              <span style={{fontSize:13,fontWeight:700,color:T.text}}>{p.name}</span>
-                              {p.roas_be > 0 && <span style={{fontSize:10,padding:"2px 8px",borderRadius:5,background:T.green+"22",color:T.green,fontWeight:700,letterSpacing:0.3}}>BE {p.roas_be}x</span>}
-                              <span style={{fontSize:10,color:T.textSm}}>· {(p.urls||[]).length} URL{(p.urls||[]).length===1?"":"s"}</span>
-                            </div>
-                            {(p.urls||[]).length>0 && (
-                              <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.urls.slice(0,2).join(" · ")}{p.urls.length>2?` · +${p.urls.length-2} más`:""}</div>
-                            )}
-                          </div>
-                          <button onClick={()=>setEditingProduct(p)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
-                          <button onClick={()=>deleteProduct(p.id)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                )}
 
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>

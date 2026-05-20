@@ -1146,6 +1146,90 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // Mapa de ads → product_ids (URL matching) — usado por Analisis para
+    // calcular el BE efectivo por row. Devuelve tambien mapas agregados
+    // por adset y campaign (union de product_ids).
+    if (action === "ad_products_map" && req.method === "GET") {
+      const accIdQ = req.query.acc_id || acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, accIdQ);
+      if (!cfg?.access_token || !cfg?.ad_account_id) return res.status(400).json({ error: "Cuenta sin token o ad_account_id" });
+
+      // Cargar productos
+      const prodSnap = await db.collection("users").doc(uid).collection("meta_products")
+        .where("acc_id", "==", accIdQ).get();
+      const productsArr = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (productsArr.length === 0) {
+        return res.json({ products: [], ad: {}, adset: {}, campaign: {} });
+      }
+
+      // Pre-fetch ads con sus URLs de destino
+      let ads = [];
+      try {
+        const adsData = await metaGet(`${cfg.ad_account_id}/ads`, {
+          limit: 500,
+          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec}",
+        }, cfg.access_token);
+        ads = adsData.data || [];
+      } catch (e) {
+        return res.status(502).json({ error: `No se pudieron traer los ads para mapear: ${e.message}` });
+      }
+
+      const linkOfAd = (ad) => {
+        const cr = ad.creative || {};
+        if (cr.link_url) return cr.link_url;
+        const oss = cr.object_story_spec || {};
+        const link = oss.link_data?.link || oss.video_data?.call_to_action?.value?.link || oss.template_data?.link || null;
+        if (link) return link;
+        const afs = cr.asset_feed_spec || {};
+        if (Array.isArray(afs.link_urls) && afs.link_urls[0]?.website_url) return afs.link_urls[0].website_url;
+        return null;
+      };
+      const norm = (u) => String(u || "").trim().toLowerCase().replace(/\/+$/, "").replace(/^https?:\/\//, "");
+      const productsByPrefix = [];
+      for (const p of productsArr) {
+        for (const u of (p.urls || [])) productsByPrefix.push({ prefix: norm(u), id: p.id });
+      }
+      productsByPrefix.sort((a, b) => b.prefix.length - a.prefix.length);
+      const productIdsForUrl = (url) => {
+        if (!url) return [];
+        const n = norm(url);
+        const matches = new Set();
+        for (const { prefix, id } of productsByPrefix) {
+          if (prefix && (n === prefix || n.startsWith(prefix + "/") || n.startsWith(prefix + "?"))) matches.add(id);
+        }
+        return [...matches];
+      };
+      const adMap = {};       // ad_id → product_ids[]
+      const adsetMap = {};    // adset_id → Set of product_ids
+      const campMap = {};     // campaign_id → Set
+      for (const ad of ads) {
+        const link = linkOfAd(ad);
+        const pids = productIdsForUrl(link);
+        if (pids.length === 0) continue;
+        adMap[ad.id] = pids;
+        if (ad.adset_id) {
+          const s = adsetMap[ad.adset_id] || new Set();
+          pids.forEach(p => s.add(p));
+          adsetMap[ad.adset_id] = s;
+        }
+        if (ad.campaign_id) {
+          const s = campMap[ad.campaign_id] || new Set();
+          pids.forEach(p => s.add(p));
+          campMap[ad.campaign_id] = s;
+        }
+      }
+      // Aplastar Sets a arrays para JSON
+      const adsetOut = Object.fromEntries(Object.entries(adsetMap).map(([k, v]) => [k, [...v]]));
+      const campOut = Object.fromEntries(Object.entries(campMap).map(([k, v]) => [k, [...v]]));
+      return res.json({
+        products: productsArr.map(p => ({ id: p.id, name: p.name, roas_be: p.roas_be || 0 })),
+        ad: adMap,
+        adset: adsetOut,
+        campaign: campOut,
+      });
+    }
+
     // ── HISTORIAL DE LOTES PUBLICADOS ──
     // Guarda cada batch del bulk publish + permite listar los recientes.
 
