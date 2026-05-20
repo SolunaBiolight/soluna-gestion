@@ -1940,10 +1940,9 @@ export default async function handler(req, res) {
 
     if (action === "add_creative" && req.method === "POST") {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
-      const { filename, kind, url, size, meta_video_id, meta_hash } = req.body || {};
+      const { filename, kind, url, size, meta_video_id, meta_hash, link, cta } = req.body || {};
       if (!filename || !kind || !url) return res.status(400).json({ error: "Faltan filename, kind o url" });
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      // Si es video subido directo, extraer video_id del url "meta-video://..." si no vino en body
       let videoId = meta_video_id || null;
       if (!videoId && typeof url === "string" && url.startsWith("meta-video://")) {
         videoId = url.slice("meta-video://".length);
@@ -1954,7 +1953,9 @@ export default async function handler(req, res) {
         meta_video_id: videoId || null,
         meta_hash: meta_hash || null,
         tone: "directo", length: "medio", format: "storytelling",
-        notes: "", copy: "", title: "", description: "", link: "", cta: "LEARN_MORE",
+        notes: "", copy: "", title: "", description: "",
+        link: link || "",
+        cta: cta || "LEARN_MORE",
         campaign_id: "", adset_id: "", analysis: null, ia_status: "pending",
         created_at: new Date().toISOString(),
       };

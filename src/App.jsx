@@ -9360,11 +9360,10 @@ function AppMetaAds({T, user, onHome}) {
   // dispara analisis+copy automatico con Gemini. La razon de subir directo
   // es que Vercel tiene hard limit de ~4.5MB en request body, asi que un
   // video de 5-40MB no entra. Meta acepta multipart hasta 1GB.
-  // tempId = id placeholder en la cola (creado por handleUploadMultiple).
-  // localPreviewUrl = blob: URL del file para mostrar preview hasta que Meta
-  // devuelva la URL real (para imagenes). Se mantiene como fallback para
-  // videos (que no tienen url publica).
-  async function handleUploadFile(file, tempId, localPreviewUrl) {
+  // tempId = id placeholder en la cola; localPreviewUrl = blob URL preview.
+  // preFetchedCreds = creds compartidas del bulk upload (evita 1 call extra
+  // por archivo).
+  async function handleUploadFile(file, tempId, localPreviewUrl, preFetchedCreds) {
     if(!file) return;
     if(!activeAccId) { toast("Conectá una cuenta Meta primero","warning"); if(tempId) setCreatives(prev=>prev.filter(c=>c.id!==tempId)); return; }
     const MAX = 200 * 1024 * 1024;
@@ -9378,7 +9377,7 @@ function AppMetaAds({T, user, onHome}) {
       if(tempId) setCreatives(prev=>prev.map(c=>c.id===tempId?{...c,_uploading:false,_error:msg,ia_status:"error"}:c));
     };
     try {
-      const creds = await metaApi("upload_creds","GET",null,{acc_id:activeAccId});
+      const creds = preFetchedCreds || await metaApi("upload_creds","GET",null,{acc_id:activeAccId});
       if(creds.error){ failTemp("Error: "+creds.error); return; }
       const accIdStr = creds.ad_account_id.startsWith("act_") ? creds.ad_account_id : `act_${creds.ad_account_id}`;
       const isVideo = (file.type||"").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(file.name);
@@ -9403,27 +9402,34 @@ function AppMetaAds({T, user, onHome}) {
         return;
       }
 
+      // add_creative: ya incluye link + cta del shared dest, evitamos un
+      // patch_creative extra por archivo.
       const fileUrl = up.url || (up.id ? `meta-video://${up.id}` : "");
-      const cr = await metaApi("add_creative","POST",{filename:file.name, kind:up.kind, url:fileUrl, size:file.size, meta_video_id: up.id||null, meta_hash: up.hash||null},{acc_id:activeAccId});
+      const sharedLink = studioMode === "shared" ? (sharedDest.link || "") : "";
+      const sharedCta = studioMode === "shared" ? (sharedDest.cta || "LEARN_MORE") : "LEARN_MORE";
+      const cr = await metaApi("add_creative","POST",{
+        filename: file.name,
+        kind: up.kind,
+        url: fileUrl,
+        size: file.size,
+        meta_video_id: up.id || null,
+        meta_hash: up.hash || null,
+        link: sharedLink,
+        cta: sharedCta,
+      },{acc_id:activeAccId});
       if(cr.error){ failTemp("Error guardando creative: "+cr.error); return; }
-      // Para video, conservamos el localPreviewUrl en el state local (no se
-      // persiste) asi el thumbnail se ve hasta que el ad este publicado.
       const cWithMeta = {
         ...cr.creative,
+        link: sharedLink || cr.creative.link,
+        cta: sharedCta || cr.creative.cta,
         meta_hash: up.hash || null,
         meta_video_id: up.id || null,
         ...(isVideo && localPreviewUrl ? { _localPreview: localPreviewUrl } : {}),
       };
-      if (studioMode === "shared" && (sharedDest.link || sharedDest.cta)) {
-        await metaApi("patch_creative","PATCH",{link:sharedDest.link||"", cta:sharedDest.cta||"LEARN_MORE"},{cid:cWithMeta.id});
-        cWithMeta.link = sharedDest.link || "";
-        cWithMeta.cta = sharedDest.cta || "LEARN_MORE";
-      }
-      // REEMPLAZAR el temp por el creative real (no prepend, mantiene posicion)
       if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? cWithMeta : c));
       else setCreatives(prev => [cWithMeta, ...prev]);
 
-      // Generar copy en background (no bloquea el upload del proximo)
+      // Copy en background
       handleAnalyzeCreative(cWithMeta, { skip_vision: true });
     } catch(e){
       failTemp("Error: "+(e.message||"upload falló"));
@@ -9546,13 +9552,12 @@ function AppMetaAds({T, user, onHome}) {
   }
 
   // ── Studio: upload multiple con UX instantanea + concurrency optima ────
-  // 1) Los N archivos aparecen en la cola AL INSTANTE como cards temporales
-  //    con preview local (URL.createObjectURL).
-  // 2) Concurrencia 2: en redes residenciales (Argentina), paralelismo total
-  //    es CONTRA-PRODUCENTE porque cada upload se queda con 1/N del ancho
-  //    de banda y el TCP slow-start arranca de cero para cada uno. 2 a la
-  //    vez es el sweet spot: ocupa ancho de banda + se monta un upload
-  //    mientras el otro va por la red.
+  // Optimizaciones:
+  // 1) Cards instantaneos con preview local.
+  // 2) upload_creds se pide UNA SOLA VEZ al inicio (no 1 por archivo).
+  // 3) add_creative ya incluye link/cta del shared dest — no hay
+  //    patch_creative extra por archivo.
+  // 4) Concurrencia 2: optimo para redes residenciales.
   async function handleUploadMultiple(fileList) {
     if (!fileList || fileList.length === 0) return;
     if (!activeAccId) return toast("Conectá una cuenta Meta primero","warning");
@@ -9574,12 +9579,22 @@ function AppMetaAds({T, user, onHome}) {
     });
     setCreatives(prev => [...temps, ...prev]);
     setUploadingFile(true);
+
+    // Pre-fetch creds una sola vez (era el cuello de botella: 500ms x N archivos)
+    const creds = await metaApi("upload_creds","GET",null,{acc_id:activeAccId});
+    if (creds.error) {
+      toast("Error: "+creds.error,"error");
+      setCreatives(prev=>prev.filter(c=>!temps.some(t=>t.id===c.id)));
+      setUploadingFile(false);
+      return;
+    }
+
     const MAX_CONCURRENT = 2;
     let i = 0;
     const worker = async () => {
       while (i < files.length) {
         const idx = i++;
-        await handleUploadFile(files[idx], temps[idx].id, temps[idx].url);
+        await handleUploadFile(files[idx], temps[idx].id, temps[idx].url, creds);
       }
     };
     await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT, files.length) }, () => worker()));
