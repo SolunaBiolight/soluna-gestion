@@ -384,7 +384,7 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
         const adsArr = [];
         let page = await metaGet(`${cfg.ad_account_id}/ads`, {
           limit: 500,
-          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec,template_url,effective_object_story_id}",
+          fields: "id,adset_id,campaign_id,creative{id,link_url,object_story_spec,asset_feed_spec,template_url,effective_object_story_id}",
         }, cfg.access_token);
         adsArr.push(...(page.data || []));
         let nextUrl = page.paging?.next || null;
@@ -422,31 +422,69 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
         // Resolver URLs de ads que usan post existente (effective_object_story_id)
         const extractLinkFromPost = (post) => {
           if (!post) return null;
+          if (post.link) return post.link;
+          const cta = post.call_to_action;
+          if (cta?.value?.link) return cta.value.link;
+          if (cta?.value?.link_url) return cta.value.link_url;
           const atts = post.attachments?.data || [];
           for (const att of atts) {
             if (att.target?.url) return att.target.url;
             if (att.url) return att.url;
+            if (att.unshimmed_url) return att.unshimmed_url;
             const subs = att.subattachments?.data || [];
             for (const sub of subs) {
               if (sub.target?.url) return sub.target.url;
               if (sub.url) return sub.url;
+              if (sub.unshimmed_url) return sub.unshimmed_url;
             }
           }
+          if (post.message) {
+            const m = post.message.match(/https?:\/\/[^\s"'<>)]+/i);
+            if (m) return m[0];
+          }
           return null;
+        };
+        const fetchPostsBatch = async (chunk, token) => {
+          const out = {};
+          try {
+            const params = new URLSearchParams({ ids: chunk.join(","), fields: "attachments.fields(target,url,unshimmed_url,subattachments),link,call_to_action,message,permalink_url", access_token: token });
+            const r = await fetch(`${META_BASE}/?${params}`);
+            const j = await r.json();
+            if (r.ok && !j.error && typeof j === "object") {
+              for (const [pid, obj] of Object.entries(j)) {
+                const link = extractLinkFromPost(obj);
+                if (link) out[pid] = link;
+              }
+            }
+          } catch (_) {}
+          return out;
         };
         const adsWithPostNoLink = adsArr.filter(a => !linkOfAdCreative(a) && a.creative?.effective_object_story_id);
         const postIds = [...new Set(adsWithPostNoLink.map(a => a.creative.effective_object_story_id))];
         const postLinks = {};
         for (let i = 0; i < postIds.length; i += 50) {
           const chunk = postIds.slice(i, i + 50);
+          Object.assign(postLinks, await fetchPostsBatch(chunk, cfg.access_token));
+          if (cfg.page_access_token) {
+            const remaining = chunk.filter(pid => !postLinks[pid]);
+            if (remaining.length) Object.assign(postLinks, await fetchPostsBatch(remaining, cfg.page_access_token));
+          }
+        }
+        // Para ads que aun no resolvieron, fetchear el creative directamente
+        const adsStillNoLink = adsArr.filter(a => !linkOfAdCreative(a) && !(a.creative?.effective_object_story_id && postLinks[a.creative.effective_object_story_id]));
+        const creativeIds = [...new Set(adsStillNoLink.map(a => a.creative?.id).filter(Boolean))];
+        const creativeLinks = {};
+        for (let i = 0; i < creativeIds.length; i += 50) {
+          const chunk = creativeIds.slice(i, i + 50);
           try {
-            const params = new URLSearchParams({ ids: chunk.join(","), fields: "attachments,permalink_url", access_token: cfg.access_token });
+            const params = new URLSearchParams({ ids: chunk.join(","), fields: "link_url,template_url,object_story_spec{link_data{link},video_data{call_to_action{value{link,link_url}}},template_data{link},photo_data{url}},asset_feed_spec{link_urls}", access_token: cfg.access_token });
             const r = await fetch(`${META_BASE}/?${params}`);
             const j = await r.json();
             if (r.ok && !j.error && typeof j === "object") {
-              for (const [pid, obj] of Object.entries(j)) {
-                const link = extractLinkFromPost(obj);
-                if (link) postLinks[pid] = link;
+              for (const [cid, cr] of Object.entries(j)) {
+                const fakeAd = { creative: cr };
+                const link = linkOfAdCreative(fakeAd);
+                if (link) creativeLinks[cid] = link;
               }
             }
           } catch (_) {}
@@ -456,6 +494,8 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
           if (direct) return direct;
           const pid = ad.creative?.effective_object_story_id;
           if (pid && postLinks[pid]) return postLinks[pid];
+          const cid = ad.creative?.id;
+          if (cid && creativeLinks[cid]) return creativeLinks[cid];
           return null;
         };
         // Normaliza URL: minusculas, sin proto, sin www, sin query/hash, sin trailing slash.
@@ -1242,7 +1282,7 @@ export default async function handler(req, res) {
         let nextUrl = null;
         const baseParams = {
           limit: 500,
-          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec,template_url,instagram_permalink_url,effective_object_story_id}",
+          fields: "id,adset_id,campaign_id,creative{id,link_url,object_story_spec,asset_feed_spec,template_url,instagram_permalink_url,effective_object_story_id}",
         };
         let page = await metaGet(`${cfg.ad_account_id}/ads`, baseParams, cfg.access_token);
         ads.push(...(page.data || []));
@@ -1283,43 +1323,91 @@ export default async function handler(req, res) {
       };
       const extractLinkFromPost = (post) => {
         if (!post) return null;
+        // 1) post-level link (typical de link posts)
+        if (post.link) return post.link;
+        // 2) post-level CTA value
+        const cta = post.call_to_action;
+        if (cta?.value?.link) return cta.value.link;
+        if (cta?.value?.link_url) return cta.value.link_url;
+        // 3) attachments
         const atts = post.attachments?.data || [];
         for (const att of atts) {
           if (att.target?.url) return att.target.url;
           if (att.url) return att.url;
+          if (att.unshimmed_url) return att.unshimmed_url;
           const subs = att.subattachments?.data || [];
           for (const sub of subs) {
             if (sub.target?.url) return sub.target.url;
             if (sub.url) return sub.url;
+            if (sub.unshimmed_url) return sub.unshimmed_url;
           }
+        }
+        // 4) URL en el mensaje del post (regex como ultimo recurso)
+        if (post.message) {
+          const m = post.message.match(/https?:\/\/[^\s"'<>)]+/i);
+          if (m) return m[0];
         }
         return null;
       };
-      // Para ads que usan post existente (effective_object_story_id) sin link
-      // directo en creative, hay que fetchear el post para sacar la URL del
-      // attachment. Batched de a 50 ids para no morir.
-      const adsWithPostNoLink = ads.filter(a => !linkOfAdCreative(a) && a.creative?.effective_object_story_id);
-      const postIds = [...new Set(adsWithPostNoLink.map(a => a.creative.effective_object_story_id))];
-      const postLinks = {};
-      for (let i = 0; i < postIds.length; i += 50) {
-        const chunk = postIds.slice(i, i + 50);
+      // Helper fetch posts con varios tokens (algunos posts requieren page_access_token)
+      const fetchPostsBatch = async (chunk, token) => {
+        const out = {};
         try {
-          const params = new URLSearchParams({ ids: chunk.join(","), fields: "attachments,permalink_url", access_token: cfg.access_token });
+          const params = new URLSearchParams({ ids: chunk.join(","), fields: "attachments.fields(target,url,unshimmed_url,subattachments),link,call_to_action,message,permalink_url", access_token: token });
           const r = await fetch(`${META_BASE}/?${params}`);
           const j = await r.json();
           if (r.ok && !j.error && typeof j === "object") {
             for (const [pid, obj] of Object.entries(j)) {
               const link = extractLinkFromPost(obj);
-              if (link) postLinks[pid] = link;
+              if (link) out[pid] = link;
             }
           }
-        } catch (_) { /* ignorar */ }
+        } catch (_) {}
+        return out;
+      };
+      // Para ads que usan post existente (effective_object_story_id) sin link
+      // directo en creative, hay que fetchear el post para sacar la URL.
+      const adsWithPostNoLink = ads.filter(a => !linkOfAdCreative(a) && a.creative?.effective_object_story_id);
+      const postIds = [...new Set(adsWithPostNoLink.map(a => a.creative.effective_object_story_id))];
+      const postLinks = {};
+      for (let i = 0; i < postIds.length; i += 50) {
+        const chunk = postIds.slice(i, i + 50);
+        // Intento 1: system user token (cfg.access_token)
+        Object.assign(postLinks, await fetchPostsBatch(chunk, cfg.access_token));
+        // Intento 2: page_access_token para los que aun no resolvieron
+        if (cfg.page_access_token) {
+          const remaining = chunk.filter(pid => !postLinks[pid]);
+          if (remaining.length) Object.assign(postLinks, await fetchPostsBatch(remaining, cfg.page_access_token));
+        }
+      }
+      // Para los ads que SIGUEN sin link, fetchear el creative directamente
+      // (a veces /ads?fields=creative{...} omite campos que el endpoint
+      // del creative directo si devuelve).
+      const adsStillNoLink = ads.filter(a => !linkOfAdCreative(a) && !(a.creative?.effective_object_story_id && postLinks[a.creative.effective_object_story_id]));
+      const creativeIds = [...new Set(adsStillNoLink.map(a => a.creative?.id).filter(Boolean))];
+      const creativeLinks = {}; // creative_id → link
+      for (let i = 0; i < creativeIds.length; i += 50) {
+        const chunk = creativeIds.slice(i, i + 50);
+        try {
+          const params = new URLSearchParams({ ids: chunk.join(","), fields: "link_url,template_url,object_story_spec{link_data{link},video_data{call_to_action{value{link,link_url}}},template_data{link},photo_data{url}},asset_feed_spec{link_urls}", access_token: cfg.access_token });
+          const r = await fetch(`${META_BASE}/?${params}`);
+          const j = await r.json();
+          if (r.ok && !j.error && typeof j === "object") {
+            for (const [cid, cr] of Object.entries(j)) {
+              const fakeAd = { creative: cr };
+              const link = linkOfAdCreative(fakeAd);
+              if (link) creativeLinks[cid] = link;
+            }
+          }
+        } catch (_) {}
       }
       const linkOfAd = (ad) => {
         const direct = linkOfAdCreative(ad);
         if (direct) return direct;
         const pid = ad.creative?.effective_object_story_id;
         if (pid && postLinks[pid]) return postLinks[pid];
+        const cid = ad.creative?.id;
+        if (cid && creativeLinks[cid]) return creativeLinks[cid];
         return null;
       };
       // Normaliza URL para comparar: minusculas, sin protocolo, sin www,
