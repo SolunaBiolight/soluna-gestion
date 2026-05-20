@@ -5524,27 +5524,18 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   ];
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"20px 28px 40px",maxWidth:1400,margin:"0 auto"}}>
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"28px 32px 48px",maxWidth:1400,margin:"0 auto"}} className="home-wrap">
 
-      {/* Hero compacto */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:DS.sp["2xl"],flexWrap:"wrap",gap:DS.sp.md}}>
-        <div>
-          <div style={{fontSize:DS.font.xs,color:T.textSm,marginBottom:4,fontWeight:DS.w.medium}}>{fechaCap}</div>
-          <h1 style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,margin:0,letterSpacing:-0.8,lineHeight:1.2,color:T.text}}>
-            {saludo}, <span style={{background:`linear-gradient(135deg,${T.accentSolid},#a78bfa)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{nombre}</span>
-          </h1>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 11px",borderRadius:DS.r.full,background:fbStatus==="ok"?T.green+"15":T.surface,border:`1px solid ${fbStatus==="ok"?T.green+"33":T.border}`}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:fbDot,boxShadow:fbStatus==="ok"?`0 0 6px ${T.green}`:"none",flexShrink:0}}/>
-            <span style={{fontSize:DS.font.xs,color:fbStatus==="ok"?T.green:T.textSm,fontWeight:DS.w.semibold}}>{fbStatus==="ok"?"En vivo":"Conectando..."}</span>
-          </div>
-          {isAdmin&&<DSBadge T={T} color={T.yellow} size="sm">👑 Admin</DSBadge>}
-        </div>
+      {/* Hero */}
+      <div style={{marginBottom:DS.sp["3xl"]}}>
+        <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:8,fontWeight:DS.w.medium,letterSpacing:0.1}}>{fechaCap}</div>
+        <h1 style={{fontSize:DS.font["4xl"],fontWeight:DS.w.black,margin:0,letterSpacing:-1.2,lineHeight:1.1,color:T.text}}>
+          {saludo}, <span style={{background:`linear-gradient(135deg,${T.accentSolid},#a78bfa)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{nombre}</span>
+        </h1>
       </div>
 
       {/* KPIs — métricas accionables */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:DS.sp.md,marginBottom:DS.sp["2xl"]}} className="stack-mobile">
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:DS.sp.md,marginBottom:DS.sp["2xl"]}} className="kpi-grid">
         <KPI T={T} label="Facturado (7d)" value={fmtARS(stockSummary?.total_revenue||0)} icon="💰" color={T.green}
           sub={stockSummary?`${fmt(stockSummary.total_orders)} órdenes`:"cargando..."} onClick={()=>onNavigate("stock")}/>
         <KPI T={T} label="Unidades vendidas (7d)" value={fmt(stockSummary?.total_units||0)} icon="📈" color={T.accentSolid}
@@ -13218,11 +13209,13 @@ export default function App() {
       @media(max-width:768px){
         .hide-mobile{display:none!important;}
         .mobile-only{display:flex!important;}
-        .stack-mobile{flex-direction:column!important;}
+        .stack-mobile{flex-direction:column!important;grid-template-columns:1fr!important;}
         .full-mobile{width:100%!important;min-width:0!important;}
         .pad-mobile{padding:12px 14px!important;}
         .font-mobile{font-size:13px!important;}
         .main-content{padding-bottom:68px!important;}
+        .kpi-grid{grid-template-columns:repeat(2,1fr)!important;}
+        .home-wrap{padding:16px 14px 80px!important;}
       }
       @media(min-width:769px){
         .main-content{padding-bottom:0!important;}
