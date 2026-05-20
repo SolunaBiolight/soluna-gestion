@@ -1530,6 +1530,7 @@ export default async function handler(req, res) {
           status: i.status || "PAUSED",
           ok: i.ok !== false,
           error: i.error || null,
+          creative_id: i.creative_id || null,
         })),
         errors: Array.isArray(errors) ? errors : [],
         total: items.length,
@@ -1970,7 +1971,7 @@ export default async function handler(req, res) {
       if (!cid) return res.status(400).json({ error: "Falta cid" });
       const c = await loadCreative(db, uid, cid);
       if (!c) return res.status(404).json({ error: "Creativo no encontrado" });
-      const EDITABLE = ["tone","length","format","notes","copy","title","description","link","cta","campaign_id","adset_id","analysis","word_min","word_max","product_data"];
+      const EDITABLE = ["tone","length","format","notes","copy","title","description","link","cta","campaign_id","adset_id","analysis","word_min","word_max","product_data","video_ready","ia_status"];
       const updates = {};
       EDITABLE.forEach(k => { if (req.body?.[k] !== undefined) updates[k] = req.body[k]; });
       const updated = { ...c, ...updates };
@@ -2101,6 +2102,9 @@ export default async function handler(req, res) {
         if (!videoId && typeof c.url === "string" && c.url.startsWith("meta-video://")) {
           videoId = c.url.slice("meta-video://".length);
         }
+        // Si el frontend ya verifico que el video esta ready (background polling
+        // durante upload), saltamos el polling.
+        const skipPolling = c.video_ready === true;
         // Fallback: si no hay video_id pero hay file_url publica, intentar upload
         // rapido sin polling largo (max 10s total).
         if (!videoId) {
@@ -2111,19 +2115,26 @@ export default async function handler(req, res) {
           videoId = uploadRes.id;
           if (!videoId) return res.status(502).json({ error: "Meta no devolvió video_id" });
         }
-        // Polling muy corto para confirmar que esta listo (max 10s total)
-        let ready = false;
-        for (let i = 0; i < 5 && !ready; i++) {
-          try {
-            const st = await metaGet(videoId, { fields: "status" }, token);
-            const vs = st.status?.video_status;
-            if (vs === "ready") { ready = true; break; }
-            if (vs === "error") return res.status(502).json({ error: "Meta falló al procesar el video" });
-          } catch (_) {}
-          if (i < 4) await new Promise(r => setTimeout(r, 2000));
+        // Si el frontend ya verifico ready en background, saltamos polling.
+        // Si no, polling con backoff hasta ~50s.
+        let ready = skipPolling;
+        let lastStatus = skipPolling ? "ready" : null;
+        if (!skipPolling) {
+          const delays = [1000, 1500, 2000, 3000, 3000, 4000, 4000, 5000, 5000, 5000, 5000, 5000, 5000];
+          for (let i = 0; i < delays.length && !ready; i++) {
+            await new Promise(r => setTimeout(r, delays[i]));
+            try {
+              const st = await metaGet(videoId, { fields: "status" }, token);
+              const vs = st.status?.video_status;
+              lastStatus = vs;
+              if (vs === "ready") { ready = true; break; }
+              if (vs === "error") return res.status(502).json({ error: "Meta falló al procesar el video" });
+            } catch (_) {}
+          }
         }
-        // Si no esta listo en 10s, igual intentamos crear el ad — Meta a veces
-        // lo aprueba en el momento del adcreative. Si falla, devuelve error claro.
+        if (!ready) {
+          return res.status(409).json({ error: `Video aún procesándose en Meta (status: ${lastStatus||"unknown"}). Reintentá en 30s.`, code: "VIDEO_NOT_READY", video_id: videoId });
+        }
         let thumb;
         try { const tr = await metaGet(`${videoId}/thumbnails`, { fields: "uri,is_preferred" }, token); thumb = (tr.data?.find(t => t.is_preferred) || tr.data?.[0])?.uri; } catch (_) {}
         spec = { page_id: pageId, video_data: { video_id: videoId, title: (c.title || "").slice(0, 60), message: c.copy.trim(), link_description: (c.description || "").slice(0, 60), ...(thumb ? { image_url: thumb } : {}), call_to_action: { type: cta, value: { link } } } };

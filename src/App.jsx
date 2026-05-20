@@ -9360,6 +9360,31 @@ function AppMetaAds({T, user, onHome}) {
   // dispara analisis+copy automatico con Gemini. La razon de subir directo
   // es que Vercel tiene hard limit de ~4.5MB en request body, asi que un
   // video de 5-40MB no entra. Meta acepta multipart hasta 1GB.
+  // Polling de status de video en Meta — corre en background apenas se
+  // sube el video. Meta tarda 5-60s en procesar. Cuando termina, marca el
+  // creative como video_ready=true asi al publicar no hay espera.
+  async function pollVideoReady(videoId, accessToken, apiVer, creativeId) {
+    const MAX_ATTEMPTS = 60; // hasta ~5 min total
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      await new Promise(r => setTimeout(r, 5000)); // poll cada 5s
+      try {
+        const r = await fetch(`https://graph.facebook.com/${apiVer}/${videoId}?fields=status&access_token=${encodeURIComponent(accessToken)}`);
+        const j = await r.json();
+        const vs = j.status?.video_status;
+        if (vs === "ready") {
+          setCreatives(prev => prev.map(c => c.id === creativeId ? {...c, video_ready: true} : c));
+          // Persistir en backend para que publish lo sepa sin re-pollear
+          try { await metaApi("patch_creative","PATCH",{video_ready:true},{cid:creativeId}); } catch (_) {}
+          return;
+        }
+        if (vs === "error") {
+          setCreatives(prev => prev.map(c => c.id === creativeId ? {...c, video_error: true} : c));
+          return;
+        }
+      } catch (_) { /* network blip, retry */ }
+    }
+  }
+
   // tempId = id placeholder en la cola; localPreviewUrl = blob URL preview.
   // preFetchedCreds = creds compartidas del bulk upload (evita 1 call extra
   // por archivo).
@@ -9431,6 +9456,13 @@ function AppMetaAds({T, user, onHome}) {
 
       // Copy en background
       handleAnalyzeCreative(cWithMeta, { skip_vision: true });
+
+      // Para video: arrancar polling en background del status de procesamiento
+      // en Meta. Apenas Meta termina (5-30s tipicamente) marcamos el creative
+      // como video_ready=true. Asi al publicar no hay que esperar.
+      if (isVideo && up.id) {
+        pollVideoReady(up.id, creds.access_token, creds.api_version, cWithMeta.id);
+      }
     } catch(e){
       failTemp("Error: "+(e.message||"upload falló"));
     }
@@ -9742,7 +9774,7 @@ function AppMetaAds({T, user, onHome}) {
         if (d.error) { errs.push(`${c.filename}: ${d.error}`); errMsg = d.error; }
         else { ok = true; adId = d.ad_id; igStatus = d.ig_status; }
       } catch (e) { errs.push(`${c.filename}: ${e.message}`); errMsg = e.message; }
-      items.push({ ad_id: adId, ig_status: igStatus, filename: c.filename, kind: c.kind, status: publishActiveByDefault?"ACTIVE":"PAUSED", ok, error: errMsg });
+      items.push({ ad_id: adId, ig_status: igStatus, filename: c.filename, kind: c.kind, status: publishActiveByDefault?"ACTIVE":"PAUSED", ok, error: errMsg, creative_id: c.id });
       if (ok) publishedIds.push(c.id);
       setBulkProgress({done:i+1,total:queue.length,errors:errs});
     }
@@ -9764,6 +9796,66 @@ function AppMetaAds({T, user, onHome}) {
     setBulkPublishing(false);
     if (errs.length === 0) toast(`${queue.length} ad${queue.length===1?"":"s"} publicado${queue.length===1?"":"s"} ✓`,"success");
     else toast(`${queue.length-errs.length}/${queue.length} ok, ${errs.length} con error`,"warning");
+  }
+
+  // ── Studio: reintentar los items fallados de un lote ──
+  // Filtra los items ok=false del batch, busca los creatives correspondientes
+  // (que NO se borraron porque solo borramos los exitosos) y reintenta el
+  // publish con la misma config dest del batch.
+  const [retryingBatchId, setRetryingBatchId] = useState(null);
+  async function handleRetryBatch(batch) {
+    const failed = (batch.items || []).filter(i => !i.ok);
+    if (failed.length === 0) return toast("No hay fallados en este lote","info");
+    // Match por creative_id si esta, sino por filename
+    const toRetry = failed.map(item => {
+      let c = null;
+      if (item.creative_id) c = creatives.find(x => x.id === item.creative_id);
+      if (!c) c = creatives.find(x => x.filename === item.filename);
+      return c ? { item, c } : { item, c: null };
+    });
+    const missing = toRetry.filter(r => !r.c).length;
+    const found = toRetry.filter(r => r.c);
+    if (found.length === 0) {
+      return appAlert(`No se encontraron los creativos en la cola. Puede que los hayas eliminado.\n\nSi querés reintentar, volvelos a subir.`);
+    }
+    if (!await appConfirm(`Reintentar publicar ${found.length} ${found.length===1?"ad":"ads"}${missing>0?` (${missing} ya no están en la cola)`:""}?`,{okLabel:"🔄 Reintentar"})) return;
+    setRetryingBatchId(batch.id);
+    const newItems = [];
+    const newErrs = [];
+    const newPublishedIds = [];
+    for (const { c } of found) {
+      const dest = batch.dest || {};
+      const adsetId = batch.dest_mode === "shared" ? dest.adset_id : c.adset_id;
+      const link = batch.dest_mode === "shared" ? dest.link : c.link;
+      const cta = batch.dest_mode === "shared" ? dest.cta : (c.cta || "LEARN_MORE");
+      let ok = false; let adId = null; let igStatus = null; let errMsg = null;
+      try {
+        if (batch.dest_mode === "shared") {
+          await metaApi("patch_creative","PATCH",{adset_id:adsetId,link,cta},{cid:c.id});
+        }
+        const d = await metaApi("publish","POST",{creative_id:c.id, activate: false, default_link: link, default_cta: cta},{acc_id:activeAccId});
+        if (d.error) { newErrs.push(`${c.filename}: ${d.error}`); errMsg = d.error; }
+        else { ok = true; adId = d.ad_id; igStatus = d.ig_status; }
+      } catch (e) { newErrs.push(`${c.filename}: ${e.message}`); errMsg = e.message; }
+      newItems.push({ ad_id: adId, ig_status: igStatus, filename: c.filename, kind: c.kind, status: "PAUSED", ok, error: errMsg, creative_id: c.id });
+      if (ok) newPublishedIds.push(c.id);
+    }
+    if (newPublishedIds.length > 0) {
+      await Promise.all(newPublishedIds.map(cid => fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${cid}`,{method:"DELETE"}).catch(()=>{})));
+      setCreatives(prev => prev.filter(x => !newPublishedIds.includes(x.id)));
+    }
+    try {
+      await metaApi("publish_batch_save","POST",{
+        items: newItems,
+        dest_mode: batch.dest_mode,
+        dest: batch.dest,
+        errors: newErrs,
+      },{acc_id:activeAccId});
+      loadPublishBatches();
+    } catch (_) {}
+    setRetryingBatchId(null);
+    if (newErrs.length === 0) toast(`${found.length} ad${found.length===1?"":"s"} re-publicado${found.length===1?"":"s"} ✓`,"success");
+    else toast(`${found.length-newErrs.length}/${found.length} ok, ${newErrs.length} con error`,"warning");
   }
 
   // ── Studio: limpiar cola (borra creatives de Growith) ──
@@ -11137,6 +11229,11 @@ LONGITUD Y FORMATO
                             {b.ok_count < b.total && <span style={{fontSize:10,padding:"2px 7px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>{b.total-b.ok_count} fallaron</span>}
                             <span style={{fontSize:10,color:T.textSm}}>· {b.dest_mode==="shared"?"Destino compartido":"Distinto por ad"}</span>
                           </div>
+                          {b.ok_count < b.total && (
+                            <button onClick={()=>handleRetryBatch(b)} disabled={retryingBatchId===b.id} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:`1px solid ${T.accent}55`,background:T.accent+"15",color:T.accent,cursor:retryingBatchId===b.id?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                              {retryingBatchId===b.id ? <><Spinner size={10} color={T.accent}/>Reintentando…</> : <>🔄 Reintentar {b.total-b.ok_count} fallado{(b.total-b.ok_count)===1?"":"s"}</>}
+                            </button>
+                          )}
                         </div>
                         <details>
                           <summary style={{cursor:"pointer",fontSize:11,color:T.accent,fontWeight:600,marginBottom:4}}>▸ Ver los {b.total} anuncio{b.total===1?"":"s"} del lote</summary>
