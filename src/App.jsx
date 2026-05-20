@@ -6563,47 +6563,44 @@ function AppAdmin({T, user, onBack}) {
     loadData();
   },[]);
 
+  async function adminApi(body) {
+    const r=await fetch("/api/admin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
+    const d=await r.json();
+    if(!r.ok||d.error) throw new Error(d.error||"Error del servidor");
+    return d;
+  }
+
   async function loadData() {
     setLoading(true);
     try {
-      // Load pending payments
-      const pagSnap=await getDocs(query(collection(db,"pagos"),orderBy("createdAt","desc")));
-      setPagos(pagSnap.docs.map(d=>({_id:d.id,...d.data()})));
-      // Load all users
-      const usSnap=await getDocs(collection(db,"users"));
-      setUsuarios(usSnap.docs.map(d=>({_id:d.id,...d.data()})));
-    } catch(e){ appAlert("Error: "+e.message); }
+      const d=await adminApi({action:"getData"});
+      setPagos(d.pagos||[]);
+      setUsuarios(d.usuarios||[]);
+    } catch(e){ appAlert("Error cargando datos: "+e.message); }
     setLoading(false);
   }
 
   async function activarPlan(uid, plan, meses=1) {
-    const expiry=new Date();
-    expiry.setMonth(expiry.getMonth()+meses);
-    await updateDoc(doc(db,"users",uid),{
-      plan,
-      planExpiry: expiry,
-      planActivadoBy: user.uid,
-      planActivadoAt: serverTimestamp(),
-    });
-    setUsuarios(u=>u.map(u2=>u2._id===uid?{...u2,plan,planExpiry:expiry}:u2));
+    const d=await adminApi({action:"activarPlan",targetUid:uid,plan,meses});
+    setUsuarios(u=>u.map(u2=>u2._id===uid?{...u2,plan,planExpiry:d.expiry}:u2));
     appAlert(`✅ Plan ${plan} activado para ${meses} mes${meses>1?"es":""}`);
   }
 
   async function desactivarPlan(uid) {
     if(!await appConfirm("¿Desactivar plan?",{danger:true,okLabel:"Desactivar"})) return;
-    await updateDoc(doc(db,"users",uid),{plan:"free",planExpiry:null});
+    await adminApi({action:"desactivarPlan",targetUid:uid});
     setUsuarios(u=>u.map(u2=>u2._id===uid?{...u2,plan:"free",planExpiry:null}:u2));
   }
 
   async function confirmarPago(pagoId, uid, plan) {
-    await activarPlan(uid, plan, 1);
-    await updateDoc(doc(db,"pagos",pagoId),{estado:"confirmado",confirmadoBy:user.uid,confirmadoAt:serverTimestamp()});
+    const d=await adminApi({action:"confirmarPago",pagoId,targetUid:uid,plan});
+    setUsuarios(u=>u.map(u2=>u2._id===uid?{...u2,plan,planExpiry:d.expiry}:u2));
     setPagos(p=>p.map(p2=>p2._id===pagoId?{...p2,estado:"confirmado"}:p2));
   }
 
   async function rechazarPago(pagoId) {
     if(!await appConfirm("¿Rechazar pago?",{danger:true,okLabel:"Rechazar"})) return;
-    await updateDoc(doc(db,"pagos",pagoId),{estado:"rechazado"});
+    await adminApi({action:"rechazarPago",pagoId});
     setPagos(p=>p.map(p2=>p2._id===pagoId?{...p2,estado:"rechazado"}:p2));
   }
 
