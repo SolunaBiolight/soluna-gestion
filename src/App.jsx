@@ -5453,7 +5453,6 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const [stockSummary, setStockSummary] = React.useState(null);
   const fbDot = {connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
 
-  // Cargar resumen de stock al montar
   React.useEffect(()=>{
     if(!user?.uid) return;
     const uid=user.uid;
@@ -5469,7 +5468,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           total_orders: data.total_orders||0,
           total_products: data.total_products||0,
         });
-        const alertas=(data.products||[]).filter(p=>(cfg[p.id]?.enabled)!==false).flatMap(p=>{
+        const al=(data.products||[]).filter(p=>(cfg[p.id]?.enabled)!==false).flatMap(p=>{
           const thr=cfg[p.id]?.threshold??global;
           return p.variants.filter(v=>{
             const vrate=v.units_sold>0?v.units_sold/7:0;
@@ -5481,7 +5480,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
             return {producto:p.nombre,variante:v.nombre,stock:v.stock,daysLeft:vd,status:v.stock===0?"empty":vd<=7?"critical":"low"};
           });
         }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1)).slice(0,4);
-        setStockAlertas(alertas);
+        setStockAlertas(al);
       }).catch(()=>{});
   },[user?.uid]);
 
@@ -5490,130 +5489,129 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const fecha = new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   const fechaCap = fecha.charAt(0).toUpperCase()+fecha.slice(1);
 
+  // Feed unificado de pendientes, ordenado por urgencia
+  const pendientes = [
+    ...stockAlertas.filter(a=>a.status==="empty").map(a=>({
+      icon:"⛔", titulo:`Sin stock: ${a.producto}`, sub:a.variante,
+      badge:"Sin stock", badgeColor:T.red, accion:()=>onNavigate("stock"),
+    })),
+    ...(reclamosCount>0?[{
+      icon:"💬", titulo:`${reclamosCount} reclamo${reclamosCount!==1?"s":""} abierto${reclamosCount!==1?"s":""}`,
+      sub:"Requieren seguimiento", badge:String(reclamosCount), badgeColor:T.red, accion:()=>onNavigate("reclamos"),
+    }]:[]),
+    ...stockAlertas.filter(a=>a.status==="critical").map(a=>({
+      icon:"🔴", titulo:`Stock crítico: ${a.producto}`, sub:`${a.variante} · ${a.daysLeft}d restantes`,
+      badge:`${a.daysLeft}d`, badgeColor:T.red, accion:()=>onNavigate("stock"),
+    })),
+    ...notificacionesCanjes.slice(0,3).map(n=>({
+      icon:"🤝", titulo:n.canje.influencer, sub:n.msg,
+      badge:"Pendiente", badgeColor:T.orange, accion:()=>onNavigate("canjes",n.canje._docId),
+    })),
+    ...stockAlertas.filter(a=>a.status==="low").map(a=>({
+      icon:"⚠️", titulo:`Stock bajo: ${a.producto}`, sub:`${a.variante} · ${a.daysLeft}d restantes`,
+      badge:`${a.daysLeft}d`, badgeColor:T.yellow, accion:()=>onNavigate("stock"),
+    })),
+  ];
+
+  // Secciones con contexto real
+  const secciones = [
+    {id:"envios",   icon:"📦", label:"Envíos",    meta:`${fmt(ordersCount)} pedidos`,                                              color:T.accentSolid},
+    {id:"reclamos", icon:"💬", label:"Reclamos",  meta:reclamosCount>0?`${reclamosCount} abiertos`:"Todo OK",                     color:reclamosCount>0?T.red:T.green},
+    {id:"canjes",   icon:"🤝", label:"Canjes",    meta:`${fmt(canjesCount)} activos`,                                              color:T.orange},
+    {id:"stock",    icon:"📊", label:"Stock",     meta:stockAlertas.length>0?`${stockAlertas.length} alertas`:`${fmt(stockSummary?.total_products||0)} productos`, color:stockAlertas.length>0?T.red:T.blue},
+    {id:"arca",     icon:"📄", label:"ARCA",      meta:"Facturación AFIP",                                                        color:T.textMd},
+    {id:"meta",     icon:"📣", label:"Meta Ads",  meta:"Campañas",                                                                color:T.textMd},
+  ];
+
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"24px 32px 32px",maxWidth:1400,margin:"0 auto"}}>
-      {/* Hero saludo */}
-      <div style={{marginBottom:DS.sp["2xl"]}}>
-        <div style={{fontSize:DS.font.xs,textTransform:"uppercase",color:T.textSm,fontWeight:DS.w.semibold,letterSpacing:1.2,marginBottom:8}}>{fechaCap}</div>
-        <h1 style={{fontSize:DS.font["4xl"],fontWeight:DS.w.black,margin:"0 0 6px",letterSpacing:-1.2,color:T.text,lineHeight:1.1}}>
-          {saludo}, <span style={{background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{nombre}</span>
-        </h1>
-        <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,marginTop:DS.sp.sm,flexWrap:"wrap"}}>
-          <div style={{display:"flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:DS.r.full,background:fbStatus==="ok"?T.green+"15":T.surface,border:`1px solid ${fbStatus==="ok"?T.green+"33":T.border}`}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:fbDot,boxShadow:fbStatus==="ok"?`0 0 6px ${T.green}`:"none"}}/>
-            <span style={{fontSize:DS.font.xs,color:fbStatus==="ok"?T.green:T.textSm,fontWeight:DS.w.semibold}}>{fbStatus==="ok"?"Sistema en vivo":"Conectando..."}</span>
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"20px 28px 40px",maxWidth:1400,margin:"0 auto"}}>
+
+      {/* Hero compacto */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:DS.sp["2xl"],flexWrap:"wrap",gap:DS.sp.md}}>
+        <div>
+          <div style={{fontSize:DS.font.xs,color:T.textSm,marginBottom:4,fontWeight:DS.w.medium}}>{fechaCap}</div>
+          <h1 style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,margin:0,letterSpacing:-0.8,lineHeight:1.2,color:T.text}}>
+            {saludo}, <span style={{background:`linear-gradient(135deg,${T.accentSolid},#a78bfa)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{nombre}</span>
+          </h1>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 11px",borderRadius:DS.r.full,background:fbStatus==="ok"?T.green+"15":T.surface,border:`1px solid ${fbStatus==="ok"?T.green+"33":T.border}`}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:fbDot,boxShadow:fbStatus==="ok"?`0 0 6px ${T.green}`:"none",flexShrink:0}}/>
+            <span style={{fontSize:DS.font.xs,color:fbStatus==="ok"?T.green:T.textSm,fontWeight:DS.w.semibold}}>{fbStatus==="ok"?"En vivo":"Conectando..."}</span>
           </div>
-          {reclamosCount>0&&<DSBadge T={T} color={T.red} size="sm">{reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}</DSBadge>}
-          {notificacionesCanjes.length>0&&<DSBadge T={T} color={T.orange} size="sm">{notificacionesCanjes.length} en canjes</DSBadge>}
-          {stockAlertas.length>0&&<DSBadge T={T} color={T.red} size="sm">{stockAlertas.length} alertas de stock</DSBadge>}
+          {isAdmin&&<DSBadge T={T} color={T.yellow} size="sm">👑 Admin</DSBadge>}
         </div>
       </div>
 
-      {/* Stats principales */}
+      {/* KPIs — métricas accionables */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:DS.sp.md,marginBottom:DS.sp["2xl"]}} className="stack-mobile">
-        <KPI T={T} label="Pedidos totales" value={fmt(ordersCount)} icon="📦" color={T.accentSolid} onClick={()=>onNavigate("envios")} sub="Todos los pedidos"/>
-        <KPI T={T} label="Vendido (7d)" value={fmt(stockSummary?.total_units||0)} icon="📈" color={T.green} sub={`${stockSummary?.total_orders||0} órdenes`} onClick={()=>onNavigate("stock")}/>
-        <KPI T={T} label="Facturado (7d)" value={fmtARS(stockSummary?.total_revenue||0)} icon="💰" color={T.green} sub="últimos 7 días" onClick={()=>onNavigate("stock")}/>
-        <KPI T={T} label="Productos en catálogo" value={fmt(stockSummary?.total_products||0)} icon="🏷" color={T.blue||"#3b82f6"} sub={stockSummary?`${stockAlertas.length} con alertas`:""} onClick={()=>onNavigate("stock")}/>
+        <KPI T={T} label="Facturado (7d)" value={fmtARS(stockSummary?.total_revenue||0)} icon="💰" color={T.green}
+          sub={stockSummary?`${fmt(stockSummary.total_orders)} órdenes`:"cargando..."} onClick={()=>onNavigate("stock")}/>
+        <KPI T={T} label="Unidades vendidas (7d)" value={fmt(stockSummary?.total_units||0)} icon="📈" color={T.accentSolid}
+          sub="últimos 7 días" onClick={()=>onNavigate("stock")}/>
+        <KPI T={T} label="Reclamos abiertos" value={reclamosCount} icon="💬"
+          color={reclamosCount>0?T.red:T.green} accent={reclamosCount>0}
+          sub={reclamosCount>0?"Requieren atención":"Todo en orden"} onClick={()=>onNavigate("reclamos")}/>
+        <KPI T={T} label="Stock crítico" value={stockAlertas.length} icon="⚠️"
+          color={stockAlertas.length>0?T.red:T.green} accent={stockAlertas.length>0}
+          sub={stockAlertas.length>0?"Productos en alerta":"Sin alertas"} onClick={()=>onNavigate("stock")}/>
       </div>
 
-      {/* Layout dos columnas — Alertas / Quick actions */}
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:DS.sp.lg}} className="stack-mobile">
-        {/* Columna izquierda: alertas y notificaciones */}
-        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
+      {/* Layout principal */}
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:DS.sp.lg,alignItems:"start"}} className="stack-mobile">
 
-          {/* Alertas de stock */}
-          {stockAlertas.length > 0 && (
-            <Card T={T} padding="lg" style={{borderColor:T.red+"33"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:DS.sp.md}}>
-                <span style={{width:6,height:6,borderRadius:"50%",background:T.red,flexShrink:0}}/>
-                <span style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Alertas de Stock</span>
-                <DSBadge T={T} color={T.red} size="sm">{stockAlertas.length}</DSBadge>
-                <button onClick={()=>onNavigate("stock")} style={{marginLeft:"auto",fontSize:DS.font.sm,color:T.accent,background:"transparent",border:"none",cursor:"pointer",fontWeight:DS.w.semibold}}>Ver todo →</button>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {stockAlertas.map((a,i)=>{
-                  const c=a.status==="empty"?T.red:a.status==="critical"?T.red+"cc":(T.yellow||"#eab308");
-                  return (
-                    <div key={i} onClick={()=>onNavigate("stock")} style={{padding:"10px 12px",borderRadius:DS.r.md,background:T.surface,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",border:`1px solid transparent`,transition:`all 0.15s ${DS.ease}`}}
-                      onMouseEnter={e=>{e.currentTarget.style.borderColor=c+"44";}}
-                      onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0,flex:1}}>
-                        <span style={{fontSize:14,flexShrink:0}}>{a.status==="empty"?"⛔":a.status==="critical"?"🔴":"⚠️"}</span>
-                        <div style={{minWidth:0}}>
-                          <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.producto}</div>
-                          <div style={{fontSize:DS.font.xs,color:T.textSm}}>{a.variante}</div>
-                        </div>
-                      </div>
-                      <DSBadge T={T} color={c} size="sm">{a.status==="empty"?"Sin stock":`${a.daysLeft}d restantes`}</DSBadge>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
-
-          {/* Notificaciones de canjes */}
-          {notificacionesCanjes.length > 0 && (
-            <Card T={T} padding="lg" style={{borderColor:T.orange+"33"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:DS.sp.md}}>
-                <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
-                <span style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Canjes que requieren atención</span>
-                <DSBadge T={T} color={T.orange} size="sm">{notificacionesCanjes.length}</DSBadge>
-                <button onClick={()=>onNavigate("canjes")} style={{marginLeft:"auto",fontSize:DS.font.sm,color:T.accent,background:"transparent",border:"none",cursor:"pointer",fontWeight:DS.w.semibold}}>Ver todo →</button>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {notificacionesCanjes.slice(0,5).map((a,i)=>(
-                  <div key={i} onClick={()=>onNavigate("canjes",a.canje._docId)} style={{padding:"10px 12px",borderRadius:DS.r.md,background:T.surface,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-                      <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
-                      <span style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text}}>{a.canje.influencer}</span>
-                      <span style={{fontSize:DS.font.sm,color:T.textSm}}>{a.msg}</span>
-                    </div>
-                    <span style={{fontSize:DS.font.sm,color:T.textSm}}>→</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {/* Empty state si todo está OK */}
-          {stockAlertas.length === 0 && notificacionesCanjes.length === 0 && (
-            <DSEmpty T={T} icon="✅" title="Todo en orden" subtitle="No hay alertas pendientes. Tu sistema está funcionando perfectamente."/>
-          )}
-        </div>
-
-        {/* Columna derecha: acciones rápidas */}
-        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
-          <Card T={T} padding="lg">
-            <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5,marginBottom:DS.sp.md}}>Acciones rápidas</div>
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("envios")} style={{justifyContent:"flex-start",width:"100%"}}>
-                📦 Generar etiquetas Andreani
-              </Btn>
-              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("canjes")} style={{justifyContent:"flex-start",width:"100%"}}>
-                🤝 Nuevo canje
-              </Btn>
-              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("reclamos")} style={{justifyContent:"flex-start",width:"100%"}}>
-                💬 Crear reclamo
-              </Btn>
-              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("arca")} style={{justifyContent:"flex-start",width:"100%"}}>
-                📄 Emitir factura
-              </Btn>
-              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("meta")} style={{justifyContent:"flex-start",width:"100%"}}>
-                📣 Ver campañas Meta
-              </Btn>
+        {/* Columna izquierda: feed de pendientes unificado */}
+        <Card T={T} padding="lg">
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:DS.sp.lg}}>
+            <span style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.text}}>Pendientes</span>
+            {pendientes.length>0&&<DSBadge T={T} color={T.red} size="sm">{pendientes.length}</DSBadge>}
+          </div>
+          {pendientes.length===0?(
+            <div style={{textAlign:"center",padding:"28px 0"}}>
+              <div style={{fontSize:36,marginBottom:DS.sp.md}}>✅</div>
+              <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,marginBottom:4}}>Todo en orden</div>
+              <div style={{fontSize:DS.font.sm,color:T.textSm}}>Sin alertas ni pendientes por ahora</div>
             </div>
-          </Card>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {pendientes.map((p,i)=>(
+                <div key={i} onClick={p.accion}
+                  style={{padding:"10px 12px",borderRadius:DS.r.md,background:T.surface,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,border:"1px solid transparent"}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=p.badgeColor+"33";e.currentTarget.style.background=T.card;}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.background=T.surface;}}>
+                  <span style={{fontSize:15,flexShrink:0}}>{p.icon}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.titulo}</div>
+                    <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1}}>{p.sub}</div>
+                  </div>
+                  <DSBadge T={T} color={p.badgeColor} size="sm">{p.badge}</DSBadge>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
 
-          {/* Plan card */}
-          {userPlan==="free" && (
-            <Card T={T} padding="lg" style={{background:`linear-gradient(135deg, ${T.accentSolid}15, ${T.accentSolid}05)`,borderColor:T.accentSolid+"33"}}>
-              <div style={{fontSize:DS.font.xs,textTransform:"uppercase",color:T.accent,fontWeight:DS.w.bold,letterSpacing:0.5,marginBottom:6}}>💎 Plan Free</div>
-              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:DS.sp.sm}}>Desbloqueá todo el potencial</div>
-              <div style={{fontSize:DS.font.sm,color:T.textMd,marginBottom:DS.sp.lg,lineHeight:1.4}}>Reclamos ilimitados, Meta Ads avanzado, ARCA, Audio Studio y soporte prioritario.</div>
-              <Btn T={T} variant="primary" size="md" onClick={()=>onNavigate("planes")} style={{width:"100%"}}>Ver planes →</Btn>
-            </Card>
+        {/* Columna derecha: secciones con contexto */}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {secciones.map(s=>(
+            <div key={s.id} onClick={()=>onNavigate(s.id)}
+              style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"11px 14px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,cursor:"pointer",transition:`all 0.15s ${DS.ease}`}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=s.color+"55";e.currentTarget.style.background=T.surface;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background=T.card;}}>
+              <span style={{fontSize:15,flexShrink:0}}>{s.icon}</span>
+              <span style={{fontSize:DS.font.base,fontWeight:DS.w.medium,color:T.text,flex:1}}>{s.label}</span>
+              <span style={{fontSize:DS.font.sm,color:s.color,fontWeight:DS.w.semibold,whiteSpace:"nowrap"}}>{s.meta}</span>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M9 18l6-6-6-6"/></svg>
+            </div>
+          ))}
+          {userPlan==="free"&&(
+            <div onClick={()=>onNavigate("planes")}
+              style={{padding:"12px 14px",background:`linear-gradient(135deg,${T.accentSolid}15,transparent)`,border:`1px solid ${T.accentSolid}33`,borderRadius:DS.r.lg,cursor:"pointer",marginTop:4,transition:`all 0.15s ${DS.ease}`}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor=T.accentSolid+"66"}
+              onMouseLeave={e=>e.currentTarget.style.borderColor=T.accentSolid+"33"}>
+              <div style={{fontSize:DS.font.xs,color:T.accent,fontWeight:DS.w.bold,marginBottom:3}}>💎 Plan Free</div>
+              <div style={{fontSize:DS.font.sm,color:T.textMd}}>Desbloqueá todas las funciones →</div>
+            </div>
           )}
         </div>
       </div>
