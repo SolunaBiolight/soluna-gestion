@@ -77,6 +77,368 @@ const LIGHT = {
   badge: (dot) => ({ bg: dot+"18", border: dot+"33" }),
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// DESIGN SYSTEM — tokens centralizados
+// ═══════════════════════════════════════════════════════════════════
+const DS = {
+  // Spacing scale
+  sp: { xs:4, sm:8, md:12, lg:16, xl:20, "2xl":24, "3xl":32, "4xl":48 },
+  // Border radius scale
+  r: { sm:6, md:8, lg:10, xl:14, "2xl":16, full:9999 },
+  // Typography scale
+  font: { xs:10, sm:11, md:12, base:13, lg:14, xl:16, "2xl":20, "3xl":26, "4xl":34 },
+  // Font weights
+  w: { regular:400, medium:500, semibold:600, bold:700, black:800 },
+  // Shadows
+  shadow: {
+    sm: "0 1px 2px rgba(0,0,0,0.04)",
+    md: "0 2px 8px rgba(0,0,0,0.08)",
+    lg: "0 8px 24px rgba(0,0,0,0.12)",
+    xl: "0 16px 48px rgba(0,0,0,0.18)",
+  },
+  // Easing
+  ease: "cubic-bezier(0.4, 0, 0.2, 1)",
+};
+
+// ─── Componentes base reusables ───────────────────────────────────────
+function Card({T, children, hoverable, onClick, style={}, padding="lg"}) {
+  const [hover, setHover] = React.useState(false);
+  const padMap = {sm:"10px 12px", md:"14px 16px", lg:"18px 20px", xl:"24px 28px"};
+  return (
+    <div onClick={onClick}
+      onMouseEnter={()=>hoverable&&setHover(true)}
+      onMouseLeave={()=>setHover(false)}
+      style={{
+        background: T.card,
+        border: `1px solid ${hover&&hoverable?T.accentSolid+"55":T.border}`,
+        borderRadius: DS.r.xl,
+        padding: padMap[padding]||padMap.lg,
+        transition: `all 0.15s ${DS.ease}`,
+        cursor: onClick?"pointer":"default",
+        ...style,
+      }}>
+      {children}
+    </div>
+  );
+}
+
+function KPI({T, label, value, sub, color, icon, accent, onClick, compact}) {
+  const c = color||T.accentSolid;
+  return (
+    <Card T={T} hoverable={!!onClick} onClick={onClick} padding={compact?"md":"lg"} style={{borderColor:accent?c+"55":T.border}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:DS.sp.md}}>
+        {icon&&<div style={{fontSize:compact?16:18,flexShrink:0,opacity:0.9}}>{icon}</div>}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:DS.font.xs,textTransform:"uppercase",color:T.textSm,fontWeight:DS.w.semibold,letterSpacing:0.5,marginBottom:5}}>{label}</div>
+          <div style={{fontSize:compact?DS.font["2xl"]:DS.font["3xl"],fontWeight:DS.w.black,color:c,letterSpacing:-0.6,lineHeight:1}}>{value}</div>
+          {sub&&<div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:4}}>{sub}</div>}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function Btn({T, variant="primary", size="md", icon, children, onClick, disabled, style={}, ...rest}) {
+  const variants = {
+    primary:   {bg:T.accentSolid, color:"#fff", border:"transparent"},
+    secondary: {bg:T.card, color:T.text, border:T.border},
+    ghost:     {bg:"transparent", color:T.textMd, border:"transparent"},
+    danger:    {bg:T.red, color:"#fff", border:"transparent"},
+    success:   {bg:T.green, color:"#fff", border:"transparent"},
+  };
+  const sizes = {
+    sm: {padding:"5px 10px", fontSize:DS.font.sm, gap:5},
+    md: {padding:"7px 14px", fontSize:DS.font.base, gap:6},
+    lg: {padding:"10px 20px", fontSize:DS.font.lg, gap:8},
+  };
+  const v = variants[variant]||variants.primary;
+  const s = sizes[size]||sizes.md;
+  return (
+    <button onClick={onClick} disabled={disabled} {...rest}
+      style={{
+        background: disabled?T.surface:v.bg,
+        color: disabled?T.textSm:v.color,
+        border: `1px solid ${v.border==="transparent"?"transparent":v.border}`,
+        borderRadius: DS.r.md,
+        cursor: disabled?"not-allowed":"pointer",
+        fontWeight: DS.w.semibold,
+        fontFamily: "'Inter',system-ui,sans-serif",
+        display:"inline-flex",alignItems:"center",justifyContent:"center",
+        transition: `all 0.15s ${DS.ease}`,
+        opacity: disabled?0.5:1,
+        ...s,
+        ...style,
+      }}>
+      {icon&&<span style={{display:"inline-flex",alignItems:"center"}}>{icon}</span>}
+      {children}
+    </button>
+  );
+}
+
+function DSEmpty({T, icon="📭", title, subtitle, action}) {
+  return (
+    <Card T={T} padding="xl" style={{textAlign:"center"}}>
+      <div style={{fontSize:42,marginBottom:DS.sp.md,opacity:0.8}}>{icon}</div>
+      <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:DS.sp.xs}}>{title}</div>
+      {subtitle&&<div style={{fontSize:DS.font.md,color:T.textSm,marginBottom:action?DS.sp.lg:0,maxWidth:400,margin:"0 auto"}}>{subtitle}</div>}
+      {action&&<div style={{marginTop:DS.sp.lg}}>{action}</div>}
+    </Card>
+  );
+}
+
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed}) {
+  const nav = [
+    {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
+    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count: alerts.envios},
+    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count: alerts.reclamos, badge:"red"},
+    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count: alerts.canjes, badge:"orange"},
+    {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count: alerts.stock, badge:"red"},
+    {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
+    {id:"arca",     label:"ARCA",      icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
+    {id:"audio",    label:"Audio",     icon:"M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3zM19 10v2a7 7 0 01-14 0v-2M12 19v3"},
+  ];
+  const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
+  const W = collapsed ? 64 : 220;
+  return (
+    <div style={{
+      width:W, minWidth:W, height:"100vh", background:T.surface, borderRight:`1px solid ${T.border}`,
+      display:"flex", flexDirection:"column", position:"sticky", top:0, transition:`width 0.2s ${DS.ease}`,
+      zIndex:50,
+    }} className="hide-mobile">
+      {/* Logo */}
+      <div style={{padding:DS.sp.lg, display:"flex", alignItems:"center", gap:10, borderBottom:`1px solid ${T.border}`, height:60}}>
+        <div style={{width:28, height:28, borderRadius:DS.r.md, background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, boxShadow:`0 2px 8px ${T.accentSolid}40`, flexShrink:0}}>🌙</div>
+        {!collapsed && <span style={{fontWeight:DS.w.bold, fontSize:DS.font.xl, color:T.text, letterSpacing:-0.3}}>Growith</span>}
+        {!collapsed && <button onClick={()=>setCollapsed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",padding:4,fontSize:14}}>‹</button>}
+        {collapsed && <button onClick={()=>setCollapsed(false)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",padding:4,fontSize:14,marginLeft:-4}}>›</button>}
+      </div>
+
+      {/* Nav */}
+      <nav style={{flex:1, padding:DS.sp.sm, display:"flex", flexDirection:"column", gap:2, overflowY:"auto"}}>
+        {nav.map(item => {
+          const active = page === item.id;
+          const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
+          return (
+            <button key={item.id} onClick={()=>setPage(item.id)} title={collapsed?item.label:undefined}
+              style={{
+                display:"flex", alignItems:"center", gap:10, padding:collapsed?"10px 14px":"9px 12px",
+                background: active ? T.accentSolid+"18" : "transparent",
+                border:"none", borderRadius:DS.r.md, cursor:"pointer", textAlign:"left",
+                color: active ? T.accent : T.textMd,
+                fontWeight: active ? DS.w.semibold : DS.w.medium,
+                fontSize: DS.font.base, fontFamily:"'Inter',system-ui,sans-serif",
+                transition:`all 0.15s ${DS.ease}`,
+                justifyContent: collapsed ? "center" : "flex-start",
+              }}
+              onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.card;}}
+              onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={item.icon}/></svg>
+              {!collapsed && <span style={{flex:1}}>{item.label}</span>}
+              {!collapsed && item.count > 0 && (
+                <span style={{
+                  fontSize:DS.font.xs, fontWeight:DS.w.bold, padding:"1px 7px",
+                  borderRadius:DS.r.full, background:badgeColor+"22", color:badgeColor, lineHeight:1.4,
+                }}>{item.count > 99 ? "99+" : item.count}</span>
+              )}
+              {collapsed && item.count > 0 && (
+                <span style={{position:"absolute", marginLeft:18, marginTop:-12, width:6, height:6, borderRadius:DS.r.full, background:badgeColor}}/>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* User Section */}
+      <div style={{borderTop:`1px solid ${T.border}`, padding:DS.sp.sm}}>
+        {!collapsed && (
+          <div style={{display:"flex", alignItems:"center", gap:DS.sp.md, padding:DS.sp.sm, marginBottom:DS.sp.xs}}>
+            {user?.photoURL ?
+              <img src={user.photoURL} alt="" style={{width:28, height:28, borderRadius:DS.r.full, border:`1px solid ${T.border}`, flexShrink:0}}/> :
+              <div style={{width:28, height:28, borderRadius:DS.r.full, background:T.accentSolid+"33", color:T.accent, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:DS.w.bold, fontSize:DS.font.md, flexShrink:0}}>{initial}</div>
+            }
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{fontSize:DS.font.md, fontWeight:DS.w.semibold, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{user?.displayName || user?.email?.split("@")[0]}</div>
+              <div style={{fontSize:DS.font.xs, color:T.textSm}}>{userPlan==="free"?"Plan Free":userPlan==="starter"?"Starter":userPlan==="pro"?"Pro":"Total"}</div>
+            </div>
+          </div>
+        )}
+        <div style={{display:"flex", flexDirection:collapsed?"column":"row", gap:4}}>
+          <button onClick={()=>setPage("config")} title="Configuración" style={{flex:1, background:"transparent", border:`1px solid ${T.border}`, borderRadius:DS.r.md, color:T.textMd, cursor:"pointer", padding:"6px", fontSize:DS.font.sm, display:"flex", alignItems:"center", justifyContent:"center", gap:5}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            {!collapsed && "Config"}
+          </button>
+          <button onClick={onToggleDark} title={darkMode?"Modo claro":"Modo oscuro"} style={{background:"transparent", border:`1px solid ${T.border}`, borderRadius:DS.r.md, color:T.textMd, cursor:"pointer", padding:"6px 9px", fontSize:DS.font.sm}}>
+            {darkMode?"☀":"◑"}
+          </button>
+          {isAdmin && (
+            <button onClick={()=>setPage("admin")} title="Admin" style={{background:"transparent", border:`1px solid ${T.yellow}44`, borderRadius:DS.r.md, color:T.yellow, cursor:"pointer", padding:"6px 9px", fontSize:DS.font.sm}}>👑</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Command Palette (Ctrl+K) ───
+function CommandPalette({T, open, onClose, setPage, isAdmin}) {
+  const [q, setQ] = React.useState("");
+  const inputRef = React.useRef(null);
+  React.useEffect(()=>{
+    if(open) setTimeout(()=>inputRef.current?.focus(), 50);
+    else setQ("");
+  },[open]);
+  React.useEffect(()=>{
+    if(!open) return;
+    const onKey = (e)=>{ if(e.key==="Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return ()=>window.removeEventListener("keydown", onKey);
+  },[open, onClose]);
+
+  const items = [
+    {label:"Inicio",       page:"home",     icon:"🏠"},
+    {label:"Envíos",       page:"envios",   icon:"📦"},
+    {label:"Reclamos",     page:"reclamos", icon:"💬"},
+    {label:"Canjes",       page:"canjes",   icon:"🤝"},
+    {label:"Stock & Estadísticas", page:"stock", icon:"📊"},
+    {label:"Meta Ads",     page:"meta",     icon:"📣"},
+    {label:"ARCA / Facturación", page:"arca", icon:"📄"},
+    {label:"Audio Studio", page:"audio",    icon:"🎙"},
+    {label:"Configuración", page:"config",  icon:"⚙"},
+    {label:"Planes",       page:"planes",   icon:"💎"},
+    ...(isAdmin?[{label:"Admin Panel", page:"admin", icon:"👑"}]:[]),
+  ];
+  const filtered = items.filter(i => !q || i.label.toLowerCase().includes(q.toLowerCase()));
+
+  if(!open) return null;
+  return ReactDOM.createPortal(
+    <div onClick={onClose}
+      style={{position:"fixed", inset:0, zIndex:10000, background:"rgba(0,0,0,0.5)", backdropFilter:"blur(6px)", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:"15vh"}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], width:"100%", maxWidth:560, boxShadow:DS.shadow.xl, overflow:"hidden"}}>
+        <div style={{display:"flex", alignItems:"center", gap:10, padding:"14px 18px", borderBottom:`1px solid ${T.border}`}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input ref={inputRef} type="text" placeholder="Buscar sección, acción..." value={q} onChange={e=>setQ(e.target.value)}
+            style={{flex:1, border:"none", background:"transparent", color:T.text, fontSize:DS.font.lg, outline:"none", fontFamily:"'Inter',system-ui,sans-serif"}}/>
+          <span style={{fontSize:DS.font.xs, color:T.textSm, padding:"2px 6px", border:`1px solid ${T.border}`, borderRadius:DS.r.sm}}>ESC</span>
+        </div>
+        <div style={{maxHeight:380, overflowY:"auto", padding:DS.sp.sm}}>
+          {filtered.length===0 ? (
+            <div style={{padding:"32px 16px", textAlign:"center", color:T.textSm, fontSize:DS.font.md}}>Sin resultados</div>
+          ) : filtered.map((item,i)=>(
+            <button key={i} onClick={()=>{setPage(item.page);onClose();}}
+              style={{display:"flex", alignItems:"center", gap:DS.sp.md, padding:"10px 12px", width:"100%", border:"none", background:"transparent", borderRadius:DS.r.md, cursor:"pointer", textAlign:"left", color:T.text, fontSize:DS.font.base, transition:`background 0.1s`}}
+              onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <span style={{fontSize:16}}>{item.icon}</span>
+              <span style={{flex:1, fontWeight:DS.w.medium}}>{item.label}</span>
+              <span style={{fontSize:DS.font.xs, color:T.textSm}}>↵</span>
+            </button>
+          ))}
+        </div>
+        <div style={{padding:"8px 16px", borderTop:`1px solid ${T.border}`, fontSize:DS.font.xs, color:T.textSm, display:"flex", justifyContent:"space-between"}}>
+          <span>↑↓ navegar · ↵ seleccionar</span>
+          <span>⌘K / Ctrl+K</span>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Onboarding Wizard ───
+function OnboardingWizard({T, user, onComplete}) {
+  const [step, setStep] = React.useState(1);
+  const totalSteps = 3;
+
+  const steps = [
+    {
+      n:1,
+      icon:"🛍",
+      title:"Conectá tu tienda online",
+      desc:"Vincula Tienda Nube o Shopify para sincronizar pedidos, productos y stock automáticamente.",
+      actions: (
+        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
+          <Btn T={T} variant="primary" size="lg" onClick={()=>{window.location.href=`/api/integrations?platform=tn&action=auth&uid=${user?.uid}`;}}>
+            🛒 Conectar Tienda Nube
+          </Btn>
+          <Btn T={T} variant="secondary" size="lg" onClick={()=>onComplete("shopify")}>
+            🛍 Conectar Shopify
+          </Btn>
+        </div>
+      ),
+    },
+    {
+      n:2,
+      icon:"📣",
+      title:"Conectá Meta Ads",
+      desc:"Opcional. Conecta Facebook/Instagram Ads para ver el rendimiento de tus campañas y calcular ROAS real.",
+      actions: (
+        <div style={{display:"flex",gap:DS.sp.md}}>
+          <Btn T={T} variant="primary" size="lg" style={{flex:1}} onClick={()=>setStep(3)}>Configurar después</Btn>
+          <Btn T={T} variant="secondary" size="lg" style={{flex:1}} onClick={()=>setStep(3)}>Más tarde</Btn>
+        </div>
+      ),
+    },
+    {
+      n:3,
+      icon:"📄",
+      title:"Facturación electrónica (ARCA)",
+      desc:"Opcional. Configurá tu CUIT y certificado ARCA para emitir facturas automáticas. Podés saltearlo y configurarlo después.",
+      actions: (
+        <div style={{display:"flex",gap:DS.sp.md}}>
+          <Btn T={T} variant="primary" size="lg" style={{flex:1}} onClick={()=>onComplete("done")}>✓ Comenzar a usar Growith</Btn>
+        </div>
+      ),
+    },
+  ];
+  const current = steps[step-1];
+
+  return (
+    <div style={{position:"fixed",inset:0,background:T.bg,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:DS.sp.lg}}>
+      <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], padding:"40px 36px", maxWidth:520, width:"100%", boxShadow:DS.shadow.xl}}>
+        {/* Progress */}
+        <div style={{display:"flex",gap:6,marginBottom:DS.sp["3xl"]}}>
+          {[1,2,3].map(n=>(
+            <div key={n} style={{flex:1, height:4, borderRadius:DS.r.sm, background: n<=step ? T.accentSolid : T.borderL, transition:"background 0.3s"}}/>
+          ))}
+        </div>
+        <div style={{textAlign:"center", marginBottom:DS.sp["2xl"]}}>
+          <div style={{fontSize:48, marginBottom:DS.sp.md}}>{current.icon}</div>
+          <div style={{fontSize:DS.font["2xl"], fontWeight:DS.w.bold, color:T.text, marginBottom:DS.sp.sm, letterSpacing:-0.5}}>{current.title}</div>
+          <div style={{fontSize:DS.font.lg, color:T.textMd, lineHeight:1.5}}>{current.desc}</div>
+        </div>
+        {current.actions}
+        <div style={{textAlign:"center", marginTop:DS.sp.lg}}>
+          <button onClick={()=>onComplete("skip")} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:DS.font.sm,padding:DS.sp.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            Saltar onboarding por ahora
+          </button>
+        </div>
+        <div style={{textAlign:"center",fontSize:DS.font.xs,color:T.textSm,marginTop:DS.sp.md}}>Paso {step} de {totalSteps}</div>
+      </div>
+    </div>
+  );
+}
+
+function DSBadge({T, color, children, size="md"}) {
+  const c = color||T.accent;
+  return (
+    <span style={{
+      fontSize: size==="sm"?DS.font.xs:DS.font.sm,
+      padding: size==="sm"?"2px 7px":"3px 9px",
+      borderRadius: DS.r.sm,
+      background: c+"20",
+      color: c,
+      fontWeight: DS.w.bold,
+      border: `1px solid ${c}33`,
+      display: "inline-flex", alignItems:"center", gap:4,
+      lineHeight: 1.4,
+      whiteSpace: "nowrap",
+    }}>
+      {children}
+    </span>
+  );
+}
+
 // --- Constants ---
 const MOTIVOS_R = ["Producto dañado","Color incorrecto","No cumple expectativas","Problema con el lente","Error en el pedido","Armazón roto","Otro"];
 const ESTADOS_R = ["Nuevo","Contactado","Esperando producto","Producto recibido","Envío en camino","Resuelto","Rechazado"];
@@ -586,19 +948,15 @@ function TabView({children, tabKey}) {
 // --- Shared AppTopbar ---
 function AppTopbar({T, section, onHome, children}) {
   return (
-    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"cc",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,gap:16,maxWidth:1400,margin:"0 auto"}}>
+    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"cc",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"0 24px",position:"sticky",top:48,zIndex:30}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:56,gap:16,maxWidth:1400,margin:"0 auto"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <button onClick={onHome} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",fontSize:13,fontWeight:500,borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease"}}
-            onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;e.currentTarget.style.borderColor=T.accentSolid+"66";}}
-            onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textMd;e.currentTarget.style.borderColor=T.border;}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-            Inicio
+          <button onClick={onHome} className="mobile-only" style={{display:"none",alignItems:"center",gap:6,padding:"5px 10px",fontSize:DS.font.sm,fontWeight:DS.w.medium,borderRadius:DS.r.md,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           </button>
-          <div style={{width:24,height:24,borderRadius:6,background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,boxShadow:`0 2px 8px ${T.accentSolid}40`}}>🌙</div>
-          <span style={{fontWeight:700,fontSize:15,color:T.text,letterSpacing:-0.2,background:`linear-gradient(135deg, ${T.text}, ${T.textMd})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{section}</span>
+          <span style={{fontWeight:DS.w.bold,fontSize:DS.font.xl,color:T.text,letterSpacing:-0.3}}>{section}</span>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           {children}
         </div>
       </div>
@@ -5068,30 +5426,32 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 // HOME SCREEN
 // ===========================================
 function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjesCount, alertas, user, userPlan="free", planExpiry, isAdmin=false, darkMode, onToggleDark}) {
-  const fbDot={connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
   const nombre = user?.displayName?.split(" ")[0] || "ahí";
   const hora = new Date().getHours();
-  const saludo = hora < 13 ? "Buenos días" : hora < 20 ? "Buenas tardes" : "Buenas noches";
+  const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
   const notificacionesCanjes = alertas||[];
-  const [notifCollapsed, setNotifCollapsed] = React.useState(false);
   const [stockAlertas, setStockAlertas] = React.useState([]);
-  const [stockAlertCollapsed, setStockAlertCollapsed] = React.useState(false);
+  const [stockSummary, setStockSummary] = React.useState(null);
+  const fbDot = {connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
 
-  // Cargar alertas de stock al montar
+  // Cargar resumen de stock al montar
   React.useEffect(()=>{
     if(!user?.uid) return;
     const uid=user.uid;
-    // Leer config de alertas guardada
     let cfg={}, global=14;
     try{ cfg=JSON.parse(localStorage.getItem(`growith_alert_config_${uid}`)||"{}"); }catch(e){}
     try{ global=parseInt(localStorage.getItem(`growith_alert_global_${uid}`))||14; }catch(e){}
-    // Traer datos de stock (rápido — solo 7 días)
     fetch(`/api/stock?action=products&uid=${uid}&days=7`)
       .then(r=>r.json()).then(data=>{
         if(!data.products) return;
+        setStockSummary({
+          total_units: data.total_units||0,
+          total_revenue: data.total_revenue||0,
+          total_orders: data.total_orders||0,
+          total_products: data.total_products||0,
+        });
         const alertas=(data.products||[]).filter(p=>(cfg[p.id]?.enabled)!==false).flatMap(p=>{
           const thr=cfg[p.id]?.threshold??global;
-          const rate=p.units_sold>0?p.units_sold/7:0;
           return p.variants.filter(v=>{
             const vrate=v.units_sold>0?v.units_sold/7:0;
             const vd=vrate>0?Math.round(v.stock/vrate):null;
@@ -5101,188 +5461,147 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
             const vd=vrate>0?Math.round(v.stock/vrate):null;
             return {producto:p.nombre,variante:v.nombre,stock:v.stock,daysLeft:vd,status:v.stock===0?"empty":vd<=7?"critical":"low"};
           });
-        }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1)).slice(0,5);
+        }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1)).slice(0,4);
         setStockAlertas(alertas);
       }).catch(()=>{});
   },[user?.uid]);
+
+  const fmt = n => (n||0).toLocaleString("es-AR");
+  const fmtARS = n => "$"+Math.round(n||0).toLocaleString("es-AR");
   const fecha = new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   const fechaCap = fecha.charAt(0).toUpperCase()+fecha.slice(1);
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text,display:"flex",flexDirection:"column",position:"relative",overflow:"hidden"}}>
-
-      {/* Aurora background gradient (subtle) */}
-      <div aria-hidden style={{position:"absolute",top:-200,left:"50%",transform:"translateX(-50%)",width:1100,height:600,background:`radial-gradient(ellipse at center, ${T.accentSolid}18 0%, transparent 60%)`,pointerEvents:"none",filter:"blur(40px)"}}/>
-      <div aria-hidden style={{position:"absolute",top:100,right:-100,width:500,height:500,background:`radial-gradient(circle, ${T.green}10 0%, transparent 65%)`,pointerEvents:"none",filter:"blur(60px)"}}/>
-
-      {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"cc",backdropFilter:"blur(12px)",padding:"0 24px",position:"relative",zIndex:2}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:1200,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:30,height:30,borderRadius:8,background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,boxShadow:`0 4px 14px ${T.accentSolid}33`}}>🌙</div>
-            <span style={{fontWeight:800,fontSize:15,color:T.text,letterSpacing:-0.3}}>Growith</span>
-            <div style={{display:"flex",alignItems:"center",gap:5,marginLeft:6,padding:"3px 9px",borderRadius:20,background:fbStatus==="ok"?T.green+"15":T.surface,border:`1px solid ${fbStatus==="ok"?T.green+"33":T.border}`}}>
-              <span style={{width:5,height:5,borderRadius:"50%",background:fbDot,boxShadow:fbStatus==="ok"?`0 0 6px ${T.green}`:"none"}}/>
-              <span style={{fontSize:10,color:fbStatus==="ok"?T.green:T.textSm,fontWeight:600}}>{fbStatus==="ok"?"en vivo":"conectando"}</span>
-            </div>
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"24px 32px 32px",maxWidth:1400,margin:"0 auto"}}>
+      {/* Hero saludo */}
+      <div style={{marginBottom:DS.sp["2xl"]}}>
+        <div style={{fontSize:DS.font.xs,textTransform:"uppercase",color:T.textSm,fontWeight:DS.w.semibold,letterSpacing:1.2,marginBottom:8}}>{fechaCap}</div>
+        <h1 style={{fontSize:DS.font["4xl"],fontWeight:DS.w.black,margin:"0 0 6px",letterSpacing:-1.2,color:T.text,lineHeight:1.1}}>
+          {saludo}, <span style={{background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{nombre}</span>
+        </h1>
+        <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,marginTop:DS.sp.sm,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:DS.r.full,background:fbStatus==="ok"?T.green+"15":T.surface,border:`1px solid ${fbStatus==="ok"?T.green+"33":T.border}`}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:fbDot,boxShadow:fbStatus==="ok"?`0 0 6px ${T.green}`:"none"}}/>
+            <span style={{fontSize:DS.font.xs,color:fbStatus==="ok"?T.green:T.textSm,fontWeight:DS.w.semibold}}>{fbStatus==="ok"?"Sistema en vivo":"Conectando..."}</span>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            {user?.photoURL&&<img src={user.photoURL} style={{width:28,height:28,borderRadius:"50%",border:`1.5px solid ${T.border}`}} alt=""/>}
-            <button onClick={()=>onNavigate("planes")} style={{fontSize:11,fontWeight:600,padding:"4px 9px",borderRadius:6,background:"transparent",border:`1px solid ${T.border}`,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-              {userPlan==="free"?"Free":userPlan==="starter"?"Starter":userPlan==="pro"?"Pro":"Total"}
-            </button>
-            {isAdmin&&<button onClick={()=>onNavigate("admin")} style={{...BtnSecondary(T),padding:"5px 9px",fontSize:12,color:T.yellow,borderColor:T.yellow+"44"}}>👑</button>}
-            <button onClick={onToggleDark} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.textSm}}>{darkMode?"☀︎":"◑"}</button>
-            <button onClick={()=>onNavigate("config")} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:12,color:T.textMd}}>Config</button>
-          </div>
+          {reclamosCount>0&&<DSBadge T={T} color={T.red} size="sm">{reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}</DSBadge>}
+          {notificacionesCanjes.length>0&&<DSBadge T={T} color={T.orange} size="sm">{notificacionesCanjes.length} en canjes</DSBadge>}
+          {stockAlertas.length>0&&<DSBadge T={T} color={T.red} size="sm">{stockAlertas.length} alertas de stock</DSBadge>}
         </div>
       </div>
 
-      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"48px 24px 64px",position:"relative",zIndex:1}}>
-        <div style={{width:"100%",maxWidth:1100}}>
+      {/* Stats principales */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:DS.sp.md,marginBottom:DS.sp["2xl"]}} className="stack-mobile">
+        <KPI T={T} label="Pedidos totales" value={fmt(ordersCount)} icon="📦" color={T.accentSolid} onClick={()=>onNavigate("envios")} sub="Todos los pedidos"/>
+        <KPI T={T} label="Vendido (7d)" value={fmt(stockSummary?.total_units||0)} icon="📈" color={T.green} sub={`${stockSummary?.total_orders||0} órdenes`} onClick={()=>onNavigate("stock")}/>
+        <KPI T={T} label="Facturado (7d)" value={fmtARS(stockSummary?.total_revenue||0)} icon="💰" color={T.green} sub="últimos 7 días" onClick={()=>onNavigate("stock")}/>
+        <KPI T={T} label="Productos en catálogo" value={fmt(stockSummary?.total_products||0)} icon="🏷" color={T.blue||"#3b82f6"} sub={stockSummary?`${stockAlertas.length} con alertas`:""} onClick={()=>onNavigate("stock")}/>
+      </div>
 
-          {/* Saludo */}
-          <div style={{marginBottom:32}}>
-            <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:1.2,marginBottom:8}}>{fechaCap}</div>
-            <h1 style={{fontSize:38,fontWeight:800,margin:"0 0 6px",letterSpacing:-1.2,color:T.text,lineHeight:1.1}}>{saludo}, <span style={{background:`linear-gradient(135deg, ${T.accentSolid}, #a78bfa)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{nombre}</span></h1>
-            <p style={{fontSize:14,color:T.textSm,margin:0,marginTop:4}}>
-              {reclamosCount} reclamo{reclamosCount!==1?"s":""} activo{reclamosCount!==1?"s":""}
-              {notificacionesCanjes.length>0&&<> · <span style={{color:T.orange}}>{notificacionesCanjes.length} notificación{notificacionesCanjes.length>1?"es":""} en canjes</span></>}
-            </p>
-          </div>
+      {/* Layout dos columnas — Alertas / Quick actions */}
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:DS.sp.lg}} className="stack-mobile">
+        {/* Columna izquierda: alertas y notificaciones */}
+        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
 
-          {/* -- CARDS -- */}
-          {(()=>{
-            const CARD_ICONS = {
-              reclamos: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
-              canjes:   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
-              envios:   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
-              audio:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>,
-              meta:     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>,
-              arca:     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
-              stock:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>,
-            };
-            return (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:16,marginBottom:28}}>
-            {[
-              {id:"reclamos", label:"Reclamos", desc:"Cambios y devoluciones",   stat:reclamosCount, statLabel:"activos",  accent:"#f87171", accentBg:"rgba(248,113,113,0.08)"},
-              {id:"canjes",   label:"Canjes",   desc:"Influencers y contenido",  stat:canjesCount,   statLabel:"canjes",   accent:"#c084fc", accentBg:"rgba(192,132,252,0.08)"},
-              {id:"envios",   label:"Envíos",   desc:"Despachos y seguimientos", stat:ordersCount,   statLabel:"pedidos",  accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
-              {id:"audio",    label:"Audio Studio", desc:"Voces TTS con IA",     stat:null,          statLabel:"voces",    accent:"#a78bfa", accentBg:"rgba(167,139,250,0.08)"},
-              {id:"meta",     label:"Meta Ads",      desc:"Análisis y optimizador IA", stat:null, statLabel:"",       accent:"#60a5fa", accentBg:"rgba(96,165,250,0.08)"},
-              {id:"arca",     label:"ARCA",          desc:"Facturación electrónica", stat:null, statLabel:"",       accent:"#4ade80", accentBg:"rgba(74,222,128,0.08)"},
-              {id:"stock",    label:"Stock",         desc:"Inventario y proyección",  stat:null, statLabel:"",       accent:"#f97316", accentBg:"rgba(249,115,22,0.08)"},
-            ].map(item=>(
-              <button key={item.id} onClick={()=>onNavigate(item.id)}
-                className="gh-home-card"
-                style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"24px 24px 20px",textAlign:"left",cursor:"pointer",transition:"all 0.28s cubic-bezier(0.22,1,0.36,1)",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,display:"flex",flexDirection:"column",position:"relative",overflow:"hidden","--accent":item.accent}}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor=item.accent+"66";e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.boxShadow=`0 14px 40px ${item.accent}25, 0 0 0 1px ${item.accent}33`;const g=e.currentTarget.querySelector(".gh-glow");if(g) g.style.opacity="1";}}
-                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";const g=e.currentTarget.querySelector(".gh-glow");if(g) g.style.opacity="0";}}>
-                {/* glow background */}
-                <div className="gh-glow" style={{position:"absolute",top:-40,right:-40,width:140,height:140,borderRadius:"50%",background:`radial-gradient(circle, ${item.accent}33, transparent 70%)`,filter:"blur(20px)",opacity:0,transition:"opacity 0.35s",pointerEvents:"none"}}/>
-                {/* gradient top border */}
-                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg, transparent, ${item.accent}, transparent)`}}/>
-                <div style={{width:42,height:42,borderRadius:11,background:item.accentBg,border:`1px solid ${item.accent}33`,display:"flex",alignItems:"center",justifyContent:"center",color:item.accent,marginBottom:16,marginTop:6,boxShadow:`inset 0 1px 0 ${item.accent}22`}}>
-                  {CARD_ICONS[item.id]}
-                </div>
-                <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:4,letterSpacing:-0.2}}>{item.label}</div>
-                <div style={{fontSize:12,color:T.textSm,lineHeight:1.5}}>{item.desc}</div>
-              </button>
-            ))}
-          </div>
-            );
-          })()}
-
-          {/* -- ALERTAS DE STOCK -- */}
-          {stockAlertas.length>0&&(
-            <div style={{background:T.card,border:`1px solid ${T.red}44`,borderRadius:12,overflow:"hidden",marginBottom:8}}>
-              <div onClick={()=>setStockAlertCollapsed(c=>!c)}
-                style={{padding:"10px 18px",display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}
-                onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          {/* Alertas de stock */}
+          {stockAlertas.length > 0 && (
+            <Card T={T} padding="lg" style={{borderColor:T.red+"33"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:DS.sp.md}}>
                 <span style={{width:6,height:6,borderRadius:"50%",background:T.red,flexShrink:0}}/>
-                <span style={{fontSize:11,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Alertas de Stock</span>
-                <span style={{fontSize:11,background:T.red+"22",color:T.red,borderRadius:4,padding:"1px 7px",fontWeight:600,border:`1px solid ${T.red}33`,marginLeft:2}}>{stockAlertas.length}</span>
-                <button onClick={e=>{e.stopPropagation();onNavigate("stock");}} style={{marginLeft:"auto",fontSize:11,color:T.accent,background:"transparent",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>Ver todo →</button>
-                <span style={{fontSize:13,color:T.textSm,display:"inline-block",transition:"transform 0.25s",transform:stockAlertCollapsed?"rotate(-90deg)":"rotate(0deg)"}}>▾</span>
+                <span style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Alertas de Stock</span>
+                <DSBadge T={T} color={T.red} size="sm">{stockAlertas.length}</DSBadge>
+                <button onClick={()=>onNavigate("stock")} style={{marginLeft:"auto",fontSize:DS.font.sm,color:T.accent,background:"transparent",border:"none",cursor:"pointer",fontWeight:DS.w.semibold}}>Ver todo →</button>
               </div>
-              <div style={{maxHeight:stockAlertCollapsed?"0px":`${stockAlertas.length*52}px`,overflow:"hidden",transition:"max-height 0.28s cubic-bezier(0.4,0,0.2,1)",borderTop:stockAlertCollapsed?"none":`1px solid ${T.borderL}`}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 {stockAlertas.map((a,i)=>{
-                  const c2=a.status==="empty"?T.red:a.status==="critical"?T.red+"cc":(T.yellow||"#eab308");
-                  const icon=a.status==="empty"?"⛔":a.status==="critical"?"🔴":"⚠️";
+                  const c=a.status==="empty"?T.red:a.status==="critical"?T.red+"cc":(T.yellow||"#eab308");
                   return (
-                    <div key={i} onClick={()=>onNavigate("stock")} style={{padding:"10px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<stockAlertas.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s"}}
-                      onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-                        <span style={{fontSize:14,flexShrink:0}}>{icon}</span>
+                    <div key={i} onClick={()=>onNavigate("stock")} style={{padding:"10px 12px",borderRadius:DS.r.md,background:T.surface,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",border:`1px solid transparent`,transition:`all 0.15s ${DS.ease}`}}
+                      onMouseEnter={e=>{e.currentTarget.style.borderColor=c+"44";}}
+                      onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0,flex:1}}>
+                        <span style={{fontSize:14,flexShrink:0}}>{a.status==="empty"?"⛔":a.status==="critical"?"🔴":"⚠️"}</span>
                         <div style={{minWidth:0}}>
-                          <span style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>{a.producto}</span>
-                          <span style={{fontSize:11,color:T.textSm}}>{a.variante} · {a.stock===0?"Sin stock":`${a.daysLeft}d restantes`}</span>
+                          <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.producto}</div>
+                          <div style={{fontSize:DS.font.xs,color:T.textSm}}>{a.variante}</div>
                         </div>
                       </div>
-                      <span style={{fontSize:11,padding:"2px 8px",borderRadius:4,background:c2+"22",color:c2,fontWeight:700,flexShrink:0,marginLeft:8}}>
-                        {a.status==="empty"?"Sin stock":a.status==="critical"?"Crítico":"Reponer"}
-                      </span>
+                      <DSBadge T={T} color={c} size="sm">{a.status==="empty"?"Sin stock":`${a.daysLeft}d restantes`}</DSBadge>
                     </div>
                   );
                 })}
               </div>
-            </div>
+            </Card>
           )}
 
-          {/* -- NOTIFICACIONES DE CANJES -- */}
-          {notificacionesCanjes.length>0&&(
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-              <div
-                onClick={()=>setNotifCollapsed(c=>!c)}
-                style={{padding:"10px 18px",display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none",transition:"background 0.15s ease"}}
-                onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          {/* Notificaciones de canjes */}
+          {notificacionesCanjes.length > 0 && (
+            <Card T={T} padding="lg" style={{borderColor:T.orange+"33"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:DS.sp.md}}>
                 <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
-                <span style={{fontSize:11,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Notificaciones · Canjes</span>
-                <span style={{fontSize:11,background:T.orangeBg,color:T.orange,borderRadius:4,padding:"1px 7px",fontWeight:600,border:`1px solid ${T.orange}33`,marginLeft:2}}>{notificacionesCanjes.length}</span>
-                <span style={{marginLeft:"auto",fontSize:13,color:T.textSm,display:"inline-block",transition:"transform 0.25s cubic-bezier(0.4,0,0.2,1)",transform:notifCollapsed?"rotate(-90deg)":"rotate(0deg)"}}>▾</span>
+                <span style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Canjes que requieren atención</span>
+                <DSBadge T={T} color={T.orange} size="sm">{notificacionesCanjes.length}</DSBadge>
+                <button onClick={()=>onNavigate("canjes")} style={{marginLeft:"auto",fontSize:DS.font.sm,color:T.accent,background:"transparent",border:"none",cursor:"pointer",fontWeight:DS.w.semibold}}>Ver todo →</button>
               </div>
-              {/* maxHeight animation - no mount/unmount */}
-              <div style={{
-                maxHeight: notifCollapsed ? "0px" : `${notificacionesCanjes.length * 54}px`,
-                overflow: "hidden",
-                transition: "max-height 0.28s cubic-bezier(0.4,0,0.2,1)",
-                borderTop: notifCollapsed ? "none" : `1px solid ${T.borderL}`,
-              }}>
-                {notificacionesCanjes.map((a,i)=>{
-                  const colorMap={recordatorio:T.yellow,sinrespuesta:T.orange,contenido:T.blue};
-                  const col=colorMap[a.tipo]||T.orange;
-                  return (
-                    <div key={i}
-                      onClick={()=>onNavigate("canjes", a.canje._docId)}
-                      style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",borderBottom:i<notificacionesCanjes.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.15s ease"}}
-                      onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <span style={{width:5,height:5,borderRadius:"50%",background:col,flexShrink:0}}/>
-                        <span style={{fontSize:13,fontWeight:600,color:T.text}}>{a.canje.influencer}</span>
-                        <span style={{fontSize:12,color:T.textSm}}>{a.msg}</span>
-                      </div>
-                      <span style={{fontSize:11,color:T.textSm}}>Ver →</span>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {notificacionesCanjes.slice(0,5).map((a,i)=>(
+                  <div key={i} onClick={()=>onNavigate("canjes",a.canje._docId)} style={{padding:"10px 12px",borderRadius:DS.r.md,background:T.surface,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                      <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
+                      <span style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text}}>{a.canje.influencer}</span>
+                      <span style={{fontSize:DS.font.sm,color:T.textSm}}>{a.msg}</span>
                     </div>
-                  );
-                })}
+                    <span style={{fontSize:DS.font.sm,color:T.textSm}}>→</span>
+                  </div>
+                ))}
               </div>
-            </div>
+            </Card>
           )}
 
+          {/* Empty state si todo está OK */}
+          {stockAlertas.length === 0 && notificacionesCanjes.length === 0 && (
+            <DSEmpty T={T} icon="✅" title="Todo en orden" subtitle="No hay alertas pendientes. Tu sistema está funcionando perfectamente."/>
+          )}
+        </div>
+
+        {/* Columna derecha: acciones rápidas */}
+        <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
+          <Card T={T} padding="lg">
+            <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5,marginBottom:DS.sp.md}}>Acciones rápidas</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("envios")} style={{justifyContent:"flex-start",width:"100%"}}>
+                📦 Generar etiquetas Andreani
+              </Btn>
+              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("canjes")} style={{justifyContent:"flex-start",width:"100%"}}>
+                🤝 Nuevo canje
+              </Btn>
+              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("reclamos")} style={{justifyContent:"flex-start",width:"100%"}}>
+                💬 Crear reclamo
+              </Btn>
+              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("arca")} style={{justifyContent:"flex-start",width:"100%"}}>
+                📄 Emitir factura
+              </Btn>
+              <Btn T={T} variant="secondary" size="md" onClick={()=>onNavigate("meta")} style={{justifyContent:"flex-start",width:"100%"}}>
+                📣 Ver campañas Meta
+              </Btn>
+            </div>
+          </Card>
+
+          {/* Plan card */}
+          {userPlan==="free" && (
+            <Card T={T} padding="lg" style={{background:`linear-gradient(135deg, ${T.accentSolid}15, ${T.accentSolid}05)`,borderColor:T.accentSolid+"33"}}>
+              <div style={{fontSize:DS.font.xs,textTransform:"uppercase",color:T.accent,fontWeight:DS.w.bold,letterSpacing:0.5,marginBottom:6}}>💎 Plan Free</div>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:DS.sp.sm}}>Desbloqueá todo el potencial</div>
+              <div style={{fontSize:DS.font.sm,color:T.textMd,marginBottom:DS.sp.lg,lineHeight:1.4}}>Reclamos ilimitados, Meta Ads avanzado, ARCA, Audio Studio y soporte prioritario.</div>
+              <Btn T={T} variant="primary" size="md" onClick={()=>onNavigate("planes")} style={{width:"100%"}}>Ver planes →</Btn>
+            </Card>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-
-// ===========================================
-// AUTH SCREEN
-// ===========================================
 function AuthScreen({T, darkMode, onToggleDark}) {
   const [mode,setMode]=useState("login"); // login | register
   const [email,setEmail]=useState("");
@@ -12418,16 +12737,17 @@ function AppStock({T, user, onHome}) {
         ):data?(
           <>
             {/* KPIs siempre visibles */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:20}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:20}}>
               {[
                 {label:`Unidades vendidas`,val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"📦"},
                 {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||"#3b82f6",icon:"🔢"},
                 {label:"Facturación",val:fmtARS(totalRev),sub:`${fmtARS(totalRev/(days||1))}/día`,color:T.green,icon:"💰"},
                 {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||"#eab308"):T.green,icon:"⏳"},
-                {label:"Críticos",val:kpiCritical+kpiEmpty,sub:`${kpiEmpty} sin stock`,color:T.red,icon:"⛔"},
+                {label:"Sin stock",val:kpiEmpty,sub:"agotados",color:T.red,icon:"⛔"},
+                {label:"Stock crítico",val:kpiCritical,sub:"menos de 7 días",color:T.red+"cc",icon:"🔴"},
                 {label:"Sin ventas",val:kpiDead,sub:"prod. inactivos",color:T.textSm,icon:"💤"},
               ].map(k=>(
-                <div key={k.label} style={{background:T.card,border:`1px solid ${(k.label==="Críticos"&&k.val>0)?T.red+"55":T.border}`,borderRadius:12,padding:"13px 14px"}}>
+                <div key={k.label} style={{background:T.card,border:`1px solid ${((k.label==="Sin stock"||k.label==="Stock crítico")&&k.val>0)?T.red+"55":T.border}`,borderRadius:12,padding:"13px 14px"}}>
                   <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:5}}>{k.icon} {k.label}</div>
                   <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
                   <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.sub}</div>
@@ -12472,7 +12792,7 @@ function AppStock({T, user, onHome}) {
               return (
                 <div style={{display:"flex",flexDirection:"column",gap:16}}>
                   {/* Fila superior: Gráfico + Resumen */}
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:16,alignItems:"start"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(280px,300px)",gap:16,alignItems:"start"}} className="stack-mobile">
                     {/* Gráfico barras */}
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 20px 14px"}}>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
@@ -12545,7 +12865,7 @@ function AppStock({T, user, onHome}) {
                   </div>
 
                   {/* Donuts — siempre los mismos 3, el título/enfoque cambia por tab */}
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>
                         {isFact?"Revenue por variante":showingVentas?"Variantes más vendidas":"Unidades por variante"}
@@ -12819,8 +13139,11 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
-  const [pendingCanje,setPendingCanje]=useState(null); // datos pre-cargados desde un pedido
-  const [pendingCanjeDetail,setPendingCanjeDetail]=useState(null); // _docId a abrir directo
+  const [pendingCanje,setPendingCanje]=useState(null);
+  const [pendingCanjeDetail,setPendingCanjeDetail]=useState(null);
+  const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{try{return localStorage.getItem("growith_sidebar")==="1";}catch(e){return false;}});
+  const [cmdOpen,setCmdOpen]=useState(false);
+  const [onboardingDone,setOnboardingDone]=useState(()=>{try{return localStorage.getItem("growith_onb_done")==="1";}catch(e){return true;}});
   const [orders,setOrders]=useState([]);
   const [ordersStatus,setOrdersStatus]=useState("idle");
   const [totalOrdersCount,setTotalOrdersCount]=useState(null);
@@ -12840,6 +13163,21 @@ export default function App() {
 
   const T = darkMode ? DARK : LIGHT;
 
+  // Ctrl+K / Cmd+K — Command Palette
+  useEffect(()=>{
+    const onKey = (e)=>{
+      if((e.ctrlKey||e.metaKey) && e.key==="k") {
+        e.preventDefault();
+        setCmdOpen(c=>!c);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return ()=>window.removeEventListener("keydown", onKey);
+  },[]);
+
+  // Persist sidebar collapsed
+  useEffect(()=>{try{localStorage.setItem("growith_sidebar", sidebarCollapsed?"1":"0");}catch(e){}}, [sidebarCollapsed]);
+
   useEffect(()=>{
     document.title="Growith";
     const l=document.createElement("link");
@@ -12855,13 +13193,24 @@ export default function App() {
     style.textContent=`
       *{box-sizing:border-box;}
       body{margin:0;overflow-x:hidden;}
-      @media(max-width:600px){
+      .mobile-only{display:none!important;}
+      @media(max-width:768px){
         .hide-mobile{display:none!important;}
+        .mobile-only{display:flex!important;}
         .stack-mobile{flex-direction:column!important;}
         .full-mobile{width:100%!important;min-width:0!important;}
         .pad-mobile{padding:12px 14px!important;}
         .font-mobile{font-size:13px!important;}
+        .main-content{padding-bottom:68px!important;}
       }
+      @media(min-width:769px){
+        .main-content{padding-bottom:0!important;}
+      }
+      /* Scrollbar thin */
+      ::-webkit-scrollbar{width:8px;height:8px;}
+      ::-webkit-scrollbar-track{background:transparent;}
+      ::-webkit-scrollbar-thumb{background:rgba(127,127,127,0.2);border-radius:8px;}
+      ::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,0.35);}
     `;
     document.head.appendChild(style);
   },[]);
@@ -12880,6 +13229,12 @@ export default function App() {
     const unsub=onAuthStateChanged(auth, async (u)=>{
       setUser(u);
       if(u) {
+        // Detectar usuario nuevo
+        try{
+          const k=`growith_onb_done_${u.uid}`;
+          const done=localStorage.getItem(k)==="1";
+          setOnboardingDone(done);
+        }catch(e){setOnboardingDone(true);}
         // Migrate legacy data for owner account
         if(u.email===OWNER_EMAIL && !migrated) {
           await migrateLegacyData(u.uid);
@@ -13017,21 +13372,80 @@ export default function App() {
   // Not logged in
   if(!user) return <><AuthScreen T={T} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/><AppPromptHost T={T}/></>;
 
-  // Config
-  if(page==="planes") return <><AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>;
-  if(page==="admin"&&isAdmin) return <><AppAdmin T={T} user={user} onBack={()=>setPage("home")}/><AppPromptHost T={T}/></>;
-  if(page==="config") return <><ConfigScreen T={T} user={user} onBack={()=>setPage("home")} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/><AppPromptHost T={T}/></>;
+  // Onboarding (primera vez)
+  const showOnboarding = !onboardingDone;
 
-  // App
-  if(page==="arca") return <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
-  if(page==="meta") return <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
-  if(page==="stock") return <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
-  if(page==="audio") return <PageView T={T} pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/><ToastContainer T={T}/></PageView>;
-  if(page==="reclamos") return <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
-  if(page==="canjes") return <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/><ToastContainer T={T}/></PageView>;
-  if(page==="envios") return <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/><ToastContainer T={T}/></PageView>;
-  return <><HomeScreen T={T} onNavigate={(page, docId)=>{
-    if(page==="canjes"&&docId){ setPendingCanjeDetail(docId); }
-    setPage(page);
-  }} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/><AppPromptHost T={T}/></>;
+  // Mobile bottom nav
+  const MobileBottomNav = () => (
+    <div className="mobile-only" style={{
+      display:"none",
+      position:"fixed", bottom:0, left:0, right:0, zIndex:90,
+      background:T.surface+"f5", backdropFilter:"blur(16px)",
+      borderTop:`1px solid ${T.border}`,
+      padding:"6px 4px 8px",
+    }}>
+      {[
+        {id:"home",label:"Inicio",icon:"🏠"},
+        {id:"envios",label:"Envíos",icon:"📦"},
+        {id:"stock",label:"Stock",icon:"📊"},
+        {id:"reclamos",label:"Reclamos",icon:"💬"},
+        {id:"canjes",label:"Canjes",icon:"🤝"},
+      ].map(it=>(
+        <button key={it.id} onClick={()=>setPage(it.id)} style={{
+          flex:1, background:"transparent", border:"none", cursor:"pointer",
+          display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"6px 4px",
+          color: page===it.id?T.accent:T.textMd, fontFamily:"'Inter',system-ui,sans-serif",
+        }}>
+          <span style={{fontSize:18}}>{it.icon}</span>
+          <span style={{fontSize:10, fontWeight:page===it.id?700:500}}>{it.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  // ─── Render page content ───
+  let pageContent = null;
+  if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
+  else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
+  else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
+  else if(page==="arca") pageContent = <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="meta") pageContent = <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="stock") pageContent = <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="audio") pageContent = <PageView T={T} pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="reclamos") pageContent = <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/></PageView>;
+  else if(page==="canjes") pageContent = <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/></PageView>;
+  else if(page==="envios") pageContent = <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}}/></PageView>;
+  else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
+    if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
+    setPage(p);
+  }} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
+
+  return (
+    <>
+      {showOnboarding && (
+        <OnboardingWizard T={T} user={user} onComplete={(action)=>{
+          try{localStorage.setItem("growith_onb_done","1");localStorage.setItem(`growith_onb_done_${user.uid}`,"1");}catch(e){}
+          setOnboardingDone(true);
+        }}/>
+      )}
+      <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
+      <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed}/>
+        <div style={{flex:1,minWidth:0,paddingBottom:"68px"}} className="main-content">
+          {/* Mini topbar global con Cmd+K hint */}
+          <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:DS.sp.md,height:48}}>
+            <button onClick={()=>setCmdOpen(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 12px 5px 10px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,cursor:"pointer",fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <span>Buscar...</span>
+              <span style={{padding:"0px 5px",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,fontSize:DS.font.xs,marginLeft:8}}>⌘K</span>
+            </button>
+          </div>
+          {pageContent}
+        </div>
+      </div>
+      <MobileBottomNav/>
+      <ToastContainer T={T}/>
+      <AppPromptHost T={T}/>
+    </>
+  );
 }
