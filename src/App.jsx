@@ -9372,13 +9372,13 @@ function AppMetaAds({T, user, onHome}) {
         const j = await r.json();
         const vs = j.status?.video_status;
         if (vs === "ready") {
-          setCreatives(prev => prev.map(c => c.id === creativeId ? {...c, video_ready: true} : c));
+          setCreatives(prev => prev.map(c => c.id === creativeId ? {...c, video_ready: true, _processing: false} : c));
           // Persistir en backend para que publish lo sepa sin re-pollear
           try { await metaApi("patch_creative","PATCH",{video_ready:true},{cid:creativeId}); } catch (_) {}
           return;
         }
         if (vs === "error") {
-          setCreatives(prev => prev.map(c => c.id === creativeId ? {...c, video_error: true} : c));
+          setCreatives(prev => prev.map(c => c.id === creativeId ? {...c, video_error: true, _processing: false} : c));
           return;
         }
       } catch (_) { /* network blip, retry */ }
@@ -9449,6 +9449,8 @@ function AppMetaAds({T, user, onHome}) {
         cta: sharedCta || cr.creative.cta,
         meta_hash: up.hash || null,
         meta_video_id: up.id || null,
+        // Para video: marca "procesando en Meta" hasta que video_ready
+        ...(isVideo ? { _processing: true } : {}),
         ...(isVideo && localPreviewUrl ? { _localPreview: localPreviewUrl } : {}),
       };
       if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? cWithMeta : c));
@@ -11103,15 +11105,17 @@ LONGITUD Y FORMATO
                               <span style={{fontSize:14,fontWeight:700,color:T.text,wordBreak:"break-all"}}>{c.filename}</span>
                               {c._uploading
                                 ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo a Meta…</span>
-                                : c._error
+                                : c._error || c.video_error
                                   ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>✗ ERROR</span>
-                                  : c.copy?.trim()
-                                    ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
-                                    : c.ia_status === "analyzed"
-                                      ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
-                                      : analyzingCreative===c.id
-                                        ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}><Spinner size={9} color={T.accent}/> Generando copy…</span>
-                                        : <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,border:`1px solid ${T.border}`}}>PENDIENTE</span>
+                                  : (c._processing && !c.video_ready && c.kind === "video")
+                                    ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Procesando en Meta…</span>
+                                    : c.copy?.trim()
+                                      ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
+                                      : c.ia_status === "analyzed"
+                                        ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
+                                        : analyzingCreative===c.id
+                                          ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}><Spinner size={9} color={T.accent}/> Generando copy…</span>
+                                          : <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,border:`1px solid ${T.border}`}}>PENDIENTE</span>
                               }
                             </div>
                           </div>
