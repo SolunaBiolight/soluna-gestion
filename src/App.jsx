@@ -772,49 +772,6 @@ function OrderSearchField({T, orders, onSelect, uid}) {
   const [loading,setLoading]=useState(false);
   const inputRef=useRef(null);
   const iS = InputStyle(T);
-
-  // Exportar tabla a CSV
-  function exportCSV() {
-    const products = allProducts;
-    const rows = [["Producto","SKU","Stock","Vendidos","Tasa/día","Días restantes","Revenue","Estado"]];
-    products.forEach(p => {
-      p.variants.forEach(v => {
-        const vr = v.units_sold/Math.max(1,days);
-        const vd = vr>0 ? Math.round(v.stock/vr) : null;
-        const st = v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
-        rows.push([p.nombre, v.sku||"", v.stock, v.units_sold, vr.toFixed(2), vd??"-", Math.round(v.revenue), st]);
-      });
-    });
-    const csv = rows.map(r=>r.map(c=>(`"${String(c).replace(/"/g,'""')}"`)).join(",")).join("\n");
-    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href=url; a.download=`growith-stock-${new Date().toISOString().slice(0,10)}.csv`; a.click();
-    URL.revokeObjectURL(url);
-    toast("CSV exportado ✓","success");
-  }
-
-  // Registrar agotados en historial
-  function registrarAgotado(productName, variantName, date) {
-    try{
-      const key=`growith_stockouts_${uid}`;
-      const hist=JSON.parse(localStorage.getItem(key)||"[]");
-      hist.unshift({producto:productName,variante:variantName,fecha:date,ts:Date.now()});
-      localStorage.setItem(key, JSON.stringify(hist.slice(0,200)));
-    }catch(e){}
-  }
-  function getHistorialAgotados() {
-    try{ return JSON.parse(localStorage.getItem(`growith_stockouts_${uid}`)||"[]"); }catch(e){ return []; }
-  }
-
-  // Detectar agotados nuevos cuando llegan datos
-  React.useEffect(()=>{
-    if(!data?.products) return;
-    const today=new Date().toISOString().slice(0,10);
-    data.products.forEach(p=>p.variants.forEach(v=>{
-      if(v.stock===0) registrarAgotado(p.nombre,v.nombre,today);
-    }));
-  },[data]);
   // Primero buscar en órdenes locales
   const localResults=useMemo(()=>{
     if(!q||q.length<2) return [];
@@ -11939,6 +11896,39 @@ function AppStock({T, user, onHome}) {
   const [leadTime, setLeadTime] = useState({}); // {productId: days} tiempo de entrega por producto
 
   const iS = InputStyle(T);
+
+  // Exportar tabla a CSV
+  function exportCSV() {
+    if(!data?.products) return;
+    const rows = [["Producto","SKU","Stock","Vendidos","Tasa/día","Días restantes","Revenue","Estado"]];
+    data.products.forEach(p => {
+      p.variants.forEach(v => {
+        const vr = v.units_sold/Math.max(1,days);
+        const vd = vr>0 ? Math.round(v.stock/vr) : null;
+        const st = v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
+        rows.push([p.nombre, v.sku||"", v.stock, v.units_sold, vr.toFixed(2), vd??"-", Math.round(v.revenue), st]);
+      });
+    });
+    const csv = rows.map(r=>r.map(c=>(`"${String(c).replace(/"/g,'""')}"`)).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url; a.download=`growith-stock-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    toast("CSV exportado ✓","success");
+  }
+
+  function registrarAgotado(productName, variantName, date) {
+    try{
+      const key=`growith_stockouts_${uid}`;
+      const hist=JSON.parse(localStorage.getItem(key)||"[]");
+      hist.unshift({producto:productName,variante:variantName,fecha:date,ts:Date.now()});
+      localStorage.setItem(key, JSON.stringify(hist.slice(0,200)));
+    }catch(e){}
+  }
+  function getHistorialAgotados() {
+    try{ return JSON.parse(localStorage.getItem(`growith_stockouts_${uid}`)||"[]"); }catch(e){ return []; }
+  }
 
   async function loadStock(d=days, from="", to="") {
     if(!uid) return;
