@@ -379,36 +379,70 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
         .where("acc_id", "==", accId).get();
       for (const d of prodSnap.docs) productsById.set(d.id, { id: d.id, ...d.data() });
       // Pre-fetch los ads de la cuenta con sus URLs de destino para mapear node → product_ids
+      // Paginar para que cuentas con >500 ads no queden parcialmente mapeadas.
       try {
-        const adsData = await metaGet(`${cfg.ad_account_id}/ads`, {
+        const adsArr = [];
+        let page = await metaGet(`${cfg.ad_account_id}/ads`, {
           limit: 500,
-          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec}",
+          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec,template_url}",
         }, cfg.access_token);
-        const adsArr = adsData.data || [];
-        // Helper: extrae la URL de destino del creative
+        adsArr.push(...(page.data || []));
+        let nextUrl = page.paging?.next || null;
+        let safety = 0;
+        while (nextUrl && safety < 10) {
+          safety++;
+          const r = await fetch(nextUrl);
+          const j = await r.json();
+          if (!r.ok || j.error) break;
+          adsArr.push(...(j.data || []));
+          nextUrl = j.paging?.next || null;
+        }
+        // Helper: extrae la URL de destino del creative (multiples fallbacks)
         const linkOfAd = (ad) => {
           const cr = ad.creative || {};
           if (cr.link_url) return cr.link_url;
+          if (cr.template_url) return cr.template_url;
           const oss = cr.object_story_spec || {};
-          const link = oss.link_data?.link || oss.video_data?.call_to_action?.value?.link || oss.template_data?.link || null;
+          const link = oss.link_data?.link
+            || oss.video_data?.call_to_action?.value?.link
+            || oss.video_data?.call_to_action?.value?.link_url
+            || oss.template_data?.link
+            || oss.photo_data?.url
+            || null;
           if (link) return link;
           const afs = cr.asset_feed_spec || {};
-          if (Array.isArray(afs.link_urls) && afs.link_urls[0]?.website_url) return afs.link_urls[0].website_url;
+          if (Array.isArray(afs.link_urls)) {
+            for (const lu of afs.link_urls) {
+              if (lu?.website_url) return lu.website_url;
+              if (lu?.url) return lu.url;
+            }
+          }
           return null;
         };
-        // Helper: match URL → product ids
-        const norm = (u) => String(u || "").trim().toLowerCase().replace(/\/+$/, "").replace(/^https?:\/\//, "");
+        // Normaliza URL: minusculas, sin proto, sin www, sin query/hash, sin trailing slash.
+        const norm = (u) => {
+          let s = String(u || "").trim().toLowerCase();
+          s = s.replace(/^https?:\/\//, "").replace(/^www\./, "");
+          s = s.split("#")[0].split("?")[0];
+          s = s.replace(/\/+$/, "");
+          return s;
+        };
         const productsByUrlPrefix = []; // [{prefix, id}]
         for (const [pid, p] of productsById) {
-          for (const u of (p.urls || [])) productsByUrlPrefix.push({ prefix: norm(u), id: pid });
+          for (const u of (p.urls || [])) {
+            const n = norm(u);
+            if (n) productsByUrlPrefix.push({ prefix: n, id: pid });
+          }
         }
         productsByUrlPrefix.sort((a, b) => b.prefix.length - a.prefix.length); // mas largo primero
         const productIdsForUrl = (url) => {
           if (!url) return [];
           const n = norm(url);
+          if (!n) return [];
           const matches = new Set();
           for (const { prefix, id } of productsByUrlPrefix) {
-            if (prefix && (n === prefix || n.startsWith(prefix + "/") || n.startsWith(prefix + "?"))) matches.add(id);
+            if (!prefix) continue;
+            if (n === prefix || n.startsWith(prefix + "/")) matches.add(id);
           }
           return [...matches];
         };
@@ -1163,14 +1197,26 @@ export default async function handler(req, res) {
         return res.json({ products: [], ad: {}, adset: {}, campaign: {} });
       }
 
-      // Pre-fetch ads con sus URLs de destino
+      // Pre-fetch ads con sus URLs de destino — paginar hasta 5000 ads
       let ads = [];
       try {
-        const adsData = await metaGet(`${cfg.ad_account_id}/ads`, {
+        let nextUrl = null;
+        const baseParams = {
           limit: 500,
-          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec}",
-        }, cfg.access_token);
-        ads = adsData.data || [];
+          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec,template_url,instagram_permalink_url,effective_object_story_id}",
+        };
+        let page = await metaGet(`${cfg.ad_account_id}/ads`, baseParams, cfg.access_token);
+        ads.push(...(page.data || []));
+        nextUrl = page.paging?.next || null;
+        let safety = 0;
+        while (nextUrl && safety < 10) {
+          safety++;
+          const r = await fetch(nextUrl);
+          const j = await r.json();
+          if (!r.ok || j.error) break;
+          ads.push(...(j.data || []));
+          nextUrl = j.paging?.next || null;
+        }
       } catch (e) {
         return res.status(502).json({ error: `No se pudieron traer los ads para mapear: ${e.message}` });
       }
@@ -1178,25 +1224,49 @@ export default async function handler(req, res) {
       const linkOfAd = (ad) => {
         const cr = ad.creative || {};
         if (cr.link_url) return cr.link_url;
+        if (cr.template_url) return cr.template_url;
         const oss = cr.object_story_spec || {};
-        const link = oss.link_data?.link || oss.video_data?.call_to_action?.value?.link || oss.template_data?.link || null;
+        const link = oss.link_data?.link
+          || oss.video_data?.call_to_action?.value?.link
+          || oss.video_data?.call_to_action?.value?.link_url
+          || oss.template_data?.link
+          || oss.photo_data?.url
+          || null;
         if (link) return link;
         const afs = cr.asset_feed_spec || {};
-        if (Array.isArray(afs.link_urls) && afs.link_urls[0]?.website_url) return afs.link_urls[0].website_url;
+        if (Array.isArray(afs.link_urls)) {
+          for (const lu of afs.link_urls) {
+            if (lu?.website_url) return lu.website_url;
+            if (lu?.url) return lu.url;
+          }
+        }
         return null;
       };
-      const norm = (u) => String(u || "").trim().toLowerCase().replace(/\/+$/, "").replace(/^https?:\/\//, "");
+      // Normaliza URL para comparar: minusculas, sin protocolo, sin www,
+      // sin trailing slash, sin query string, sin hash, sin "/?" final.
+      const norm = (u) => {
+        let s = String(u || "").trim().toLowerCase();
+        s = s.replace(/^https?:\/\//, "").replace(/^www\./, "");
+        s = s.split("#")[0].split("?")[0];
+        s = s.replace(/\/+$/, "");
+        return s;
+      };
       const productsByPrefix = [];
       for (const p of productsArr) {
-        for (const u of (p.urls || [])) productsByPrefix.push({ prefix: norm(u), id: p.id });
+        for (const u of (p.urls || [])) {
+          const n = norm(u);
+          if (n) productsByPrefix.push({ prefix: n, id: p.id });
+        }
       }
       productsByPrefix.sort((a, b) => b.prefix.length - a.prefix.length);
       const productIdsForUrl = (url) => {
         if (!url) return [];
         const n = norm(url);
+        if (!n) return [];
         const matches = new Set();
         for (const { prefix, id } of productsByPrefix) {
-          if (prefix && (n === prefix || n.startsWith(prefix + "/") || n.startsWith(prefix + "?"))) matches.add(id);
+          if (!prefix) continue;
+          if (n === prefix || n.startsWith(prefix + "/")) matches.add(id);
         }
         return [...matches];
       };
