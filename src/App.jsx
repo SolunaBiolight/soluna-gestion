@@ -9545,19 +9545,18 @@ function AppMetaAds({T, user, onHome}) {
     } finally { setResSaving(false); }
   }
 
-  // ── Studio: subida múltiple en paralelo TOTAL (velocidad WhatsApp) ────
+  // ── Studio: upload multiple con UX instantanea + concurrency optima ────
   // 1) Los N archivos aparecen en la cola AL INSTANTE como cards temporales
-  //    con preview local (URL.createObjectURL). Cada card muestra estado
-  //    "subiendo…" hasta que Meta confirma.
-  // 2) Todos los uploads disparan en paralelo (no hay concurrency limit,
-  //    el browser y Meta se las arreglan).
-  // 3) A medida que cada upload termina, el temp se reemplaza por el creative
-  //    real con su id de Firestore.
+  //    con preview local (URL.createObjectURL).
+  // 2) Concurrencia 2: en redes residenciales (Argentina), paralelismo total
+  //    es CONTRA-PRODUCENTE porque cada upload se queda con 1/N del ancho
+  //    de banda y el TCP slow-start arranca de cero para cada uno. 2 a la
+  //    vez es el sweet spot: ocupa ancho de banda + se monta un upload
+  //    mientras el otro va por la red.
   async function handleUploadMultiple(fileList) {
     if (!fileList || fileList.length === 0) return;
     if (!activeAccId) return toast("Conectá una cuenta Meta primero","warning");
     const files = Array.from(fileList);
-    // Crear cards temporales con preview local — al toque visibles en la cola.
     const temps = files.map(f => {
       const isVideo = (f.type||"").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(f.name);
       return {
@@ -9575,9 +9574,15 @@ function AppMetaAds({T, user, onHome}) {
     });
     setCreatives(prev => [...temps, ...prev]);
     setUploadingFile(true);
-    // PARALELO TOTAL — todos los uploads se disparan al mismo tiempo.
-    // Cada uno reemplaza su temp por el real cuando termina.
-    await Promise.all(files.map((f, i) => handleUploadFile(f, temps[i].id, temps[i].url)));
+    const MAX_CONCURRENT = 2;
+    let i = 0;
+    const worker = async () => {
+      while (i < files.length) {
+        const idx = i++;
+        await handleUploadFile(files[idx], temps[idx].id, temps[idx].url);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT, files.length) }, () => worker()));
     setUploadingFile(false);
     toast(`${files.length} archivo${files.length===1?"":"s"} subido${files.length===1?"":"s"} ✓`,"success");
   }
