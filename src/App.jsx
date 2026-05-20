@@ -221,19 +221,19 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
     const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
     return (
       <button onClick={()=>setPage(item.id)} title={collapsed?item.label:undefined}
-        style={{display:"flex",alignItems:"center",gap:10,padding:collapsed?"10px 14px":"9px 12px",
-          background:active?T.accentSolid+"15":"transparent",border:"none",
-          borderLeft:active?`2px solid ${T.accentSolid}`:"2px solid transparent",
+        style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"10px 0":"8px 10px",
+          background:active?T.accentSolid+"20":"transparent",border:"none",
           borderRadius:DS.r.md,cursor:"pointer",textAlign:"left",
           color:active?T.accent:T.textMd,fontWeight:active?DS.w.semibold:DS.w.medium,
-          fontSize:DS.font.base,fontFamily:"'Inter',system-ui,sans-serif",
-          transition:`all 0.15s ${DS.ease}`,justifyContent:collapsed?"center":"flex-start",position:"relative",width:"100%"}}
+          fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif",
+          transition:`all 0.12s ${DS.ease}`,justifyContent:collapsed?"center":"flex-start",
+          position:"relative",width:"100%",letterSpacing:active?0:-0.1}}
         onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.card;}}
         onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={item.icon}/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?"2.2":"1.8"} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.65}}><path d={item.icon}/></svg>
         {!collapsed&&<span style={{flex:1}}>{item.label}</span>}
-        {!collapsed&&item.count>0&&<span style={{fontSize:DS.font.xs,fontWeight:DS.w.bold,padding:"1px 7px",borderRadius:DS.r.full,background:badgeColor+"22",color:badgeColor,lineHeight:1.4}}>{item.count>99?"99+":item.count}</span>}
-        {collapsed&&item.count>0&&<span style={{position:"absolute",marginLeft:18,marginTop:-12,width:6,height:6,borderRadius:DS.r.full,background:badgeColor}}/>}
+        {!collapsed&&item.count>0&&<span style={{fontSize:10,fontWeight:DS.w.bold,padding:"1px 6px",borderRadius:DS.r.full,background:badgeColor+(active?"33":"22"),color:badgeColor,lineHeight:1.5,minWidth:18,textAlign:"center"}}>{item.count>99?"99+":item.count}</span>}
+        {collapsed&&item.count>0&&<span style={{position:"absolute",top:6,right:8,width:6,height:6,borderRadius:DS.r.full,background:badgeColor}}/>}
       </button>
     );
   };
@@ -5530,9 +5530,9 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 
   // Feed por categoría
   const CAT_META = {
-    reclamos: {label:"Reclamos",icon:"💬",color:T.red,   nav:"reclamos"},
-    stock:    {label:"Stock",   icon:"📊",color:T.red,   nav:"stock"},
-    canjes:   {label:"Canjes", icon:"🤝",color:T.orange, nav:"canjes"},
+    reclamos: {label:"Reclamos", icon:"💬", color:T.red,    nav:"reclamos"},
+    stock:    {label:"Stock",    icon:"📊", color:T.red,    nav:"stock"},
+    canjes:   {label:"Canjes",  icon:"🤝", color:T.orange,  nav:"canjes"},
   };
   const grouped = {
     reclamos: reclamosCount>0?[{
@@ -5547,29 +5547,34 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
     canjes: notificacionesCanjes.slice(0,4).map(n=>({icon:"🤝",titulo:n.canje.influencer,sub:n.msg,badge:"Pendiente",badgeColor:T.orange,accion:()=>onNavigate("canjes",n.canje._docId)})),
   };
   const totalPendientes = Object.values(grouped).reduce((s,arr)=>s+arr.length,0);
+  const [collapsedCats, setCollapsedCats] = React.useState({});
+  const toggleCat = (cat) => setCollapsedCats(prev=>({...prev,[cat]:!prev[cat]}));
+
   const PendienteItem = ({p})=>(
     <div onClick={p.accion}
-      style={{padding:"10px 12px",borderRadius:DS.r.md,background:T.surface,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,border:"1px solid transparent"}}
-      onMouseEnter={e=>{e.currentTarget.style.borderColor=p.badgeColor+"33";e.currentTarget.style.background=T.card;e.currentTarget.style.transform="scale(1.012)";}}
-      onMouseLeave={e=>{e.currentTarget.style.borderColor="transparent";e.currentTarget.style.background=T.surface;e.currentTarget.style.transform="scale(1)";}}>
-      <span style={{fontSize:15,flexShrink:0}}>{p.icon}</span>
+      style={{padding:"10px 14px",borderRadius:DS.r.md,background:T.surface,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,border:`1px solid ${T.border}`}}
+      onMouseEnter={e=>{e.currentTarget.style.borderColor=p.badgeColor+"44";e.currentTarget.style.background=T.card;e.currentTarget.style.transform="translateY(-1px)";}}
+      onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background=T.surface;e.currentTarget.style.transform="translateY(0)";}}>
+      <span style={{fontSize:14,flexShrink:0}}>{p.icon}</span>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.titulo}</div>
-        <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1}}>{p.sub}</div>
+        <div style={{fontSize:DS.font.base,fontWeight:DS.w.medium,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.titulo}</div>
+        <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:2}}>{p.sub}</div>
       </div>
       <DSBadge T={T} color={p.badgeColor} size="sm">{p.badge}</DSBadge>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.5}}><path d="M9 18l6-6-6-6"/></svg>
     </div>
   );
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"28px 32px 48px",maxWidth:1200,margin:"0 auto"}} className="home-wrap">
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"28px 32px 48px",maxWidth:1100,margin:"0 auto"}} className="home-wrap">
 
-      {/* Hero */}
+      {/* Hero — estilo limpio */}
       <div style={{marginBottom:DS.sp["3xl"]}}>
-        <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:8,fontWeight:DS.w.medium,letterSpacing:0.1}}>{fechaCap}</div>
-        <h1 style={{fontSize:DS.font["4xl"],fontWeight:DS.w.black,margin:0,letterSpacing:-1.2,lineHeight:1.1,color:T.text}}>
-          {saludo}, <span style={{background:`linear-gradient(135deg,${T.accentSolid},#a78bfa)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{nombre}</span>
+        <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:6,fontWeight:DS.w.medium}}>{fechaCap}</div>
+        <h1 style={{fontSize:DS.font["4xl"],fontWeight:DS.w.black,margin:"0 0 6px",letterSpacing:-1,lineHeight:1.1,color:T.text}}>
+          {saludo}, {nombre} 👋
         </h1>
+        <p style={{margin:0,fontSize:DS.font.base,color:T.textMd,fontWeight:DS.w.regular}}>¿Qué tenés que hacer hoy?</p>
       </div>
 
       {/* KPIs — con skeleton loader */}
@@ -5587,35 +5592,54 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
       </div>
 
       {/* Pendientes por categoría */}
-      <Card T={T} padding="lg">
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:DS.sp.lg}}>
-          <span style={{fontSize:DS.font.base,fontWeight:DS.w.bold,color:T.text}}>Pendientes</span>
+      <Card T={T} padding="lg" style={{border:`1px solid ${T.border}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:totalPendientes>0?DS.sp.xl:0}}>
+          <span style={{fontSize:DS.font.base,fontWeight:DS.w.bold,color:T.text,flex:1}}>Pendientes</span>
           {totalPendientes>0&&<DSBadge T={T} color={T.red} size="sm">{totalPendientes}</DSBadge>}
         </div>
 
         {totalPendientes===0?(
-          <div style={{textAlign:"center",padding:"32px 0"}}>
-            <div style={{fontSize:40,marginBottom:DS.sp.md}}>✅</div>
+          <div style={{textAlign:"center",padding:"28px 0"}}>
+            <div style={{fontSize:36,marginBottom:DS.sp.sm}}>✅</div>
             <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,marginBottom:4}}>Todo en orden</div>
             <div style={{fontSize:DS.font.sm,color:T.textSm}}>Sin alertas ni pendientes por ahora</div>
           </div>
         ):(
-          <div style={{display:"flex",flexDirection:"column",gap:DS.sp["2xl"]}}>
+          <div style={{display:"flex",flexDirection:"column",gap:DS.sp.xl}}>
             {["reclamos","stock","canjes"].map(cat=>{
               const items=grouped[cat];
               if(!items||items.length===0) return null;
               const meta=CAT_META[cat];
+              const isCollapsed=!!collapsedCats[cat];
               return (
                 <div key={cat}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:DS.sp.sm,cursor:"pointer"}} onClick={()=>onNavigate(meta.nav)}>
-                    <span style={{fontSize:12}}>{meta.icon}</span>
-                    <span style={{fontSize:DS.font.xs,fontWeight:DS.w.bold,color:meta.color,textTransform:"uppercase",letterSpacing:0.7}}>{meta.label}</span>
-                    <span style={{fontSize:DS.font.xs,color:T.textSm,marginLeft:2}}>({items.length})</span>
-                    <div style={{flex:1,height:1,background:meta.color+"22",marginLeft:4}}/>
+                  {/* Header de categoría — clickeable para colapsar */}
+                  <div
+                    onClick={()=>toggleCat(cat)}
+                    style={{display:"flex",alignItems:"center",gap:8,marginBottom:isCollapsed?0:DS.sp.sm,cursor:"pointer",padding:"6px 0",userSelect:"none"}}>
+                    <span style={{fontSize:11}}>{meta.icon}</span>
+                    <span style={{fontSize:DS.font.xs,fontWeight:DS.w.bold,color:meta.color,textTransform:"uppercase",letterSpacing:0.8,flex:1}}>{meta.label}</span>
+                    <DSBadge T={T} color={meta.color} size="sm">{items.length}</DSBadge>
+                    {/* botón ir a sección */}
+                    <button
+                      onClick={e=>{e.stopPropagation();onNavigate(meta.nav);}}
+                      style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,color:T.textSm,cursor:"pointer",padding:"2px 7px",fontSize:DS.font.xs,fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}
+                      onMouseEnter={e=>e.currentTarget.style.borderColor=meta.color}
+                      onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                      Ver →
+                    </button>
+                    {/* chevron toggle */}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                      style={{transition:`transform 0.2s ${DS.ease}`,transform:isCollapsed?"rotate(-90deg)":"rotate(0deg)",flexShrink:0}}>
+                      <path d="M6 9l6 6 6-6"/>
+                    </svg>
                   </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                    {items.map((p,i)=><PendienteItem key={i} p={p}/>)}
-                  </div>
+                  {/* Items (colapsables) */}
+                  {!isCollapsed&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:5,animation:`growith-fadeIn 0.18s ease both`}}>
+                      {items.map((p,i)=><PendienteItem key={i} p={p}/>)}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -5624,7 +5648,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 
         {userPlan==="free"&&(
           <div onClick={()=>onNavigate("planes")}
-            style={{marginTop:DS.sp.lg,padding:"11px 14px",background:`linear-gradient(135deg,${T.accentSolid}12,transparent)`,border:`1px solid ${T.accentSolid}33`,borderRadius:DS.r.md,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,display:"flex",alignItems:"center",gap:10}}
+            style={{marginTop:DS.sp.lg,padding:"11px 14px",background:`linear-gradient(135deg,${T.accentSolid}10,transparent)`,border:`1px solid ${T.accentSolid}33`,borderRadius:DS.r.md,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,display:"flex",alignItems:"center",gap:10}}
             onMouseEnter={e=>e.currentTarget.style.borderColor=T.accentSolid+"66"}
             onMouseLeave={e=>e.currentTarget.style.borderColor=T.accentSolid+"33"}>
             <span style={{fontSize:14}}>💎</span>
@@ -5632,6 +5656,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
               <div style={{fontSize:DS.font.xs,color:T.accent,fontWeight:DS.w.bold}}>Plan Free activo</div>
               <div style={{fontSize:DS.font.xs,color:T.textSm}}>Desbloqueá todas las funciones →</div>
             </div>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
           </div>
         )}
       </Card>

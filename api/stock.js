@@ -45,7 +45,9 @@ async function tnOrders(sid, tok, days, since, until) {
     fetch(url.replace("PAGE",p),{headers:TN_H(tok)})
     .then(r=>r.ok?r.json():[]).catch(()=>[])
   ));
-  return pages.flat().filter(o=>o?.id);
+  // Deduplicar por id (paginación simultánea puede repetir órdenes en el límite)
+  const seen=new Set();
+  return pages.flat().filter(o=>{ if(!o?.id||seen.has(o.id)) return false; seen.add(o.id); return true; });
 }
 
 // ── Shopify Fetch ─────────────────────────────────────────────────────
@@ -99,10 +101,22 @@ function processTN(orders) {
     // Contar la orden
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
 
+    // Calcular el ratio de descuento por orden (cupones de influencers etc.)
+    // item.price es precio de lista; o.discount es el descuento total de la orden
+    // Para obtener revenue real: distribuimos el descuento proporcionalmente a los items
+    let orderSubtotal=0;
+    for(const item of o.products||[]){
+      orderSubtotal += parseFloat(item.price||0) * (parseInt(item.quantity)||0);
+    }
+    const orderDiscount = parseFloat(o.discount||0);
+    // ratio = proporción del precio real vs lista (ej: 0.70 si hay 30% de descuento)
+    const discountRatio = orderSubtotal>0 ? Math.max(0, orderSubtotal-orderDiscount)/orderSubtotal : 1;
+
     for(const item of o.products||[]){
       const vid=String(item.variant_id||item.product_id);
       const qty=parseInt(item.quantity)||0;
-      const rev=parseFloat(item.price)*qty;
+      // Aplicar descuento proporcional para obtener revenue real pagado
+      const rev=parseFloat(item.price||0)*qty*discountRatio;
       if(!map[vid]) map[vid]={units:0,revenue:0};
       map[vid].units+=qty;
       map[vid].revenue+=rev;
