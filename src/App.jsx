@@ -8887,6 +8887,7 @@ function AppMetaAds({T, user, onHome}) {
   const [generatingCopy,setGeneratingCopy]=useState(null);
   const [publishing,setPublishing]=useState(null);
   const [uploadingFile,setUploadingFile]=useState(false);
+  const [uploadProgress,setUploadProgress]=useState({ done: 0, total: 0 });
   const [analyzingCreative,setAnalyzingCreative]=useState(null);
 
   // Brand
@@ -9359,20 +9360,29 @@ function AppMetaAds({T, user, onHome}) {
   // dispara analisis+copy automatico con Gemini. La razon de subir directo
   // es que Vercel tiene hard limit de ~4.5MB en request body, asi que un
   // video de 5-40MB no entra. Meta acepta multipart hasta 1GB.
-  async function handleUploadFile(file) {
+  // tempId = id placeholder en la cola (creado por handleUploadMultiple).
+  // localPreviewUrl = blob: URL del file para mostrar preview hasta que Meta
+  // devuelva la URL real (para imagenes). Se mantiene como fallback para
+  // videos (que no tienen url publica).
+  async function handleUploadFile(file, tempId, localPreviewUrl) {
     if(!file) return;
-    if(!activeAccId) return toast("Conectá una cuenta Meta primero","warning");
-    const MAX = 200 * 1024 * 1024; // 200MB (Meta soporta hasta 1GB pero damos margen)
-    if(file.size > MAX) return toast(`Archivo muy grande (max 200MB, tiene ${(file.size/1024/1024).toFixed(1)}MB)`,"error");
-    setUploadingFile(true);
+    if(!activeAccId) { toast("Conectá una cuenta Meta primero","warning"); if(tempId) setCreatives(prev=>prev.filter(c=>c.id!==tempId)); return; }
+    const MAX = 200 * 1024 * 1024;
+    if(file.size > MAX) {
+      toast(`"${file.name}" muy grande (max 200MB, ${(file.size/1024/1024).toFixed(1)}MB)`,"error");
+      if(tempId) setCreatives(prev=>prev.filter(c=>c.id!==tempId));
+      return;
+    }
+    const failTemp = (msg) => {
+      toast(msg,"error");
+      if(tempId) setCreatives(prev=>prev.map(c=>c.id===tempId?{...c,_uploading:false,_error:msg,ia_status:"error"}:c));
+    };
     try {
-      // 1) Pedir credenciales al backend (access_token + ad_account_id)
       const creds = await metaApi("upload_creds","GET",null,{acc_id:activeAccId});
-      if(creds.error){ toast("Error: "+creds.error,"error"); setUploadingFile(false); return; }
+      if(creds.error){ failTemp("Error: "+creds.error); return; }
       const accIdStr = creds.ad_account_id.startsWith("act_") ? creds.ad_account_id : `act_${creds.ad_account_id}`;
       const isVideo = (file.type||"").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(file.name);
 
-      // 2) Upload directo a Meta via FormData (NO pasa por Vercel)
       const fd = new FormData();
       fd.append("access_token", creds.access_token);
       fd.append(isVideo ? "source" : "filename", file, file.name);
@@ -9382,39 +9392,42 @@ function AppMetaAds({T, user, onHome}) {
         const r = await fetch(metaUrl, { method: "POST", body: fd });
         const j = await r.json();
         if (!r.ok || j.error) throw new Error(j.error?.message || `HTTP ${r.status}`);
-        if (isVideo) up = { kind: "video", id: j.id, url: null };
+        if (isVideo) up = { kind: "video", id: j.id, url: localPreviewUrl || null };
         else {
           const img = Object.values(j.images || {})[0];
           if (!img) throw new Error("Meta no devolvió image hash");
           up = { kind: "image", hash: img.hash, url: img.url, width: img.width, height: img.height };
         }
       } catch (e) {
-        toast("Error subiendo a Meta: "+e.message,"error");
-        setUploadingFile(false);
+        failTemp(`Error subiendo "${file.name}": ${e.message}`);
         return;
       }
 
-      // 3) Registrar creative en Growith
       const fileUrl = up.url || (up.id ? `meta-video://${up.id}` : "");
       const cr = await metaApi("add_creative","POST",{filename:file.name, kind:up.kind, url:fileUrl, size:file.size, meta_video_id: up.id||null, meta_hash: up.hash||null},{acc_id:activeAccId});
-      if(cr.error){toast("Error guardando creative: "+cr.error,"error");setUploadingFile(false);return;}
-      const cWithMeta = {...cr.creative, meta_hash: up.hash || null, meta_video_id: up.id || null};
+      if(cr.error){ failTemp("Error guardando creative: "+cr.error); return; }
+      // Para video, conservamos el localPreviewUrl en el state local (no se
+      // persiste) asi el thumbnail se ve hasta que el ad este publicado.
+      const cWithMeta = {
+        ...cr.creative,
+        meta_hash: up.hash || null,
+        meta_video_id: up.id || null,
+        ...(isVideo && localPreviewUrl ? { _localPreview: localPreviewUrl } : {}),
+      };
       if (studioMode === "shared" && (sharedDest.link || sharedDest.cta)) {
         await metaApi("patch_creative","PATCH",{link:sharedDest.link||"", cta:sharedDest.cta||"LEARN_MORE"},{cid:cWithMeta.id});
         cWithMeta.link = sharedDest.link || "";
         cWithMeta.cta = sharedDest.cta || "LEARN_MORE";
       }
-      setCreatives(prev=>[cWithMeta,...prev]);
-      toast(`Subido ✓ (${up.kind === "video" ? "video" : "imagen"})`,"success");
+      // REEMPLAZAR el temp por el creative real (no prepend, mantiene posicion)
+      if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? cWithMeta : c));
+      else setCreatives(prev => [cWithMeta, ...prev]);
 
-      // 4) Generar copy rapido en background (text-only, sin Vision).
-      // Vision tarda mucho — el usuario prefiere copy rapido con randomness
-      // basada en brand + filename + url. Si quiere el analisis profundo,
-      // hay un boton "🤖 Analizar profundo" por card.
+      // Generar copy en background (no bloquea el upload del proximo)
       handleAnalyzeCreative(cWithMeta, { skip_vision: true });
     } catch(e){
-      toast("Error: "+(e.message||"upload falló"),"error");
-    } finally { setUploadingFile(false); }
+      failTemp("Error: "+(e.message||"upload falló"));
+    }
   }
 
   // analyze_creative con retry automatico si Gemini devuelve vacio.
@@ -9532,13 +9545,41 @@ function AppMetaAds({T, user, onHome}) {
     } finally { setResSaving(false); }
   }
 
-  // ── Studio: subida múltiple (drag-drop o file picker con multiple) ────
+  // ── Studio: subida múltiple en paralelo TOTAL (velocidad WhatsApp) ────
+  // 1) Los N archivos aparecen en la cola AL INSTANTE como cards temporales
+  //    con preview local (URL.createObjectURL). Cada card muestra estado
+  //    "subiendo…" hasta que Meta confirma.
+  // 2) Todos los uploads disparan en paralelo (no hay concurrency limit,
+  //    el browser y Meta se las arreglan).
+  // 3) A medida que cada upload termina, el temp se reemplaza por el creative
+  //    real con su id de Firestore.
   async function handleUploadMultiple(fileList) {
     if (!fileList || fileList.length === 0) return;
     if (!activeAccId) return toast("Conectá una cuenta Meta primero","warning");
-    for (const f of Array.from(fileList)) {
-      await handleUploadFile(f); // secuencial para no saturar Meta
-    }
+    const files = Array.from(fileList);
+    // Crear cards temporales con preview local — al toque visibles en la cola.
+    const temps = files.map(f => {
+      const isVideo = (f.type||"").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(f.name);
+      return {
+        id: `_temp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+        _isTemp: true,
+        _uploading: true,
+        filename: f.name,
+        filename_base: f.name.replace(/\.[^.]+$/, ""),
+        kind: isVideo ? "video" : "image",
+        url: URL.createObjectURL(f),
+        size: f.size,
+        copy: "", title: "", description: "", notes: "",
+        ia_status: "uploading",
+      };
+    });
+    setCreatives(prev => [...temps, ...prev]);
+    setUploadingFile(true);
+    // PARALELO TOTAL — todos los uploads se disparan al mismo tiempo.
+    // Cada uno reemplaza su temp por el real cuando termina.
+    await Promise.all(files.map((f, i) => handleUploadFile(f, temps[i].id, temps[i].url)));
+    setUploadingFile(false);
+    toast(`${files.length} archivo${files.length===1?"":"s"} subido${files.length===1?"":"s"} ✓`,"success");
   }
 
   // ── Studio: crear campaña + N adsets (con bulk endpoint create_full) ──
@@ -10908,31 +10949,47 @@ LONGITUD Y FORMATO
                       <button onClick={handleClearQueue} style={BtnSec}>Limpiar todo</button>
                     </div>
                     {creatives.map(c => (
-                      <div key={c.id} style={{background:T.card,border:`2px solid ${c.copy?.trim()?T.green+"55":T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:18,boxShadow:c.copy?.trim()?`0 4px 14px ${T.green}10`:"0 2px 8px rgba(0,0,0,0.15)",position:"relative"}}>
-                        <div style={{position:"absolute",top:-9,left:14,padding:"2px 10px",borderRadius:6,background:c.copy?.trim()?T.green:T.borderL,color:c.copy?.trim()?"#fff":T.textSm,fontSize:9,fontWeight:800,letterSpacing:0.6,textTransform:"uppercase"}}>Ad #{creatives.indexOf(c)+1}</div>
+                      <div key={c.id} style={{background:T.card,border:`2px solid ${c._uploading?T.blue+"55":c._error?T.red+"55":c.copy?.trim()?T.green+"55":T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:18,boxShadow:c.copy?.trim()?`0 4px 14px ${T.green}10`:"0 2px 8px rgba(0,0,0,0.15)",position:"relative",opacity:c._uploading?0.85:1,transition:"all 0.2s"}}>
+                        <div style={{position:"absolute",top:-9,left:14,padding:"2px 10px",borderRadius:6,background:c._uploading?T.blue:c._error?T.red:c.copy?.trim()?T.green:T.borderL,color:c._uploading||c._error||c.copy?.trim()?"#fff":T.textSm,fontSize:9,fontWeight:800,letterSpacing:0.6,textTransform:"uppercase"}}>Ad #{creatives.indexOf(c)+1}</div>
                         {/* Top row: thumbnail + filename + badges + remove */}
                         <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:10}}>
                           <div style={{width:90,height:90,flexShrink:0,borderRadius:8,background:T.bg,border:`1px solid ${T.border}`,overflow:"hidden",position:"relative"}}>
-                            {c.url && c.kind === "image" && !c.url.startsWith("meta-video://")
-                              ? <img src={c.url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
-                              : <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:"100%",height:"100%",fontSize:28}}>{c.kind==="video"?"🎬":"🖼️"}</div>
-                            }
+                            {(() => {
+                              // Imagen real, preview local de imagen, o thumbnail de video local
+                              const previewSrc = (c.url && !c.url.startsWith("meta-video://")) ? c.url : (c._localPreview || null);
+                              if (previewSrc && c.kind === "image") {
+                                return <img src={previewSrc} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>;
+                              }
+                              if (c._localPreview && c.kind === "video") {
+                                return <video src={c._localPreview} muted style={{width:"100%",height:"100%",objectFit:"cover"}}/>;
+                              }
+                              return <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:"100%",height:"100%",fontSize:28}}>{c.kind==="video"?"🎬":"🖼️"}</div>;
+                            })()}
                             <span style={{position:"absolute",bottom:4,left:4,fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(0,0,0,0.7)",color:"#fff",fontWeight:700,letterSpacing:0.3}}>{c.kind==="video"?"🎬 VID":"🖼️ IMG"}</span>
+                            {c._uploading && (
+                              <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(2px)"}}>
+                                <Spinner size={20} color="#fff"/>
+                              </div>
+                            )}
                           </div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                               <span style={{fontSize:14,fontWeight:700,color:T.text,wordBreak:"break-all"}}>{c.filename}</span>
-                              {c.copy?.trim()
-                                ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
-                                : c.ia_status === "analyzed"
-                                  ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
-                                  : analyzingCreative===c.id
-                                    ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}><Spinner size={9} color={T.accent}/> Analizando…</span>
-                                    : <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,border:`1px solid ${T.border}`}}>PENDIENTE</span>
+                              {c._uploading
+                                ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo a Meta…</span>
+                                : c._error
+                                  ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>✗ ERROR</span>
+                                  : c.copy?.trim()
+                                    ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
+                                    : c.ia_status === "analyzed"
+                                      ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
+                                      : analyzingCreative===c.id
+                                        ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}><Spinner size={9} color={T.accent}/> Generando copy…</span>
+                                        : <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:600,letterSpacing:0.3,border:`1px solid ${T.border}`}}>PENDIENTE</span>
                               }
                             </div>
                           </div>
-                          <button onClick={()=>handleDeleteCreative(c)} title="Quitar de la cola" style={{background:"transparent",border:"none",color:T.textSm,fontSize:18,cursor:"pointer",padding:"0 4px"}}>✕</button>
+                          <button onClick={()=>c._isTemp?setCreatives(prev=>prev.filter(x=>x.id!==c.id)):handleDeleteCreative(c)} title="Quitar de la cola" style={{background:"transparent",border:"none",color:T.textSm,fontSize:18,cursor:"pointer",padding:"0 4px"}}>✕</button>
                         </div>
 
                         {/* Análisis profundo */}
