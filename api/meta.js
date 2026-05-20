@@ -1349,35 +1349,37 @@ export default async function handler(req, res) {
         }
         return null;
       };
-      // Helper fetch posts con varios tokens (algunos posts requieren page_access_token)
-      const fetchPostsBatch = async (chunk, token) => {
-        const out = {};
-        try {
-          const params = new URLSearchParams({ ids: chunk.join(","), fields: "attachments.fields(target,url,unshimmed_url,subattachments),link,call_to_action,message,permalink_url", access_token: token });
-          const r = await fetch(`${META_BASE}/?${params}`);
-          const j = await r.json();
-          if (r.ok && !j.error && typeof j === "object") {
-            for (const [pid, obj] of Object.entries(j)) {
-              const link = extractLinkFromPost(obj);
-              if (link) out[pid] = link;
-            }
-          }
-        } catch (_) {}
-        return out;
-      };
       // Para ads que usan post existente (effective_object_story_id) sin link
-      // directo en creative, hay que fetchear el post para sacar la URL.
+      // directo en creative, fetcheamos el post individualmente (mas robusto
+      // que el batched /?ids= que tiene issues con URL-encoded parens).
       const adsWithPostNoLink = ads.filter(a => !linkOfAdCreative(a) && a.creative?.effective_object_story_id);
       const postIds = [...new Set(adsWithPostNoLink.map(a => a.creative.effective_object_story_id))];
       const postLinks = {};
-      for (let i = 0; i < postIds.length; i += 50) {
-        const chunk = postIds.slice(i, i + 50);
-        // Intento 1: system user token (cfg.access_token)
-        Object.assign(postLinks, await fetchPostsBatch(chunk, cfg.access_token));
-        // Intento 2: page_access_token para los que aun no resolvieron
+      const postErrors = [];
+      const fetchOnePost = async (pid, token) => {
+        try {
+          const obj = await metaGet(pid, { fields: "attachments{target,url,unshimmed_url,subattachments,type,title,description},link,call_to_action,message,permalink_url" }, token);
+          const link = extractLinkFromPost(obj);
+          return { pid, link, raw: obj };
+        } catch (e) {
+          return { pid, link: null, error: e.message };
+        }
+      };
+      // Parallel en lotes de 8 (cuidamos rate limit)
+      for (let i = 0; i < postIds.length; i += 8) {
+        const chunk = postIds.slice(i, i + 8);
+        const results = await Promise.all(chunk.map(pid => fetchOnePost(pid, cfg.access_token)));
+        for (const r of results) {
+          if (r.link) postLinks[r.pid] = r.link;
+          else if (r.error) postErrors.push(`${r.pid}: ${r.error}`);
+        }
+        // Retry con page_access_token los que fallaron
         if (cfg.page_access_token) {
-          const remaining = chunk.filter(pid => !postLinks[pid]);
-          if (remaining.length) Object.assign(postLinks, await fetchPostsBatch(remaining, cfg.page_access_token));
+          const stillMissing = chunk.filter(pid => !postLinks[pid]);
+          if (stillMissing.length) {
+            const retries = await Promise.all(stillMissing.map(pid => fetchOnePost(pid, cfg.page_access_token)));
+            for (const r of retries) { if (r.link) postLinks[r.pid] = r.link; }
+          }
         }
       }
       // Para los ads que SIGUEN sin link, fetchear el creative directamente
@@ -1460,11 +1462,32 @@ export default async function handler(req, res) {
       // Aplastar Sets a arrays para JSON
       const adsetOut = Object.fromEntries(Object.entries(adsetMap).map(([k, v]) => [k, [...v]]));
       const campOut = Object.fromEntries(Object.entries(campMap).map(([k, v]) => [k, [...v]]));
+      // Diagnostico para entender que pasa con los ads en blanco
+      const unmatchedAds = ads.filter(a => !linkOfAd(a)).slice(0, 20).map(a => ({
+        id: a.id,
+        has_creative: Boolean(a.creative),
+        has_link_url: Boolean(a.creative?.link_url),
+        has_oss: Boolean(a.creative?.object_story_spec),
+        has_post_id: Boolean(a.creative?.effective_object_story_id),
+        post_id: a.creative?.effective_object_story_id || null,
+        creative_id: a.creative?.id || null,
+      }));
+      const linkedAds = ads.filter(a => linkOfAd(a)).length;
       return res.json({
         products: productsArr.map(p => ({ id: p.id, name: p.name, roas_be: p.roas_be || 0 })),
         ad: adMap,
         adset: adsetOut,
         campaign: campOut,
+        _debug: {
+          total_ads: ads.length,
+          linked_ads: linkedAds,
+          unlinked_ads: ads.length - linkedAds,
+          post_ids_attempted: postIds.length,
+          post_links_resolved: Object.keys(postLinks).length,
+          creative_links_resolved: Object.keys(creativeLinks).length,
+          post_errors_sample: postErrors.slice(0, 5),
+          unmatched_sample: unmatchedAds,
+        },
       });
     }
 
