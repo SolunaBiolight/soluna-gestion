@@ -12304,147 +12304,167 @@ function AppStock({T, user, onHome}) {
               ))}
             </div>
 
-            {/* ── TAB VENTAS ── */}
-            {tab==="ventas"&&(
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                {/* Gráfico principal */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 20px 14px"}}>
-                  <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
-                    <div>
-                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>Productos vendidos por día</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimos {days} días · {platformLabel}{data.ml_data?" + Mercado Libre":""}</div>
+            {/* ── BLOQUE COMÚN: Gráfico + Resumen + Donuts ── */}
+            {(()=>{
+              // Config por tab
+              const cfg = {
+                ventas:       { title:"Ventas por día",      subtitle:"Órdenes pagadas", mainVal:fmt(totalUnits),   mainLabel:"unidades vendidas", barColor:T.accentSolid, daily:data.daily_series, top5Label:"uds" },
+                productos:    { title:"Productos vendidos por día", subtitle:"Unidades despachadas", mainVal:fmt(totalUnits), mainLabel:"productos vendidos", barColor:T.accentSolid, daily:data.daily_series, top5Label:"uds" },
+                facturacion:  { title:"Facturación por día", subtitle:"Revenue generado", mainVal:fmtARS(totalRev), mainLabel:"facturado total",   barColor:T.green,        daily:(()=>{const d={};Object.entries(data.daily_series||{}).forEach(([k])=>{d[k]=0;});allProducts.forEach(p=>p.variants.forEach(v=>{/* revenue diario no disponible directamente */;}));return data.daily_series;})(), top5Label:"uds" },
+              };
+              if(!cfg[tab]) return null;
+              const c=cfg[tab];
+              const dailyEntries2=Object.entries(data.daily_series||{}).sort(([a],[b])=>a.localeCompare(b));
+
+              return (
+                <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                  {/* Fila superior: Gráfico + Resumen */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:16,alignItems:"start"}}>
+                    {/* Gráfico barras */}
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 20px 14px"}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>{c.title}</div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:16}}>{c.subtitle} · Últimos {days} días · {platformLabel}</div>
+                      <BarChart daily={data.daily_series} height={130}/>
                     </div>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:24,fontWeight:800,color:T.accentSolid}}>{fmt(totalUnits)}</div>
-                      <div style={{fontSize:10,color:T.textSm}}>unidades totales</div>
+                    {/* Resumen período */}
+                    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                        <div style={{fontSize:11,color:T.textSm,marginBottom:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Resumen del período</div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                          {tab==="ventas"&&[
+                            {val:fmt(totalUnits),label:"unidades vendidas"},
+                            {val:avgRate.toFixed(1),label:"unidades por día"},
+                            {val:fmt(allProducts.filter(p=>p.units_sold>0).length),label:"productos con ventas"},
+                            {val:fmtARS(totalRev/Math.max(1,totalUnits)),label:"ticket por unidad"},
+                          ].map((k,i)=>(
+                            <div key={i} style={{background:T.surface,borderRadius:10,padding:"12px 12px"}}>
+                              <div style={{fontSize:18,fontWeight:800,color:T.accentSolid,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
+                              <div style={{fontSize:10,color:T.textSm,marginTop:4}}>{k.label}</div>
+                            </div>
+                          ))}
+                          {tab==="productos"&&[
+                            {val:fmt(totalUnits),label:"productos vendidos"},
+                            {val:avgRate.toFixed(1),label:"productos por día"},
+                            {val:fmt(allProducts.length),label:"productos en catálogo"},
+                            {val:fmt(kpiDead),label:"sin ventas en el período"},
+                          ].map((k,i)=>(
+                            <div key={i} style={{background:T.surface,borderRadius:10,padding:"12px 12px"}}>
+                              <div style={{fontSize:18,fontWeight:800,color:T.accentSolid,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
+                              <div style={{fontSize:10,color:T.textSm,marginTop:4}}>{k.label}</div>
+                            </div>
+                          ))}
+                          {tab==="facturacion"&&[
+                            {val:fmtARS(totalRev),label:"total facturado"},
+                            {val:fmtARS(totalRev/Math.max(1,days)),label:"facturación por día"},
+                            {val:fmtARS(totalRev/Math.max(1,totalUnits)),label:"ticket promedio"},
+                            {val:fmtARS((totalRev/Math.max(1,days))*30),label:"proyección mensual"},
+                          ].map((k,i)=>(
+                            <div key={i} style={{background:T.surface,borderRadius:10,padding:"12px 12px"}}>
+                              <div style={{fontSize:16,fontWeight:800,color:T.green,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
+                              <div style={{fontSize:10,color:T.textSm,marginTop:4}}>{k.label}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Top 5 días */}
+                      {dailyEntries2.length>0&&(()=>{
+                        const top5=Object.entries(data.daily_series||{}).sort(([,a],[,b])=>b-a).slice(0,5);
+                        const maxV=top5[0]?.[1]||1;
+                        return (
+                          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 16px"}}>
+                            <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>🏆 Mejores días</div>
+                            {top5.map(([date,val],i)=>(
+                              <div key={date} style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
+                                <span style={{fontSize:10,fontWeight:700,color:T.textSm,width:14,flexShrink:0}}>{i+1}</span>
+                                <span style={{fontSize:11,color:T.text,width:36,flexShrink:0}}>{date.slice(5).replace("-","/")}</span>
+                                <div style={{flex:1,height:5,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                                  <div style={{height:"100%",width:`${(val/maxV)*100}%`,background:i===0?T.accentSolid:T.accentSolid+"66",borderRadius:10}}/>
+                                </div>
+                                <span style={{fontSize:11,fontWeight:700,color:i===0?T.accentSolid:T.text,width:50,textAlign:"right",flexShrink:0}}>{fmt(val)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
-                  <BarChart daily={data.daily_series} height={130}/>
-                  {data.ml_data&&Object.keys(data.ml_data.daily||{}).length>0&&(
-                    <div style={{marginTop:12,padding:"8px 12px",background:T.surface,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{fontSize:11,color:"#f0c14b",fontWeight:700}}>🛒 Mercado Libre:</span>
-                      <span style={{fontSize:11,color:T.textMd}}>{fmt(data.ml_data.total_units)} uds adicionales en el período</span>
+
+                  {/* Donuts — siempre los mismos 3, el título/enfoque cambia por tab */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>
+                        {tab==="facturacion"?"Revenue por variante":"Variantes más vendidas"}
+                      </div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>
+                        {tab==="facturacion"?"Distribución del revenue":"Productos vendidos por variante"}
+                      </div>
+                      <DonutChart data={tab==="facturacion"?(()=>{const m={};allProducts.forEach(p=>p.variants.forEach(v=>{m[v.nombre]=(m[v.nombre]||0)+v.revenue;}));return m;})():data.by_variant||{}} centerLabel={tab==="facturacion"?{val:fmtARS(totalRev),label:"total"}:{val:fmt(totalUnits),label:"uds"}}/>
+                    </div>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Distribución geográfica</div>
+                      <DonutChart data={data.by_province||{}} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(data.by_province||{}).length,label:"provincias"}}/>
+                    </div>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Método de pago</div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Plataforma de cobro</div>
+                      <DonutChart data={data.by_payment||{}} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1","#ec4899"]} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
+                      <div style={{marginTop:16}}>
+                        <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:8}}>Hora del día</div>
+                        <HourChart byHour={data.by_hour||{}} height={50}/>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Detalle específico por tab */}
+                  {(tab==="productos"||tab==="facturacion")&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+                        <input type="text" placeholder="🔍 Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
+                          style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
+                        <span style={{fontSize:11,color:T.textSm}}>{allProducts.length} productos</span>
+                      </div>
+                      <ProductTable products={allProducts}/>
+                      {tab==="productos"&&kpiDead>0&&(
+                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                          <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
+                            <span>💤</span>
+                            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Sin ventas en el período</div>
+                            <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{kpiDead} productos inactivos</span>
+                          </div>
+                          <ProductTable products={allProducts} showDead/>
+                        </div>
+                      )}
+                      {tab==="facturacion"&&(
+                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>Revenue por producto</div>
+                          {[...allProducts].sort((a,b)=>b.revenue-a.revenue).map((p,i)=>{
+                            const pct=totalRev>0?(p.revenue/totalRev*100).toFixed(1):0;
+                            return (
+                              <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+                                <div style={{fontSize:11,fontWeight:700,color:T.textSm,width:18,textAlign:"right",flexShrink:0}}>{i+1}</div>
+                                {p.imagen?<img src={p.imagen} alt="" style={{width:28,height:28,borderRadius:6,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
+                                  :<div style={{width:28,height:28,borderRadius:6,background:T.surface,flexShrink:0}}/>}
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12,fontWeight:500,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3}}>{p.nombre}</div>
+                                  <div style={{height:6,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                                    <div style={{height:"100%",width:`${pct}%`,background:T.green,borderRadius:10}}/>
+                                  </div>
+                                </div>
+                                <div style={{textAlign:"right",flexShrink:0}}>
+                                  <div style={{fontSize:13,fontWeight:700,color:T.green}}>{fmtARS(p.revenue)}</div>
+                                  <div style={{fontSize:10,color:T.textSm}}>{pct}%</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-
-                {/* 3 columnas: Variantes + Provincias + Hora */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Variantes más vendidas</div>
-                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Por tipo de producto</div>
-                    <DonutChart data={data.by_variant||{}} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
-                  </div>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
-                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Distribución geográfica</div>
-                    <DonutChart data={data.by_province||{}} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(data.by_province||{}).length,label:"provincias"}}/>
-                  </div>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Hora del día</div>
-                    <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Cuándo comprás más</div>
-                    <HourChart byHour={data.by_hour||{}}/>
-                    <div style={{marginTop:14}}>
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:8}}>Método de pago</div>
-                      <DonutChart data={data.by_payment||{}} size={120} thickness={26} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1"]}/>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Top 5 días */}
-                {(()=>{
-                  const entries=Object.entries(data.daily_series||{}).sort(([,a],[,b])=>b-a).slice(0,5);
-                  if(!entries.length) return null;
-                  const maxV=entries[0][1];
-                  return (
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>🏆 Top 5 mejores días del período</div>
-                      {entries.map(([date,val],i)=>(
-                        <div key={date} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                          <div style={{width:20,fontSize:11,fontWeight:700,color:T.textSm,textAlign:"right",flexShrink:0}}>{i+1}</div>
-                          <div style={{fontSize:12,color:T.text,minWidth:60,flexShrink:0}}>{date.slice(5).replace("-","/")}</div>
-                          <div style={{flex:1,height:8,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${(val/maxV)*100}%`,background:i===0?T.accentSolid:T.accentSolid+"77",borderRadius:10}}/>
-                          </div>
-                          <div style={{fontSize:12,fontWeight:700,color:i===0?T.accentSolid:T.text,minWidth:60,textAlign:"right",flexShrink:0}}>{fmt(val)} uds</div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* ── TAB PRODUCTOS ── */}
-            {tab==="productos"&&(
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                  <input type="text" placeholder="🔍 Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
-                    style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
-                  <span style={{fontSize:11,color:T.textSm}}>{allProducts.length} productos</span>
-                </div>
-                <ProductTable products={allProducts}/>
-                {kpiDead>0&&(
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-                    <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{fontSize:14}}>💤</span>
-                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>Productos sin ventas en el período</div>
-                      <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Tienen stock pero no se vendieron en los últimos {days} días</span>
-                    </div>
-                    <ProductTable products={allProducts} showDead/>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── TAB FACTURACIÓN ── */}
-            {tab==="facturacion"&&(
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                {/* Cards */}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
-                  {[
-                    {label:"Total facturado",val:fmtARS(totalRev),sub:`${days} días`,color:T.green},
-                    {label:"Facturación/día",val:fmtARS(totalRev/Math.max(1,days)),sub:"promedio",color:T.accent},
-                    {label:"Ticket promedio",val:fmtARS(totalRev/Math.max(1,totalUnits)),sub:"por unidad",color:T.blue||"#3b82f6"},
-                    {label:"Proyección mensual",val:fmtARS((totalRev/Math.max(1,days))*30),sub:"a ritmo actual",color:T.green},
-                  ].map(k=>(
-                    <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px",textAlign:"center"}}>
-                      <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
-                      <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{k.val}</div>
-                      <div style={{fontSize:10,color:T.textSm,marginTop:3}}>{k.sub}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Ranking revenue por producto */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>Revenue por producto</div>
-                  {allProducts.sort((a,b)=>b.revenue-a.revenue).map((p,i)=>{
-                    const pct=totalRev>0?(p.revenue/totalRev*100).toFixed(1):0;
-                    return (
-                      <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                        <div style={{fontSize:11,fontWeight:700,color:T.textSm,width:18,textAlign:"right",flexShrink:0}}>{i+1}</div>
-                        {p.imagen?<img src={p.imagen} alt="" style={{width:28,height:28,borderRadius:6,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
-                          :<div style={{width:28,height:28,borderRadius:6,background:T.surface,flexShrink:0,border:`1px solid ${T.border}`}}/>}
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:12,fontWeight:500,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3}}>{p.nombre}</div>
-                          <div style={{height:6,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${pct}%`,background:T.accentSolid,borderRadius:10}}/>
-                          </div>
-                        </div>
-                        <div style={{textAlign:"right",flexShrink:0}}>
-                          <div style={{fontSize:13,fontWeight:700,color:T.green}}>{fmtARS(p.revenue)}</div>
-                          <div style={{fontSize:10,color:T.textSm}}>{pct}%</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Tabla completa con revenue */}
-                <ProductTable products={allProducts}/>
-              </div>
-            )}
+              );
+            })()}
 
             {/* ── TAB ALERTAS ── */}
             {tab==="alertas"&&(
