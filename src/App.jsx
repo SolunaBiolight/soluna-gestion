@@ -9443,25 +9443,39 @@ function AppMetaAds({T, user, onHome}) {
     const MAX_RETRIES = 3;
     try {
       if (opts.skip_vision) {
-        // Video pesado: skip vision, generar copy text-only con retry.
+        // Copy random text-only — pasa product_data/url directamente para
+        // no depender de loadCreative en backend (evita "creativo no
+        // encontrado" en parallel upload donde Firestore puede estar lento).
         let d = null;
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
           const r = await fetch(`/api/meta?action=generate_copy&uid=${uid}&cid=${c.id}`,{
             method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({tone:c.tone||"directo",length:c.length||"nativo",format:c.format||"storytelling",notes:c.notes||""})
+            body:JSON.stringify({
+              product_data: c.product_data || "",
+              url: c.link || "",
+              tone: c.tone || "",
+              length: c.length || "nativo",
+              format: c.format || "",
+              notes: c.notes || "",
+            })
           });
           const txt = await r.text();
           try { d = JSON.parse(txt); } catch(_){ d = {error:`HTTP ${r.status}`}; }
-          // Solo retry si Gemini devolvio respuesta vacia / parsing fallo.
-          const isEmpty = d.error && /vací|invalid|empty|parsing/i.test(d.error);
-          if (!d.error || !isEmpty) break;
+          const isRecoverable = d.error && /vací|invalid|empty|parsing|JSON|encontrado/i.test(d.error);
+          if (!d.error || !isRecoverable) break;
           await new Promise(r=>setTimeout(r, 800));
         }
         if(d?.error){ toast("Error copy: "+d.error,"error"); return; }
-        const updated = d.creative || c;
+        // Backend devuelve creative completo si lo encontro, o solo copy/title/desc.
+        let updated;
+        if (d.creative) updated = d.creative;
+        else {
+          updated = { ...c, copy: d.copy, title: d.title, description: d.description, ia_status: "ok" };
+          // Guardar via patch (el backend NO guardo si no encontro el creative)
+          metaApi("patch_creative","PATCH",{copy:d.copy,title:d.title,description:d.description,ia_status:"ok"},{cid:c.id}).catch(()=>{});
+        }
         setCreatives(prev=>prev.map(x=>x.id===c.id?updated:x));
         if(selCreative?.id === c.id) setSelCreative(updated);
-        toast("Copy generado ✓ (sin vision por tamaño)","success");
         return;
       }
       const body = { cid: c.id, auto_copy: true };

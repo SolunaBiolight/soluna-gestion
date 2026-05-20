@@ -218,14 +218,16 @@ async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes
   const lengthLine = effectiveMin > 0
     ? `- Largo: entre ${effectiveMin} y ${effectiveMax} palabras (mínimo ${effectiveMin}, NO menos)`
     : `- Largo: ${lengthDesc}`;
+  // Copy aleatorio: ignoramos filename y analisis (el user lo pidio explicito).
+  // El copy se basa SOLO en: brand + product_data + URL + copy_agent + seed
+  // random. Sin contexto del ad concreto, sin filename, sin angulo.
   const userPrompt = [
     brand ? `## Contexto de marca:\n${brand}` : "",
-    product_data ? `## Data específica del producto (usar SI o SI):\n${product_data}` : "",
+    product_data ? `## Data del producto (usar SI o SI):\n${product_data}` : "",
     url ? `## URL del producto (mencionar al final como CTA):\n${url}` : "",
-    analysis ? `## Análisis profundo del creativo (Gemini Vision):\n${JSON.stringify(analysis, null, 2)}` : `## Creativo: ${filename || "sin nombre"}`,
     (tone || length || format) ? `## Parámetros sugeridos (opcional):\n${[tone?`- Tono: ${toneDesc}`:"",lengthLine,format?`- Formato: ${formatDesc}`:""].filter(Boolean).join("\n")}` : "",
     notes ? `- Notas extra: ${notes}` : "",
-    `\nGenerá el copy según el JSON exacto. La PRIMERA línea = hook scroll-stopper.`,
+    `\nGenerá un copy COMPLETAMENTE ORIGINAL para Meta Ads. La PRIMERA línea = hook scroll-stopper. NO repitas estructuras de copies anteriores — improvisá un ángulo único cada vez. JSON exacto.`,
   ].filter(Boolean).join("\n\n");
   // System instruction = baseline + estilo del agente que define el usuario
   const systemText = copy_agent?.trim()
@@ -1942,7 +1944,8 @@ export default async function handler(req, res) {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const { filename, kind, url, size, meta_video_id, meta_hash, link, cta } = req.body || {};
       if (!filename || !kind || !url) return res.status(400).json({ error: "Faltan filename, kind o url" });
-      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      // ID con timestamp + 10 chars random (evita colisiones en parallel upload)
+      const id = Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
       let videoId = meta_video_id || null;
       if (!videoId && typeof url === "string" && url.startsWith("meta-video://")) {
         videoId = url.slice("meta-video://".length);
@@ -1981,21 +1984,58 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // generate_copy: no requiere creative existente. Se basa en brand +
+    // copy_agent (de la user doc) + product_data + url + parametros opcionales
+    // del body. Si viene cid y el creative existe, ademas guarda el copy
+    // en el. Si no, devuelve solo el copy y el frontend lo guarda.
     if (action === "generate_copy" && req.method === "POST") {
-      if (!cid) return res.status(400).json({ error: "Falta cid" });
-      const c = await loadCreative(db, uid, cid);
-      if (!c) return res.status(404).json({ error: "Creativo no encontrado" });
       const userSnap = await db.collection("users").doc(uid).get();
       const brand = userSnap.data()?.meta_brand || "";
       const copyAgent = userSnap.data()?.meta_copy_agent || "";
       const { tone, length, format, notes, word_min, word_max, product_data, url } = req.body || {};
-      const merged = { ...c, ...(tone && { tone }), ...(length && { length }), ...(format && { format }), ...(notes !== undefined && { notes }), ...(word_min && { word_min }), ...(word_max && { word_max }), ...(product_data !== undefined && { product_data }), ...(url !== undefined && { link: url }) };
+      // Si tenemos cid, intentamos mergear con la data del creative existente
+      // (product_data y link guardados). Si no existe, seguimos igual.
+      let existing = null;
+      if (cid) {
+        try { existing = await loadCreative(db, uid, cid); } catch (_) {}
+      }
+      const merged = {
+        ...(existing || {}),
+        ...(tone && { tone }),
+        ...(length && { length }),
+        ...(format && { format }),
+        ...(notes !== undefined && { notes }),
+        ...(word_min && { word_min }),
+        ...(word_max && { word_max }),
+        ...(product_data !== undefined && { product_data }),
+        ...(url !== undefined && { link: url }),
+      };
       let result;
-      try { result = await geminiGenerateCopy({ brand, copy_agent: copyAgent, analysis: merged.analysis, tone: merged.tone, length: merged.length || "nativo", format: merged.format, notes: merged.notes, filename: merged.filename_base, word_min: merged.word_min, word_max: merged.word_max, product_data: merged.product_data, url: merged.link }); }
-      catch (e) { return res.status(502).json({ error: e.message }); }
-      const updated = { ...merged, copy: result.copy, title: result.title, description: result.description, ia_status: "ok" };
-      await saveCreative(db, uid, updated);
-      return res.json({ ok: true, creative: updated });
+      try {
+        result = await geminiGenerateCopy({
+          brand,
+          copy_agent: copyAgent,
+          // NO pasamos analysis ni filename — copy aleatorio.
+          analysis: null,
+          tone: merged.tone || "",
+          length: merged.length || "nativo",
+          format: merged.format || "",
+          notes: merged.notes || "",
+          filename: "",
+          word_min: merged.word_min || "",
+          word_max: merged.word_max || "",
+          product_data: merged.product_data || "",
+          url: merged.link || "",
+        });
+      } catch (e) { return res.status(502).json({ error: e.message }); }
+      // Si habia creative, guardar el copy en el
+      if (existing) {
+        const updated = { ...merged, copy: result.copy, title: result.title, description: result.description, ia_status: "ok" };
+        await saveCreative(db, uid, updated);
+        return res.json({ ok: true, creative: updated, ...result });
+      }
+      // Sin creative existente: devolver solo el copy
+      return res.json({ ok: true, ...result });
     }
 
     // ── BRAND ────────────────────────────────────────────
