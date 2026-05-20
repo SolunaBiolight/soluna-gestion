@@ -196,7 +196,7 @@ REGLA #3: Cerrá con un CTA claro y un link suave al producto.
 Devolvé SOLO un JSON sin backticks ni explicaciones:
 {"copy":"texto principal con saltos de línea reales","title":"titular ≤40 chars que combina con el creativo","description":"descripción ≤30 chars"}`;
 
-async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes, filename, word_min, word_max, product_data, url }) {
+async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes, filename, word_min, word_max, product_data, url, copy_agent }) {
   const apiKey = process.env.GOOGLE_AI_KEY;
   if (!apiKey) throw new Error("Falta GOOGLE_AI_KEY en env");
   const toneDesc = { directo:"directo y al grano", emocional:"empático y emocional", urgencia:"con urgencia y escasez", educativo:"educativo e informativo", empatico:"empático y emocional", experto:"voz de experto/profesional con autoridad", ugc:"como UGC real de cliente, casual y honesto", dramatico:"dramático y emocional fuerte", informativo:"informativo y educativo" }[tone] || tone || "directo";
@@ -223,12 +223,16 @@ async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes
     product_data ? `## Data específica del producto (usar SI o SI):\n${product_data}` : "",
     url ? `## URL del producto (mencionar al final como CTA):\n${url}` : "",
     analysis ? `## Análisis profundo del creativo (Gemini Vision):\n${JSON.stringify(analysis, null, 2)}` : `## Creativo: ${filename || "sin nombre"}`,
-    `## Parámetros:\n- Tono: ${toneDesc}\n${lengthLine}\n- Formato: ${formatDesc}`,
+    (tone || length || format) ? `## Parámetros sugeridos (opcional):\n${[tone?`- Tono: ${toneDesc}`:"",lengthLine,format?`- Formato: ${formatDesc}`:""].filter(Boolean).join("\n")}` : "",
     notes ? `- Notas extra: ${notes}` : "",
     `\nGenerá el copy según el JSON exacto. La PRIMERA línea = hook scroll-stopper.`,
   ].filter(Boolean).join("\n\n");
+  // System instruction = baseline + estilo del agente que define el usuario
+  const systemText = copy_agent?.trim()
+    ? `${COPY_SYSTEM}\n\n## INSTRUCCIONES DEL AGENTE (definidas por el dueño de la cuenta — PRIORIDAD MAXIMA, sobreescriben cualquier default):\n${copy_agent.trim()}`
+    : COPY_SYSTEM;
   const payload = {
-    system_instruction: { parts: [{ text: COPY_SYSTEM }] },
+    system_instruction: { parts: [{ text: systemText }] },
     contents: [{ role: "user", parts: [{ text: userPrompt }] }],
     generationConfig: { response_mime_type: "application/json", temperature: 0.7, max_output_tokens: 3000 },
   };
@@ -364,6 +368,82 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
     }
   }
 
+  // ── Productos (clasificador URL→producto) — para reglas con product_ids ──
+  // Solo cargamos si alguna regla usa filtro de productos (ahorra una API call si nadie filtra).
+  const rulesNeedProducts = rules.some(r => Array.isArray(r.product_ids) && r.product_ids.length > 0);
+  let productsById = new Map();
+  let adProductsByNode = { campaign: new Map(), adset: new Map(), ad: new Map() };
+  if (rulesNeedProducts) {
+    try {
+      const prodSnap = await db.collection("users").doc(uid).collection("meta_products")
+        .where("acc_id", "==", accId).get();
+      for (const d of prodSnap.docs) productsById.set(d.id, { id: d.id, ...d.data() });
+      // Pre-fetch los ads de la cuenta con sus URLs de destino para mapear node → product_ids
+      try {
+        const adsData = await metaGet(`${cfg.ad_account_id}/ads`, {
+          limit: 500,
+          fields: "id,adset_id,campaign_id,creative{link_url,object_story_spec,asset_feed_spec}",
+        }, cfg.access_token);
+        const adsArr = adsData.data || [];
+        // Helper: extrae la URL de destino del creative
+        const linkOfAd = (ad) => {
+          const cr = ad.creative || {};
+          if (cr.link_url) return cr.link_url;
+          const oss = cr.object_story_spec || {};
+          const link = oss.link_data?.link || oss.video_data?.call_to_action?.value?.link || oss.template_data?.link || null;
+          if (link) return link;
+          const afs = cr.asset_feed_spec || {};
+          if (Array.isArray(afs.link_urls) && afs.link_urls[0]?.website_url) return afs.link_urls[0].website_url;
+          return null;
+        };
+        // Helper: match URL → product ids
+        const norm = (u) => String(u || "").trim().toLowerCase().replace(/\/+$/, "").replace(/^https?:\/\//, "");
+        const productsByUrlPrefix = []; // [{prefix, id}]
+        for (const [pid, p] of productsById) {
+          for (const u of (p.urls || [])) productsByUrlPrefix.push({ prefix: norm(u), id: pid });
+        }
+        productsByUrlPrefix.sort((a, b) => b.prefix.length - a.prefix.length); // mas largo primero
+        const productIdsForUrl = (url) => {
+          if (!url) return [];
+          const n = norm(url);
+          const matches = new Set();
+          for (const { prefix, id } of productsByUrlPrefix) {
+            if (prefix && (n === prefix || n.startsWith(prefix + "/") || n.startsWith(prefix + "?"))) matches.add(id);
+          }
+          return [...matches];
+        };
+        // Construir mapas por nivel
+        for (const ad of adsArr) {
+          const link = linkOfAd(ad);
+          const pids = productIdsForUrl(link);
+          if (pids.length === 0) continue;
+          adProductsByNode.ad.set(ad.id, new Set(pids));
+          if (ad.adset_id) {
+            const s = adProductsByNode.adset.get(ad.adset_id) || new Set();
+            pids.forEach(p => s.add(p));
+            adProductsByNode.adset.set(ad.adset_id, s);
+          }
+          if (ad.campaign_id) {
+            const s = adProductsByNode.campaign.get(ad.campaign_id) || new Set();
+            pids.forEach(p => s.add(p));
+            adProductsByNode.campaign.set(ad.campaign_id, s);
+          }
+        }
+      } catch (e) {
+        console.error("[meta-rules] ads fetch for product mapping failed:", e.message);
+      }
+    } catch (e) {
+      console.error("[meta-rules] products load failed:", e.message);
+    }
+  }
+  // Helper: ¿este node (campaign/adset/ad id) pertenece a alguno de los products filtrados?
+  const nodeMatchesProductFilter = (level, nodeId, filterIds) => {
+    if (!Array.isArray(filterIds) || filterIds.length === 0) return true; // sin filtro = aplica a todos
+    const productSet = adProductsByNode[level]?.get(nodeId);
+    if (!productSet || productSet.size === 0) return false; // nodo sin URL conocida → no aplica
+    return filterIds.some(pid => productSet.has(pid));
+  };
+
   let totalActions = 0;
   const logBatch = db.batch();
   const logCol = db.collection("users").doc(uid).collection("meta_rule_log");
@@ -377,6 +457,9 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
 
     for (const [nodeId, refRow] of refMap) {
       if (refRow.effective_status !== "ACTIVE") continue;
+      // Filtro por productos: si la regla tiene product_ids, solo actuar sobre
+      // nodos que matcheen algún producto seleccionado.
+      if (!nodeMatchesProductFilter(rule.level, nodeId, rule.product_ids)) continue;
 
       const results = rule.conditions.map(c => {
         const combo = `${rule.level}|${effectiveWindow(c)}`;
@@ -410,6 +493,9 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
       }
 
       const logRef = logCol.doc();
+      const matchedProductIds = (rule.product_ids?.length && adProductsByNode[rule.level]?.get(nodeId))
+        ? [...adProductsByNode[rule.level].get(nodeId)].filter(pid => rule.product_ids.includes(pid))
+        : [];
       logBatch.set(logRef, {
         rule_id: rule.id, rule_name: rule.name,
         node_id: nodeId, node_name: refRow.name || "",
@@ -418,6 +504,7 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
         triggered: results.map(r => ({ metric: r.cond.metric, op: r.cond.op, target: r.cond.value, window_days: r.effective_window || r.cond.window_days, actual: r.actual })),
         reprocessed: useForcedWindow,
         forced_window_days: useForcedWindow ? forceWindow : null,
+        product_ids: matchedProductIds,
         ts: new Date().toISOString(),
       });
       totalActions++;
@@ -1006,6 +1093,8 @@ export default async function handler(req, res) {
         })),
         action: ["pause", "notify", "reduce_budget"].includes(rule.action) ? rule.action : "pause",
         action_pct: rule.action === "reduce_budget" ? (parseFloat(rule.action_pct) || 20) : null,
+        // Productos a los que se aplica esta regla (URL match). [] o ausente = todos los productos / cualquier ad.
+        product_ids: Array.isArray(rule.product_ids) ? rule.product_ids.filter(Boolean) : [],
         active: rule.active !== false,
         acc_id: rule.acc_id,
         updated_at: new Date().toISOString(),
@@ -1013,6 +1102,89 @@ export default async function handler(req, res) {
       };
       await col.doc(ruleId).set(data, { merge: true });
       return res.json({ ok: true, id: ruleId, rule: { id: ruleId, ...data } });
+    }
+
+    // ── PRODUCTOS (clasificador URL → producto con roas BE propio) ─────
+    // Estructura: users/{uid}/meta_products/{id}
+    //   { name, urls: string[], roas_be: number, acc_id, created_at, updated_at }
+
+    if (action === "products_list" && req.method === "GET") {
+      const accIdQ = req.query.acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const snap = await db.collection("users").doc(uid).collection("meta_products")
+        .where("acc_id", "==", accIdQ).get();
+      const products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      products.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      return res.json({ products });
+    }
+
+    if (action === "product_save" && req.method === "POST") {
+      const { product } = req.body || {};
+      if (!product?.name?.trim()) return res.status(400).json({ error: "Falta nombre del producto" });
+      if (!product?.acc_id) return res.status(400).json({ error: "Falta acc_id" });
+      const cleanUrls = (Array.isArray(product.urls) ? product.urls : [])
+        .map(u => String(u || "").trim())
+        .filter(u => u && /^https?:\/\//i.test(u));
+      const col = db.collection("users").doc(uid).collection("meta_products");
+      const productId = product.id || col.doc().id;
+      const data = {
+        name: String(product.name).trim().slice(0, 80),
+        urls: cleanUrls,
+        roas_be: parseFloat(product.roas_be) || 0,
+        acc_id: product.acc_id,
+        updated_at: new Date().toISOString(),
+        ...(product.id ? {} : { created_at: new Date().toISOString() }),
+      };
+      await col.doc(productId).set(data, { merge: true });
+      return res.json({ ok: true, id: productId, product: { id: productId, ...data } });
+    }
+
+    if (action === "product_delete" && req.method === "DELETE") {
+      const { product_id } = req.query;
+      if (!product_id) return res.status(400).json({ error: "Falta product_id" });
+      await db.collection("users").doc(uid).collection("meta_products").doc(String(product_id)).delete();
+      return res.json({ ok: true });
+    }
+
+    // ── HISTORIAL DE LOTES PUBLICADOS ──
+    // Guarda cada batch del bulk publish + permite listar los recientes.
+
+    if (action === "publish_batch_save" && req.method === "POST") {
+      const { items, dest_mode, dest, errors } = req.body || {};
+      if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Faltan items en el batch" });
+      const accIdQ = acc_id || req.query.acc_id;
+      const ref = db.collection("users").doc(uid).collection("meta_publish_batches").doc();
+      const data = {
+        acc_id: accIdQ || null,
+        ts: new Date().toISOString(),
+        dest_mode: dest_mode || "shared",
+        dest: dest || null,
+        items: items.map(i => ({
+          ad_id: i.ad_id || null,
+          ig_status: i.ig_status || null,
+          filename: i.filename || "",
+          kind: i.kind || "image",
+          status: i.status || "PAUSED",
+          ok: i.ok !== false,
+          error: i.error || null,
+        })),
+        errors: Array.isArray(errors) ? errors : [],
+        total: items.length,
+        ok_count: items.filter(i => i.ok !== false).length,
+      };
+      await ref.set(data);
+      return res.json({ ok: true, id: ref.id, batch: { id: ref.id, ...data } });
+    }
+
+    if (action === "publish_batches_list" && req.method === "GET") {
+      const accIdQ = req.query.acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const snap = await db.collection("users").doc(uid).collection("meta_publish_batches")
+        .where("acc_id", "==", accIdQ).get();
+      const batches = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.ts || "").localeCompare(a.ts || ""))
+        .slice(0, 30);
+      return res.json({ batches });
     }
 
     if (action === "rule_delete" && req.method === "DELETE") {
@@ -1299,9 +1471,10 @@ export default async function handler(req, res) {
         const isImage = (mime || "").startsWith("image/");
         if (!isVideo && !isImage) return res.status(400).json({ error: `Tipo no soportado: ${mime}` });
 
-        // Contexto: brand + product_data + url + filename
+        // Contexto: brand + product_data + url + filename + copy_agent
         const userSnap = await db.collection("users").doc(uid).get();
         const brand = userSnap.data()?.meta_brand || "";
+        const copyAgent = userSnap.data()?.meta_copy_agent || "";
         const productData = creativeRef?.product_data || "";
         const link = creativeRef?.link || "";
         const fname = filename || creativeRef?.filename || "";
@@ -1369,10 +1542,11 @@ export default async function handler(req, res) {
           try {
             const r2 = await geminiGenerateCopy({
               brand,
+              copy_agent: copyAgent,
               analysis,
-              tone: updatedRef.tone || analysis?.tono_detectado || "directo",
+              tone: updatedRef.tone || analysis?.tono_detectado || "",
               length: updatedRef.length || "nativo",
-              format: updatedRef.format || "storytelling",
+              format: updatedRef.format || "",
               notes: updatedRef.notes || "",
               filename: updatedRef.filename_base || fname,
               word_min: updatedRef.word_min || "",
@@ -1405,12 +1579,19 @@ export default async function handler(req, res) {
 
     if (action === "add_creative" && req.method === "POST") {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
-      const { filename, kind, url, size } = req.body || {};
+      const { filename, kind, url, size, meta_video_id, meta_hash } = req.body || {};
       if (!filename || !kind || !url) return res.status(400).json({ error: "Faltan filename, kind o url" });
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      // Si es video subido directo, extraer video_id del url "meta-video://..." si no vino en body
+      let videoId = meta_video_id || null;
+      if (!videoId && typeof url === "string" && url.startsWith("meta-video://")) {
+        videoId = url.slice("meta-video://".length);
+      }
       const creative = {
         id, acc_id, filename, filename_base: filename.replace(/\.[^.]+$/, ""),
         kind, url, size: size || 0,
+        meta_video_id: videoId || null,
+        meta_hash: meta_hash || null,
         tone: "directo", length: "medio", format: "storytelling",
         notes: "", copy: "", title: "", description: "", link: "", cta: "LEARN_MORE",
         campaign_id: "", adset_id: "", analysis: null, ia_status: "pending",
@@ -1444,10 +1625,11 @@ export default async function handler(req, res) {
       if (!c) return res.status(404).json({ error: "Creativo no encontrado" });
       const userSnap = await db.collection("users").doc(uid).get();
       const brand = userSnap.data()?.meta_brand || "";
+      const copyAgent = userSnap.data()?.meta_copy_agent || "";
       const { tone, length, format, notes, word_min, word_max, product_data, url } = req.body || {};
       const merged = { ...c, ...(tone && { tone }), ...(length && { length }), ...(format && { format }), ...(notes !== undefined && { notes }), ...(word_min && { word_min }), ...(word_max && { word_max }), ...(product_data !== undefined && { product_data }), ...(url !== undefined && { link: url }) };
       let result;
-      try { result = await geminiGenerateCopy({ brand, analysis: merged.analysis, tone: merged.tone, length: merged.length || "nativo", format: merged.format, notes: merged.notes, filename: merged.filename_base, word_min: merged.word_min, word_max: merged.word_max, product_data: merged.product_data, url: merged.link }); }
+      try { result = await geminiGenerateCopy({ brand, copy_agent: copyAgent, analysis: merged.analysis, tone: merged.tone, length: merged.length || "nativo", format: merged.format, notes: merged.notes, filename: merged.filename_base, word_min: merged.word_min, word_max: merged.word_max, product_data: merged.product_data, url: merged.link }); }
       catch (e) { return res.status(502).json({ error: e.message }); }
       const updated = { ...merged, copy: result.copy, title: result.title, description: result.description, ia_status: "ok" };
       await saveCreative(db, uid, updated);
@@ -1465,6 +1647,23 @@ export default async function handler(req, res) {
     if (action === "save_brand" && req.method === "POST") {
       const { text } = req.body || {};
       await db.collection("users").doc(uid).set({ meta_brand: text || "" }, { merge: true });
+      return res.json({ ok: true });
+    }
+
+    // ── INSTRUCCIONES DEL AGENTE COPYWRITER ─────────────
+    // El usuario define COMO escribe el agente (personalidad, emojis, CTAs,
+    // lo que NO debe decir, voseo, longitud, etc). Se inyecta en cada
+    // generate_copy y en el auto-copy del analyze_creative.
+
+    if (action === "copy_agent" && req.method === "GET") {
+      const userSnap = await db.collection("users").doc(uid).get();
+      const text = userSnap.data()?.meta_copy_agent || "";
+      return res.json({ text, configured: Boolean(text.trim()) });
+    }
+
+    if (action === "save_copy_agent" && req.method === "POST") {
+      const { text } = req.body || {};
+      await db.collection("users").doc(uid).set({ meta_copy_agent: text || "" }, { merge: true });
       return res.json({ ok: true });
     }
 
@@ -1493,25 +1692,54 @@ export default async function handler(req, res) {
 
       let spec;
       if (c.kind === "video") {
-        const uploadRes = await metaPost(`${adAccountId}/advideos`, { file_url: c.url, title: (c.title || c.filename_base || "").slice(0, 60) }, token);
-        const videoId = uploadRes.id;
-        if (!videoId) return res.status(502).json({ error: "Meta no devolvió video_id" });
-        let ready = false;
-        for (let i = 0; i < 9 && !ready; i++) {
-          await new Promise(r => setTimeout(r, 5000));
-          const st = await metaGet(videoId, { fields: "status" }, token);
-          if (st.status?.video_status === "ready") ready = true;
-          else if (st.status?.video_status === "error") return res.status(502).json({ error: "Meta falló al procesar el video" });
+        // El video YA fue subido a Meta en el upload directo desde el browser.
+        // Tenemos su video_id en c.meta_video_id (o derivado del c.url
+        // "meta-video://VIDEO_ID"). NO re-subir — saltea polling.
+        let videoId = c.meta_video_id || null;
+        if (!videoId && typeof c.url === "string" && c.url.startsWith("meta-video://")) {
+          videoId = c.url.slice("meta-video://".length);
         }
-        if (!ready) return res.status(504).json({ error: "Timeout esperando procesamiento de video" });
+        // Fallback: si no hay video_id pero hay file_url publica, intentar upload
+        // rapido sin polling largo (max 10s total).
+        if (!videoId) {
+          if (!c.url || !/^https?:\/\//i.test(c.url)) {
+            return res.status(400).json({ error: "El creative no tiene video_id ni URL publica de video" });
+          }
+          const uploadRes = await metaPost(`${adAccountId}/advideos`, { file_url: c.url, title: (c.title || c.filename_base || "").slice(0, 60) }, token);
+          videoId = uploadRes.id;
+          if (!videoId) return res.status(502).json({ error: "Meta no devolvió video_id" });
+        }
+        // Polling muy corto para confirmar que esta listo (max 10s total)
+        let ready = false;
+        for (let i = 0; i < 5 && !ready; i++) {
+          try {
+            const st = await metaGet(videoId, { fields: "status" }, token);
+            const vs = st.status?.video_status;
+            if (vs === "ready") { ready = true; break; }
+            if (vs === "error") return res.status(502).json({ error: "Meta falló al procesar el video" });
+          } catch (_) {}
+          if (i < 4) await new Promise(r => setTimeout(r, 2000));
+        }
+        // Si no esta listo en 10s, igual intentamos crear el ad — Meta a veces
+        // lo aprueba en el momento del adcreative. Si falla, devuelve error claro.
         let thumb;
         try { const tr = await metaGet(`${videoId}/thumbnails`, { fields: "uri,is_preferred" }, token); thumb = (tr.data?.find(t => t.is_preferred) || tr.data?.[0])?.uri; } catch (_) {}
         spec = { page_id: pageId, video_data: { video_id: videoId, title: (c.title || "").slice(0, 60), message: c.copy.trim(), link_description: (c.description || "").slice(0, 60), ...(thumb ? { image_url: thumb } : {}), call_to_action: { type: cta, value: { link } } } };
       } else {
-        const imgRes = await metaPost(`${adAccountId}/adimages`, { url: c.url }, token);
-        const first = Object.values(imgRes.images || {})[0];
-        if (!first?.hash) return res.status(502).json({ error: "Meta no devolvió image hash" });
-        spec = { page_id: pageId, link_data: { image_hash: first.hash, link, message: c.copy.trim(), name: (c.title || "").slice(0, 60), description: (c.description || "").slice(0, 60), call_to_action: { type: cta, value: { link } } } };
+        // Imagen: si tenemos meta_hash guardado del upload directo, usarlo.
+        // Sino, re-subir via URL (puede fallar si la URL CDN de Meta expiró).
+        let imageHash = c.meta_hash || null;
+        if (!imageHash) {
+          try {
+            const imgRes = await metaPost(`${adAccountId}/adimages`, { url: c.url }, token);
+            const first = Object.values(imgRes.images || {})[0];
+            imageHash = first?.hash || null;
+          } catch (e) {
+            return res.status(502).json({ error: `No se pudo re-subir la imagen a Meta (URL caducada). Tip: re-subí el archivo desde la cola. (${e.message})` });
+          }
+        }
+        if (!imageHash) return res.status(502).json({ error: "Meta no devolvió image hash" });
+        spec = { page_id: pageId, link_data: { image_hash: imageHash, link, message: c.copy.trim(), name: (c.title || "").slice(0, 60), description: (c.description || "").slice(0, 60), call_to_action: { type: cta, value: { link } } } };
       }
       if (igId) spec.instagram_user_id = igId;
 

@@ -8533,7 +8533,76 @@ function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked}) {
 // ===========================================
 // META ADS · Rule Editor (Fase 3 optimizador)
 // ===========================================
-function RuleEditor({T, initialRule, onSave, onCancel}) {
+function ProductEditor({T, initialProduct, onSave, onCancel}) {
+  const [name, setName] = useState(initialProduct?.name || "");
+  const [roasBe, setRoasBe] = useState(initialProduct?.roas_be ?? 2);
+  const [urls, setUrls] = useState(Array.isArray(initialProduct?.urls) && initialProduct.urls.length ? [...initialProduct.urls] : [""]);
+  const [saving, setSaving] = useState(false);
+  const update = (i, v) => setUrls(prev => prev.map((u,idx)=>idx===i?v:u));
+  const addUrl = () => setUrls(prev => [...prev, ""]);
+  const removeUrl = (i) => setUrls(prev => prev.filter((_,idx)=>idx!==i));
+  async function handleSave() {
+    if (!name.trim()) { appAlert("Poné el nombre del producto"); return; }
+    const cleanUrls = urls.map(u=>String(u||"").trim()).filter(u=>u && /^https?:\/\//i.test(u));
+    if (cleanUrls.length === 0) { appAlert("Agregá al menos 1 URL válida (https://...)"); return; }
+    setSaving(true);
+    const ok = await onSave({
+      ...(initialProduct?{id:initialProduct.id}:{}),
+      name: name.trim(),
+      urls: cleanUrls,
+      roas_be: parseFloat(roasBe) || 0,
+    });
+    setSaving(false);
+    if(!ok) return;
+  }
+  return ReactDOM.createPortal(
+    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onCancel()}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px",fontFamily:"'Inter',system-ui,sans-serif"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div>
+            <div style={{fontSize:17,fontWeight:700,color:T.text}}>{initialProduct?"Editar producto":"Nuevo producto"}</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Vinculá una o más URLs a un producto. Las reglas pueden filtrar por producto, y cada uno tiene su ROAS break-even.</div>
+          </div>
+          <button onClick={onCancel} disabled={saving} style={{background:"transparent",border:"none",color:T.textMd,cursor:saving?"wait":"pointer",fontSize:18,padding:4}}>✕</button>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Nombre</div>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder='Ej. "Gomitas Azul de Metileno"' style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"}}/>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>URLs de destino del producto</div>
+          <div style={{fontSize:10,color:T.textSm,marginBottom:8,lineHeight:1.5}}>Pegá las URLs exactas a las que dirigen tus ads (página del producto, landing, etc). Cualquier ad cuyo link empiece con alguna de estas URLs se considera "de este producto".</div>
+          {urls.map((u,i)=>(
+            <div key={i} style={{display:"flex",gap:6,marginBottom:6}}>
+              <input value={u} onChange={e=>update(i,e.target.value)} placeholder="https://mitienda.com/products/..." style={{flex:1,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:12,color:T.text,fontFamily:"monospace",boxSizing:"border-box"}}/>
+              {urls.length>1 && <button onClick={()=>removeUrl(i)} style={{padding:"6px 10px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
+            </div>
+          ))}
+          <button onClick={addUrl} style={{padding:"6px 12px",fontSize:11,fontWeight:600,border:`1px dashed ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Agregar URL</button>
+        </div>
+
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>ROAS Break-Even (x)</div>
+          <div style={{fontSize:10,color:T.textSm,marginBottom:8,lineHeight:1.5}}>El ROAS por encima del cual este producto es rentable según tu margen. Sirve de referencia visual y para sugerir thresholds en reglas.</div>
+          <input type="number" step="0.1" min="0.1" max="50" value={roasBe} onChange={e=>setRoasBe(e.target.value)} style={{width:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+          <span style={{fontSize:12,color:T.textMd,marginLeft:8}}>x</span>
+        </div>
+
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={onCancel} disabled={saving} style={{padding:"10px 18px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:saving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving} style={{padding:"10px 24px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:saving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            {saving?"Guardando...":"Guardar"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
   const METRICS = [
     {id:"spend",label:"Gasto ($)",unit:"$"},
     {id:"roas",label:"ROAS (x)",unit:"x"},
@@ -8556,6 +8625,7 @@ function RuleEditor({T, initialRule, onSave, onCancel}) {
   const [actionPct,setActionPct]=useState(initialRule?.action_pct||20);
   const [active,setActive]=useState(initialRule?.active!==false);
   const [conditions,setConditions]=useState(initialRule?.conditions?.length?[...initialRule.conditions]:[{metric:"spend",op:">=",value:"",window_days:7}]);
+  const [productIds,setProductIds]=useState(Array.isArray(initialRule?.product_ids)?[...initialRule.product_ids]:[]);
   const [saving,setSaving]=useState(false);
 
   const updateCond=(i,patch)=>{
@@ -8573,6 +8643,7 @@ function RuleEditor({T, initialRule, onSave, onCancel}) {
       ...(initialRule?{id:initialRule.id}:{}),
       name:name.trim(), level, logic, action, active,
       action_pct: action === "reduce_budget" ? (parseFloat(actionPct) || 20) : null,
+      product_ids: productIds,
       conditions: validConds.map(c=>({metric:c.metric,op:c.op,value:parseFloat(c.value),window_days:parseInt(c.window_days)||7})),
     });
     setSaving(false);
@@ -8667,6 +8738,31 @@ function RuleEditor({T, initialRule, onSave, onCancel}) {
           )}
         </div>
 
+        {/* Productos a los que aplica */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Productos afectados</div>
+          {products.length === 0 ? (
+            <div style={{padding:"10px 12px",background:T.bg,border:`1px dashed ${T.borderL}`,borderRadius:8,fontSize:11,color:T.textSm,lineHeight:1.5}}>No tenés productos clasificados todavía. Esta regla aplicará a <strong style={{color:T.text}}>todos</strong> los anuncios. Podés crear productos en la sección Productos para filtrar a futuro.</div>
+          ) : (
+            <>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}}>
+                <button onClick={()=>setProductIds([])} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${productIds.length===0?T.green+"99":T.border}`,background:productIds.length===0?T.green+"15":"transparent",color:productIds.length===0?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  ⌘ Todos los productos
+                </button>
+                {products.map(p=>{
+                  const sel = productIds.includes(p.id);
+                  return (
+                    <button key={p.id} onClick={()=>setProductIds(prev => sel ? prev.filter(x=>x!==p.id) : [...prev, p.id])} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${sel?T.accent+"99":T.border}`,background:sel?T.accent+"18":"transparent",color:sel?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      {sel?"✓ ":""}{p.name}{p.roas_be>0?` · BE ${p.roas_be}x`:""}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{fontSize:10,color:T.textSm,lineHeight:1.5}}>{productIds.length===0 ? "Aplica a TODOS los anuncios — ningún filtro de producto." : `Solo aplica a anuncios cuya URL de destino esté asociada a estos ${productIds.length} producto${productIds.length===1?"":"s"}.`}</div>
+            </>
+          )}
+        </div>
+
         {/* Estado (toggle switch) */}
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18,padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
           <div style={{flex:1}}>
@@ -8751,6 +8847,10 @@ function AppMetaAds({T, user, onHome}) {
   const [ruleLog,setRuleLog]=useState([]);
   const [expandedRuleId,setExpandedRuleId]=useState(null);
   const [rulesLoading,setRulesLoading]=useState(false);
+  // Productos (clasificador URL → producto con ROAS BE)
+  const [products,setProducts]=useState([]);
+  const [productsLoading,setProductsLoading]=useState(false);
+  const [editingProduct,setEditingProduct]=useState(null); // null | "new" | product
   const [editingRule,setEditingRule]=useState(null); // null | "new" | rule object
   const [evaluatingNow,setEvaluatingNow]=useState(false);
 
@@ -8790,6 +8890,10 @@ function AppMetaAds({T, user, onHome}) {
   // Brand
   const [brand,setBrand]=useState("");
   const [brandSaving,setBrandSaving]=useState(false);
+  // Instrucciones del agente copywriter (personalidad, emojis, CTAs, etc)
+  const [copyAgent,setCopyAgent]=useState("");
+  const [copyAgentSaving,setCopyAgentSaving]=useState(false);
+  const [showCopyAgentEdit,setShowCopyAgentEdit]=useState(false);
 
   // Publicar: destino del ad (flujo viejo, todavía usado para crear campaña inline)
   const [pubDest,setPubDest]=useState("existing"); // existing | newCamp
@@ -8809,6 +8913,7 @@ function AppMetaAds({T, user, onHome}) {
   const [publishActiveByDefault,setPublishActiveByDefault]=useState(false);
   const [bulkPublishing,setBulkPublishing]=useState(false);
   const [bulkProgress,setBulkProgress]=useState({done:0,total:0,errors:[]});
+  const [publishBatches,setPublishBatches]=useState([]);
   const [showBrandEdit,setShowBrandEdit]=useState(false);
   // Modal Nueva campaña + adsets
   const [showNewCampModal,setShowNewCampModal]=useState(false);
@@ -8871,6 +8976,7 @@ function AppMetaAds({T, user, onHome}) {
       if(d.active) setActiveAccId(d.active);
       else if(accs.length>0) setActiveAccId(accs[0].id);
       metaApi("brand").then(d=>{if(d.text!==undefined)setBrand(d.text);}).catch(()=>{});
+      metaApi("copy_agent").then(d=>{if(d.text!==undefined)setCopyAgent(d.text);}).catch(()=>{});
     }).catch(()=>{}).finally(()=>setLoading(false));
   },[uid]);
 
@@ -8898,10 +9004,10 @@ function AppMetaAds({T, user, onHome}) {
 
   useEffect(()=>{
     if(tab==="campanas"&&activeAccId) loadCampaigns();
-    if(tab==="creativos"&&activeAccId) { loadCreatives(); loadCampaigns(); }
+    if(tab==="creativos"&&activeAccId) { loadCreatives(); loadCampaigns(); loadPublishBatches(); }
     if(tab==="analisis"&&activeAccId) loadInsights();
     if(tab==="biblioteca"&&activeAccId) loadLibrary();
-    if(tab==="reglas"&&activeAccId) loadRules();
+    if(tab==="reglas"&&activeAccId) { loadRules(); loadProducts(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab,activeAccId]);
 
@@ -8928,6 +9034,41 @@ function AppMetaAds({T, user, onHome}) {
   // Auto-análisis deshabilitado: tomaba demasiado tiempo y bloqueaba la UI.
   // El usuario puede disparar análisis individual con el botón "Analizar con IA".
   const [autoAnalyzeStatus] = React.useState({ active: false, done: 0, total: 0 });
+
+  // ── Historial de batches publicados ──
+  async function loadPublishBatches() {
+    if (!activeAccId) return;
+    try {
+      const d = await metaApi("publish_batches_list","GET",null,{acc_id:activeAccId});
+      if (!d.error) setPublishBatches(d.batches || []);
+    } catch (_) {}
+  }
+
+  // ── Productos (clasificador URL → producto con ROAS BE) ──
+  async function loadProducts() {
+    if (!activeAccId) return;
+    setProductsLoading(true);
+    try {
+      const d = await metaApi("products_list","GET",null,{acc_id:activeAccId});
+      if (!d.error) setProducts(d.products || []);
+    } finally { setProductsLoading(false); }
+  }
+  async function saveProduct(product) {
+    const d = await metaApi("product_save","POST",{product:{...product, acc_id: activeAccId}});
+    if (d.error) { toast("Error: "+d.error,"error"); return false; }
+    toast("Producto guardado ✓","success");
+    await loadProducts();
+    setEditingProduct(null);
+    return true;
+  }
+  async function deleteProduct(productId) {
+    if (!await appConfirm("¿Borrar este producto? Las reglas que lo usaban pasarán a aplicar a todos.",{danger:true,okLabel:"Borrar"})) return;
+    const params = new URLSearchParams({action:"product_delete",uid,product_id:productId});
+    const d = await fetch(`/api/meta?${params}`,{method:"DELETE"}).then(r=>r.json()).catch(()=>({error:"network"}));
+    if (d.error) { toast(d.error,"error"); return; }
+    toast("Producto eliminado","success");
+    loadProducts();
+  }
 
   // ── Reglas ──
   async function loadRules() {
@@ -9228,7 +9369,7 @@ function AppMetaAds({T, user, onHome}) {
 
       // 3) Registrar creative en Growith
       const fileUrl = up.url || (up.id ? `meta-video://${up.id}` : "");
-      const cr = await metaApi("add_creative","POST",{filename:file.name, kind:up.kind, url:fileUrl, size:file.size},{acc_id:activeAccId});
+      const cr = await metaApi("add_creative","POST",{filename:file.name, kind:up.kind, url:fileUrl, size:file.size, meta_video_id: up.id||null, meta_hash: up.hash||null},{acc_id:activeAccId});
       if(cr.error){toast("Error guardando creative: "+cr.error,"error");setUploadingFile(false);return;}
       const cWithMeta = {...cr.creative, meta_hash: up.hash || null, meta_video_id: up.id || null};
       if (studioMode === "shared" && (sharedDest.link || sharedDest.cta)) {
@@ -9254,22 +9395,28 @@ function AppMetaAds({T, user, onHome}) {
     } finally { setUploadingFile(false); }
   }
 
-  // analyze_creative: si skip_vision=true (videos pesados que no entran a
-  // Vercel), solo genera copy text-only via generate_copy con brand/url/
-  // filename. Si no, hace vision completa via analyze_creative endpoint.
+  // analyze_creative con retry automatico si Gemini devuelve vacio.
   async function handleAnalyzeCreative(c, opts = {}) {
     if(!c?.id) return;
     setAnalyzingCreative(c.id);
+    const MAX_RETRIES = 3;
     try {
       if (opts.skip_vision) {
-        // Video pesado: skip vision, generar copy text-only.
-        const r = await fetch(`/api/meta?action=generate_copy&uid=${uid}&cid=${c.id}`,{
-          method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({tone:c.tone||"directo",length:c.length||"nativo",format:c.format||"storytelling",notes:c.notes||""})
-        });
-        const txt = await r.text();
-        let d; try { d = JSON.parse(txt); } catch(_){ d = {error:`HTTP ${r.status}`}; }
-        if(d.error){ toast("Error copy: "+d.error,"error"); return; }
+        // Video pesado: skip vision, generar copy text-only con retry.
+        let d = null;
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          const r = await fetch(`/api/meta?action=generate_copy&uid=${uid}&cid=${c.id}`,{
+            method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({tone:c.tone||"directo",length:c.length||"nativo",format:c.format||"storytelling",notes:c.notes||""})
+          });
+          const txt = await r.text();
+          try { d = JSON.parse(txt); } catch(_){ d = {error:`HTTP ${r.status}`}; }
+          // Solo retry si Gemini devolvio respuesta vacia / parsing fallo.
+          const isEmpty = d.error && /vací|invalid|empty|parsing/i.test(d.error);
+          if (!d.error || !isEmpty) break;
+          await new Promise(r=>setTimeout(r, 800));
+        }
+        if(d?.error){ toast("Error copy: "+d.error,"error"); return; }
         const updated = d.creative || c;
         setCreatives(prev=>prev.map(x=>x.id===c.id?updated:x));
         if(selCreative?.id === c.id) setSelCreative(updated);
@@ -9280,7 +9427,14 @@ function AppMetaAds({T, user, onHome}) {
       if (opts.data_base64) body.data_base64 = opts.data_base64;
       if (opts.contentType) body.contentType = opts.contentType;
       if (c.filename) body.filename = c.filename;
-      const d = await metaApi("analyze_creative","POST",body);
+      let d = null;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        d = await metaApi("analyze_creative","POST",body);
+        // Retry solo si Gemini devolvio empty/parsing error
+        const isRecoverable = d.error && /vací|invalid|empty|parsing|JSON/i.test(d.error);
+        if (!d.error || !isRecoverable) break;
+        await new Promise(r=>setTimeout(r, 800));
+      }
       if(d.error){ toast("Error IA: "+d.error,"error"); return; }
       const updated = d.creative || { ...c, analysis: d.analysis, ia_status: d.auto_copy ? "ok" : "analyzed", ...(d.auto_copy ? { copy: d.auto_copy.copy, title: d.auto_copy.title, description: d.auto_copy.description } : {}) };
       setCreatives(prev=>prev.map(x=>x.id===c.id?updated:x));
@@ -9461,6 +9615,9 @@ function AppMetaAds({T, user, onHome}) {
   }
 
   // ── Studio: publicar todos los creatives en cola con el shared dest ──
+  // Tras cada publish exitoso, borra el creative de la cola (para que nunca
+  // se publique dos veces). Al final, guarda un registro del batch en
+  // publish_history para mostrar abajo del Publicar tab.
   async function handleBulkPublish() {
     if (studioMode === "shared") {
       if (!sharedDest.adset_id) return toast("Elegí o creá un AdSet","warning");
@@ -9472,22 +9629,43 @@ function AppMetaAds({T, user, onHome}) {
     setBulkPublishing(true);
     setBulkProgress({done:0,total:queue.length,errors:[]});
     const errs = [];
+    const items = []; // resumen del batch para guardar al final
+    const publishedIds = []; // ids para borrar de la cola tras success
     for (let i = 0; i < queue.length; i++) {
       const c = queue[i];
       const adsetId = studioMode === "shared" ? sharedDest.adset_id : c.adset_id;
       const link = studioMode === "shared" ? sharedDest.link : c.link;
       const cta = studioMode === "shared" ? sharedDest.cta : (c.cta || "LEARN_MORE");
+      let ok = false; let adId = null; let igStatus = null; let errMsg = null;
       try {
         if (studioMode === "shared") {
           await metaApi("patch_creative","PATCH",{adset_id:adsetId,link,cta},{cid:c.id});
         }
         const d = await metaApi("publish","POST",{creative_id:c.id, activate: publishActiveByDefault, default_link: link, default_cta: cta},{acc_id:activeAccId});
-        if (d.error) errs.push(`${c.filename}: ${d.error}`);
-      } catch (e) { errs.push(`${c.filename}: ${e.message}`); }
+        if (d.error) { errs.push(`${c.filename}: ${d.error}`); errMsg = d.error; }
+        else { ok = true; adId = d.ad_id; igStatus = d.ig_status; }
+      } catch (e) { errs.push(`${c.filename}: ${e.message}`); errMsg = e.message; }
+      items.push({ ad_id: adId, ig_status: igStatus, filename: c.filename, kind: c.kind, status: publishActiveByDefault?"ACTIVE":"PAUSED", ok, error: errMsg });
+      if (ok) publishedIds.push(c.id);
       setBulkProgress({done:i+1,total:queue.length,errors:errs});
     }
+    // Borrar los publicados de la cola (en backend y en state local).
+    if (publishedIds.length > 0) {
+      await Promise.all(publishedIds.map(cid => fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${cid}`,{method:"DELETE"}).catch(()=>{})));
+      setCreatives(prev => prev.filter(x => !publishedIds.includes(x.id)));
+    }
+    // Guardar registro del batch
+    try {
+      await metaApi("publish_batch_save","POST",{
+        items,
+        dest_mode: studioMode,
+        dest: studioMode === "shared" ? sharedDest : null,
+        errors: errs,
+      },{acc_id:activeAccId});
+      loadPublishBatches();
+    } catch (_) {}
     setBulkPublishing(false);
-    if (errs.length === 0) toast(`${queue.length} ads publicados ✓`,"success");
+    if (errs.length === 0) toast(`${queue.length} ad${queue.length===1?"":"s"} publicado${queue.length===1?"":"s"} ✓`,"success");
     else toast(`${queue.length-errs.length}/${queue.length} ok, ${errs.length} con error`,"warning");
   }
 
@@ -9563,6 +9741,12 @@ function AppMetaAds({T, user, onHome}) {
     await metaApi("save_brand","POST",{text:brand});
     toast("Brand context guardado ✓","success");
     setBrandSaving(false);
+  }
+  async function handleSaveCopyAgent() {
+    setCopyAgentSaving(true);
+    await metaApi("save_copy_agent","POST",{text:copyAgent});
+    toast("Estilo del agente guardado ✓","success");
+    setCopyAgentSaving(false);
   }
 
   if(loading) return(
@@ -10036,6 +10220,43 @@ function AppMetaAds({T, user, onHome}) {
               </div>
             ) : (
               <>
+                {/* Productos (clasificador URL → producto con ROAS BE) */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:10}}>
+                    <div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>🎯 Productos</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Asociá cada producto a sus URLs y su ROAS break-even. Las reglas pueden filtrar por producto.</div>
+                    </div>
+                    <button onClick={()=>setEditingProduct("new")} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo producto</button>
+                  </div>
+                  {productsLoading ? (
+                    <div style={{padding:"20px 0",textAlign:"center"}}><Spinner size={16} color={T.accent}/></div>
+                  ) : products.length === 0 ? (
+                    <div style={{padding:"16px",background:T.bg,border:`1px dashed ${T.borderL}`,borderRadius:8,fontSize:12,color:T.textSm,textAlign:"center",lineHeight:1.5}}>
+                      Sin productos clasificados. Las reglas aplican a TODOS los anuncios por defecto.<br/>Creá productos si querés escribir reglas que apliquen solo a algunos.
+                    </div>
+                  ) : (
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      {products.map(p => (
+                        <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                              <span style={{fontSize:13,fontWeight:700,color:T.text}}>{p.name}</span>
+                              {p.roas_be > 0 && <span style={{fontSize:10,padding:"2px 8px",borderRadius:5,background:T.green+"22",color:T.green,fontWeight:700,letterSpacing:0.3}}>BE {p.roas_be}x</span>}
+                              <span style={{fontSize:10,color:T.textSm}}>· {(p.urls||[]).length} URL{(p.urls||[]).length===1?"":"s"}</span>
+                            </div>
+                            {(p.urls||[]).length>0 && (
+                              <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace",marginTop:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.urls.slice(0,2).join(" · ")}{p.urls.length>2?` · +${p.urls.length-2} más`:""}</div>
+                            )}
+                          </div>
+                          <button onClick={()=>setEditingProduct(p)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                          <button onClick={()=>deleteProduct(p.id)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>Reglas de optimización</div>
@@ -10161,7 +10382,8 @@ function AppMetaAds({T, user, onHome}) {
                 </div>
 
                 {/* Editor de regla (modal) */}
-                {editingRule && <RuleEditor T={T} initialRule={editingRule==="new"?null:editingRule} onSave={saveRule} onCancel={()=>setEditingRule(null)}/>}
+                {editingRule && <RuleEditor T={T} initialRule={editingRule==="new"?null:editingRule} products={products} onSave={saveRule} onCancel={()=>setEditingRule(null)}/>}
+                {editingProduct && <ProductEditor T={T} initialProduct={editingProduct==="new"?null:editingProduct} onSave={saveProduct} onCancel={()=>setEditingProduct(null)}/>}
               </>
             )}
           </div>
@@ -10461,10 +10683,77 @@ function AppMetaAds({T, user, onHome}) {
                 )}
               </div>
 
-              {/* ── Sección 3: PUBLICAR ADS ──────────────────── */}
+              {/* ── Sección 3: ESTILO DEL COPY (instrucciones del agente) ── */}
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
-                <SectionHeader n="3" title="Publicar ads"/>
-                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos. Gemini analiza cada uno (imagen o video) y escribe el copy usando el contexto de tu marca.</div>
+                <SectionHeader n="3" title="Estilo del copy"/>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:12,lineHeight:1.6}}>Definí cómo tiene que escribir el agente. Estas instrucciones se inyectan con prioridad máxima en cada copy generado — sobreescriben los defaults.</div>
+                {!showCopyAgentEdit ? (
+                  copyAgent?.trim() ? (
+                    <div style={{background:T.surface,border:`1px solid ${T.green}33`,borderRadius:10,padding:"14px 16px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                        <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,letterSpacing:0.5}}>✓ CONFIGURADO</span>
+                        <span style={{fontSize:11,color:T.textSm}}>{(new Blob([copyAgent]).size/1024).toFixed(1)} KB</span>
+                      </div>
+                      <div style={{fontSize:12,fontFamily:"monospace",color:T.textMd,lineHeight:1.55,maxHeight:80,overflow:"hidden",whiteSpace:"pre-wrap"}}>
+                        {copyAgent.slice(0,320)}{copyAgent.length>320?" …":""}
+                      </div>
+                      <div style={{textAlign:"right",marginTop:10}}>
+                        <button onClick={()=>setShowCopyAgentEdit(true)} style={BtnSec}>✏️ Editar estilo</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{textAlign:"center",padding:30,border:`1px dashed ${T.border}`,borderRadius:10}}>
+                      <div style={{fontSize:13,color:T.textMd,marginBottom:12,lineHeight:1.6}}>Sin estilo definido. El agente va a usar el default (rioplatense, hook fuerte, 400+ palabras).</div>
+                      <button onClick={()=>setShowCopyAgentEdit(true)} style={BtnPri}>+ Definir estilo del agente</button>
+                    </div>
+                  )
+                ) : (
+                  <div>
+                    <textarea value={copyAgent} onChange={e=>setCopyAgent(e.target.value)}
+                      placeholder={`Ejemplo:
+
+PERSONALIDAD
+- Amable, cercana, como hablás con un amigo
+- Usar emojis sutiles: ✨ 💪 ❤️ (máximo 4 por copy)
+- Voseo argentino siempre (vos / tenés / podés)
+- Primera persona o "vos" — nunca "usted"
+
+CTA preferidos
+- "Pedilo ahora"
+- "Conocelo acá"
+- "Probalo 30 días sin riesgo"
+
+QUE SI DECIR
+- Beneficios concretos con números cuando se pueda
+- Storytelling: dolor → entendimiento → solución
+- Cerrar con una pregunta o invitación
+
+QUE NO DECIR
+- "Garantía 100%" (legal)
+- "Cura", "elimina por completo", "milagroso"
+- Nada de comparativas con productos de la competencia
+- Sin promesas médicas no respaldadas
+- Evitar "¿Sabías que…?" como apertura
+
+LONGITUD Y FORMATO
+- Entre 300 y 500 palabras
+- Párrafos cortos, mucho espacio en blanco
+- Hook scroll-stopper en la primera línea`}
+                      style={{...iS,minHeight:340,resize:"vertical",lineHeight:1.6,marginBottom:10,fontFamily:"monospace",fontSize:12,whiteSpace:"pre-wrap"}}/>
+                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                      <button onClick={()=>setShowCopyAgentEdit(false)} style={BtnSec}>Cancelar</button>
+                      <button onClick={async()=>{await handleSaveCopyAgent(); setShowCopyAgentEdit(false);}} disabled={copyAgentSaving} style={BtnPri}>
+                        {copyAgentSaving?<><Spinner size={12} color="#fff"/>Guardando...</>:"💾 Guardar"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Sección 4: PUBLICAR ADS ──────────────────── */}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+                <SectionHeader n="4" title="Publicar ads"/>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos. Gemini analiza cada uno (imagen o video) y escribe el copy usando el contexto de tu marca y el estilo del agente que definiste arriba.</div>
 
                 {/* Mode toggle */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
@@ -10540,12 +10829,16 @@ function AppMetaAds({T, user, onHome}) {
                 {/* Queue */}
                 {creatives.length > 0 && (
                   <>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                      <div style={{fontSize:11,color:T.textSm,fontWeight:700,letterSpacing:0.6,textTransform:"uppercase"}}>{creatives.length} creativo{creatives.length===1?"":"s"} en cola</div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,letterSpacing:0.6,textTransform:"uppercase"}}>{creatives.length} creativo{creatives.length===1?"":"s"} en cola</div>
+                        <span style={{fontSize:11,padding:"3px 9px",borderRadius:5,background:T.green+"15",color:T.green,fontWeight:700,letterSpacing:0.3,border:`1px solid ${T.green}33`}}>{creatives.filter(c=>c.copy?.trim()).length} con copy listo</span>
+                      </div>
                       <button onClick={handleClearQueue} style={BtnSec}>Limpiar todo</button>
                     </div>
                     {creatives.map(c => (
-                      <div key={c.id} style={{background:T.surface,border:`1px solid ${selCreative?.id===c.id?T.green+"66":T.borderL}`,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
+                      <div key={c.id} style={{background:T.card,border:`2px solid ${c.copy?.trim()?T.green+"55":T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:18,boxShadow:c.copy?.trim()?`0 4px 14px ${T.green}10`:"0 2px 8px rgba(0,0,0,0.15)",position:"relative"}}>
+                        <div style={{position:"absolute",top:-9,left:14,padding:"2px 10px",borderRadius:6,background:c.copy?.trim()?T.green:T.borderL,color:c.copy?.trim()?"#fff":T.textSm,fontSize:9,fontWeight:800,letterSpacing:0.6,textTransform:"uppercase"}}>Ad #{creatives.indexOf(c)+1}</div>
                         {/* Top row: thumbnail + filename + badges + remove */}
                         <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:10}}>
                           <div style={{width:90,height:90,flexShrink:0,borderRadius:8,background:T.bg,border:`1px solid ${T.border}`,overflow:"hidden",position:"relative"}}>
@@ -10604,35 +10897,6 @@ function AppMetaAds({T, user, onHome}) {
                             </div>
                           </div>
                         )}
-
-                        {/* Selectores de override */}
-                        <div style={{marginBottom:8}}>
-                          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-                            <span style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.5,minWidth:60,textTransform:"uppercase"}}>Tono</span>
-                            <div style={{display:"flex",flexWrap:"wrap",gap:5,flex:1}}>
-                              {TONOS.map(t=>(
-                                <button key={t} onClick={()=>{const u={...c,tone:t};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));handlePatch(c,{tone:t});}} style={{padding:"4px 11px",fontSize:11,borderRadius:18,border:`1px solid ${c.tone===t?T.green+"99":T.border}`,background:c.tone===t?T.green+"15":"transparent",color:c.tone===t?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:c.tone===t?700:400}}>{t}</button>
-                              ))}
-                            </div>
-                          </div>
-                          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-                            <span style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.5,minWidth:60,textTransform:"uppercase"}}>Largo</span>
-                            <div style={{display:"flex",flexWrap:"wrap",gap:5,flex:1}}>
-                              {LARGOS.map(L=>{
-                                const isSel = (c.length||"nativo")===L.id;
-                                return <button key={L.id} onClick={()=>{const u={...c,length:L.id};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));handlePatch(c,{length:L.id});}} style={{padding:"4px 11px",fontSize:11,borderRadius:18,border:`1px solid ${isSel?T.green+"99":T.border}`,background:isSel?T.green+"15":"transparent",color:isSel?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:isSel?700:400}}>{L.label}</button>;
-                              })}
-                            </div>
-                          </div>
-                          <div style={{display:"flex",alignItems:"center",gap:10}}>
-                            <span style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.5,minWidth:60,textTransform:"uppercase"}}>Formato</span>
-                            <div style={{display:"flex",flexWrap:"wrap",gap:5,flex:1}}>
-                              {FORMATOS.map(f=>(
-                                <button key={f} onClick={()=>{const u={...c,format:f};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));handlePatch(c,{format:f});}} style={{padding:"4px 11px",fontSize:11,borderRadius:18,border:`1px solid ${c.format===f?T.green+"99":T.border}`,background:c.format===f?T.green+"15":"transparent",color:c.format===f?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:c.format===f?700:400,textTransform:"capitalize"}}>{f}</button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
 
                         {/* Notas */}
                         <input value={c.notes||""} onChange={e=>{const u={...c,notes:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{notes:e.target.value})} placeholder="Notas extra opcionales (override / detalles que Gemini no vio)" style={{...iS,marginBottom:10,fontSize:12}}/>
@@ -10696,6 +10960,46 @@ function AppMetaAds({T, user, onHome}) {
                   );
                 })()}
               </div>
+
+              {/* ── Historial de batches publicados ──────────────── */}
+              {publishBatches.length > 0 && (
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+                  <SectionHeader n="📜" title={`Lotes publicados (${publishBatches.length})`}/>
+                  <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:480,overflowY:"auto"}}>
+                    {publishBatches.map(b => (
+                      <div key={b.id} style={{background:T.surface,border:`1px solid ${b.ok_count===b.total?T.green+"33":T.yellow+"33"}`,borderRadius:10,padding:"12px 14px"}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:8,flexWrap:"wrap"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                            <span style={{fontSize:13,fontWeight:700,color:T.text}}>{new Date(b.ts).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}</span>
+                            <span style={{fontSize:10,padding:"2px 7px",borderRadius:5,background:T.green+"22",color:T.green,fontWeight:700,letterSpacing:0.3}}>{b.ok_count}/{b.total} OK</span>
+                            {b.ok_count < b.total && <span style={{fontSize:10,padding:"2px 7px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>{b.total-b.ok_count} fallaron</span>}
+                            <span style={{fontSize:10,color:T.textSm}}>· {b.dest_mode==="shared"?"Destino compartido":"Distinto por ad"}</span>
+                          </div>
+                        </div>
+                        <details>
+                          <summary style={{cursor:"pointer",fontSize:11,color:T.accent,fontWeight:600,marginBottom:4}}>▸ Ver los {b.total} anuncio{b.total===1?"":"s"} del lote</summary>
+                          <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6,paddingLeft:6}}>
+                            {(b.items||[]).map((it,i) => (
+                              <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:T.textMd,padding:"4px 0"}}>
+                                <span style={{fontSize:14}}>{it.ok?(it.kind==="video"?"🎬":"🖼️"):"❌"}</span>
+                                <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.filename}</span>
+                                {it.ok ? (
+                                  <>
+                                    <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:it.status==="ACTIVE"?T.green+"22":T.textSm+"22",color:it.status==="ACTIVE"?T.green:T.textSm,fontWeight:600,letterSpacing:0.3}}>{it.status}</span>
+                                    {it.ad_id && <span style={{fontSize:10,color:T.textSm,fontFamily:"monospace"}}>{it.ad_id}</span>}
+                                  </>
+                                ) : (
+                                  <span style={{fontSize:10,color:T.red,fontFamily:"monospace"}}>{it.error?.slice(0,80)}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* ── Modal: Nueva campaña + AdSets ───────────── */}
               {showNewCampModal && ReactDOM.createPortal(
