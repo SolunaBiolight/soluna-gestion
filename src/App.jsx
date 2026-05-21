@@ -202,8 +202,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
-    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red",
-      subs:[{id:"dashboard",label:"Dashboard"},{id:"buscar",label:"Buscar pedido"},{id:"reclamos",label:"Lista"},{id:"config",label:"Plantillas"}]},
+    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red"},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
     { group:"ANALYTICS" },
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red"},
@@ -844,6 +843,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     @keyframes growith-slideIn { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
     @keyframes growith-scaleIn { from{opacity:0;transform:scale(0.97)} to{opacity:1;transform:scale(1)} }
     @keyframes growith-popIn   { from{opacity:0;transform:scale(0.94) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    @keyframes slideInRight    { from{opacity:0;transform:translateX(100%)} to{opacity:1;transform:translateX(0)} }
 
     /* -- Page / section transitions -- */
     .gh-page {
@@ -1280,11 +1280,12 @@ function OrderSearchField({T, orders, onSelect, uid}) {
 function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje, view:viewProp, setView:setViewProp}) {
   const [reclamos,setReclamos]=useState([]);
   const [plantillas,setPlantillas]=useState([]);
-  const [view,setViewState]=useState(viewProp||"dashboard"); // dashboard | buscar | reclamos | config
+  const [view,setViewState]=useState(viewProp||"reclamos"); // reclamos | config
   React.useEffect(()=>{ if(viewProp!==undefined&&viewProp!==view) setViewState(viewProp); },[viewProp]);
   const setView=(v)=>{ setViewState(v); setViewProp&&setViewProp(v); };
-  const [dashView,setDashView]=useState("kanban"); // kanban | pipeline
+  const [mainView,setMainView]=useState("kanban"); // kanban | lista
   const [kanbanTipo,setKanbanTipo]=useState("Todos");
+  const [statsPeriod,setStatsPeriod]=useState("all"); // 7d | 30d | all
   const [search,setSearch]=useState("");
   const [filterEstado,setFilterEstado]=useState("");
   const [filterTipo,setFilterTipo]=useState("");
@@ -1295,19 +1296,17 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [saving,setSaving]=useState(false);
   const [plantillaEdit,setPlantillaEdit]=useState(null);
   const [copiedMsg,setCopiedMsg]=useState(null);
-  const [searchGlobal,setSearchGlobal]=useState("");
   const [searchApiResults,setSearchApiResults]=useState([]);
   const [searchApiLoading,setSearchApiLoading]=useState(false);
-  const [pedidoDetalle,setPedidoDetalle]=useState(null);
-  const [slaConfig,setSlaConfig]=useState({dias:3}); // SLA configurable
-  const [andreaniAlertas,setAndreaniAlertas]=useState([]); // [{docId, orderNum, tracking, estado}]
+  const [slaConfig,setSlaConfig]=useState({dias:3});
+  const [andreaniAlertas,setAndreaniAlertas]=useState([]);
   const [andreaniChecked,setAndreaniChecked]=useState(false);
 
   // Atajos de teclado en reclamos
   useEffect(()=>{
     function handleKey(e) {
       if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA") return;
-      if(e.key==="Escape") { setActiveReclamo(null); setSearchGlobal(""); setPedidoDetalle(null); }
+      if(e.key==="Escape") { setActiveReclamo(null); setSearch(""); }
     }
     window.addEventListener("keydown", handleKey);
     return ()=>window.removeEventListener("keydown", handleKey);
@@ -1515,23 +1514,35 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     setTimeout(()=>setCopiedMsg(null),2000);
   }
 
-  // Stats
-  const hoy=new Date().toISOString().split('T')[0];
+  // Stats period filter
   const hace3=new Date(Date.now()-slaConfig.dias*86400000).toISOString().split('T')[0];
+  const periodStart=useMemo(()=>{
+    if(statsPeriod==="all") return null;
+    return new Date(Date.now()-(statsPeriod==="7d"?7:30)*86400000);
+  },[statsPeriod]);
+  const reclamosPeriod=useMemo(()=>
+    reclamos.filter(r=>!periodStart||(r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000)>=periodStart))
+  ,[reclamos,periodStart]);
   const _baseCount=totalOrdersCount||orders.length;
-  const pctCambios=_baseCount>0?((reclamos.filter(r=>r.tipo==="Cambio").length/_baseCount)*100).toFixed(1):null;
-  const pctDevoluciones=_baseCount>0?((reclamos.filter(r=>r.tipo==="Devolución").length/_baseCount)*100).toFixed(1):null;
+  const pctCambios=_baseCount>0?((reclamosPeriod.filter(r=>r.tipo==="Cambio").length/_baseCount)*100).toFixed(1):null;
+  const pctDevoluciones=_baseCount>0?((reclamosPeriod.filter(r=>r.tipo==="Devolución").length/_baseCount)*100).toFixed(1):null;
+  const avgResolutionDays=useMemo(()=>{
+    const resolved=reclamosPeriod.filter(r=>r.estado==="Resuelto"&&r.createdAt?.seconds&&r.resolvedAt?.seconds);
+    if(!resolved.length) return null;
+    const avgMs=resolved.reduce((a,r)=>a+(r.resolvedAt.seconds-r.createdAt.seconds)*1000,0)/resolved.length;
+    return Math.round(avgMs/86400000*10)/10;
+  },[reclamosPeriod]);
   const stats={
-    total:reclamos.length,
-    pendientes:reclamos.filter(r=>r.estado==="Nuevo").length,
-    resueltos:reclamos.filter(r=>r.estado==="Resuelto").length,
-    rechazados:reclamos.filter(r=>r.estado==="Rechazado").length,
-    cambios:reclamos.filter(r=>r.tipo==="Cambio").length,
-    devoluciones:reclamos.filter(r=>r.tipo==="Devolución").length,
+    total:reclamosPeriod.length,
+    pendientes:reclamosPeriod.filter(r=>r.estado==="Nuevo").length,
+    resueltos:reclamosPeriod.filter(r=>r.estado==="Resuelto").length,
+    rechazados:reclamosPeriod.filter(r=>r.estado==="Rechazado").length,
+    cambios:reclamosPeriod.filter(r=>r.tipo==="Cambio").length,
+    devoluciones:reclamosPeriod.filter(r=>r.tipo==="Devolución").length,
     urgentes:reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado)&&r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]<=hace3).length,
   };
 
-  // Filtered reclamos
+  // Filtered reclamos (for lista view)
   const filteredReclamos=useMemo(()=>reclamos.filter(r=>{
     if(filterEstado&&r.estado!==filterEstado) return false;
     if(filterTipo&&r.tipo!==filterTipo) return false;
@@ -1541,48 +1552,40 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     }
     if(search){
       const s=search.toLowerCase().trim();
-      if(r.orderNum===s) return true; // exacto primero
+      if(r.orderNum===s) return true;
       if(r.orderNum.includes(s)) return true;
       if((r.motivo||"").toLowerCase().includes(s)) return true;
-      if((r.tipo||"").toLowerCase().includes(s)) return true;
+      if((r.clienteNombre||"").toLowerCase().includes(s)) return true;
       const o=orders.find(o=>o.numero===r.orderNum);
       if(o&&(o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s)||o.telefono.includes(s))) return true;
+      // Also search in API results
+      const oa=searchApiResults.find(o=>o.numero===r.orderNum);
+      if(oa&&(oa.comprador.toLowerCase().includes(s)||oa.email.toLowerCase().includes(s))) return true;
       return false;
     }
     return true;
-  }),[reclamos,search,filterEstado,filterTipo,filterUrgentes,hace3]);
+  }),[reclamos,search,filterEstado,filterTipo,filterUrgentes,hace3,orders,searchApiResults]);
 
-  // Global search - usa API de TN directamente, no depende de orders local
-  const globalResults=useMemo(()=>{
-    if(!searchGlobal||searchGlobal.length<1) return {pedidos:[],reclamos:[]};
-    const s=searchGlobal.toLowerCase().trim();
-    const pedidos=searchApiResults.slice(0,8);
-    // Reclamos: match por número exacto, parcial, nombre o motivo
-    const recls=reclamos.filter(r=>{
-      if(r.orderNum===s) return true; // exacto primero
-      if(r.orderNum.includes(s)) return true;
-      if((r.motivo||"").toLowerCase().includes(s)) return true;
-      if((r.tipo||"").toLowerCase().includes(s)) return true;
-      const o=searchApiResults.find(o=>o.numero===r.orderNum);
-      return o&&(o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
-    }).slice(0,8);
-    return {pedidos,recls};
-  },[searchGlobal,searchApiResults,reclamos]);
+  // Order search results for creating reclamos
+  const searchOrderResults=useMemo(()=>{
+    if(!search||search.length<2) return [];
+    return searchApiResults.filter(o=>!reclamos.some(r=>r.orderNum===o.numero)).slice(0,5);
+  },[search,searchApiResults,reclamos]);
 
-  // Buscar en TN API cuando cambia searchGlobal
+  // Buscar en TN API cuando cambia search
   useEffect(()=>{
-    if(!searchGlobal||searchGlobal.length<2){ setSearchApiResults([]); return; }
+    if(!search||search.length<2){ setSearchApiResults([]); return; }
     const timer=setTimeout(async()=>{
       setSearchApiLoading(true);
       try{
-        const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(searchGlobal.trim())}`);
+        const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(search.trim())}`);
         const data=await r.json();
         if(Array.isArray(data)) setSearchApiResults(buildOrdersFromAPI(data));
       }catch(e){}
       setSearchApiLoading(false);
-    },400); // debounce 400ms
+    },400);
     return ()=>clearTimeout(timer);
-  },[searchGlobal,user?.uid]);
+  },[search,user?.uid]);
 
   const activeR=reclamos.find(r=>r._docId===activeReclamo);
   const [activeOrderCache,setActiveOrderCache]=useState({});
@@ -1689,13 +1692,11 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       </AppTopbar>
 
       <AppTabs T={T} tabs={[
-        {id:"dashboard",label:"Dashboard"},
-        {id:"buscar",label:"Buscar pedido"},
-        {id:"reclamos",label:"Lista",badge:stats.urgentes,badgeColor:T.red},
-        {id:"config",label:"Plantillas"},
+        {id:"reclamos",label:"Reclamos",badge:stats.urgentes,badgeColor:T.red},
+        {id:"config",label:"Configuración"},
       ]} active={view} onChange={(v)=>{setView(v);setActiveReclamo(null);}}/>
 
-      <div style={{padding:"24px 24px 64px",maxWidth:1200,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"20px 24px 64px",maxWidth:1400,margin:"0 auto",width:"100%",boxSizing:"border-box",paddingRight:activeReclamo?460:24,transition:`padding-right 0.25s ${DS.ease}`}}>
 
         {/* BANNER ANDREANI - Paquetes listos para retirar */}
         {andreaniAlertas.length > 0 && (
@@ -1744,12 +1745,195 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             >✕</button>
           </div>
         )}
-        {view==="dashboard"&&(
-          <div key="dashboard" className="gh-tab-content" style={{padding:"24px 0 48px"}}>
-
-            {/* Buscador prominente */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:24}}>
-              <div style={{fontSize:13,fontWeight:600,color:T.textMd,marginBottom:10}}>🔍 Buscar cliente o pedido</div>
+        {/* === RECLAMOS TAB === */}
+        {view==="reclamos"&&(
+          <div>
+            {/* Buscador siempre visible */}
+            <div style={{position:"relative",marginBottom:16}}>
+              <svg style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <input autoComplete="off" placeholder="Buscar reclamo, cliente, pedido..." value={search} onChange={e=>setSearch(e.target.value)}
+                style={{...InputStyle(T),paddingLeft:40,fontSize:14,padding:"11px 40px 11px 40px",width:"100%",boxSizing:"border-box"}}
+                onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=InputStyle(T).borderColor}/>
+              {search&&<button onClick={()=>{setSearch("");setSearchApiResults([]);}} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:20,lineHeight:1,padding:4}}>×</button>}
+              {searchApiLoading&&<div style={{position:"absolute",right:search?36:14,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></div>}
+            </div>
+            {/* Resultados pedidos TN sin reclamo */}
+            {search.length>=2&&searchOrderResults.length>0&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",marginBottom:16,animation:"growith-fadeIn 0.2s ease"}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:10}}>Pedidos TN sin reclamo abierto</div>
+                {searchOrderResults.map(o=>(
+                  <div key={o.numero} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <span style={{fontWeight:700,fontSize:14,color:T.text}}>{o.comprador}</span>
+                      <span style={{fontSize:13,color:T.accent,marginLeft:8}}>#{o.numero}</span>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(' · ')}</div>
+                    </div>
+                    <button onClick={()=>{setReclamoForm(emptyForm(o.numero,{nombre:o.comprador,email:o.email,telefono:o.telefono,productos:(o.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,"").replace(/[()]/g,"").trim()).filter(Boolean),total:o.total}));setSearch("");}} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0,marginLeft:12}}>+ Reclamo</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Stats + período */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div style={{display:"flex",gap:3,background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:3}}>
+                {[{id:"7d",label:"7d"},{id:"30d",label:"30d"},{id:"all",label:"Todo"}].map(p=>(
+                  <button key={p.id} onClick={()=>setStatsPeriod(p.id)} style={{padding:"4px 12px",fontSize:12,fontWeight:statsPeriod===p.id?700:400,borderRadius:DS.r.md,border:"none",background:statsPeriod===p.id?T.accentSolid:"transparent",color:statsPeriod===p.id?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.15s ${DS.ease}`}}>{p.label}</button>
+                ))}
+              </div>
+              {stats.urgentes>0&&(
+                <div style={{display:"flex",alignItems:"center",gap:6,background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:DS.r.lg,padding:"5px 12px",cursor:"pointer"}} onClick={()=>{setMainView("lista");setFilterUrgentes(true);}}>
+                  <span style={{width:7,height:7,borderRadius:"50%",background:T.red,display:"inline-block"}}/>
+                  <span style={{fontSize:12,fontWeight:700,color:T.red}}>{stats.urgentes} urgente{stats.urgentes!==1?"s":""}</span>
+                </div>
+              )}
+            </div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:22}}>
+              {[
+                {label:"Total",value:stats.total,color:T.text,sub:"reclamos"},
+                {label:"Pendientes",value:stats.pendientes,color:stats.pendientes>0?T.blue:T.textMd,sub:"estado Nuevo"},
+                {label:"Resueltos",value:stats.resueltos,color:T.green,sub:stats.total>0?`${Math.round(stats.resueltos/stats.total*100)}% del total`:"--"},
+                {label:"Cambios",value:stats.cambios,color:T.purple,sub:pctCambios?`${pctCambios}% de pedidos`:"--"},
+                {label:"Devoluciones",value:stats.devoluciones,color:T.orange,sub:pctDevoluciones?`${pctDevoluciones}% de pedidos`:"--"},
+                ...(avgResolutionDays!==null?[{label:"Resolución prom.",value:`${avgResolutionDays}d`,color:avgResolutionDays<=3?T.green:avgResolutionDays<=7?T.yellow:T.red,sub:"tiempo medio"}]:[]),
+              ].map((s,i)=>(
+                <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"14px 18px",flex:"1 1 100px",minWidth:100}}>
+                  <div style={{fontSize:DS.font.xs,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5,fontWeight:600}}>{s.label}</div>
+                  <div style={{fontSize:26,fontWeight:800,color:s.color,letterSpacing:-1,lineHeight:1}}>{s.value}</div>
+                  {s.sub&&<div style={{fontSize:10,color:T.textSm,marginTop:4}}>{s.sub}</div>}
+                </div>
+              ))}
+            </div>
+            {/* Toggle kanban/lista + filtros */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {mainView==="kanban"&&["Todos","Cambio","Devolución"].map(t=>(
+                  <button key={t} onClick={()=>setKanbanTipo(t)} style={{padding:"5px 12px",fontSize:12,fontWeight:kanbanTipo===t?700:400,borderRadius:DS.r.full,border:`1px solid ${kanbanTipo===t?T.accentSolid:T.border}`,background:kanbanTipo===t?T.accentSolid:"transparent",color:kanbanTipo===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.12s ${DS.ease}`}}>{t}</button>
+                ))}
+                {mainView==="lista"&&(
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+                    {["","Nuevo","Contactado","Esperando producto","Producto recibido","Envío en camino","Resuelto","Rechazado"].map(e=>{
+                      const a=filterEstado===e&&(e?true:!filterUrgentes);
+                      const sc=e?getEstadoRC(T,e):{dot:T.textSm,text:T.textMd};
+                      return(<button key={e||"all"} onClick={()=>{setFilterEstado(a?"":e);if(e)setFilterUrgentes(false);}} style={{padding:"4px 11px",fontSize:11,fontWeight:a?700:400,borderRadius:DS.r.full,border:`1px solid ${a?sc.dot:T.border}`,background:a?sc.dot+"22":"transparent",color:a?sc.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.12s ${DS.ease}`}}>{e||"Todos"}</button>);
+                    })}
+                    <button onClick={()=>setFilterTipo(filterTipo==="Cambio"?"":"Cambio")} style={{padding:"4px 11px",fontSize:11,fontWeight:filterTipo==="Cambio"?700:400,borderRadius:DS.r.full,border:`1px solid ${filterTipo==="Cambio"?T.purple:T.border}`,background:filterTipo==="Cambio"?T.purpleBg:"transparent",color:filterTipo==="Cambio"?T.purple:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🔄</button>
+                    <button onClick={()=>setFilterTipo(filterTipo==="Devolución"?"":"Devolución")} style={{padding:"4px 11px",fontSize:11,fontWeight:filterTipo==="Devolución"?700:400,borderRadius:DS.r.full,border:`1px solid ${filterTipo==="Devolución"?T.orange:T.border}`,background:filterTipo==="Devolución"?T.orangeBg:"transparent",color:filterTipo==="Devolución"?T.orange:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>↩️</button>
+                    <button onClick={()=>{setFilterUrgentes(v=>!v);setFilterEstado("");}} style={{padding:"4px 11px",fontSize:11,fontWeight:filterUrgentes?700:400,borderRadius:DS.r.full,border:`1px solid ${filterUrgentes?T.red:T.border}`,background:filterUrgentes?T.redBg:"transparent",color:filterUrgentes?T.red:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⚠ Urgentes</button>
+                    <span style={{fontSize:11,color:T.textSm}}>{filteredReclamos.length}</span>
+                  </div>
+                )}
+              </div>
+              <div style={{display:"flex",gap:2,background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.md,padding:3,flexShrink:0}}>
+                <button onClick={()=>setMainView("kanban")} style={{padding:"5px 12px",fontSize:12,fontWeight:mainView==="kanban"?700:400,borderRadius:DS.r.sm,border:"none",background:mainView==="kanban"?T.accentSolid:"transparent",color:mainView==="kanban"?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.12s ${DS.ease}`}}>⬜ Kanban</button>
+                <button onClick={()=>setMainView("lista")} style={{padding:"5px 12px",fontSize:12,fontWeight:mainView==="lista"?700:400,borderRadius:DS.r.sm,border:"none",background:mainView==="lista"?T.accentSolid:"transparent",color:mainView==="lista"?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.12s ${DS.ease}`}}>☰ Lista</button>
+              </div>
+            </div>
+            {/* KANBAN */}
+            {mainView==="kanban"&&(
+              <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16}}>
+                {ESTADOS_R.map(estado=>{
+                  const sc=getEstadoRC(T,estado);
+                  const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo));
+                  return(
+                    <div key={estado} style={{flex:"0 0 220px",minWidth:220,background:T.card,border:`1px solid ${sc.dot}33`,borderRadius:DS.r.xl,overflow:"hidden"}}>
+                      <div style={{padding:"10px 14px",background:sc.dot+"18",borderBottom:`1px solid ${sc.dot}22`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:8,height:8,borderRadius:"50%",background:sc.dot}}/><span style={{fontSize:12,fontWeight:700,color:sc.text}}>{estado}</span></div>
+                        <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:DS.r.full,padding:"1px 8px"}}>{items.length}</span>
+                      </div>
+                      <div style={{padding:8,display:"flex",flexDirection:"column",gap:6,maxHeight:440,overflowY:"auto"}}>
+                        {items.length===0&&<div style={{textAlign:"center",padding:"20px 8px",fontSize:12,color:T.textSm,opacity:0.5}}>Sin reclamos</div>}
+                        {items.map(r=>{
+                          const o=orders.find(o=>o.numero===r.orderNum);
+                          const nombre=r.clienteNombre||o?.comprador;
+                          const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):null;
+                          const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=slaConfig.dias;
+                          const isActive=activeReclamo===r._docId;
+                          const tc=getTipoRC(T,r.tipo);
+                          return(
+                            <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
+                              style={{background:isActive?T.accentSolid+"18":T.bg,border:`1px solid ${isActive?T.accentSolid:urgente?T.red+"55":T.borderL}`,borderLeft:`3px solid ${urgente?T.red:sc.dot}`,borderRadius:DS.r.md,padding:"10px 12px",cursor:"pointer",transition:`all 0.12s ${DS.ease}`}}
+                              onMouseEnter={e=>{if(!isActive)e.currentTarget.style.background=T.surface;}}
+                              onMouseLeave={e=>{if(!isActive)e.currentTarget.style.background=T.bg;}}>
+                              {nombre&&<div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
+                              <div style={{fontSize:11,color:T.accent,marginBottom:5}}>#{r.orderNum}</div>
+                              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4}}>
+                                <span style={{fontSize:10,fontWeight:600,color:tc.text,background:tc.bg,borderRadius:DS.r.sm,padding:"2px 6px"}}>{r.tipo}</span>
+                                <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                                  {r.notasInternas&&<span title="Tiene notas" style={{fontSize:10,color:T.yellow}}>🔒</span>}
+                                  {dias!==null&&<span style={{fontSize:10,color:urgente?T.red:T.textSm,fontWeight:urgente?700:400}}>{dias}d</span>}
+                                </div>
+                              </div>
+                              {r.motivo&&<div style={{fontSize:10,color:T.textSm,marginTop:5,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{r.motivo}</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {/* LISTA */}
+            {mainView==="lista"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {filteredReclamos.length===0?(
+                  <div style={{textAlign:"center",padding:"64px 20px",color:T.textSm}}>
+                    <div style={{fontSize:36,marginBottom:12}}>📋</div>
+                    <div style={{fontSize:15,fontWeight:600,color:T.textMd,marginBottom:4}}>{reclamos.length===0?"Sin reclamos todavía":"Sin resultados"}</div>
+                    <div style={{fontSize:13,color:T.textSm}}>{reclamos.length===0?"Creá el primero con + Nuevo reclamo":"Probá cambiando los filtros"}</div>
+                  </div>
+                ):filteredReclamos.map((r,rIdx)=>{
+                  const o=orders.find(o=>o.numero===r.orderNum);
+                  const sc=getEstadoRC(T,r.estado);
+                  const tc=getTipoRC(T,r.tipo);
+                  const nombre=r.clienteNombre||o?.comprador;
+                  const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):0;
+                  const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=slaConfig.dias;
+                  const isActive=activeReclamo===r._docId;
+                  return(
+                    <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
+                      style={{background:isActive?T.surface:T.card,border:`1px solid ${isActive?T.accentSolid:urgente?T.red+"44":T.border}`,borderLeft:`3px solid ${sc.dot}`,borderRadius:DS.r.lg,padding:"14px 16px",cursor:"pointer",transition:`all 0.1s ${DS.ease}`,animation:"growith-fadeIn 0.2s ease both",animationDelay:`${Math.min(rIdx*20,180)}ms`}}
+                      onMouseEnter={e=>{if(!isActive){e.currentTarget.style.background=T.surface;e.currentTarget.style.transform="translateY(-1px)";}}}
+                      onMouseLeave={e=>{if(!isActive){e.currentTarget.style.background=T.card;e.currentTarget.style.transform="translateY(0)";}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+                            {nombre&&<span style={{fontWeight:700,fontSize:14,color:T.text}}>{nombre}</span>}
+                            <span style={{fontSize:13,color:T.accent,fontWeight:600}}>#{r.orderNum}</span>
+                            {urgente&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.redBg,borderRadius:DS.r.sm,padding:"1px 7px"}}>⚠ {dias}d</span>}
+                            {!urgente&&dias>0&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:DS.r.sm,padding:"1px 6px"}}>{dias}d</span>}
+                          </div>
+                          {r.motivo&&<div style={{fontSize:12,color:T.textSm,marginBottom:6,lineHeight:1.4}}>{r.motivo}</div>}
+                          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+                            <span style={{fontSize:11,fontWeight:600,color:sc.text,background:sc.dot+"22",borderRadius:DS.r.full,padding:"2px 9px",border:`1px solid ${sc.dot}33`}}>{r.estado}</span>
+                            <span style={{fontSize:11,fontWeight:500,color:tc.text,background:tc.bg,borderRadius:DS.r.full,padding:"2px 9px"}}>{r.tipo}</span>
+                            {r.trackingCambio&&<span style={{fontSize:11,color:T.purple}}>📦 {r.trackingCambio.slice(0,10)}…</span>}
+                            {r.trackingDevolucion&&<span style={{fontSize:11,color:T.green}}>📥 {r.trackingDevolucion.slice(0,10)}…</span>}
+                          </div>
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,flexShrink:0}}>
+                          <span style={{fontSize:11,color:T.textSm,whiteSpace:"nowrap"}}>{fmtTs(r.createdAt)}</span>
+                          <div style={{display:"flex",gap:3,flexWrap:"wrap",justifyContent:"flex-end"}} onClick={e=>e.stopPropagation()}>
+                            {ESTADOS_R.filter(e=>e!==r.estado).slice(0,3).map(e=>{const c=getEstadoRC(T,e);return(
+                              <button key={e} onClick={()=>updateEstado(r._docId,e)}
+                                style={{fontSize:10,padding:"2px 7px",borderRadius:DS.r.sm,background:"transparent",color:c.text,border:`1px solid ${c.dot}33`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.1s ${DS.ease}`}}
+                                onMouseEnter={e2=>{e2.currentTarget.style.background=c.dot+"22";e2.currentTarget.style.borderColor=c.dot;}}
+                                onMouseLeave={e2=>{e2.currentTarget.style.background="transparent";e2.currentTarget.style.borderColor=c.dot+"33";}}>→ {e.split(" ")[0]}</button>
+                            );})}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        {/* -- CONFIGURACION PLANTILLAS -- */}
+        {view==="config"&&(
+          <div style={{padding:"24px 0 48px",maxWidth:720}}>
+            <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:-0.5}}>⚙️ Configuración de Reclamos</div>
               <div style={{position:"relative"}}>
                 <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:18,color:T.textSm}}>🔍</span>
                 <input
@@ -2009,8 +2193,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           </div>
         )}
 
-        {/* -- BUSCAR -- */}
-        {view==="buscar"&&(
+        {/* BUSCAR: eliminado, ahora es el buscador siempre visible arriba */}
+        {false&&(
           <div style={{padding:"28px 0 48px",maxWidth:700}}>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:-0.5}}>Buscar cliente o pedido</div>
             <div style={{fontSize:14,color:T.textMd,marginBottom:20}}>Buscá por nombre, email, teléfono o número de pedido.</div>
@@ -2117,8 +2301,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           </div>
         )}
 
-        {/* -- RECLAMOS LIST + PANEL UNIFICADO -- */}
-        {view==="reclamos"&&(
+        {/* RECLAMOS LIST: eliminado, ahora es el nuevo view=reclamos arriba */}
+        {false&&(
           <div key="reclamos" className="gh-tab-content stack-mobile" style={{display:"grid",gridTemplateColumns:activeR?"1fr 420px":"1fr",gap:20,padding:"20px 0 48px",alignItems:"start"}}>
             {/* Lista */}
             <div>
@@ -2449,6 +2633,164 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         )}
       </div>
 
+      {/* === DRAWER PANEL LATERAL === */}
+      {activeR&&(
+        <div style={{position:"fixed",right:0,top:105,bottom:0,width:440,background:T.card,borderLeft:`1px solid ${T.border}`,zIndex:35,overflowY:"auto",boxShadow:`-8px 0 32px rgba(0,0,0,0.12)`,animation:"slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+          {/* Header */}
+          <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",position:"sticky",top:0,zIndex:1}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{activeOrder?.comprador||activeR.clienteNombre||`Pedido #${activeR.orderNum}`}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,color:T.accent}}>#{activeR.orderNum}</span>
+                <span style={{fontSize:12,color:T.textSm}}>· {activeR.tipo}</span>
+                {!activeOrder&&<span style={{fontSize:11,color:T.textSm,opacity:0.7}}>⏳ Cargando...</span>}
+              </div>
+            </div>
+            <button onClick={()=>setActiveReclamo(null)}
+              style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,cursor:"pointer",padding:"4px 9px",fontSize:18,lineHeight:1,flexShrink:0,marginLeft:8,display:"flex",alignItems:"center",justifyContent:"center"}}
+              onMouseEnter={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.color=T.text;}}
+              onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textSm;}}>✕</button>
+          </div>
+          <div style={{padding:"16px 18px"}}>
+            {/* Estado + cambio rápido */}
+            {(()=>{const sc=getEstadoRC(T,activeR.estado);const dias=activeR.createdAt?.seconds?Math.floor((Date.now()-activeR.createdAt.seconds*1000)/86400000):null;const urgente=!["Resuelto","Rechazado"].includes(activeR.estado)&&dias>=slaConfig.dias;return(
+              <div style={{background:sc.bg,border:`1px solid ${sc.dot}33`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                  <span style={{width:10,height:10,borderRadius:"50%",background:sc.dot,boxShadow:`0 0 6px ${sc.dot}`,flexShrink:0}}/>
+                  <span style={{fontSize:15,fontWeight:700,color:sc.text}}>{activeR.estado}</span>
+                  {dias!==null&&<span style={{fontSize:11,fontWeight:urgente?700:400,color:urgente?T.red:T.textSm,marginLeft:"auto"}}>{dias}d abierto</span>}
+                </div>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                  {ESTADOS_R.filter(e=>e!==activeR.estado).map(e=>{const c=getEstadoRC(T,e);return(
+                    <button key={e} onClick={()=>updateEstado(activeR._docId,e)}
+                      style={{fontSize:11,fontWeight:500,padding:"4px 10px",borderRadius:DS.r.md,background:T.card,color:c.text,border:`1px solid ${c.dot}44`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.1s ${DS.ease}`}}
+                      onMouseEnter={e2=>{e2.currentTarget.style.background=c.dot+"22";e2.currentTarget.style.borderColor=c.dot;}}
+                      onMouseLeave={e2=>{e2.currentTarget.style.background=T.card;e2.currentTarget.style.borderColor=c.dot+"44";}}>{e}</button>
+                  );})}
+                </div>
+              </div>
+            );})()}
+            {/* Cliente */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Cliente</div>
+              {(()=>{
+                const nombre=activeR.clienteNombre||activeOrder?.comprador||"--";
+                const email=activeR.clienteEmail||activeOrder?.email||"";
+                const tel=activeR.clienteTelefono||activeOrder?.telefono||"";
+                const prods=activeR.clienteProductos?.length>0?activeR.clienteProductos:(activeOrder?.productos||[]).map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'').trim());
+                const total=activeR.clienteTotal||activeOrder?.total||"";
+                const plantillaWA=plantillas.find(p=>p.tipo===activeR.tipo&&p.estado===activeR.estado)||plantillas.find(p=>p.tipo===activeR.tipo)||plantillas[0];
+                const waMsg=plantillaWA?plantillaWA.mensaje.replace(/\[nombre\]/g,nombre).replace(/\[pedido\]/g,activeR.orderNum).replace(/\[tracking\]/g,activeR.trackingCambio||"--").replace(/\[email\]/g,email).replace(/\[telefono\]/g,tel).replace(/\[producto\]/g,prods.join(", ")||"--").replace(/\[monto\]/g,total||"--").replace(/\[dirección\]/g,"Av. Ejemplo 1234, Buenos Aires"):"";
+                return(
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>{nombre}</div>
+                    {prods.length>0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>{prods.join(' · ')}{total&&<span style={{color:T.accent,fontWeight:600,marginLeft:8}}>${total}</span>}</div>}
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {tel&&<a href={`https://wa.me/${tel.replace(/\D/g,'')}${waMsg?`?text=${encodeURIComponent(waMsg)}`:""}`} target="_blank" rel="noopener noreferrer"
+                        style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.green,background:T.greenBg,border:`1px solid ${T.green}44`,display:"inline-flex",alignItems:"center",gap:5}}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                        WhatsApp
+                      </a>}
+                      {activeOrder?.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",textDecoration:"none",color:T.purple}}>🔗 TN</a>}
+                      {email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4}}>✉️ {email}</span>}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+            {/* Productos del pedido */}
+            {activeOrder?.productos?.length>0&&(
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Productos comprados</div>
+                {activeOrder.productos.map((p,i)=>(
+                  <div key={i} style={{fontSize:13,color:T.text,padding:"4px 0",borderBottom:i<activeOrder.productos.length-1?`1px solid ${T.borderL}`:"none",display:"flex",justifyContent:"space-between"}}>
+                    <span>{p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'')}</span><span style={{color:T.textSm}}>x{p.cantidad}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Detalle Cambio */}
+            {activeR.tipo==="Cambio"&&(
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>🔄 Cambio</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:8,alignItems:"start",marginBottom:12}}>
+                  <div><div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Nos devuelve</div>{(activeR.productosRecibe||[]).filter(p=>p.producto).map((item,i)=><div key={i} style={{fontSize:13,fontWeight:600,color:T.red,marginBottom:2}}>{item.cantidad>1&&<span style={{color:T.textSm,fontSize:11}}>{item.cantidad}× </span>}{item.producto}</div>)}</div>
+                  <div style={{color:T.textSm,paddingTop:18,fontSize:16}}>→</div>
+                  <div><div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Le enviamos</div>{(activeR.productosEnvia||[]).filter(p=>p.producto).map((item,i)=><div key={i} style={{fontSize:13,fontWeight:600,color:T.green,marginBottom:2}}>{item.cantidad>1&&<span style={{color:T.textSm,fontSize:11}}>{item.cantidad}× </span>}{item.producto}</div>)}</div>
+                </div>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6}}>Tracking envío (al cliente)</div>
+                <div style={{display:"flex",gap:8,marginBottom:6}}>
+                  <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px"}} value={activeR.trackingCambio||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:e.target.value,updatedAt:serverTimestamp()});}}/>
+                  {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnPurple(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0}}>📦</a>}
+                </div>
+                {activeR.trackingCambio&&(<AsyncButton onClick={async()=>{const r=await fetch(`/api/update-shipping?uid=${user?.uid}&orderId=${activeR.orderNum}&tracking=${activeR.trackingCambio}`);const d=await r.json();if(r.ok)appAlert("✅ Tracking actualizado en TN");else appAlert("Error: "+(d.error||""));}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,marginBottom:8}}>↑ Subir a TN</AsyncButton>)}
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6}}>📥 Tracking devolución (cliente → nosotros)</div>
+                <div style={{display:"flex",gap:8}}>
+                  <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} value={activeR.trackingDevolucion||""} placeholder="Código Andreani del cliente..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:e.target.value,updatedAt:serverTimestamp()});}}/>
+                  {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green}}>🔍</a>}
+                </div>
+                {!activeR.trackingDevolucion&&<div style={{fontSize:11,color:T.textSm,marginTop:4}}>📢 Te avisamos cuando llegue a sucursal</div>}
+              </div>
+            )}
+            {/* Devolución */}
+            {activeR.tipo==="Devolución"&&(
+              <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.orange,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>↩️ Devolución</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px",marginBottom:10}}>
+                  <div><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:5}}>Recepción</div>
+                    <select style={{...InputStyle(T),fontSize:12}} value={activeR.estadoRecepcion||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoRecepcion:e.target.value,updatedAt:serverTimestamp()});}}><option value="">-</option><option>Esperando envío</option><option>En tránsito</option><option>Recibido</option><option>Inspeccionado</option></select>
+                  </div>
+                  <div><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:5}}>Reembolso</div>
+                    <select style={{...InputStyle(T),fontSize:12}} value={activeR.estadoReembolso||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoReembolso:e.target.value,updatedAt:serverTimestamp()});}}><option value="">-</option><option>Pendiente</option><option>En proceso</option><option>Procesado</option></select>
+                  </div>
+                </div>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6}}>📥 Tracking devolución</div>
+                <div style={{display:"flex",gap:8}}>
+                  <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} value={activeR.trackingDevolucion||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:e.target.value,updatedAt:serverTimestamp()});}}/>
+                  {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green}}>🔍</a>}
+                </div>
+              </div>
+            )}
+            {/* Notas internas */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>🔒 Notas internas</div>
+              <textarea rows={3} placeholder="Notas privadas..." defaultValue={activeR.notasInternas||""}
+                onBlur={async e=>{const val=e.target.value;if(val!==(activeR.notasInternas||""))await updateDoc(doc(db,"reclamos",activeR._docId),{notasInternas:val,updatedAt:serverTimestamp()});}}
+                style={{...InputStyle(T),width:"100%",resize:"vertical",fontSize:12,padding:"8px 10px",lineHeight:1.5,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",minHeight:70,background:T.yellowBg||T.surface,borderColor:T.yellow+"44"}}
+                onFocus={e=>e.target.style.borderColor=T.yellow}/>
+            </div>
+            {/* Mensajes rápidos */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>Mensajes rápidos</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {plantillas.filter(p=>p.tipo===activeR.tipo||p.estado===activeR.estado).slice(0,4).map(p=>(
+                  <button key={p.id} onClick={()=>copyMensaje(p,activeR)}
+                    style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",justifyContent:"space-between",width:"100%",background:copiedMsg===p.id?T.greenBg:T.card,borderColor:copiedMsg===p.id?T.green:T.border,color:copiedMsg===p.id?T.green:T.text,transition:"all 0.2s"}}>
+                    <span>{p.nombre}</span>
+                    <span style={{fontSize:11,color:copiedMsg===p.id?T.green:T.textSm}}>{copiedMsg===p.id?"✓ Copiado":"📋 Copiar"}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Historial */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:12}}>Historial</div>
+              <HistorialReclamo T={T} reclamo={activeR} onAdd={addNotaReclamo}/>
+            </div>
+            {/* Acciones */}
+            <div style={{display:"flex",gap:8,paddingTop:14,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
+              <AsyncButton onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue}}>📦 Etiqueta Andreani</AsyncButton>
+              <button onClick={()=>{setReclamoForm({...activeR,productosRecibe:activeR.productosRecibe||[{producto:"",cantidad:1}],productosEnvia:activeR.productosEnvia||[{producto:"",cantidad:1}],historial:activeR.historial||[],trackingCambio:activeR.trackingCambio||"",trackingDevolucion:activeR.trackingDevolucion||"",estadoRecepcion:activeR.estadoRecepcion||"",estadoReembolso:activeR.estadoReembolso||""});}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>✏️ Editar</button>
+              {deleteConfirm===activeR._docId?(
+                <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><AsyncButton onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</AsyncButton><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
+              ):(
+                <button onClick={()=>setDeleteConfirm(activeR._docId)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>Eliminar</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Form Modal - Nuevo/Editar Reclamo */}
       <Modal T={T} open={!!reclamoForm} onClose={()=>setReclamoForm(null)} title={reclamoForm?._docId?"Editar Reclamo":reclamoForm?.orderNum?`Nuevo Reclamo - #${reclamoForm.orderNum}`:"Nuevo Reclamo"} width={580}>
         {reclamoForm&&(
@@ -2583,23 +2925,45 @@ function HistorialReclamo({T, reclamo, onAdd}) {
     await onAdd(reclamo._docId,texto);
     setTexto("");setGuardando(false);
   }
+  function getEntryStyle(accion) {
+    if(accion.startsWith("Nota:")) return {icon:"💬",color:"#60a5fa",bold:false};
+    if(accion.startsWith("Estado >")) return {icon:"🔄",color:"#a78bfa",bold:true};
+    if(accion.startsWith("Reclamo creado")) return {icon:"🟢",color:"#34d399",bold:true};
+    return {icon:"📌",color:"#94a3b8",bold:false};
+  }
+  function fmtHistFecha(fecha) {
+    try{
+      const d=new Date(fecha);const now=new Date();
+      const diffH=Math.floor((now-d)/3600000);const diffD=Math.floor((now-d)/86400000);
+      if(diffH<1) return "Hace menos de 1h";
+      if(diffH<24) return `Hace ${diffH}h`;
+      if(diffD===1) return "Ayer · "+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+      return d.toLocaleDateString('es-AR',{day:'numeric',month:'short'})+" · "+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+    }catch(e){return "";}
+  }
   return(
     <div>
-      <div style={{display:"flex",gap:6,marginBottom:10}}>
-        <input style={{...iS,flex:1,fontSize:12,padding:"7px 10px"}} value={texto} onChange={e=>setTexto(e.target.value)} placeholder="Agregar nota..." onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();handleAdd();}}}/>
-        <button onClick={handleAdd} disabled={guardando||!texto.trim()} style={{...BtnPrimary(T),padding:"7px 12px",fontSize:12,opacity:guardando||!texto.trim()?0.5:1}}>+</button>
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        <input style={{...iS,flex:1,fontSize:12,padding:"8px 10px"}} value={texto} onChange={e=>setTexto(e.target.value)} placeholder="Agregar nota al historial..." onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();handleAdd();}}}/>
+        <button onClick={handleAdd} disabled={guardando||!texto.trim()} style={{...BtnPrimary(T),padding:"8px 12px",fontSize:12,opacity:guardando||!texto.trim()?0.5:1,flexShrink:0}}>+</button>
       </div>
+      {historial.length===0&&<div style={{fontSize:12,color:T.textSm,textAlign:"center",padding:"8px 0",opacity:0.5}}>Sin historial todavía</div>}
       {historial.length>0&&(
-        <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:200,overflow:"auto"}}>
-          {historial.map((n,i)=>(
-            <div key={i} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:7,padding:"7px 10px",display:"flex",gap:8}}>
-              <span style={{fontSize:13,flexShrink:0}}>{n.accion.startsWith("Nota:")?"💬":"📌"}</span>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,color:T.text,lineHeight:1.4}}>{n.accion.replace("Nota: ","")}</div>
-                <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{new Date(n.fecha).toLocaleDateString('es-AR')} {new Date(n.fecha).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</div>
+        <div style={{position:"relative",paddingLeft:24,maxHeight:300,overflowY:"auto"}}>
+          <div style={{position:"absolute",left:8,top:6,bottom:6,width:1.5,background:T.border,borderRadius:2}}/>
+          {historial.map((n,i)=>{
+            const {icon,color,bold}=getEntryStyle(n.accion);
+            const textoEntry=n.accion.replace(/^Nota: /,"").replace(/^Estado > /,"→ ");
+            return(
+              <div key={i} style={{position:"relative",paddingBottom:i<historial.length-1?14:0,display:"flex",gap:10,alignItems:"flex-start"}}>
+                <div style={{position:"absolute",left:-20,top:2,width:16,height:16,borderRadius:"50%",background:T.card,border:`2px solid ${color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,flexShrink:0,zIndex:1}}>{icon}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,color:T.text,lineHeight:1.4,fontWeight:bold?600:400}}>{textoEntry}</div>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{fmtHistFecha(n.fecha)}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -13220,7 +13584,7 @@ export default function App() {
   const [pendingCanjeDetail,setPendingCanjeDetail]=useState(null);
   const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{try{return localStorage.getItem("growith_sidebar")==="1";}catch(e){return false;}});
   const [enviosTab,setEnviosTab]=useState("panel");
-  const [reclamosView,setReclamosView]=useState("dashboard");
+  const [reclamosView,setReclamosView]=useState("reclamos");
   const [cmdOpen,setCmdOpen]=useState(false);
   const [onboardingDone,setOnboardingDone]=useState(()=>{try{return localStorage.getItem("growith_onb_done")==="1";}catch(e){return true;}});
   const [orders,setOrders]=useState([]);
