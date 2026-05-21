@@ -4395,6 +4395,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     setTabLoading(true);
     try {
       const res=await fetch(`/api/orders?uid=${user.uid}&tab=${tab}`);
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
       if(Array.isArray(data)){
         const built=buildOrdersFromAPI(data);
@@ -4402,7 +4403,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         setTabOrders(built);
       }
     } catch(e){ console.error(e); }
-    setTabLoading(false);
+    finally { setTabLoading(false); }
   }
 
   // Al montar: cargar tab empaquetar + contadores

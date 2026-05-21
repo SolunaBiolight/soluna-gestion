@@ -15,19 +15,29 @@ function initAdmin() {
   return getFirestore();
 }
 
-const FALLBACK_STORE_ID = "6978415";
-const FALLBACK_TOKEN    = "71be8939bf409df5b98caa80e22d7227ad288f82";
+// Sin fallback — se requiere uid válido con tienda conectada
 
 const TN_H  = t => ({ "Authentication":`bearer ${t}`, "User-Agent":"GrowithApp (soluna.biolight@gmail.com)" });
 const SH_H  = t => ({ "X-Shopify-Access-Token":t, "Content-Type":"application/json" });
 const ML_H  = t => ({ "Authorization":`Bearer ${t}` });
 const SH_URL = s => `https://${s}/admin/api/2024-10`;
 
+// ── Fetch con timeout (Bug #3) ────────────────────────────────────────
+async function fetchT(url, opts={}, ms=15000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ── TN Fetch ──────────────────────────────────────────────────────────
 async function tnProducts(sid, tok) {
   let all=[], page=1;
   while(true){
-    const r=await fetch(`https://api.tiendanube.com/v1/${sid}/products?per_page=200&page=${page}`,{headers:TN_H(tok)});
+    const r=await fetchT(`https://api.tiendanube.com/v1/${sid}/products?per_page=200&page=${page}`,{headers:TN_H(tok)});
     if(!r.ok) break;
     const d=await r.json();
     if(!Array.isArray(d)||d.length===0) break;
@@ -38,16 +48,21 @@ async function tnProducts(sid, tok) {
   return all;
 }
 
+// Bug #2 fix: sequential pagination instead of always firing 5 parallel requests
 async function tnOrders(sid, tok, days, since, until) {
-  let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=200&page=PAGE&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
-  if(until) url+=`&created_at_max=${until}`;
-  const pages=await Promise.all([1,2,3,4,5].map(p=>
-    fetch(url.replace("PAGE",p),{headers:TN_H(tok)})
-    .then(r=>r.ok?r.json():[]).catch(()=>[])
-  ));
-  // Deduplicar por id (paginación simultánea puede repetir órdenes en el límite)
-  const seen=new Set();
-  return pages.flat().filter(o=>{ if(!o?.id||seen.has(o.id)) return false; seen.add(o.id); return true; });
+  let all=[], page=1;
+  while(page<=10){
+    let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=200&page=${page}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
+    if(until) url+=`&created_at_max=${until}`;
+    const r=await fetchT(url,{headers:TN_H(tok)});
+    if(!r.ok) break;
+    const d=await r.json();
+    if(!Array.isArray(d)||d.length===0) break;
+    all=all.concat(d);
+    if(d.length<200) break;
+    page++;
+  }
+  return all;
 }
 
 // ── Shopify Fetch ─────────────────────────────────────────────────────
@@ -56,7 +71,7 @@ async function shProducts(shop, tok) {
   while(true){
     let url=`${SH_URL(shop)}/products.json?limit=250&fields=id,title,variants,image`;
     if(sinceId) url+=`&since_id=${sinceId}`;
-    const r=await fetch(url,{headers:SH_H(tok)});
+    const r=await fetchT(url,{headers:SH_H(tok)});
     if(!r.ok) break;
     const {products:batch}=await r.json();
     if(!batch||batch.length===0) break;
@@ -67,14 +82,23 @@ async function shProducts(shop, tok) {
   return all;
 }
 
+// Bug #1 fix: was fetching same page twice — now uses cursor-based pagination via Link header
 async function shOrders(shop, tok, days, since, until) {
-  let base=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid,partially_paid,partially_refunded&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway`;
-  if(until) base+=`&created_at_max=${until}`;
-  const pages=await Promise.all([1,2].map(async ()=>{
-    const r=await fetch(base,{headers:SH_H(tok)});
-    return r.ok?(await r.json()).orders||[]:[];
-  }));
-  return pages.flat();
+  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid,partially_paid,partially_refunded&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway`;
+  if(until) url+=`&created_at_max=${until}`;
+  while(url){
+    const r=await fetchT(url,{headers:SH_H(tok)});
+    if(!r.ok) break;
+    const d=await r.json();
+    const batch=d.orders||[];
+    all=all.concat(batch);
+    if(batch.length<250) break;
+    // Shopify cursor-based pagination via Link header
+    const link=r.headers.get("Link")||"";
+    const next=link.match(/<([^>]+)>;\s*rel="next"/);
+    url=next?next[1]:null;
+  }
+  return all;
 }
 
 // ── ML Fetch ──────────────────────────────────────────────────────────
@@ -265,24 +289,26 @@ export default async function handler(req, res) {
     : new Date(Date.now()-effectiveDays*86400000).toISOString();
   const untilDate = hasCustomDate ? new Date(date_to).toISOString() : null;
 
-  let platform="tiendanube", storeId=FALLBACK_STORE_ID, accessToken=FALLBACK_TOKEN, shop, mlSellerId, mlToken;
+  if(!uid) return res.status(401).json({ error: "uid requerido" });
 
-  if(uid){
-    try{
-      const db=initAdmin();
-      const snap=await db.collection("users").doc(uid).get();
-      if(snap.exists){
-        const stores=snap.data().stores||[];
-        const tn=stores.find(s=>s.type==="tiendanube");
-        const sh=stores.find(s=>s.type==="shopify");
-        const ml=stores.find(s=>s.type==="mercadolibre"||s.type==="meli");
-        if(sh?.accessToken&&sh?.shop){ platform="shopify"; shop=sh.shop; accessToken=sh.accessToken; }
-        else if(tn?.accessToken&&tn?.storeId){ platform="tiendanube"; storeId=tn.storeId; accessToken=tn.accessToken; }
-        // ML como complemento (si está conectado)
-        if(ml?.accessToken&&ml?.sellerId){ mlSellerId=ml.sellerId; mlToken=ml.accessToken; }
-      }
-    }catch(e){ console.error("[stock]",e.message); }
+  let platform="tiendanube", storeId, accessToken, shop, mlSellerId, mlToken;
+  try{
+    const db=initAdmin();
+    const snap=await db.collection("users").doc(uid).get();
+    if(snap.exists){
+      const stores=snap.data().stores||[];
+      const tn=stores.find(s=>s.type==="tiendanube");
+      const sh=stores.find(s=>s.type==="shopify");
+      const ml=stores.find(s=>s.type==="mercadolibre"||s.type==="meli");
+      if(sh?.accessToken&&sh?.shop){ platform="shopify"; shop=sh.shop; accessToken=sh.accessToken; }
+      else if(tn?.accessToken&&tn?.storeId){ platform="tiendanube"; storeId=tn.storeId; accessToken=tn.accessToken; }
+      if(ml?.accessToken&&ml?.sellerId){ mlSellerId=ml.sellerId; mlToken=ml.accessToken; }
+    }
+  }catch(e){
+    console.error("[stock]",e.message);
+    return res.status(500).json({ error: "Error al obtener credenciales" });
   }
+  if(!accessToken) return res.status(403).json({ error: "Tienda no conectada" });
 
   try{
     if(action==="products"){
@@ -294,7 +320,7 @@ export default async function handler(req, res) {
       } else {
         const [products,orders]=await Promise.all([tnProducts(storeId,accessToken),tnOrders(storeId,accessToken,effectiveDays,sinceDate,untilDate)]);
         const analytics=processTN(orders);
-        const normalized=products.map(p=>normTN(p,analytics.map,days));
+        const normalized=products.map(p=>normTN(p,analytics.map,effectiveDays));
         // Si también tiene ML conectado, obtener ventas ML
         let mlAnalytics=null;
         if(mlSellerId&&mlToken){

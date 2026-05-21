@@ -2,8 +2,8 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
-const TN_CLIENT_ID = "30036";
-const TN_CLIENT_SECRET = "236de957e037dc47aee7a38cf5e72ec60891a3c25c9e0ce3";
+const TN_CLIENT_ID     = process.env.TN_CLIENT_ID     || "30036";
+const TN_CLIENT_SECRET = process.env.TN_CLIENT_SECRET;
 const APP_URL = "https://www.growithapp.com";
 
 function initAdmin() {
@@ -51,15 +51,8 @@ export default async function handler(req, res) {
   console.log("[tn-callback] state:", state ? state.slice(0,12)+"..." : "MISSING");
 
   if (!code || !state) {
-    // Devolver info de debug en vez de solo "Faltan parámetros"
-    return res.status(400).json({
-      error: "Faltan parámetros",
-      received: {
-        query: req.query,
-        url: req.url,
-        method: req.method,
-      }
-    });
+    console.error("[tn-callback] Faltan parámetros — query:", JSON.stringify(req.query), "url:", req.url);
+    return res.status(400).json({ error: "Faltan parámetros" });
   }
 
   const uid = decodeURIComponent(state);

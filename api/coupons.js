@@ -13,26 +13,19 @@ function initAdmin() {
   return getFirestore();
 }
 
-const FALLBACK_STORE_ID = "6978415";
-const FALLBACK_TOKEN = "71be8939bf409df5b98caa80e22d7227ad288f82";
-
 async function getTNCredentials(uid) {
-  let storeId = FALLBACK_STORE_ID;
-  let accessToken = FALLBACK_TOKEN;
-  if (uid) {
-    try {
-      const db = initAdmin();
-      const snap = await db.collection("users").doc(uid).get();
-      if (snap.exists) {
-        const tnStore = (snap.data().stores || []).find(s => s.type === "tiendanube");
-        if (tnStore?.accessToken && tnStore?.storeId) {
-          storeId = tnStore.storeId;
-          accessToken = tnStore.accessToken;
-        }
+  if (!uid) return null;
+  try {
+    const db = initAdmin();
+    const snap = await db.collection("users").doc(uid).get();
+    if (snap.exists) {
+      const tnStore = (snap.data().stores || []).find(s => s.type === "tiendanube");
+      if (tnStore?.accessToken && tnStore?.storeId) {
+        return { storeId: tnStore.storeId, accessToken: tnStore.accessToken };
       }
-    } catch(e) { console.error("Firebase error:", e.message); }
-  }
-  return { storeId, accessToken };
+    }
+  } catch(e) { console.error("Firebase error:", e.message); }
+  return null;
 }
 
 export default async function handler(req, res) {
@@ -40,7 +33,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET');
 
   const { uid, desde, hasta } = req.query;
-  const { storeId, accessToken } = await getTNCredentials(uid);
+  if (!uid) return res.status(401).json({ error: "uid requerido" });
+  const creds = await getTNCredentials(uid);
+  if (!creds) return res.status(403).json({ error: "Tienda no conectada" });
+  const { storeId, accessToken } = creds;
 
   const headers = {
     'Authentication': `bearer ${accessToken}`,

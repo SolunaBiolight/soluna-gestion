@@ -367,10 +367,12 @@ export async function getValidMLToken(db, uid) {
     accessToken: t.access_token,
     refreshToken: t.refresh_token || ml.refreshToken,
     expiresAt: Date.now() + (Number(t.expires_in || 21600) - 60) * 1000,
+    // Preservar userId original si ML no devuelve uno nuevo en el refresh
+    userId: t.user_id || ml.userId,
   };
   const newStores = stores.map(s => s.type === "mercadolibre" ? newStore : s);
   await userRef.update({ stores: newStores });
-  return { accessToken: newStore.accessToken, userId: newStore.userId };
+  return { accessToken: newStore.accessToken, userId: newStore.userId || ml.userId };
 }
 
 // ─── Handler principal ──────────────────────────────────────────

@@ -13,8 +13,7 @@ function initAdmin() {
   return getFirestore();
 }
 
-const FALLBACK_STORE_ID = "6978415";
-const FALLBACK_TOKEN = "71be8939bf409df5b98caa80e22d7227ad288f82";
+// Sin fallback — se requiere uid válido con tienda conectada
 
 async function fetchPage(storeId, accessToken, extraParams, page, perPage=200) {
   const headers = {
@@ -52,30 +51,31 @@ export default async function handler(req, res) {
 
   const { uid, tab, countOnly, q } = req.query;
 
-  let storeId = FALLBACK_STORE_ID;
-  let accessToken = FALLBACK_TOKEN;
+  if (!uid) return res.status(401).json({ error: "uid requerido" });
 
-  if (uid) {
-    try {
-      const db = initAdmin();
-      const userSnap = await db.collection("users").doc(uid).get();
-      if (userSnap.exists) {
-        const tnStore = (userSnap.data().stores || []).find(s => s.type === "tiendanube");
-        if (tnStore?.accessToken && tnStore?.storeId) {
-          storeId = tnStore.storeId;
-          accessToken = tnStore.accessToken;
-        }
+  let storeId, accessToken;
+  try {
+    const db = initAdmin();
+    const userSnap = await db.collection("users").doc(uid).get();
+    if (userSnap.exists) {
+      const tnStore = (userSnap.data().stores || []).find(s => s.type === "tiendanube");
+      if (tnStore?.accessToken && tnStore?.storeId) {
+        storeId = tnStore.storeId;
+        accessToken = tnStore.accessToken;
       }
-    } catch(e) {
-      console.error("Error fetching user store:", e.message);
     }
+  } catch(e) {
+    console.error("Error fetching user store:", e.message);
+    return res.status(500).json({ error: "Error al obtener credenciales" });
   }
+  if (!storeId || !accessToken) return res.status(403).json({ error: "Tienda no conectada" });
 
   try {
     // Búsqueda directa por número o nombre
     if (q) {
       const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
       const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${encodeURIComponent(q)}&per_page=20`, { headers });
+      if (!r.ok) throw new Error(`TN search error ${r.status}`);
       const data = await r.json();
       return res.status(200).json(Array.isArray(data) ? data : []);
     }
