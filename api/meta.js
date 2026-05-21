@@ -479,15 +479,24 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
           }
           return null;
         };
+        const extractLinkAnywhere = (obj) => {
+          const link = extractLinkFromPost(obj);
+          if (link) return link;
+          if (obj.caption) {
+            const m = String(obj.caption).match(/https?:\/\/[^\s"'<>)]+/i);
+            if (m) return m[0];
+          }
+          return null;
+        };
         const fetchPostsBatch = async (chunk, token) => {
           const out = {};
           try {
-            const params = new URLSearchParams({ ids: chunk.join(","), fields: "attachments.fields(target,url,unshimmed_url,subattachments),link,call_to_action,message,permalink_url", access_token: token });
+            const params = new URLSearchParams({ ids: chunk.join(","), fields: "attachments.fields(target,url,unshimmed_url,subattachments),link,call_to_action,message,permalink_url,caption", access_token: token });
             const r = await fetch(`${META_BASE}/?${params}`);
             const j = await r.json();
             if (r.ok && !j.error && typeof j === "object") {
               for (const [pid, obj] of Object.entries(j)) {
-                const link = extractLinkFromPost(obj);
+                const link = extractLinkAnywhere(obj);
                 if (link) out[pid] = link;
               }
             }
@@ -505,6 +514,16 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
             const remaining = chunk.filter(pid => !postLinks[pid]);
             if (remaining.length) Object.assign(postLinks, await fetchPostsBatch(remaining, cfg.page_access_token));
           }
+        }
+        // Fallback IG-media para los que no resolvieron via /post_id endpoint
+        const stillMissing = postIds.filter(pid => !postLinks[pid]);
+        for (const pid of stillMissing.slice(0, 30)) {
+          const igCandidate = pid.includes("_") ? pid.split("_")[1] : pid;
+          try {
+            const obj = await metaGet(igCandidate, { fields: "caption,permalink,media_type" }, cfg.page_access_token || cfg.access_token);
+            const link = extractLinkAnywhere(obj);
+            if (link) postLinks[pid] = link;
+          } catch (_) {}
         }
         // Para ads que aun no resolvieron, fetchear el creative directamente
         const adsStillNoLink = adsArr.filter(a => !linkOfAdCreative(a) && !(a.creative?.effective_object_story_id && postLinks[a.creative.effective_object_story_id]));
@@ -1448,24 +1467,46 @@ export default async function handler(req, res) {
       const postErrors = [];
       const postRawSamples = []; // primeros 3 raw responses para diagnostico
       // Helper: probar VARIAS estrategias para sacar el link del post.
+      // Incluye fallback para posts IG (que no tienen attachments tradicionales).
+      const extractLinkAnywhere = (obj) => {
+        const link = extractLinkFromPost(obj);
+        if (link) return link;
+        // IG-specific: caption a veces tiene la URL
+        if (obj.caption) {
+          const m = String(obj.caption).match(/https?:\/\/[^\s"'<>)]+/i);
+          if (m) return m[0];
+        }
+        // Story-spec inline link
+        if (obj.story_attachment_style && obj.story?.link) return obj.story.link;
+        return null;
+      };
       const fetchOnePost = async (pid, token) => {
         // Estrategia 1: pedir attachments sin subfields explicitos
-        // (Meta devuelve subfields default que suelen incluir target/url).
         try {
-          const obj = await metaGet(pid, { fields: "attachments,link,call_to_action,message,permalink_url,source,picture" }, token);
+          const obj = await metaGet(pid, { fields: "attachments,link,call_to_action,message,permalink_url,caption,source,picture" }, token);
           if (postRawSamples.length < 3) postRawSamples.push({ pid, keys: Object.keys(obj), att_count: obj.attachments?.data?.length || 0 });
-          const link = extractLinkFromPost(obj);
+          const link = extractLinkAnywhere(obj);
           if (link) return { pid, link };
         } catch (e) {
           postErrors.push(`${pid} (intento 1): ${e.message}`);
         }
         // Estrategia 2: con subfields explicitos via {} syntax
         try {
-          const obj = await metaGet(pid, { fields: "attachments{target,url,unshimmed_url,subattachments{target,url,unshimmed_url},type,title,description,media,description_tags},link,message" }, token);
-          const link = extractLinkFromPost(obj);
+          const obj = await metaGet(pid, { fields: "attachments{target,url,unshimmed_url,subattachments{target,url,unshimmed_url},type,title,description,media,description_tags},link,message,caption" }, token);
+          const link = extractLinkAnywhere(obj);
           if (link) return { pid, link };
         } catch (e) {
           postErrors.push(`${pid} (intento 2): ${e.message}`);
+        }
+        // Estrategia 3: IG media direct (algunos post_ids son IG-only, vienen
+        // como {ig_user_id}_{media_id} o solo media_id) — pedimos campos IG.
+        const igCandidate = pid.includes("_") ? pid.split("_")[1] : pid;
+        try {
+          const obj = await metaGet(igCandidate, { fields: "caption,permalink,media_type,media_url,thumbnail_url" }, token);
+          const link = extractLinkAnywhere(obj);
+          if (link) return { pid, link };
+        } catch (e) {
+          postErrors.push(`${pid} (IG intento 3): ${e.message}`);
         }
         return { pid, link: null };
       };

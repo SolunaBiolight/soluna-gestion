@@ -700,7 +700,8 @@ export default async function handler(req, res) {
     if (action === "ml_items" && req.method === "GET") {
       let token;
       try { token = await getValidMLToken(db, uid); }
-      catch (e) { return res.status(400).json({ error: `ML no conectado o token inválido: ${e.message}` }); }
+      catch (e) { return res.status(400).json({ error: `Tu cuenta de Mercado Libre necesita reconexión: ${e.message}` }); }
+      if (!token) return res.status(400).json({ error: "Tu cuenta de Mercado Libre no está vinculada. Andá a Configuración → Integraciones → Mercado Libre y conectala." });
       const status = req.query.status || "active"; // active | paused | closed | all
       const items = [];
       try {
@@ -762,6 +763,7 @@ export default async function handler(req, res) {
       if (!changes || typeof changes !== "object") return res.status(400).json({ error: "Falta changes" });
       let token;
       try { token = await getValidMLToken(db, uid); } catch (e) { return res.status(400).json({ error: e.message }); }
+      if (!token) return res.status(400).json({ error: "Mercado Libre no conectado" });
       try {
         const r = await fetch(`https://api.mercadolibre.com/items/${item_id}`, {
           method: "PUT",
@@ -786,6 +788,7 @@ export default async function handler(req, res) {
       if (!changes || typeof changes !== "object") return res.status(400).json({ error: "Faltan changes" });
       let token;
       try { token = await getValidMLToken(db, uid); } catch (e) { return res.status(400).json({ error: e.message }); }
+      if (!token) return res.status(400).json({ error: "Mercado Libre no conectado" });
       // Traducir handling_time → sale_terms format ML
       const mlChanges = { ...changes };
       if (mlChanges.handling_time != null) {
@@ -845,6 +848,7 @@ export default async function handler(req, res) {
       if (!Array.isArray(picture_urls) || picture_urls.length === 0) return res.status(400).json({ error: "Faltan picture_urls" });
       let token;
       try { token = await getValidMLToken(db, uid); } catch (e) { return res.status(400).json({ error: e.message }); }
+      if (!token) return res.status(400).json({ error: "Mercado Libre no conectado" });
       try {
         const pictures = picture_urls.filter(u => /^https?:\/\//i.test(u)).map(u => ({ source: u }));
         const r = await fetch(`https://api.mercadolibre.com/items/${item_id}`, {

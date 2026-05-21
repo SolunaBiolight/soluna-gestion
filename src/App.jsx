@@ -12492,10 +12492,11 @@ LONGITUD Y FORMATO
 // ===========================================
 // APP MERCADO LIBRE — Gestión + Bulk Edit
 // ===========================================
-function AppML({T, user, onHome}) {
+function AppML({T, user, onHome, onGoConfig}) {
   const uid = user?.uid;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [statusFilter, setStatusFilter] = useState("active");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -12517,13 +12518,14 @@ function AppML({T, user, onHome}) {
   async function loadItems() {
     if (!uid) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const r = await fetch(`/api/inventory?action=ml_items&uid=${uid}&status=${statusFilter}`);
       const j = await r.json();
-      if (j.error) { toast(j.error, "error"); return; }
+      if (j.error) { setLoadError(j.error); setItems([]); return; }
       setItems(j.items || []);
       setSelectedIds(new Set());
-    } catch (e) { toast(e.message, "error"); }
+    } catch (e) { setLoadError(e.message); }
     finally { setLoading(false); }
   }
   useEffect(() => { if (uid) loadItems(); /* eslint-disable-next-line */ }, [uid, statusFilter]);
@@ -12705,10 +12707,17 @@ function AppML({T, user, onHome}) {
         {/* Tabla */}
         {loading ? (
           <div style={{padding:"60px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/><div style={{fontSize:12,color:T.textSm,marginTop:10}}>Trayendo publicaciones de ML...</div></div>
+        ) : loadError ? (
+          <div style={{background:T.card,border:`1px dashed ${T.red}55`,borderRadius:14,padding:"40px 24px",textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:10}}>🔌</div>
+            <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>Mercado Libre no está conectado</div>
+            <div style={{fontSize:12,color:T.textMd,marginBottom:14,maxWidth:520,margin:"0 auto 14px",lineHeight:1.5}}>{loadError}</div>
+            <button onClick={()=>onGoConfig && onGoConfig()} style={{padding:"8px 16px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ir a Configuración → Integraciones</button>
+          </div>
         ) : items.length === 0 ? (
           <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
             <div style={{fontSize:32,marginBottom:8}}>📭</div>
-            <div style={{fontSize:14,color:T.textMd}}>Sin publicaciones de ML conectadas. Vinculá tu cuenta desde Config.</div>
+            <div style={{fontSize:14,color:T.textMd}}>No se encontraron publicaciones {statusFilter==="active"?"activas":statusFilter==="paused"?"pausadas":statusFilter==="closed"?"cerradas":""} en tu cuenta de ML.</div>
           </div>
         ) : (
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
@@ -12846,6 +12855,24 @@ function AppStock({T, user, onHome}) {
   // Edit stock por depósito
   const [editingStockItem, setEditingStockItem] = useState(null); // item object
   const [stockEditValues, setStockEditValues] = useState({}); // {whId: count}
+  // Items (central inventory entities + mapping)
+  const [invItems, setInvItems] = useState([]);
+  const [invItemsLoading, setInvItemsLoading] = useState(false);
+  const [invSearch, setInvSearch] = useState("");
+  const [editingItem, setEditingItem] = useState(null); // {id?, nombre, sku, image, product_links}
+  const [itemEditTab, setItemEditTab] = useState("stock"); // "stock" | "mapeo"
+  const [itemSaving, setItemSaving] = useState(false);
+  // Mapeo: catálogo de pubs de plataformas
+  const [platformProducts, setPlatformProducts] = useState([]);
+  const [platformLoading, setPlatformLoading] = useState(false);
+  const [platformErrors, setPlatformErrors] = useState([]);
+  const [mapeoSearch, setMapeoSearch] = useState("");
+  const [mapeoChannel, setMapeoChannel] = useState("all"); // all|shopify|tiendanube|mercadolibre
+  // Movimientos
+  const [movements, setMovements] = useState([]);
+  const [movementsLoading, setMovementsLoading] = useState(false);
+  // Sync sales (descontar stock por órdenes recientes)
+  const [syncingSales, setSyncingSales] = useState(false);
 
   const iS = InputStyle(T);
 
@@ -12998,7 +13025,153 @@ function AppStock({T, user, onHome}) {
     loadStock(d, "", "");
   }
 
+  // ── Items (central) ──
+  async function loadInvItems() {
+    if (!uid) return;
+    setInvItemsLoading(true);
+    try {
+      const r = await fetch(`/api/inventory?action=list_items&uid=${uid}`);
+      const j = await r.json();
+      if (j.error) { toast(j.error,"error"); return; }
+      setInvItems(j.items || []);
+    } catch(e){ toast(e.message,"error"); }
+    finally { setInvItemsLoading(false); }
+  }
+  async function loadPlatformProducts() {
+    if (!uid) return;
+    setPlatformLoading(true);
+    setPlatformErrors([]);
+    try {
+      const r = await fetch(`/api/inventory?action=list_platform_products&uid=${uid}&platform=all`);
+      const j = await r.json();
+      if (j.error) { toast(j.error,"error"); return; }
+      setPlatformProducts(j.products || []);
+      if ((j.errors || []).length) setPlatformErrors(j.errors);
+    } catch(e){ toast(e.message,"error"); }
+    finally { setPlatformLoading(false); }
+  }
+  function openNewItem() {
+    setEditingItem({ id:null, nombre:"", sku:"", image:null, stock_total:0, stock_by_warehouse:{}, product_links:[] });
+    setItemEditTab("stock");
+    if (platformProducts.length === 0) loadPlatformProducts();
+  }
+  function openEditItem(item) {
+    setEditingItem({
+      id: item.id,
+      nombre: item.nombre || "",
+      sku: item.sku || "",
+      image: item.image || null,
+      stock_total: item.stock_total || 0,
+      stock_by_warehouse: item.stock_by_warehouse || {},
+      product_links: item.product_links || [],
+      canales: item.canales || [],
+    });
+    setItemEditTab("stock");
+    setStockEditValues((()=> {
+      const obj = {};
+      const sbw = item.stock_by_warehouse || {};
+      for (const w of warehouses) obj[w.id] = sbw[w.id] || 0;
+      return obj;
+    })());
+    if (platformProducts.length === 0) loadPlatformProducts();
+  }
+  async function saveInvItem() {
+    if (!editingItem) return;
+    if (!editingItem.nombre.trim()) return toast("Falta nombre del item","warning");
+    setItemSaving(true);
+    try {
+      const sbw = itemEditTab==="stock" ? stockEditValues : (editingItem.stock_by_warehouse || {});
+      const total = Object.values(sbw).reduce((s,v)=>s+(parseInt(v)||0),0);
+      const body = {
+        nombre: editingItem.nombre.trim(),
+        sku: editingItem.sku.trim(),
+        image: editingItem.image,
+        stock_total: total,
+        stock_by_warehouse: sbw,
+        product_links: editingItem.product_links || [],
+      };
+      if (editingItem.id) body.id = editingItem.id;
+      const r = await fetch(`/api/inventory?action=save_item&uid=${uid}`,{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (j.error) return toast(j.error,"error");
+      toast(editingItem.id?"Item actualizado ✓":"Item creado ✓","success");
+      setEditingItem(null);
+      loadInvItems();
+    } finally { setItemSaving(false); }
+  }
+  async function deleteInvItem(item) {
+    if (!await appConfirm(`¿Borrar el item "${item.nombre}"? Se borra el stock pero NO toca las publicaciones de tus canales.`,{danger:true,okLabel:"Borrar"})) return;
+    const r = await fetch(`/api/inventory?action=delete_item&uid=${uid}&item_id=${item.id}`,{method:"DELETE"});
+    const j = await r.json();
+    if (j.error) return toast(j.error,"error");
+    toast("Item borrado","success");
+    loadInvItems();
+  }
+  function linkProductToItem(prod) {
+    if (!editingItem) return;
+    const links = editingItem.product_links || [];
+    if (links.some(l => l.product_id === prod.id)) return toast("Ya está vinculado","info");
+    const next = [...links, { product_id: prod.id, platform: prod.platform, title: prod.title, image: prod.image, quantity: 1 }];
+    setEditingItem({...editingItem, product_links: next});
+  }
+  function unlinkProduct(linkId) {
+    if (!editingItem) return;
+    setEditingItem({...editingItem, product_links: (editingItem.product_links||[]).filter(l => l.product_id !== linkId)});
+  }
+  function updateLinkQty(linkId, qty) {
+    if (!editingItem) return;
+    const next = (editingItem.product_links||[]).map(l => l.product_id===linkId ? {...l, quantity: Math.max(1, parseInt(qty)||1)} : l);
+    setEditingItem({...editingItem, product_links: next});
+  }
+  async function importAllPubs() {
+    if (!await appConfirm("Esto crea un Item por cada publicación de tus canales conectados (Shopify + TN + ML). Cantidad inicial = 1x. ¿Continuar?",{okLabel:"Importar"})) return;
+    if (platformProducts.length === 0) { await loadPlatformProducts(); }
+    const pubs = platformProducts;
+    let created = 0;
+    for (const p of pubs) {
+      try {
+        const r = await fetch(`/api/inventory?action=save_item&uid=${uid}`,{
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            nombre: p.title,
+            sku: p.sku || "",
+            image: p.image,
+            stock_total: 0,
+            product_links: [{ product_id: p.id, platform: p.platform, title: p.title, image: p.image, quantity: 1 }],
+          }),
+        });
+        if (r.ok) created++;
+      } catch(e){}
+    }
+    toast(`Importados ${created} items`,"success");
+    loadInvItems();
+  }
+  async function syncSales() {
+    setSyncingSales(true);
+    try {
+      const r = await fetch(`/api/inventory?action=sync_sales&uid=${uid}`,{method:"POST"});
+      const j = await r.json();
+      if (j.error) return toast(j.error,"error");
+      toast(`Sync OK · ${j.processed_orders||0} órdenes · ${j.items_updated||0} items actualizados`,"success");
+      loadInvItems();
+    } finally { setSyncingSales(false); }
+  }
+  async function loadMovements() {
+    if (!uid) return;
+    setMovementsLoading(true);
+    try {
+      const r = await fetch(`/api/inventory?action=list_movements&uid=${uid}&limit=200`);
+      const j = await r.json();
+      if (!j.error) setMovements(j.movements || []);
+    } finally { setMovementsLoading(false); }
+  }
+
   useEffect(()=>{ if (uid && tab === "depositos") loadWarehouses(); /* eslint-disable-next-line */ }, [uid, tab]);
+  useEffect(()=>{ if (uid && tab === "items") { loadInvItems(); loadWarehouses(); } /* eslint-disable-next-line */ }, [uid, tab]);
+  useEffect(()=>{ if (uid && tab === "historial") loadMovements(); /* eslint-disable-next-line */ }, [uid, tab]);
 
   // Cargar config de alertas desde localStorage
   useEffect(()=>{
@@ -13347,8 +13520,10 @@ function AppStock({T, user, onHome}) {
 
   const TABS=[
     {id:"analisis",label:"📊 Análisis"},
-    {id:"productos",label:"📦 Productos"},
+    {id:"items",label:"📋 Items"},
+    {id:"productos",label:"📦 Publicaciones"},
     {id:"depositos",label:"🏬 Depósitos"},
+    {id:"historial",label:"📜 Historial"},
     {id:"facturacion",label:"💰 Facturación"},
     {id:"alertas",label:`🚨 Alertas${alertas.length>0?` (${alertas.length})`:""}`},
   ];
@@ -13381,43 +13556,24 @@ function AppStock({T, user, onHome}) {
         {/* Período + date picker */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,flexWrap:"wrap"}}>
           <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período:</span>
-          {[7,14,30,60,90].map(d=>(
-            <button key={d} onClick={()=>applyQuickPeriod(d)}
-              style={{padding:"5px 11px",fontSize:12,fontWeight:600,border:`1px solid ${!useCustomDate&&days===d?T.accentSolid:T.border}`,borderRadius:7,background:!useCustomDate&&days===d?T.accentSolid+"22":"transparent",color:!useCustomDate&&days===d?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-              {d}d
-            </button>
-          ))}
+          <DateRangePicker
+            T={T}
+            since={useCustomDate ? dateFrom : new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
+            until={useCustomDate ? dateTo : new Date().toISOString().slice(0,10)}
+            onChange={(s,u)=>{
+              setUseCustomDate(true);
+              setDateFrom(s); setDateTo(u);
+              setShowDatePicker(false);
+              loadStock(0, s, u);
+              const diff = Math.round((new Date(u)-new Date(s))/86400000)+1;
+              setDays(diff);
+            }}
+          />
           <span style={{fontSize:11,color:T.textSm,marginLeft:2}}>
             {useCustomDate&&dateFrom&&dateTo
-              ? `${Math.round((new Date(dateTo)-new Date(dateFrom))/86400000)+1} días seleccionados`
+              ? `${Math.round((new Date(dateTo)-new Date(dateFrom))/86400000)+1} días`
               : `últimos ${days} días`}
           </span>
-          {/* Date picker personalizado */}
-          <div style={{position:"relative"}}>
-            <button onClick={()=>setShowDatePicker(s=>!s)}
-              style={{padding:"5px 12px",fontSize:12,fontWeight:600,border:`1px solid ${useCustomDate?T.accentSolid:T.border}`,borderRadius:7,background:useCustomDate?T.accentSolid+"22":"transparent",color:useCustomDate?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}>
-              📅 {useCustomDate&&dateFrom&&dateTo?`${dateFrom.slice(5).replace("-","/")} → ${dateTo.slice(5).replace("-","/")}` :"Fechas"}
-            </button>
-            {showDatePicker&&(
-              <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:200,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",minWidth:280,boxShadow:"0 8px 32px rgba(0,0,0,0.3)"}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>Rango personalizado</div>
-                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
-                  <div>
-                    <label style={{fontSize:11,color:T.textSm,display:"block",marginBottom:3}}>Desde</label>
-                    <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{...iS,fontSize:12,padding:"6px 10px"}}/>
-                  </div>
-                  <div>
-                    <label style={{fontSize:11,color:T.textSm,display:"block",marginBottom:3}}>Hasta</label>
-                    <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} max={new Date().toISOString().slice(0,10)} style={{...iS,fontSize:12,padding:"6px 10px"}}/>
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>setShowDatePicker(false)} style={{flex:1,padding:"7px",fontSize:12,background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,cursor:"pointer",fontWeight:500}}>Cancelar</button>
-                  <button onClick={applyCustomDate} style={{flex:1,padding:"7px",fontSize:12,background:T.accentSolid,border:"none",color:"#fff",borderRadius:7,cursor:"pointer",fontWeight:600}}>Aplicar</button>
-                </div>
-              </div>
-            )}
-          </div>
           {/* Comparativa */}
           {dataPrev&&(()=>{
             const prevU=dataPrev.total_units||0, currU=data?.total_units||0;
@@ -13820,6 +13976,319 @@ function AppStock({T, user, onHome}) {
                   document.body
                 )}
               </div>
+            )}
+
+            {/* ── TAB ITEMS (entidades centrales con mapeo multi-canal) ── */}
+            {tab==="items"&&(()=>{
+              const filteredItems = invItems.filter(it => !invSearch.trim() || (it.nombre||"").toLowerCase().includes(invSearch.trim().toLowerCase()) || (it.sku||"").toLowerCase().includes(invSearch.trim().toLowerCase()));
+              const kpis = {
+                total: invItems.length,
+                ok: invItems.filter(i => i.status==="ok").length,
+                low: invItems.filter(i => i.status==="low").length,
+                empty: invItems.filter(i => i.status==="empty").length,
+              };
+              return (
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                {/* Header con KPIs y acciones */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>📋 Items de inventario</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Un item es la entidad central de tu stock. Vinculá las publicaciones de Shopify/TN/ML que correspondan a un mismo producto físico (con cantidades para packs).</div>
+                    </div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      <button onClick={syncSales} disabled={syncingSales} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{syncingSales?<><Spinner size={11} color={T.textMd}/> Sincronizando</>:"🔄 Sincronizar ventas"}</button>
+                      <button onClick={importAllPubs} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>📥 Importar items</button>
+                      <button onClick={openNewItem} style={{padding:"7px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear Item</button>
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
+                    {[
+                      {l:"Items",v:kpis.total,c:T.text},
+                      {l:"OK",v:kpis.ok,c:T.green},
+                      {l:"Bajo stock",v:kpis.low,c:T.yellow},
+                      {l:"Sin stock",v:kpis.empty,c:T.red},
+                    ].map((k,i)=>(
+                      <div key={i} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:9,padding:"10px 12px"}}>
+                        <div style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase"}}>{k.l}</div>
+                        <div style={{fontSize:20,fontWeight:800,color:k.c,marginTop:3}}>{k.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Buscador */}
+                <div style={{display:"flex",gap:8}}>
+                  <input type="text" placeholder="🔍 Buscar item por nombre o SKU..." value={invSearch} onChange={e=>setInvSearch(e.target.value)} style={{flex:1,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                </div>
+
+                {/* Tabla */}
+                {invItemsLoading ? (
+                  <div style={{padding:"40px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/></div>
+                ) : invItems.length === 0 ? (
+                  <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                    <div style={{fontSize:32,marginBottom:8}}>📦</div>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>Todavía no tenés items</div>
+                    <div style={{fontSize:12,color:T.textMd,marginBottom:14,maxWidth:480,margin:"0 auto 14px"}}>Importá automáticamente desde tus canales conectados (Shopify, Tienda Nube, ML) o creá uno manual.</div>
+                    <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+                      <button onClick={importAllPubs} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>📥 Importar de canales</button>
+                      <button onClick={openNewItem} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear item manual</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <thead style={{background:T.bg}}>
+                          <tr>
+                            <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Producto</th>
+                            <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Canales</th>
+                            <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Stock total</th>
+                            <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Ventas 30d</th>
+                            <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Días stock</th>
+                            <th style={{padding:"10px 12px",borderBottom:`1px solid ${T.border}`}}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredItems.map(it => {
+                            const links = it.product_links || [];
+                            const chs = [...new Set(links.map(l => l.platform))];
+                            const chLabel = (p) => p==="shopify"?"Shopify":p==="tiendanube"?"Tienda Nube":p==="mercadolibre"?"Mercado Libre":p;
+                            const chColor = (p) => p==="shopify"?T.green:p==="mercadolibre"?T.yellow:p==="tiendanube"?T.blue:T.textSm;
+                            const statusColor = it.status==="empty"?T.red:it.status==="low"?T.yellow:T.green;
+                            const daysLabel = it.days_left==null?"—":(it.days_left===Infinity||it.days_left>9999)?"∞":Math.round(it.days_left)+"d";
+                            return (
+                              <tr key={it.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                                <td style={{padding:"10px 12px"}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                                    {it.image && <img src={it.image} alt="" style={{width:40,height:40,borderRadius:6,objectFit:"cover",background:T.bg,flexShrink:0}}/>}
+                                    <div style={{minWidth:0,maxWidth:340}}>
+                                      <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.nombre}</div>
+                                      {it.sku && <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace"}}>SKU: {it.sku}</div>}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td style={{padding:"10px 12px"}}>
+                                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                                    {chs.length===0 ? <span style={{fontSize:10,color:T.textSm,fontStyle:"italic"}}>Sin vincular</span> : chs.map(c => (
+                                      <span key={c} style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:chColor(c)+"22",color:chColor(c)}}>{chLabel(c)}</span>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td style={{padding:"10px 12px",textAlign:"right"}}>
+                                  <span style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:statusColor,padding:"3px 9px",borderRadius:5,background:statusColor+"15"}}>{it.stock_total||0}</span>
+                                </td>
+                                <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{it.sales_30d||0}</td>
+                                <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",color:it.days_left!=null&&it.days_left<7?T.red:it.days_left!=null&&it.days_left<14?T.yellow:T.textMd}}>{daysLabel}</td>
+                                <td style={{padding:"10px 12px",textAlign:"right",whiteSpace:"nowrap"}}>
+                                  <button onClick={()=>openEditItem(it)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.accent,cursor:"pointer",marginRight:6,fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                                  <button onClick={()=>deleteInvItem(it)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🗑</button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+              );
+            })()}
+
+            {/* ── TAB HISTORIAL ── */}
+            {tab==="historial"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>📜 Historial de movimientos</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimos 200 movimientos de stock. Las ventas descuentan, los ajustes manuales se ven con el origen "manual".</div>
+                  </div>
+                  <button onClick={loadMovements} disabled={movementsLoading} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{movementsLoading?<Spinner size={11} color={T.textMd}/>:"↻"} Refrescar</button>
+                </div>
+                {movementsLoading ? (
+                  <div style={{padding:"40px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/></div>
+                ) : movements.length === 0 ? (
+                  <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"50px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>Sin movimientos registrados.</div>
+                ) : (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <thead style={{background:T.bg}}>
+                          <tr>
+                            <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Fecha</th>
+                            <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Origen</th>
+                            <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Evento</th>
+                            <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Item</th>
+                            <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Cambio</th>
+                            <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Depósito</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {movements.map((m,i) => {
+                            const dt = new Date(m.ts);
+                            const src = m.source || "—";
+                            const srcColor = src==="shopify"?T.green:src==="mercadolibre"?T.yellow:src==="tiendanube"?T.blue:src==="manual"?T.accent:T.textSm;
+                            const wh = warehouses.find(w => w.id === m.warehouse_id);
+                            return (
+                              <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>
+                                  <div style={{fontSize:11,color:T.text}}>{dt.toLocaleDateString("es-AR")}</div>
+                                  <div style={{fontSize:10,color:T.textSm}}>{dt.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</div>
+                                </td>
+                                <td style={{padding:"10px 12px"}}>
+                                  <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:srcColor+"22",color:srcColor,textTransform:"uppercase"}}>{src}</span>
+                                </td>
+                                <td style={{padding:"10px 12px",color:T.textMd,fontSize:11}}>{m.event || m.order_id || "—"}</td>
+                                <td style={{padding:"10px 12px",color:T.text,fontSize:11,maxWidth:300,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.item_name || m.item_id}</td>
+                                <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:m.change<0?T.red:T.green}}>{m.change>0?"+":""}{m.change}</td>
+                                <td style={{padding:"10px 12px",color:T.textMd,fontSize:11}}>{wh?.name || m.warehouse_id || "—"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── MODAL Crear/Editar Item ── */}
+            {editingItem && ReactDOM.createPortal(
+              <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
+                <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,width:"100%",maxWidth:720,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
+                  {/* Header */}
+                  <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <input value={editingItem.nombre} onChange={e=>setEditingItem({...editingItem,nombre:e.target.value})} placeholder="Nombre del item" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"8px 11px",fontSize:14,fontWeight:700,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                      <div style={{display:"flex",gap:8,marginTop:6}}>
+                        <input value={editingItem.sku} onChange={e=>setEditingItem({...editingItem,sku:e.target.value})} placeholder="SKU (opcional)" style={{flex:1,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"5px 9px",fontSize:11,color:T.text,fontFamily:"monospace"}}/>
+                      </div>
+                    </div>
+                    <button onClick={()=>setEditingItem(null)} style={{background:"transparent",border:"none",color:T.textMd,fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+                  </div>
+                  {/* Tabs */}
+                  <div style={{display:"flex",gap:4,padding:"10px 20px",borderBottom:`1px solid ${T.borderL}`}}>
+                    {[["stock","📦 Stock"],["mapeo","🔗 Mapeo de productos"]].map(([id,l])=>(
+                      <button key={id} onClick={()=>setItemEditTab(id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:itemEditTab===id?T.accent+"22":"transparent",color:itemEditTab===id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
+                    ))}
+                  </div>
+                  {/* Body */}
+                  <div style={{padding:"18px 20px",flex:1,overflowY:"auto"}}>
+                    {itemEditTab==="stock" && (
+                      <>
+                        <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Ajustá el stock por depósito. Esto establece un nuevo punto de partida para el stock total.</div>
+                        {warehouses.length === 0 ? (
+                          <div style={{padding:"30px 16px",background:T.bg,border:`1px dashed ${T.borderL}`,borderRadius:10,textAlign:"center",fontSize:12,color:T.textSm}}>No tenés depósitos creados. Cerrá este modal y andá a la tab Depósitos para crear uno.</div>
+                        ) : (
+                          <>
+                            {warehouses.map(w => (
+                              <div key={w.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,padding:"10px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
+                                <div style={{flex:1}}>
+                                  <div style={{fontSize:13,fontWeight:600,color:T.text}}>{w.name}{w.is_default && <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.green+"22",color:T.green,fontWeight:700,marginLeft:8}}>PRINCIPAL</span>}</div>
+                                </div>
+                                <input type="number" min="0" value={stockEditValues[w.id]||0} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
+                              </div>
+                            ))}
+                            <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:8,marginTop:6,fontSize:12,color:T.text,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                              <span style={{fontWeight:600}}>Total</span>
+                              <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,color:T.accent}}>{Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0)}</span>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                    {itemEditTab==="mapeo" && (
+                      <>
+                        {/* Vinculados */}
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                          <div style={{fontSize:12,fontWeight:700,color:T.text}}>Productos vinculados <span style={{color:T.textSm,fontWeight:500}}>· {(editingItem.product_links||[]).length}</span></div>
+                          {(editingItem.product_links||[]).length>0 && <button onClick={()=>setEditingItem({...editingItem,product_links:[]})} style={{padding:"3px 9px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>× Quitar todos</button>}
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14,maxHeight:200,overflowY:"auto"}}>
+                          {(editingItem.product_links||[]).length===0 ? (
+                            <div style={{padding:"20px 16px",background:T.bg,border:`1px dashed ${T.borderL}`,borderRadius:8,textAlign:"center",fontSize:11,color:T.textSm}}>Sin productos vinculados. Buscá abajo para empezar.</div>
+                          ) : (editingItem.product_links||[]).map(l => {
+                            const chLabel = l.platform==="shopify"?"Shopify":l.platform==="tiendanube"?"TN":l.platform==="mercadolibre"?"ML":l.platform;
+                            const chColor = l.platform==="shopify"?T.green:l.platform==="mercadolibre"?T.yellow:l.platform==="tiendanube"?T.blue:T.textSm;
+                            return (
+                              <div key={l.product_id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:T.bg,border:`1px solid ${chColor}33`,borderRadius:8}}>
+                                {l.image && <img src={l.image} alt="" style={{width:36,height:36,borderRadius:6,objectFit:"cover",flexShrink:0}}/>}
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:11,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.title}</div>
+                                  <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:chColor+"22",color:chColor}}>{chLabel}</span>
+                                </div>
+                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  <span style={{fontSize:10,color:T.textSm}}>Cantidad</span>
+                                  <button onClick={()=>updateLinkQty(l.product_id,(l.quantity||1)-1)} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.textMd,cursor:"pointer",fontSize:13,fontWeight:700,padding:0}}>−</button>
+                                  <input type="number" min="1" value={l.quantity||1} onChange={e=>updateLinkQty(l.product_id,e.target.value)} style={{width:42,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:5,padding:"3px 6px",fontSize:11,color:T.text,textAlign:"center",fontFamily:"monospace"}}/>
+                                  <button onClick={()=>updateLinkQty(l.product_id,(l.quantity||1)+1)} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.textMd,cursor:"pointer",fontSize:13,fontWeight:700,padding:0}}>+</button>
+                                </div>
+                                <button onClick={()=>unlinkProduct(l.product_id)} style={{width:24,height:24,border:`1px solid ${T.red}33`,borderRadius:5,background:"transparent",color:T.red,cursor:"pointer",fontSize:11,padding:0}}>×</button>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Buscador de publicaciones */}
+                        <div style={{display:"flex",gap:8,marginBottom:10}}>
+                          <input type="text" placeholder="Buscar publicaciones para vincular..." value={mapeoSearch} onChange={e=>setMapeoSearch(e.target.value)} style={{flex:1,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 11px",fontSize:11,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                          <select value={mapeoChannel} onChange={e=>setMapeoChannel(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:11,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                            <option value="all">Todos los canales</option>
+                            <option value="shopify">Shopify</option>
+                            <option value="tiendanube">Tienda Nube</option>
+                            <option value="mercadolibre">Mercado Libre</option>
+                          </select>
+                          <button onClick={loadPlatformProducts} disabled={platformLoading} style={{padding:"7px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:7,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{platformLoading?<Spinner size={11} color={T.textMd}/>:"↻"}</button>
+                        </div>
+                        {platformErrors.length>0 && (
+                          <div style={{padding:"8px 10px",background:T.red+"15",border:`1px solid ${T.red}33`,borderRadius:7,fontSize:10,color:T.red,marginBottom:8}}>
+                            {platformErrors.map((e,i)=><div key={i}>⚠ {e.platform}: {e.error}</div>)}
+                          </div>
+                        )}
+                        <div style={{maxHeight:260,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:8}}>
+                          {platformLoading ? (
+                            <div style={{padding:"30px",textAlign:"center"}}><Spinner size={16} color={T.accent}/></div>
+                          ) : platformProducts.length===0 ? (
+                            <div style={{padding:"20px",textAlign:"center",fontSize:11,color:T.textSm}}>Sin publicaciones disponibles. Conectá Shopify/TN/ML en Configuración primero.</div>
+                          ) : (() => {
+                            const linkedIds = new Set((editingItem.product_links||[]).map(l=>l.product_id));
+                            const filtered = platformProducts.filter(p => {
+                              if (linkedIds.has(p.id)) return false;
+                              if (mapeoChannel !== "all" && p.platform !== mapeoChannel) return false;
+                              if (mapeoSearch.trim() && !p.title.toLowerCase().includes(mapeoSearch.trim().toLowerCase()) && !(p.sku||"").toLowerCase().includes(mapeoSearch.trim().toLowerCase())) return false;
+                              return true;
+                            });
+                            if (filtered.length === 0) return <div style={{padding:"20px",textAlign:"center",fontSize:11,color:T.textSm}}>Sin resultados con esos filtros.</div>;
+                            return filtered.slice(0, 50).map(p => {
+                              const chLabel = p.platform==="shopify"?"Shopify":p.platform==="tiendanube"?"TN":p.platform==="mercadolibre"?"ML":p.platform;
+                              const chColor = p.platform==="shopify"?T.green:p.platform==="mercadolibre"?T.yellow:p.platform==="tiendanube"?T.blue:T.textSm;
+                              return (
+                                <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer"}} onClick={()=>linkProductToItem(p)}>
+                                  {p.image && <img src={p.image} alt="" style={{width:32,height:32,borderRadius:5,objectFit:"cover",flexShrink:0}}/>}
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:11,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</div>
+                                    {p.sku && <div style={{fontSize:9,color:T.textSm,fontFamily:"monospace"}}>SKU: {p.sku}</div>}
+                                  </div>
+                                  <span style={{fontSize:9,padding:"1px 6px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:chColor+"22",color:chColor}}>{chLabel}</span>
+                                  <button style={{width:24,height:24,border:`1px solid ${T.accent}33`,borderRadius:5,background:"transparent",color:T.accent,cursor:"pointer",fontSize:13,padding:0,fontWeight:700}}>+</button>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {/* Footer */}
+                  <div style={{padding:"14px 20px",borderTop:`1px solid ${T.border}`,display:"flex",gap:10,justifyContent:"flex-end"}}>
+                    <button onClick={()=>setEditingItem(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                    <button onClick={saveInvItem} disabled={itemSaving} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:itemSaving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{itemSaving?<><Spinner size={13} color="#fff"/> Guardando</>:editingItem.id?"Guardar cambios":"Crear item"}</button>
+                  </div>
+                </div>
+              </div>,
+              document.body
             )}
 
             {/* ── TAB ALERTAS ── */}
@@ -14262,7 +14731,7 @@ export default function App() {
   else if(page==="arca") pageContent = <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="meta") pageContent = <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="stock") pageContent = <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
-  else if(page==="ml") pageContent = <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="ml") pageContent = <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")}/></PageView>;
   else if(page==="audio") pageContent = <PageView T={T} pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="reclamos") pageContent = <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/></PageView>;
