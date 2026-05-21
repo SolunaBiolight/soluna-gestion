@@ -1287,7 +1287,6 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   React.useEffect(()=>{ if(viewProp!==undefined&&viewProp!==view) setViewState(viewProp); },[viewProp]);
   const setView=(v)=>{ setViewState(v); setViewProp&&setViewProp(v); };
   const [kanbanTipo,setKanbanTipo]=useState("Todos");
-  const [statsPeriod,setStatsPeriod]=useState("all"); // 7d | 30d | all
   const [search,setSearch]=useState("");
   const [activeReclamo,setActiveReclamo]=useState(null);
   const [reclamoForm,setReclamoForm]=useState(null);
@@ -1458,26 +1457,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     setSlaConfig({dias});
   }
 
-  // Stats period filter
+  // Stats — solo reclamos abiertos (no Resuelto/Rechazado)
   const hace3=new Date(Date.now()-slaConfig.dias*86400000).toISOString().split('T')[0];
-  const periodStart=useMemo(()=>{
-    if(statsPeriod==="all") return null;
-    return new Date(Date.now()-(statsPeriod==="7d"?7:30)*86400000);
-  },[statsPeriod]);
-  const reclamosPeriod=useMemo(()=>
-    reclamos.filter(r=>!periodStart||(r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000)>=periodStart))
-  ,[reclamos,periodStart]);
-  const _baseCount=totalOrdersCount||orders.length;
-  const pctCambios=_baseCount>0?((reclamosPeriod.filter(r=>r.tipo==="Cambio").length/_baseCount)*100).toFixed(1):null;
-  const pctDevoluciones=_baseCount>0?((reclamosPeriod.filter(r=>r.tipo==="Devolución").length/_baseCount)*100).toFixed(1):null;
+  const abiertos=reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado));
   const stats={
-    total:reclamosPeriod.length,
-    pendientes:reclamosPeriod.filter(r=>r.estado==="Nuevo").length,
-    resueltos:reclamosPeriod.filter(r=>r.estado==="Resuelto").length,
-    rechazados:reclamosPeriod.filter(r=>r.estado==="Rechazado").length,
-    cambios:reclamosPeriod.filter(r=>r.tipo==="Cambio").length,
-    devoluciones:reclamosPeriod.filter(r=>r.tipo==="Devolución").length,
-    urgentes:reclamos.filter(r=>!["Resuelto","Rechazado"].includes(r.estado)&&r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]<=hace3).length,
+    pendientes:abiertos.length,
+    cambios:abiertos.filter(r=>r.tipo==="Cambio").length,
+    devoluciones:abiertos.filter(r=>r.tipo==="Devolución").length,
+    urgentes:abiertos.filter(r=>r.createdAt?.seconds&&new Date(r.createdAt.seconds*1000).toISOString().split('T')[0]<=hace3).length,
   };
 
   // Order search results for creating reclamos
@@ -1687,20 +1674,23 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 ))}
               </div>
             )}
-            {/* Stats + período */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:8}}>
-              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                <div style={{display:"flex",gap:3,background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:3}}>
-                  {[{id:"7d",label:"7d"},{id:"30d",label:"30d"},{id:"all",label:"Todo"}].map(p=>(
-                    <button key={p.id} onClick={()=>setStatsPeriod(p.id)} style={{padding:"4px 12px",fontSize:12,fontWeight:statsPeriod===p.id?700:400,borderRadius:DS.r.md,border:"none",background:statsPeriod===p.id?T.accentSolid:"transparent",color:statsPeriod===p.id?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.15s ${DS.ease}`}}>{p.label}</button>
-                  ))}
-                </div>
-                {pctCambios!==null&&<span style={{fontSize:12,fontWeight:600,color:T.purple,background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:DS.r.full,padding:"4px 12px"}}>🔄 {pctCambios}% cambios</span>}
-                {pctDevoluciones!==null&&<span style={{fontSize:12,fontWeight:600,color:T.orange,background:T.orangeBg,border:`1px solid ${T.orange}33`,borderRadius:DS.r.full,padding:"4px 12px"}}>↩️ {pctDevoluciones}% devoluciones</span>}
+            {/* Stats — pendientes */}
+            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:18,flexWrap:"wrap"}}>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 18px",display:"flex",alignItems:"baseline",gap:6}}>
+                <span style={{fontSize:22,fontWeight:800,color:T.text,letterSpacing:-0.5}}>{stats.pendientes}</span>
+                <span style={{fontSize:12,color:T.textSm}}>abiertos</span>
+              </div>
+              <div style={{background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:DS.r.lg,padding:"10px 18px",display:"flex",alignItems:"baseline",gap:6}}>
+                <span style={{fontSize:22,fontWeight:800,color:T.purple,letterSpacing:-0.5}}>{stats.cambios}</span>
+                <span style={{fontSize:12,color:T.purple,opacity:0.7}}>cambios</span>
+              </div>
+              <div style={{background:T.orangeBg,border:`1px solid ${T.orange}33`,borderRadius:DS.r.lg,padding:"10px 18px",display:"flex",alignItems:"baseline",gap:6}}>
+                <span style={{fontSize:22,fontWeight:800,color:T.orange,letterSpacing:-0.5}}>{stats.devoluciones}</span>
+                <span style={{fontSize:12,color:T.orange,opacity:0.7}}>devoluciones</span>
               </div>
               {stats.urgentes>0&&(
-                <div style={{display:"flex",alignItems:"center",gap:6,background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:DS.r.lg,padding:"5px 12px"}}>
-                  <span style={{width:7,height:7,borderRadius:"50%",background:T.red,display:"inline-block"}}/>
+                <div style={{display:"flex",alignItems:"center",gap:6,background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:DS.r.lg,padding:"10px 14px"}}>
+                  <span style={{width:7,height:7,borderRadius:"50%",background:T.red,flexShrink:0}}/>
                   <span style={{fontSize:12,fontWeight:700,color:T.red}}>{stats.urgentes} urgente{stats.urgentes!==1?"s":""}</span>
                 </div>
               )}
