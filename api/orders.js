@@ -80,6 +80,24 @@ export default async function handler(req, res) {
       return res.status(200).json(Array.isArray(data) ? data : []);
     }
 
+    // STATS: facturado + count período actual vs anterior (para Home KPIs)
+    if (tab === 'stats') {
+      const { from, to, prevFrom } = req.query;
+      if (!from) return res.status(400).json({ error: 'from required' });
+      const toDate = to || new Date().toISOString();
+      const mkParams = (f, t) =>
+        `payment_status=paid&created_at_min=${encodeURIComponent(f)}&created_at_max=${encodeURIComponent(t)}`;
+      const [current, prev] = await Promise.all([
+        fetchAllPages(storeId, accessToken, mkParams(from, toDate)),
+        prevFrom ? fetchAllPages(storeId, accessToken, mkParams(prevFrom, from)) : Promise.resolve([]),
+      ]);
+      const calcStats = (orders) => ({
+        count: orders.length,
+        revenue: orders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0),
+      });
+      return res.status(200).json({ current: calcStats(current), prev: calcStats(prev) });
+    }
+
     // TOTAL: count de todos los pedidos pagados para Home/Reclamos
     if (tab === 'total') {
       let total = 0;

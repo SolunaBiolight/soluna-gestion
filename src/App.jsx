@@ -5609,9 +5609,65 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
   const notificacionesCanjes = alertas||[];
   const [stockAlertas, setStockAlertas] = React.useState([]);
-  const [stockSummary, setStockSummary] = React.useState(null);
-  const fbDot = {connecting:T.yellow,ok:T.green,error:T.red}[fbStatus];
+  const [statsPeriod, setStatsPeriod] = React.useState("hoy"); // hoy | 7d | mes | custom
+  const [customFrom, setCustomFrom] = React.useState("");
+  const [customTo, setCustomTo] = React.useState("");
+  const [orderStats, setOrderStats] = React.useState(null);   // {current:{count,revenue}, prev:{count,revenue}}
+  const [orderStatsLoading, setOrderStatsLoading] = React.useState(true);
 
+  // Calcula fechas ISO para el período y el período anterior (timezone AR = UTC-3)
+  function getPeriodDates(period, cFrom, cTo) {
+    const now = new Date();
+    const AR = -3 * 3600000; // offset en ms
+    const arNow = new Date(now.getTime() + AR); // "now" en hora AR expresado en UTC fields
+    // Medianoche AR de una fecha (retorna objeto Date UTC)
+    const arMidnight = (utcDate) => {
+      const y = utcDate.getUTCFullYear(), m = utcDate.getUTCMonth(), d = utcDate.getUTCDate();
+      return new Date(Date.UTC(y, m, d) - AR); // le sumamos 3h para que sea 00:00 AR
+    };
+    if (period === "hoy") {
+      const todayStart = arMidnight(arNow);
+      const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+      return { from: todayStart.toISOString(), to: now.toISOString(), prevFrom: yesterdayStart.toISOString(), vsLabel: "vs ayer" };
+    }
+    if (period === "7d") {
+      const from = new Date(now.getTime() - 7*86400000);
+      const prevFrom = new Date(now.getTime() - 14*86400000);
+      return { from: from.toISOString(), to: now.toISOString(), prevFrom: prevFrom.toISOString(), vsLabel: "vs 7d ant." };
+    }
+    if (period === "mes") {
+      const firstOfMonth = arMidnight(new Date(Date.UTC(arNow.getUTCFullYear(), arNow.getUTCMonth(), 1)));
+      const pm = arNow.getUTCMonth()===0?11:arNow.getUTCMonth()-1;
+      const py = arNow.getUTCMonth()===0?arNow.getUTCFullYear()-1:arNow.getUTCFullYear();
+      const firstOfPrevMonth = arMidnight(new Date(Date.UTC(py, pm, 1)));
+      return { from: firstOfMonth.toISOString(), to: now.toISOString(), prevFrom: firstOfPrevMonth.toISOString(), vsLabel: "vs mes ant." };
+    }
+    if (period === "custom" && cFrom && cTo) {
+      const fromDate = new Date(cFrom + "T03:00:00Z"); // medianoche AR
+      const toDate   = new Date(cTo   + "T03:00:00Z");
+      toDate.setUTCDate(toDate.getUTCDate() + 1); // fin del día
+      const duration = toDate.getTime() - fromDate.getTime();
+      const prevFrom = new Date(fromDate.getTime() - duration);
+      return { from: fromDate.toISOString(), to: toDate.toISOString(), prevFrom: prevFrom.toISOString(), vsLabel: "vs período ant." };
+    }
+    return null;
+  }
+
+  // Fetch stats de órdenes cuando cambia el período
+  React.useEffect(()=>{
+    if(!user?.uid) return;
+    const dates = getPeriodDates(statsPeriod, customFrom, customTo);
+    if(!dates) return;
+    setOrderStatsLoading(true);
+    const { from, to, prevFrom } = dates;
+    fetch(`/api/orders?uid=${user.uid}&tab=stats&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&prevFrom=${encodeURIComponent(prevFrom)}`)
+      .then(r=>r.json())
+      .then(data=>{ setOrderStats(data); setOrderStatsLoading(false); })
+      .catch(()=>setOrderStatsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[user?.uid, statsPeriod, statsPeriod==="custom"?customFrom:null, statsPeriod==="custom"?customTo:null]);
+
+  // Fetch alertas de stock (sin cambios)
   React.useEffect(()=>{
     if(!user?.uid) return;
     const uid=user.uid;
@@ -5621,12 +5677,6 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
     fetch(`/api/stock?action=products&uid=${uid}&days=7`)
       .then(r=>r.json()).then(data=>{
         if(!data.products) return;
-        setStockSummary({
-          total_units: data.total_units||0,
-          total_revenue: data.total_revenue||0,
-          total_orders: data.total_orders||0,
-          total_products: data.total_products||0,
-        });
         const al=(data.products||[]).filter(p=>(cfg[p.id]?.enabled)!==false).flatMap(p=>{
           const thr=cfg[p.id]?.threshold??global;
           return p.variants.filter(v=>{
@@ -5647,6 +5697,18 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   const fmtARS = n => "$"+Math.round(n||0).toLocaleString("es-AR");
   const fecha = new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   const fechaCap = fecha.charAt(0).toUpperCase()+fecha.slice(1);
+
+  // Helpers para los KPIs de órdenes
+  const dates = getPeriodDates(statsPeriod, customFrom, customTo);
+  const vsLabel = dates?.vsLabel || "";
+  const curRevenue  = orderStats?.current?.revenue || 0;
+  const prevRevenue = orderStats?.prev?.revenue    || 0;
+  const curCount    = orderStats?.current?.count   || 0;
+  const prevCount   = orderStats?.prev?.count      || 0;
+  const pctRevenue  = prevRevenue > 0 ? Math.round((curRevenue-prevRevenue)/prevRevenue*100) : null;
+  const deltaCount  = prevCount > 0 || curCount > 0 ? curCount - prevCount : null;
+  const subRevenue  = orderStatsLoading ? "" : pctRevenue!==null ? `${pctRevenue>=0?"↑":"↓"} ${Math.abs(pctRevenue)}% ${vsLabel}` : vsLabel;
+  const subCount    = orderStatsLoading ? "" : deltaCount!==null ? `${deltaCount>=0?"+":""}${deltaCount} ${vsLabel}` : vsLabel;
 
   // Feed por categoría
   const CAT_META = {
@@ -5697,12 +5759,34 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         <p style={{margin:0,fontSize:DS.font.base,color:T.textMd,fontWeight:DS.w.regular}}>¿Qué tenés que hacer hoy?</p>
       </div>
 
-      {/* KPIs — con skeleton loader */}
+      {/* Selector de período — controla Facturado y Pedidos */}
+      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:DS.sp.sm,flexWrap:"wrap"}}>
+        <span style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.medium,marginRight:2}}>Período:</span>
+        {[{id:"hoy",label:"Hoy"},{id:"7d",label:"7 días"},{id:"mes",label:"Este mes"},{id:"custom",label:"Personalizado"}].map(p=>(
+          <button key={p.id} onClick={()=>setStatsPeriod(p.id)}
+            style={{padding:"5px 13px",fontSize:DS.font.sm,fontWeight:statsPeriod===p.id?DS.w.bold:DS.w.regular,borderRadius:DS.r.full,border:`1px solid ${statsPeriod===p.id?T.accentSolid:T.border}`,background:statsPeriod===p.id?T.accentSolid:"transparent",color:statsPeriod===p.id?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.12s ${DS.ease}`}}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+      {statsPeriod==="custom"&&(
+        <div style={{display:"flex",gap:8,marginBottom:DS.sp.sm,alignItems:"center",flexWrap:"wrap"}}>
+          <input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)}
+            style={{...InputStyle(T),fontSize:DS.font.sm,padding:"6px 10px",width:"auto"}}/>
+          <span style={{color:T.textSm,fontSize:DS.font.sm}}>→</span>
+          <input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)}
+            style={{...InputStyle(T),fontSize:DS.font.sm,padding:"6px 10px",width:"auto"}}/>
+        </div>
+      )}
+
+      {/* KPIs */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:DS.sp.md,marginBottom:DS.sp["2xl"]}} className="kpi-grid">
-        <KPI T={T} label="Facturado (7d)" value={fmtARS(stockSummary?.total_revenue||0)} icon="💰" color={T.green}
-          loading={!stockSummary} sub={stockSummary?`${fmt(stockSummary.total_orders)} órdenes`:""} onClick={()=>onNavigate("stock")}/>
-        <KPI T={T} label="Unidades vendidas (7d)" value={fmt(stockSummary?.total_units||0)} icon="📈" color={T.accentSolid}
-          loading={!stockSummary} sub="últimos 7 días" onClick={()=>onNavigate("stock")}/>
+        <KPI T={T} label="Facturado" value={fmtARS(curRevenue)} icon="💰" color={T.green}
+          loading={orderStatsLoading}
+          sub={subRevenue} onClick={()=>onNavigate("stock")}/>
+        <KPI T={T} label="Pedidos" value={fmt(curCount)} icon="📦" color={T.accentSolid}
+          loading={orderStatsLoading}
+          sub={subCount} onClick={()=>onNavigate("envios")}/>
         <KPI T={T} label="Reclamos abiertos" value={reclamosCount} icon="💬"
           color={reclamosCount>0?T.red:T.green} accent={reclamosCount>0}
           sub={reclamosCount>0?"Requieren atención":"Todo en orden"} onClick={()=>onNavigate("reclamos")}/>
