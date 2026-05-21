@@ -439,7 +439,12 @@ function OnboardingWizard({T, user, onComplete}) {
       desc:"Vincula Tienda Nube o Shopify para sincronizar pedidos, productos y stock automáticamente.",
       actions: (
         <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md}}>
-          <Btn T={T} variant="primary" size="lg" onClick={()=>{window.location.href=`/api/integrations?platform=tn&action=auth&uid=${user?.uid}`;}}>
+          <Btn T={T} variant="primary" size="lg" onClick={()=>{
+            const clientId="30036";
+            const redirectUri=encodeURIComponent(`${window.location.origin}/api/tn-callback`);
+            const state=encodeURIComponent(user?.uid||"");
+            window.location.href=`https://www.tiendanube.com/apps/${clientId}/authorize?state=${state}&redirect_uri=${redirectUri}`;
+          }}>
             🛒 Conectar Tienda Nube
           </Btn>
           <Btn T={T} variant="secondary" size="lg" onClick={()=>onComplete("shopify")}>
