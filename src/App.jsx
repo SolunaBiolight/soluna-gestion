@@ -1394,40 +1394,92 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     setDeleteConfirm(null);setActiveReclamo(null);
   }
 
-  // -- Andreani polling: chequear trackings de devolución pendientes --
+  // Ref para leer reclamos frescos dentro del intervalo (evita closures stale)
+  const reclamosRef = useRef([]);
+  useEffect(()=>{ reclamosRef.current = reclamos; }, [reclamos]);
+
+  // Mapea el estado de Andreani al estado del reclamo en Growith
+  function mapAndreaniEstado(estadoAndreani, tipoTracking) {
+    const e = (estadoAndreani||"").toLowerCase();
+    const entregado = e.includes("entregado") || e.includes("delivered") || e.includes("devolución aceptada");
+    const enCamino  = e.includes("camino") || e.includes("tránsito") || e.includes("transito") ||
+                      e.includes("distribuc") || e.includes("en viaje") || e.includes("en reparto") ||
+                      e.includes("en curso") || e.includes("clasificad");
+    if(tipoTracking === "devolucion") {
+      // Devolución: cliente → nosotros
+      if(entregado) return "Producto recibido";
+      return null;
+    }
+    if(tipoTracking === "cambio") {
+      // Cambio enviado: nosotros → cliente
+      if(entregado) return "Resuelto";
+      if(enCamino)  return "Envío en camino";
+      return null;
+    }
+    return null;
+  }
+
+  // -- Andreani polling: monitorear todos los trackings y actualizar estados automáticamente --
   useEffect(()=>{
     if(!reclamos.length) return;
-    // Solo monitorear reclamos con trackingDevolucion y estado no resuelto
-    const pendientes = reclamos.filter(r =>
-      r.trackingDevolucion &&
-      r.trackingDevolucion.trim() &&
-      !["Resuelto","Rechazado"].includes(r.estado)
+
+    const conTracking = reclamos.filter(r =>
+      !["Resuelto","Rechazado"].includes(r.estado) &&
+      (r.trackingDevolucion?.trim() || r.trackingCambio?.trim())
     );
-    if(!pendientes.length) { setAndreaniChecked(true); return; }
+    if(!conTracking.length) { setAndreaniChecked(true); return; }
 
     async function checkAndreani() {
       const alertas = [];
-      await Promise.all(pendientes.map(async (r) => {
-        const tracking = r.trackingDevolucion.trim();
-        try {
-          // Usamos proxy server-side para evitar CORS con la API de Andreani
-          const res = await fetch(`/api/andreani-tracking?tracking=${encodeURIComponent(tracking)}`);
-          if(!res.ok) return;
-          const d = await res.json();
-          const estadoAndreani = d?.estado || d?.estadoActual || d?.ultimoEvento?.estado || "";
-          if(esEnSucursal(estadoAndreani)) alertas.push({docId:r._docId, orderNum:r.orderNum, tracking, estado:estadoAndreani, nombre:r.clienteNombre});
-        } catch(_) {}
+      const actuales = reclamosRef.current; // frescos para comparar estado actual
+
+      await Promise.all(conTracking.map(async (rOrig) => {
+        // Usar datos frescos del snapshot para el estado actual
+        const r = actuales.find(x=>x._docId===rOrig._docId) || rOrig;
+        if(["Resuelto","Rechazado"].includes(r.estado)) return;
+
+        // 1. Tracking de devolución (cliente → nosotros)
+        if(r.trackingDevolucion?.trim()) {
+          try {
+            const res = await fetch(`/api/andreani-tracking?tracking=${encodeURIComponent(r.trackingDevolucion.trim())}`);
+            if(res.ok) {
+              const d = await res.json();
+              const ea = d?.estado || d?.estadoActual || d?.ultimoEvento?.estado || "";
+              // Alerta si está en sucursal (listo para retirar)
+              if(esEnSucursal(ea)) alertas.push({docId:r._docId, orderNum:r.orderNum, tracking:r.trackingDevolucion.trim(), estado:ea, nombre:r.clienteNombre});
+              // Auto-update si corresponde avanzar el estado
+              const nuevo = mapAndreaniEstado(ea, "devolucion");
+              if(nuevo && nuevo !== r.estado && ESTADOS_R.indexOf(nuevo) > ESTADOS_R.indexOf(r.estado)) {
+                await updateEstado(r._docId, nuevo);
+                toast(`Reclamo #${r.orderNum} actualizado a "${nuevo}" (Andreani)`, "success");
+              }
+            }
+          } catch(_) {}
+        }
+
+        // 2. Tracking de cambio (nosotros → cliente)
+        if(r.trackingCambio?.trim()) {
+          try {
+            const res = await fetch(`/api/andreani-tracking?tracking=${encodeURIComponent(r.trackingCambio.trim())}`);
+            if(res.ok) {
+              const d = await res.json();
+              const ea = d?.estado || d?.estadoActual || d?.ultimoEvento?.estado || "";
+              const nuevo = mapAndreaniEstado(ea, "cambio");
+              if(nuevo && nuevo !== r.estado && ESTADOS_R.indexOf(nuevo) > ESTADOS_R.indexOf(r.estado)) {
+                await updateEstado(r._docId, nuevo);
+                toast(`Reclamo #${r.orderNum} actualizado a "${nuevo}" (Andreani)`, "success");
+              }
+            }
+          } catch(_) {}
+        }
       }));
+
       setAndreaniAlertas(alertas);
       setAndreaniChecked(true);
-      // Notificación del browser si hay paquetes listos
-      if(alertas.length > 0) {
-        dispararNotificacionBrowser(alertas);
-      }
+      if(alertas.length > 0) dispararNotificacionBrowser(alertas);
     }
 
     checkAndreani();
-    // Re-chequear cada 30 minutos mientras la app está abierta
     const interval = setInterval(checkAndreani, 30 * 60 * 1000);
     return () => clearInterval(interval);
   }, [reclamos.length]);
