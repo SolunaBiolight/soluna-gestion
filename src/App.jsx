@@ -1433,25 +1433,11 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       await Promise.all(pendientes.map(async (r) => {
         const tracking = r.trackingDevolucion.trim();
         try {
-          const res = await fetch(
-            `https://api.andreani.com/v2/ordenes/${tracking}`,
-            { headers: { "Accept": "application/json" } }
-          );
-          // Andreani pública no requiere auth para consultas básicas
-          if(!res.ok) {
-            // Fallback: intentar endpoint de seguimiento
-            const res2 = await fetch(
-              `https://tracking.andreani.com/api/v1/seguimiento?tracking=${tracking}`,
-              { headers: { "Accept": "application/json" } }
-            );
-            if(!res2.ok) return;
-            const d2 = await res2.json();
-            const estadoAndreani = d2?.estado || d2?.ultimoEvento?.estado || "";
-            if(esEnSucursal(estadoAndreani)) alertas.push({docId:r._docId, orderNum:r.orderNum, tracking, estado:estadoAndreani, nombre:r.clienteNombre});
-            return;
-          }
+          // Usamos proxy server-side para evitar CORS con la API de Andreani
+          const res = await fetch(`/api/andreani-tracking?tracking=${encodeURIComponent(tracking)}`);
+          if(!res.ok) return;
           const d = await res.json();
-          const estadoAndreani = d?.estado || d?.estadoActual || "";
+          const estadoAndreani = d?.estado || d?.estadoActual || d?.ultimoEvento?.estado || "";
           if(esEnSucursal(estadoAndreani)) alertas.push({docId:r._docId, orderNum:r.orderNum, tracking, estado:estadoAndreani, nombre:r.clienteNombre});
         } catch(_) {}
       }));
