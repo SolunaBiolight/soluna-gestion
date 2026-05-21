@@ -12,7 +12,8 @@ import { getValidMLToken } from "./integrations.js";
 
 // Filtra valores basura ("?", "-", "—", "S/N", "N/A", "null", undefined) y arma una dirección legible.
 function cleanAddr(parts) {
-  const invalid = new Set(["", "?", "-", "—", "S/N", "s/n", "N/A", "n/a", "null", "undefined"]);
+  // Sólo descartamos placeholders puros — "S/N" puede ser un número de calle real.
+  const invalid = new Set(["", "?", "-", "—", "null", "undefined", "N/A", "n/a"]);
   return (parts || [])
     .map(p => (p == null ? "" : String(p).trim()))
     .filter(p => !invalid.has(p))
@@ -912,7 +913,7 @@ async function generarPDF(factData, config) {
       draw("Nombre y Apellido / Razón Social: " + clienteName, MX + 8, RY + 12, 8, true);
     }
     draw("Condición frente al IVA: " + condIVA, MX + 8, RY + 25, 7);
-    draw("Domicilio: " + (factData.domicilio || "-"), MID + 8, RY + 25, 7);
+    draw("Domicilio: " + (factData.domicilio || "No informado"), MID + 8, RY + 25, 7);
     draw("Condición de venta: Contado", MX + 8, RY + 36, 7);
 
     // ─────── TABLA ITEMS ───────
@@ -1794,7 +1795,12 @@ export default async function handler(req, res) {
             fecha: o.paid_at || o.created_at || "",
             ciudad: o.shipping_address?.city || o.billing_city || "",
             provincia: o.shipping_address?.province || o.billing_province || "",
-            direccion: o.shipping_address?.address || "",
+            // TN tiene address (calle), number, floor, locality. Combinamos todo.
+            direccion: [
+              o.shipping_address?.address || o.billing_address || "",
+              o.shipping_address?.number || o.billing_number || "",
+              o.shipping_address?.floor || o.billing_floor || "",
+            ].filter(Boolean).join(" ").trim(),
             metodo_pago: o.payment_details?.method || "Pagado",
             items: (o.products || []).map(p => ({
               nombre: p.name || "Producto",
@@ -1857,7 +1863,10 @@ export default async function handler(req, res) {
             fecha: o.processed_at || o.created_at || "",
             ciudad: o.billing_address?.city || o.shipping_address?.city || "",
             provincia: o.billing_address?.province || o.shipping_address?.province || "",
-            direccion: o.billing_address?.address1 || o.shipping_address?.address1 || "",
+            direccion: [
+              o.billing_address?.address1 || o.shipping_address?.address1 || "",
+              o.billing_address?.address2 || o.shipping_address?.address2 || "",
+            ].filter(Boolean).join(", "),
             metodo_pago: o.payment_gateway_names?.join(", ") || "Pagado",
             items: (o.line_items || []).map(li => ({
               nombre: li.title || "Producto",
@@ -1953,7 +1962,18 @@ export default async function handler(req, res) {
               const docRaw = String(bi?.doc_number || buyer.billing_info?.doc_number || "").replace(/[.\-]/g, "");
               const clas = clasificarDoc(docRaw);
               const shipAddr = o.shipping?.receiver_address || {};
+              // billing_info también puede traer address (datos fiscales)
+              const biAddr = bi?.buyer?.billing_info?.address || bi?.address || {};
               const billed = billedMap.get(orderId);
+
+              // Construir dirección con todos los datos posibles (calle + número + dpto)
+              const calle = shipAddr.street_name || biAddr.street_name || "";
+              const numero = shipAddr.street_number || biAddr.street_number || "";
+              const comment = shipAddr.comment || ""; // dpto, piso, etc
+              const direccionStr = [
+                [calle, numero].filter(Boolean).join(" "),
+                comment,
+              ].filter(Boolean).join(", ");
 
               ordenes[orderId] = {
                 _platform: "mercadolibre",
@@ -1970,9 +1990,9 @@ export default async function handler(req, res) {
                 envio: parseFloat(o.shipping?.cost) || 0,
                 estado_pago: "paid",
                 fecha: o.date_closed || o.date_created || "",
-                ciudad: shipAddr.city?.name || "",
-                provincia: shipAddr.state?.name || "",
-                direccion: [shipAddr.street_name, shipAddr.street_number].filter(Boolean).join(" "),
+                ciudad: shipAddr.city?.name || biAddr.city_name || biAddr.city?.name || "",
+                provincia: shipAddr.state?.name || biAddr.state_name || biAddr.state?.name || "",
+                direccion: direccionStr,
                 metodo_pago: "Mercado Pago",
                 items: (o.order_items || []).map(it => ({
                   nombre: it.item?.title || "Producto",
@@ -2079,7 +2099,11 @@ export default async function handler(req, res) {
           fecha: o.paid_at || o.created_at || "",
           ciudad: o.shipping_address?.city || o.billing_city || "",
           provincia: o.shipping_address?.province || o.billing_province || "",
-          direccion: o.shipping_address?.address || "",
+          direccion: [
+            o.shipping_address?.address || o.billing_address || "",
+            o.shipping_address?.number || o.billing_number || "",
+            o.shipping_address?.floor || o.billing_floor || "",
+          ].filter(Boolean).join(" ").trim(),
           metodo_pago: o.payment_details?.method || (o.payment_status === "paid" ? "Pagado" : ""),
           items: (o.products || []).map(p => ({
             nombre: p.name || "Producto",
