@@ -770,19 +770,21 @@ export default async function handler(req, res) {
       // Capturamos el primer error real (en vez de fallar en silencio)
       let firstError = null;
       try {
-        // 1) paginar IDs
+        // 1) paginar IDs — intento con limit=50 normal
         const ids = [];
         let offset = 0;
         let totalFromML = null;
+        let httpStatus = null;
         while (offset < 1000) {
           // URL bien formada: si status==="all", no incluimos el filtro.
           const url = status === "all"
             ? `https://api.mercadolibre.com/users/${token.userId}/items/search?limit=50&offset=${offset}`
             : `https://api.mercadolibre.com/users/${token.userId}/items/search?status=${status}&limit=50&offset=${offset}`;
           const r = await fetch(url, { headers: { Authorization: `Bearer ${token.accessToken}` } });
+          httpStatus = r.status;
           if (!r.ok) {
             const txt = await r.text().catch(()=>"");
-            firstError = `HTTP ${r.status} en items/search: ${txt.slice(0,200)}`;
+            firstError = `HTTP ${r.status} en items/search: ${txt.slice(0,300)}`;
             break;
           }
           const j = await r.json();
@@ -792,14 +794,47 @@ export default async function handler(req, res) {
           if (batch.length < 50) break;
           offset += 50;
         }
+        // Fallback: si normal devolvió 0 sin error HTTP, probar search_type=scan
+        // (ML recomienda scan para usuarios con muchos items o cuentas vintage).
+        if (ids.length === 0 && !firstError) {
+          try {
+            const scanUrl = status === "all"
+              ? `https://api.mercadolibre.com/users/${token.userId}/items/search?search_type=scan&limit=50`
+              : `https://api.mercadolibre.com/users/${token.userId}/items/search?status=${status}&search_type=scan&limit=50`;
+            const r = await fetch(scanUrl, { headers: { Authorization: `Bearer ${token.accessToken}` } });
+            if (r.ok) {
+              const j = await r.json();
+              ids.push(...(j.results || []));
+              if (totalFromML == null) totalFromML = j.paging?.total ?? null;
+            }
+          } catch (_) {}
+        }
         if (ids.length === 0) {
-          // Devolver info útil cuando viene vacío
-          return res.json({
-            items: [],
-            diagnostic: firstError
-              ? { reason: "api_error", error: firstError, hint: "Llamá a ml_diagnose para más detalles." }
-              : { reason: "empty", total_from_ml: totalFromML, hint: totalFromML === 0 ? `No tenés publicaciones en estado "${status}".` : "ML respondió 0 items para este filtro." },
-          });
+          // Auto-diagnose para que el frontend tenga toda la info sin segunda llamada
+          let diagnosticPayload = { reason: firstError ? "api_error" : "empty", error: firstError, total_from_ml: totalFromML, http_status: httpStatus };
+          // Probar /users/me para verificar token
+          try {
+            const me = await fetch("https://api.mercadolibre.com/users/me", { headers: { Authorization: `Bearer ${token.accessToken}` } });
+            const meJ = await me.json();
+            if (me.ok) {
+              diagnosticPayload.users_me = { nickname: meJ.nickname, user_id: meJ.id, site_id: meJ.site_id, status: meJ.status?.list?.allow ? "active" : "inactive" };
+              if (String(meJ.id) !== String(token.userId)) {
+                diagnosticPayload.warning = `user_id en token (${token.userId}) ≠ user_id de /users/me (${meJ.id}). Reconectá ML.`;
+              }
+            } else {
+              diagnosticPayload.users_me_error = meJ.message || meJ.error || `HTTP ${me.status}`;
+            }
+          } catch (_) {}
+          if (firstError && /403|PolicyAgent|UNAUTHORIZED/i.test(firstError)) {
+            diagnosticPayload.hint = "Tu app de ML en developers.mercadolibre.com NO tiene permiso de lectura de items. Entrá a la app → editar → Permisos → marcá 'Publicación y sincronización' (Lectura) → Guardar → reconectá ML.";
+          } else if (firstError && /401/.test(firstError)) {
+            diagnosticPayload.hint = "Token expirado o inválido. Reconectá ML.";
+          } else if (totalFromML === 0) {
+            diagnosticPayload.hint = `ML respondió 0 publicaciones en estado "${status}".`;
+          } else {
+            diagnosticPayload.hint = "Revisá el diagnóstico arriba.";
+          }
+          return res.json({ items: [], diagnostic: diagnosticPayload });
         }
         // 2) fetch detalles en multiget (max 20 por call)
         const fields = "id,title,permalink,status,available_quantity,price,currency_id,sale_terms,thumbnail,pictures,sold_quantity,health,listing_type_id";

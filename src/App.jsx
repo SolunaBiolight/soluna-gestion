@@ -12050,7 +12050,7 @@ function AppStock({T, user, onHome}) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [dataPrev, setDataPrev] = useState(null);
-  const [tab, setTab] = useState("items");
+  const [tab, setTab] = useState("analisis");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("units");
   const [sortDir, setSortDir] = useState("desc");
