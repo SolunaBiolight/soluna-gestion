@@ -206,6 +206,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
     { group:"ANALYTICS" },
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red"},
+    {id:"ml",       label:"Mercado Libre", icon:"M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2zM9 22V12h6v10"},
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
     { group:"FINANZAS" },
     {id:"arca",     label:"ARCA",      icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
@@ -379,6 +380,7 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
     {label:"Reclamos",     page:"reclamos", icon:"💬"},
     {label:"Canjes",       page:"canjes",   icon:"🤝"},
     {label:"Stock & Estadísticas", page:"stock", icon:"📊"},
+    {label:"Gestión Mercado Libre", page:"ml", icon:"🛒"},
     {label:"Meta Ads",     page:"meta",     icon:"📣"},
     {label:"ARCA / Facturación", page:"arca", icon:"📄"},
     {label:"Audio Studio", page:"audio",    icon:"🎙"},
@@ -8297,18 +8299,55 @@ function AppArca({T, user, onHome}) {
 
             {/* Progress bar */}
             <div style={{display:"flex",gap:6,marginBottom:8}}>
-              {["Datos fiscales","Certificado en ARCA","Verificar"].map((_,i)=>(
+              {["Punto de venta","Datos fiscales","Certificado en ARCA","Verificar"].map((_,i)=>(
                 <div key={i} style={{flex:1,height:4,borderRadius:2,background:i<=wizStep?T.accent:T.border,transition:"background 0.2s ease"}}/>
               ))}
             </div>
             <div style={{display:"flex",gap:6,marginBottom:24,fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>
-              {["Datos fiscales","Certificado en ARCA","Verificar"].map((label,i)=>(
+              {["Punto de venta","Datos fiscales","Certificado","Verificar"].map((label,i)=>(
                 <div key={i} style={{flex:1,textAlign:"center",color:i===wizStep?T.accent:T.textSm}}>{label}</div>
               ))}
             </div>
 
-            {/* Step 0: Datos */}
+            {/* Step 0 NEW: Crear Punto de Venta tipo RECE en ARCA */}
             {wizStep===0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <div style={{background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,padding:"12px 14px",fontSize:12,color:T.textMd,lineHeight:1.55}}>
+                  <strong style={{color:T.yellow}}>⚠ Importante:</strong> antes de cargar el CUIT en Growith tenés que crear en ARCA un <strong style={{color:T.text}}>Punto de Venta del tipo "RECE para aplicativo y web services"</strong>. Los puntos de venta tipo "Factura en Línea" (manual) <strong style={{color:T.text}}>no funcionan</strong> con el web service que Growith usa para emitir.
+                </div>
+
+                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Pasos en ARCA</div>
+                  <ol style={{margin:0,paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
+                    <li>Entrá a <a href="https://www.afip.gob.ar" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>arca.gob.ar</a> con tu clave fiscal.</li>
+                    <li>Buscá el servicio <strong style={{color:T.text}}>"Administración de puntos de venta y domicilios"</strong> (si no lo ves: <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → Nueva Relación → buscá el servicio y autorizá tu CUIT).</li>
+                    <li>Click en <strong style={{color:T.text}}>"A/B/M de puntos de venta"</strong>.</li>
+                    <li>Tocá <strong style={{color:T.text}}>"Agregar"</strong>.</li>
+                    <li><strong style={{color:T.text}}>Número</strong>: el próximo libre (si ya tenés 1, 2, 3, poné <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>4</code> — no se pueden reutilizar).</li>
+                    <li><strong style={{color:T.text}}>Nombre de fantasía</strong>: <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>Growith API</code> (o lo que quieras).</li>
+                    <li><strong style={{color:T.text}}>Sistema</strong>: del dropdown elegí <strong style={{color:T.green}}>"RECE para aplicativo y web services"</strong> (NO "Factura en Línea" — esos son manuales).</li>
+                    <li><strong style={{color:T.text}}>Domicilio</strong>: el fiscal del CUIT.</li>
+                    <li>Confirmar.</li>
+                  </ol>
+                </div>
+
+                <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:"12px 14px"}}>
+                  <label style={labelS}>¿Qué número de Punto de Venta quedó?</label>
+                  <input value={wizPuntoVenta} onChange={e=>setWizPuntoVenta(e.target.value.replace(/\D/g,"").slice(0,5))} placeholder="Ej. 4" style={iS}/>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:6,lineHeight:1.55}}>Anotá acá el número exacto que te quedó tras crearlo. Si todavía no lo creaste, dejá el campo y volvé después de hacerlo en ARCA — el wizard te espera.</div>
+                </div>
+
+                <details style={{marginTop:4}}>
+                  <summary style={{cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600}}>¿Por qué no sirven los "Factura en Línea"?</summary>
+                  <div style={{padding:"10px 14px",marginTop:6,background:T.bg,borderRadius:8,fontSize:11,color:T.textMd,lineHeight:1.6}}>
+                    "Factura en Línea" (Responsable Inscripto o Monotributo) es el portal manual de ARCA donde cargás factura por factura. <strong style={{color:T.text}}>No tiene API expuesta.</strong> El web service WSFE de ARCA — que Growith usa para emitir con un click — solo acepta puntos de venta del régimen <strong style={{color:T.text}}>RECE</strong>. Si intentás emitir con un PV tipo "Factura en Línea", ARCA devuelve: <code style={{background:T.surface,padding:"1px 4px",borderRadius:3,fontSize:10}}>NO AUTORIZADO A EMITIR COMPROBANTES — EL PUNTO DE VENTA INFORMADO DEBE ESTAR DADO DE ALTA Y SER DEL TIPO RECE</code>.
+                  </div>
+                </details>
+              </div>
+            )}
+
+            {/* Step 1 (antes 0): Datos */}
+            {wizStep===1&&(
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
                   <div>
@@ -8368,8 +8407,8 @@ function AppArca({T, user, onHome}) {
               </div>
             )}
 
-            {/* Step 1: Certificado + Clave (modo auto o manual) */}
-            {wizStep===1&&(
+            {/* Step 2 (antes 1): Certificado + Clave (modo auto o manual) */}
+            {wizStep===2&&(
               <div>
                 <>
                     {/* Bloque 1: Generar (solo visible mientras no se generó) */}
@@ -8491,8 +8530,8 @@ function AppArca({T, user, onHome}) {
               </div>
             )}
 
-            {/* Step 2: Verificar */}
-            {wizStep===2&&(
+            {/* Step 3 (antes 2): Verificar */}
+            {wizStep===3&&(
               <div>
                 <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:18,marginBottom:20}}>
                   <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:14}}>Resumen de tu CUIT</div>
@@ -8540,8 +8579,8 @@ function AppArca({T, user, onHome}) {
                 </button>
               )}
               <div style={{flex:1}}/>
-              {wizStep<2?(
-                <button onClick={()=>setWizStep(s=>s+1)} disabled={wizStep===1 && (!certText.trim()||!keyText.trim())} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:(wizStep===1&&(!certText.trim()||!keyText.trim()))?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:(wizStep===1&&(!certText.trim()||!keyText.trim()))?0.5:1}}>
+              {wizStep<3?(
+                <button onClick={()=>setWizStep(s=>s+1)} disabled={(wizStep===0 && !wizPuntoVenta.trim()) || (wizStep===2 && (!certText.trim()||!keyText.trim()))} style={{background:T.accent,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:((wizStep===0 && !wizPuntoVenta.trim()) || (wizStep===2&&(!certText.trim()||!keyText.trim())))?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:((wizStep===0 && !wizPuntoVenta.trim()) || (wizStep===2&&(!certText.trim()||!keyText.trim())))?0.5:1}}>
                   Continuar →
                 </button>
               ):(
@@ -12451,6 +12490,326 @@ LONGITUD Y FORMATO
 
 
 // ===========================================
+// APP MERCADO LIBRE — Gestión + Bulk Edit
+// ===========================================
+function AppML({T, user, onHome}) {
+  const uid = user?.uid;
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [sortBy, setSortBy] = useState("sold");
+  const [bulkMode, setBulkMode] = useState(null); // null | "price" | "stock" | "handling" | "status" | "pictures"
+  const [bulkValue, setBulkValue] = useState("");
+  const [bulkPctMode, setBulkPctMode] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  // Single item edit
+  const [editingItem, setEditingItem] = useState(null);
+  const [editPrice, setEditPrice] = useState("");
+  const [editStock, setEditStock] = useState("");
+  const [editHandling, setEditHandling] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editPicturesText, setEditPicturesText] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  async function loadItems() {
+    if (!uid) return;
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/inventory?action=ml_items&uid=${uid}&status=${statusFilter}`);
+      const j = await r.json();
+      if (j.error) { toast(j.error, "error"); return; }
+      setItems(j.items || []);
+      setSelectedIds(new Set());
+    } catch (e) { toast(e.message, "error"); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { if (uid) loadItems(); /* eslint-disable-next-line */ }, [uid, statusFilter]);
+
+  const filtered = items
+    .filter(i => !search.trim() || (i.title||"").toLowerCase().includes(search.trim().toLowerCase()) || (i.id||"").toLowerCase().includes(search.trim().toLowerCase()))
+    .sort((a,b) => {
+      if (sortBy === "sold") return (b.sold_quantity||0) - (a.sold_quantity||0);
+      if (sortBy === "stock") return (b.available_quantity||0) - (a.available_quantity||0);
+      if (sortBy === "price") return (b.price||0) - (a.price||0);
+      if (sortBy === "handling") return (a.handling_time||999) - (b.handling_time||999);
+      if (sortBy === "health") return (b.health||0) - (a.health||0);
+      return 0;
+    });
+
+  const toggleAll = () => {
+    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filtered.map(i => i.id)));
+  };
+  const toggleOne = (id) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+    setSelectedIds(newSet);
+  };
+
+  async function applyBulk() {
+    if (selectedIds.size === 0) return toast("Seleccioná al menos 1 publicación","warning");
+    if (!bulkMode) return;
+    const ids = [...selectedIds];
+    let changes = {};
+    if (bulkMode === "price") {
+      const num = parseFloat(bulkValue);
+      if (!num || num <= 0) return toast("Valor inválido","warning");
+      if (bulkPctMode) changes.price_pct = num;
+      else changes.price = num;
+    } else if (bulkMode === "stock") {
+      const n = parseInt(bulkValue);
+      if (isNaN(n) || n < 0) return toast("Stock inválido","warning");
+      changes.available_quantity = n;
+    } else if (bulkMode === "handling") {
+      const n = parseInt(bulkValue);
+      if (isNaN(n) || n < 0) return toast("Tiempo inválido","warning");
+      changes.handling_time = n;
+    } else if (bulkMode === "status") {
+      if (!["active","paused","closed"].includes(bulkValue)) return toast("Estado inválido","warning");
+      changes.status = bulkValue;
+    }
+    if (!await appConfirm(`Aplicar a ${ids.length} publicación${ids.length===1?"":"es"}: ${JSON.stringify(changes)}`,{okLabel:"Aplicar"})) return;
+    setApplying(true);
+    setProgress({ done: 0, total: ids.length });
+    try {
+      const r = await fetch(`/api/inventory?action=ml_bulk_update&uid=${uid}`, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ item_ids: ids, changes }),
+      });
+      const j = await r.json();
+      if (j.error) { toast(j.error,"error"); return; }
+      toast(`${j.ok_count}/${j.total} aplicados${j.errors?.length?` · ${j.errors.length} con error`:""}`,"success");
+      await loadItems();
+      setBulkMode(null); setBulkValue("");
+    } finally { setApplying(false); setProgress({ done:0, total:0 }); }
+  }
+
+  function openEdit(item) {
+    setEditingItem(item);
+    setEditPrice(String(item.price || ""));
+    setEditStock(String(item.available_quantity || ""));
+    setEditHandling(String(item.handling_time || ""));
+    setEditTitle(item.title || "");
+    setEditPicturesText("");
+  }
+  async function saveItemEdit() {
+    if (!editingItem) return;
+    const changes = {};
+    if (parseFloat(editPrice) !== editingItem.price) changes.price = parseFloat(editPrice);
+    if (parseInt(editStock) !== editingItem.available_quantity) changes.available_quantity = parseInt(editStock);
+    if (editTitle.trim() !== editingItem.title) changes.title = editTitle.trim().slice(0, 60);
+    const ht = parseInt(editHandling);
+    if (!isNaN(ht) && ht !== editingItem.handling_time) {
+      changes.sale_terms = [{ id: "MANUFACTURING_TIME", value_struct: { number: ht, unit: "días" } }];
+    }
+    if (Object.keys(changes).length === 0 && !editPicturesText.trim()) return toast("Sin cambios","info");
+    setSavingEdit(true);
+    try {
+      if (Object.keys(changes).length > 0) {
+        const r = await fetch(`/api/inventory?action=ml_item_update&uid=${uid}`,{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({ item_id: editingItem.id, changes }),
+        });
+        const j = await r.json();
+        if (j.error) { toast(j.error,"error"); return; }
+      }
+      if (editPicturesText.trim()) {
+        const urls = editPicturesText.split("\n").map(s=>s.trim()).filter(Boolean);
+        const r = await fetch(`/api/inventory?action=ml_item_pictures&uid=${uid}`,{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({ item_id: editingItem.id, picture_urls: urls }),
+        });
+        const j = await r.json();
+        if (j.error) toast("Imágenes: "+j.error,"warning");
+      }
+      toast("Publicación actualizada ✓","success");
+      setEditingItem(null);
+      loadItems();
+    } finally { setSavingEdit(false); }
+  }
+
+  const cur = (n) => "$"+(n||0).toLocaleString("es-AR");
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      <AppTopbar T={T} section="Gestión Mercado Libre" onHome={onHome}>
+        <button onClick={loadItems} disabled={loading} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{loading?<Spinner size={12} color={T.textMd}/>:"↻"} Refrescar</button>
+      </AppTopbar>
+
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
+        {/* Filtros */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+            {[{id:"active",l:"Activas"},{id:"paused",l:"Pausadas"},{id:"closed",l:"Cerradas"},{id:"all",l:"Todas"}].map(s=>(
+              <button key={s.id} onClick={()=>setStatusFilter(s.id)} style={{padding:"6px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:statusFilter===s.id?T.card:"transparent",color:statusFilter===s.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.l}</button>
+            ))}
+          </div>
+          <input type="text" placeholder="🔍 Buscar por título o ID..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1,minWidth:200,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <option value="sold">Más vendidos</option>
+            <option value="stock">Mayor stock</option>
+            <option value="price">Mayor precio</option>
+            <option value="handling">Menor handling time</option>
+            <option value="health">Mejor health</option>
+          </select>
+          <span style={{fontSize:11,color:T.textSm}}>{filtered.length} pubs · {selectedIds.size} sel.</span>
+        </div>
+
+        {/* Bulk bar */}
+        {selectedIds.size > 0 && (
+          <div style={{background:`linear-gradient(90deg, ${T.accent}15, ${T.accentSolid}08)`,border:`1px solid ${T.accent}55`,borderRadius:14,padding:"14px 18px",marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:bulkMode?12:0,flexWrap:"wrap",gap:8}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>🎯 {selectedIds.size} seleccionada{selectedIds.size===1?"":"s"} — aplicar cambio bulk:</div>
+              <button onClick={()=>setSelectedIds(new Set())} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar selección</button>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:bulkMode?12:0}}>
+              {[["price","💰 Precio"],["stock","📦 Stock"],["handling","⏱ Handling"],["status","🔌 Estado"]].map(([id,label])=>(
+                <button key={id} onClick={()=>{setBulkMode(id);setBulkValue("");setBulkPctMode(false);}} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${bulkMode===id?T.accent+"99":T.border}`,borderRadius:7,background:bulkMode===id?T.accent+"22":"transparent",color:bulkMode===id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{label}</button>
+              ))}
+            </div>
+            {bulkMode && (
+              <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:T.card,borderRadius:10,border:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
+                {bulkMode === "price" && (
+                  <>
+                    <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer"}}>
+                      <input type="checkbox" checked={bulkPctMode} onChange={e=>setBulkPctMode(e.target.checked)} style={{width:14,height:14}}/>
+                      Cambio % (+sube, -baja)
+                    </label>
+                    <input type="number" step="0.01" value={bulkValue} onChange={e=>setBulkValue(e.target.value)} placeholder={bulkPctMode?"-15 = bajar 15%":"Nuevo precio fijo"} style={{flex:1,minWidth:160,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                  </>
+                )}
+                {bulkMode === "stock" && (
+                  <input type="number" min="0" value={bulkValue} onChange={e=>setBulkValue(e.target.value)} placeholder="Nuevo stock" style={{flex:1,minWidth:160,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                )}
+                {bulkMode === "handling" && (
+                  <input type="number" min="0" max="30" value={bulkValue} onChange={e=>setBulkValue(e.target.value)} placeholder="Días de manejo (0-30)" style={{flex:1,minWidth:160,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                )}
+                {bulkMode === "status" && (
+                  <select value={bulkValue} onChange={e=>setBulkValue(e.target.value)} style={{flex:1,minWidth:160,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <option value="">— Elegí estado —</option>
+                    <option value="active">Activar</option>
+                    <option value="paused">Pausar</option>
+                    <option value="closed">Cerrar (irreversible)</option>
+                  </select>
+                )}
+                <button onClick={applyBulk} disabled={applying||!bulkValue} style={{padding:"8px 18px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:applying?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{applying?<><Spinner size={12} color="#fff"/> {progress.done}/{progress.total}</>:"Aplicar a "+selectedIds.size}</button>
+                <button onClick={()=>setBulkMode(null)} style={{padding:"8px 14px",fontSize:12,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tabla */}
+        {loading ? (
+          <div style={{padding:"60px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/><div style={{fontSize:12,color:T.textSm,marginTop:10}}>Trayendo publicaciones de ML...</div></div>
+        ) : items.length === 0 ? (
+          <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:8}}>📭</div>
+            <div style={{fontSize:14,color:T.textMd}}>Sin publicaciones de ML conectadas. Vinculá tu cuenta desde Config.</div>
+          </div>
+        ) : (
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <thead style={{background:T.bg,position:"sticky",top:0}}>
+                  <tr>
+                    <th style={{padding:"10px 12px",width:32}}><input type="checkbox" checked={selectedIds.size===filtered.length&&filtered.length>0} onChange={toggleAll} style={{width:14,height:14,cursor:"pointer"}}/></th>
+                    <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Publicación</th>
+                    <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Precio</th>
+                    <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Stock</th>
+                    <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Vendidos</th>
+                    <th style={{padding:"10px 12px",textAlign:"center",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Handling</th>
+                    <th style={{padding:"10px 12px",textAlign:"center",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Estado</th>
+                    <th style={{padding:"10px 12px",borderBottom:`1px solid ${T.border}`}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(it => {
+                    const sel = selectedIds.has(it.id);
+                    return (
+                      <tr key={it.id} style={{borderBottom:`1px solid ${T.borderL}`,background:sel?T.accent+"08":"transparent"}}>
+                        <td style={{padding:"10px 12px"}}><input type="checkbox" checked={sel} onChange={()=>toggleOne(it.id)} style={{width:14,height:14,cursor:"pointer"}}/></td>
+                        <td style={{padding:"10px 12px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            {it.thumbnail && <img src={it.thumbnail} alt="" style={{width:40,height:40,borderRadius:6,objectFit:"cover",background:T.bg,flexShrink:0}}/>}
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12,fontWeight:600,color:T.text,maxWidth:380,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.title}</div>
+                              <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace"}}><a href={it.permalink} target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"none"}}>{it.id}</a></div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",color:T.text,fontWeight:600}}>{cur(it.price)}</td>
+                        <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",color:it.available_quantity<5?T.red:T.text}}>{it.available_quantity}</td>
+                        <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{it.sold_quantity}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center",fontFamily:"monospace",color:T.textMd}}>{it.handling_time != null ? `${it.handling_time}d` : "—"}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center"}}>
+                          <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:700,letterSpacing:0.3,textTransform:"uppercase",background:it.status==="active"?T.green+"22":it.status==="paused"?T.yellow+"22":T.textSm+"22",color:it.status==="active"?T.green:it.status==="paused"?T.yellow:T.textSm}}>{it.status}</span>
+                        </td>
+                        <td style={{padding:"10px 12px",textAlign:"right"}}>
+                          <button onClick={()=>openEdit(it)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Edit single */}
+        {editingItem && ReactDOM.createPortal(
+          <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
+            <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:560,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+                {editingItem.thumbnail && <img src={editingItem.thumbnail} alt="" style={{width:60,height:60,borderRadius:8,objectFit:"cover"}}/>}
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>{editingItem.title}</div>
+                  <a href={editingItem.permalink} target="_blank" rel="noopener" style={{fontSize:10,color:T.accent,fontFamily:"monospace"}}>{editingItem.id} ↗</a>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div>
+                  <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Precio</label>
+                  <input type="number" step="0.01" value={editPrice} onChange={e=>setEditPrice(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                </div>
+                <div>
+                  <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Stock</label>
+                  <input type="number" min="0" value={editStock} onChange={e=>setEditStock(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                </div>
+              </div>
+              <div style={{marginBottom:10}}>
+                <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Días de manejo (handling time)</label>
+                <input type="number" min="0" max="30" value={editHandling} onChange={e=>setEditHandling(e.target.value)} placeholder="0-30 días" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              </div>
+              <div style={{marginBottom:10}}>
+                <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Título (máx 60 chars)</label>
+                <input value={editTitle} onChange={e=>setEditTitle(e.target.value.slice(0,60))} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 11px",fontSize:13,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                <div style={{fontSize:10,color:T.textSm,marginTop:3}}>{editTitle.length}/60</div>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Reemplazar imágenes (URLs, una por línea)</label>
+                <textarea value={editPicturesText} onChange={e=>setEditPicturesText(e.target.value)} placeholder={"https://...\nhttps://..."} style={{width:"100%",minHeight:80,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"8px 11px",fontSize:11,color:T.text,boxSizing:"border-box",fontFamily:"monospace",resize:"vertical"}}/>
+                <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Dejá vacío para no tocar las imágenes. Si pegás URLs, reemplazan TODAS las actuales.</div>
+              </div>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                <button onClick={()=>setEditingItem(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                <button onClick={saveItemEdit} disabled={savingEdit} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:savingEdit?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{savingEdit?<><Spinner size={13} color="#fff"/> Guardando</>:"Guardar"}</button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ===========================================
 // APP STOCK / INVENTARIO
 // ===========================================
 function AppStock({T, user, onHome}) {
@@ -12476,6 +12835,17 @@ function AppStock({T, user, onHome}) {
   const [viewMode, setViewMode] = useState("tabla"); // tabla | kanban
   const [analysisMode, setAnalysisMode] = useState("ventas"); // ventas | productos (para tab análisis)
   const [leadTime, setLeadTime] = useState({}); // {productId: days} tiempo de entrega por producto
+  // Depósitos
+  const [warehouses, setWarehouses] = useState([]);
+  const [warehousesLoading, setWarehousesLoading] = useState(false);
+  const [editingWarehouse, setEditingWarehouse] = useState(null); // null | "new" | warehouse
+  const [whName, setWhName] = useState("");
+  const [whAddress, setWhAddress] = useState("");
+  const [whIsDefault, setWhIsDefault] = useState(false);
+  const [whSaving, setWhSaving] = useState(false);
+  // Edit stock por depósito
+  const [editingStockItem, setEditingStockItem] = useState(null); // item object
+  const [stockEditValues, setStockEditValues] = useState({}); // {whId: count}
 
   const iS = InputStyle(T);
 
@@ -12548,12 +12918,87 @@ function AppStock({T, user, onHome}) {
     loadStock(0, dateFrom, dateTo);
   }
 
+  // ── Depósitos ──
+  async function loadWarehouses() {
+    if (!uid) return;
+    setWarehousesLoading(true);
+    try {
+      const r = await fetch(`/api/inventory?action=warehouses_list&uid=${uid}`);
+      const j = await r.json();
+      if (!j.error) setWarehouses(j.warehouses || []);
+    } finally { setWarehousesLoading(false); }
+  }
+  function openNewWarehouse() {
+    setEditingWarehouse("new");
+    setWhName(""); setWhAddress(""); setWhIsDefault(false);
+  }
+  function openEditWarehouse(w) {
+    setEditingWarehouse(w);
+    setWhName(w.name || ""); setWhAddress(w.address || ""); setWhIsDefault(Boolean(w.is_default));
+  }
+  async function saveWarehouse() {
+    if (!whName.trim()) return toast("Falta nombre","warning");
+    setWhSaving(true);
+    try {
+      const body = { name: whName, address: whAddress, is_default: whIsDefault };
+      if (editingWarehouse && editingWarehouse !== "new") body.id = editingWarehouse.id;
+      const r = await fetch(`/api/inventory?action=warehouse_save&uid=${uid}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (j.error) return toast(j.error,"error");
+      toast("Depósito guardado ✓","success");
+      setEditingWarehouse(null);
+      loadWarehouses();
+    } finally { setWhSaving(false); }
+  }
+  async function deleteWarehouse(w) {
+    if (w.id === "main") return toast("No se puede borrar el depósito principal","warning");
+    if (!await appConfirm(`¿Borrar "${w.name}"?\nEl stock que tenga este depósito se mueve al principal.`,{danger:true,okLabel:"Borrar"})) return;
+    const r = await fetch(`/api/inventory?action=warehouse_delete&uid=${uid}&warehouse_id=${w.id}`,{method:"DELETE"});
+    const j = await r.json();
+    if (j.error) return toast(j.error,"error");
+    toast("Depósito eliminado","success");
+    loadWarehouses();
+    loadStock();
+  }
+  function openEditStock(item) {
+    setEditingStockItem(item);
+    const sbw = item.stock_by_warehouse || {};
+    const obj = {};
+    for (const w of warehouses) obj[w.id] = sbw[w.id] || 0;
+    setStockEditValues(obj);
+  }
+  async function saveStockByWarehouse() {
+    if (!editingStockItem) return;
+    const total = Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0);
+    const r = await fetch(`/api/inventory?action=save_item&uid=${uid}`,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        id: editingStockItem.id,
+        nombre: editingStockItem.nombre,
+        sku: editingStockItem.sku,
+        image: editingStockItem.image,
+        stock_total: total,
+        stock_by_warehouse: stockEditValues,
+        canales: editingStockItem.canales,
+      }),
+    });
+    const j = await r.json();
+    if (j.error) return toast(j.error,"error");
+    toast(`Stock actualizado · total ${total}`,"success");
+    setEditingStockItem(null);
+    loadStock();
+  }
+
   function applyQuickPeriod(d) {
     setDays(d);
     setUseCustomDate(false);
     setDateFrom(""); setDateTo("");
     loadStock(d, "", "");
   }
+
+  useEffect(()=>{ if (uid && tab === "depositos") loadWarehouses(); /* eslint-disable-next-line */ }, [uid, tab]);
 
   // Cargar config de alertas desde localStorage
   useEffect(()=>{
@@ -12903,6 +13348,7 @@ function AppStock({T, user, onHome}) {
   const TABS=[
     {id:"analisis",label:"📊 Análisis"},
     {id:"productos",label:"📦 Productos"},
+    {id:"depositos",label:"🏬 Depósitos"},
     {id:"facturacion",label:"💰 Facturación"},
     {id:"alertas",label:`🚨 Alertas${alertas.length>0?` (${alertas.length})`:""}`},
   ];
@@ -13245,6 +13691,137 @@ function AppStock({T, user, onHome}) {
               );
             })()}
 
+            {/* ── TAB DEPÓSITOS ── */}
+            {tab==="depositos"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                {/* Header */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>🏬 Depósitos</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Gestioná los depósitos donde tenés stock. El stock total de cada item es la suma de los depósitos.</div>
+                  </div>
+                  <button onClick={openNewWarehouse} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo depósito</button>
+                </div>
+
+                {/* Lista de depósitos */}
+                {warehousesLoading ? (
+                  <div style={{padding:"40px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/></div>
+                ) : warehouses.length === 0 ? (
+                  <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:12,padding:"40px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>Sin depósitos. Creá uno para empezar.</div>
+                ) : (
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))",gap:12}}>
+                    {warehouses.map(w => {
+                      const totalItems = (data?.products || []).reduce((s,p)=>{
+                        const sbw = p.stock_by_warehouse || {};
+                        return s + (sbw[w.id] || 0);
+                      },0);
+                      return (
+                        <div key={w.id} style={{background:T.card,border:`1px solid ${w.is_default?T.green+"55":T.border}`,borderRadius:12,padding:"14px 16px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                            <span style={{fontSize:14,fontWeight:700,color:T.text}}>{w.name}</span>
+                            {w.is_default && <span style={{fontSize:10,padding:"2px 7px",borderRadius:5,background:T.green+"22",color:T.green,fontWeight:700}}>PRINCIPAL</span>}
+                          </div>
+                          {w.address && <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>{w.address}</div>}
+                          <div style={{fontSize:12,color:T.textMd,marginBottom:10}}>Stock total: <strong style={{color:T.text}}>{totalItems}</strong> unidades</div>
+                          <div style={{display:"flex",gap:6}}>
+                            <button onClick={()=>openEditWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                            {w.id !== "main" && <button onClick={()=>deleteWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar</button>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Tabla items por depósito */}
+                {warehouses.length > 0 && data?.products?.length > 0 && (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Stock por item y depósito</div>
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                        <thead>
+                          <tr>
+                            <th style={{textAlign:"left",padding:"8px 10px",borderBottom:`1px solid ${T.border}`,fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase"}}>Producto</th>
+                            {warehouses.map(w => (
+                              <th key={w.id} style={{textAlign:"right",padding:"8px 10px",borderBottom:`1px solid ${T.border}`,fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",whiteSpace:"nowrap"}}>{w.name}</th>
+                            ))}
+                            <th style={{textAlign:"right",padding:"8px 10px",borderBottom:`1px solid ${T.border}`,fontSize:10,color:T.text,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase"}}>Total</th>
+                            <th style={{padding:"8px 10px",borderBottom:`1px solid ${T.border}`}}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(data?.products || []).map(p => {
+                            const sbw = p.stock_by_warehouse || {};
+                            return (
+                              <tr key={p.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                                <td style={{padding:"8px 10px",color:T.text,fontWeight:600,whiteSpace:"nowrap",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis"}}>{p.nombre}</td>
+                                {warehouses.map(w => (
+                                  <td key={w.id} style={{padding:"8px 10px",textAlign:"right",color:T.textMd,fontFamily:"monospace"}}>{sbw[w.id] || 0}</td>
+                                ))}
+                                <td style={{padding:"8px 10px",textAlign:"right",color:T.text,fontWeight:700,fontFamily:"monospace"}}>{p.stock_total || 0}</td>
+                                <td style={{padding:"8px 10px",textAlign:"right"}}>
+                                  <button onClick={()=>openEditStock(p)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Modal editar warehouse */}
+                {editingWarehouse && ReactDOM.createPortal(
+                  <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingWarehouse(null)}>
+                    <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:440,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <h3 style={{margin:"0 0 14px",fontSize:17,fontWeight:800,color:T.text}}>{editingWarehouse==="new"?"Nuevo depósito":"Editar depósito"}</h3>
+                      <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Nombre</label>
+                      <input value={whName} onChange={e=>setWhName(e.target.value)} placeholder="Depósito CABA" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,marginBottom:12,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                      <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Dirección (opcional)</label>
+                      <input value={whAddress} onChange={e=>setWhAddress(e.target.value)} placeholder="Av. Corrientes 1234, CABA" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,marginBottom:12,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,cursor:"pointer",marginBottom:18}}>
+                        <input type="checkbox" checked={whIsDefault} onChange={e=>setWhIsDefault(e.target.checked)} style={{width:14,height:14}}/>
+                        Marcar como principal (las ventas descuentan de este)
+                      </label>
+                      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                        <button onClick={()=>setEditingWarehouse(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                        <button onClick={saveWarehouse} disabled={whSaving} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{whSaving?<Spinner size={13} color="#fff"/>:"Guardar"}</button>
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+
+                {/* Modal editar stock por depósito */}
+                {editingStockItem && ReactDOM.createPortal(
+                  <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingStockItem(null)}>
+                    <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:520,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <h3 style={{margin:"0 0 6px",fontSize:17,fontWeight:800,color:T.text}}>{editingStockItem.nombre}</h3>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:16}}>Ajustá el stock por depósito. El total se calcula automáticamente.</div>
+                      {warehouses.map(w => (
+                        <div key={w.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"10px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{w.name}{w.is_default && <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.green+"22",color:T.green,fontWeight:700,marginLeft:8}}>PRINCIPAL</span>}</div>
+                          </div>
+                          <input type="number" min="0" value={stockEditValues[w.id]||0} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
+                        </div>
+                      ))}
+                      <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:8,marginTop:6,fontSize:12,color:T.text,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <span style={{fontWeight:600}}>Total</span>
+                        <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,color:T.accent}}>{Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0)}</span>
+                      </div>
+                      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:18}}>
+                        <button onClick={()=>setEditingStockItem(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                        <button onClick={saveStockByWarehouse} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:"#16a34a",color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Guardar stock</button>
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+              </div>
+            )}
+
             {/* ── TAB ALERTAS ── */}
             {tab==="alertas"&&(
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -13376,7 +13953,7 @@ export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","arca","meta","audio","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock"];
+  const VALID_PAGES = ["home","arca","meta","audio","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock","ml"];
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
   const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "home");
   const setPage = (p) => {
@@ -13685,6 +14262,7 @@ export default function App() {
   else if(page==="arca") pageContent = <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="meta") pageContent = <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="stock") pageContent = <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="ml") pageContent = <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="audio") pageContent = <PageView T={T} pageKey="audio"><AppAudioStudio T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="reclamos") pageContent = <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/></PageView>;

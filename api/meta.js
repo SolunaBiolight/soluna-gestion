@@ -262,7 +262,10 @@ async function fetchInsightsRows(cfg, level, since, until) {
     "spend", "impressions", "clicks", "ctr", "cpm", "cpc", "frequency", "reach",
     "actions", "action_values", "purchase_roas", "cost_per_action_type",
   ].join(",");
-  const data = await metaGet(`${cfg.ad_account_id}/insights`, {
+  // Paginar insights — antes con limit 500 y sin paging.next los ads de pos 501+
+  // caian en el branch "sin gasto" con spend:0 aunque hayan gastado 20k+.
+  const insightsRows = [];
+  let page = await metaGet(`${cfg.ad_account_id}/insights`, {
     level,
     "time_range[since]": since,
     "time_range[until]": until,
@@ -270,17 +273,44 @@ async function fetchInsightsRows(cfg, level, since, until) {
     fields,
     limit: 500,
   }, cfg.access_token);
+  insightsRows.push(...(page.data || []));
+  let nextUrl = page.paging?.next || null;
+  let safety = 0;
+  while (nextUrl && safety < 20) {
+    safety++;
+    try {
+      const r = await fetch(nextUrl);
+      const j = await r.json();
+      if (!r.ok || j.error) break;
+      insightsRows.push(...(j.data || []));
+      nextUrl = j.paging?.next || null;
+    } catch (_) { break; }
+  }
 
   const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget"
                    : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id"
                    : "id,name,status,effective_status,adset_id,campaign_id";
-  const nodes = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads"}`, {
+  const nodeArr = [];
+  let nodePage = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads"}`, {
     fields: nodeFields, limit: 500,
   }, cfg.access_token);
+  nodeArr.push(...(nodePage.data || []));
+  let nodeNext = nodePage.paging?.next || null;
+  let nodeSafety = 0;
+  while (nodeNext && nodeSafety < 20) {
+    nodeSafety++;
+    try {
+      const r = await fetch(nodeNext);
+      const j = await r.json();
+      if (!r.ok || j.error) break;
+      nodeArr.push(...(j.data || []));
+      nodeNext = j.paging?.next || null;
+    } catch (_) { break; }
+  }
   const nodeMap = {};
-  for (const n of (nodes.data || [])) nodeMap[n.id] = n;
+  for (const n of nodeArr) nodeMap[n.id] = n;
 
-  const rows = (data.data || []).map(r => {
+  const rows = insightsRows.map(r => {
     const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
     const id = r[idField];
     const node = nodeMap[id] || {};
@@ -389,7 +419,7 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
         const adsArr = [];
         let page = await metaGet(`${cfg.ad_account_id}/ads`, {
           limit: 500,
-          fields: "id,adset_id,campaign_id,creative{id,link_url,object_story_spec,asset_feed_spec,template_url,effective_object_story_id}",
+          fields: "id,adset_id,campaign_id,creative{id,link_url,object_story_spec,asset_feed_spec,template_url,effective_object_story_id,object_story_id}",
         }, cfg.access_token);
         adsArr.push(...(page.data || []));
         let nextUrl = page.paging?.next || null;
@@ -464,8 +494,9 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
           } catch (_) {}
           return out;
         };
-        const adsWithPostNoLink = adsArr.filter(a => !linkOfAdCreative(a) && a.creative?.effective_object_story_id);
-        const postIds = [...new Set(adsWithPostNoLink.map(a => a.creative.effective_object_story_id))];
+        const postIdOfAd = (a) => a.creative?.effective_object_story_id || a.creative?.object_story_id || null;
+        const adsWithPostNoLink = adsArr.filter(a => !linkOfAdCreative(a) && postIdOfAd(a));
+        const postIds = [...new Set(adsWithPostNoLink.map(postIdOfAd))];
         const postLinks = {};
         for (let i = 0; i < postIds.length; i += 50) {
           const chunk = postIds.slice(i, i + 50);
@@ -497,7 +528,7 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
         const linkOfAd = (ad) => {
           const direct = linkOfAdCreative(ad);
           if (direct) return direct;
-          const pid = ad.creative?.effective_object_story_id;
+          const pid = postIdOfAd(ad);
           if (pid && postLinks[pid]) return postLinks[pid];
           const cid = ad.creative?.id;
           if (cid && creativeLinks[cid]) return creativeLinks[cid];
@@ -1264,6 +1295,59 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // Debug: trae TODA la data de un ad para diagnosticar por que su URL no
+    // se esta detectando. Pega el ad_id y devuelve la respuesta cruda de Meta
+    // mas el intento de extraer link en cada estrategia.
+    if (action === "debug_ad" && req.method === "GET") {
+      const accIdQ = req.query.acc_id || acc_id;
+      const adId = req.query.ad_id;
+      if (!accIdQ || !adId) return res.status(400).json({ error: "Faltan acc_id y ad_id" });
+      const cfg = await loadMetaAccount(db, uid, accIdQ);
+      if (!cfg?.access_token) return res.status(400).json({ error: "Sin token" });
+      const out = { ad_id: adId };
+      try {
+        out.ad = await metaGet(adId, {
+          fields: "id,name,adset_id,campaign_id,status,effective_status,creative{id,link_url,object_story_spec,asset_feed_spec,template_url,effective_object_story_id,object_story_id,instagram_permalink_url,image_url,thumbnail_url}",
+        }, cfg.access_token);
+        const cr = out.ad?.creative || {};
+        out.derived = {
+          link_url_direct: cr.link_url || null,
+          template_url: cr.template_url || null,
+          oss_link_data_link: cr.object_story_spec?.link_data?.link || null,
+          oss_video_data_link: cr.object_story_spec?.video_data?.call_to_action?.value?.link || null,
+          oss_template_data_link: cr.object_story_spec?.template_data?.link || null,
+          oss_photo_data_url: cr.object_story_spec?.photo_data?.url || null,
+          afs_link_urls: cr.asset_feed_spec?.link_urls || null,
+          effective_object_story_id: cr.effective_object_story_id || null,
+          object_story_id: cr.object_story_id || null,
+        };
+        // Si tiene post id, fetchearlo
+        const pid = cr.effective_object_story_id || cr.object_story_id;
+        if (pid) {
+          try {
+            out.post = await metaGet(pid, {
+              fields: "attachments{target,url,unshimmed_url,subattachments,type,title,description,media},link,call_to_action,message,permalink_url",
+            }, cfg.access_token);
+          } catch (e) { out.post_error_user_token = e.message; }
+          if (cfg.page_access_token && cfg.page_access_token !== cfg.access_token) {
+            try {
+              out.post_via_page_token = await metaGet(pid, {
+                fields: "attachments{target,url,unshimmed_url,subattachments,type,title,description,media},link,call_to_action,message,permalink_url",
+              }, cfg.page_access_token);
+            } catch (e) { out.post_error_page_token = e.message; }
+          }
+        }
+        // Tambien probar previews
+        try {
+          const previewRes = await metaGet(`${adId}/previews`, { ad_format: "MOBILE_FEED_STANDARD" }, cfg.access_token);
+          out.preview_html_snippet = (previewRes.data?.[0]?.body || "").slice(0, 800);
+        } catch (e) { out.preview_error = e.message; }
+      } catch (e) {
+        return res.status(500).json({ error: e.message, partial: out });
+      }
+      return res.json(out);
+    }
+
     // Mapa de ads → product_ids (URL matching) — usado por Analisis para
     // calcular el BE efectivo por row. Devuelve tambien mapas agregados
     // por adset y campaign (union de product_ids).
@@ -1287,7 +1371,7 @@ export default async function handler(req, res) {
         let nextUrl = null;
         const baseParams = {
           limit: 500,
-          fields: "id,adset_id,campaign_id,creative{id,link_url,object_story_spec,asset_feed_spec,template_url,instagram_permalink_url,effective_object_story_id}",
+          fields: "id,adset_id,campaign_id,creative{id,link_url,object_story_spec,asset_feed_spec,template_url,instagram_permalink_url,effective_object_story_id,object_story_id}",
         };
         let page = await metaGet(`${cfg.ad_account_id}/ads`, baseParams, cfg.access_token);
         ads.push(...(page.data || []));
@@ -1354,11 +1438,12 @@ export default async function handler(req, res) {
         }
         return null;
       };
-      // Para ads que usan post existente (effective_object_story_id) sin link
-      // directo en creative, fetcheamos el post individualmente (mas robusto
-      // que el batched /?ids= que tiene issues con URL-encoded parens).
-      const adsWithPostNoLink = ads.filter(a => !linkOfAdCreative(a) && a.creative?.effective_object_story_id);
-      const postIds = [...new Set(adsWithPostNoLink.map(a => a.creative.effective_object_story_id))];
+      // Para ads que usan post existente, fetcheamos el post individualmente.
+      // Probamos AMBOS post_ids: effective_object_story_id (que ve el ad como
+      // post desde la pagina) Y object_story_id (legacy / original id).
+      const postIdOfAd = (a) => a.creative?.effective_object_story_id || a.creative?.object_story_id || null;
+      const adsWithPostNoLink = ads.filter(a => !linkOfAdCreative(a) && postIdOfAd(a));
+      const postIds = [...new Set(adsWithPostNoLink.map(postIdOfAd))];
       const postLinks = {};
       const postErrors = [];
       const postRawSamples = []; // primeros 3 raw responses para diagnostico
@@ -1422,7 +1507,7 @@ export default async function handler(req, res) {
       const linkOfAd = (ad) => {
         const direct = linkOfAdCreative(ad);
         if (direct) return direct;
-        const pid = ad.creative?.effective_object_story_id;
+        const pid = postIdOfAd(ad);
         if (pid && postLinks[pid]) return postLinks[pid];
         const cid = ad.creative?.id;
         if (cid && creativeLinks[cid]) return creativeLinks[cid];
@@ -2158,22 +2243,44 @@ export default async function handler(req, res) {
       }
       if (igId) spec.instagram_user_id = igId;
 
-      let creativeId, igStatus;
+      // Estrategia portada de Gestionommerce: 5 intentos para crear el
+      // AdCreative en orden de mas a menos preferido para binding con IG.
+      // Si un intento falla por OTRA razon distinta a IG → aborta (no
+      // tiene sentido reintentar si es error de creative o ad_account).
+      const specUser = { ...spec };
+      delete specUser.instagram_actor_id;
+      const specActor = { ...spec };
+      if (specActor.instagram_user_id) {
+        specActor.instagram_actor_id = specActor.instagram_user_id;
+        delete specActor.instagram_user_id;
+      }
+      const specNoIg = { ...spec };
+      delete specNoIg.instagram_user_id;
+      delete specNoIg.instagram_actor_id;
       const attempts = [
-        ["user", { ...spec }, pageToken],
-        ["actor", { ...spec, instagram_actor_id: igId, instagram_user_id: undefined }, pageToken],
-        ["fb-only", { ...spec, instagram_user_id: undefined, instagram_actor_id: undefined }, pageToken],
+        ["user",     specUser,  pageToken], // page_token + instagram_user_id (v21+)
+        ["actor",    specActor, pageToken], // page_token + instagram_actor_id (legacy)
+        ["user-ut",  specUser,  token],     // user_token + instagram_user_id (fallback)
+        ["actor-ut", specActor, token],     // user_token + instagram_actor_id
+        ["fb-only",  specNoIg,  pageToken], // sin IG (FB only)
       ];
+      let creativeId, igStatus;
+      let lastErr = null;
       for (const [tag, sp, tok] of attempts) {
         try {
           const cr = await metaPost(`${adAccountId}/adcreatives`, { name: adName, object_story_spec: JSON.stringify(sp) }, tok);
           creativeId = cr.id; igStatus = tag; break;
         } catch (e) {
+          lastErr = e.message;
           const low = e.message.toLowerCase();
-          if (!low.includes("instagram") && !low.includes("actor") && !low.includes("user_id")) throw e;
+          // Si el error NO es de IG/actor/user_id, abortar — reintentar no va a
+          // cambiar nada (error de adset, page, spec, etc).
+          if (!low.includes("instagram") && !low.includes("ig ") && !low.includes("actor") && !low.includes("user_id")) {
+            return res.status(502).json({ error: `Creative falló: ${e.message}` });
+          }
         }
       }
-      if (!creativeId) return res.status(502).json({ error: "No se pudo crear el AdCreative" });
+      if (!creativeId) return res.status(502).json({ error: `Todos los intentos de creative fallaron${lastErr?": "+lastErr:""}` });
 
       const ad = await metaPost(`${adAccountId}/ads`, {
         name: adName, adset_id: c.adset_id,

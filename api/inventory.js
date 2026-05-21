@@ -404,6 +404,96 @@ export default async function handler(req, res) {
       return res.json({ ok: true, processed_orders: recentOrders.length, items_updated: itemsUpdated, sales_logged: salesLogged });
     }
 
+    // ── DEPOSITOS / WAREHOUSES ──────────────────────────────
+    // Cada user tiene N depositos. Cada inventory_item tiene
+    // stock_by_warehouse: {warehouseId: stock}. stock_total = sum.
+
+    if (action === "warehouses_list" && req.method === "GET") {
+      const snap = await db.collection("users").doc(uid).collection("warehouses").get();
+      const warehouses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Default warehouse "main" si no hay ninguno
+      if (warehouses.length === 0) {
+        const mainRef = db.collection("users").doc(uid).collection("warehouses").doc("main");
+        const main = { name: "Depósito principal", is_default: true, created_at: new Date().toISOString() };
+        await mainRef.set(main);
+        warehouses.push({ id: "main", ...main });
+      }
+      warehouses.sort((a,b) => (b.is_default?1:0) - (a.is_default?1:0));
+      return res.json({ warehouses });
+    }
+
+    if (action === "warehouse_save" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { id, name, address, is_default } = body || {};
+      if (!name?.trim()) return res.status(400).json({ error: "Falta nombre" });
+      const col = db.collection("users").doc(uid).collection("warehouses");
+      const whId = id || col.doc().id;
+      // Si se marca default, desmarcar los otros
+      if (is_default) {
+        const snap = await col.get();
+        const batch = db.batch();
+        for (const d of snap.docs) if (d.id !== whId) batch.update(d.ref, { is_default: false });
+        await batch.commit();
+      }
+      const data = {
+        name: String(name).trim().slice(0, 80),
+        address: String(address || "").slice(0, 200),
+        is_default: Boolean(is_default),
+        updated_at: new Date().toISOString(),
+        ...(id ? {} : { created_at: new Date().toISOString() }),
+      };
+      await col.doc(whId).set(data, { merge: true });
+      return res.json({ ok: true, id: whId, warehouse: { id: whId, ...data } });
+    }
+
+    if (action === "warehouse_delete" && req.method === "DELETE") {
+      const whId = req.query.warehouse_id;
+      if (!whId) return res.status(400).json({ error: "Falta warehouse_id" });
+      if (whId === "main") return res.status(400).json({ error: "No se puede borrar el depósito principal" });
+      // Transferir stock de este wh al principal antes de borrar
+      const itemsSnap = await db.collection("users").doc(uid).collection("inventory_items").get();
+      const batch = db.batch();
+      for (const itemDoc of itemsSnap.docs) {
+        const item = itemDoc.data();
+        const sbw = item.stock_by_warehouse || {};
+        if (sbw[whId]) {
+          const newSbw = { ...sbw };
+          const transferred = newSbw[whId];
+          delete newSbw[whId];
+          newSbw["main"] = (newSbw["main"] || 0) + transferred;
+          batch.update(itemDoc.ref, { stock_by_warehouse: newSbw });
+        }
+      }
+      batch.delete(db.collection("users").doc(uid).collection("warehouses").doc(whId));
+      await batch.commit();
+      return res.json({ ok: true });
+    }
+
+    // Ajuste de stock por deposito específico
+    if (action === "adjust_warehouse_stock" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { item_id, warehouse_id, change, new_stock, event } = body || {};
+      if (!item_id || !warehouse_id) return res.status(400).json({ error: "Faltan item_id y warehouse_id" });
+      const ref = db.collection("users").doc(uid).collection("inventory_items").doc(item_id);
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({ error: "Item no encontrado" });
+      const current = snap.data();
+      const sbw = current.stock_by_warehouse || {};
+      const oldWh = sbw[warehouse_id] || 0;
+      const newWh = new_stock !== undefined && new_stock !== null
+        ? parseInt(new_stock) : oldWh + (parseInt(change) || 0);
+      const newSbw = { ...sbw, [warehouse_id]: Math.max(0, newWh) };
+      const newTotal = Object.values(newSbw).reduce((s, v) => s + (parseInt(v) || 0), 0);
+      await ref.update({ stock_by_warehouse: newSbw, stock_total: newTotal, updated_at: new Date().toISOString() });
+      await logMovement(db, uid, {
+        item_id, item_name: current.nombre,
+        warehouse_id, change: newWh - oldWh,
+        old_stock: oldWh, new_stock: newWh,
+        source: "manual", event: event || "ajuste_deposito",
+      });
+      return res.json({ ok: true, old_stock: oldWh, new_stock: newWh, new_total: newTotal });
+    }
+
     // ── CREATE/UPDATE ITEM ──────────────────────────────────
     if (action === "save_item" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
@@ -413,12 +503,20 @@ export default async function handler(req, res) {
       const id = body.id || itemsCol.doc().id;
       const existing = body.id ? (await itemsCol.doc(id).get()).data() : null;
 
+      // stock_by_warehouse: {whId: qty}. Si viene en el body, usar; sino,
+      // poner todo el stock_total en el deposito default "main".
+      const sbw = body.stock_by_warehouse && typeof body.stock_by_warehouse === "object"
+        ? Object.fromEntries(Object.entries(body.stock_by_warehouse).map(([k,v]) => [String(k), parseInt(v) || 0]))
+        : null;
+      const stockTotalFromSbw = sbw ? Object.values(sbw).reduce((s,v)=>s+v,0) : (parseInt(body.stock_total) || 0);
+      const finalSbw = sbw || (body.stock_total ? { main: parseInt(body.stock_total) } : (existing?.stock_by_warehouse || {}));
       const data = {
         id,
         nombre: String(body.nombre).slice(0, 200),
         sku: String(body.sku || "").slice(0, 80),
         image: body.image || null,
-        stock_total: parseInt(body.stock_total) || 0,
+        stock_total: stockTotalFromSbw,
+        stock_by_warehouse: finalSbw,
         canales: Array.isArray(body.canales) ? body.canales : [],
         // product_links: [{ product_id, platform, title, image, quantity }] — cantidad descuento por venta
         product_links: Array.isArray(body.product_links) ? body.product_links.map(l => ({
@@ -592,6 +690,174 @@ export default async function handler(req, res) {
         empty_in_days: salesPerDay > 0 ? Math.floor((item.stock_total || 0) / salesPerDay) : null,
         projection,
       });
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // GESTIÓN DE MERCADO LIBRE — Ediciones bulk
+    // ──────────────────────────────────────────────────────────
+
+    // Listar todas las publicaciones del user con los campos editables
+    if (action === "ml_items" && req.method === "GET") {
+      let token;
+      try { token = await getValidMLToken(db, uid); }
+      catch (e) { return res.status(400).json({ error: `ML no conectado o token inválido: ${e.message}` }); }
+      const status = req.query.status || "active"; // active | paused | closed | all
+      const items = [];
+      try {
+        // 1) paginar IDs
+        const ids = [];
+        let offset = 0;
+        while (offset < 1000) {
+          const url = `https://api.mercadolibre.com/users/${token.userId}/items/search${status==="all"?"":`?status=${status}`}${status==="all"?"?":"&"}limit=50&offset=${offset}`;
+          const r = await fetch(url, { headers: { Authorization: `Bearer ${token.accessToken}` } });
+          if (!r.ok) break;
+          const j = await r.json();
+          const batch = j.results || [];
+          ids.push(...batch);
+          if (batch.length < 50) break;
+          offset += 50;
+        }
+        if (ids.length === 0) return res.json({ items: [] });
+        // 2) fetch detalles en multiget (max 20 por call)
+        const fields = "id,title,permalink,status,available_quantity,price,currency_id,sale_terms,thumbnail,pictures,sold_quantity,health,listing_type_id";
+        for (let i = 0; i < ids.length; i += 20) {
+          const chunk = ids.slice(i, i + 20);
+          const r = await fetch(`https://api.mercadolibre.com/items?ids=${chunk.join(",")}&attributes=${fields}`, {
+            headers: { Authorization: `Bearer ${token.accessToken}` },
+          });
+          if (!r.ok) continue;
+          const arr = await r.json();
+          for (const entry of arr) {
+            const it = entry.body || entry;
+            if (!it?.id) continue;
+            const handlingTerm = (it.sale_terms || []).find(t => t.id === "MANUFACTURING_TIME");
+            items.push({
+              id: it.id,
+              title: it.title,
+              permalink: it.permalink,
+              status: it.status,
+              available_quantity: it.available_quantity || 0,
+              sold_quantity: it.sold_quantity || 0,
+              price: it.price || 0,
+              currency: it.currency_id || "ARS",
+              thumbnail: it.thumbnail || null,
+              pictures_count: (it.pictures || []).length,
+              handling_time: handlingTerm?.value_struct?.number || null,
+              listing_type: it.listing_type_id || null,
+              health: it.health ?? null,
+            });
+          }
+        }
+        return res.json({ items });
+      } catch (e) {
+        return res.status(502).json({ error: `Error consultando ML: ${e.message}` });
+      }
+    }
+
+    // Update individual de un item (PUT a /items/{id})
+    if (action === "ml_item_update" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { item_id, changes } = body || {};
+      if (!item_id) return res.status(400).json({ error: "Falta item_id" });
+      if (!changes || typeof changes !== "object") return res.status(400).json({ error: "Falta changes" });
+      let token;
+      try { token = await getValidMLToken(db, uid); } catch (e) { return res.status(400).json({ error: e.message }); }
+      try {
+        const r = await fetch(`https://api.mercadolibre.com/items/${item_id}`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token.accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify(changes),
+        });
+        const data = await r.json();
+        if (!r.ok) return res.status(502).json({ error: data.message || `HTTP ${r.status}`, raw: data });
+        return res.json({ ok: true, item_id, applied: changes });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
+    // BULK update: aplica los mismos changes a N items en paralelo
+    // body: { item_ids: [...], changes: {...} }
+    // Para handling_time: changes={ handling_time: 5 } se convierte a sale_terms.
+    if (action === "ml_bulk_update" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { item_ids, changes } = body || {};
+      if (!Array.isArray(item_ids) || item_ids.length === 0) return res.status(400).json({ error: "Faltan item_ids" });
+      if (!changes || typeof changes !== "object") return res.status(400).json({ error: "Faltan changes" });
+      let token;
+      try { token = await getValidMLToken(db, uid); } catch (e) { return res.status(400).json({ error: e.message }); }
+      // Traducir handling_time → sale_terms format ML
+      const mlChanges = { ...changes };
+      if (mlChanges.handling_time != null) {
+        const ht = parseInt(mlChanges.handling_time);
+        mlChanges.sale_terms = [{
+          id: "MANUFACTURING_TIME",
+          value_struct: { number: ht, unit: "días" },
+        }];
+        delete mlChanges.handling_time;
+      }
+      // % price changes: si pasan { price_pct: -10 } trabajamos por item
+      const isPctPrice = typeof changes.price_pct === "number";
+      const results = [];
+      const POOL = 5;
+      let idx = 0;
+      const worker = async () => {
+        while (idx < item_ids.length) {
+          const i = idx++;
+          const itemId = item_ids[i];
+          try {
+            let payload = mlChanges;
+            if (isPctPrice) {
+              // Necesitamos precio actual para calcular delta
+              const r0 = await fetch(`https://api.mercadolibre.com/items/${itemId}?attributes=price`, {
+                headers: { Authorization: `Bearer ${token.accessToken}` },
+              });
+              const j0 = await r0.json();
+              const current = j0.price || 0;
+              const newPrice = Math.round(current * (1 + changes.price_pct / 100));
+              payload = { ...mlChanges, price: newPrice };
+              delete payload.price_pct;
+            }
+            const r = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+              method: "PUT",
+              headers: { Authorization: `Bearer ${token.accessToken}`, "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            const data = await r.json();
+            if (!r.ok) results.push({ item_id: itemId, ok: false, error: data.message || `HTTP ${r.status}` });
+            else results.push({ item_id: itemId, ok: true });
+          } catch (e) {
+            results.push({ item_id: itemId, ok: false, error: e.message });
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(POOL, item_ids.length) }, () => worker()));
+      const okCount = results.filter(r => r.ok).length;
+      return res.json({ ok: true, total: item_ids.length, ok_count: okCount, errors: results.filter(r => !r.ok) });
+    }
+
+    // Reemplazar / agregar / quitar imagenes de UN item
+    // body: { item_id, picture_urls: [...] }  ← reemplaza el set completo
+    if (action === "ml_item_pictures" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { item_id, picture_urls } = body || {};
+      if (!item_id) return res.status(400).json({ error: "Falta item_id" });
+      if (!Array.isArray(picture_urls) || picture_urls.length === 0) return res.status(400).json({ error: "Faltan picture_urls" });
+      let token;
+      try { token = await getValidMLToken(db, uid); } catch (e) { return res.status(400).json({ error: e.message }); }
+      try {
+        const pictures = picture_urls.filter(u => /^https?:\/\//i.test(u)).map(u => ({ source: u }));
+        const r = await fetch(`https://api.mercadolibre.com/items/${item_id}`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token.accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ pictures }),
+        });
+        const data = await r.json();
+        if (!r.ok) return res.status(502).json({ error: data.message || `HTTP ${r.status}`, raw: data });
+        return res.json({ ok: true, item_id, pictures_count: pictures.length });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
     }
 
     return res.status(400).json({ error: `Acción no soportada: ${action}` });
