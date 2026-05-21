@@ -208,7 +208,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red"},
     {id:"ml",       label:"Mercado Libre", icon:"M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2zM9 22V12h6v10"},
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z",
-      subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"publicar",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
+      subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
   ];
@@ -10167,7 +10167,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     spend:          { label:"Gasto",          render: r => "$"+fmt(r.spend),            total: () => "$"+fmt(sumSpend), bold:true },
                     purchases:      { label:"Compras",        render: r => r.purchases,                 total: () => sumPurchases },
                     purchase_value: { label:"Valor compras",  render: r => "$"+fmt(r.purchase_value),   total: () => "$"+fmt(sumPurchaseValue) },
-                    roas:           { label:"ROAS",           render: r => fmt(r.roas)+"x", total: () => fmt(totalRoas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,null); if(be==null) return T.text; return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => T.text, bold:true },
+                    roas:           { label:"ROAS",           render: r => fmt(r.roas)+"x", total: () => fmt(totalRoas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); if(!be||be<=0) return T.text; return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => T.text, bold:true },
                     cpa:            { label:"CPA",            render: r => r.cpa ? "$"+fmt(r.cpa) : "—", total: () => totalCpa ? "$"+fmt(totalCpa) : "—" },
                     ctr:            { label:"CTR",            render: r => fmt(r.ctr)+"%",              total: () => fmt(totalCtr)+"%" },
                     cpm:            { label:"CPM",            render: r => "$"+fmt(r.cpm),              total: () => "—" },
@@ -10348,7 +10348,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const isExpanded = expandedAdId === ad.id;
                         const analyzing = analyzingId === ad.id;
                         const A = ad.analysis;
-                        const roasColor = ad.roas >= 2 ? T.green : ad.roas >= 1 ? T.text : ad.roas > 0 ? T.red : T.textSm;
+                        const adBe = effectiveBeForRow(ad, "ad", aRoasBe) || 2;
+                        const roasColor = ad.roas >= adBe ? T.green : ad.roas >= adBe * 0.5 ? T.text : ad.roas > 0 ? T.red : T.textSm;
                         const hasVideo = !!ad.creative_video_url;
                         const previewImage = ad.creative_image_hd || ad.creative_thumbnail;
                         return (
@@ -11720,18 +11721,32 @@ function AppML({T, user, onHome, onGoConfig}) {
   const [editPicturesText, setEditPicturesText] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const [diagnostic, setDiagnostic] = useState(null);
+  const [diagnosing, setDiagnosing] = useState(false);
   async function loadItems() {
     if (!uid) return;
     setLoading(true);
     setLoadError(null);
+    setDiagnostic(null);
     try {
       const r = await fetch(`/api/inventory?action=ml_items&uid=${uid}&status=${statusFilter}`);
       const j = await r.json();
       if (j.error) { setLoadError(j.error); setItems([]); return; }
       setItems(j.items || []);
+      if (j.diagnostic) setDiagnostic(j.diagnostic);
       setSelectedIds(new Set());
     } catch (e) { setLoadError(e.message); }
     finally { setLoading(false); }
+  }
+  async function runDiagnose() {
+    setDiagnosing(true);
+    try {
+      const r = await fetch(`/api/inventory?action=ml_diagnose&uid=${uid}`);
+      const j = await r.json();
+      const msg = j.steps.map(s => `${s.ok?"✓":"✗"} ${s.name}${s.error?": "+s.error:s.results_count!=null?": "+s.results_count+" results (total: "+s.total+")":""}`).join("\n");
+      await appAlert(`Diagnóstico Mercado Libre:\n\n${msg}\n\n${j.suggestion || ""}`);
+    } catch (e) { toast(e.message, "error"); }
+    finally { setDiagnosing(false); }
   }
   useEffect(() => { if (uid) loadItems(); /* eslint-disable-next-line */ }, [uid, statusFilter]);
 
@@ -11922,7 +11937,10 @@ function AppML({T, user, onHome, onGoConfig}) {
         ) : items.length === 0 ? (
           <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
             <div style={{fontSize:32,marginBottom:8}}>📭</div>
-            <div style={{fontSize:14,color:T.textMd}}>No se encontraron publicaciones {statusFilter==="active"?"activas":statusFilter==="paused"?"pausadas":statusFilter==="closed"?"cerradas":""} en tu cuenta de ML.</div>
+            <div style={{fontSize:14,color:T.textMd,marginBottom:10}}>No se encontraron publicaciones {statusFilter==="active"?"activas":statusFilter==="paused"?"pausadas":statusFilter==="closed"?"cerradas":""} en tu cuenta de ML.</div>
+            {diagnostic?.reason === "api_error" && <div style={{fontSize:11,color:T.red,marginBottom:10,fontFamily:"monospace",padding:8,background:T.red+"11",borderRadius:6,maxWidth:520,margin:"0 auto 10px"}}>⚠ {diagnostic.error}</div>}
+            {diagnostic?.reason === "empty" && diagnostic.total_from_ml === 0 && <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>ML respondió 0 publicaciones en estado "{statusFilter}". Probá con "Todas" arriba.</div>}
+            <button onClick={runDiagnose} disabled={diagnosing} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{diagnosing?<Spinner size={11} color={T.textMd}/>:"🔍"} Diagnosticar conexión</button>
           </div>
         ) : (
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
@@ -12032,7 +12050,7 @@ function AppStock({T, user, onHome}) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [dataPrev, setDataPrev] = useState(null);
-  const [tab, setTab] = useState("ventas");
+  const [tab, setTab] = useState("items");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("units");
   const [sortDir, setSortDir] = useState("desc");
@@ -12243,16 +12261,18 @@ function AppStock({T, user, onHome}) {
     finally { setInvItemsLoading(false); }
   }
   async function loadPlatformProducts() {
-    if (!uid) return;
+    if (!uid) return [];
     setPlatformLoading(true);
     setPlatformErrors([]);
     try {
       const r = await fetch(`/api/inventory?action=list_platform_products&uid=${uid}&platform=all`);
       const j = await r.json();
-      if (j.error) { toast(j.error,"error"); return; }
-      setPlatformProducts(j.products || []);
+      if (j.error) { toast(j.error,"error"); return []; }
+      const products = j.products || [];
+      setPlatformProducts(products);
       if ((j.errors || []).length) setPlatformErrors(j.errors);
-    } catch(e){ toast(e.message,"error"); }
+      return products;
+    } catch(e){ toast(e.message,"error"); return []; }
     finally { setPlatformLoading(false); }
   }
   function openNewItem() {
@@ -12333,9 +12353,13 @@ function AppStock({T, user, onHome}) {
   }
   async function importAllPubs() {
     if (!await appConfirm("Esto crea un Item por cada publicación de tus canales conectados (Shopify + TN + ML). Cantidad inicial = 1x. ¿Continuar?",{okLabel:"Importar"})) return;
-    if (platformProducts.length === 0) { await loadPlatformProducts(); }
-    const pubs = platformProducts;
-    let created = 0;
+    let pubs = platformProducts;
+    if (pubs.length === 0) { pubs = await loadPlatformProducts(); }
+    if (pubs.length === 0) {
+      toast("No se encontraron publicaciones. Verificá que tengas Shopify/TN/ML conectados en Configuración.","warning");
+      return;
+    }
+    let created = 0, failed = 0;
     for (const p of pubs) {
       try {
         const r = await fetch(`/api/inventory?action=save_item&uid=${uid}`,{
@@ -12348,10 +12372,10 @@ function AppStock({T, user, onHome}) {
             product_links: [{ product_id: p.id, platform: p.platform, title: p.title, image: p.image, quantity: 1 }],
           }),
         });
-        if (r.ok) created++;
-      } catch(e){}
+        if (r.ok) created++; else failed++;
+      } catch(e){ failed++; }
     }
-    toast(`Importados ${created} items`,"success");
+    toast(`Importados ${created} items${failed?` · ${failed} fallaron`:""}`,"success");
     loadInvItems();
   }
   async function syncSales() {

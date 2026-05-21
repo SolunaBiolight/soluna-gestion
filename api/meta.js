@@ -1150,12 +1150,27 @@ export default async function handler(req, res) {
       const until = String(req.query.until || new Date().toISOString().slice(0, 10));
 
       try {
-        // 1) Ads con creative detallado — pedimos image_url HD + video_id si lo tiene
-        const adsData = await metaGet(`${cfg.ad_account_id}/ads`, {
+        // 1) Ads con creative detallado — paginamos en lotes chicos para no exceder limites de Meta.
+        // El error "Please reduce the amount of data" salta con limit alto + muchos fields.
+        const ads = [];
+        let nextUrl = null;
+        let page = await metaGet(`${cfg.ad_account_id}/ads`, {
           fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,image_url,image_hash,video_id,object_story_spec,object_type,body,title,asset_feed_spec}",
-          limit: 300,
+          limit: 75,
         }, cfg.access_token);
-        const ads = adsData.data || [];
+        ads.push(...(page.data || []));
+        nextUrl = page.paging?.next || null;
+        let safety = 0;
+        while (nextUrl && safety < 10 && ads.length < 600) {
+          safety++;
+          try {
+            const r = await fetch(nextUrl);
+            const j = await r.json();
+            if (!r.ok || j.error) break;
+            ads.push(...(j.data || []));
+            nextUrl = j.paging?.next || null;
+          } catch (_) { break; }
+        }
 
         // 1.b) Para los ads que tienen video_id, resolver el MP4 source + thumbnail HD
         const videoIds = [...new Set(ads.map(a => a.creative?.video_id).filter(Boolean))];

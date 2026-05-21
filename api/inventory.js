@@ -697,6 +697,69 @@ export default async function handler(req, res) {
     // ──────────────────────────────────────────────────────────
 
     // Listar todas las publicaciones del user con los campos editables
+    // Diagnóstico de la conexión ML — muestra qué falla en cada paso.
+    if (action === "ml_diagnose" && req.method === "GET") {
+      const diag = { steps: [], suggestion: null };
+      let token;
+      try { token = await getValidMLToken(db, uid); }
+      catch (e) {
+        diag.steps.push({ name: "token", ok: false, error: e.message });
+        diag.suggestion = "Reconectá ML desde Configuración → Integraciones.";
+        return res.json(diag);
+      }
+      if (!token) {
+        diag.steps.push({ name: "token", ok: false, error: "No hay token guardado" });
+        diag.suggestion = "Conectá ML desde Configuración → Integraciones.";
+        return res.json(diag);
+      }
+      diag.steps.push({ name: "token", ok: true, userId: token.userId });
+      // Test 1: /users/me
+      try {
+        const r = await fetch("https://api.mercadolibre.com/users/me", { headers: { Authorization: `Bearer ${token.accessToken}` } });
+        const j = await r.json();
+        if (!r.ok) {
+          diag.steps.push({ name: "users/me", ok: false, status: r.status, error: j.message || JSON.stringify(j).slice(0,300) });
+          diag.suggestion = "El token no es válido. Reconectá ML.";
+          return res.json(diag);
+        }
+        diag.steps.push({ name: "users/me", ok: true, nickname: j.nickname, site_id: j.site_id, user_id: j.id });
+      } catch (e) {
+        diag.steps.push({ name: "users/me", ok: false, error: e.message });
+        return res.json(diag);
+      }
+      // Test 2: items/search active
+      try {
+        const r = await fetch(`https://api.mercadolibre.com/users/${token.userId}/items/search?status=active&limit=5`, { headers: { Authorization: `Bearer ${token.accessToken}` } });
+        const j = await r.json();
+        if (!r.ok) {
+          const errMsg = j.message || j.error || JSON.stringify(j).slice(0,300);
+          diag.steps.push({ name: "items/search?status=active", ok: false, status: r.status, error: errMsg, raw: j });
+          if (r.status === 403 && /PolicyAgent|UNAUTHORIZED/.test(errMsg)) {
+            diag.suggestion = "Tu app de ML en developers.mercadolibre.com no tiene permiso 'Publicación y sincronización' (Lectura). Entrá a tu app → editar → Permisos → marcalo → Guardar → reconectá ML.";
+          } else if (r.status === 401) {
+            diag.suggestion = "Token vencido o inválido. Reconectá ML.";
+          } else {
+            diag.suggestion = "Revisá el error específico arriba.";
+          }
+          return res.json(diag);
+        }
+        diag.steps.push({ name: "items/search?status=active", ok: true, total: j.paging?.total ?? null, results_count: (j.results || []).length, sample_ids: (j.results || []).slice(0,3) });
+      } catch (e) {
+        diag.steps.push({ name: "items/search?status=active", ok: false, error: e.message });
+        return res.json(diag);
+      }
+      // Test 3: items/search all (sin status)
+      try {
+        const r = await fetch(`https://api.mercadolibre.com/users/${token.userId}/items/search?limit=5`, { headers: { Authorization: `Bearer ${token.accessToken}` } });
+        const j = await r.json();
+        diag.steps.push({ name: "items/search (all)", ok: r.ok, total: j.paging?.total ?? null, results_count: (j.results || []).length, error: r.ok ? null : (j.message || JSON.stringify(j).slice(0,200)) });
+      } catch (e) {
+        diag.steps.push({ name: "items/search (all)", ok: false, error: e.message });
+      }
+      diag.suggestion = "Diagnóstico OK. Si seguís sin ver publicaciones, contactá soporte con este JSON.";
+      return res.json(diag);
+    }
+
     if (action === "ml_items" && req.method === "GET") {
       let token;
       try { token = await getValidMLToken(db, uid); }
@@ -704,21 +767,40 @@ export default async function handler(req, res) {
       if (!token) return res.status(400).json({ error: "Tu cuenta de Mercado Libre no está vinculada. Andá a Configuración → Integraciones → Mercado Libre y conectala." });
       const status = req.query.status || "active"; // active | paused | closed | all
       const items = [];
+      // Capturamos el primer error real (en vez de fallar en silencio)
+      let firstError = null;
       try {
         // 1) paginar IDs
         const ids = [];
         let offset = 0;
+        let totalFromML = null;
         while (offset < 1000) {
-          const url = `https://api.mercadolibre.com/users/${token.userId}/items/search${status==="all"?"":`?status=${status}`}${status==="all"?"?":"&"}limit=50&offset=${offset}`;
+          // URL bien formada: si status==="all", no incluimos el filtro.
+          const url = status === "all"
+            ? `https://api.mercadolibre.com/users/${token.userId}/items/search?limit=50&offset=${offset}`
+            : `https://api.mercadolibre.com/users/${token.userId}/items/search?status=${status}&limit=50&offset=${offset}`;
           const r = await fetch(url, { headers: { Authorization: `Bearer ${token.accessToken}` } });
-          if (!r.ok) break;
+          if (!r.ok) {
+            const txt = await r.text().catch(()=>"");
+            firstError = `HTTP ${r.status} en items/search: ${txt.slice(0,200)}`;
+            break;
+          }
           const j = await r.json();
+          if (totalFromML == null) totalFromML = j.paging?.total ?? null;
           const batch = j.results || [];
           ids.push(...batch);
           if (batch.length < 50) break;
           offset += 50;
         }
-        if (ids.length === 0) return res.json({ items: [] });
+        if (ids.length === 0) {
+          // Devolver info útil cuando viene vacío
+          return res.json({
+            items: [],
+            diagnostic: firstError
+              ? { reason: "api_error", error: firstError, hint: "Llamá a ml_diagnose para más detalles." }
+              : { reason: "empty", total_from_ml: totalFromML, hint: totalFromML === 0 ? `No tenés publicaciones en estado "${status}".` : "ML respondió 0 items para este filtro." },
+          });
+        }
         // 2) fetch detalles en multiget (max 20 por call)
         const fields = "id,title,permalink,status,available_quantity,price,currency_id,sale_terms,thumbnail,pictures,sold_quantity,health,listing_type_id";
         for (let i = 0; i < ids.length; i += 20) {
