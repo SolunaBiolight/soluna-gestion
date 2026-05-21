@@ -1894,7 +1894,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
                       style={{background:isActive?T.surface:T.card,border:`1px solid ${isActive?T.accentSolid:urgente?T.red+"44":T.border}`,borderLeft:`3px solid ${sc.dot}`,borderRadius:DS.r.lg,padding:"14px 16px",cursor:"pointer",transition:`all 0.1s ${DS.ease}`,animation:"growith-fadeIn 0.2s ease both",animationDelay:`${Math.min(rIdx*20,180)}ms`}}
                       onMouseEnter={e=>{if(!isActive){e.currentTarget.style.background=T.surface;e.currentTarget.style.transform="translateY(-1px)";}}}
-                      onMouseLeave={e=>{if(!isActive){e.currentTarget.style.background=T.card;e.currentTarget.style.transform="translateY(0)";}}>
+                      onMouseLeave={e=>{if(!isActive){e.currentTarget.style.background=T.card;e.currentTarget.style.transform="translateY(0)";}}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
