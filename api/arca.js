@@ -773,8 +773,37 @@ async function generarPDF(factData, config) {
     console.error("[pdf] no se pudo generar QR:", e.message);
   }
 
-  // Sanitiza texto para Helvetica (WinAnsi): caracteres fuera del rango se reemplazan
-  const safe = (s) => String(s || "").replace(/[^\x20-\x7E\xA0-\xFF]/g, "?");
+  // Banner opcional (config.banner_b64 — data URL "data:image/png;base64,...")
+  let bannerImage = null;
+  if (config.banner_b64 && typeof config.banner_b64 === "string") {
+    try {
+      const m = config.banner_b64.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (m) {
+        const mime = m[1].toLowerCase();
+        const buf = Buffer.from(m[2], "base64");
+        if (mime === "png") bannerImage = await pdfDoc.embedPng(buf);
+        else if (mime === "jpg" || mime === "jpeg") bannerImage = await pdfDoc.embedJpg(buf);
+      }
+    } catch (e) {
+      console.error("[pdf] no se pudo embeber banner:", e.message);
+    }
+  }
+
+  // Sanitiza texto para Helvetica (WinAnsi). Primero mapeamos caracteres
+  // comunes (curly quotes, em-dash, º, ª) a su equivalente latin-1; lo que
+  // sobre fuera del rango lo borramos (no metemos "?" porque se ve feo).
+  const safe = (s) => {
+    let t = String(s || "");
+    const map = {
+      "‘":"'", "’":"'", "“":'"', "”":'"',
+      "–":"-", "—":"-", "…":"...",
+      " ":" ", "​":"", " ":" ",
+      "º":"o", "ª":"a",
+    };
+    t = t.replace(/[‘’“”–—… ​ ºª]/g, ch => map[ch] || "");
+    // Sólo lo que pdf-lib puede renderizar sin morir
+    return t.replace(/[^\x20-\x7E\xA0-\xFF]/g, "");
+  };
 
   const drawPage = async (copyLabel) => {
     const page = pdfDoc.addPage([595, 842]);
@@ -784,10 +813,11 @@ async function generarPDF(factData, config) {
     const MID = MX + UW / 2;
 
     const COL_BLACK = rgb(0, 0, 0);
-    const COL_GREY = rgb(0.4, 0.4, 0.4);
-    const COL_LINE = rgb(0.7, 0.7, 0.7);
-    const COL_HEAD_BG = rgb(0.95, 0.95, 0.95);
-    const COL_ACCENT = rgb(0.0, 0.0, 0.0);
+    const COL_GREY = rgb(0.45, 0.45, 0.5);
+    const COL_LINE = rgb(0.78, 0.78, 0.82);
+    const COL_HEAD_BG = rgb(0.96, 0.96, 0.98);
+    const COL_ACCENT = rgb(0.12, 0.16, 0.32); // azul oscuro sobrio
+    const COL_ACCENT_SOFT = rgb(0.93, 0.94, 0.97);
 
     const draw = (text, x, y, size, bold = false, align = "left", color = COL_BLACK) => {
       const font = bold ? fontB : fontR;
@@ -804,43 +834,71 @@ async function generarPDF(factData, config) {
       borderWidth: opts.borderWidth ?? 0.6,
       color: opts.fill || rgb(1, 1, 1),
     });
-    const line = (x1, y1, x2, y2, color = COL_LINE) => page.drawLine({
+    const line = (x1, y1, x2, y2, color = COL_LINE, thickness = 0.6) => page.drawLine({
       start: { x: x1, y: H - y1 }, end: { x: x2, y: H - y2 },
-      thickness: 0.6, color,
+      thickness, color,
     });
 
     // ─────── HEADER ───────
     // Tres zonas: emisor (izq) | letra (centro) | datos factura (der)
-    const HY = 40, HH = 80;
-    const LW = 50; // ancho recuadro letra
+    const HY = 40, HH = 92;
+    const LW = 56; // ancho recuadro letra
     const halfW = (UW - LW) / 2;
     rect(MX, HY, halfW, HH);
-    rect(MX + halfW, HY, LW, HH, { fill: rgb(0.98, 0.98, 0.98) });
+    // Caja letra con fill suave de acento
+    rect(MX + halfW, HY, LW, HH, { fill: COL_ACCENT_SOFT, borderColor: COL_ACCENT, borderWidth: 0.8 });
     rect(MX + halfW + LW, HY, halfW, HH);
 
     // Letra grande en el centro
-    draw(letra, MX + halfW + LW / 2, HY + 38, 38, true, "center");
+    draw(letra, MX + halfW + LW / 2, HY + 48, 44, true, "center", COL_ACCENT);
     const cod = letra === "A" ? "01" : letra === "B" ? "06" : "11";
-    draw("COD. " + cod, MX + halfW + LW / 2, HY + 60, 7, false, "center", COL_GREY);
+    draw("COD. " + cod, MX + halfW + LW / 2, HY + 72, 7, true, "center", COL_GREY);
 
-    // Emisor (izquierda)
-    draw(nombre_fantasia || razon_social, MX + 8, HY + 14, 12, true);
-    draw("Razón Social: " + razon_social, MX + 8, HY + 28, 7);
-    draw("Domicilio Comercial: " + (domicilio || "—"), MX + 8, HY + 39, 7);
-    draw("Condición frente al IVA: " + (isMonotributo ? "Responsable Monotributo" : "IVA Responsable Inscripto"), MX + 8, HY + 50, 7);
-    if (ingresos_brutos) draw("Ingresos Brutos: " + ingresos_brutos, MX + 8, HY + 61, 7);
-    draw("Fecha Inicio Actividades: " + (config.fecha_inicio || "—"), MX + 8, HY + 72, 7);
+    // Emisor (izquierda) — banner si existe, sino nombre de fantasía
+    if (bannerImage) {
+      // Banner ocupa la franja superior izquierda. Mantenemos aspect ratio.
+      const maxBW = halfW - 16;
+      const maxBH = 38;
+      const bw0 = bannerImage.width, bh0 = bannerImage.height;
+      const scaleB = Math.min(maxBW / bw0, maxBH / bh0);
+      const bw = bw0 * scaleB, bh = bh0 * scaleB;
+      page.drawImage(bannerImage, {
+        x: MX + 8, y: H - HY - 4 - bh, width: bw, height: bh,
+      });
+      // Datos del emisor abajo del banner, en cuerpo más chico
+      let ey = HY + bh + 12;
+      draw("Razón Social: " + razon_social, MX + 8, ey, 7); ey += 10;
+      draw("Domicilio Comercial: " + (domicilio || "-"), MX + 8, ey, 7); ey += 10;
+      draw("Cond. IVA: " + (isMonotributo ? "Responsable Monotributo" : "IVA Responsable Inscripto"), MX + 8, ey, 7); ey += 10;
+      if (ingresos_brutos) { draw("Ingresos Brutos: " + ingresos_brutos, MX + 8, ey, 7); ey += 10; }
+    } else {
+      draw(nombre_fantasia || razon_social, MX + 8, HY + 16, 13, true, "left", COL_ACCENT);
+      draw("Razón Social: " + razon_social, MX + 8, HY + 32, 7);
+      draw("Domicilio Comercial: " + (domicilio || "-"), MX + 8, HY + 44, 7);
+      draw("Condición frente al IVA: " + (isMonotributo ? "Responsable Monotributo" : "IVA Responsable Inscripto"), MX + 8, HY + 56, 7);
+      if (ingresos_brutos) draw("Ingresos Brutos: " + ingresos_brutos, MX + 8, HY + 68, 7);
+      draw("Fecha Inicio Actividades: " + (config.fecha_inicio || "-"), MX + 8, HY + 80, 7);
+    }
 
     // Datos factura (derecha)
-    const RX = MX + halfW + LW + 8;
-    draw("FACTURA " + letra, RX, HY + 14, 14, true);
-    draw("Punto de Venta: " + String(punto_venta).padStart(5, "0") + "    Comp. Nro: " + String(factData.comprobante).padStart(8, "0"), RX, HY + 28, 7);
-    draw("Fecha de Emisión: " + factData.fecha, RX, HY + 39, 7);
-    draw("CUIT: " + cuit, RX, HY + 50, 7);
+    const RX = MX + halfW + LW + 10;
+    draw("FACTURA " + letra, RX, HY + 16, 15, true, "left", COL_ACCENT);
+    // pequeña línea bajo el título
+    line(RX, HY + 22, RX + halfW - 18, HY + 22, COL_ACCENT, 0.8);
+    draw("Punto de Venta: " + String(punto_venta).padStart(5, "0"), RX, HY + 36, 8);
+    draw("Comp. Nro: " + String(factData.comprobante).padStart(8, "0"), RX, HY + 48, 8);
+    draw("Fecha de Emisión: " + factData.fecha, RX, HY + 60, 8);
+    draw("CUIT: " + cuit, RX, HY + 72, 8);
+    if (nombre_fantasia && bannerImage) {
+      // si hay banner, mostrar nombre de fantasía aquí también, abajo
+      draw(nombre_fantasia, RX, HY + 84, 7, true, "left", COL_GREY);
+    }
 
     // ─────── DATOS RECEPTOR ───────
-    const RY = HY + HH + 12;
-    rect(MX, RY, UW, 36);
+    const RY = HY + HH + 14;
+    rect(MX, RY, UW, 42, { fill: rgb(0.99, 0.99, 1), borderColor: COL_LINE });
+    // Mini label sobre la caja
+    draw("DATOS DEL RECEPTOR", MX + 8, RY - 2, 7, true, "left", COL_GREY);
     const docTipo = factData.doc_tipo;
     const docNro = factData.doc_nro || "";
     const condIVA = docTipo === "CUIT" ? "IVA Responsable Inscripto" : "Consumidor Final";
@@ -848,17 +906,17 @@ async function generarPDF(factData, config) {
     const clienteName = factData.cliente || "Consumidor Final";
 
     if (docLabel && docNro) {
-      draw(docLabel + ": " + docNro, MX + 8, RY + 11, 8, true);
-      draw("Apellido y Nombre / Razón Social: " + clienteName, MID + 8, RY + 11, 7);
+      draw(docLabel + ": " + docNro, MX + 8, RY + 12, 8, true);
+      draw("Nombre y Apellido / Razón Social: " + clienteName, MID + 8, RY + 12, 8, true);
     } else {
-      draw("Apellido y Nombre / Razón Social: " + clienteName, MX + 8, RY + 11, 8, true);
+      draw("Nombre y Apellido / Razón Social: " + clienteName, MX + 8, RY + 12, 8, true);
     }
-    draw("Condición frente al IVA: " + condIVA, MX + 8, RY + 22, 7);
-    draw("Domicilio: " + (factData.domicilio || "—"), MID + 8, RY + 22, 7);
-    draw("Condición de venta: Contado", MX + 8, RY + 32, 7);
+    draw("Condición frente al IVA: " + condIVA, MX + 8, RY + 25, 7);
+    draw("Domicilio: " + (factData.domicilio || "-"), MID + 8, RY + 25, 7);
+    draw("Condición de venta: Contado", MX + 8, RY + 36, 7);
 
     // ─────── TABLA ITEMS ───────
-    const TY = RY + 50;
+    const TY = RY + 58;
     // Columnas: [Producto/Servicio, Cant, Unidad, Precio Unit, Bonif%, Subtotal]
     // (Quitamos "Código" — no es obligatorio en facturas AR y nunca lo tenemos)
     // Si es A/C, se agrega IVA % al final
@@ -875,22 +933,21 @@ async function generarPDF(factData, config) {
     const scale = UW / totalColsW;
     const scaledCols = cols.map(c => c * scale);
 
-    // Header fila
+    // Header fila — con fondo de acento
     let cx = MX;
-    const headRowH = 14;
+    const headRowH = 16;
     for (let i = 0; i < scaledCols.length; i++) {
       page.drawRectangle({
         x: cx, y: H - TY - headRowH, width: scaledCols[i], height: headRowH,
-        color: COL_HEAD_BG, borderColor: COL_BLACK, borderWidth: 0.4,
+        color: COL_ACCENT, borderColor: COL_ACCENT, borderWidth: 0.4,
       });
-      // Producto / Servicio (col 0) = left, Cant/U.Medida (1,2) = center, el resto (precios) = right
       const align = i === 0 ? "left" : i >= 3 ? "right" : "center";
       const xPos = align === "right" ? cx + scaledCols[i] - 4 : align === "center" ? cx + scaledCols[i] / 2 : cx + 4;
-      draw(hdrs[i], xPos, TY + 9, 7, true, align);
+      draw(hdrs[i], xPos, TY + 11, 7, true, align, rgb(1, 1, 1));
       cx += scaledCols[i];
     }
 
-    // Filas de items
+    // Filas de items — zebra striping
     let iy = TY + headRowH;
     const items = factData.items || [];
     for (let idx = 0; idx < items.length; idx++) {
@@ -899,7 +956,7 @@ async function generarPDF(factData, config) {
       const precioUnit = isMonotributo ? precioBruto : Math.round((precioBruto / 1.21) * 100) / 100;
       const subtotal = Math.round(item.cantidad * precioUnit * 100) / 100;
       const bonif = item.descuento_item > 0 ? Math.round((item.descuento_item / (item.cantidad * item.precio)) * 10000) / 100 : 0;
-      const nombreItem = (item.nombre || "Producto").length > 60 ? (item.nombre || "Producto").slice(0, 60) + "…" : (item.nombre || "Producto");
+      const nombreItem = (item.nombre || "Producto").length > 60 ? (item.nombre || "Producto").slice(0, 60) + "..." : (item.nombre || "Producto");
       const cellData = [
         nombreItem,
         String(item.cantidad),
@@ -910,13 +967,14 @@ async function generarPDF(factData, config) {
         ...(showIVA ? ["21,00%"] : []),
       ];
 
-      const rowH = 12;
+      const rowH = 13;
+      const rowBg = idx % 2 === 0 ? rgb(1, 1, 1) : rgb(0.985, 0.985, 0.995);
       let cx2 = MX;
       for (let i = 0; i < scaledCols.length; i++) {
-        rect(cx2, iy, scaledCols[i], rowH, { borderWidth: 0.3 });
+        rect(cx2, iy, scaledCols[i], rowH, { borderWidth: 0.3, fill: rowBg });
         const align = i === 0 ? "left" : i >= 3 ? "right" : "center";
         const xPos = align === "right" ? cx2 + scaledCols[i] - 4 : align === "center" ? cx2 + scaledCols[i] / 2 : cx2 + 4;
-        draw(cellData[i], xPos, iy + 8, 7, false, align);
+        draw(cellData[i], xPos, iy + 9, 7, false, align);
         cx2 += scaledCols[i];
       }
       iy += rowH;
@@ -926,22 +984,28 @@ async function generarPDF(factData, config) {
     const minRows = 4;
     for (let i = items.length; i < minRows; i++) {
       let cx2 = MX;
-      for (const c of scaledCols) { rect(cx2, iy, c, 12, { borderWidth: 0.3 }); cx2 += c; }
-      iy += 12;
+      const fillBg = i % 2 === 0 ? rgb(1, 1, 1) : rgb(0.985, 0.985, 0.995);
+      for (const c of scaledCols) { rect(cx2, iy, c, 13, { borderWidth: 0.3, fill: fillBg }); cx2 += c; }
+      iy += 13;
     }
 
     // ─────── TOTALES ───────
-    const totY = iy + 16;
-    rect(MX, totY, UW, 70);
+    const totY = iy + 18;
+    const totH = showIVA ? 116 : 60;
+    rect(MX, totY, UW, totH, { fill: rgb(0.985, 0.985, 0.99) });
     // Importes a la derecha
-    const labelX = MX + UW - 130;
+    const labelX = MX + UW - 140;
     const valX = MX + UW - 12;
-    let ty2 = totY + 12;
+    let ty2 = totY + 14;
     if (showIVA) {
+      // Discriminación IVA por alícuota (todos en 0 menos 21% que tiene el monto).
       const rows = [
-        ["Subtotal:", "$ " + neto.toFixed(2)],
         ["Importe Neto Gravado:", "$ " + neto.toFixed(2)],
+        ["IVA 0%:", "$ 0,00"],
+        ["IVA 10,5%:", "$ 0,00"],
         ["IVA 21%:", "$ " + iva21.toFixed(2)],
+        ["IVA 27%:", "$ 0,00"],
+        ["Importe Otros Tributos:", "$ 0,00"],
       ];
       for (const [l, v] of rows) {
         draw(l, labelX, ty2, 8, false, "right");
@@ -953,41 +1017,46 @@ async function generarPDF(factData, config) {
       draw("$ " + total.toFixed(2), valX, ty2, 8, false, "right");
       ty2 += 12;
     }
-    // Línea separadora de total
-    line(MX + UW - 200, ty2 + 2, MX + UW - 8, ty2 + 2, COL_BLACK);
-    draw("Importe Total:", labelX, ty2 + 16, 11, true, "right");
-    draw("$ " + total.toFixed(2), valX, ty2 + 16, 12, true, "right");
+    // Línea separadora antes del importe total
+    line(MX + UW - 220, ty2 + 4, MX + UW - 8, ty2 + 4, COL_ACCENT, 0.8);
+    // Importe total con fondo de acento
+    page.drawRectangle({
+      x: MX + UW - 220, y: H - ty2 - 28, width: 212, height: 22,
+      color: COL_ACCENT,
+    });
+    draw("IMPORTE TOTAL:", labelX, ty2 + 22, 10, true, "right", rgb(1, 1, 1));
+    draw("$ " + total.toFixed(2), valX, ty2 + 22, 12, true, "right", rgb(1, 1, 1));
 
     // ─────── CAE / AUTORIZACIÓN + QR ARCA ───────
-    const caeY = totY + 86;
-    const qrSize = 75;
-    rect(MX, caeY, UW, qrSize + 8, { fill: rgb(0.97, 0.97, 0.97) });
+    const caeY = totY + totH + 14;
+    const qrSize = 80;
+    rect(MX, caeY, UW, qrSize + 10, { fill: rgb(0.98, 0.98, 1), borderColor: COL_LINE });
 
     // QR a la izquierda
     if (qrImage) {
       page.drawImage(qrImage, {
-        x: MX + 8, y: H - caeY - qrSize - 4, width: qrSize, height: qrSize,
+        x: MX + 8, y: H - caeY - qrSize - 5, width: qrSize, height: qrSize,
       });
     }
 
     // Texto del medio
     const midX = MX + qrSize + 22;
-    draw("Comprobante Autorizado", midX, caeY + 14, 9, true);
-    draw("AGENCIA DE RECAUDACIÓN Y CONTROL ADUANERO (ARCA)", midX, caeY + 26, 7, false, "left", COL_GREY);
+    draw("Comprobante Autorizado", midX, caeY + 16, 9, true, "left", COL_ACCENT);
+    draw("AGENCIA DE RECAUDACION Y CONTROL ADUANERO (ARCA)", midX, caeY + 28, 7, false, "left", COL_GREY);
 
     // CAE a la derecha
-    draw("CAE N°:", MX + UW - 130, caeY + 14, 8, true, "left");
-    draw(factData.cae || "—", MX + UW - 8, caeY + 14, 9, true, "right");
-    draw("Fecha de Vto. CAE:", MX + UW - 130, caeY + 26, 7, false, "left");
-    draw(factData.cae_vto || "—", MX + UW - 8, caeY + 26, 7, false, "right");
+    draw("CAE N°:", MX + UW - 140, caeY + 16, 8, true, "left");
+    draw(factData.cae || "-", MX + UW - 8, caeY + 16, 10, true, "right", COL_ACCENT);
+    draw("Fecha de Vto. CAE:", MX + UW - 140, caeY + 28, 7, false, "left");
+    draw(factData.cae_vto || "-", MX + UW - 8, caeY + 28, 8, true, "right");
 
     // ─────── COPIA + FOOTER GROWITH ───────
-    draw(copyLabel, MX, H - 50, 7, true, "left", COL_GREY);
+    draw(copyLabel, MX, H - 50, 7, true, "left", COL_ACCENT);
     draw("Página 1 de 1", MX + UW, H - 50, 7, false, "right", COL_GREY);
 
     // Línea separadora antes del footer
     line(MX, H - 38, MX + UW, H - 38, COL_LINE);
-    draw("Documento emitido por Growith — growithapp.com", MX + UW / 2, H - 28, 7, false, "center", COL_GREY);
+    draw("Documento emitido por Growith - growithapp.com", MX + UW / 2, H - 28, 7, false, "center", COL_GREY);
   };
 
   for (const copy of ["ORIGINAL", "DUPLICADO", "TRIPLICADO"]) {
@@ -1110,6 +1179,9 @@ export default async function handler(req, res) {
       };
       if (data.cert_pem) updated.cert_pem = data.cert_pem;
       if (data.key_pem) updated.key_pem = data.key_pem;
+      // Banner opcional para PDF (data URL "data:image/png;base64,...")
+      if (data.banner_b64 === "") updated.banner_b64 = ""; // permitir borrar
+      else if (data.banner_b64) updated.banner_b64 = data.banner_b64;
 
       await saveCuitConfig(db, uid, cuitNum, updated);
       return res.json({ ok: true, cuit: cuitNum, has_cert: Boolean(updated.cert_pem), has_key: Boolean(updated.key_pem) });

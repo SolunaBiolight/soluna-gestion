@@ -7260,6 +7260,8 @@ function AppArca({T, user, onHome}) {
     fd.append("punto_venta", String(editCuit.punto_venta||1));
     fd.append("arca_prod", String(editCuit.arca_prod||false));
     fd.append("ingresos_brutos", editCuit.ingresos_brutos||"");
+    // Banner: si está vacío "" = quitar, si tiene contenido = guardar, si es undefined = no tocar
+    if (editCuit.banner_b64 !== undefined) fd.append("banner_b64", editCuit.banner_b64);
     const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
     if(d.error){toast(d.error,"error");setSavingEdit(false);return;}
     const updated = await api("list_cuits");
@@ -8645,6 +8647,30 @@ function AppArca({T, user, onHome}) {
                   <option value="homo">Homologación (pruebas)</option>
                   <option value="prod">Producción (facturas reales)</option>
                 </select>
+              </div>
+
+              {/* Banner opcional para PDF */}
+              <div>
+                <label style={labelS}>Banner / Logo para PDF (opcional)</label>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:8,lineHeight:1.4}}>Si subís una imagen, aparece arriba a la izquierda de la factura PDF en lugar del nombre de fantasía. PNG o JPG. Recomendado ~600×120 px.</div>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  {editCuit.banner_b64 && (
+                    <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:T.bg,border:`1px solid ${T.border}`,borderRadius:8}}>
+                      <img src={editCuit.banner_b64} alt="banner" style={{maxHeight:36,maxWidth:140,borderRadius:4,background:"#fff",padding:2}}/>
+                      <button onClick={()=>setEditCuit({...editCuit,banner_b64:""})} style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar</button>
+                    </div>
+                  )}
+                  <label style={{padding:"7px 14px",border:`1px solid ${T.border}`,borderRadius:8,fontSize:12,fontWeight:600,color:T.text,cursor:"pointer",background:T.surface,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    📷 {editCuit.banner_b64?"Cambiar imagen":"Subir imagen"}
+                    <input type="file" accept="image/png,image/jpeg" style={{display:"none"}} onChange={async e=>{
+                      const f = e.target.files?.[0]; if (!f) return;
+                      if (f.size > 600*1024) { toast("Imagen muy pesada (>600KB). Optimizala antes de subir.","warning"); return; }
+                      const reader = new FileReader();
+                      reader.onload = () => setEditCuit({...editCuit, banner_b64: String(reader.result)});
+                      reader.readAsDataURL(f);
+                    }}/>
+                  </label>
+                </div>
               </div>
             </div>
             <div style={{display:"flex",gap:10,marginTop:22}}>
