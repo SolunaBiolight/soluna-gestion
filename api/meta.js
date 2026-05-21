@@ -235,23 +235,66 @@ async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes
     : COPY_SYSTEM;
   // Variabilidad: temperature alta + seed que cambia cada vez para que copies
   // del mismo creativo salgan distintos cada generacion.
-  const randSeed = Math.floor(Math.random() * 100000);
-  const payload = {
-    system_instruction: { parts: [{ text: systemText }] },
-    contents: [{ role: "user", parts: [{ text: userPrompt + `\n\n(seed: ${randSeed})` }] }],
-    generationConfig: { response_mime_type: "application/json", temperature: 0.95, top_p: 0.95, max_output_tokens: 3000 },
-  };
-  const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-  });
-  const data = await r.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  if (!text) throw new Error("Gemini devolvió respuesta vacía");
-  let cleaned = text;
-  if (cleaned.includes("```")) { cleaned = cleaned.split("```")[1]; if (cleaned.startsWith("json")) cleaned = cleaned.slice(4); }
-  const s = cleaned.indexOf("{"), e = cleaned.lastIndexOf("}");
-  if (s >= 0 && e > s) cleaned = cleaned.slice(s, e + 1);
-  return JSON.parse(cleaned);
+  // Hasta 3 intentos. Si Gemini devuelve vacío o JSON truncado, reintentamos con
+  // tokens cada vez más grandes y temperature más conservadora.
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const randSeed = Math.floor(Math.random() * 100000);
+    const maxTok = attempt === 0 ? 3000 : attempt === 1 ? 4500 : 6000;
+    const temp = attempt === 0 ? 0.95 : 0.7;
+    const payload = {
+      system_instruction: { parts: [{ text: systemText }] },
+      contents: [{ role: "user", parts: [{ text: userPrompt + `\n\n(seed: ${randSeed})` }] }],
+      generationConfig: { response_mime_type: "application/json", temperature: temp, top_p: 0.95, max_output_tokens: maxTok },
+    };
+    let data;
+    try {
+      const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_TEXT_MODEL}:generateContent?key=${apiKey}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      data = await r.json();
+    } catch (e) { lastErr = e; continue; }
+    const cand = data.candidates?.[0];
+    const text = cand?.content?.parts?.[0]?.text || "";
+    const finishReason = cand?.finishReason || "";
+    if (!text) {
+      lastErr = new Error(`Gemini devolvió respuesta vacía (finish: ${finishReason || "sin razón"})`);
+      continue;
+    }
+    let cleaned = text;
+    if (cleaned.includes("```")) { cleaned = cleaned.split("```")[1] || ""; if (cleaned.startsWith("json")) cleaned = cleaned.slice(4); }
+    const s = cleaned.indexOf("{"), e = cleaned.lastIndexOf("}");
+    if (s >= 0 && e > s) cleaned = cleaned.slice(s, e + 1);
+    // Intento 1: parse directo
+    try { return JSON.parse(cleaned); } catch (_) {}
+    // Intento 2: si JSON truncado (Unterminated string), reparar cerrando comillas y llaves
+    try {
+      let repaired = cleaned;
+      // Si terminó sin cerrar string: agregar comilla
+      const dquotes = (repaired.match(/(?<!\\)"/g) || []).length;
+      if (dquotes % 2 === 1) repaired += '"';
+      // Cerrar llaves abiertas que sobren
+      const opens = (repaired.match(/\{/g) || []).length;
+      const closes = (repaired.match(/\}/g) || []).length;
+      for (let i = 0; i < opens - closes; i++) repaired += "}";
+      return JSON.parse(repaired);
+    } catch (_) {}
+    // Intento 3: extraer campos copy/title/description via regex como fallback
+    try {
+      const copyM = cleaned.match(/"copy"\s*:\s*"((?:\\.|[^"\\])*)/);
+      const titleM = cleaned.match(/"title"\s*:\s*"((?:\\.|[^"\\])*)/);
+      const descM = cleaned.match(/"description"\s*:\s*"((?:\\.|[^"\\])*)/);
+      if (copyM) {
+        return {
+          copy: copyM[1].replace(/\\n/g, "\n").replace(/\\"/g, '"'),
+          title: titleM?.[1].replace(/\\"/g, '"') || "",
+          description: descM?.[1].replace(/\\"/g, '"') || "",
+        };
+      }
+    } catch (_) {}
+    lastErr = new Error(`Gemini devolvió JSON inválido (intento ${attempt + 1})`);
+  }
+  throw lastErr || new Error("Gemini falló tras 3 intentos");
 }
 
 // ─── Insights helper (reutilizable por endpoint y evaluador de reglas) ──
@@ -605,11 +648,16 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
     }
   }
   // Helper: ¿este node (campaign/adset/ad id) pertenece a alguno de los products filtrados?
+  // NOTA: Si no se pudo resolver la URL del ad pero el ad tiene spend significativo,
+  // dejamos pasar (incluir) en vez de skipear — vale más over-actuar que perder dinero
+  // en ads que la URL no se resolvió. El usuario validó esta política tras ver ads con
+  // $50k+ gastado sin apagar por product_filter strict.
   const nodeMatchesProductFilter = (level, nodeId, filterIds) => {
     if (!Array.isArray(filterIds) || filterIds.length === 0) return true; // sin filtro = aplica a todos
     const productSet = adProductsByNode[level]?.get(nodeId);
-    if (!productSet || productSet.size === 0) return false; // nodo sin URL conocida → no aplica
-    return filterIds.some(pid => productSet.has(pid));
+    if (productSet && productSet.size > 0) return filterIds.some(pid => productSet.has(pid));
+    // URL no resuelta — política: incluir igual (la condición de spend/roas decide)
+    return true;
   };
 
   let totalActions = 0;
@@ -747,10 +795,19 @@ Analizá el anuncio FULL y devolvé el JSON. Sé específico y útil — no des 
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
   if (!text) throw new Error("Gemini devolvió respuesta vacía");
   let cleaned = text;
-  if (cleaned.includes("```")) { cleaned = cleaned.split("```")[1]; if (cleaned.startsWith("json")) cleaned = cleaned.slice(4); }
+  if (cleaned.includes("```")) { cleaned = cleaned.split("```")[1] || ""; if (cleaned.startsWith("json")) cleaned = cleaned.slice(4); }
   const s = cleaned.indexOf("{"), e = cleaned.lastIndexOf("}");
   if (s >= 0 && e > s) cleaned = cleaned.slice(s, e + 1);
-  return JSON.parse(cleaned);
+  try { return JSON.parse(cleaned); } catch (_) {
+    // Reparar JSON truncado
+    let repaired = cleaned;
+    const dq = (repaired.match(/(?<!\\)"/g) || []).length;
+    if (dq % 2 === 1) repaired += '"';
+    const opens = (repaired.match(/\{/g) || []).length;
+    const closes = (repaired.match(/\}/g) || []).length;
+    for (let i = 0; i < opens - closes; i++) repaired += "}";
+    return JSON.parse(repaired);
+  }
 }
 
 // ─── Handler ───────────────────────────────────────────

@@ -1756,7 +1756,9 @@ export default async function handler(req, res) {
         };
         const allTN = [];
         for (let page = 1; page <= 5; page++) {
-          let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}&created_at_max=${untilDate}T23:59:59`;
+          // Timezone Argentina (UTC-3): until incluye hasta 23:59:59 hora AR (= 02:59:59 UTC del día siguiente).
+        // Si filtraramos en UTC plano, las ventas entre 21:00-23:59 hora AR del día until caerían fuera.
+        let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
           const tnRes = await fetch(tnUrl, { headers });
           if (!tnRes.ok) break;
           const batch = await tnRes.json();
@@ -1811,7 +1813,7 @@ export default async function handler(req, res) {
         connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
         const allSH = [];
         // Shopify usa cursor pagination con Link header — para simplificar usamos page_info implícito vía date filters
-        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&created_at_min=${sinceDate}T00:00:00&created_at_max=${untilDate}T23:59:59`;
+        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
         for (let i = 0; i < 4; i++) {
           if (!pageInfoUrl) break;
           const shRes = await fetch(pageInfoUrl, {
@@ -1877,7 +1879,7 @@ export default async function handler(req, res) {
           if (accessToken) {
             const allML = [];
             for (let offset = 0; offset < 500; offset += 50) {
-              const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&order.status=paid&order.date_created.from=${sinceDate}T00:00:00.000-00:00&order.date_created.to=${untilDate}T23:59:59.999-00:00&limit=50&offset=${offset}&sort=date_desc`;
+              const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&order.status=paid&order.date_created.from=${sinceDate}T00:00:00.000-03:00&order.date_created.to=${untilDate}T23:59:59.999-03:00&limit=50&offset=${offset}&sort=date_desc`;
               const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
               if (!r.ok) {
                 console.error("[ml] orders search failed", r.status, await r.text().catch(()=>""));
@@ -2036,8 +2038,8 @@ export default async function handler(req, res) {
       };
       const allOrders = [];
       for (let page = 1; page <= 5; page++) {
-        let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}`;
-        if (untilDate) tnUrl += `&created_at_max=${untilDate}T23:59:59`;
+        let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}T00:00:00-03:00`;
+        if (untilDate) tnUrl += `&created_at_max=${untilDate}T23:59:59-03:00`;
         const tnRes = await fetch(tnUrl, { headers });
         if (!tnRes.ok) break;
         const batch = await tnRes.json();
