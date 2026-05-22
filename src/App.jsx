@@ -5822,6 +5822,52 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
           </div>
         </div>
 
+        {/* Troubleshooting: ya conectado pero sin publicaciones en Stock */}
+        {(shStore || mlStore) && (
+          <details style={{background:T.card,border:`1px solid ${T.yellow||"#eab308"}55`,borderRadius:14,padding:"14px 18px",marginTop:14}}>
+            <summary style={{cursor:"pointer",fontSize:13,fontWeight:700,color:T.yellow||"#eab308",listStyle:"none",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:16}}>⚠</span> ¿Ya conectaste pero no aparecen publicaciones en Stock o Gestión ML?
+            </summary>
+            <div style={{marginTop:12,fontSize:12,color:T.textMd,lineHeight:1.65}}>
+              Tu cuenta está vinculada pero la app que creaste necesita permisos adicionales para leer productos. Esto sucede cuando creaste la app antes que Growith soportara el módulo Stock.
+
+              {shStore && (
+                <div style={{marginTop:14,padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>🛍️ Shopify — agregar scope <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>read_products</code></div>
+                  <ol style={{margin:0,paddingLeft:18}}>
+                    <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> → abrí <strong style={{color:T.text}}>tu app de Growith</strong></li>
+                    <li>Andá a <strong style={{color:T.text}}>Versiones</strong> → tocá <strong style={{color:T.text}}>"Crear versión"</strong> (a partir de la última)</li>
+                    <li>En <strong style={{color:T.text}}>"Acceso" → "Seleccionar alcances"</strong>, marcá <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>read_products</code> (sumado a los que ya tenías: <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>read_all_orders</code>, <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>read_orders</code>, <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>write_orders</code>, <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>read_customers</code>)</li>
+                    <li><strong style={{color:T.text}}>Publicar</strong> esa versión nueva</li>
+                    <li>Volvé acá → tocá <strong style={{color:T.red}}>Desvincular</strong> en Shopify (arriba) → después <strong style={{color:T.accent}}>Conectar</strong> de nuevo con las mismas credenciales. Vas a re-autorizar la app y el nuevo scope queda activo.</li>
+                  </ol>
+                </div>
+              )}
+
+              {mlStore && (
+                <div style={{marginTop:14,padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>🛒 Mercado Libre — habilitar permiso <em>Publicación y sincronización</em></div>
+                  <ol style={{margin:0,paddingLeft:18}}>
+                    <li>Entrá a <a href="https://developers.mercadolibre.com.ar/devcenter" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>developers.mercadolibre.com.ar/devcenter</a> con el mismo usuario ML</li>
+                    <li><strong style={{color:T.text}}>Mis aplicaciones</strong> → abrí tu app de Growith → tocá <strong style={{color:T.text}}>Editar</strong></li>
+                    <li>Bajá hasta <strong style={{color:T.text}}>Permisos</strong> y marcá:
+                      <ul style={{margin:"4px 0 0",paddingLeft:18}}>
+                        <li><strong style={{color:T.text}}>Publicación y sincronización</strong> · al menos <strong style={{color:T.accent}}>Lectura</strong> (para ver publicaciones). Si querés editar precios/stock/imágenes desde Growith, marcá también escritura.</li>
+                      </ul>
+                    </li>
+                    <li>Tocá <strong style={{color:T.text}}>Guardar</strong> abajo del todo</li>
+                    <li>Volvé acá → <strong style={{color:T.red}}>Desvincular</strong> Mercado Libre → <strong style={{color:T.accent}}>Conectar</strong> de nuevo con las mismas App ID + Secret Key. El nuevo permiso queda activo.</li>
+                  </ol>
+                </div>
+              )}
+
+              <div style={{marginTop:12,fontSize:11,color:T.textSm}}>
+                💡 Después de reconectar, andá a Stock → Items o a Mercado Libre y tocá <strong style={{color:T.text}}>Refrescar</strong>. Si no aparece, tocá el botón <strong style={{color:T.text}}>🔍 Diagnosticar conexión</strong> y mostrame el resultado.
+              </div>
+            </div>
+          </details>
+        )}
+
         {/* Modal conectar Shopify */}
         {showShopifyModal && (
           <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingShopify && setShowShopifyModal(false)}>
@@ -5838,15 +5884,15 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                 <div style={{fontWeight:700,color:T.text,marginBottom:6}}>📖 Crear tu app en Shopify (3 minutos)</div>
                 <ol style={{margin:0,paddingLeft:18}}>
                   <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> → <strong style={{color:T.text}}>"Crear app"</strong> → nombre "Growith"</li>
-                  <li>"Versiones" → <strong style={{color:T.text}}>"Crear versión"</strong> → en "Acceso" → Seleccionar alcances:
+                  <li>"Versiones" → <strong style={{color:T.text}}>"Crear versión"</strong> → en "Acceso" → Seleccionar alcances <strong style={{color:T.text}}>(marcá todos)</strong>:
                     <div style={{margin:"3px 0",display:"flex",gap:4,flexWrap:"wrap"}}>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_all_orders</code>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_customers</code>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_orders</code>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>write_orders</code>
-                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_products</code>
+                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent,border:`1px solid ${T.yellow||"#eab308"}55`}}>read_products ⚠</code>
                     </div>
-                    <div style={{fontSize:9,color:T.textSm,marginTop:3}}>El último es para el módulo Stock (leer publicaciones).</div>
+                    <div style={{fontSize:9,color:T.textSm,marginTop:3}}><strong>read_products</strong> es indispensable para Stock y Análisis. Si tu app vieja no lo tenía, creá una versión nueva ahora y publicala.</div>
                   </li>
                   <li>⚠ En esa misma versión, agregá esta <strong style={{color:T.text}}>URL de redireccionamiento</strong>:
                     <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=shopify&action=callback`}</div>
@@ -5903,13 +5949,13 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                   <li><strong style={{color:T.text}}>"Crear aplicación"</strong> → completá nombre, descripción, propósito "Negocios"</li>
                   <li>En <strong style={{color:T.text}}>Flujos OAuth</strong> marcá: <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>Authorization Code</code> y <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>Refresh Token</code></li>
                   <li>En <strong style={{color:T.text}}>Negocios</strong> marcá <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>Mercado Libre</code></li>
-                  <li>En <strong style={{color:T.text}}>Permisos</strong> marcá:
+                  <li>En <strong style={{color:T.text}}>Permisos</strong> marcá <strong style={{color:T.text}}>TODOS</strong> estos:
                     <ul style={{margin:"4px 0 0",paddingLeft:18}}>
                       <li><strong style={{color:T.text}}>Usuarios</strong> · Lectura y escritura</li>
                       <li><strong style={{color:T.text}}>Facturación de una venta</strong> · Lectura y escritura</li>
                       <li><strong style={{color:T.text}}>Venta y envíos de un producto</strong> · Lectura y escritura</li>
                       <li><strong style={{color:T.text}}>Métricas del negocio</strong> · Lectura</li>
-                      <li><strong style={{color:T.text}}>Publicación y sincronización</strong> · Lectura <span style={{fontSize:10,color:T.yellow||"#eab308"}}>← necesario para el módulo Stock</span></li>
+                      <li style={{padding:"3px 6px",background:(T.yellow||"#eab308")+"15",borderRadius:4,border:`1px solid ${T.yellow||"#eab308"}33`}}><strong style={{color:T.text}}>Publicación y sincronización</strong> · Lectura <span style={{fontSize:10,color:T.yellow||"#eab308"}}>⚠ INDISPENSABLE para Stock y Gestión ML</span></li>
                     </ul>
                   </li>
                   <li>⚠ En <strong style={{color:T.text}}>Redirect URIs</strong> agregá exactamente:
