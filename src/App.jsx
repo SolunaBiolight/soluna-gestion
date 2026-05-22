@@ -12827,9 +12827,10 @@ function AppStock({T, user, onHome}) {
       )}
 
       <AppTopbar T={T} section="Stock & Estadísticas" onHome={onHome}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:11,background:platformColor+"22",border:`1px solid ${platformColor}44`,borderRadius:6,padding:"3px 8px",fontWeight:600,color:platformColor}}>{platformLabel}</span>
-          {data?.ml_data&&<span style={{fontSize:11,background:"#f0c14b22",border:"1px solid #f0c14b44",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#f0c14b"}}>+ML</span>}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          {platform==="shopify" && <span style={{fontSize:11,background:"#96BF4822",border:"1px solid #96BF4866",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#96BF48"}}>Shopify</span>}
+          {platform==="tiendanube" && <span style={{fontSize:11,background:"#2D8DF222",border:"1px solid #2D8DF266",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#2D8DF2"}}>Tienda Nube</span>}
+          {data?.ml_data && <span style={{fontSize:11,background:"#FFE60022",border:"1px solid #FFE60088",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#FFE600"}}>Mercado Libre</span>}
           <button onClick={exportCSV} disabled={!data}
             style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
             ⬇ CSV
@@ -13180,44 +13181,6 @@ function AppStock({T, user, onHome}) {
                         </div>
                       );
                     })}
-                  </div>
-                )}
-
-                {/* Tabla items por depósito */}
-                {warehouses.length > 0 && data?.products?.length > 0 && (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Stock por item y depósito</div>
-                    <div style={{overflowX:"auto"}}>
-                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                        <thead>
-                          <tr>
-                            <th style={{textAlign:"left",padding:"8px 10px",borderBottom:`1px solid ${T.border}`,fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase"}}>Producto</th>
-                            {warehouses.map(w => (
-                              <th key={w.id} style={{textAlign:"right",padding:"8px 10px",borderBottom:`1px solid ${T.border}`,fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",whiteSpace:"nowrap"}}>{w.name}</th>
-                            ))}
-                            <th style={{textAlign:"right",padding:"8px 10px",borderBottom:`1px solid ${T.border}`,fontSize:10,color:T.text,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase"}}>Total</th>
-                            <th style={{padding:"8px 10px",borderBottom:`1px solid ${T.border}`}}></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(data?.products || []).map(p => {
-                            const sbw = p.stock_by_warehouse || {};
-                            return (
-                              <tr key={p.id} style={{borderBottom:`1px solid ${T.borderL}`}}>
-                                <td style={{padding:"8px 10px",color:T.text,fontWeight:600,whiteSpace:"nowrap",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis"}}>{p.nombre}</td>
-                                {warehouses.map(w => (
-                                  <td key={w.id} style={{padding:"8px 10px",textAlign:"right",color:T.textMd,fontFamily:"monospace"}}>{sbw[w.id] || 0}</td>
-                                ))}
-                                <td style={{padding:"8px 10px",textAlign:"right",color:T.text,fontWeight:700,fontFamily:"monospace"}}>{p.stock_total || 0}</td>
-                                <td style={{padding:"8px 10px",textAlign:"right"}}>
-                                  <button onClick={()=>openEditStock(p)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
                   </div>
                 )}
 
@@ -13702,34 +13665,6 @@ function AppStock({T, user, onHome}) {
                   );
                 })()}
 
-                {/* Config por producto */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Configuración por producto</div>
-                  <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Personalizá el umbral de alerta para cada producto. Si no configurás uno, usa el global ({globalThreshold}d).</div>
-                  {allProducts.map(p=>{
-                    const cfg=alertConfig[p.id]||{};
-                    return (
-                      <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                        {p.imagen?<img src={p.imagen} alt="" style={{width:32,height:32,borderRadius:7,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
-                          :<div style={{width:32,height:32,borderRadius:7,background:T.surface,flexShrink:0}}/>}
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
-                          <div style={{fontSize:10,color:T.textSm}}>{p.variants.length} variantes</div>
-                        </div>
-                        <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,cursor:"pointer"}}>
-                          <input type="checkbox" checked={cfg.enabled!==false} onChange={e=>{saveAlertConfig({...alertConfig,[p.id]:{...cfg,enabled:e.target.checked}});}}/>
-                          <span style={{color:T.textMd}}>Activa</span>
-                        </label>
-                        <select value={cfg.threshold||""} onChange={e=>{const v=e.target.value?parseInt(e.target.value):undefined;saveAlertConfig({...alertConfig,[p.id]:{...cfg,threshold:v,enabled:cfg.enabled!==false}});}}
-                          style={{...iS,width:"auto",padding:"4px 8px",fontSize:11}}>
-                          <option value="">Global ({globalThreshold}d)</option>
-                          {[3,5,7,10,14,21,30,45,60].map(d=><option key={d} value={d}>{d} días</option>)}
-                        </select>
-                        {cfg.threshold&&<button onClick={()=>{const nc={...alertConfig};delete nc[p.id];saveAlertConfig(nc);}} style={{fontSize:10,color:T.red,background:"transparent",border:"none",cursor:"pointer",padding:"0 4px"}}>✕</button>}
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
             )}
           </>

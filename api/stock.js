@@ -287,10 +287,16 @@ export default async function handler(req, res) {
   const effectiveDays = hasCustomDate
     ? Math.max(1, Math.round((new Date(date_to)-new Date(date_from))/86400000)+1)
     : days;
+  // CRÍTICO: timezone AR (-03:00) — antes usábamos toISOString() que es UTC y
+  // cuando elegías "1 día" (since==until==hoy) el until quedaba como 00:00 UTC = 21:00 de ayer AR,
+  // excluyendo toda la jornada del día seleccionado y devolviendo "Sin datos".
+  // Ahora: since = inicio del día AR, until = fin del día AR.
   const sinceDate = hasCustomDate
-    ? new Date(date_from).toISOString()
+    ? `${String(date_from).slice(0,10)}T00:00:00-03:00`
     : new Date(Date.now()-effectiveDays*86400000).toISOString();
-  const untilDate = hasCustomDate ? new Date(date_to).toISOString() : null;
+  const untilDate = hasCustomDate
+    ? `${String(date_to).slice(0,10)}T23:59:59-03:00`
+    : null;
 
   if(!uid) return res.status(401).json({ error: "uid requerido" });
 

@@ -411,14 +411,8 @@ export default async function handler(req, res) {
     if (action === "warehouses_list" && req.method === "GET") {
       const snap = await db.collection("users").doc(uid).collection("warehouses").get();
       const warehouses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Default warehouse "main" si no hay ninguno
-      if (warehouses.length === 0) {
-        const mainRef = db.collection("users").doc(uid).collection("warehouses").doc("main");
-        const main = { name: "Depósito principal", is_default: true, created_at: new Date().toISOString() };
-        await mainRef.set(main);
-        warehouses.push({ id: "main", ...main });
-      }
-      warehouses.sort((a,b) => (b.is_default?1:0) - (a.is_default?1:0));
+      // No auto-creamos "main": los depósitos son los que el usuario decide crear.
+      warehouses.sort((a,b) => (a.created_at || "").localeCompare(b.created_at || ""));
       return res.json({ warehouses });
     }
 
@@ -449,18 +443,17 @@ export default async function handler(req, res) {
     if (action === "warehouse_delete" && req.method === "DELETE") {
       const whId = req.query.warehouse_id;
       if (!whId) return res.status(400).json({ error: "Falta warehouse_id" });
-      if (whId === "main") return res.status(400).json({ error: "No se puede borrar el depósito principal" });
-      // Transferir stock de este wh al principal antes de borrar
+      // Borramos el depósito. El stock que tuviera queda registrado en el item pero
+      // sin depósito asignado — el user puede re-asignarlo después si lo necesita.
+      // (Nota: el stock_total del item NO cambia; solo desaparece la clave del map.)
       const itemsSnap = await db.collection("users").doc(uid).collection("inventory_items").get();
       const batch = db.batch();
       for (const itemDoc of itemsSnap.docs) {
         const item = itemDoc.data();
         const sbw = item.stock_by_warehouse || {};
-        if (sbw[whId]) {
+        if (sbw[whId] != null) {
           const newSbw = { ...sbw };
-          const transferred = newSbw[whId];
           delete newSbw[whId];
-          newSbw["main"] = (newSbw["main"] || 0) + transferred;
           batch.update(itemDoc.ref, { stock_by_warehouse: newSbw });
         }
       }
