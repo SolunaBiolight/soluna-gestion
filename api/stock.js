@@ -87,8 +87,11 @@ async function shProducts(shop, tok) {
 // Política: solo financial_status=paid (pago aprobado). Las ventas con pago parcial,
 // pendiente o reembolso parcial NO descuentan stock ni se cuentan en estadísticas.
 async function shOrders(shop, tok, days, since, until) {
-  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway,financial_status`;
-  if(until) url+=`&created_at_max=${until}`;
+  // URL-encode las fechas (los chars ":" y "+" rompen queries de Shopify si no se escapan)
+  const sinceE = encodeURIComponent(since);
+  const untilE = until ? encodeURIComponent(until) : null;
+  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${sinceE}&fields=id,line_items,created_at,shipping_address,payment_gateway,financial_status`;
+  if(untilE) url+=`&created_at_max=${untilE}`;
   while(url){
     const r=await fetchT(url,{headers:SH_H(tok)});
     if(!r.ok) break;
@@ -284,15 +287,23 @@ export default async function handler(req, res) {
   const effectiveDays = hasCustomDate
     ? Math.max(1, Math.round((new Date(date_to)-new Date(date_from))/86400000)+1)
     : days;
-  // CRÍTICO: timezone AR (-03:00) — antes usábamos toISOString() que es UTC y
-  // cuando elegías "1 día" (since==until==hoy) el until quedaba como 00:00 UTC = 21:00 de ayer AR,
-  // excluyendo toda la jornada del día seleccionado y devolviendo "Sin datos".
-  // Ahora: since = inicio del día AR, until = fin del día AR.
+  // CRÍTICO: convertir el día seleccionado (AR, UTC-3) a UTC explícito.
+  // Día 2026-05-22 AR = desde 2026-05-22T03:00:00Z hasta 2026-05-23T02:59:59Z
+  // Antes usábamos T00:00:00-03:00 directo, pero algunos endpoints (Shopify) son
+  // quisquillosos con offsets; UTC es lo más universal.
+  const arDayToUtcStart = (yyyymmdd) => {
+    const [y, m, d] = String(yyyymmdd).slice(0, 10).split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 3, 0, 0)).toISOString(); // 00:00 AR = 03:00 UTC
+  };
+  const arDayToUtcEnd = (yyyymmdd) => {
+    const [y, m, d] = String(yyyymmdd).slice(0, 10).split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d + 1, 2, 59, 59)).toISOString(); // 23:59 AR = 02:59 UTC día siguiente
+  };
   const sinceDate = hasCustomDate
-    ? `${String(date_from).slice(0,10)}T00:00:00-03:00`
-    : new Date(Date.now()-effectiveDays*86400000).toISOString();
+    ? arDayToUtcStart(date_from)
+    : new Date(Date.now() - effectiveDays * 86400000).toISOString();
   const untilDate = hasCustomDate
-    ? `${String(date_to).slice(0,10)}T23:59:59-03:00`
+    ? arDayToUtcEnd(date_to)
     : null;
 
   if(!uid) return res.status(401).json({ error: "uid requerido" });
