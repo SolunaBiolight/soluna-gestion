@@ -13472,7 +13472,6 @@ function AppStock({T, user, onHome}) {
               </div>
               );
             })()}
-            )}
 
             {/* ── MODAL Crear/Editar Item ── */}
             {editingItem && ReactDOM.createPortal(
