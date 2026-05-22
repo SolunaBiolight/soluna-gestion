@@ -3656,10 +3656,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     function cleanAndreani(s){return cleanField(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^\x00-\x7F]/g,"");}
 
     // Separate domicilio vs sucursal
+    // NOTA: por pedido del usuario, TODOS los envíos a Andreani se generan como
+    // "Domicilio" sin importar lo que diga el método de envío de la tienda.
+    // Si en el futuro quiere reactivar sucursal, restaurar la lógica original.
     function isSucursal(o){
-      if(o.esSucursal!==undefined) return o.esSucursal;
-      const dir=(o.direccion||"").toUpperCase();
-      return dir.includes('PUNTO ANDREANI')||dir.includes('HOP ')||dir.includes('SUCURSAL ')||dir==="NO INFORMADO";
+      return false;
     }
     const domicilioOrders=ordersData.filter(o=>!isSucursal(o));
     const sucursalOrders=ordersData.filter(o=>isSucursal(o));
@@ -3851,11 +3852,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   },[]);
 
   function isSucursalOrder(o) {
-    // Usar el campo esSucursal calculado en buildOrdersFromAPI
-    if(o.esSucursal!==undefined) return o.esSucursal;
-    // Fallback para compatibilidad
-    const dir=(o.direccion||"").toUpperCase();
-    return dir.includes('PUNTO ANDREANI')||dir.includes('HOP ')||dir.includes('SUCURSAL ')||dir==="NO INFORMADO";
+    // NOTA: por pedido del usuario, TODOS los envíos van como Domicilio
+    // independientemente del método de envío de la tienda. Si querés reactivar
+    // detección de sucursal, restaurar la lógica original (esSucursal || dir
+    // contiene PUNTO ANDREANI / HOP / SUCURSAL).
+    return false;
   }
 
   async function exportAndreani() {
