@@ -5859,7 +5859,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                     <li><strong style={{color:T.text}}>Mis aplicaciones</strong> → abrí tu app de Growith → tocá <strong style={{color:T.text}}>Editar</strong></li>
                     <li>Bajá hasta <strong style={{color:T.text}}>Permisos</strong> y marcá:
                       <ul style={{margin:"4px 0 0",paddingLeft:18}}>
-                        <li><strong style={{color:T.text}}>Publicación y sincronización</strong> · al menos <strong style={{color:T.accent}}>Lectura</strong> (para ver publicaciones). Si querés editar precios/stock/imágenes desde Growith, marcá también escritura.</li>
+                        <li><strong style={{color:T.text}}>Publicación y sincronización</strong> · <strong style={{color:T.accent}}>Lectura y escritura</strong> — escritura es lo que permite editar precios, stock, imágenes y pausar publicaciones desde Gestión ML.</li>
                       </ul>
                     </li>
                     <li>Tocá <strong style={{color:T.text}}>Guardar</strong> abajo del todo</li>
@@ -5966,7 +5966,7 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
                       <li><strong style={{color:T.text}}>Facturación de una venta</strong> · Lectura y escritura</li>
                       <li><strong style={{color:T.text}}>Venta y envíos de un producto</strong> · Lectura y escritura</li>
                       <li><strong style={{color:T.text}}>Métricas del negocio</strong> · Lectura</li>
-                      <li style={{padding:"3px 6px",background:(T.yellow||"#eab308")+"15",borderRadius:4,border:`1px solid ${T.yellow||"#eab308"}33`}}><strong style={{color:T.text}}>Publicación y sincronización</strong> · Lectura <span style={{fontSize:10,color:T.yellow||"#eab308"}}>⚠ INDISPENSABLE para Stock y Gestión ML</span></li>
+                      <li style={{padding:"3px 6px",background:(T.yellow||"#eab308")+"15",borderRadius:4,border:`1px solid ${T.yellow||"#eab308"}33`}}><strong style={{color:T.text}}>Publicación y sincronización</strong> · <strong style={{color:T.accent}}>Lectura y escritura</strong> <span style={{fontSize:10,color:T.yellow||"#eab308"}}>⚠ INDISPENSABLE — escritura es para que puedas editar precios/stock/imágenes desde Gestión ML</span></li>
                     </ul>
                   </li>
                   <li>⚠ En <strong style={{color:T.text}}>Redirect URIs</strong> agregá exactamente:

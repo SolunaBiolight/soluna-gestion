@@ -83,8 +83,10 @@ async function shProducts(shop, tok) {
 }
 
 // Bug #1 fix: was fetching same page twice — now uses cursor-based pagination via Link header
+// Política: solo financial_status=paid (pago aprobado). Las ventas con pago parcial,
+// pendiente o reembolso parcial NO descuentan stock ni se cuentan en estadísticas.
 async function shOrders(shop, tok, days, since, until) {
-  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid,partially_paid,partially_refunded&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway`;
+  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway,financial_status`;
   if(until) url+=`&created_at_max=${until}`;
   while(url){
     const r=await fetchT(url,{headers:SH_H(tok)});
