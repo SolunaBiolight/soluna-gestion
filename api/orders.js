@@ -1,5 +1,6 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getValidMLToken } from "./integrations.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -53,14 +54,16 @@ export default async function handler(req, res) {
 
   if (!uid) return res.status(401).json({ error: "uid requerido" });
 
-  let platform = 'tiendanube', storeId, accessToken, shop;
+  let platform = 'tiendanube', storeId, accessToken, shop, mlUserId, mlToken;
+  let dbRef;
   try {
-    const db = initAdmin();
-    const userSnap = await db.collection("users").doc(uid).get();
+    dbRef = initAdmin();
+    const userSnap = await dbRef.collection("users").doc(uid).get();
     if (userSnap.exists) {
       const stores = userSnap.data().stores || [];
       const tnStore = stores.find(s => s.type === "tiendanube");
       const shStore = stores.find(s => s.type === "shopify");
+      const mlStore = stores.find(s => s.type === "mercadolibre" || s.type === "meli");
       // Shopify tiene prioridad si está conectado
       if (shStore?.accessToken && shStore?.shop) {
         platform = 'shopify';
@@ -70,6 +73,13 @@ export default async function handler(req, res) {
         platform = 'tiendanube';
         storeId = tnStore.storeId;
         accessToken = tnStore.accessToken;
+      }
+      // ML (en paralelo a la plataforma primaria, para que stats sume todo)
+      if (mlStore) {
+        try {
+          const tok = await getValidMLToken(dbRef, uid);
+          if (tok?.accessToken && tok?.userId) { mlUserId = tok.userId; mlToken = tok.accessToken; }
+        } catch (_) {}
       }
     }
   } catch(e) {
@@ -103,6 +113,32 @@ export default async function handler(req, res) {
     revenue: orders.reduce((sum, o) => sum + parseFloat(isShopify ? (o.total_price || 0) : (o.total || 0)), 0),
   });
 
+  // ── ML orders helper ───────────────────────────────────────────
+  // Trae todas las órdenes paid (no canceladas) en el rango con paginación.
+  async function fetchMLOrdersInRange(from, to) {
+    if (!mlUserId || !mlToken) return [];
+    const all = [];
+    const fromISO = new Date(from).toISOString().replace("Z", "-00:00");
+    const toISO = new Date(to).toISOString().replace("Z", "-00:00");
+    for (let offset = 0; offset < 2000; offset += 50) {
+      try {
+        const url = `https://api.mercadolibre.com/orders/search?seller=${mlUserId}&order.status=paid&order.date_created.from=${encodeURIComponent(fromISO)}&order.date_created.to=${encodeURIComponent(toISO)}&limit=50&offset=${offset}&sort=date_desc`;
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${mlToken}` } });
+        if (!r.ok) break;
+        const d = await r.json();
+        const batch = d.results || [];
+        all.push(...batch);
+        if (batch.length < 50) break;
+      } catch (_) { break; }
+    }
+    return all;
+  }
+  const calcMLStats = (mlOrders) => ({
+    count: mlOrders.length,
+    revenue: mlOrders.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0),
+  });
+  const mergeStats = (a, b) => ({ count: (a.count || 0) + (b.count || 0), revenue: (a.revenue || 0) + (b.revenue || 0) });
+
   try {
     // Búsqueda directa por número (solo TN — Shopify devuelve vacío)
     if (q) {
@@ -115,28 +151,42 @@ export default async function handler(req, res) {
     }
 
     // STATS: facturado + count período actual vs anterior (para Home KPIs)
-    // Compatible con TN y Shopify
+    // Compatible con TN, Shopify y ML — SUMA todas las plataformas conectadas.
     if (tab === 'stats') {
       const { from, to, prevFrom } = req.query;
       if (!from) return res.status(400).json({ error: 'from required' });
       const toDate = to || new Date().toISOString();
 
+      // Fetch ML en paralelo a la plataforma primaria
+      const mlCurrentP = fetchMLOrdersInRange(from, toDate);
+      const mlPrevP = prevFrom ? fetchMLOrdersInRange(prevFrom, from) : Promise.resolve([]);
+
+      let primaryCurrent, primaryPrev;
       if (platform === 'shopify') {
-        const [current, prev] = await Promise.all([
+        [primaryCurrent, primaryPrev] = await Promise.all([
           fetchShopifyOrders(from, toDate),
           prevFrom ? fetchShopifyOrders(prevFrom, from) : Promise.resolve([]),
         ]);
-        return res.status(200).json({ current: calcStats(current, true), prev: calcStats(prev, true) });
+        primaryCurrent = calcStats(primaryCurrent, true);
+        primaryPrev = calcStats(primaryPrev, true);
+      } else {
+        const mkParams = (f, t) =>
+          `payment_status=paid&created_at_min=${encodeURIComponent(f)}&created_at_max=${encodeURIComponent(t)}`;
+        [primaryCurrent, primaryPrev] = await Promise.all([
+          fetchAllPages(storeId, accessToken, mkParams(from, toDate)),
+          prevFrom ? fetchAllPages(storeId, accessToken, mkParams(prevFrom, from)) : Promise.resolve([]),
+        ]);
+        primaryCurrent = calcStats(primaryCurrent, false);
+        primaryPrev = calcStats(primaryPrev, false);
       }
-
-      // TN
-      const mkParams = (f, t) =>
-        `payment_status=paid&created_at_min=${encodeURIComponent(f)}&created_at_max=${encodeURIComponent(t)}`;
-      const [current, prev] = await Promise.all([
-        fetchAllPages(storeId, accessToken, mkParams(from, toDate)),
-        prevFrom ? fetchAllPages(storeId, accessToken, mkParams(prevFrom, from)) : Promise.resolve([]),
-      ]);
-      return res.status(200).json({ current: calcStats(current, false), prev: calcStats(prev, false) });
+      const [mlCurOrders, mlPrevOrders] = await Promise.all([mlCurrentP, mlPrevP]);
+      const mlCurrent = calcMLStats(mlCurOrders);
+      const mlPrev = calcMLStats(mlPrevOrders);
+      return res.status(200).json({
+        current: mergeStats(primaryCurrent, mlCurrent),
+        prev: mergeStats(primaryPrev, mlPrev),
+        breakdown: { primary: primaryCurrent, ml: mlCurrent }, // por si la UI quiere desglosar
+      });
     }
 
     // TOTAL: count de todos los pedidos pagados (solo TN por ahora)
