@@ -86,9 +86,13 @@ export default async function handler(req, res) {
 
       const items = snap.docs.map(d => {
         const data = d.data();
+        // Defensive clamp: si hay datos viejos con stock_total negativo (por bugs anteriores),
+        // los mostramos como 0 al user. El valor en Firestore queda hasta que el user lo edite.
+        const stockClean = Math.max(0, data.stock_total || 0);
+        const sbwClean = Object.fromEntries(Object.entries(data.stock_by_warehouse || {}).map(([k,v]) => [k, Math.max(0, parseInt(v) || 0)]));
         const sales_30d = sales30dByItem[d.id] || 0;
-        const { days_left, status } = computeStatus(data.stock_total, sales_30d, settings);
-        return { id: d.id, ...data, sales_30d, days_left, status };
+        const { days_left, status } = computeStatus(stockClean, sales_30d, settings);
+        return { id: d.id, ...data, stock_total: stockClean, stock_by_warehouse: sbwClean, sales_30d, days_left, status };
       });
       items.sort((a, b) => (a.status === "empty" ? -1 : 1) - (b.status === "empty" ? -1 : 1));
       const kpis = {
@@ -499,10 +503,10 @@ export default async function handler(req, res) {
       // stock_by_warehouse: {whId: qty}. Si viene en el body, usar; sino,
       // poner todo el stock_total en el deposito default "main".
       const sbw = body.stock_by_warehouse && typeof body.stock_by_warehouse === "object"
-        ? Object.fromEntries(Object.entries(body.stock_by_warehouse).map(([k,v]) => [String(k), parseInt(v) || 0]))
+        ? Object.fromEntries(Object.entries(body.stock_by_warehouse).map(([k,v]) => [String(k), Math.max(0, parseInt(v) || 0)]))
         : null;
-      const stockTotalFromSbw = sbw ? Object.values(sbw).reduce((s,v)=>s+v,0) : (parseInt(body.stock_total) || 0);
-      const finalSbw = sbw || (body.stock_total ? { main: parseInt(body.stock_total) } : (existing?.stock_by_warehouse || {}));
+      const stockTotalFromSbw = sbw ? Object.values(sbw).reduce((s,v)=>s+v,0) : Math.max(0, parseInt(body.stock_total) || 0);
+      const finalSbw = sbw || (body.stock_total ? { main: Math.max(0, parseInt(body.stock_total)) } : (existing?.stock_by_warehouse || {}));
       const data = {
         id,
         nombre: String(body.nombre).slice(0, 200),

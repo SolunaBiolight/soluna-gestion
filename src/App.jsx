@@ -635,7 +635,13 @@ function DateRangePicker({ T, since, until, onChange, presets }) {
     setOpen(false);
   }
   function clickDay(dateStr) {
-    if (!tmpStart) { setTmpStart(dateStr); return; }
+    // UX: el primer click selecciona el día como inicio AND fin (single-day view).
+    // El segundo click extiende el rango. Esto permite ver "1 solo día" con un solo click.
+    if (!tmpStart) {
+      setTmpStart(dateStr);
+      onChange(dateStr, dateStr); // aplica inmediatamente como rango de 1 día
+      return;
+    }
     let s = tmpStart, u = dateStr;
     if (s > u) [s, u] = [u, s];
     onChange(s, u);
@@ -12833,7 +12839,6 @@ function AppStock({T, user, onHome}) {
   const TABS=[
     {id:"analisis",label:"📊 Análisis"},
     {id:"items",label:"📋 Items"},
-    {id:"productos",label:"📦 Publicaciones"},
     {id:"depositos",label:"🏬 Depósitos"},
     {id:"historial",label:"📜 Historial"},
     {id:"facturacion",label:"💰 Facturación"},
