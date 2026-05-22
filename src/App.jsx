@@ -12151,6 +12151,10 @@ function AppStock({T, user, onHome}) {
   // Movimientos
   const [movements, setMovements] = useState([]);
   const [movementsLoading, setMovementsLoading] = useState(false);
+  const [movFilterSearch, setMovFilterSearch] = useState("");
+  const [movFilterOrigen, setMovFilterOrigen] = useState("all");
+  const [movFilterDeposito, setMovFilterDeposito] = useState("all");
+  const [movFilterEvento, setMovFilterEvento] = useState("all");
   // Sync sales (descontar stock por órdenes recientes)
   const [syncingSales, setSyncingSales] = useState(false);
 
@@ -12830,6 +12834,11 @@ function AppStock({T, user, onHome}) {
             style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
             ⬇ CSV
           </button>
+          <button onClick={syncSales} disabled={syncingSales}
+            title="Re-sincroniza ventas de los últimos 30 días desde TN/Shopify/ML"
+            style={{background:T.card,border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:syncingSales?"wait":"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:600}}>
+            {syncingSales?<><Spinner size={11} color={T.accent}/> Reprocesando...</>:"🔄 Reprocesar 30 días"}
+          </button>
           <button onClick={()=>loadStock(days, useCustomDate?dateFrom:"", useCustomDate?dateTo:"")} disabled={loading}
             style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
             {loading?<Spinner size={11} color={T.textMd}/>:"↻"} Actualizar
@@ -12883,7 +12892,7 @@ function AppStock({T, user, onHome}) {
         {loading&&!data?(
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"80px 20px",textAlign:"center"}}>
             <Spinner size={24} color={T.accent}/>
-            <div style={{fontSize:13,color:T.textSm,marginTop:12}}>Cargando datos desde {platformLabel}...</div>
+            <div style={{fontSize:13,color:T.textSm,marginTop:12}}>Cargando datos...</div>
           </div>
         ):data?(
           <>
@@ -13158,10 +13167,9 @@ function AppStock({T, user, onHome}) {
                         return s + (sbw[w.id] || 0);
                       },0);
                       return (
-                        <div key={w.id} style={{background:T.card,border:`1px solid ${w.is_default?T.green+"55":T.border}`,borderRadius:12,padding:"14px 16px"}}>
+                        <div key={w.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                             <span style={{fontSize:14,fontWeight:700,color:T.text}}>{w.name}</span>
-                            {w.is_default && <span style={{fontSize:10,padding:"2px 7px",borderRadius:5,background:T.green+"22",color:T.green,fontWeight:700}}>PRINCIPAL</span>}
                           </div>
                           {w.address && <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>{w.address}</div>}
                           <div style={{fontSize:12,color:T.textMd,marginBottom:10}}>Stock total: <strong style={{color:T.text}}>{totalItems}</strong> unidades</div>
@@ -13221,11 +13229,7 @@ function AppStock({T, user, onHome}) {
                       <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Nombre</label>
                       <input value={whName} onChange={e=>setWhName(e.target.value)} placeholder="Depósito CABA" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,marginBottom:12,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
                       <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Dirección (opcional)</label>
-                      <input value={whAddress} onChange={e=>setWhAddress(e.target.value)} placeholder="Av. Corrientes 1234, CABA" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,marginBottom:12,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,cursor:"pointer",marginBottom:18}}>
-                        <input type="checkbox" checked={whIsDefault} onChange={e=>setWhIsDefault(e.target.checked)} style={{width:14,height:14}}/>
-                        Marcar como principal (las ventas descuentan de este)
-                      </label>
+                      <input value={whAddress} onChange={e=>setWhAddress(e.target.value)} placeholder="Av. Corrientes 1234, CABA" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,marginBottom:18,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
                       <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                         <button onClick={()=>setEditingWarehouse(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
                         <button onClick={saveWarehouse} disabled={whSaving} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{whSaving?<Spinner size={13} color="#fff"/>:"Guardar"}</button>
@@ -13244,7 +13248,7 @@ function AppStock({T, user, onHome}) {
                       {warehouses.map(w => (
                         <div key={w.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"10px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
                           <div style={{flex:1}}>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{w.name}{w.is_default && <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.green+"22",color:T.green,fontWeight:700,marginLeft:8}}>PRINCIPAL</span>}</div>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{w.name}</div>
                           </div>
                           <input type="number" min="0" value={stockEditValues[w.id]||0} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
                         </div>
@@ -13383,7 +13387,21 @@ function AppStock({T, user, onHome}) {
             })()}
 
             {/* ── TAB HISTORIAL ── */}
-            {tab==="historial"&&(
+            {tab==="historial"&&(()=>{
+              // Filtros locales sobre los movements ya cargados
+              const filteredMov = movements.filter(m => {
+                if (movFilterSearch && !(m.item_name||"").toLowerCase().includes(movFilterSearch.toLowerCase()) && !(m.event||"").toLowerCase().includes(movFilterSearch.toLowerCase()) && !(m.order_id||"").toLowerCase().includes(movFilterSearch.toLowerCase())) return false;
+                if (movFilterOrigen !== "all" && (m.source||"").toLowerCase() !== movFilterOrigen) return false;
+                if (movFilterDeposito !== "all" && m.warehouse_id !== movFilterDeposito) return false;
+                if (movFilterEvento !== "all") {
+                  const ev = (m.event||"").toLowerCase();
+                  if (movFilterEvento === "venta" && !/orden|venta|order|sale/i.test(ev)) return false;
+                  if (movFilterEvento === "manual" && !/manual|ajuste/i.test(ev) && (m.source||"") !== "manual") return false;
+                  if (movFilterEvento === "creacion" && !/creacion|create/i.test(ev)) return false;
+                }
+                return true;
+              });
+              return (
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
@@ -13392,10 +13410,34 @@ function AppStock({T, user, onHome}) {
                   </div>
                   <button onClick={loadMovements} disabled={movementsLoading} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{movementsLoading?<Spinner size={11} color={T.textMd}/>:"↻"} Refrescar</button>
                 </div>
+                {/* Filtros */}
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                  <input type="text" placeholder="🔍 Buscar por producto, evento u orden..." value={movFilterSearch} onChange={e=>setMovFilterSearch(e.target.value)} style={{flex:1,minWidth:220,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                  <select value={movFilterOrigen} onChange={e=>setMovFilterOrigen(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <option value="all">🌐 Todos los orígenes</option>
+                    <option value="shopify">Shopify</option>
+                    <option value="tiendanube">Tienda Nube</option>
+                    <option value="mercadolibre">Mercado Libre</option>
+                    <option value="manual">Manual (User)</option>
+                  </select>
+                  <select value={movFilterDeposito} onChange={e=>setMovFilterDeposito(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <option value="all">🏬 Todos los depósitos</option>
+                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
+                  <select value={movFilterEvento} onChange={e=>setMovFilterEvento(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <option value="all">📋 Todos los eventos</option>
+                    <option value="venta">Ventas / Órdenes</option>
+                    <option value="manual">Ajustes manuales</option>
+                    <option value="creacion">Creación</option>
+                  </select>
+                  <span style={{fontSize:11,color:T.textSm}}>{filteredMov.length}/{movements.length}</span>
+                </div>
                 {movementsLoading ? (
                   <div style={{padding:"40px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/></div>
-                ) : movements.length === 0 ? (
-                  <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"50px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>Sin movimientos registrados.</div>
+                ) : filteredMov.length === 0 ? (
+                  <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"50px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>
+                    {movements.length === 0 ? "Sin movimientos registrados." : "Sin resultados con esos filtros."}
+                  </div>
                 ) : (
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
                     <div style={{overflowX:"auto"}}>
@@ -13411,7 +13453,7 @@ function AppStock({T, user, onHome}) {
                           </tr>
                         </thead>
                         <tbody>
-                          {movements.map((m,i) => {
+                          {filteredMov.map((m,i) => {
                             const dt = new Date(m.ts);
                             const src = m.source || "—";
                             const srcColor = src==="shopify"?T.green:src==="mercadolibre"?T.yellow:src==="tiendanube"?T.blue:src==="manual"?T.accent:T.textSm;
@@ -13438,6 +13480,8 @@ function AppStock({T, user, onHome}) {
                   </div>
                 )}
               </div>
+              );
+            })()}
             )}
 
             {/* ── MODAL Crear/Editar Item ── */}
@@ -13472,7 +13516,7 @@ function AppStock({T, user, onHome}) {
                             {warehouses.map(w => (
                               <div key={w.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,padding:"10px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
                                 <div style={{flex:1}}>
-                                  <div style={{fontSize:13,fontWeight:600,color:T.text}}>{w.name}{w.is_default && <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.green+"22",color:T.green,fontWeight:700,marginLeft:8}}>PRINCIPAL</span>}</div>
+                                  <div style={{fontSize:13,fontWeight:600,color:T.text}}>{w.name}</div>
                                 </div>
                                 <input type="number" min="0" value={stockEditValues[w.id]||0} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
                               </div>

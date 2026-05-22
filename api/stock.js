@@ -4,6 +4,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getValidMLToken } from "./integrations.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -294,9 +295,10 @@ export default async function handler(req, res) {
   if(!uid) return res.status(401).json({ error: "uid requerido" });
 
   let platform="tiendanube", storeId, accessToken, shop, mlSellerId, mlToken;
+  let dbRef;
   try{
-    const db=initAdmin();
-    const snap=await db.collection("users").doc(uid).get();
+    dbRef=initAdmin();
+    const snap=await dbRef.collection("users").doc(uid).get();
     if(snap.exists){
       const stores=snap.data().stores||[];
       const tn=stores.find(s=>s.type==="tiendanube");
@@ -304,7 +306,14 @@ export default async function handler(req, res) {
       const ml=stores.find(s=>s.type==="mercadolibre"||s.type==="meli");
       if(sh?.accessToken&&sh?.shop){ platform="shopify"; shop=sh.shop; accessToken=sh.accessToken; }
       else if(tn?.accessToken&&tn?.storeId){ platform="tiendanube"; storeId=tn.storeId; accessToken=tn.accessToken; }
-      if(ml?.accessToken&&ml?.sellerId){ mlSellerId=ml.sellerId; mlToken=ml.accessToken; }
+      // ML: el OAuth guarda userId (no sellerId). Usar getValidMLToken para refrescar
+      // tokens vencidos automáticamente (TTL 6h).
+      if(ml){
+        try{
+          const tok=await getValidMLToken(dbRef, uid);
+          if(tok?.accessToken && tok?.userId){ mlSellerId=tok.userId; mlToken=tok.accessToken; }
+        }catch(_){ /* ML token roto, no abortamos — seguimos sin ML */ }
+      }
     }
   }catch(e){
     console.error("[stock]",e.message);
@@ -314,25 +323,36 @@ export default async function handler(req, res) {
 
   try{
     if(action==="products"){
+      // Helper: fetch ML data en paralelo (si está conectado).
+      // Funciona con cualquier plataforma primaria (Shopify O TN).
+      const fetchML = async () => {
+        if (!mlSellerId || !mlToken) return null;
+        try {
+          const mlOrd = await mlOrders(mlSellerId, mlToken, days);
+          return processML(mlOrd);
+        } catch (e) { return null; }
+      };
       if(platform==="shopify"){
-        const [products,orders]=await Promise.all([shProducts(shop,accessToken),shOrders(shop,accessToken,effectiveDays,sinceDate,untilDate)]);
-        const analytics=processSH(orders);
-        const normalized=products.map(p=>normSH(p,analytics.map,days));
-        return res.status(200).json(buildResponse("shopify",normalized,analytics,effectiveDays));
+        const [products, orders, mlAnalytics] = await Promise.all([
+          shProducts(shop, accessToken),
+          shOrders(shop, accessToken, effectiveDays, sinceDate, untilDate),
+          fetchML(),
+        ]);
+        const analytics = processSH(orders);
+        const normalized = products.map(p => normSH(p, analytics.map, days));
+        const resp = buildResponse("shopify", normalized, analytics, effectiveDays);
+        if (mlAnalytics) resp.ml_data = { daily: mlAnalytics.daily, by_variant: mlAnalytics.byVariant, total_units: Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units, 0) };
+        return res.status(200).json(resp);
       } else {
-        const [products,orders]=await Promise.all([tnProducts(storeId,accessToken),tnOrders(storeId,accessToken,effectiveDays,sinceDate,untilDate)]);
-        const analytics=processTN(orders);
-        const normalized=products.map(p=>normTN(p,analytics.map,effectiveDays));
-        // Si también tiene ML conectado, obtener ventas ML
-        let mlAnalytics=null;
-        if(mlSellerId&&mlToken){
-          try{
-            const mlOrd=await mlOrders(mlSellerId,mlToken,days);
-            mlAnalytics=processML(mlOrd);
-          }catch(e){}
-        }
-        const resp=buildResponse("tiendanube",normalized,analytics,effectiveDays);
-        if(mlAnalytics) resp.ml_data={daily:mlAnalytics.daily,by_variant:mlAnalytics.byVariant,total_units:Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units,0)};
+        const [products, orders, mlAnalytics] = await Promise.all([
+          tnProducts(storeId, accessToken),
+          tnOrders(storeId, accessToken, effectiveDays, sinceDate, untilDate),
+          fetchML(),
+        ]);
+        const analytics = processTN(orders);
+        const normalized = products.map(p => normTN(p, analytics.map, effectiveDays));
+        const resp = buildResponse("tiendanube", normalized, analytics, effectiveDays);
+        if (mlAnalytics) resp.ml_data = { daily: mlAnalytics.daily, by_variant: mlAnalytics.byVariant, total_units: Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units, 0) };
         return res.status(200).json(resp);
       }
     }
