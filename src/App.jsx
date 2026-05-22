@@ -12464,6 +12464,27 @@ function AppStock({T, user, onHome}) {
   useEffect(()=>{ if (uid && tab === "items") { loadInvItems(); loadWarehouses(); } /* eslint-disable-next-line */ }, [uid, tab]);
   useEffect(()=>{ if (uid && tab === "historial") loadMovements(); /* eslint-disable-next-line */ }, [uid, tab]);
 
+  // ── Auto-sincronizar ventas al entrar a Stock (descuenta stock por órdenes nuevas) ──
+  // Throttle: máximo 1 vez por minuto. Si el user navega entre tabs, no spammeamos.
+  useEffect(()=>{
+    if (!uid) return;
+    const lastSync = parseInt(localStorage.getItem(`growith_stock_autosync_${uid}`) || "0");
+    const now = Date.now();
+    if (now - lastSync < 60000) return; // 60s throttle
+    localStorage.setItem(`growith_stock_autosync_${uid}`, String(now));
+    // Disparamos en background — no bloqueamos la UI
+    fetch(`/api/inventory?action=sync_sales&uid=${uid}`, { method: "POST" })
+      .then(r => r.json())
+      .then(j => {
+        if (j.items_updated > 0 || j.sales_logged > 0) {
+          // Recargar items si la tab actual los muestra
+          if (tab === "items") loadInvItems();
+        }
+      })
+      .catch(()=>{});
+    /* eslint-disable-next-line */
+  }, [uid]);
+
   // Cargar config de alertas desde localStorage
   useEffect(()=>{
     if(!uid) return;

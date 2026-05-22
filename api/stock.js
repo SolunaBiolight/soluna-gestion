@@ -115,7 +115,7 @@ async function mlOrders(sellerId, tok, days) {
 
 // ── Procesar órdenes TN ───────────────────────────────────────────────
 function processTN(orders) {
-  const map={}, daily={}, byProv={}, byHour={}, byPayment={}, byVariant={};
+  const map={}, daily={}, dailyRevenue={}, byProv={}, byHour={}, byPayment={}, byVariant={};
   const dailyOrders={}; // "YYYY-MM-DD" → cantidad de órdenes
   for(const o of orders){
     const dt=o.created_at||"";
@@ -123,47 +123,42 @@ function processTN(orders) {
     const hour=dt.slice(11,13);
     const prov=o.shipping_address?.province||o.billing_address?.province||"Sin provincia";
     const pay=o.gateway||"Otro";
-    let orderUnits=0;
+    let orderUnits=0, orderRevenue=0;
 
     // Contar la orden
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
 
-    // Calcular el ratio de descuento por orden (cupones de influencers etc.)
-    // item.price es precio de lista; o.discount es el descuento total de la orden
-    // Para obtener revenue real: distribuimos el descuento proporcionalmente a los items
     let orderSubtotal=0;
     for(const item of o.products||[]){
       orderSubtotal += parseFloat(item.price||0) * (parseInt(item.quantity)||0);
     }
     const orderDiscount = parseFloat(o.discount||0);
-    // ratio = proporción del precio real vs lista (ej: 0.70 si hay 30% de descuento)
     const discountRatio = orderSubtotal>0 ? Math.max(0, orderSubtotal-orderDiscount)/orderSubtotal : 1;
 
     for(const item of o.products||[]){
       const vid=String(item.variant_id||item.product_id);
       const qty=parseInt(item.quantity)||0;
-      // Aplicar descuento proporcional para obtener revenue real pagado
       const rev=parseFloat(item.price||0)*qty*discountRatio;
       if(!map[vid]) map[vid]={units:0,revenue:0};
       map[vid].units+=qty;
       map[vid].revenue+=rev;
       orderUnits+=qty;
+      orderRevenue+=rev;
       const vname=item.variant_values?.join(" / ")||item.name||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
-      // Para ventas (por orden) también trackeamos por variante
       byVariant[vname+"__orders"]=(byVariant[vname+"__orders"]||0)+1;
     }
-    if(day)  daily[day]  =(daily[day]  ||0)+orderUnits;
+    if(day)  { daily[day]=(daily[day]||0)+orderUnits; dailyRevenue[day]=(dailyRevenue[day]||0)+orderRevenue; }
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
   }
-  return {map,daily,dailyOrders,byProv,byHour,byPayment,byVariant};
+  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant};
 }
 
 // ── Procesar órdenes Shopify ──────────────────────────────────────────
 function processSH(orders) {
-  const map={}, daily={}, byProv={}, byHour={}, byPayment={}, byVariant={};
+  const map={}, daily={}, dailyRevenue={}, byProv={}, byHour={}, byPayment={}, byVariant={};
   const dailyOrders={};
   for(const o of orders){
     const dt=o.created_at||"";
@@ -171,7 +166,7 @@ function processSH(orders) {
     const hour=dt.slice(11,13);
     const prov=o.shipping_address?.province||"Sin provincia";
     const pay=o.payment_gateway||"Otro";
-    let orderUnits=0;
+    let orderUnits=0, orderRevenue=0;
 
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
 
@@ -183,15 +178,16 @@ function processSH(orders) {
       map[vid].units+=qty;
       map[vid].revenue+=rev;
       orderUnits+=qty;
+      orderRevenue+=rev;
       const vname=item.variant_title||item.title||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
     }
-    if(day)  daily[day]  =(daily[day]  ||0)+orderUnits;
+    if(day)  { daily[day]=(daily[day]||0)+orderUnits; dailyRevenue[day]=(dailyRevenue[day]||0)+orderRevenue; }
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
   }
-  return {map,daily,dailyOrders,byProv,byHour,byPayment,byVariant};
+  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant};
 }
 
 // ── Procesar órdenes ML ───────────────────────────────────────────────
@@ -267,6 +263,7 @@ function buildResponse(platform, products, analytics, days) {
     total_revenue:  products.reduce((a,p)=>a+p.revenue,0),
     total_orders:   totalOrders,
     daily_series:   analytics.daily,      // unidades por día
+    daily_revenue:  analytics.dailyRevenue||{}, // revenue por día
     daily_orders:   analytics.dailyOrders||{}, // órdenes por día
     by_province:    analytics.byProv,
     by_hour:        analytics.byHour,
