@@ -60,7 +60,9 @@ async function shopifyOauthStart(req, res, db) {
 
   const shop = normalizeShop(shopRaw);
   if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) {
-    return res.status(400).json({ error: `Dominio inválido (${shop}). Esperado: xxxx-xx.myshopify.com o solo el subdominio` });
+    return res.status(400).json({
+      error: `Dominio inválido (${shop}). Tenés que poner el subdominio NATIVO de Shopify (xxxx.myshopify.com), no tu dominio personalizado tipo .com o .com.ar. Buscalo en Admin → Configuración → Dominios → el que diga "Predeterminado de Shopify".`
+    });
   }
 
   // Guardar credenciales temporalmente con un state random (TTL 10 min implícito)

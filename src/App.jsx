@@ -5540,13 +5540,20 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
         }),
       });
       const d = await r.json();
-      if(d.error) { setMsg("Error: "+d.error); setConnectingShopify(false); return; }
+      if(d.error) {
+        toast(d.error, "error");
+        setMsg("Error: "+d.error);
+        setConnectingShopify(false);
+        return;
+      }
       // Abrir Shopify para autorización
       window.open(d.url, "_blank");
+      toast("Completá la autorización en la pestaña nueva","info");
       setMsg("Completá la autorización en la ventana que se abrió. Volvé acá cuando termines.");
       setShowShopifyModal(false);
       setShopifyShop(""); setShopifyClientId(""); setShopifySecret("");
     } catch(e) {
+      toast("Error de red: "+e.message, "error");
       setMsg("Error de red: "+e.message);
     } finally {
       setConnectingShopify(false);
@@ -5904,9 +5911,13 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
 
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Subdominio Shopify</div>
-                  <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="xxxx-xx" style={iS} disabled={connectingShopify} autoFocus/>
-                  <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Solo el subdominio (sin .myshopify.com). Lo encontrás en la URL de tu admin.</div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Subdominio Shopify <span style={{color:T.yellow||"#eab308",textTransform:"none",fontWeight:500}}>(el .myshopify.com, NO tu dominio custom)</span></div>
+                  <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="ej: tu-tienda-xx (solo el subdominio)" style={iS} disabled={connectingShopify} autoFocus/>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.5}}>
+                    Tenés que poner el subdominio <strong style={{color:T.text}}>NATIVO</strong> de Shopify (ej: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc.myshopify.com</code> → ponés solo <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc</code>).<br/>
+                    ⚠ <strong style={{color:T.text}}>NO uses tu dominio personalizado</strong> (ej: <code style={{color:T.red}}>tutienda.com</code>, <code style={{color:T.red}}>tutienda.com.ar</code>) — Shopify OAuth solo funciona con el .myshopify.com.<br/>
+                    Para encontrarlo: andá al admin de Shopify → <strong style={{color:T.text}}>Configuración → Dominios</strong> → mirá cuál tiene el sello "Predeterminado de Shopify" (ese es el .myshopify.com).
+                  </div>
                 </div>
                 <div>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Client ID</div>
