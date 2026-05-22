@@ -88,14 +88,17 @@ async function shProducts(shop, tok) {
 // pendiente o reembolso parcial NO descuentan stock ni se cuentan en estadísticas.
 async function shOrders(shop, tok, days, since, until) {
   // Format exact que usa Facturador: 2026-05-22T00:00:00-03:00 (sin URL-encode).
-  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway,financial_status,total_price,subtotal_price`;
+  // status=any incluye canceladas — filtramos por cancelled_at en JS.
+  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds`;
   if(until) url+=`&created_at_max=${until}`;
   while(url){
     const r=await fetchT(url,{headers:SH_H(tok)});
     if(!r.ok) break;
     const d=await r.json();
     const batch=d.orders||[];
-    all=all.concat(batch);
+    // Excluir canceladas y refundeadas totales
+    const valid = batch.filter(o => !o.cancelled_at);
+    all=all.concat(valid);
     if(batch.length<250) break;
     // Shopify cursor-based pagination via Link header
     const link=r.headers.get("Link")||"";
@@ -167,9 +170,18 @@ function processSH(orders) {
     const hour=dt.slice(11,13);
     const prov=o.shipping_address?.province||"Sin provincia";
     const pay=o.payment_gateway||"Otro";
-    let orderUnits=0, orderRevenue=0;
+    let orderUnits=0;
 
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
+
+    // Revenue por orden: usamos subtotal_price (precio de productos sin tax ni envío)
+    // menos refunds. Esto matchea con apps tipo Escalafy y con lo que el user "cobró".
+    // Antes sumábamos line_items.price × qty que incluía precio con IVA y sin descontar refunds.
+    const refundedAmount = (o.refunds || []).reduce((s, r) => {
+      const ti = (r.transactions || []).reduce((t, x) => t + (parseFloat(x.amount) || 0), 0);
+      return s + ti;
+    }, 0);
+    const orderRevenue = Math.max(0, (parseFloat(o.subtotal_price) || 0) - refundedAmount);
 
     for(const item of o.line_items||[]){
       const vid=String(item.variant_id||item.product_id);
@@ -177,9 +189,8 @@ function processSH(orders) {
       const rev=parseFloat(item.price)*qty;
       if(!map[vid]) map[vid]={units:0,revenue:0};
       map[vid].units+=qty;
-      map[vid].revenue+=rev;
+      map[vid].revenue+=rev; // mantenemos per-variant a precio de lista
       orderUnits+=qty;
-      orderRevenue+=rev;
       const vname=item.variant_title||item.title||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
     }
@@ -255,13 +266,16 @@ function normSH(p, salesMap, days) {
 
 function buildResponse(platform, products, analytics, days) {
   const totalOrders=Object.values(analytics.dailyOrders||{}).reduce((a,b)=>a+b,0);
+  // total_revenue ahora viene de la suma de dailyRevenue (subtotal por orden, sin tax/shipping/refunds)
+  // — antes era suma de line_items.price × qty que daba inflado por IVA incluido.
+  const totalRevenueFromOrders = Object.values(analytics.dailyRevenue||{}).reduce((a,b)=>a+b,0);
   return {
     platform, products, days,
     total_products: products.length,
     total_variants: products.reduce((a,p)=>a+p.variants.length,0),
     total_stock:    products.reduce((a,p)=>a+p.stock_total,0),
     total_units:    products.reduce((a,p)=>a+p.units_sold,0),
-    total_revenue:  products.reduce((a,p)=>a+p.revenue,0),
+    total_revenue:  totalRevenueFromOrders > 0 ? totalRevenueFromOrders : products.reduce((a,p)=>a+p.revenue,0),
     total_orders:   totalOrders,
     daily_series:   analytics.daily,      // unidades por día
     daily_revenue:  analytics.dailyRevenue||{}, // revenue por día
