@@ -197,6 +197,40 @@ export default async function handler(req, res) {
       return res.json({ ok: true, expiry });
     }
 
+    // ── gestionarPlan ─────────────────────────────────────────────────────────
+    // Acción unificada: activa o extiende un plan por meses o días, real o prueba
+    if (action === "gestionarPlan") {
+      const { targetUid, plan, cantidad, unidad = "meses", isTrial = false } = body;
+      const userDoc = await db.collection("users").doc(targetUid).get();
+      const userData = userDoc.data() || {};
+      let base = now;
+      if (userData.planExpiry) {
+        const cur = userData.planExpiry?._seconds
+          ? new Date(userData.planExpiry._seconds * 1000)
+          : userData.planExpiry?.toDate?.() || now;
+        if (cur > now) base = cur;
+      }
+      let expiry;
+      if (unidad === "dias") {
+        expiry = new Date(base); expiry.setDate(expiry.getDate() + Number(cantidad));
+      } else {
+        expiry = addMonths(base, Number(cantidad));
+      }
+      await db.collection("users").doc(targetUid).update({
+        plan, planExpiry: expiry, isTrial: !!isTrial,
+        planActivadoBy: uid, planActivadoAt: now,
+      });
+      if (isTrial) {
+        await db.collection("pagos").add({
+          uid: targetUid, plan, method: "prueba", currency: "—", amount: 0,
+          isTrial: true, cantidad: Number(cantidad), unidad,
+          estado: "confirmado", confirmadoBy: uid, confirmadoAt: now, createdAt: now,
+          nota: `Prueba: ${cantidad} ${unidad} de ${plan}`,
+        });
+      }
+      return res.json({ ok: true, expiry });
+    }
+
     // ── activarPrueba ─────────────────────────────────────────────────────────
     // Activa un plan sin cobro — crea registro con isTrial:true, no cuenta en revenue
     if (action === "activarPrueba") {

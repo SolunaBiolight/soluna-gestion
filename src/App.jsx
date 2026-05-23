@@ -6444,11 +6444,11 @@ function AppAdmin({T, user, onBack}) {
   const [expandedUser, setExpandedUser] = useState(null);
   const [noteEdit, setNoteEdit] = useState({});
   const [confirmMeses, setConfirmMeses] = useState({});
-  // Estado por usuario para las acciones en el panel expandido
-  const [uPlan, setUPlan] = useState({});       // {uid: "plus"|"full"}
-  const [uMeses, setUMeses] = useState({});     // {uid: "1"}
-  const [uPruebaMeses, setUPruebaMeses] = useState({}); // {uid: "1"} — meses para prueba
-  const [uDias, setUDias] = useState({});       // {uid: "7"} — campo custom días
+  // Estado por usuario para el panel expandido (unificado)
+  const [uPlan,     setUPlan]     = useState({}); // {uid: "plus"|"full"}
+  const [uCantidad, setUCantidad] = useState({}); // {uid: "1"}
+  const [uUnidad,   setUUnidad]   = useState({}); // {uid: "meses"|"dias"}
+  const [uDias,     setUDias]     = useState({}); // {uid: ""} — ajuste rápido días
 
   async function adminApi(body) {
     const r = await fetch("/api/admin", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
@@ -6539,14 +6539,20 @@ function AppAdmin({T, user, onBack}) {
     toast("Nota guardada", "success");
   }
 
-  async function activarPrueba(uid, plan, meses) {
-    if (!await appConfirm(`¿Activar ${meses} mes${Number(meses)>1?"es":""} de prueba (${plan}) sin cobro?`, {okLabel:"Activar prueba"})) return;
-    const d = await adminApi({action:"activarPrueba", targetUid:uid, plan, meses});
+  async function gestionarPlan(uid, plan, cantidad, unidad, isTrial) {
+    const cant = Number(cantidad);
+    if (!cant || cant < 1) return appAlert("Ingresá una cantidad válida (mínimo 1)");
+    const label = `${cant} ${unidad==="dias"?`día${cant>1?"s":""}`:cant===1?"mes":"meses"} de ${plan}`;
+    if (!await appConfirm(
+      isTrial ? `¿Activar ${label} como PRUEBA (no cuenta como ingreso)?` : `¿Activar ${label}?`,
+      {okLabel: isTrial ? "🎁 Activar prueba" : "💳 Activar"}
+    )) return;
+    const d = await adminApi({action:"gestionarPlan", targetUid:uid, plan, cantidad:cant, unidad, isTrial});
     setDatos(prev => ({
       ...prev,
-      usuarios: prev.usuarios.map(u => u._id===uid ? {...u, plan, planExpiry:d.expiry, isTrial:true} : u),
+      usuarios: prev.usuarios.map(u => u._id===uid ? {...u, plan, planExpiry:d.expiry, isTrial:!!isTrial} : u),
     }));
-    toast(`🎁 Prueba ${plan} (${meses}m) activada — no cuenta como ingreso`, "success");
+    toast(isTrial ? `🎁 Prueba ${label} activada` : `💳 ${label} activado`, isTrial?"warning":"success");
   }
 
   async function ajustarDias(uid, dias) {
@@ -6913,109 +6919,78 @@ function AppAdmin({T, user, onBack}) {
                       )}
                     </div>
 
-                    {/* ── 2. AJUSTAR DÍAS (solo si tiene plan activo) ── */}
-                    {u.plan!=="free"&&(
+                    {/* ── 2. GESTIÓN UNIFICADA ── */}
                     <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
-                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Ajustar días de vencimiento</div>
-                      <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Suma o resta días al vencimiento actual. Útil para cortesías, retrasos de pago, etc.</div>
-                      {/* Botones rápidos de resta */}
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-                        <span style={{fontSize:11,color:T.textSm,alignSelf:"center",minWidth:42}}>Restar:</span>
-                        {[-30,-14,-7,-3,-1].map(d=>(
-                          <AsyncButton key={d} onClick={()=>ajustarDias(u._id,d)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red}}>
-                            {d}d
-                          </AsyncButton>
-                        ))}
-                      </div>
-                      {/* Botones rápidos de suma */}
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                        <span style={{fontSize:11,color:T.textSm,alignSelf:"center",minWidth:42}}>Sumar:</span>
-                        {[1,3,7,14,30].map(d=>(
-                          <AsyncButton key={d} onClick={()=>ajustarDias(u._id,d)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.green}}>
-                            +{d}d
-                          </AsyncButton>
-                        ))}
-                      </div>
-                      {/* Input personalizado */}
-                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Gestionar suscripción</div>
+                      {/* Fila de controles */}
+                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+                        {/* Plan */}
+                        <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
+                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                          <option value="plus">⭐ Plus</option>
+                          <option value="full">💎 Full</option>
+                        </select>
+                        {/* Cantidad */}
                         <input
-                          type="number"
-                          value={selDias}
-                          onChange={e=>setUDias(prev=>({...prev,[u._id]:e.target.value}))}
-                          onKeyDown={e=>e.key==="Enter"&&ajustarDias(u._id,selDias)}
-                          placeholder="Días (negativo para restar)"
-                          style={{...iS,fontSize:12,width:220}}
-                        />
+                          type="number" min="1"
+                          value={uCantidad[u._id]||"1"}
+                          onChange={e=>setUCantidad(prev=>({...prev,[u._id]:e.target.value}))}
+                          style={{...iS,fontSize:12,width:64,textAlign:"center"}}/>
+                        {/* Unidad */}
+                        <select
+                          value={uUnidad[u._id]||"meses"}
+                          onChange={e=>setUUnidad(prev=>({...prev,[u._id]:e.target.value}))}
+                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                          <option value="meses">mes(es)</option>
+                          <option value="dias">día(s)</option>
+                        </select>
+                        {/* Botón real */}
                         <AsyncButton
-                          onClick={()=>ajustarDias(u._id,selDias)}
-                          style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",color:Number(selDias)<0?T.red:T.green}}>
-                          {Number(selDias)<0?"Restar":"Sumar"} {selDias?Math.abs(Number(selDias))+"d":""}
+                          onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", false)}
+                          style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",background:selPlan==="plus"?T.blue:T.purple}}>
+                          💳 Activar
+                        </AsyncButton>
+                        {/* Botón prueba */}
+                        <AsyncButton
+                          onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", true)}
+                          style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",color:T.yellow,border:`1px solid ${T.yellow}44`}}>
+                          🎁 Prueba
                         </AsyncButton>
                       </div>
-                    </div>
-                    )}
-
-                    {/* ── 3. ACTIVAR / CAMBIAR PLAN ── */}
-                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
-                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Activar / cambiar plan</div>
-                      <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>
-                        {u.plan!=="free"
-                          ? "Si ya tiene plan vigente, los meses se suman al vencimiento actual."
-                          : "Activará el plan desde hoy."}
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:u.plan!=="free"?12:0}}>
+                        {u.plan!=="free"?"Si ya tiene plan, suma al vencimiento actual. Prueba no cuenta como ingreso.":"Activará el plan desde hoy. Prueba no cuenta como ingreso."}
                       </div>
-
-                      {/* Pago real */}
-                      <div style={{background:T.surface,borderRadius:8,padding:"12px 14px",marginBottom:10}}>
-                        <div style={{fontSize:11,fontWeight:600,color:T.textMd,marginBottom:8}}>💳 Con cobro — cuenta como ingreso</div>
-                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                          <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
-                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                            <option value="plus">⭐ Plus</option>
-                            <option value="full">💎 Full</option>
-                          </select>
-                          <select value={selMeses} onChange={e=>setUMeses(prev=>({...prev,[u._id]:e.target.value}))}
-                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                            {[["1","1 mes"],["2","2 meses"],["3","3 meses"],["6","6 meses"],["12","12 meses"]].map(([v,l])=>(
-                              <option key={v} value={v}>{l}</option>
-                            ))}
-                          </select>
-                          <AsyncButton
-                            onClick={()=>activarPlan(u._id, selPlan, Number(selMeses))}
-                            style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",background:selPlan==="plus"?T.blue:T.purple}}>
-                            Activar {selMeses} mes{Number(selMeses)>1?"es":""} de {selPlan}
-                          </AsyncButton>
-                        </div>
-                      </div>
-
-                      {/* Prueba */}
-                      <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:8,padding:"12px 14px",marginBottom:10}}>
-                        <div style={{fontSize:11,fontWeight:600,color:T.yellow,marginBottom:8}}>🎁 Plan de prueba — NO cuenta como ingreso</div>
-                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                          <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
-                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                            <option value="plus">⭐ Plus</option>
-                            <option value="full">💎 Full</option>
-                          </select>
-                          <select
-                            value={uPruebaMeses[u._id]||"1"}
-                            onChange={e=>setUPruebaMeses(prev=>({...prev,[u._id]:e.target.value}))}
-                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                            {[["1","1 mes"],["2","2 meses"],["3","3 meses"],["6","6 meses"]].map(([v,l])=>(
-                              <option key={v} value={v}>{l}</option>
-                            ))}
-                          </select>
-                          <AsyncButton
-                            onClick={()=>activarPrueba(u._id, selPlan, Number(uPruebaMeses[u._id]||1))}
-                            style={{...BtnSecondary(T),fontSize:12,padding:"7px 16px",color:T.yellow,border:`1px solid ${T.yellow}44`}}>
-                            🎁 Activar prueba
-                          </AsyncButton>
-                        </div>
-                      </div>
-
+                      {/* Ajuste rápido de días (solo con plan activo) */}
                       {u.plan!=="free"&&(
-                        <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>
-                          Desactivar plan
-                        </AsyncButton>
+                        <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:10}}>
+                          <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>Ajuste rápido de días sobre el vencimiento actual:</div>
+                          <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+                            {[-30,-14,-7,-3,-1,1,3,7,14,30].map(d=>(
+                              <AsyncButton key={d} onClick={()=>ajustarDias(u._id,d)}
+                                style={{...BtnSecondary(T),fontSize:11,padding:"3px 9px",color:d<0?T.red:T.green}}>
+                                {d>0?"+":""}{d}d
+                              </AsyncButton>
+                            ))}
+                            <input
+                              type="number"
+                              value={selDias}
+                              onChange={e=>setUDias(prev=>({...prev,[u._id]:e.target.value}))}
+                              onKeyDown={e=>e.key==="Enter"&&ajustarDias(u._id,selDias)}
+                              placeholder="días"
+                              style={{...iS,fontSize:11,width:70,textAlign:"center"}}/>
+                            <AsyncButton onClick={()=>ajustarDias(u._id,selDias)}
+                              style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px",color:Number(selDias)<0?T.red:T.green}}>
+                              Aplicar
+                            </AsyncButton>
+                          </div>
+                        </div>
+                      )}
+                      {u.plan!=="free"&&(
+                        <div style={{marginTop:10}}>
+                          <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 12px"}}>
+                            Desactivar plan
+                          </AsyncButton>
+                        </div>
                       )}
                     </div>
 
