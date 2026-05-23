@@ -6437,13 +6437,17 @@ function AppAdmin({T, user, onBack}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({ pagos:[], usuarios:[], stats:{} });
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("dashboard"); // dashboard | pagos | usuarios
-  const [filterPagos, setFilterPagos] = useState("pendiente"); // todos|pendiente|confirmado|rechazado
-  const [filterPlan, setFilterPlan] = useState("todos"); // todos|free|plus|full
+  const [tab, setTab] = useState("dashboard");
+  const [filterPagos, setFilterPagos] = useState("pendiente");
+  const [filterPlan, setFilterPlan] = useState("todos");
   const [search, setSearch] = useState("");
   const [expandedUser, setExpandedUser] = useState(null);
-  const [noteEdit, setNoteEdit] = useState({}); // {uid: string}
-  const [confirmMeses, setConfirmMeses] = useState({}); // {pagoId: "1"}
+  const [noteEdit, setNoteEdit] = useState({});
+  const [confirmMeses, setConfirmMeses] = useState({});
+  // Estado por usuario para las acciones en el panel expandido
+  const [uPlan, setUPlan] = useState({});     // {uid: "plus"|"full"}
+  const [uMeses, setUMeses] = useState({});   // {uid: "1"}
+  const [uDias, setUDias] = useState({});     // {uid: "7"} — campo custom días
 
   async function adminApi(body) {
     const r = await fetch("/api/admin", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
@@ -6532,6 +6536,16 @@ function AppAdmin({T, user, onBack}) {
     setDatos(prev => ({...prev, usuarios: prev.usuarios.map(u => u._id===uid ? {...u, adminNote:note} : u)}));
     setNoteEdit(prev => { const n={...prev}; delete n[uid]; return n; });
     toast("Nota guardada", "success");
+  }
+
+  async function ajustarDias(uid, dias) {
+    if (!dias || isNaN(Number(dias))) return appAlert("Ingresá una cantidad de días válida");
+    const n = Number(dias);
+    if (n === 0) return;
+    const d = await adminApi({action:"ajustarDias", targetUid:uid, dias:n});
+    setDatos(prev => ({...prev, usuarios: prev.usuarios.map(u => u._id===uid ? {...u, planExpiry:d.expiry} : u)}));
+    toast(`${n>0?"+":""}${n} días aplicados`, n>0?"success":"warning");
+    setUDias(prev => ({...prev, [uid]:""}));
   }
 
   const tabStyle = (id) => ({
@@ -6746,56 +6760,117 @@ function AppAdmin({T, user, onBack}) {
                   <span style={{fontSize:12,color:T.textSm}}>{expanded?"▲":"▼"}</span>
                 </div>
 
-                {/* Expandido */}
-                {expanded&&(
-                  <div style={{borderTop:`0.5px solid ${T.border}`,padding:"16px 16px",display:"flex",flexDirection:"column",gap:14}}>
-                    {/* Acciones plan */}
-                    <div>
-                      <div style={{fontSize:12,color:T.textSm,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Gestión plan</div>
-                      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                        {["plus","full"].map(plan=>{
-                          const key = `${u._id}_${plan}`;
-                          return (
-                            <div key={plan} style={{display:"flex",gap:4,alignItems:"center"}}>
-                              <select
-                                defaultValue="1"
-                                id={`sel_${key}`}
-                                style={{...iS,padding:"5px 8px",fontSize:11,width:"auto"}}>
-                                {["1","2","3","6","12"].map(m=><option key={m} value={m}>{m}m</option>)}
-                              </select>
-                              <AsyncButton
-                                onClick={()=>{
-                                  const sel = document.getElementById(`sel_${key}`);
-                                  return activarPlan(u._id, plan, Number(sel?.value||1));
-                                }}
-                                style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:plan==="plus"?T.blue:T.purple}}>
-                                +{plan}
-                              </AsyncButton>
-                            </div>
-                          );
-                        })}
-                        {u.plan!=="free"&&(
-                          <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>↓ Desactivar</AsyncButton>
-                        )}
-                      </div>
-                      {/* Detalle expiry */}
-                      {u.planExpiry&&u.plan!=="free"&&(
-                        <div style={{marginTop:8,fontSize:12,color:expiryColor}}>
-                          Vence: {fmtDate(u.planExpiry)}{days!==null?` (${days} días)`:""}
+                {/* ── Panel expandido ── */}
+                {expanded&&(()=>{
+                  const selPlan  = uPlan[u._id]  || (u.plan!=="free"?u.plan:"plus");
+                  const selMeses = uMeses[u._id] || "1";
+                  const selDias  = uDias[u._id]  || "";
+                  return (
+                  <div style={{borderTop:`1px solid ${T.border}`,background:T.bg,display:"flex",flexDirection:"column",gap:0}}>
+
+                    {/* ── 1. ESTADO ACTUAL ── */}
+                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
+                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Estado de suscripción</div>
+                      {u.plan==="free"?(
+                        <div style={{fontSize:13,color:T.textSm,fontStyle:"italic"}}>Sin plan activo — plan gratuito</div>
+                      ):(
+                        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                          <span style={{fontSize:13,fontWeight:700,color:PLAN_C[u.plan]}}>{u.plan==="plus"?"⭐ Plus":"💎 Full"}</span>
+                          {days!==null&&(
+                            <span style={{fontSize:13,fontWeight:600,color:expiryColor}}>
+                              {days<0?`⛔ Vencido hace ${Math.abs(days)} día${Math.abs(days)!==1?"s":""}`:days===0?"⚠️ Vence hoy":`✅ ${days} día${days!==1?"s":""} restantes`}
+                            </span>
+                          )}
+                          {u.planExpiry&&<span style={{fontSize:12,color:T.textSm}}>({fmtDate(u.planExpiry)})</span>}
                         </div>
                       )}
                     </div>
 
-                    {/* Nota interna */}
-                    <div>
-                      <div style={{fontSize:12,color:T.textSm,fontWeight:600,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Nota interna</div>
+                    {/* ── 2. AJUSTAR DÍAS (solo si tiene plan activo) ── */}
+                    {u.plan!=="free"&&(
+                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
+                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Ajustar días de vencimiento</div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Suma o resta días al vencimiento actual. Útil para cortesías, retrasos de pago, etc.</div>
+                      {/* Botones rápidos de resta */}
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                        <span style={{fontSize:11,color:T.textSm,alignSelf:"center",minWidth:42}}>Restar:</span>
+                        {[-30,-14,-7,-3,-1].map(d=>(
+                          <AsyncButton key={d} onClick={()=>ajustarDias(u._id,d)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red}}>
+                            {d}d
+                          </AsyncButton>
+                        ))}
+                      </div>
+                      {/* Botones rápidos de suma */}
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                        <span style={{fontSize:11,color:T.textSm,alignSelf:"center",minWidth:42}}>Sumar:</span>
+                        {[1,3,7,14,30].map(d=>(
+                          <AsyncButton key={d} onClick={()=>ajustarDias(u._id,d)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.green}}>
+                            +{d}d
+                          </AsyncButton>
+                        ))}
+                      </div>
+                      {/* Input personalizado */}
+                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                        <input
+                          type="number"
+                          value={selDias}
+                          onChange={e=>setUDias(prev=>({...prev,[u._id]:e.target.value}))}
+                          onKeyDown={e=>e.key==="Enter"&&ajustarDias(u._id,selDias)}
+                          placeholder="Días (negativo para restar)"
+                          style={{...iS,fontSize:12,width:220}}
+                        />
+                        <AsyncButton
+                          onClick={()=>ajustarDias(u._id,selDias)}
+                          style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",color:Number(selDias)<0?T.red:T.green}}>
+                          {Number(selDias)<0?"Restar":"Sumar"} {selDias?Math.abs(Number(selDias))+"d":""}
+                        </AsyncButton>
+                      </div>
+                    </div>
+                    )}
+
+                    {/* ── 3. ACTIVAR / CAMBIAR PLAN ── */}
+                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
+                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Activar / cambiar plan</div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>
+                        {u.plan!=="free"
+                          ? "Si el usuario ya tiene plan vigente, los meses se suman al vencimiento actual."
+                          : "Activará el plan desde hoy."}
+                      </div>
+                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                        <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
+                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                          <option value="plus">⭐ Plus — $29 USDT / $35.000 ARS</option>
+                          <option value="full">💎 Full — $79 USDT / $95.000 ARS</option>
+                        </select>
+                        <select value={selMeses} onChange={e=>setUMeses(prev=>({...prev,[u._id]:e.target.value}))}
+                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                          {[["1","1 mes"],["2","2 meses"],["3","3 meses"],["6","6 meses"],["12","12 meses"]].map(([v,l])=>(
+                            <option key={v} value={v}>{l}</option>
+                          ))}
+                        </select>
+                        <AsyncButton
+                          onClick={()=>activarPlan(u._id, selPlan, Number(selMeses))}
+                          style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",background:selPlan==="plus"?T.blue:T.purple}}>
+                          Activar {selMeses} mes{Number(selMeses)>1?"es":""} de {selPlan}
+                        </AsyncButton>
+                        {u.plan!=="free"&&(
+                          <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>
+                            Desactivar plan
+                          </AsyncButton>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── 4. NOTA INTERNA ── */}
+                    <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
+                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Nota interna (solo vos la ves)</div>
                       {noteEdit[u._id]!==undefined ? (
                         <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
                           <textarea
                             value={noteEdit[u._id]}
                             onChange={e=>setNoteEdit(prev=>({...prev,[u._id]:e.target.value}))}
-                            style={{...iS,fontSize:12,minHeight:60,resize:"vertical",flex:1}}
-                            placeholder="Nota sobre este usuario..."/>
+                            style={{...iS,fontSize:12,minHeight:64,resize:"vertical",flex:1}}
+                            placeholder="Ej: pagó tarde, le regalamos 7 días de cortesía..."/>
                           <div style={{display:"flex",flexDirection:"column",gap:6}}>
                             <AsyncButton onClick={()=>saveNote(u._id)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px"}}>Guardar</AsyncButton>
                             <button onClick={()=>setNoteEdit(prev=>{const n={...prev};delete n[u._id];return n;})} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>Cancelar</button>
@@ -6803,32 +6878,37 @@ function AppAdmin({T, user, onBack}) {
                         </div>
                       ) : (
                         <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                          <div style={{fontSize:12,color:u.adminNote?T.text:T.textSm,flex:1,fontStyle:u.adminNote?"normal":"italic"}}>
-                            {u.adminNote||"Sin nota"}
+                          <div style={{fontSize:12,color:u.adminNote?T.text:T.textSm,flex:1,fontStyle:u.adminNote?"normal":"italic",lineHeight:1.5}}>
+                            {u.adminNote||"Sin nota — hacé clic en Editar para agregar"}
                           </div>
                           <button onClick={()=>setNoteEdit(prev=>({...prev,[u._id]:u.adminNote||""}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",flexShrink:0}}>Editar</button>
                         </div>
                       )}
                     </div>
 
-                    {/* Historial de pagos del usuario */}
-                    {userPagos.length>0&&(
-                      <div>
-                        <div style={{fontSize:12,color:T.textSm,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Historial de pagos</div>
-                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {/* ── 5. HISTORIAL DE PAGOS ── */}
+                    <div style={{padding:"14px 16px"}}>
+                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Historial de pagos ({userPagos.length})</div>
+                      {userPagos.length===0
+                        ? <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin pagos registrados</div>
+                        : <div style={{display:"flex",flexDirection:"column",gap:6}}>
                           {userPagos.map(p=>(
-                            <div key={p._id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11}}>
+                            <div key={p._id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,padding:"6px 10px",background:T.surface,borderRadius:8}}>
                               <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{p.plan}</span>
                               {p.method&&<span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"🏦 ARS"}</span>}
+                              {p.amount&&<span style={{color:T.textMd,fontWeight:600}}>${p.amount} {p.currency}</span>}
                               <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.estado==="pendiente"?T.yellowBg:p.estado==="confirmado"?T.greenBg:T.redBg,color:p.estado==="pendiente"?T.yellow:p.estado==="confirmado"?T.green:T.red}}>{p.estado}</span>
-                              <span style={{color:T.textSm}}>{fmtDate(p.createdAt)}</span>
+                              {p.mesesConfirmados&&<span style={{color:T.textSm}}>{p.mesesConfirmados}m</span>}
+                              <span style={{color:T.textSm,marginLeft:"auto"}}>{fmtDate(p.createdAt)}</span>
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
+                      }
+                    </div>
+
                   </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })}

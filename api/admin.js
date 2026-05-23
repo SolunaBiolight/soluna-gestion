@@ -167,7 +167,6 @@ export default async function handler(req, res) {
     }
 
     // ── extenderPlan ──────────────────────────────────────────────────────────
-    // Extiende desde el expiry actual (no cambia de plan)
     if (action === "extenderPlan") {
       const { targetUid, meses = 1 } = body;
       const userDoc = await db.collection("users").doc(targetUid).get();
@@ -184,6 +183,27 @@ export default async function handler(req, res) {
         planExpiry: expiry,
         planExtendidoBy: uid,
         planExtendidoAt: now,
+      });
+      return res.json({ ok: true, expiry });
+    }
+
+    // ── ajustarDias ───────────────────────────────────────────────────────────
+    // Suma o resta días al vencimiento actual (dias puede ser negativo)
+    if (action === "ajustarDias") {
+      const { targetUid, dias } = body;
+      if (!targetUid || dias === undefined) return res.status(400).json({ error: "Faltan parámetros" });
+      const userDoc = await db.collection("users").doc(targetUid).get();
+      const userData = userDoc.data() || {};
+      let base = userData.planExpiry?._seconds
+        ? new Date(userData.planExpiry._seconds * 1000)
+        : userData.planExpiry?.toDate?.() || now;
+      const expiry = new Date(base);
+      expiry.setDate(expiry.getDate() + Number(dias));
+      await db.collection("users").doc(targetUid).update({
+        planExpiry: expiry,
+        planAjustadoBy: uid,
+        planAjustadoAt: now,
+        planAjusteDias: Number(dias),
       });
       return res.json({ ok: true, expiry });
     }
