@@ -8761,6 +8761,7 @@ function AppArca({T, user, onHome}) {
   const [fechaDesde, setFechaDesde] = useState(new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10));
   const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0,10));
   const [canalSel, setCanalSel] = useState("todos"); // "todos" | "tn" | "shopify" | "ml"
+  const [metodoPagoSel, setMetodoPagoSel] = useState("todos"); // "todos" | string literal
   const [montoMin, setMontoMin] = useState("");
   const [montoMax, setMontoMax] = useState("");
   const [showManualUpload, setShowManualUpload] = useState(false);
@@ -9504,6 +9505,19 @@ function AppArca({T, user, onHome}) {
                         <option value="shopify">Shopify</option>
                         <option value="mercadolibre">Mercado Libre</option>
                       </select>
+                      <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>Pago</span>
+                      <select value={metodoPagoSel} onChange={e=>setMetodoPagoSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
+                        <option value="todos">Todos</option>
+                        {(()=>{
+                          // Detectar métodos de pago únicos en los pedidos cargados
+                          const set = new Set();
+                          Object.values(tnData?.ordenes || {}).forEach(o => {
+                            const m = (o.metodo_pago || "").trim();
+                            if (m) set.add(m);
+                          });
+                          return [...set].sort().map(m => <option key={m} value={m}>{m}</option>);
+                        })()}
+                      </select>
                       <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>Monto $</span>
                       <input type="number" placeholder="min" value={montoMin} onChange={e=>setMontoMin(e.target.value)} style={{...iS,width:78,padding:"6px 8px",fontSize:12}}/>
                       <span style={{fontSize:11,color:T.textSm}}>–</span>
@@ -9610,6 +9624,7 @@ function AppArca({T, user, onHome}) {
                     const maxN = montoMax === "" ? null : parseFloat(montoMax);
                     const items = all.filter(([, o]) => {
                       if (canalSel !== "todos" && o._platform !== canalSel) return false;
+                      if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
                       if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
                       if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
                       return true;
