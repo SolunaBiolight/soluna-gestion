@@ -64,6 +64,21 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    if (action === "publicAddComment") {
+      const { tareaId, texto } = body;
+      if (!token || !tareaId || !texto?.trim()) return res.status(400).json({ error:"Faltan parámetros" });
+      const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (snap.empty) return res.status(403).json({ error:"Token inválido" });
+      const colab = snap.docs[0].data();
+      const ref = db.collection("tareas").doc(tareaId);
+      const t = await ref.get();
+      if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error:"No autorizado" });
+      const comment = { texto: texto.trim(), autor: colab.nombre, fecha:now };
+      const prev = t.data().comments || [];
+      await ref.update({ comments:[...prev, comment] });
+      return res.json({ ok:true, comment });
+    }
+
     if (action === "publicAddEntrega") {
       const { tareaId, link, nota } = body;
       if (!token || !tareaId || !link) return res.status(400).json({ error: "Link de entrega requerido" });
@@ -75,7 +90,7 @@ export default async function handler(req, res) {
       if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error: "No autorizado" });
       const entrega = { link, nota: nota||"", fecha: now };
       const prev = t.data().deliverables || [];
-      await ref.update({ deliverables:[...prev, entrega], estado:"entregado", updatedAt:now });
+      await ref.update({ deliverables:[...prev, entrega], estado:"entregado", feedbackActual:null, updatedAt:now });
       return res.json({ ok: true, entrega });
     }
 
@@ -128,21 +143,21 @@ export default async function handler(req, res) {
     }
 
     if (action === "createTarea") {
-      const { titulo, descripcion="", asignadoEmail, asignadoNombre="", brief="", links=[], deadline } = body;
+      const { titulo, descripcion="", asignadoEmail, asignadoNombre="", brief="", links=[], deadline, prioridad="normal" } = body;
       if (!titulo||!asignadoEmail) return res.status(400).json({ error:"Título y asignado requeridos" });
       const linksArr = Array.isArray(links) ? links : String(links).split("\n").map(l=>l.trim()).filter(Boolean);
       const data = {
         uid, titulo, descripcion, asignadoEmail, asignadoNombre,
-        brief, links: linksArr,
+        brief, links: linksArr, prioridad,
         deadline: deadline ? new Date(deadline) : null,
-        estado:"pendiente", deliverables:[], createdAt:now, updatedAt:now,
+        estado:"pendiente", deliverables:[], correcciones:0, feedbackActual:null, comments:[], createdAt:now, updatedAt:now,
       };
       const ref = await db.collection("tareas").add(data);
       return res.json({ _id:ref.id, ...data });
     }
 
     if (action === "updateTarea") {
-      const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre } = body;
+      const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre, prioridad } = body;
       const clean = { updatedAt:now };
       if (titulo!==undefined) clean.titulo = titulo;
       if (descripcion!==undefined) clean.descripcion = descripcion;
@@ -152,19 +167,41 @@ export default async function handler(req, res) {
       if (estado!==undefined) clean.estado = estado;
       if (asignadoEmail!==undefined) clean.asignadoEmail = asignadoEmail;
       if (asignadoNombre!==undefined) clean.asignadoNombre = asignadoNombre;
+      if (prioridad!==undefined) clean.prioridad = prioridad;
       await db.collection("tareas").doc(tareaId).update(clean);
       return res.json({ ok:true });
     }
 
     if (action === "updateEstado") {
-      const { tareaId, estado } = body;
-      await db.collection("tareas").doc(tareaId).update({ estado, updatedAt:now });
-      return res.json({ ok:true });
+      const { tareaId, estado, feedback } = body;
+      const ref = db.collection("tareas").doc(tareaId);
+      const upd = { estado, updatedAt: now };
+      if (estado === "revision") {
+        const snap = await ref.get();
+        upd.correcciones = (snap.data()?.correcciones || 0) + 1;
+        upd.feedbackActual = feedback || null;
+      } else {
+        upd.feedbackActual = null;
+      }
+      await ref.update(upd);
+      return res.json({ ok: true });
     }
 
     if (action === "deleteTarea") {
       await db.collection("tareas").doc(body.tareaId).delete();
       return res.json({ ok:true });
+    }
+
+    if (action === "addComment") {
+      const { tareaId, texto } = body;
+      if (!tareaId || !texto?.trim()) return res.status(400).json({ error:"Texto requerido" });
+      const ref = db.collection("tareas").doc(tareaId);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
+      const comment = { texto: texto.trim(), autor:"manager", fecha:now };
+      const prev = snap.data().comments || [];
+      await ref.update({ comments:[...prev, comment] });
+      return res.json({ ok:true, comment });
     }
 
     return res.status(400).json({ error:"Acción desconocida" });
