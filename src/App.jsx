@@ -6896,7 +6896,7 @@ function AppAdmin({T, user, onBack}) {
                 {/* ── Panel expandido ── */}
                 {expanded&&(()=>{
                   const selPlan  = uPlan[u._id]  || (u.plan!=="free"?u.plan:"plus");
-                  const selMeses = uMeses[u._id] || "1";
+                  const selMeses = uCantidad[u._id] || "1";
                   const selDias  = uDias[u._id]  || "";
                   return (
                   <div style={{borderTop:`1px solid ${T.border}`,background:T.bg,display:"flex",flexDirection:"column",gap:0}}>
