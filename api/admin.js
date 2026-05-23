@@ -52,9 +52,11 @@ export default async function handler(req, res) {
       const usuarios = usSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
 
       // Stats calculadas server-side
-      const activos  = usuarios.filter(u => u.plan && u.plan !== "free");
-      const mrrUsdt  = activos.reduce((s, u) => s + (PLAN_PRICE_USDT[u.plan] || 0), 0);
-      const mrrArs   = activos.reduce((s, u) => s + (PLAN_PRICE_ARS[u.plan]  || 0), 0);
+      const activos     = usuarios.filter(u => u.plan && u.plan !== "free");
+      // MRR: solo usuarios que pagaron (sin pruebas)
+      const activosPagos = activos.filter(u => !u.isTrial);
+      const mrrUsdt  = activosPagos.reduce((s, u) => s + (PLAN_PRICE_USDT[u.plan] || 0), 0);
+      const mrrArs   = activosPagos.reduce((s, u) => s + (PLAN_PRICE_ARS[u.plan]  || 0), 0);
 
       const en7dias  = new Date(now); en7dias.setDate(en7dias.getDate() + 7);
       const vencenPronto = activos.filter(u => {
@@ -71,8 +73,12 @@ export default async function handler(req, res) {
 
       const stats = {
         totalUsuarios:    usuarios.length,
-        usuariosPlus:     usuarios.filter(u => u.plan === "plus").length,
-        usuariosFull:     usuarios.filter(u => u.plan === "full").length,
+        // Pagaron (no trial)
+        usuariosPlus:     usuarios.filter(u => u.plan === "plus" && !u.isTrial).length,
+        usuariosFull:     usuarios.filter(u => u.plan === "full" && !u.isTrial).length,
+        // Prueba (no cuentan en MRR)
+        usuariosPlus_trial: usuarios.filter(u => u.plan === "plus" && u.isTrial).length,
+        usuariosFull_trial: usuarios.filter(u => u.plan === "full" && u.isTrial).length,
         usuariosPrueba:   usuarios.filter(u => u.isTrial).length,
         pagosPendientes:  pagos.filter(p => p.estado === "pendiente").length,
         pagosRealesCount: pagosReales.length,

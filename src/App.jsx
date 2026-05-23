@@ -6736,8 +6736,8 @@ function AppAdmin({T, user, onBack}) {
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:24}}>
             {[
               {label:"MRR",value:`$${stats.mrrUsdt||0} USDT / $${(stats.mrrArs||0).toLocaleString("es-AR")} ARS`,sub:"/ mes",color:T.accent},
-              {label:"Usuarios Plus",value:`${stats.usuariosPlus||0}`,color:T.blue},
-              {label:"Usuarios Full",value:`${stats.usuariosFull||0}`,color:T.purple},
+              {label:"Usuarios Plus",value:`${stats.usuariosPlus||0}`,sub:(stats.usuariosPlus_trial||0)>0?`+ ${stats.usuariosPlus_trial} prueba`:null,color:T.blue},
+              {label:"Usuarios Full",value:`${stats.usuariosFull||0}`,sub:(stats.usuariosFull_trial||0)>0?`+ ${stats.usuariosFull_trial} prueba`:null,color:T.purple},
               {label:"Total usuarios",value:`${stats.totalUsuarios||0}`,color:T.textMd},
               {label:"Pagos pendientes",value:`${stats.pagosPendientes||0}`,color:T.yellow},
               {label:"Vencen <7 días",value:`${stats.vencenPronto||0}`,color:(stats.vencenPronto||0)>0?T.red:T.textSm},
