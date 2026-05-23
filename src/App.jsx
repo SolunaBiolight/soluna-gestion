@@ -1032,6 +1032,100 @@ function PageView({children, pageKey, T}) {
   );
 }
 
+// ─── UpgradeWall — pantalla de upgrade cuando el plan no alcanza ──────────────
+function UpgradeWall({T, requiredPlan, onNavigate}) {
+  const PLAN_INFO = {
+    plus: {
+      nombre:"Plus", icon:"⭐", color:T.blue,
+      precio_usdt:29, precio_ars:35000,
+      features:[
+        "Stock multi-canal (Tienda Nube + Shopify + ML)",
+        "Facturador ARCA / AFIP",
+        "Analytics de Mercado Libre",
+        "Envíos ilimitados + etiquetas PDF con SKU",
+        "Reclamos ilimitados + auto-tracking Andreani",
+        "Hasta 3 tiendas conectadas",
+      ],
+    },
+    full: {
+      nombre:"Full", icon:"💎", color:T.purple,
+      precio_usdt:79, precio_ars:95000,
+      features:[
+        "Todo lo de Plus, sin restricciones",
+        "Meta Ads completo (Facebook + Instagram)",
+        "Delegación de tareas a colaboradores externos",
+        "Tiendas ilimitadas",
+        "Soporte prioritario por WhatsApp",
+      ],
+    },
+  };
+  const info = PLAN_INFO[requiredPlan] || PLAN_INFO.plus;
+  return (
+    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:DS.sp["4xl"],minHeight:"60vh"}}>
+      <div style={{maxWidth:460,width:"100%",textAlign:"center"}}>
+        {/* Lock icon */}
+        <div style={{width:72,height:72,borderRadius:"50%",background:info.color+"18",display:"flex",alignItems:"center",justifyContent:"center",margin:`0 auto ${DS.sp["2xl"]}px`}}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={info.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0110 0v4"/>
+          </svg>
+        </div>
+        {/* Badge */}
+        <div style={{display:"inline-flex",alignItems:"center",gap:6,background:info.color+"18",border:`1px solid ${info.color}40`,borderRadius:DS.r.full,padding:"4px 14px",marginBottom:DS.sp.lg}}>
+          <span style={{fontSize:14}}>{info.icon}</span>
+          <span style={{fontSize:DS.font.sm,fontWeight:DS.w.semibold,color:info.color,fontFamily:"'Inter',system-ui,sans-serif"}}>Plan {info.nombre} requerido</span>
+        </div>
+        <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.bold,color:T.text,marginBottom:DS.sp.sm,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1.3}}>
+          Esta función requiere el plan {info.nombre}
+        </div>
+        <div style={{fontSize:DS.font.base,color:T.textSm,marginBottom:DS.sp["2xl"],fontFamily:"'Inter',system-ui,sans-serif"}}>
+          Actualizá para acceder a esta y muchas funciones más.
+        </div>
+        {/* Features */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:DS.sp.xl,marginBottom:DS.sp.xl,textAlign:"left"}}>
+          <div style={{fontSize:DS.font.sm,fontWeight:DS.w.semibold,color:T.textMd,marginBottom:DS.sp.md,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            Con el plan {info.nombre} obtenés:
+          </div>
+          {info.features.map((f,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"flex-start",gap:DS.sp.sm,marginBottom:i<info.features.length-1?DS.sp.sm:0}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={info.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}>
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span style={{fontSize:DS.font.sm,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>{f}</span>
+            </div>
+          ))}
+        </div>
+        {/* Price */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:DS.sp.xl,marginBottom:DS.sp.xl}}>
+          <div>
+            <span style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>u$s {info.precio_usdt}</span>
+            <span style={{fontSize:DS.font.sm,color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}> / mes</span>
+          </div>
+          <div style={{color:T.border,fontSize:DS.font["2xl"],lineHeight:1}}>·</div>
+          <div style={{fontSize:DS.font.sm,color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            ${info.precio_ars.toLocaleString("es-AR")} ARS
+          </div>
+        </div>
+        {/* CTA */}
+        <button
+          onClick={()=>onNavigate("planes")}
+          style={{width:"100%",padding:"14px 24px",background:info.color,color:"#fff",border:"none",borderRadius:DS.r.xl,fontSize:DS.font.lg,fontWeight:DS.w.bold,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:DS.sp.sm,fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}
+          onMouseEnter={e=>e.currentTarget.style.opacity="0.88"}
+          onMouseLeave={e=>e.currentTarget.style.opacity="1"}
+        >
+          Ver planes y actualizar
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </button>
+        <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:DS.sp.md,fontFamily:"'Inter',system-ui,sans-serif"}}>
+          Cancelás cuando quieras · Sin contratos
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Animated tab content wrapper
 function TabView({children, tabKey}) {
   return (
@@ -15153,18 +15247,26 @@ export default function App() {
   );
 
   // ─── Render page content ───
+  // Plan gate: devuelve <UpgradeWall> si el plan del usuario no alcanza, o null si puede pasar
+  const PLAN_LEVEL = {free:0, plus:1, full:2};
+  const planGate = (req) => {
+    if ((PLAN_LEVEL[userPlan]??0) < (PLAN_LEVEL[req]??0))
+      return <UpgradeWall T={T} requiredPlan={req} onNavigate={setPage}/>;
+    return null;
+  };
+
   let pageContent = null;
   if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
-  else if(page==="arca") pageContent = <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
-  else if(page==="meta") pageContent = <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
-  else if(page==="stock") pageContent = <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
-  else if(page==="ml") pageContent = <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")}/></PageView>;
+  else if(page==="arca") pageContent = planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="stock") pageContent = planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="ml") pageContent = planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")}/></PageView>;
+  else if(page==="meta") pageContent = planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
+  else if(page==="tareas") pageContent = planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="reclamos") pageContent = <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/></PageView>;
   else if(page==="envios") pageContent = <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
-  else if(page==="tareas") pageContent = <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     setPage(p);
