@@ -123,7 +123,7 @@ function Card({T, children, hoverable, onClick, style={}, padding="lg"}) {
 }
 
 function Skeleton({T, width="72%", height=22, radius=6, style={}}) {
-  return <div style={{width,height,borderRadius:radius,background:T.border,animation:"growith-skeleton 1.4s ease-in-out infinite",...style}}/>;
+  return <div style={{width,height,borderRadius:radius,background:T?T.surface:"#1e1e2e",position:"relative",overflow:"hidden",...style}}><div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.07) 50%,transparent 100%)",backgroundSize:"200% 100%",animation:"skeleton 1.4s ease infinite"}}/></div>;
 }
 
 function KPI({T, label, value, sub, color, icon, accent, onClick, compact, loading}) {
@@ -196,7 +196,7 @@ function DSEmpty({T, icon="📭", title, subtitle, action}) {
   );
 }
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab}) {
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, connectedStores={}}) {
   const GROUPS = [
     { group:"OPERACIONES" },
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
@@ -204,11 +204,11 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
     {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red"},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
-    {id:"tareas",  label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"},
+    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange"},
     { group:"ANALYTICS" },
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red"},
-    {id:"ml",       label:"Mercado Libre", icon:"M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2zM9 22V12h6v10"},
-    {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z",
+    {id:"ml",       label:"Mercado Libre", icon:"M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2zM9 22V12h6v10", integrationKey:"ml"},
+    {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
@@ -219,6 +219,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
   const NavBtn = ({item}) => {
     const active = page === item.id;
     const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
+    const isConnected = item.integrationKey ? connectedStores[item.integrationKey] : undefined;
     return (
       <button onClick={()=>setPage(item.id)} title={collapsed?item.label:undefined}
         style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"10px 0":"8px 10px",
@@ -233,7 +234,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?"2.2":"1.8"} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.65}}><path d={item.icon}/></svg>
         {!collapsed&&<span style={{flex:1}}>{item.label}</span>}
         {!collapsed&&item.count>0&&<span style={{fontSize:10,fontWeight:DS.w.bold,padding:"1px 6px",borderRadius:DS.r.full,background:badgeColor+(active?"33":"22"),color:badgeColor,lineHeight:1.5,minWidth:18,textAlign:"center"}}>{item.count>99?"99+":item.count}</span>}
+        {!collapsed&&isConnected!==undefined&&<span style={{width:7,height:7,borderRadius:"50%",background:isConnected?T.green:T.textSm,flexShrink:0,opacity:0.8}} title={isConnected?"Conectado":"Sin conectar"}/>}
         {collapsed&&item.count>0&&<span style={{position:"absolute",top:6,right:8,width:6,height:6,borderRadius:DS.r.full,background:badgeColor}}/>}
+        {collapsed&&isConnected!==undefined&&!item.count&&<span style={{position:"absolute",top:6,right:8,width:6,height:6,borderRadius:DS.r.full,background:isConnected?T.green:T.textSm}}/>}
       </button>
     );
   };
@@ -1308,11 +1311,10 @@ function InputStyle(T) {
   };
 }
 
-function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid,color:"#fff",letterSpacing:"0.01em"}; }
-function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.card,color:T.text}; }
-function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
-function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
-
+function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid,color:"#fff",letterSpacing:"0.01em",boxShadow:`0 1px 4px ${T.accentSolid}55`}; }
+function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.card,color:T.text}; }
+function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
+function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
 function OrderSearchField({T, orders, onSelect, uid}) {
   const [q,setQ]=useState("");
   const [apiResults,setApiResults]=useState([]);
@@ -2457,7 +2459,14 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [filterRed,setFilterRed]=useState("");
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [saving,setSaving]=useState(false);
-  const [viewTab,setViewTab]=useState("lista"); // lista | kanban | ranking | comisiones
+  const [viewTab,setViewTab]=useState("lista"); // lista | kanban | ranking | comisiones | perfiles
+  // Perfiles de influencers
+  const [influencers,setInfluencers]=useState([]);
+  const [showInfluencerForm,setShowInfluencerForm]=useState(false);
+  const [editInfluencer,setEditInfluencer]=useState(null);
+  const [infForm,setInfForm]=useState({nombre:"",usuario:"",red:"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});
+  const [savingInf,setSavingInf]=useState(false);
+  const [infSearch,setInfSearch]=useState("");
   const [filterNicho,setFilterNicho]=useState("");
   const [filterSoloPendientes,setFilterSoloPendientes]=useState(false);
   // Comisiones UGC - overrides guardados localmente por código
@@ -2517,7 +2526,14 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       data.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
       setCanjes(data);
     },(err)=>{ console.error("[canjes] snapshot error:", err); });
-    return ()=>unsub();
+    // Influencers
+    const qi=query(collection(db,"influencers"),where("ownerId","==",user.uid));
+    const unsubi=onSnapshot(qi,snap=>{
+      const data=snap.docs.map(d=>({...d.data(),_docId:d.id}));
+      data.sort((a,b)=>a.nombre?.localeCompare(b.nombre)||0);
+      setInfluencers(data);
+    },()=>{});
+    return ()=>{unsub();unsubi();};
   },[user?.uid]);
 
   useEffect(()=>{
@@ -2742,7 +2758,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         {/* Tabs de vista */}
         <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center"}}>
           <div style={{display:"inline-flex",background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:3,gap:2}}>
-            {[{id:"lista",label:"Lista"},{id:"kanban",label:"Kanban"},{id:"ranking",label:"Ranking"},{id:"comisiones",label:"Pagos Cupones"}].map(t=>{
+            {[{id:"lista",label:"Lista"},{id:"kanban",label:"Kanban"},{id:"ranking",label:"Ranking"},{id:"comisiones",label:"Pagos Cupones"},{id:"perfiles",label:"👤 Perfiles"}].map(t=>{
               const isActive=viewTab===t.id;
               return (
                 <button key={t.id} onClick={()=>setViewTab(t.id)}
@@ -3123,7 +3139,192 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           </div>
         )}
 
+        {/* ── TAB PERFILES ── */}
+        {viewTab==="perfiles"&&(
+          <div key="perfiles" style={{paddingBottom:48}}>
+            {/* Header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:700,color:T.text}}>👤 Perfiles de Influencers</div>
+                <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{influencers.length} perfil{influencers.length!==1?"es":""} · datos de comisiones y códigos de descuento</div>
+              </div>
+              <button onClick={()=>{setEditInfluencer(null);setInfForm({nombre:"",usuario:"",red:"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});setShowInfluencerForm(true);}} style={{...BtnPrimary(T),fontSize:13}}>+ Nuevo perfil</button>
+            </div>
+            {/* Search */}
+            <div style={{position:"relative",marginBottom:16,maxWidth:340}}>
+              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:13}}>🔍</span>
+              <input placeholder="Buscar perfil..." value={infSearch} onChange={e=>setInfSearch(e.target.value)} style={{...iS,paddingLeft:36}}/>
+            </div>
+            {/* Grid de perfiles */}
+            {influencers.length===0&&(
+              <div style={{textAlign:"center",padding:"60px 20px",background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`}}>
+                <div style={{fontSize:36,marginBottom:10}}>👤</div>
+                <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Sin perfiles aún</div>
+                <div style={{fontSize:13,color:T.textSm,marginBottom:20}}>Creá perfiles para guardar el código, comisión y datos de cada influencer</div>
+                <button onClick={()=>{setEditInfluencer(null);setInfForm({nombre:"",usuario:"",red:"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});setShowInfluencerForm(true);}} style={{...BtnPrimary(T)}}>+ Crear primer perfil</button>
+              </div>
+            )}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+              {influencers.filter(inf=>{
+                if(!infSearch) return true;
+                const s=infSearch.toLowerCase();
+                return (inf.nombre||"").toLowerCase().includes(s)||(inf.usuario||"").toLowerCase().includes(s)||(inf.codigoDescuento||"").toLowerCase().includes(s);
+              }).map(inf=>{
+                // Cross-ref canjes
+                const canjesDeEste=canjes.filter(c=>(c.codigoDescuento&&inf.codigoDescuento&&c.codigoDescuento.toUpperCase()===inf.codigoDescuento.toUpperCase())||(c.influencer&&inf.nombre&&c.influencer===inf.nombre));
+                const canjesActivos=canjesDeEste.filter(c=>c.estado!=="Finalizado"&&c.estado!=="Rechazado");
+                return (
+                  <div key={inf._docId} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 18px 14px",display:"flex",flexDirection:"column",gap:0,transition:"box-shadow 0.15s",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                    {/* Header del perfil */}
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                      <div style={{width:42,height:42,borderRadius:"50%",background:T.accentSolid+"20",border:`2px solid ${T.accentSolid}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accentSolid,flexShrink:0}}>
+                        {(inf.nombre||"?")[0].toUpperCase()}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:14,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inf.nombre||"Sin nombre"}</div>
+                        <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {inf.usuario&&<span>@{inf.usuario.replace("@","")} · </span>}
+                          <span>{inf.red||"Instagram"}</span>
+                        </div>
+                      </div>
+                      <button onClick={()=>{setEditInfluencer(inf);setInfForm({nombre:inf.nombre||"",usuario:inf.usuario||"",red:inf.red||"Instagram",codigoDescuento:inf.codigoDescuento||"",descuentoPct:inf.descuentoPct||"",comisionPct:inf.comisionPct||"",email:inf.email||"",telefono:inf.telefono||"",notas:inf.notas||""});setShowInfluencerForm(true);}} style={{padding:"4px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontSize:11,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
+                    </div>
+                    {/* Datos comerciales */}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12,background:T.surface,borderRadius:10,padding:"10px 12px"}}>
+                      <div style={{textAlign:"center"}}>
+                        <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Descuento</div>
+                        <div style={{fontSize:16,fontWeight:800,color:T.green}}>{inf.descuentoPct?inf.descuentoPct+"%":"—"}</div>
+                        <div style={{fontSize:9,color:T.textSm}}>al público</div>
+                      </div>
+                      <div style={{textAlign:"center",borderLeft:`1px solid ${T.borderL}`,borderRight:`1px solid ${T.borderL}`}}>
+                        <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Comisión</div>
+                        <div style={{fontSize:16,fontWeight:800,color:T.orange||"#f97316"}}>{inf.comisionPct?inf.comisionPct+"%":"—"}</div>
+                        <div style={{fontSize:9,color:T.textSm}}>para inf.</div>
+                      </div>
+                      <div style={{textAlign:"center"}}>
+                        <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Canjes</div>
+                        <div style={{fontSize:16,fontWeight:800,color:T.accent}}>{canjesDeEste.length}</div>
+                        <div style={{fontSize:9,color:T.textSm}}>{canjesActivos.length} activo{canjesActivos.length!==1?"s":""}</div>
+                      </div>
+                    </div>
+                    {/* Código descuento */}
+                    {inf.codigoDescuento&&(
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,background:T.accentSolid+"10",borderRadius:8,padding:"7px 12px"}}>
+                        <span style={{fontSize:11,color:T.textSm,fontWeight:600}}>CÓDIGO:</span>
+                        <span style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:14,fontWeight:800,color:T.accentSolid,letterSpacing:1,flex:1}}>{inf.codigoDescuento.toUpperCase()}</span>
+                        <button onClick={()=>{navigator.clipboard?.writeText(inf.codigoDescuento.toUpperCase());toast("Código copiado 📋","success");}} style={{padding:"2px 7px",borderRadius:5,border:`1px solid ${T.border}`,background:"transparent",cursor:"pointer",fontSize:10,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
+                      </div>
+                    )}
+                    {/* Datos de contacto */}
+                    {(inf.email||inf.telefono)&&(
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                        {inf.email&&<a href={"mailto:"+inf.email} style={{fontSize:11,color:T.accent,textDecoration:"none"}}>✉️ {inf.email}</a>}
+                        {inf.telefono&&<a href={"https://wa.me/"+inf.telefono.replace(/\D/g,"")} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#22c55e",textDecoration:"none"}}>💬 WA</a>}
+                      </div>
+                    )}
+                    {inf.notas&&<div style={{fontSize:11,color:T.textSm,borderTop:`1px solid ${T.borderL}`,paddingTop:8,marginTop:4,lineHeight:1.5}}>{inf.notas}</div>}
+                    {/* Ver canjes */}
+                    {canjesDeEste.length>0&&(
+                      <button onClick={()=>{setInfSearch("");setViewTab("lista");setSearch(inf.nombre);}} style={{marginTop:8,fontSize:11,color:T.accent,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        Ver {canjesDeEste.length} canje{canjesDeEste.length!==1?"s":""} →
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
+      {/* Modal: Crear / Editar perfil de influencer */}
+      <Modal T={T} open={showInfluencerForm} onClose={()=>setShowInfluencerForm(false)} title={editInfluencer?"Editar perfil":"Nuevo perfil de influencer"} width={500}>
+        {showInfluencerForm&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nombre *</div>
+                <input value={infForm.nombre} onChange={e=>setInfForm(p=>({...p,nombre:e.target.value}))} placeholder="Sofía García" style={{...iS}}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Usuario / @</div>
+                <input value={infForm.usuario} onChange={e=>setInfForm(p=>({...p,usuario:e.target.value}))} placeholder="@sofiagarcia" style={{...iS}}/>
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Red social</div>
+              <select value={infForm.red} onChange={e=>setInfForm(p=>({...p,red:e.target.value}))} style={{...iS}}>
+                {REDES.map(r=><option key={r}>{r}</option>)}
+              </select>
+            </div>
+            {/* Datos comerciales */}
+            <div style={{background:T.surface,borderRadius:10,padding:"14px 16px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>💰 Condiciones comerciales</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Código descuento</div>
+                  <input value={infForm.codigoDescuento} onChange={e=>setInfForm(p=>({...p,codigoDescuento:e.target.value.toUpperCase()}))} placeholder="SOFIA10" style={{...iS,fontFamily:"monospace",letterSpacing:1}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Desc. público %</div>
+                  <input type="number" min="0" max="100" value={infForm.descuentoPct} onChange={e=>setInfForm(p=>({...p,descuentoPct:e.target.value}))} placeholder="10" style={{...iS}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Comisión inf. %</div>
+                  <input type="number" min="0" max="100" value={infForm.comisionPct} onChange={e=>setInfForm(p=>({...p,comisionPct:e.target.value}))} placeholder="10" style={{...iS}}/>
+                </div>
+              </div>
+              {(infForm.descuentoPct||infForm.comisionPct)&&(
+                <div style={{marginTop:10,padding:"8px 12px",background:T.accentSolid+"10",borderRadius:8,fontSize:12,color:T.text}}>
+                  👤 Con el código <strong>{infForm.codigoDescuento||"CODIGO"}</strong>{infForm.descuentoPct?` el público recibe un ${infForm.descuentoPct}% de descuento`:""}{infForm.comisionPct?` y ${infForm.nombre||"el/la influencer"} cobra un ${infForm.comisionPct}% de comisión`:""}.
+                </div>
+              )}
+            </div>
+            {/* Contacto */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Email</div>
+                <input value={infForm.email} onChange={e=>setInfForm(p=>({...p,email:e.target.value}))} placeholder="sofia@gmail.com" style={{...iS}}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Teléfono WA</div>
+                <input value={infForm.telefono} onChange={e=>setInfForm(p=>({...p,telefono:e.target.value}))} placeholder="5491155..." style={{...iS}}/>
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Notas internas</div>
+              <textarea value={infForm.notas} onChange={e=>setInfForm(p=>({...p,notas:e.target.value}))} placeholder="Nicho, estilo, condiciones especiales..." rows={2} style={{...iS,resize:"vertical"}}/>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:4}}>
+              {editInfluencer&&(
+                <AsyncButton onClick={async()=>{
+                  if(!await appConfirm("¿Eliminar este perfil?",{danger:true,okLabel:"Eliminar"})) return;
+                  await deleteDoc(doc(db,"influencers",editInfluencer._docId));
+                  setShowInfluencerForm(false);
+                  toast("Perfil eliminado","warning");
+                }} style={{...BtnDanger(T)}}>Eliminar</AsyncButton>
+              )}
+              <button onClick={()=>setShowInfluencerForm(false)} style={{...BtnSecondary(T)}}>Cancelar</button>
+              <AsyncButton onClick={async()=>{
+                if(!infForm.nombre.trim()) return appAlert("El nombre es requerido");
+                setSavingInf(true);
+                try {
+                  const data={nombre:infForm.nombre.trim(),usuario:(infForm.usuario||"").replace("@","").trim(),red:infForm.red,codigoDescuento:(infForm.codigoDescuento||"").toUpperCase().trim(),descuentoPct:infForm.descuentoPct?Number(infForm.descuentoPct):null,comisionPct:infForm.comisionPct?Number(infForm.comisionPct):null,email:infForm.email.trim(),telefono:infForm.telefono.trim(),notas:infForm.notas.trim(),ownerId:user.uid};
+                  if(editInfluencer) {
+                    await updateDoc(doc(db,"influencers",editInfluencer._docId),{...data,updatedAt:serverTimestamp()});
+                    toast("Perfil actualizado ✓","success");
+                  } else {
+                    await addDoc(collection(db,"influencers"),{...data,createdAt:serverTimestamp()});
+                    toast("Perfil creado ✓","success");
+                  }
+                  setShowInfluencerForm(false);
+                } catch(e){appAlert("Error al guardar: "+e.message);}
+                setSavingInf(false);
+              }} style={{...BtnPrimary(T)}}>{editInfluencer?"Guardar cambios":"Crear perfil"}</AsyncButton>
+            </div>
+          </div>
+        )}
+      </Modal>
       <Modal T={T} open={!!detail} onClose={()=>{setDetail(null);setDeleteConfirm(null);}} title={detailC?detailC.influencer:""} width={560}>
         {detailC&&(()=>{
           const c=canjes.find(x=>x._docId===detailC._docId)||detailC;
@@ -3337,6 +3538,21 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       <Modal T={T} open={!!form&&!form._docId} onClose={()=>setForm(null)} title="Nuevo canje 🤝" width={460}>
         {form&&!form._docId&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {/* Seleccionar desde perfil existente */}
+            {influencers.length>0&&(
+              <div style={{background:T.accentSolid+"0f",border:`1px solid ${T.accentSolid}25`,borderRadius:10,padding:"10px 14px"}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:0.5}}>📋 Autocompletar desde perfil</div>
+                <select onChange={e=>{
+                  const inf=influencers.find(i=>i._docId===e.target.value);
+                  if(!inf) return;
+                  setForm(f=>({...f,influencer:inf.nombre||f.influencer,usuario:inf.usuario||f.usuario,red:inf.red||f.red,email:inf.email||f.email,telefono:inf.telefono||f.telefono,codigoDescuento:inf.codigoDescuento||f.codigoDescuento,comisionPct:inf.comisionPct||f.comisionPct,...(inf.usuario?{linkInstagram:"https://instagram.com/"+inf.usuario}:{})}));
+                  e.target.value="";
+                }} defaultValue="" style={{...iS,fontSize:13}}>
+                  <option value="">Elegir un perfil...</option>
+                  {influencers.map(inf=><option key={inf._docId} value={inf._docId}>{inf.nombre}{inf.codigoDescuento?` (${inf.codigoDescuento})`:""}</option>)}
+                </select>
+              </div>
+            )}
             {/* Link Instagram - campo principal, auto-extrae @usuario */}
             <div>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Link de Instagram <span style={{color:T.red}}>*</span></label>
@@ -7129,13 +7345,28 @@ function AppTareas({T, user, onHome}) {
     if(!r.ok||d.error) throw new Error(d.error||"Error");
     return d;
   }
-  async function loadData() {
+
+  // Real-time listeners via Firestore onSnapshot
+  useEffect(()=>{
+    if(!user?.uid) return;
     setLoading(true);
-    try { const d = await tareasApi({action:"getData"}); setDatos(d); }
-    catch(e){ appAlert("Error: "+e.message); }
-    setLoading(false);
-  }
-  useEffect(()=>{ loadData(); },[]);
+    // Tareas — field name is "uid" (not ownerId)
+    const qt=query(collection(db,"tareas"),where("uid","==",user.uid));
+    const ut=onSnapshot(qt,snap=>{
+      const tareas=snap.docs.map(d=>({_id:d.id,...d.data()}));
+      tareas.sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
+      setDatos(prev=>({...prev,tareas}));
+      setLoading(false);
+    },(e)=>{appAlert("Error al cargar tareas");setLoading(false);});
+    // Colaboradores — field name is "uid"
+    const qc=query(collection(db,"colaboradores"),where("uid","==",user.uid));
+    const uc=onSnapshot(qc,snap=>{
+      const colaboradores=snap.docs.map(d=>({_id:d.id,...d.data()}));
+      colaboradores.sort((a,b)=>a.nombre?.localeCompare(b.nombre,"es")||0);
+      setDatos(prev=>({...prev,colaboradores}));
+    },()=>{});
+    return ()=>{ut();uc();};
+  },[user?.uid]);
 
   function fmtDate(val) {
     if(!val) return "—";
@@ -7209,8 +7440,8 @@ function AppTareas({T, user, onHome}) {
     const colab = colaboradores.find(c=>c.email===ntAsignado);
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||""});
-    setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
+    await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||""});
+    // onSnapshot updates datos automatically
     setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal");
     toast("Tarea creada ✓","success");
   }
@@ -7231,7 +7462,6 @@ function AppTareas({T, user, onHome}) {
     const linksArr = etLinks.filter(l=>l.url.trim());
     const checkArr = etChecklist.filter(i=>i.text.trim());
     await tareasApi({action:"updateTarea",tareaId:editTarea._id,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===editTarea._id?{...t,titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""}:t)}));
     setEditTarea(null);
     toast("Tarea actualizada ✓","success");
   }
@@ -7239,7 +7469,6 @@ function AppTareas({T, user, onHome}) {
   async function crearColaborador() {
     if(!ncNombre.trim()||!ncEmail.trim()) return appAlert("Nombre y email son requeridos");
     const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim()});
-    setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
     setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol("");
     toast("Colaborador agregado ✓","success");
     copyLink(d.token);
@@ -7247,7 +7476,6 @@ function AppTareas({T, user, onHome}) {
 
   async function updateEstado(tareaId, estado, feedback="") {
     await tareasApi({action:"updateEstado",tareaId,estado,feedback});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado,feedbackActual:estado==="revision"?feedback||null:null,correcciones:estado==="revision"?(t.correcciones||0)+1:t.correcciones}:t)}));
     setShowFeedback(prev=>({...prev,[tareaId]:false}));
     setFeedbackText(prev=>({...prev,[tareaId]:""}));
     toast("Estado actualizado","success");
@@ -7258,15 +7486,13 @@ function AppTareas({T, user, onHome}) {
   async function addComment(tareaId) {
     const texto = commentText[tareaId]?.trim();
     if(!texto) return;
-    const d = await tareasApi({action:"addComment",tareaId,texto});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,comments:[...(t.comments||[]),d.comment]}:t)}));
+    await tareasApi({action:"addComment",tareaId,texto});
     setCommentText(prev=>({...prev,[tareaId]:""}));
   }
 
   async function deleteTarea(tareaId) {
     if(!await appConfirm("¿Eliminar esta tarea?",{danger:true,okLabel:"Eliminar"})) return;
     await tareasApi({action:"deleteTarea",tareaId});
-    setDatos(prev=>({...prev,tareas:prev.tareas.filter(t=>t._id!==tareaId)}));
     if(expandedTarea===tareaId) setExpandedTarea(null);
     toast("Tarea eliminada","warning");
   }
@@ -7274,20 +7500,17 @@ function AppTareas({T, user, onHome}) {
   async function deleteColab(colabId) {
     if(!await appConfirm("¿Eliminar este colaborador?",{danger:true,okLabel:"Eliminar"})) return;
     await tareasApi({action:"deleteColaborador",colabId});
-    setDatos(prev=>({...prev,colaboradores:prev.colaboradores.filter(c=>c._id!==colabId)}));
     toast("Colaborador eliminado","warning");
   }
 
   async function duplicateTarea(tareaId) {
-    const d = await tareasApi({action:"duplicateTarea",tareaId});
-    setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
+    await tareasApi({action:"duplicateTarea",tareaId});
     toast("Tarea duplicada ✓","success");
   }
 
   async function regenerateToken(colabId) {
     if(!await appConfirm("¿Regenerar link? El link anterior dejará de funcionar.",{okLabel:"Regenerar"})) return;
-    const d = await tareasApi({action:"regenerateToken",colabId});
-    setDatos(prev=>({...prev,colaboradores:prev.colaboradores.map(c=>c._id===colabId?{...c,token:d.token}:c)}));
+    await tareasApi({action:"regenerateToken",colabId});
     toast("Nuevo link generado","success");
   }
 
@@ -7537,10 +7760,11 @@ function AppTareas({T, user, onHome}) {
                   )}
                 </div>
                 {tareasFiltradas.length===0&&(
-                  <div style={{textAlign:"center",padding:"60px 0",color:T.textSm}}>
-                    <div style={{fontSize:40,marginBottom:12}}>📋</div>
-                    <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Sin tareas</div>
-                    <div style={{fontSize:13}}>{tareas.length===0?"Creá tu primera tarea con el botón + Nueva tarea":"No hay tareas con este filtro"}</div>
+                  <div style={{textAlign:"center",padding:"60px 24px",color:T.textSm,background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`,margin:"8px 0"}}>
+                    <div style={{fontSize:44,marginBottom:12}}>{tareas.length===0?"🚀":"🔍"}</div>
+                    <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>{tareas.length===0?"¡Todo listo para delegar!":"Sin resultados"}</div>
+                    <div style={{fontSize:13,color:T.textMd,marginBottom:tareas.length===0?20:0,maxWidth:320,margin:"0 auto 20px"}}>{tareas.length===0?"Creá tu primera tarea y asignala a un colaborador externo. Ellos reciben un link personal y pueden entregar su trabajo sin necesidad de cuenta.":"No hay tareas con este filtro. Probá cambiando los filtros."}</div>
+                    {tareas.length===0&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),margin:"0 auto"}}>+ Crear primera tarea</button>}
                   </div>
                 )}
                 <div style={{display:"flex",flexDirection:"column",gap:0}}>
@@ -15703,6 +15927,8 @@ export default function App() {
   const [reclamosView,setReclamosView]=useState("reclamos");
   const [metaTab,setMetaTab]=useState("productos");
   const [cmdOpen,setCmdOpen]=useState(false);
+  const [tareasForReview,setTareasForReview]=useState(0);
+  const [connectedStores,setConnectedStores]=useState({tn:false,shopify:false,ml:false,meta:false});
   const [onboardingDone,setOnboardingDone]=useState(()=>{try{return localStorage.getItem("growith_onb_done")==="1";}catch(e){return true;}});
   const [orders,setOrders]=useState([]);
   const [ordersStatus,setOrdersStatus]=useState("idle");
@@ -15783,6 +16009,9 @@ export default function App() {
       ::-webkit-scrollbar-track{background:transparent;}
       ::-webkit-scrollbar-thumb{background:rgba(127,127,127,0.18);border-radius:99px;}
       ::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,0.32);}
+      @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+      @keyframes skeleton{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+      @keyframes bellShake{0%,100%{transform:rotate(0);}20%{transform:rotate(-12deg);}40%{transform:rotate(12deg);}60%{transform:rotate(-8deg);}80%{transform:rotate(8deg);}}
     `;
     document.head.appendChild(style);
   },[]);
@@ -15890,7 +16119,12 @@ export default function App() {
     if(!user) return;
     const unsub=onSnapshot(doc(db,"users",user.uid),snap=>{
       if(!snap.exists()) return;
-      const tn=snap.data().stores?.find(s=>s.type==="tiendanube");
+      const d=snap.data();
+      const tn=d.stores?.find(s=>s.type==="tiendanube");
+      const shopify=d.stores?.find(s=>s.type==="shopify");
+      const ml=d.stores?.find(s=>s.type==="meli");
+      const meta=(d.metaAccounts||[]).length>0;
+      setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,meta});
       const newId=tn?.storeId||null;
       if(prevTnRef.current!==null && prevTnRef.current!==newId) {
         try{ localStorage.removeItem(`growith_orders_${user.uid}`); }catch(e){}
@@ -15930,6 +16164,14 @@ export default function App() {
     },()=>{});
     return ()=>{u1();u2();};
   },[user]);
+
+  // Listener de tareas "entregado" para notificación en topbar (field "uid")
+  useEffect(()=>{
+    if(!user?.uid) return;
+    const q=query(collection(db,"tareas"),where("uid","==",user.uid),where("estado","==","entregado"));
+    const unsub=onSnapshot(q,snap=>setTareasForReview(snap.size),()=>{});
+    return ()=>unsub();
+  },[user?.uid]);
 
   // Vista pública de colaborador (sin login, acceso por token)
   if(colabToken) return <ColaboradorPublicView T={T} token={colabToken}/>;
@@ -16014,17 +16256,27 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} connectedStores={connectedStores}/>
         <div style={{flex:1,minWidth:0,paddingBottom:"68px"}} className="main-content">
           {/* Mini topbar global con Cmd+K hint */}
-          <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:DS.sp.md,height:48}}>
-            <button onClick={()=>setCmdOpen(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 12px 5px 10px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,cursor:"pointer",fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <span>Buscar...</span>
-              <span style={{padding:"0px 5px",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,fontSize:DS.font.xs,marginLeft:8}}>⌘K</span>
-            </button>
+          <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:DS.sp.md,height:48}}>
+            <div/>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              {tareasForReview>0&&(
+                <button onClick={()=>setPage("tareas")} title={`${tareasForReview} entrega${tareasForReview!==1?"s":""} esperando revisión`}
+                  style={{position:"relative",padding:"5px 8px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,cursor:"pointer",display:"flex",alignItems:"center",color:T.text,animation:"bellShake 0.5s ease"}}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                  <span style={{position:"absolute",top:-4,right:-4,minWidth:16,height:16,borderRadius:8,background:"#ef4444",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px",fontFamily:"'Inter',system-ui,sans-serif"}}>{tareasForReview}</span>
+                </button>
+              )}
+              <button onClick={()=>setCmdOpen(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 12px 5px 10px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,cursor:"pointer",fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <span>Buscar...</span>
+                <span style={{padding:"0px 5px",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,fontSize:DS.font.xs,marginLeft:8}}>⌘K</span>
+              </button>
+            </div>
           </div>
-          {pageContent}
+          <div key={page} style={{animation:"fadeIn 0.15s ease"}}>{pageContent}</div>
         </div>
       </div>
       <MobileBottomNav/>
