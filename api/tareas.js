@@ -21,6 +21,95 @@ function randomToken(len = 24) {
   return t;
 }
 
+function colabPortalLink(origin, token) {
+  const base = (origin || "https://soluna-gestion.vercel.app").replace(/\/$/, "");
+  return `${base}/#/colaborador/${token}`;
+}
+
+async function sendEmail({ to, subject, html }) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key || !to) return;
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "Growith <notificaciones@growith.app>", to: [to], subject, html }),
+    });
+  } catch(e) {
+    console.error("[email]", e.message);
+  }
+}
+
+function emailTareaAsignada({ colab, tarea, link }) {
+  const deadlineStr = tarea.deadline ? new Date(tarea.deadline).toLocaleDateString("es-AR") : null;
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">📋</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Nueva tarea asignada</div>
+  </div>
+  <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
+  <p style="font-size:14px;color:#6b7280">Te asignaron una nueva tarea:</p>
+  <div style="background:#f9fafb;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #6366f1">
+    <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:6px">${tarea.titulo}</div>
+    ${tarea.descripcion ? `<div style="font-size:13px;color:#6b7280">${tarea.descripcion}</div>` : ""}
+    ${deadlineStr ? `<div style="font-size:12px;color:#6b7280;margin-top:6px">📅 Fecha límite: ${deadlineStr}</div>` : ""}
+    ${tarea.prioridad === "urgente" ? `<div style="font-size:12px;color:#ef4444;font-weight:700;margin-top:4px">🔴 URGENTE</div>` : ""}
+  </div>
+  <a href="${link}" style="display:block;text-align:center;background:#6366f1;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver mi tarea →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
+function emailEntregaRecibida({ colab, tarea, entrega, link }) {
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#f97316,#fb923c);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">📦</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Nueva entrega recibida</div>
+  </div>
+  <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> entregó trabajo para revisar:</p>
+  <div style="background:#f9fafb;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #f97316">
+    <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:6px">${tarea.titulo}</div>
+    ${entrega.label ? `<div style="font-size:12px;color:#6b7280">Versión: ${entrega.label}</div>` : ""}
+    ${entrega.nota ? `<div style="font-size:13px;color:#374151;margin-top:6px">${entrega.nota}</div>` : ""}
+    <a href="${entrega.link}" style="display:inline-block;margin-top:10px;font-size:13px;color:#6366f1;font-weight:600">Ver entrega →</a>
+  </div>
+  <a href="${link}" style="display:block;text-align:center;background:#f97316;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Revisar ahora →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
+function emailCambiosSolicitados({ colab, tarea, feedback, link }) {
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:#ef4444;padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">🔁</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Se solicitaron cambios</div>
+  </div>
+  <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
+  <p style="font-size:14px;color:#6b7280">El equipo revisó tu entrega para <strong>${tarea.titulo}</strong> y solicitó cambios:</p>
+  ${feedback ? `<div style="background:#fef2f2;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #ef4444;font-size:14px;color:#374151;line-height:1.6">${feedback}</div>` : "<p style='color:#6b7280;font-size:13px'>Revisá los detalles en tu portal de tareas.</p>"}
+  <a href="${link}" style="display:block;text-align:center;background:#ef4444;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver tarea y enviar nueva versión →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
+function emailConsultaRecibida({ colab, tarea, texto, link }) {
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#3b82f6,#60a5fa);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">❓</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Nueva consulta de colaborador</div>
+  </div>
+  <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> tiene una consulta sobre <strong>${tarea.titulo}</strong>:</p>
+  <div style="background:#eff6ff;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #3b82f6;font-size:14px;color:#374151;line-height:1.6">${texto}</div>
+  <a href="${link}" style="display:block;text-align:center;background:#3b82f6;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Responder en Growith →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
+function normalizeLinks(links) {
+  const arr = Array.isArray(links) ? links : String(links||"").split("\n").map(l=>l.trim()).filter(Boolean);
+  return arr.map(l => typeof l === "string" ? { name: "", url: l } : l).filter(l=>l.url);
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -29,6 +118,7 @@ export default async function handler(req, res) {
 
   const body = req.method === "GET" ? req.query : req.body;
   const { action, uid, token } = body;
+  const origin = req.headers.origin || req.headers.referer || "";
 
   try {
     const db = initAdmin();
@@ -41,7 +131,6 @@ export default async function handler(req, res) {
       const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
       if (snap.empty) return res.status(404).json({ error: "Link inválido o expirado" });
       const colab = { _id: snap.docs[0].id, ...snap.docs[0].data() };
-      // Sin orderBy para evitar índice compuesto — ordenamos en JS
       const tarSnap = await db.collection("tareas")
         .where("asignadoEmail","==",colab.email)
         .where("uid","==",colab.uid).get();
@@ -60,8 +149,53 @@ export default async function handler(req, res) {
       const ref = db.collection("tareas").doc(tareaId);
       const t = await ref.get();
       if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error: "No autorizado" });
-      await ref.update({ estado, updatedAt: now });
+      const act = { tipo:"estado", autor:colab.nombre, fecha:now, detalle:`Estado: ${estado}` };
+      await ref.update({ estado, updatedAt: now, activity: [...(t.data().activity||[]), act] });
       return res.json({ ok: true });
+    }
+
+    if (action === "publicMarcarLeido") {
+      const { tareaId } = body;
+      if (!token || !tareaId) return res.status(400).json({ error: "Faltan parámetros" });
+      const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (snap.empty) return res.status(403).json({ error: "Token inválido" });
+      const colab = snap.docs[0].data();
+      const ref = db.collection("tareas").doc(tareaId);
+      const t = await ref.get();
+      if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error: "No autorizado" });
+      const act = { tipo:"leido", autor:colab.nombre, fecha:now, detalle:"Brief marcado como leído" };
+      await ref.update({ leidoAt: now, activity: [...(t.data().activity||[]), act] });
+      return res.json({ ok: true });
+    }
+
+    if (action === "publicSetEstimacion") {
+      const { tareaId, estimacion } = body;
+      if (!token || !tareaId || !estimacion) return res.status(400).json({ error: "Faltan parámetros" });
+      const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (snap.empty) return res.status(403).json({ error: "Token inválido" });
+      const colab = snap.docs[0].data();
+      const ref = db.collection("tareas").doc(tareaId);
+      const t = await ref.get();
+      if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error: "No autorizado" });
+      const act = { tipo:"estimacion", autor:colab.nombre, fecha:now, detalle:`Estimación: ${estimacion}` };
+      await ref.update({ estimacion, activity: [...(t.data().activity||[]), act] });
+      return res.json({ ok: true });
+    }
+
+    if (action === "publicToggleChecklist") {
+      const { tareaId, itemId } = body;
+      if (!token || !tareaId || !itemId) return res.status(400).json({ error: "Faltan parámetros" });
+      const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (snap.empty) return res.status(403).json({ error: "Token inválido" });
+      const colab = snap.docs[0].data();
+      const ref = db.collection("tareas").doc(tareaId);
+      const t = await ref.get();
+      if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error: "No autorizado" });
+      const checklist = (t.data().checklist||[]).map(item =>
+        item.id === itemId ? { ...item, done: !item.done } : item
+      );
+      await ref.update({ checklist });
+      return res.json({ ok: true, checklist });
     }
 
     if (action === "publicAddComment") {
@@ -73,14 +207,36 @@ export default async function handler(req, res) {
       const ref = db.collection("tareas").doc(tareaId);
       const t = await ref.get();
       if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error:"No autorizado" });
-      const comment = { texto: texto.trim(), autor: colab.nombre, fecha:now };
-      const prev = t.data().comments || [];
-      await ref.update({ comments:[...prev, comment] });
+      const comment = { texto: texto.trim(), autor: colab.nombre, fecha:now, tipo:"mensaje" };
+      await ref.update({ comments:[...(t.data().comments||[]), comment] });
+      return res.json({ ok:true, comment });
+    }
+
+    if (action === "publicAddConsulta") {
+      const { tareaId, texto } = body;
+      if (!token || !tareaId || !texto?.trim()) return res.status(400).json({ error:"Faltan parámetros" });
+      const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (snap.empty) return res.status(403).json({ error:"Token inválido" });
+      const colab = snap.docs[0].data();
+      const ref = db.collection("tareas").doc(tareaId);
+      const t = await ref.get();
+      if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error:"No autorizado" });
+      const comment = { texto: texto.trim(), autor: colab.nombre, fecha:now, tipo:"consulta" };
+      await ref.update({ comments:[...(t.data().comments||[]), comment] });
+      // Notificar al manager por email
+      const managerEmail = t.data().managerEmail;
+      if (managerEmail) {
+        sendEmail({
+          to: managerEmail,
+          subject: `❓ Consulta de ${colab.nombre} — ${t.data().titulo}`,
+          html: emailConsultaRecibida({ colab, tarea:t.data(), texto:texto.trim(), link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }),
+        });
+      }
       return res.json({ ok:true, comment });
     }
 
     if (action === "publicAddEntrega") {
-      const { tareaId, link, nota } = body;
+      const { tareaId, link, nota, label } = body;
       if (!token || !tareaId || !link) return res.status(400).json({ error: "Link de entrega requerido" });
       const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
       if (snap.empty) return res.status(403).json({ error: "Token inválido" });
@@ -88,9 +244,26 @@ export default async function handler(req, res) {
       const ref = db.collection("tareas").doc(tareaId);
       const t = await ref.get();
       if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error: "No autorizado" });
-      const entrega = { link, nota: nota||"", fecha: now };
-      const prev = t.data().deliverables || [];
-      await ref.update({ deliverables:[...prev, entrega], estado:"entregado", feedbackActual:null, updatedAt:now });
+      const prevDels = t.data().deliverables || [];
+      const version = prevDels.length + 1;
+      const entrega = { link, nota: nota||"", label: label||`v${version}`, version, fecha: now };
+      const act = { tipo:"entrega", autor:colab.nombre, fecha:now, detalle:`Entregó versión ${version}` };
+      await ref.update({
+        deliverables:[...prevDels, entrega],
+        estado:"entregado",
+        feedbackActual:null,
+        updatedAt:now,
+        activity:[...(t.data().activity||[]), act],
+      });
+      // Email al manager
+      const managerEmail = t.data().managerEmail;
+      if (managerEmail) {
+        sendEmail({
+          to: managerEmail,
+          subject: `📦 Nueva entrega de ${colab.nombre} — ${t.data().titulo}`,
+          html: emailEntregaRecibida({ colab, tarea:t.data(), entrega, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }),
+        });
+      }
       return res.json({ ok: true, entrega });
     }
 
@@ -99,7 +272,6 @@ export default async function handler(req, res) {
     if (!uid) return res.status(403).json({ error: "No autorizado" });
 
     if (action === "getData") {
-      // Sin orderBy para evitar índices compuestos — ordenamos en JS (válido para multicuenta)
       const [cs, ts] = await Promise.all([
         db.collection("colaboradores").where("uid","==",uid).get(),
         db.collection("tareas").where("uid","==",uid).get(),
@@ -143,31 +315,58 @@ export default async function handler(req, res) {
     }
 
     if (action === "createTarea") {
-      const { titulo, descripcion="", asignadoEmail, asignadoNombre="", brief="", links=[], deadline, prioridad="normal" } = body;
+      const { titulo, descripcion="", asignadoEmail, asignadoNombre="", brief="", links=[], deadline, prioridad="normal", checklist=[], managerEmail="" } = body;
       if (!titulo||!asignadoEmail) return res.status(400).json({ error:"Título y asignado requeridos" });
-      const linksArr = Array.isArray(links) ? links : String(links).split("\n").map(l=>l.trim()).filter(Boolean);
+      const linksArr = normalizeLinks(links);
+      const checklistArr = Array.isArray(checklist) ? checklist : [];
+      // Número secuencial de tarea via transacción
+      const userRef = db.collection("users").doc(uid);
+      let tareaNum = 1;
+      await db.runTransaction(async tx => {
+        const userDoc = await tx.get(userRef);
+        const prev = userDoc.data()?.tareasCount || 0;
+        tareaNum = prev + 1;
+        tx.set(userRef, { tareasCount: tareaNum }, { merge: true });
+      });
+      const tareaNumStr = String(tareaNum).padStart(3, "0");
+      const activity = [{ tipo:"creado", autor:"manager", fecha:now, detalle:"Tarea creada" }];
       const data = {
         uid, titulo, descripcion, asignadoEmail, asignadoNombre,
-        brief, links: linksArr, prioridad,
+        brief, links: linksArr, prioridad, checklist: checklistArr,
+        tareaNum, tareaNumStr,
         deadline: deadline ? new Date(deadline) : null,
-        estado:"pendiente", deliverables:[], correcciones:0, feedbackActual:null, comments:[], createdAt:now, updatedAt:now,
+        estado:"pendiente", deliverables:[], correcciones:0, feedbackActual:null, comments:[],
+        activity, leidoAt:null, estimacion:null, managerEmail,
+        createdAt:now, updatedAt:now,
       };
       const ref = await db.collection("tareas").add(data);
+      // Email al colaborador
+      const colabSnap = await db.collection("colaboradores")
+        .where("uid","==",uid).where("email","==",asignadoEmail.toLowerCase()).limit(1).get();
+      if (!colabSnap.empty) {
+        const colab = colabSnap.docs[0].data();
+        sendEmail({
+          to: asignadoEmail,
+          subject: `📋 Nueva tarea: ${titulo}`,
+          html: emailTareaAsignada({ colab, tarea:{...data,deadline:deadline?new Date(deadline):null}, link:colabPortalLink(origin, colab.token) }),
+        });
+      }
       return res.json({ _id:ref.id, ...data });
     }
 
     if (action === "updateTarea") {
-      const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre, prioridad } = body;
+      const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre, prioridad, checklist } = body;
       const clean = { updatedAt:now };
       if (titulo!==undefined) clean.titulo = titulo;
       if (descripcion!==undefined) clean.descripcion = descripcion;
       if (brief!==undefined) clean.brief = brief;
-      if (links!==undefined) clean.links = Array.isArray(links) ? links : String(links).split("\n").map(l=>l.trim()).filter(Boolean);
+      if (links!==undefined) clean.links = normalizeLinks(links);
       if (deadline!==undefined) clean.deadline = deadline ? new Date(deadline) : null;
       if (estado!==undefined) clean.estado = estado;
       if (asignadoEmail!==undefined) clean.asignadoEmail = asignadoEmail;
       if (asignadoNombre!==undefined) clean.asignadoNombre = asignadoNombre;
       if (prioridad!==undefined) clean.prioridad = prioridad;
+      if (checklist!==undefined) clean.checklist = checklist;
       await db.collection("tareas").doc(tareaId).update(clean);
       return res.json({ ok:true });
     }
@@ -175,11 +374,31 @@ export default async function handler(req, res) {
     if (action === "updateEstado") {
       const { tareaId, estado, feedback } = body;
       const ref = db.collection("tareas").doc(tareaId);
+      const snap = await ref.get();
       const upd = { estado, updatedAt: now };
+      const act = { tipo:"estado", autor:"manager", fecha:now, detalle:`Estado: ${estado}` };
+      upd.activity = [...(snap.data()?.activity||[]), act];
       if (estado === "revision") {
-        const snap = await ref.get();
         upd.correcciones = (snap.data()?.correcciones || 0) + 1;
         upd.feedbackActual = feedback || null;
+        // Guardar feedback en la última entrega
+        const prevDels = snap.data()?.deliverables || [];
+        if (prevDels.length > 0) {
+          const updDels = [...prevDels];
+          updDels[updDels.length-1] = { ...updDels[updDels.length-1], feedbackRecibido: feedback || null };
+          upd.deliverables = updDels;
+        }
+        // Email al colaborador
+        const colabSnap = await db.collection("colaboradores")
+          .where("uid","==",uid).where("email","==",snap.data().asignadoEmail).limit(1).get();
+        if (!colabSnap.empty) {
+          const colab = colabSnap.docs[0].data();
+          sendEmail({
+            to: snap.data().asignadoEmail,
+            subject: `🔁 Se solicitaron cambios — ${snap.data().titulo}`,
+            html: emailCambiosSolicitados({ colab, tarea:snap.data(), feedback:feedback||"", link:colabPortalLink(origin, colab.token) }),
+          });
+        }
       } else {
         upd.feedbackActual = null;
       }
@@ -192,15 +411,49 @@ export default async function handler(req, res) {
       return res.json({ ok:true });
     }
 
+    if (action === "duplicateTarea") {
+      const { tareaId } = body;
+      const ref = db.collection("tareas").doc(tareaId);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
+      const orig = snap.data();
+      // Número secuencial
+      const userRef = db.collection("users").doc(uid);
+      let tareaNum = 1;
+      await db.runTransaction(async tx => {
+        const userDoc = await tx.get(userRef);
+        const prev = userDoc.data()?.tareasCount || 0;
+        tareaNum = prev + 1;
+        tx.set(userRef, { tareasCount: tareaNum }, { merge: true });
+      });
+      const tareaNumStr = String(tareaNum).padStart(3, "0");
+      const data = {
+        ...orig,
+        titulo: `Copia de ${orig.titulo}`,
+        estado: "pendiente",
+        deliverables: [],
+        correcciones: 0,
+        feedbackActual: null,
+        comments: [],
+        activity: [{ tipo:"creado", autor:"manager", fecha:now, detalle:`Duplicada de #${orig.tareaNumStr||tareaId.slice(0,6)}` }],
+        leidoAt: null,
+        estimacion: null,
+        checklist: (orig.checklist||[]).map(i=>({...i, done:false})),
+        tareaNum, tareaNumStr,
+        createdAt: now, updatedAt: now,
+      };
+      const newRef = await db.collection("tareas").add(data);
+      return res.json({ _id:newRef.id, ...data });
+    }
+
     if (action === "addComment") {
       const { tareaId, texto } = body;
       if (!tareaId || !texto?.trim()) return res.status(400).json({ error:"Texto requerido" });
       const ref = db.collection("tareas").doc(tareaId);
       const snap = await ref.get();
       if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
-      const comment = { texto: texto.trim(), autor:"manager", fecha:now };
-      const prev = snap.data().comments || [];
-      await ref.update({ comments:[...prev, comment] });
+      const comment = { texto: texto.trim(), autor:"manager", fecha:now, tipo:"mensaje" };
+      await ref.update({ comments:[...(snap.data().comments||[]), comment] });
       return res.json({ ok:true, comment });
     }
 

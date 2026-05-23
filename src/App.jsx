@@ -7098,7 +7098,8 @@ function AppTareas({T, user, onHome}) {
   const [ntTitulo, setNtTitulo] = useState("");
   const [ntDesc, setNtDesc] = useState("");
   const [ntBrief, setNtBrief] = useState("");
-  const [ntLinks, setNtLinks] = useState("");
+  const [ntLinks, setNtLinks] = useState([]);       // [{name,url}]
+  const [ntChecklist, setNtChecklist] = useState([]); // [{id,text,done}]
   const [ntAsignado, setNtAsignado] = useState("");
   const [ntDeadline, setNtDeadline] = useState("");
   const [ntPrioridad, setNtPrioridad] = useState("normal");
@@ -7107,10 +7108,15 @@ function AppTareas({T, user, onHome}) {
   const [etTitulo, setEtTitulo] = useState("");
   const [etDesc, setEtDesc] = useState("");
   const [etBrief, setEtBrief] = useState("");
-  const [etLinks, setEtLinks] = useState("");
+  const [etLinks, setEtLinks] = useState([]);       // [{name,url}]
+  const [etChecklist, setEtChecklist] = useState([]); // [{id,text,done}]
   const [etDeadline, setEtDeadline] = useState("");
   const [etPrioridad, setEtPrioridad] = useState("normal");
   const [etAsignado, setEtAsignado] = useState("");
+  // Calendar
+  const _calNow = new Date();
+  const [calYear, setCalYear] = useState(_calNow.getFullYear());
+  const [calMonth, setCalMonth] = useState(_calNow.getMonth()); // 0-indexed
   // Modal nuevo colaborador
   const [showNC, setShowNC] = useState(false);
   const [ncNombre, setNcNombre] = useState("");
@@ -7157,11 +7163,18 @@ function AppTareas({T, user, onHome}) {
   const ESTADOS = {
     pendiente:  {label:"⏳ Pendiente",  color:T.yellow,  bg:T.yellowBg},
     en_proceso: {label:"🔄 En proceso", color:T.blue,    bg:T.blueBg},
+    bloqueada:  {label:"🚫 Bloqueada",  color:"#6b7280", bg:"#6b728018"},
     entregado:  {label:"📦 Entregado",  color:T.orange||"#f97316", bg:(T.orangeBg||"#f9731620")},
     aprobado:   {label:"✅ Aprobado",   color:T.green,   bg:T.greenBg},
     revision:   {label:"🔁 A revisar",  color:T.red,     bg:T.redBg},
   };
-  const KANBAN_COLS = ["pendiente","en_proceso","revision","entregado","aprobado"];
+  const KANBAN_COLS = ["pendiente","en_proceso","bloqueada","revision","entregado","aprobado"];
+
+  // Helpers para links y checklist
+  function mkId() { return Date.now().toString(36)+Math.random().toString(36).slice(2); }
+  function normalizeLinksArr(links) {
+    return (links||[]).map(l=>typeof l==="string"?{name:"",url:l}:l).filter(l=>l&&l.url);
+  }
 
   const { colaboradores=[], tareas=[] } = datos;
   const countByStatus = {};
@@ -7194,10 +7207,11 @@ function AppTareas({T, user, onHome}) {
   async function crearTarea() {
     if(!ntTitulo.trim()||!ntAsignado) return appAlert("Completá título y asignado");
     const colab = colaboradores.find(c=>c.email===ntAsignado);
-    const linksArr = ntLinks.split("\n").map(l=>l.trim()).filter(Boolean);
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad});
+    const linksArr = ntLinks.filter(l=>l.url.trim());
+    const checkArr = ntChecklist.filter(i=>i.text.trim());
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||""});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks(""); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal");
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal");
     toast("Tarea creada ✓","success");
   }
 
@@ -7206,16 +7220,18 @@ function AppTareas({T, user, onHome}) {
     setEtTitulo(t.titulo||"");
     setEtDesc(t.descripcion||"");
     setEtBrief(t.brief||"");
-    setEtLinks((t.links||[]).join("\n"));
+    setEtLinks(normalizeLinksArr(t.links));
+    setEtChecklist((t.checklist||[]).map(i=>({...i})));
     setEtDeadline(t.deadline?._seconds?new Date(t.deadline._seconds*1000).toISOString().slice(0,10):"");
     setEtPrioridad(t.prioridad||"normal");
     setEtAsignado(t.asignadoEmail||"");
   }
   async function guardarEdicion() {
     const colab = colaboradores.find(c=>c.email===etAsignado);
-    const linksArr = etLinks.split("\n").map(l=>l.trim()).filter(Boolean);
-    await tareasApi({action:"updateTarea",tareaId:editTarea._id,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,deadline:etDeadline||null,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===editTarea._id?{...t,titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""}:t)}));
+    const linksArr = etLinks.filter(l=>l.url.trim());
+    const checkArr = etChecklist.filter(i=>i.text.trim());
+    await tareasApi({action:"updateTarea",tareaId:editTarea._id,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===editTarea._id?{...t,titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""}:t)}));
     setEditTarea(null);
     toast("Tarea actualizada ✓","success");
   }
@@ -7262,6 +7278,12 @@ function AppTareas({T, user, onHome}) {
     toast("Colaborador eliminado","warning");
   }
 
+  async function duplicateTarea(tareaId) {
+    const d = await tareasApi({action:"duplicateTarea",tareaId});
+    setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
+    toast("Tarea duplicada ✓","success");
+  }
+
   async function regenerateToken(colabId) {
     if(!await appConfirm("¿Regenerar link? El link anterior dejará de funcionar.",{okLabel:"Regenerar"})) return;
     const d = await tareasApi({action:"regenerateToken",colabId});
@@ -7274,8 +7296,17 @@ function AppTareas({T, user, onHome}) {
     const colab = colaboradores.find(c=>c.email===t.asignadoEmail);
     const hasDels = (t.deliverables||[]).length>0;
     const waLink = whatsappLink(t,colab);
+    const linksNorm = normalizeLinksArr(t.links);
+    const checklist = t.checklist||[];
+    const activity = t.activity||[];
     return (
       <div style={{borderTop:`1px solid ${T.border}`,background:T.bg,padding:16}}>
+        {/* Número + meta */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+          {t.tareaNumStr&&<span style={{fontSize:11,fontWeight:700,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px"}}>#{t.tareaNumStr}</span>}
+          {t.leidoAt&&<span style={{fontSize:11,color:T.green}}>👁 Brief leído</span>}
+          {t.estimacion&&<span style={{fontSize:11,color:T.blue}}>⏱ {t.estimacion}</span>}
+        </div>
         {/* Estados */}
         <div style={{marginBottom:14}}>
           <div style={{fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Estado</div>
@@ -7311,11 +7342,33 @@ function AppTareas({T, user, onHome}) {
             <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap",background:T.surface,borderRadius:8,padding:"12px 14px",border:`1px solid ${T.borderL}`}}>{t.brief}</div>
           </div>
         )}
-        {(t.links||[]).length>0&&(
+        {linksNorm.length>0&&(
           <div style={{marginBottom:12}}>
             <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Archivos / Links</div>
-            {t.links.map((l,i)=>(
-              <a key={i} href={l} target="_blank" rel="noreferrer" style={{display:"block",fontSize:12,color:T.accent,textDecoration:"none",padding:"6px 10px",background:T.surface,borderRadius:7,border:`1px solid ${T.borderL}`,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🔗 {l}</a>
+            {linksNorm.map((l,i)=>(
+              <a key={i} href={l.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.accent,textDecoration:"none",padding:"7px 10px",background:T.surface,borderRadius:7,border:`1px solid ${T.borderL}`,marginBottom:4}}>
+                <span>🔗</span>
+                <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.name||l.url}</span>
+                {l.name&&<span style={{fontSize:10,color:T.textSm,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",maxWidth:140,whiteSpace:"nowrap"}}>{l.url}</span>}
+                <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>↗</span>
+              </a>
+            ))}
+          </div>
+        )}
+        {/* Checklist */}
+        {checklist.length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>✅ Checklist</div>
+              <span style={{fontSize:11,color:T.textSm}}>{checklist.filter(i=>i.done).length}/{checklist.length}</span>
+            </div>
+            {checklist.map((item,i)=>(
+              <div key={item.id||i} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:i<checklist.length-1?`1px solid ${T.borderL}`:"none"}}>
+                <div style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${item.done?T.green:T.border}`,background:item.done?T.green:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  {item.done&&<span style={{fontSize:9,color:"#fff"}}>✓</span>}
+                </div>
+                <span style={{fontSize:12,color:item.done?T.textSm:T.text,textDecoration:item.done?"line-through":"none",lineHeight:1.4}}>{item.text}</span>
+              </div>
             ))}
           </div>
         )}
@@ -7325,10 +7378,19 @@ function AppTareas({T, user, onHome}) {
             <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>📦 Entregas ({(t.deliverables||[]).length})</div>
             {(t.deliverables||[]).map((del,i)=>(
               <div key={i} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"10px 12px",marginBottom:8}}>
-                <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:T.accent,fontWeight:600,textDecoration:"none",display:"block",marginBottom:del.nota?4:6}}>🔗 Ver entrega {i+1}</a>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:del.nota?4:0}}>
+                  <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:T.accent,fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
+                  <span style={{fontSize:10,color:T.textSm}}>{fmtDate(del.fecha)}</span>
+                </div>
                 {del.nota&&<div style={{fontSize:12,color:T.textMd,marginBottom:6}}>{del.nota}</div>}
+                {del.feedbackRecibido&&(
+                  <div style={{marginTop:6,padding:"7px 10px",background:T.red+"10",borderLeft:`2px solid ${T.red}`,borderRadius:4,fontSize:12,color:T.text}}>
+                    <span style={{fontSize:10,color:T.red,fontWeight:600,display:"block",marginBottom:2}}>Feedback recibido:</span>
+                    {del.feedbackRecibido}
+                  </div>
+                )}
                 {i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&(
-                  <div style={{display:"flex",gap:6}}>
+                  <div style={{display:"flex",gap:6,marginTop:8}}>
                     <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px",background:T.green}}>✓ Aprobar</AsyncButton>
                     <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>Pedir cambios</button>
                   </div>
@@ -7343,11 +7405,14 @@ function AppTareas({T, user, onHome}) {
           {(t.comments||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin comentarios aún.</div>}
           {(t.comments||[]).map((c,i)=>(
             <div key={i} style={{marginBottom:6,display:"flex",gap:8,alignItems:"flex-start"}}>
-              <div style={{width:24,height:24,borderRadius:"50%",background:c.autor==="manager"?T.accent+"25":T.green+"25",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:c.autor==="manager"?T.accent:T.green,flexShrink:0}}>
+              <div style={{width:24,height:24,borderRadius:"50%",background:c.autor==="manager"?T.accent+"25":c.tipo==="consulta"?"#3b82f620":T.green+"25",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:c.autor==="manager"?T.accent:c.tipo==="consulta"?"#3b82f6":T.green,flexShrink:0}}>
                 {c.autor==="manager"?"M":c.autor[0]?.toUpperCase()}
               </div>
-              <div style={{flex:1,background:T.surface,borderRadius:8,padding:"7px 10px",border:`1px solid ${T.borderL}`}}>
-                <div style={{fontSize:10,color:T.textSm,marginBottom:2}}>{c.autor==="manager"?"Vos":c.autor} · {fmtDate(c.fecha)}</div>
+              <div style={{flex:1,background:T.surface,borderRadius:8,padding:"7px 10px",border:`1px solid ${c.tipo==="consulta"?"#3b82f640":T.borderL}`}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                  <span style={{fontSize:10,color:T.textSm}}>{c.autor==="manager"?"Vos":c.autor} · {fmtDate(c.fecha)}</span>
+                  {c.tipo==="consulta"&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:"#3b82f620",color:"#3b82f6",fontWeight:600}}>CONSULTA</span>}
+                </div>
                 <div style={{fontSize:12,color:T.text,lineHeight:1.4}}>{c.texto}</div>
               </div>
             </div>
@@ -7359,6 +7424,22 @@ function AppTareas({T, user, onHome}) {
             <AsyncButton onClick={()=>addComment(t._id)} style={{...BtnSecondary(T),fontSize:11,padding:"6px 12px"}}>Enviar</AsyncButton>
           </div>
         </div>
+        {/* Actividad */}
+        {activity.length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>📅 Actividad</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {[...activity].reverse().slice(0,8).map((act,i)=>(
+                <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                  <div style={{width:6,height:6,borderRadius:"50%",background:T.accent,marginTop:5,flexShrink:0}}/>
+                  <div style={{fontSize:11,color:T.textMd,lineHeight:1.4}}>
+                    <span style={{color:T.textSm}}>{fmtDate(act.fecha)}</span> · {act.detalle}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {/* Acciones */}
         <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:12,display:"flex",gap:8,justifyContent:"space-between",flexWrap:"wrap"}}>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -7367,6 +7448,7 @@ function AppTareas({T, user, onHome}) {
               WhatsApp
             </a>}
             {colab&&<button onClick={()=>copyLink(colab.token)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>📋 Link colaborador</button>}
+            <AsyncButton onClick={()=>duplicateTarea(t._id)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>📋 Duplicar</AsyncButton>
           </div>
           <div style={{display:"flex",gap:6}}>
             <button onClick={()=>openEditModal(t)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>✏️ Editar</button>
@@ -7388,7 +7470,7 @@ function AppTareas({T, user, onHome}) {
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
           <div style={{display:"flex",background:T.card,border:`1px solid ${T.border}`,borderRadius:8,overflow:"hidden"}}>
-            {[["lista","≡ Lista"],["kanban","⬛ Kanban"]].map(([mode,label])=>(
+            {[["lista","≡ Lista"],["kanban","⬛ Kanban"],["cal","📅 Cal"]].map(([mode,label])=>(
               <button key={mode} onClick={()=>setViewMode(mode)} style={{padding:"6px 11px",border:"none",background:viewMode===mode?T.accent:"transparent",color:viewMode===mode?"#fff":T.textMd,cursor:"pointer",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:viewMode===mode?600:400,transition:"all 0.15s"}}>{label}</button>
             ))}
           </div>
@@ -7397,7 +7479,7 @@ function AppTareas({T, user, onHome}) {
         </div>
       </div>
 
-      <div style={{maxWidth:viewMode==="kanban"?1400:960,margin:"0 auto",padding:"20px 24px"}}>
+      <div style={{maxWidth:viewMode==="kanban"?1400:viewMode==="cal"?900:960,margin:"0 auto",padding:"20px 24px"}}>
         {/* Tabs */}
         <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,marginBottom:20,width:"fit-content"}}>
           {[["tareas","📋 Tareas"],["equipo",`👥 Equipo (${colaboradores.length})`]].map(([id,label])=>(
@@ -7441,7 +7523,7 @@ function AppTareas({T, user, onHome}) {
               <>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
                   <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                    {[["todos","Todos",tareas.length],["pendiente","⏳ Pendiente",countByStatus.pendiente||0],["en_proceso","🔄 En proceso",countByStatus.en_proceso||0],["entregado","📦 Entregado",countByStatus.entregado||0],["revision","🔁 A revisar",countByStatus.revision||0],["aprobado","✅ Aprobado",countByStatus.aprobado||0]].map(([id,label,count])=>(
+                    {[["todos","Todos",tareas.length],["pendiente","⏳ Pendiente",countByStatus.pendiente||0],["en_proceso","🔄 En proceso",countByStatus.en_proceso||0],["bloqueada","🚫 Bloqueada",countByStatus.bloqueada||0],["entregado","📦 Entregado",countByStatus.entregado||0],["revision","🔁 A revisar",countByStatus.revision||0],["aprobado","✅ Aprobado",countByStatus.aprobado||0]].map(([id,label,count])=>(
                       <button key={id} onClick={()=>setStatusFilter(id)} style={pillStyle(statusFilter===id)}>
                         {label}{count>0&&<span style={{opacity:0.7,fontSize:11}}> ({count})</span>}
                       </button>
@@ -7474,6 +7556,7 @@ function AppTareas({T, user, onHome}) {
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:5,flexWrap:"wrap"}}>
                               {isUrgente&&<span style={{fontSize:10,color:T.red,fontWeight:800}}>🔴</span>}
+                              {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600,flexShrink:0}}>#{t.tareaNumStr}</span>}
                               <span style={{fontSize:14,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
                               {(t.correcciones||0)>0&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:20,background:T.red+"22",color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
                               {hasDels&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:(T.orange||"#f97316")+"22",color:T.orange||"#f97316",fontWeight:700,flexShrink:0}}>📦 {(t.deliverables||[]).length}</span>}
@@ -7536,6 +7619,56 @@ function AppTareas({T, user, onHome}) {
                 })}
               </div>
             )}
+
+            {/* VISTA CALENDARIO */}
+            {viewMode==="cal"&&(()=>{
+              const DAYS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+              const firstDay = new Date(calYear,calMonth,1);
+              const lastDay  = new Date(calYear,calMonth+1,0);
+              const startDow = (firstDay.getDay()+6)%7; // 0=Mon
+              const daysInMonth = lastDay.getDate();
+              const cells = [];
+              for(let i=0;i<startDow;i++) cells.push(null);
+              for(let d=1;d<=daysInMonth;d++) cells.push(d);
+              const monthNames=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+              function tareasOfDay(d) {
+                return tareas.filter(t=>{
+                  if(!t.deadline) return false;
+                  const dd = t.deadline._seconds?new Date(t.deadline._seconds*1000):t.deadline?.toDate?.()||new Date(t.deadline);
+                  return dd.getFullYear()===calYear&&dd.getMonth()===calMonth&&dd.getDate()===d;
+                });
+              }
+              const today = new Date();
+              return (
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+                    <button onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:13}}>‹</button>
+                    <span style={{fontWeight:700,fontSize:15,color:T.text,flex:1,textAlign:"center"}}>{monthNames[calMonth]} {calYear}</span>
+                    <button onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:13}}>›</button>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+                    {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:T.textSm,padding:"4px 0"}}>{d}</div>)}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+                    {cells.map((d,i)=>{
+                      if(!d) return <div key={`e-${i}`} style={{minHeight:72,background:"transparent"}}/>;
+                      const isToday = d===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear();
+                      const dayTareas = tareasOfDay(d);
+                      return (
+                        <div key={d} style={{minHeight:72,background:T.card,borderRadius:8,padding:"5px 6px",border:`1px solid ${isToday?T.accent:T.border}`,boxSizing:"border-box"}}>
+                          <div style={{fontSize:11,fontWeight:isToday?700:400,color:isToday?T.accent:T.textMd,marginBottom:3}}>{d}</div>
+                          {dayTareas.slice(0,3).map(t=>{
+                            const est=ESTADOS[t.estado]||ESTADOS.pendiente;
+                            return <div key={t._id} onClick={()=>{setExpandedTarea(t._id);setViewMode("lista");}} title={t.titulo} style={{fontSize:9,padding:"2px 4px",borderRadius:3,background:est.bg,color:est.color,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",fontWeight:600}}>{t.titulo}</div>;
+                          })}
+                          {dayTareas.length>3&&<div style={{fontSize:9,color:T.textSm}}>+{dayTareas.length-3} más</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </>
         )}
 
@@ -7682,9 +7815,34 @@ function AppTareas({T, user, onHome}) {
                 <textarea value={ntBrief} onChange={e=>setNtBrief(e.target.value)} placeholder="Formato, duración, estilo, paleta, referencias..." style={{...iS,fontSize:12,width:"100%",minHeight:100,resize:"vertical",lineHeight:1.5}}/>
               </div>
               <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Links de referencia (uno por línea)</div>
-                <textarea value={ntLinks} onChange={e=>setNtLinks(e.target.value)} placeholder={"https://drive.google.com/...\nhttps://www.figma.com/..."} style={{...iS,fontSize:12,width:"100%",minHeight:56,resize:"vertical",fontFamily:"monospace"}}/>
-                <div style={{fontSize:11,color:T.textSm,marginTop:3}}>Google Drive, Dropbox, WeTransfer, Figma, Notion…</div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
+                  <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                </div>
+                {ntLinks.length===0&&<div style={{fontSize:12,color:T.textSm,padding:"6px 0"}}>Sin links. Podés agregar Drive, Figma, Notion, etc.</div>}
+                {ntLinks.map((l,i)=>(
+                  <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+                    <input value={l.name} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
+                      placeholder="Nombre (ej: Brief PDF)" style={{...iS,fontSize:12,width:130,flexShrink:0}}/>
+                    <input value={l.url} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
+                      placeholder="https://..." style={{...iS,fontSize:12,flex:1}}/>
+                    <button onClick={()=>setNtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Checklist de requisitos</div>
+                  <button onClick={()=>setNtChecklist(prev=>[...prev,{id:mkId(),text:"",done:false}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                </div>
+                {ntChecklist.map((item,i)=>(
+                  <div key={item.id} style={{display:"flex",gap:6,marginBottom:5,alignItems:"center"}}>
+                    <div style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${T.border}`,flexShrink:0}}/>
+                    <input value={item.text} onChange={e=>setNtChecklist(prev=>prev.map((x,j)=>j===i?{...x,text:e.target.value}:x))}
+                      placeholder={`Paso ${i+1}`} style={{...iS,fontSize:12,flex:1}}/>
+                    <button onClick={()=>setNtChecklist(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
+                  </div>
+                ))}
               </div>
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite (opcional)</div>
@@ -7737,8 +7895,33 @@ function AppTareas({T, user, onHome}) {
                 <textarea value={etBrief} onChange={e=>setEtBrief(e.target.value)} style={{...iS,fontSize:12,width:"100%",minHeight:100,resize:"vertical",lineHeight:1.5}}/>
               </div>
               <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Links (uno por línea)</div>
-                <textarea value={etLinks} onChange={e=>setEtLinks(e.target.value)} style={{...iS,fontSize:12,width:"100%",minHeight:56,resize:"vertical",fontFamily:"monospace"}}/>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
+                  <button onClick={()=>setEtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                </div>
+                {etLinks.map((l,i)=>(
+                  <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+                    <input value={l.name} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
+                      placeholder="Nombre" style={{...iS,fontSize:12,width:120,flexShrink:0}}/>
+                    <input value={l.url} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
+                      placeholder="https://..." style={{...iS,fontSize:12,flex:1}}/>
+                    <button onClick={()=>setEtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Checklist</div>
+                  <button onClick={()=>setEtChecklist(prev=>[...prev,{id:mkId(),text:"",done:false}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                </div>
+                {etChecklist.map((item,i)=>(
+                  <div key={item.id} style={{display:"flex",gap:6,marginBottom:5,alignItems:"center"}}>
+                    <div style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${T.border}`,flexShrink:0}}/>
+                    <input value={item.text} onChange={e=>setEtChecklist(prev=>prev.map((x,j)=>j===i?{...x,text:e.target.value}:x))}
+                      placeholder={`Paso ${i+1}`} style={{...iS,fontSize:12,flex:1}}/>
+                    <button onClick={()=>setEtChecklist(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
+                  </div>
+                ))}
               </div>
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
@@ -7799,15 +7982,32 @@ function ColaboradorPublicView({T, token}) {
   const [error, setError] = useState(null);
   const [expandedTarea, setExpandedTarea] = useState(null);
   const [entregaLink, setEntregaLink] = useState({});
+  const [entregaLabel, setEntregaLabel] = useState({});
   const [entregaNota, setEntregaNota] = useState({});
+  const [entregaEnviada, setEntregaEnviada] = useState({}); // {id: entrega} after submit
   const [commentText, setCommentText] = useState({});
+  const [consultaText, setConsultaText] = useState({});
+  const [showConsulta, setShowConsulta] = useState({});
+  const [estimacionText, setEstimacionText] = useState({});
+  const [showEstimacion, setShowEstimacion] = useState({});
   const [bannerClosed, setBannerClosed] = useState(()=>{
     try{return localStorage.getItem(`growith_colab_banner_${token}`)==="1";}catch(e){return false;}
   });
+  const [pwaBannerClosed, setPwaBannerClosed] = useState(()=>{
+    try{return localStorage.getItem(`growith_pwa_banner_${token}`)==="1";}catch(e){return false;}
+  });
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isAndroid = /Android/.test(navigator.userAgent);
+  const isMobile = isIOS || isAndroid;
 
   function closeBanner(){
     try{localStorage.setItem(`growith_colab_banner_${token}`,"1");}catch(e){}
     setBannerClosed(true);
+  }
+  function closePwaBanner(){
+    try{localStorage.setItem(`growith_pwa_banner_${token}`,"1");}catch(e){}
+    setPwaBannerClosed(true);
   }
 
   useEffect(()=>{
@@ -7821,6 +8021,7 @@ function ColaboradorPublicView({T, token}) {
   const ESTADOS = {
     pendiente:  {label:"⏳ Pendiente",  color:"#d97706",bg:"#d9770620"},
     en_proceso: {label:"🔄 En proceso", color:"#3b82f6",bg:"#3b82f620"},
+    bloqueada:  {label:"🚫 Bloqueada",  color:"#6b7280",bg:"#6b728018"},
     entregado:  {label:"📦 Entregado",  color:"#f97316",bg:"#f9731620"},
     aprobado:   {label:"✅ Aprobado",   color:"#22c55e",bg:"#22c55e20"},
     revision:   {label:"🔁 A revisar",  color:"#ef4444",bg:"#ef444420"},
@@ -7833,20 +8034,23 @@ function ColaboradorPublicView({T, token}) {
     return d;
   }
 
-  async function updateEstado(tareaId, estado) {
-    await publicApi({action:"publicUpdateEstado",tareaId,estado});
-    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado}:t)}));
-    toast("Estado actualizado ✓","success");
+  async function marcarLeido(tareaId) {
+    await publicApi({action:"publicMarcarLeido",tareaId});
+    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,leidoAt:new Date()}:t)}));
+    toast("Marcado como leído ✓","success");
   }
 
   async function submitEntrega(tareaId) {
     const link = (entregaLink[tareaId]||"").trim();
     const nota = (entregaNota[tareaId]||"").trim();
+    const label = (entregaLabel[tareaId]||"").trim();
     if(!link) return appAlert("Pegá el link de tu entrega (Drive, WeTransfer, Dropbox, etc.)");
-    const d = await publicApi({action:"publicAddEntrega",tareaId,link,nota});
+    const d = await publicApi({action:"publicAddEntrega",tareaId,link,nota,label});
     setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado:"entregado",feedbackActual:null,deliverables:[...(t.deliverables||[]),d.entrega]}:t)}));
     setEntregaLink(prev=>({...prev,[tareaId]:""}));
+    setEntregaLabel(prev=>({...prev,[tareaId]:""}));
     setEntregaNota(prev=>({...prev,[tareaId]:""}));
+    setEntregaEnviada(prev=>({...prev,[tareaId]:d.entrega}));
     toast("¡Entrega enviada! ✓","success");
   }
 
@@ -7856,6 +8060,30 @@ function ColaboradorPublicView({T, token}) {
     const d = await publicApi({action:"publicAddComment",tareaId,texto});
     setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,comments:[...(t.comments||[]),d.comment]}:t)}));
     setCommentText(prev=>({...prev,[tareaId]:""}));
+  }
+
+  async function submitConsulta(tareaId) {
+    const texto = consultaText[tareaId]?.trim();
+    if(!texto) return;
+    const d = await publicApi({action:"publicAddConsulta",tareaId,texto});
+    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,comments:[...(t.comments||[]),d.comment]}:t)}));
+    setConsultaText(prev=>({...prev,[tareaId]:""}));
+    setShowConsulta(prev=>({...prev,[tareaId]:false}));
+    toast("Consulta enviada ✓","success");
+  }
+
+  async function submitEstimacion(tareaId) {
+    const estimacion = estimacionText[tareaId]?.trim();
+    if(!estimacion) return;
+    await publicApi({action:"publicSetEstimacion",tareaId,estimacion});
+    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estimacion}:t)}));
+    setShowEstimacion(prev=>({...prev,[tareaId]:false}));
+    toast("Estimación guardada ✓","success");
+  }
+
+  async function toggleChecklist(tareaId, itemId) {
+    const d = await publicApi({action:"publicToggleChecklist",tareaId,itemId});
+    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,checklist:d.checklist}:t)}));
   }
 
   async function copyBrief(brief) {
@@ -7872,6 +8100,9 @@ function ColaboradorPublicView({T, token}) {
     if(!val) return null;
     const d = val._seconds ? new Date(val._seconds*1000) : val?.toDate?.() || new Date(val);
     return Math.ceil((d - new Date()) / 86400000);
+  }
+  function normalizeLinks(links) {
+    return (links||[]).map(l=>typeof l==="string"?{name:"",url:l}:l).filter(l=>l&&l.url);
   }
 
   if(loading) return <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><Spinner size={40} color="#6366f1"/></div>;
@@ -7891,9 +8122,8 @@ function ColaboradorPublicView({T, token}) {
   const totalTareas = tareas.length;
   const progressPct = totalTareas>0?Math.round(aprobadas.length/totalTareas*100):0;
 
-  // Ordenar: revision primero, luego pendiente/en_proceso, luego entregado, aprobado al final
   const sortedTareas = [...tareas].sort((a,b)=>{
-    const order={revision:0,pendiente:1,en_proceso:2,entregado:3,aprobado:4};
+    const order={revision:0,pendiente:1,en_proceso:2,bloqueada:2,entregado:3,aprobado:4};
     const oa=order[a.estado]??5, ob=order[b.estado]??5;
     if(oa!==ob) return oa-ob;
     const pa=a.prioridad==="urgente"?0:1, pb=b.prioridad==="urgente"?0:1;
@@ -7909,6 +8139,21 @@ function ColaboradorPublicView({T, token}) {
         <div style={{background:"#6366f1",padding:"10px 16px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <span style={{fontSize:13,color:"#fff",flex:1}}>💡 <strong>Guardá este link</strong> — es tu único acceso a tus tareas, funciona desde cualquier dispositivo.</span>
           <button onClick={closeBanner} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:20,padding:"4px 14px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Entendido ✓</button>
+        </div>
+      )}
+
+      {/* Banner PWA (solo mobile) */}
+      {isMobile&&!pwaBannerClosed&&(
+        <div style={{background:"#1e293b",padding:"12px 16px",display:"flex",alignItems:"flex-start",gap:10}}>
+          <span style={{fontSize:18,flexShrink:0}}>📱</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,fontWeight:600,color:"#fff",marginBottom:3}}>Instalá la app para acceso rápido</div>
+            {isIOS
+              ? <div style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>Tocá <strong>Compartir</strong> (📤) y luego <strong>"Agregar a inicio"</strong> para tener acceso directo desde tu pantalla.</div>
+              : <div style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>Tocá el menú <strong>⋮</strong> del navegador y elegí <strong>"Agregar a pantalla de inicio"</strong>.</div>
+            }
+          </div>
+          <button onClick={closePwaBanner} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.6)",fontSize:18,cursor:"pointer",padding:"0 4px",flexShrink:0}}>×</button>
         </div>
       )}
 
@@ -7949,7 +8194,10 @@ function ColaboradorPublicView({T, token}) {
           const isRevision = t.estado==="revision";
           const isUrgente = t.prioridad==="urgente";
           const hasDels = (t.deliverables||[]).length>0;
+          const checklist = t.checklist||[];
           const briefPreview = t.brief?t.brief.slice(0,130)+(t.brief.length>130?"…":""):null;
+          const linksNorm = normalizeLinks(t.links);
+          const lastEntregaJustSent = entregaEnviada[t._id];
           return (
             <div key={t._id} style={{background:T.card,border:`1px solid ${isRevision?"#ef444455":isUrgente?"#ef444433":isAprobado?"#22c55e44":T.border}`,borderRadius:14,marginBottom:12,overflow:"hidden",opacity:isAprobado?0.85:1}}>
               {/* Banner deadline urgente */}
@@ -7964,8 +8212,10 @@ function ColaboradorPublicView({T, token}) {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,flexWrap:"wrap"}}>
                       {isUrgente&&<span style={{fontSize:10,color:"#ef4444",fontWeight:800}}>🔴</span>}
+                      {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600}}>#{t.tareaNumStr}</span>}
                       <span style={{fontSize:15,fontWeight:600,color:T.text}}>{t.titulo}</span>
                       {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:20,background:"#ef444420",color:"#ef4444",fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
+                      {t.leidoAt&&<span style={{fontSize:10,color:"#22c55e",flexShrink:0}}>👁</span>}
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:briefPreview&&!expanded?7:0}}>
                       <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
@@ -7973,6 +8223,7 @@ function ColaboradorPublicView({T, token}) {
                         📅 {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Hoy":`${days}d restantes`):fmtDate(t.deadline)}
                       </span>}
                       {hasDels&&<span style={{fontSize:11,color:"#22c55e"}}>✓ {(t.deliverables||[]).length} enviada{(t.deliverables||[]).length!==1?"s":""}</span>}
+                      {t.estimacion&&<span style={{fontSize:11,color:"#3b82f6"}}>⏱ {t.estimacion}</span>}
                     </div>
                     {briefPreview&&!expanded&&<div style={{fontSize:12,color:T.textSm,lineHeight:1.4,fontStyle:"italic"}}>{briefPreview}</div>}
                   </div>
@@ -8008,68 +8259,147 @@ function ColaboradorPublicView({T, token}) {
                     <div style={{marginBottom:14}}>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                         <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief / Instrucciones</div>
-                        <button onClick={()=>copyBrief(t.brief)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>📋 Copiar</button>
+                        <div style={{display:"flex",gap:6}}>
+                          {!t.leidoAt&&<AsyncButton onClick={()=>marcarLeido(t._id)} style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:"#22c55e20",color:"#22c55e",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>👁 Marcar como leído</AsyncButton>}
+                          <button onClick={()=>copyBrief(t.brief)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>📋 Copiar</button>
+                        </div>
                       </div>
                       <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap",background:T.surface,borderRadius:8,padding:"12px 14px"}}>{t.brief}</div>
+                      {t.leidoAt&&<div style={{fontSize:11,color:"#22c55e",marginTop:5}}>✓ Leído el {fmtDate(t.leidoAt)}</div>}
                     </div>
                   )}
-                  {(t.links||[]).length>0&&(
+                  {linksNorm.length>0&&(
                     <div style={{marginBottom:14}}>
                       <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Archivos de referencia</div>
-                      {t.links.map((l,i)=>(
-                        <a key={i} href={l} target="_blank" rel="noreferrer"
+                      {linksNorm.map((l,i)=>(
+                        <a key={i} href={l.url} target="_blank" rel="noreferrer"
                           style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#6366f1",textDecoration:"none",padding:"10px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.borderL}`,marginBottom:6}}>
-                          <span>🔗</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{l}</span><span style={{fontSize:11,color:T.textSm,flexShrink:0}}>↗</span>
+                          <span>🔗</span>
+                          <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.name||l.url}</span>
+                          <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>↗</span>
                         </a>
                       ))}
                     </div>
                   )}
-                  {/* Historial de entregas */}
+                  {/* Checklist interactivo */}
+                  {checklist.length>0&&(
+                    <div style={{marginBottom:14}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>✅ Checklist</div>
+                        <span style={{fontSize:11,color:T.textSm}}>{checklist.filter(i=>i.done).length}/{checklist.length}</span>
+                      </div>
+                      <div style={{background:T.surface,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.borderL}`}}>
+                        {checklist.map((item,i)=>(
+                          <div key={item.id||i} onClick={()=>toggleChecklist(t._id,item.id||i)}
+                            style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:i<checklist.length-1?`1px solid ${T.border}`:"none",cursor:"pointer"}}>
+                            <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${item.done?"#6366f1":T.border}`,background:item.done?"#6366f1":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s"}}>
+                              {item.done&&<span style={{fontSize:10,color:"#fff"}}>✓</span>}
+                            </div>
+                            <span style={{fontSize:13,color:item.done?T.textSm:T.text,textDecoration:item.done?"line-through":"none",lineHeight:1.4,flex:1}}>{item.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Historial de entregas con feedback */}
                   {hasDels&&(
                     <div style={{marginBottom:14}}>
                       <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Historial de entregas</div>
                       {(t.deliverables||[]).map((del,i)=>(
                         <div key={i} style={{background:T.surface,borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${T.borderL}`}}>
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:"#6366f1",fontWeight:600,textDecoration:"none",flex:1}}>🔗 Entrega {i+1}</a>
-                            <span style={{fontSize:10,color:T.textSm}}>{del.fecha?fmtDate(del.fecha):""}</span>
+                            <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:"#6366f1",fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
+                            <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{del.fecha?fmtDate(del.fecha):""}</span>
                           </div>
-                          {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:3}}>{del.nota}</div>}
+                          {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{del.nota}</div>}
+                          {del.feedbackRecibido&&(
+                            <div style={{marginTop:8,padding:"8px 10px",background:"#ef444412",borderLeft:"3px solid #ef4444",borderRadius:4,fontSize:12,color:T.text}}>
+                              <div style={{fontSize:10,color:"#ef4444",fontWeight:600,marginBottom:2}}>Feedback recibido:</div>
+                              {del.feedbackRecibido}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
-                  {/* Subir entrega — disponible desde cualquier estado no aprobado */}
+                  {/* Entrega + WA post-submit */}
                   {!isAprobado&&(
                     <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?"#ef444440":T.borderL}`,marginBottom:14}}>
-                      <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:10}}>
-                        {hasDels?"📤 Subir nueva versión":"📤 Subir entrega"}
-                      </div>
-                      <input value={entregaLink[t._id]||""} onChange={e=>setEntregaLink(prev=>({...prev,[t._id]:e.target.value}))}
-                        placeholder="Pegá el link (Drive, WeTransfer, Dropbox, Figma...)"
-                        style={{...iS,fontSize:13,width:"100%",marginBottom:8}}/>
-                      <textarea value={entregaNota[t._id]||""} onChange={e=>setEntregaNota(prev=>({...prev,[t._id]:e.target.value}))}
-                        placeholder="Comentarios o notas para el equipo (opcional)"
-                        style={{...iS,fontSize:12,width:"100%",minHeight:56,resize:"vertical",marginBottom:10}}/>
-                      <AsyncButton onClick={()=>submitEntrega(t._id)}
-                        style={{...BtnPrimary(T),fontSize:14,padding:"12px 20px",width:"100%",justifyContent:"center",background:"#6366f1",display:"flex"}}>
-                        Enviar entrega
-                      </AsyncButton>
+                      {lastEntregaJustSent?(
+                        <div style={{textAlign:"center"}}>
+                          <div style={{fontSize:32,marginBottom:8}}>🎉</div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:4}}>¡Entrega enviada!</div>
+                          <div style={{fontSize:12,color:T.textMd,marginBottom:14}}>El equipo va a revisarla y te avisamos pronto.</div>
+                          <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+                            <button onClick={()=>setEntregaEnviada(prev=>({...prev,[t._id]:null}))} style={{...BtnSecondary(T),fontSize:12}}>+ Enviar otra versión</button>
+                            <a href={`https://wa.me/?text=${encodeURIComponent(`Hola! Acabo de subir mi entrega para "${t.titulo}". Por favor revisala cuando puedas 👍`)}`} target="_blank" rel="noreferrer"
+                              style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5,color:"#22c55e",border:"1px solid #22c55e44"}}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                              Avisar por WhatsApp
+                            </a>
+                          </div>
+                        </div>
+                      ):(
+                        <>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:10}}>
+                            {hasDels?"📤 Subir nueva versión":"📤 Subir entrega"}
+                          </div>
+                          <input value={entregaLabel[t._id]||""} onChange={e=>setEntregaLabel(prev=>({...prev,[t._id]:e.target.value}))}
+                            placeholder={`Etiqueta (ej: v${(t.deliverables||[]).length+1}, Final, Con correcciones...)`}
+                            style={{...iS,fontSize:12,width:"100%",marginBottom:8}}/>
+                          <input value={entregaLink[t._id]||""} onChange={e=>setEntregaLink(prev=>({...prev,[t._id]:e.target.value}))}
+                            placeholder="Link de la entrega (Drive, WeTransfer, Dropbox, Figma...)"
+                            style={{...iS,fontSize:13,width:"100%",marginBottom:8}}/>
+                          <textarea value={entregaNota[t._id]||""} onChange={e=>setEntregaNota(prev=>({...prev,[t._id]:e.target.value}))}
+                            placeholder="Notas para el equipo (opcional)"
+                            style={{...iS,fontSize:12,width:"100%",minHeight:50,resize:"vertical",marginBottom:10}}/>
+                          <AsyncButton onClick={()=>submitEntrega(t._id)}
+                            style={{...BtnPrimary(T),fontSize:14,padding:"12px 20px",width:"100%",justifyContent:"center",background:"#6366f1",display:"flex"}}>
+                            Enviar entrega
+                          </AsyncButton>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {/* Estimación de tiempo */}
+                  {!isAprobado&&(
+                    <div style={{marginBottom:14}}>
+                      {t.estimacion?(
+                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.borderL}`}}>
+                          <span style={{fontSize:12,color:T.textMd,flex:1}}>⏱ Estimación: <strong style={{color:T.text}}>{t.estimacion}</strong></span>
+                          <button onClick={()=>{setEstimacionText(p=>({...p,[t._id]:t.estimacion}));setShowEstimacion(p=>({...p,[t._id]:true}));}} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>Editar</button>
+                        </div>
+                      ):(
+                        <button onClick={()=>setShowEstimacion(p=>({...p,[t._id]:!p[t._id]}))} style={{...BtnSecondary(T),fontSize:12,width:"100%",padding:"8px",textAlign:"center"}}>
+                          ⏱ {showEstimacion[t._id]?"Cancelar":"¿Cuánto tiempo te va a llevar?"}
+                        </button>
+                      )}
+                      {showEstimacion[t._id]&&(
+                        <div style={{marginTop:8,display:"flex",gap:6}}>
+                          <input value={estimacionText[t._id]||""} onChange={e=>setEstimacionText(p=>({...p,[t._id]:e.target.value}))}
+                            placeholder="Ej: 2 días, 1 semana..." style={{...iS,fontSize:13,flex:1}}/>
+                          <AsyncButton onClick={()=>submitEstimacion(t._id)} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px",background:"#6366f1"}}>Guardar</AsyncButton>
+                        </div>
+                      )}
                     </div>
                   )}
                   {/* Mensajes / Comentarios */}
                   <div>
                     <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>💬 Mensajes</div>
-                    {(t.comments||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin mensajes. Podés dejar consultas acá.</div>}
+                    {(t.comments||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin mensajes aún.</div>}
                     {(t.comments||[]).map((c,i)=>{
                       const isMe = c.autor!=="manager";
+                      const isConsulta = c.tipo==="consulta";
                       return (
                         <div key={i} style={{marginBottom:8,display:"flex",gap:8,alignItems:"flex-start",flexDirection:isMe?"row-reverse":"row"}}>
                           <div style={{width:28,height:28,borderRadius:"50%",background:isMe?"#6366f120":"rgba(255,255,255,0.1)",border:`1px solid ${isMe?"#6366f140":T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:isMe?"#6366f1":T.textMd,flexShrink:0}}>
-                            {isMe?c.autor[0]?.toUpperCase():"S"}
+                            {isMe?c.autor[0]?.toUpperCase():"M"}
                           </div>
-                          <div style={{maxWidth:"75%",background:isMe?"#6366f112":T.surface,borderRadius:10,padding:"8px 12px",border:`1px solid ${isMe?"#6366f128":T.borderL}`}}>
-                            <div style={{fontSize:10,color:T.textSm,marginBottom:2}}>{isMe?"Vos":c.autor} · {fmtDate(c.fecha)}</div>
+                          <div style={{maxWidth:"75%",background:isMe?"#6366f112":T.surface,borderRadius:10,padding:"8px 12px",border:`1px solid ${isMe?isConsulta?"#3b82f640":"#6366f128":T.borderL}`}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                              <span style={{fontSize:10,color:T.textSm}}>{isMe?"Vos":c.autor} · {fmtDate(c.fecha)}</span>
+                              {isConsulta&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:"#3b82f620",color:"#3b82f6",fontWeight:600}}>CONSULTA</span>}
+                            </div>
                             <div style={{fontSize:13,color:T.text,lineHeight:1.4}}>{c.texto}</div>
                           </div>
                         </div>
@@ -8083,6 +8413,25 @@ function ColaboradorPublicView({T, token}) {
                       <AsyncButton onClick={()=>addComment(t._id)} style={{...BtnPrimary(T),padding:"10px 14px",background:"#6366f1"}}>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
                       </AsyncButton>
+                    </div>
+                    {/* Consulta separada */}
+                    <div style={{marginTop:10}}>
+                      {!showConsulta[t._id]?(
+                        <button onClick={()=>setShowConsulta(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:12,width:"100%",padding:"8px",textAlign:"center",color:"#3b82f6",border:`1px solid #3b82f630`}}>
+                          ❓ Tengo una consulta sobre esta tarea
+                        </button>
+                      ):(
+                        <div style={{background:"#eff6ff",borderRadius:10,padding:"12px",border:"1px solid #3b82f630",marginTop:4}}>
+                          <div style={{fontSize:12,fontWeight:600,color:"#3b82f6",marginBottom:8}}>❓ Consulta — se enviará como notificación al equipo</div>
+                          <textarea value={consultaText[t._id]||""} onChange={e=>setConsultaText(prev=>({...prev,[t._id]:e.target.value}))}
+                            placeholder="Escribí tu consulta detallada..."
+                            style={{...iS,fontSize:13,width:"100%",minHeight:60,resize:"vertical",marginBottom:8}}/>
+                          <div style={{display:"flex",gap:6}}>
+                            <AsyncButton onClick={()=>submitConsulta(t._id)} style={{...BtnPrimary(T),fontSize:12,background:"#3b82f6"}}>Enviar consulta</AsyncButton>
+                            <button onClick={()=>setShowConsulta(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:12}}>Cancelar</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
