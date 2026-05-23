@@ -5447,7 +5447,7 @@ function AuthScreen({T, darkMode, onToggleDark}) {
 // ===========================================
 // CONFIG SCREEN
 // ===========================================
-function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
+function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [userDoc,setUserDoc]=useState(null);
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
@@ -6100,71 +6100,47 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Plan actual</div>
 
-          {/* Plan cards — Free / Plus $29 / Full $99 */}
+          {/* Plan cards — Free / Plus / Full */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginBottom:16}}>
-            {/* Free */}
-            <div style={{border:`2px solid ${userDoc?.plan==="free"||!userDoc?.plan?T.accentSolid:T.border}`,borderRadius:12,padding:"18px 20px",position:"relative",background:userDoc?.plan==="free"||!userDoc?.plan?T.accentSolid+"0a":T.bg}}>
-              {(userDoc?.plan==="free"||!userDoc?.plan)&&<div style={{position:"absolute",top:-10,left:16,background:T.accentSolid,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>PLAN ACTUAL</div>}
-              <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:4}}>Free</div>
-              <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1,marginBottom:12}}>$0<span style={{fontSize:13,fontWeight:400,color:T.textSm}}>/mes</span></div>
-              <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
-                {["1 tienda conectada","Gestión de reclamos","Gestión de canjes"].map(f=>(
-                  <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:13,color:T.textMd}}>
-                    <span style={{color:T.green,fontSize:12}}>✓</span>{f}
+            {[
+              {id:"free",nombre:"Free",precio_usdt:0,precio_ars:0,color:T.textSm,features_ok:["Dashboard básico","Envíos: hasta 30/mes","Reclamos: hasta 5","Canjes: hasta 3","1 tienda"],features_no:["Etiquetas PDF con SKU","Stock multi-canal","Facturador ARCA","Meta Ads"]},
+              {id:"plus",nombre:"Plus",precio_usdt:29,precio_ars:35000,color:T.blue,popular:true,features_ok:["Todo Free sin límites","Envíos + etiquetas PDF SKU","Reclamos ilimitados","Canjes ilimitados","Stock multi-canal","Facturador ARCA","Hasta 3 tiendas"],features_no:["Meta Ads","Reglas automáticas"]},
+              {id:"full",nombre:"Full",precio_usdt:79,precio_ars:95000,color:T.purple,features_ok:["Todo Plus","Meta Ads completo","Tiendas ilimitadas","Soporte prioritario WhatsApp","Reglas automáticas (próx.)"]},
+            ].map(p=>{
+              const esPlanActual=(!userDoc?.plan&&p.id==="free")||(userDoc?.plan===p.id);
+              return (
+                <div key={p.id} style={{border:`2px solid ${esPlanActual?p.color||T.accentSolid:T.border}`,borderRadius:12,padding:"18px 20px",position:"relative",background:esPlanActual?(p.color||T.accentSolid)+"0a":T.bg}}>
+                  {esPlanActual&&<div style={{position:"absolute",top:-10,left:16,background:p.color||T.accentSolid,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>PLAN ACTUAL</div>}
+                  {p.popular&&!esPlanActual&&<div style={{position:"absolute",top:-10,right:16,background:p.color,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>POPULAR</div>}
+                  <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:4}}>{p.nombre}</div>
+                  {p.precio_usdt===0
+                    ?<div style={{fontSize:24,fontWeight:800,color:T.text,marginBottom:12}}>Gratis</div>
+                    :<div style={{marginBottom:12}}>
+                      <div style={{fontSize:24,fontWeight:800,color:T.text}}>${p.precio_usdt} <span style={{fontSize:12,fontWeight:400,color:T.textSm}}>USDT/mes</span></div>
+                      <div style={{fontSize:11,color:T.textSm}}>${p.precio_ars.toLocaleString("es-AR")} ARS/mes</div>
+                    </div>
+                  }
+                  <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+                    {(p.features_ok||[]).map(f=>(
+                      <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:12,color:T.textMd}}>
+                        <span style={{color:p.color||T.green,fontSize:11}}>✓</span>{f}
+                      </div>
+                    ))}
+                    {(p.features_no||[]).map(f=>(
+                      <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:12,color:T.textSm}}>
+                        <span style={{fontSize:11}}>✕</span>{f}
+                      </div>
+                    ))}
                   </div>
-                ))}
-                {["Facturador / ARCA","Envíos & rótulos","Stock multi-canal","Meta Ads","Reglas automáticas"].map(f=>(
-                  <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:13,color:T.textSm}}>
-                    <span style={{color:T.textSm,fontSize:12}}>✕</span>{f}
-                  </div>
-                ))}
-              </div>
-              <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Plan gratuito para siempre</div>
-            </div>
-
-            {/* Plus $29 */}
-            <div style={{border:`2px solid ${userDoc?.plan==="plus"?T.accentSolid:T.border}`,borderRadius:12,padding:"18px 20px",position:"relative",background:userDoc?.plan==="plus"?T.accentSolid+"0a":T.bg}}>
-              {userDoc?.plan==="plus"&&<div style={{position:"absolute",top:-10,left:16,background:T.accentSolid,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>PLAN ACTUAL</div>}
-              <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:4}}>Plus</div>
-              <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1,marginBottom:12}}>$29<span style={{fontSize:13,fontWeight:400,color:T.textSm}}>/mes</span></div>
-              <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
-                {["Todo lo de Free","Facturador / ARCA","Gestión de envíos","Stock multi-canal","Finanzas (próx.)","Hasta 5.000 pedidos/mes"].map(f=>(
-                  <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:13,color:T.textMd}}>
-                    <span style={{color:T.green,fontSize:12}}>✓</span>{f}
-                  </div>
-                ))}
-                {["Meta Ads","Reglas automáticas","Biblioteca creativos"].map(f=>(
-                  <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:13,color:T.textSm}}>
-                    <span style={{color:T.textSm,fontSize:12}}>✕</span>{f}
-                  </div>
-                ))}
-              </div>
-              {userDoc?.plan==="plus"
-                ?<AsyncButton onClick={async()=>{if(await appConfirm("¿Cancelar suscripción Plus?",{danger:true,okLabel:"Cancelar plan"}))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:13}}>Cancelar suscripción</AsyncButton>
-                :<button onClick={()=>{setMsg("Próximamente podrás suscribirte al plan Plus. Te avisamos cuando esté disponible.");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>Quiero Plus</button>
-              }
-            </div>
-
-            {/* Full $99 */}
-            <div style={{border:`2px solid ${userDoc?.plan==="full"?T.accentSolid:T.border}`,borderRadius:12,padding:"18px 20px",position:"relative",background:userDoc?.plan==="full"?T.accentSolid+"0a":T.bg}}>
-              {userDoc?.plan==="full"&&<div style={{position:"absolute",top:-10,left:16,background:T.accentSolid,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>PLAN ACTUAL</div>}
-              <div style={{position:"absolute",top:-10,right:16,background:`linear-gradient(135deg,${T.accentSolid},${T.purple})`,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>⚡ RECOMENDADO</div>
-              <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:4}}>Full</div>
-              <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1,marginBottom:12}}>$99<span style={{fontSize:13,fontWeight:400,color:T.textSm}}>/mes</span></div>
-              <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
-                {["Todo lo de Plus","Meta Ads completo","Reglas automáticas","Publicación de campañas","Biblioteca de creativos","Pedidos ilimitados","Tiendas ilimitadas","Soporte prioritario"].map(f=>(
-                  <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:13,color:T.textMd}}>
-                    <span style={{color:T.green,fontSize:12}}>✓</span>{f}
-                  </div>
-                ))}
-              </div>
-              {userDoc?.plan==="full"
-                ?<AsyncButton onClick={async()=>{if(await appConfirm("¿Cancelar suscripción Full?",{danger:true,okLabel:"Cancelar plan"}))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:13}}>Cancelar suscripción</AsyncButton>
-                :<button onClick={()=>{setMsg("Próximamente podrás suscribirte al plan Full. Te avisamos cuando esté disponible.");}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>Quiero Full</button>
-              }
-            </div>
+                  {p.id!=="free"&&(esPlanActual
+                    ?<AsyncButton onClick={async()=>{if(await appConfirm(`¿Cancelar suscripción ${p.nombre}?`,{danger:true,okLabel:"Cancelar plan"}))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:12}}>Cancelar suscripción</AsyncButton>
+                    :<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:12,background:p.color}}>Suscribirme →</button>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <div style={{fontSize:12,color:T.textSm,textAlign:"center"}}>¿Preguntas sobre los planes? Escribinos a <span style={{color:T.accent}}>hola@growith.app</span></div>
+          <div style={{fontSize:12,color:T.textSm,textAlign:"center"}}>¿Preguntas? Escribinos a <span style={{color:T.accent}}>hola@growith.app</span></div>
         </div>
       </div>
     </div>
@@ -6176,157 +6152,281 @@ function ConfigScreen({T, user, onBack, darkMode, onToggleDark}) {
 // ===========================================
 // APP PLANES - Página de suscripción
 // ===========================================
-function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT_EMAIL}) {
+function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAGO, ALIAS_PAGO, TITULAR_PAGO, SUPPORT_EMAIL}) {
   const iS=InputStyle(T);
-  const [step,setStep]=useState("planes"); // planes | pago | enviado
+  const [step,setStep]=useState("planes"); // planes | metodo | pago_cripto | pago_transfer | enviado
   const [planSel,setPlanSel]=useState(null);
-  const [comprobante,setComprobante]=useState("");
+  const [metodo,setMetodo]=useState(null); // "cripto" | "transfer"
   const [txHash,setTxHash]=useState("");
-  const [sending,setSending]=useState(false);
+  const [transferRef,setTransferRef]=useState("");
+  const [nota,setNota]=useState("");
 
   const PLANES=[
-    {id:"plus",nombre:"Plus",precio:29,color:T.blue,icon:"⭐",desc:"Operaciones + Facturador",popular:true,features:["Gestión de reclamos y canjes","Facturador / ARCA","Gestión de envíos","Stock multi-canal (TN+Shopify+ML)","Finanzas (próximamente)","Hasta 5.000 pedidos/mes"]},
-    {id:"full",nombre:"Full",precio:99,color:T.purple,icon:"💎",desc:"Todo incluido",features:["Todo lo de Plus","Meta Ads completo","Reglas automáticas","Publicación de campañas","Biblioteca de creativos","Pedidos y tiendas ilimitadas","Soporte prioritario"]},
+    {
+      id:"free", nombre:"Free", precio_usdt:0, precio_ars:0, color:T.textSm, icon:"🌱",
+      desc:"Para dar los primeros pasos",
+      features:[
+        "Dashboard con KPIs básicos",
+        "Envíos: hasta 30/mes (sin PDF de etiquetas)",
+        "Reclamos: hasta 5 simultáneos",
+        "Canjes: hasta 3 activos",
+        "1 tienda conectada",
+      ],
+    },
+    {
+      id:"plus", nombre:"Plus", precio_usdt:29, precio_ars:35000, color:T.blue, icon:"⭐",
+      desc:"Para tiendas en crecimiento", popular:true,
+      features:[
+        "Todo Free sin límites de volumen",
+        "Envíos ilimitados + etiquetas PDF con SKU",
+        "Reclamos ilimitados + auto-tracking Andreani",
+        "Canjes ilimitados",
+        "Stock multi-canal (TN + Shopify + ML)",
+        "Facturador ARCA",
+        "Hasta 3 tiendas conectadas",
+      ],
+    },
+    {
+      id:"full", nombre:"Full", precio_usdt:79, precio_ars:95000, color:T.purple, icon:"💎",
+      desc:"Todo incluido, sin restricciones",
+      features:[
+        "Todo Plus sin restricciones",
+        "Meta Ads completo",
+        "Tiendas ilimitadas",
+        "Soporte prioritario por WhatsApp",
+        "Reglas automáticas (próximamente)",
+        "API access (próximamente)",
+      ],
+    },
   ];
 
-  const planActual=PLANES.find(p=>p.id===userPlan);
+  const planActual=PLANES.find(p=>p.id===userPlan)||PLANES[0];
   const planSelecc=PLANES.find(p=>p.id===planSel);
 
-  async function enviarComprobante() {
-    if(!txHash&&!comprobante) return appAlert("Completá el hash de transacción o adjuntá comprobante");
-    setSending(true);
+  async function enviarPago() {
+    if(metodo==="cripto"&&!txHash.trim()) return appAlert("Pegá el hash de transacción (TxID)");
+    if(metodo==="transfer"&&!transferRef.trim()) return appAlert("Ingresá el número de comprobante o referencia de la transferencia");
     try {
-      // Guardar solicitud en Firestore
       await addDoc(collection(db,"pagos"),{
         uid: user.uid,
         email: user.email,
         plan: planSel,
-        txHash,
-        comprobante,
+        method: metodo,
+        currency: metodo==="cripto"?"USDT":"ARS",
+        amount: metodo==="cripto"?planSelecc.precio_usdt:planSelecc.precio_ars,
+        txHash: metodo==="cripto"?txHash.trim():"",
+        transferRef: metodo==="transfer"?transferRef.trim():"",
+        nota: nota.trim(),
         estado: "pendiente",
         createdAt: serverTimestamp(),
       });
       setStep("enviado");
     } catch(e){ appAlert("Error: "+e.message); }
-    setSending(false);
   }
 
+  /* ── Pantalla: enviado ── */
   if(step==="enviado") return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{textAlign:"center",maxWidth:420}}>
         <div style={{fontSize:64,marginBottom:20}}>✅</div>
-        <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>¡Comprobante enviado!</div>
-        <div style={{fontSize:14,color:T.textMd,marginBottom:24,lineHeight:1.6}}>Revisaremos tu pago y activaremos tu plan <strong>{planSelecc?.nombre}</strong> en las próximas horas. Te notificaremos por email a {user?.email}.</div>
+        <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>¡Pago enviado!</div>
+        <div style={{fontSize:14,color:T.textMd,marginBottom:8,lineHeight:1.6}}>
+          {metodo==="cripto"?"Verificaremos tu transacción y activaremos tu plan ":"Confirmaremos tu transferencia y activaremos tu plan "}
+          <strong>{planSelecc?.nombre}</strong> en las próximas horas.
+        </div>
+        <div style={{fontSize:13,color:T.textSm,marginBottom:24}}>Te notificamos a <strong>{user?.email}</strong>.</div>
         <button onClick={onBack} style={{...BtnPrimary(T),justifyContent:"center",width:"100%"}}>Volver al inicio</button>
       </div>
     </div>
   );
 
-  if(step==="pago") return (
+  /* ── Pantalla: pago cripto ── */
+  if(step==="pago_cripto") return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
-      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12}}>
-        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
-        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pagar plan {planSelecc?.nombre}</span>
+      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+        <button onClick={()=>setStep("metodo")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
+        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pago con USDT (TRC20)</span>
       </div>
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
-        {/* Resumen */}
-        <div style={{background:T.card,border:`0.5px solid ${planSelecc?.color}44`,borderLeft:`3px solid ${planSelecc?.color}`,borderRadius:12,padding:"18px 20px",marginBottom:24}}>
-          <div style={{fontSize:13,color:T.textSm,marginBottom:4}}>Plan seleccionado</div>
-          <div style={{fontSize:20,fontWeight:700,color:planSelecc?.color}}>{planSelecc?.icon} {planSelecc?.nombre} - ${planSelecc?.precio} USDT/mes</div>
+        <div style={{background:T.card,border:`0.5px solid ${planSelecc?.color}44`,borderLeft:`3px solid ${planSelecc?.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
+          <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
+          <div style={{fontSize:17,fontWeight:700,color:planSelecc?.color}}>{planSelecc?.icon} {planSelecc?.nombre}</div>
+          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${planSelecc?.precio_usdt} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USDT/mes</span></div>
         </div>
-
-        {/* Dirección USDT */}
-        <div style={{marginBottom:24}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Enviá exactamente ${planSelecc?.precio} USDT (TRC20) a esta dirección:</div>
-          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
-            <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{USDT_ADDRESS}</code>
-            <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>📋 Copiar</button>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8,padding:"8px 12px",background:T.yellowBg,border:`0.5px solid ${T.yellow}44`,borderRadius:8}}>
-            <span style={{fontSize:14}}>⚠️</span>
-            <span style={{fontSize:12,color:T.yellow}}>Solo enviar USDT en la red TRC20. Otras redes no son compatibles.</span>
-          </div>
-        </div>
-
-        {/* Comprobante */}
         <div style={{marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Hash de transacción (TxID)</div>
-          <input style={{...iS,fontSize:13,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}} placeholder="Pegá el hash de la transacción aquí..." value={txHash} onChange={e=>setTxHash(e.target.value)}/>
-          <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Lo encontrás en tu wallet después de enviar. Ejemplo: abc123def456...</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${planSelecc?.precio_usdt} USDT (TRC20) a:</div>
+          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"monospace"}}>{USDT_ADDRESS}</code>
+            <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);toast("Dirección copiada","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>📋</button>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:T.yellowBg,border:`0.5px solid ${T.yellow}44`,borderRadius:8}}>
+            <span>⚠️</span><span style={{fontSize:12,color:T.yellow}}>Solo USDT en red TRC20. Otras redes o monedas no serán recuperadas.</span>
+          </div>
+        </div>
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Hash de transacción (TxID) *</div>
+          <input style={{...iS,fontFamily:"monospace",fontSize:13}} placeholder="Pegá el TxID de tu wallet..." value={txHash} onChange={e=>setTxHash(e.target.value)}/>
+          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Lo encontrás en tu wallet después de enviar. Suele empezar con 0x... o es una cadena larga.</div>
         </div>
         <div style={{marginBottom:28}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Nota adicional (opcional)</div>
-          <textarea style={{...iS,minHeight:80,resize:"vertical",fontSize:13}} placeholder="Algún dato adicional, screenshot URL, etc..." value={comprobante} onChange={e=>setComprobante(e.target.value)}/>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Nota adicional (opcional)</div>
+          <textarea style={{...iS,minHeight:70,resize:"vertical",fontSize:13}} placeholder="Alguna aclaración, screenshot URL, etc..." value={nota} onChange={e=>setNota(e.target.value)}/>
         </div>
-
-        <AsyncButton onClick={enviarComprobante} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>
-          Enviar comprobante para activar plan
+        <AsyncButton onClick={enviarPago} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>
+          Enviar comprobante
         </AsyncButton>
-        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:12}}>Tu plan se activa en menos de 24hs hábiles una vez confirmado el pago.</div>
+        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:10}}>Tu plan se activa en menos de 24hs hábiles.</div>
       </div>
     </div>
   );
 
+  /* ── Pantalla: pago transferencia ── */
+  if(step==="pago_transfer") return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
+      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+        <button onClick={()=>setStep("metodo")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
+        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pago por transferencia bancaria</span>
+      </div>
+      <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
+        <div style={{background:T.card,border:`0.5px solid ${planSelecc?.color}44`,borderLeft:`3px solid ${planSelecc?.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
+          <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
+          <div style={{fontSize:17,fontWeight:700,color:planSelecc?.color}}>{planSelecc?.icon} {planSelecc?.nombre}</div>
+          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${planSelecc?.precio_ars.toLocaleString("es-AR")} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>ARS/mes</span></div>
+        </div>
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Datos para transferir</div>
+          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+            {[
+              {label:"Titular", value:TITULAR_PAGO},
+              {label:"Alias",   value:ALIAS_PAGO},
+              {label:"CVU",     value:CVU_PAGO},
+              {label:"Monto",   value:`$${planSelecc?.precio_ars.toLocaleString("es-AR")} ARS`},
+            ].map((row,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<3?`1px solid ${T.borderL}`:"none"}}>
+                <span style={{fontSize:12,color:T.textSm,width:65,flexShrink:0}}>{row.label}</span>
+                <span style={{flex:1,fontSize:13,color:T.text,fontFamily:row.label==="CVU"||row.label==="Alias"?"monospace":"inherit",wordBreak:"break-all"}}>{row.value}</span>
+                <button onClick={()=>{navigator.clipboard.writeText(row.value);toast(`${row.label} copiado`,"success");}} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:11,flexShrink:0,marginLeft:8}}>📋</button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Número de comprobante / referencia *</div>
+          <input style={{...iS,fontSize:13}} placeholder="Ej: 123456789 (nro de operación del banco)..." value={transferRef} onChange={e=>setTransferRef(e.target.value)}/>
+          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Lo encontrás en el comprobante de tu app de banco.</div>
+        </div>
+        <div style={{marginBottom:28}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Nota adicional (opcional)</div>
+          <textarea style={{...iS,minHeight:70,resize:"vertical",fontSize:13}} placeholder="Podés agregar screenshot URL u otras aclaraciones..." value={nota} onChange={e=>setNota(e.target.value)}/>
+        </div>
+        <AsyncButton onClick={enviarPago} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>
+          Enviar comprobante
+        </AsyncButton>
+        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:10}}>Confirmamos manualmente — generalmente en menos de 4hs hábiles.</div>
+      </div>
+    </div>
+  );
+
+  /* ── Pantalla: elegir método de pago ── */
+  if(step==="metodo") return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
+      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
+        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Plan {planSelecc?.nombre} — ¿Cómo pagás?</span>
+      </div>
+      <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div onClick={()=>{setMetodo("cripto");setStep("pago_cripto");}}
+            style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:14,padding:"22px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,transition:"border-color 0.15s"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=T.green}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+            <div style={{fontSize:36,flexShrink:0,lineHeight:1}}>₮</div>
+            <div>
+              <div style={{fontSize:16,fontWeight:700,color:T.text}}>Cripto — USDT TRC20</div>
+              <div style={{fontSize:13,color:T.textMd,marginTop:2}}>${planSelecc?.precio_usdt} USDT/mes</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Sin intermediarios bancarios.</div>
+            </div>
+          </div>
+          <div onClick={()=>{setMetodo("transfer");setStep("pago_transfer");}}
+            style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:14,padding:"22px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,transition:"border-color 0.15s"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=T.blue}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+            <div style={{fontSize:36,flexShrink:0,lineHeight:1}}>🏦</div>
+            <div>
+              <div style={{fontSize:16,fontWeight:700,color:T.text}}>Transferencia bancaria (ARS)</div>
+              <div style={{fontSize:13,color:T.textMd,marginTop:2}}>${planSelecc?.precio_ars.toLocaleString("es-AR")} ARS/mes</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Confirmación manual en menos de 4hs hábiles.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── Pantalla principal: listado de planes ── */
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
-      {/* Topbar */}
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
         <button onClick={onBack} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Inicio</button>
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Planes y suscripción</span>
       </div>
-
-      <div style={{maxWidth:860,margin:"0 auto",padding:"40px 20px"}}>
-        {/* Plan actual */}
+      <div style={{maxWidth:900,margin:"0 auto",padding:"40px 20px"}}>
         {userPlan!=="free"&&planActual&&(
           <div style={{background:T.card,border:`0.5px solid ${planActual.color}44`,borderLeft:`3px solid ${planActual.color}`,borderRadius:12,padding:"16px 20px",marginBottom:32,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
             <div>
-              <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan activo</div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Tu plan activo</div>
               <div style={{fontSize:18,fontWeight:700,color:planActual.color}}>{planActual.icon} {planActual.nombre}</div>
               {planExpiry&&<div style={{fontSize:12,color:T.textSm,marginTop:2}}>Vence: {planExpiry.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>}
             </div>
             <div style={{fontSize:13,color:T.textSm}}>¿Querés cambiar de plan? Seleccioná uno abajo.</div>
           </div>
         )}
-
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:-0.5,marginBottom:8}}>Elegí tu plan</div>
-          <div style={{fontSize:15,color:T.textMd}}>Pagos en USDT (TRC20) · Sin suscripción automática · Se activa en 24hs</div>
+          <div style={{fontSize:15,color:T.textMd}}>Sin suscripción automática · Pagás mes a mes · Se activa en menos de 24hs</div>
         </div>
-
-        {/* Cards de planes */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16,marginBottom:40}}>
-          {PLANES.map(p=>(
-            <div key={p.id} style={{background:T.card,border:`0.5px solid ${planSel===p.id?p.color:p.popular?p.color+"44":T.border}`,borderTop:p.popular?`3px solid ${p.color}`:"none",borderRadius:14,padding:"24px 20px",position:"relative",cursor:"pointer",transition:"all 0.15s",boxShadow:planSel===p.id?`0 0 0 2px ${p.color}33`:""}}
-              onClick={()=>setPlanSel(p.id)}>
-              {p.popular&&<div style={{position:"absolute",top:-1,left:"50%",transform:"translateX(-50%) translateY(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>MÁS POPULAR</div>}
-              <div style={{fontSize:28,marginBottom:12}}>{p.icon}</div>
-              <div style={{fontSize:18,fontWeight:700,color:p.color,marginBottom:2}}>{p.nombre}</div>
-              <div style={{fontSize:12,color:T.textSm,marginBottom:16}}>{p.desc}</div>
-              <div style={{fontSize:32,fontWeight:800,color:T.text,letterSpacing:-1,marginBottom:4}}>${p.precio}</div>
-              <div style={{fontSize:12,color:T.textSm,marginBottom:20}}>USDT / mes</div>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {p.features.map((f,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.textMd}}>
-                    <span style={{color:p.color,flexShrink:0,marginTop:1}}>✓</span>{f}
+          {PLANES.map(p=>{
+            const esFree=p.id==="free";
+            const esPlanActual=p.id===userPlan;
+            const seleccionado=planSel===p.id;
+            return (
+              <div key={p.id}
+                onClick={()=>!esFree&&setPlanSel(seleccionado?null:p.id)}
+                style={{background:T.card,border:`2px solid ${seleccionado?p.color:p.popular?p.color+"55":T.border}`,borderTop:p.popular?`3px solid ${p.color}`:"none",borderRadius:14,padding:"24px 20px",position:"relative",cursor:esFree?"default":"pointer",transition:"all 0.15s",boxShadow:seleccionado?`0 0 0 3px ${p.color}22`:"",opacity:esFree?0.7:1}}>
+                {p.popular&&<div style={{position:"absolute",top:-1,left:"50%",transform:"translateX(-50%) translateY(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:700,padding:"3px 12px",borderRadius:20}}>MÁS POPULAR</div>}
+                {esPlanActual&&<div style={{position:"absolute",top:12,right:12,background:p.color+"22",color:p.color,fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:20}}>PLAN ACTUAL</div>}
+                <div style={{fontSize:28,marginBottom:10}}>{p.icon}</div>
+                <div style={{fontSize:18,fontWeight:700,color:esFree?T.textMd:p.color,marginBottom:2}}>{p.nombre}</div>
+                <div style={{fontSize:12,color:T.textSm,marginBottom:14}}>{p.desc}</div>
+                {esFree?(
+                  <div style={{fontSize:28,fontWeight:800,color:T.text,marginBottom:18}}>Gratis</div>
+                ):(
+                  <div style={{marginBottom:18}}>
+                    <div style={{fontSize:28,fontWeight:800,color:T.text}}>${p.precio_usdt} <span style={{fontSize:13,fontWeight:400,color:T.textSm}}>USDT</span></div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>${p.precio_ars.toLocaleString("es-AR")} ARS / mes</div>
                   </div>
-                ))}
+                )}
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {p.features.map((f,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:12,color:T.textMd}}>
+                      <span style={{color:esFree?T.textSm:p.color,flexShrink:0,marginTop:1}}>✓</span>{f}
+                    </div>
+                  ))}
+                </div>
+                {seleccionado&&<div style={{marginTop:14,padding:"5px 0",textAlign:"center",fontSize:12,fontWeight:600,color:p.color}}>✓ Seleccionado</div>}
               </div>
-              {planSel===p.id&&<div style={{marginTop:16,padding:"6px 0",textAlign:"center",fontSize:12,fontWeight:600,color:p.color}}>✓ Seleccionado</div>}
-            </div>
-          ))}
+            );
+          })}
         </div>
-
         {planSel&&(
-          <div style={{textAlign:"center"}}>
-            <button onClick={()=>setStep("pago")} style={{...BtnPrimary(T),fontSize:15,padding:"13px 32px",justifyContent:"center"}}>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <button onClick={()=>setStep("metodo")} style={{...BtnPrimary(T),fontSize:15,padding:"13px 36px",justifyContent:"center"}}>
               Continuar con plan {planSelecc?.nombre} →
             </button>
           </div>
         )}
-
-        <div style={{marginTop:40,padding:"20px",background:T.surface,borderRadius:12,textAlign:"center"}}>
-          <div style={{fontSize:13,color:T.textSm}}>¿Dudas? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent}}>{SUPPORT_EMAIL}</a></div>
-        </div>
+        <div style={{textAlign:"center",fontSize:12,color:T.textSm}}>¿Dudas? Escribinos a <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:T.accent}}>{SUPPORT_EMAIL}</a></div>
       </div>
     </div>
   );
@@ -6388,7 +6488,8 @@ function AppAdmin({T, user, onBack}) {
     setPagos(p=>p.map(p2=>p2._id===pagoId?{...p2,estado:"rechazado"}:p2));
   }
 
-  const PLAN_C={free:T.textSm,starter:T.yellow,pro:T.blue,total:T.purple};
+  const PLAN_C={free:T.textSm,plus:T.blue,full:T.purple};
+  const PLAN_BG={free:T.surface,plus:T.blueBg,full:T.purpleBg};
   const filteredUsers=usuarios.filter(u=>!search||(u.email||"").toLowerCase().includes(search.toLowerCase())||(u.nombre||"").toLowerCase().includes(search.toLowerCase()));
   const pagosPendientes=pagos.filter(p=>p.estado==="pendiente");
 
@@ -6407,8 +6508,8 @@ function AppAdmin({T, user, onBack}) {
         <div style={{display:"flex",gap:12,marginBottom:24,flexWrap:"wrap"}}>
           {[
             {label:"Pagos pendientes",value:pagosPendientes.length,color:T.yellow},
-            {label:"Usuarios Pro",value:usuarios.filter(u=>u.plan==="pro").length,color:T.blue},
-            {label:"Usuarios Total",value:usuarios.filter(u=>u.plan==="total").length,color:T.purple},
+            {label:"Usuarios Plus",value:usuarios.filter(u=>u.plan==="plus").length,color:T.blue},
+            {label:"Usuarios Full",value:usuarios.filter(u=>u.plan==="full").length,color:T.purple},
             {label:"Total usuarios",value:usuarios.length,color:T.textMd},
           ].map((s,i)=>(
             <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${s.color}`,borderRadius:10,padding:"14px 18px",flex:"1 1 120px",minWidth:110}}>
@@ -6442,9 +6543,15 @@ function AppAdmin({T, user, onBack}) {
                         <span style={{fontWeight:700,fontSize:14,color:T.text}}>{u?.email||p.email}</span>
                         <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:p.estado==="pendiente"?T.yellowBg:p.estado==="confirmado"?T.greenBg:T.redBg,color:p.estado==="pendiente"?T.yellow:p.estado==="confirmado"?T.green:T.red}}>{p.estado}</span>
                       </div>
-                      <div style={{fontSize:13,color:T.textMd}}>Plan solicitado: <strong style={{color:PLAN_C[p.plan]||T.text}}>{p.plan}</strong> · {fecha}</div>
-                      {p.txHash&&<div style={{fontSize:12,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:4,wordBreak:"break-all"}}>TxID: {p.txHash}</div>}
-                      {p.comprobante&&<div style={{fontSize:12,color:T.textSm,marginTop:4}}>Nota: {p.comprobante}</div>}
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                        <span style={{fontSize:13,color:T.textMd}}>Plan: <strong style={{color:PLAN_C[p.plan]||T.text}}>{p.plan}</strong></span>
+                        {p.method&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"🏦 ARS"}</span>}
+                        <span style={{fontSize:12,color:T.textSm}}>{fecha}</span>
+                        {p.amount&&<span style={{fontSize:12,color:T.textSm}}>${p.amount} {p.currency||""}</span>}
+                      </div>
+                      {p.txHash&&<div style={{fontSize:12,color:T.textSm,fontFamily:"monospace",marginTop:2,wordBreak:"break-all"}}>TxID: {p.txHash}</div>}
+                      {p.transferRef&&<div style={{fontSize:12,color:T.textSm,marginTop:2}}>Ref. transferencia: <strong>{p.transferRef}</strong></div>}
+                      {p.nota&&<div style={{fontSize:12,color:T.textSm,marginTop:2}}>Nota: {p.nota}</div>}
                     </div>
                     {p.estado==="pendiente"&&(
                       <div style={{display:"flex",gap:8,flexShrink:0}}>
@@ -6470,17 +6577,17 @@ function AppAdmin({T, user, onBack}) {
                   <div>
                     <div style={{fontSize:13,fontWeight:600,color:T.text}}>{u.email||u.nombre}</div>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginTop:3}}>
-                      <span style={{fontSize:11,padding:"2px 7px",borderRadius:5,fontWeight:600,background:u.plan==="free"?T.surface:u.plan==="pro"?T.blueBg:u.plan==="total"?T.purpleBg:T.yellowBg,color:PLAN_C[u.plan]||T.textSm}}>{u.plan||"free"}</span>
+                      <span style={{fontSize:11,padding:"2px 7px",borderRadius:5,fontWeight:600,background:PLAN_BG[u.plan||"free"]||T.surface,color:PLAN_C[u.plan||"free"]||T.textSm}}>{u.plan||"free"}</span>
                       {expiry&&<span style={{fontSize:11,color:T.textSm}}>Vence: {expiry}</span>}
                     </div>
                   </div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                    {["starter","pro","total"].map(plan=>(
-                      <AsyncButton key={plan} onClick={()=>activarPlan(u._id,plan,1)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:plan==="starter"?T.yellow:plan==="pro"?T.blue:T.purple}}>
+                    {["plus","full"].map(plan=>(
+                      <AsyncButton key={plan} onClick={()=>activarPlan(u._id,plan,1)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:plan==="plus"?T.blue:T.purple}}>
                         +1m {plan}
                       </AsyncButton>
                     ))}
-                    {u.plan!=="free"&&<AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Free</AsyncButton>}
+                    {u.plan!=="free"&&<AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>↓ Free</AsyncButton>}
                   </div>
                 </div>
               );
@@ -13761,7 +13868,10 @@ export default function App() {
   const [isAdmin,setIsAdmin]=useState(false);
 
   const ADMIN_UIDS=["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"]; // ADMIN_UID_2: completar cuando tengas el segundo
-  const USDT_ADDRESS="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; // Dirección TRC20
+  const USDT_ADDRESS="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; // ← completar: dirección TRC20
+  const CVU_PAGO="0000000000000000000000"; // ← completar: CVU para transferencias ARS
+  const ALIAS_PAGO="growith.pagos.ar"; // ← completar: alias CBU
+  const TITULAR_PAGO="Soluna Biolight"; // ← completar: titular de la cuenta
   const SUPPORT_EMAIL="xxxxxx@gmail.com";
 
   const T = darkMode ? DARK : LIGHT;
@@ -14017,9 +14127,9 @@ export default function App() {
 
   // ─── Render page content ───
   let pageContent = null;
-  if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
+  if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
-  else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
+  else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
   else if(page==="arca") pageContent = <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="meta") pageContent = <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
   else if(page==="stock") pageContent = <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
