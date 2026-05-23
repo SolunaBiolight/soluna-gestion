@@ -174,14 +174,18 @@ function processSH(orders) {
 
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
 
-    // Revenue por orden: usamos subtotal_price (precio de productos sin tax ni envío)
-    // menos refunds. Esto matchea con apps tipo Escalafy y con lo que el user "cobró".
-    // Antes sumábamos line_items.price × qty que incluía precio con IVA y sin descontar refunds.
+    // Revenue NETO por orden (matchea con Escalafy y dashboards de AR típicos):
+    // subtotal_price - total_tax - refunds.
+    // En Argentina, las tiendas suelen tener "precios con IVA incluido": subtotal_price
+    // viene con IVA dentro. total_tax es la porción de IVA. Restando obtenemos el neto real.
+    // Si la tienda factura sin IVA (precios netos), total_tax = 0 y queda igual.
     const refundedAmount = (o.refunds || []).reduce((s, r) => {
       const ti = (r.transactions || []).reduce((t, x) => t + (parseFloat(x.amount) || 0), 0);
       return s + ti;
     }, 0);
-    const orderRevenue = Math.max(0, (parseFloat(o.subtotal_price) || 0) - refundedAmount);
+    const subtotal = parseFloat(o.subtotal_price) || 0;
+    const tax = parseFloat(o.total_tax) || 0;
+    const orderRevenue = Math.max(0, subtotal - tax - refundedAmount);
 
     for(const item of o.line_items||[]){
       const vid=String(item.variant_id||item.product_id);
