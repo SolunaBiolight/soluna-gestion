@@ -41,11 +41,14 @@ export default async function handler(req, res) {
       const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
       if (snap.empty) return res.status(404).json({ error: "Link inválido o expirado" });
       const colab = { _id: snap.docs[0].id, ...snap.docs[0].data() };
+      // Sin orderBy para evitar índice compuesto — ordenamos en JS
       const tarSnap = await db.collection("tareas")
         .where("asignadoEmail","==",colab.email)
-        .where("uid","==",colab.uid)
-        .orderBy("createdAt","desc").get();
-      return res.json({ colab, tareas: tarSnap.docs.map(d=>({_id:d.id,...d.data()})) });
+        .where("uid","==",colab.uid).get();
+      const tareas = tarSnap.docs
+        .map(d=>({_id:d.id,...d.data()}))
+        .sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
+      return res.json({ colab, tareas });
     }
 
     if (action === "publicUpdateEstado") {
@@ -81,13 +84,14 @@ export default async function handler(req, res) {
     if (!uid) return res.status(403).json({ error: "No autorizado" });
 
     if (action === "getData") {
+      // Sin orderBy para evitar índices compuestos — ordenamos en JS (válido para multicuenta)
       const [cs, ts] = await Promise.all([
-        db.collection("colaboradores").where("uid","==",uid).orderBy("nombre").get(),
-        db.collection("tareas").where("uid","==",uid).orderBy("createdAt","desc").get(),
+        db.collection("colaboradores").where("uid","==",uid).get(),
+        db.collection("tareas").where("uid","==",uid).get(),
       ]);
       return res.json({
-        colaboradores: cs.docs.map(d=>({_id:d.id,...d.data()})),
-        tareas:        ts.docs.map(d=>({_id:d.id,...d.data()})),
+        colaboradores: cs.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>a.nombre.localeCompare(b.nombre,"es")),
+        tareas:        ts.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0)),
       });
     }
 
