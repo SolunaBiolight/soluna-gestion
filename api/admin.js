@@ -64,13 +64,23 @@ export default async function handler(req, res) {
         return exp && exp >= now && exp <= en7dias;
       });
 
+      // Revenue: solo pagos confirmados reales (no pruebas, no $0)
+      const pagosReales = pagos.filter(p => p.estado === "confirmado" && !p.isTrial && Number(p.amount) > 0);
+      const totalUSDT   = pagosReales.filter(p => p.currency === "USDT").reduce((s,p) => s + (Number(p.amount)||0), 0);
+      const totalARS    = pagosReales.filter(p => p.currency === "ARS").reduce((s,p)  => s + (Number(p.amount)||0), 0);
+
       const stats = {
-        totalUsuarios: usuarios.length,
-        usuariosPlus:  usuarios.filter(u => u.plan === "plus").length,
-        usuariosFull:  usuarios.filter(u => u.plan === "full").length,
-        pagosPendientes: pagos.filter(p => p.estado === "pendiente").length,
+        totalUsuarios:    usuarios.length,
+        usuariosPlus:     usuarios.filter(u => u.plan === "plus").length,
+        usuariosFull:     usuarios.filter(u => u.plan === "full").length,
+        usuariosPrueba:   usuarios.filter(u => u.isTrial).length,
+        pagosPendientes:  pagos.filter(p => p.estado === "pendiente").length,
+        pagosRealesCount: pagosReales.length,
+        countPruebas:     pagos.filter(p => p.isTrial).length,
         mrrUsdt,
         mrrArs,
+        totalUSDT,
+        totalARS,
         vencenPronto: vencenPronto.length,
       };
 
@@ -184,6 +194,35 @@ export default async function handler(req, res) {
         planExtendidoBy: uid,
         planExtendidoAt: now,
       });
+      return res.json({ ok: true, expiry });
+    }
+
+    // ── activarPrueba ─────────────────────────────────────────────────────────
+    // Activa un plan sin cobro — crea registro con isTrial:true, no cuenta en revenue
+    if (action === "activarPrueba") {
+      const { targetUid, plan, meses = 1 } = body;
+      const userDoc = await db.collection("users").doc(targetUid).get();
+      const userData = userDoc.data() || {};
+      let base = now;
+      if (userData.planExpiry) {
+        const currentExpiry = userData.planExpiry?._seconds
+          ? new Date(userData.planExpiry._seconds * 1000)
+          : userData.planExpiry?.toDate?.() || now;
+        if (currentExpiry > now) base = currentExpiry;
+      }
+      const expiry = addMonths(base, meses);
+      await Promise.all([
+        db.collection("users").doc(targetUid).update({
+          plan, planExpiry: expiry, isTrial: true,
+          planActivadoBy: uid, planActivadoAt: now,
+        }),
+        db.collection("pagos").add({
+          uid: targetUid, plan, method: "prueba", currency: "—", amount: 0,
+          isTrial: true, mesesConfirmados: Number(meses),
+          estado: "confirmado", confirmadoBy: uid, confirmadoAt: now, createdAt: now,
+          nota: `Plan de prueba (${meses}m) activado por admin`,
+        }),
+      ]);
       return res.json({ ok: true, expiry });
     }
 

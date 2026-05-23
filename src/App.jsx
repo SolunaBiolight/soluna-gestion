@@ -6445,9 +6445,10 @@ function AppAdmin({T, user, onBack}) {
   const [noteEdit, setNoteEdit] = useState({});
   const [confirmMeses, setConfirmMeses] = useState({});
   // Estado por usuario para las acciones en el panel expandido
-  const [uPlan, setUPlan] = useState({});     // {uid: "plus"|"full"}
-  const [uMeses, setUMeses] = useState({});   // {uid: "1"}
-  const [uDias, setUDias] = useState({});     // {uid: "7"} — campo custom días
+  const [uPlan, setUPlan] = useState({});       // {uid: "plus"|"full"}
+  const [uMeses, setUMeses] = useState({});     // {uid: "1"}
+  const [uPruebaMeses, setUPruebaMeses] = useState({}); // {uid: "1"} — meses para prueba
+  const [uDias, setUDias] = useState({});       // {uid: "7"} — campo custom días
 
   async function adminApi(body) {
     const r = await fetch("/api/admin", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
@@ -6538,6 +6539,16 @@ function AppAdmin({T, user, onBack}) {
     toast("Nota guardada", "success");
   }
 
+  async function activarPrueba(uid, plan, meses) {
+    if (!await appConfirm(`¿Activar ${meses} mes${Number(meses)>1?"es":""} de prueba (${plan}) sin cobro?`, {okLabel:"Activar prueba"})) return;
+    const d = await adminApi({action:"activarPrueba", targetUid:uid, plan, meses});
+    setDatos(prev => ({
+      ...prev,
+      usuarios: prev.usuarios.map(u => u._id===uid ? {...u, plan, planExpiry:d.expiry, isTrial:true} : u),
+    }));
+    toast(`🎁 Prueba ${plan} (${meses}m) activada — no cuenta como ingreso`, "success");
+  }
+
   async function ajustarDias(uid, dias) {
     if (!dias || isNaN(Number(dias))) return appAlert("Ingresá una cantidad de días válida");
     const n = Number(dias);
@@ -6587,6 +6598,7 @@ function AppAdmin({T, user, onBack}) {
         <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:0,marginBottom:20,width:"fit-content"}}>
           {[
             ["dashboard","📊 Dashboard"],
+            ["finanzas","💰 Finanzas"],
             ["pagos",`💳 Pagos${pagosPendientes.length>0?" ("+pagosPendientes.length+")":""}`],
             ["usuarios","👥 Usuarios"]
           ].map(([id,label])=>(
@@ -6596,6 +6608,120 @@ function AppAdmin({T, user, onBack}) {
       </div>
 
       {loading&&<div style={{textAlign:"center",padding:60}}><Spinner size={36} color={T.accent}/></div>}
+
+      {/* ===== TAB FINANZAS ===== */}
+      {!loading&&tab==="finanzas"&&(()=>{
+        const pagosReales = pagos.filter(p => p.estado==="confirmado" && !p.isTrial && Number(p.amount)>0);
+        const pagosUSDT   = pagosReales.filter(p => p.currency==="USDT");
+        const pagosARS    = pagosReales.filter(p => p.currency==="ARS");
+        const pagosPrueba = pagos.filter(p => p.isTrial);
+
+        // Agrupar pagos reales por mes (YYYY-MM)
+        const byMonth = {};
+        pagosReales.forEach(p => {
+          const ts = p.createdAt?._seconds ? new Date(p.createdAt._seconds*1000) : p.createdAt?.toDate?.() || new Date();
+          const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,"0")}`;
+          if (!byMonth[key]) byMonth[key] = {usdt:0, ars:0, count:0};
+          if (p.currency==="USDT") byMonth[key].usdt += Number(p.amount)||0;
+          if (p.currency==="ARS")  byMonth[key].ars  += Number(p.amount)||0;
+          byMonth[key].count++;
+        });
+        const meses = Object.entries(byMonth).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,12);
+
+        return (
+        <div style={{maxWidth:960,margin:"0 auto",padding:"0 20px"}}>
+          {/* Totales */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:24}}>
+            {[
+              {label:"Total recaudado (USDT)",value:`$${(stats.totalUSDT||0).toLocaleString("en-US")} USDT`,color:T.green,sub:`${pagosUSDT.length} pago${pagosUSDT.length!==1?"s":""}`},
+              {label:"Total recaudado (ARS)",value:`$${(stats.totalARS||0).toLocaleString("es-AR")} ARS`,color:T.blue,sub:`${pagosARS.length} pago${pagosARS.length!==1?"s":""}`},
+              {label:"MRR estimado",value:`$${stats.mrrUsdt||0} USDT`,color:T.accent,sub:`$${(stats.mrrArs||0).toLocaleString("es-AR")} ARS/mes`},
+              {label:"Pagos reales",value:stats.pagosRealesCount||0,color:T.textMd,sub:"confirmados con cobro"},
+              {label:"Pruebas activas",value:stats.countPruebas||0,color:T.yellow,sub:"no cuentan como ingreso"},
+            ].map((k,i)=>(
+              <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${k.color}`,borderRadius:10,padding:"16px 18px"}}>
+                <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>{k.label}</div>
+                <div style={{fontSize:20,fontWeight:700,color:k.color,lineHeight:1.2}}>{k.value}</div>
+                {k.sub&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>{k.sub}</div>}
+              </div>
+            ))}
+          </div>
+
+          {/* Desglose por plan */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:24}}>
+            {["plus","full"].map(plan=>{
+              const pp = pagosReales.filter(p=>p.plan===plan);
+              const usdtP = pp.filter(p=>p.currency==="USDT").reduce((s,p)=>s+Number(p.amount||0),0);
+              const arsP  = pp.filter(p=>p.currency==="ARS").reduce((s,p)=>s+Number(p.amount||0),0);
+              return (
+                <div key={plan} style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${PLAN_C[plan]}`,borderRadius:10,padding:"16px 18px"}}>
+                  <div style={{fontSize:12,fontWeight:700,color:PLAN_C[plan],marginBottom:8,textTransform:"uppercase"}}>{plan==="plus"?"⭐ Plus":"💎 Full"}</div>
+                  <div style={{fontSize:14,fontWeight:600,color:T.text}}>${usdtP} USDT · ${arsP.toLocaleString("es-AR")} ARS</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:3}}>{pp.length} pago{pp.length!==1?"s":""} confirmados</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Tabla mensual */}
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:24}}>
+            <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,fontWeight:700,fontSize:13,color:T.text}}>Ingresos por mes</div>
+            {meses.length===0 ? (
+              <div style={{padding:"32px",textAlign:"center",color:T.textSm,fontSize:13}}>Sin pagos registrados aún.</div>
+            ) : (
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead style={{background:T.bg}}>
+                  <tr>
+                    {["Mes","USDT","ARS","Pagos"].map(h=>(
+                      <th key={h} style={{padding:"10px 16px",textAlign:h==="Mes"?"left":"right",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",borderBottom:`1px solid ${T.border}`}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {meses.map(([key,val],i)=>{
+                    const [year,mon] = key.split("-");
+                    const label = new Date(Number(year),Number(mon)-1,1).toLocaleString("es-AR",{month:"long",year:"numeric"});
+                    return (
+                      <tr key={key} style={{borderBottom:i<meses.length-1?`1px solid ${T.borderL}`:"none"}}>
+                        <td style={{padding:"11px 16px",color:T.text,fontWeight:500,textTransform:"capitalize"}}>{label}</td>
+                        <td style={{padding:"11px 16px",textAlign:"right",color:val.usdt>0?T.green:T.textSm,fontWeight:600}}>{val.usdt>0?`$${val.usdt} USDT`:"—"}</td>
+                        <td style={{padding:"11px 16px",textAlign:"right",color:val.ars>0?T.blue:T.textSm,fontWeight:600}}>{val.ars>0?`$${val.ars.toLocaleString("es-AR")} ARS`:"—"}</td>
+                        <td style={{padding:"11px 16px",textAlign:"right",color:T.textMd}}>{val.count}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Detalle completo */}
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+            <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,fontWeight:700,fontSize:13,color:T.text}}>Detalle de transacciones</div>
+            {[...pagosReales, ...pagosPrueba].sort((a,b)=>{
+              const ta = a.createdAt?._seconds||0; const tb = b.createdAt?._seconds||0; return tb-ta;
+            }).map((p,i,arr)=>{
+              const u = usuarios.find(x=>x._id===p.uid);
+              const es = p.isTrial;
+              return (
+                <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderBottom:i<arr.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap",opacity:es?0.65:1}}>
+                  <span style={{flex:1,fontSize:12,color:T.text,minWidth:140}}>{u?.email||p.email||p.uid}</span>
+                  <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{p.plan}</span>
+                  {es
+                    ? <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>🎁 PRUEBA</span>
+                    : <>
+                        <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.currency==="USDT"?T.greenBg:T.blueBg,color:p.currency==="USDT"?T.green:T.blue}}>${p.amount} {p.currency}</span>
+                      </>
+                  }
+                  {p.mesesConfirmados&&<span style={{fontSize:11,color:T.textSm}}>{p.mesesConfirmados}m</span>}
+                  <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{fmtDate(p.createdAt)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        );
+      })()}
 
       {/* ===== TAB DASHBOARD ===== */}
       {!loading&&tab==="dashboard"&&(
@@ -6750,6 +6876,7 @@ function AppAdmin({T, user, onBack}) {
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                     <span style={{fontSize:13,fontWeight:600,color:T.text}}>{u.email||u.nombre}</span>
                     <span style={{fontSize:11,padding:"2px 7px",borderRadius:5,fontWeight:600,background:PLAN_BG[u.plan||"free"]||T.surface,color:PLAN_C[u.plan||"free"]||T.textSm}}>{u.plan||"free"}</span>
+                    {u.isTrial&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:5,fontWeight:700,background:T.yellowBg,color:T.yellow}}>🎁 PRUEBA</span>}
                     {u.planExpiry&&u.plan!=="free"&&(
                       <span style={{fontSize:11,color:expiryColor}}>
                         {days!==null?`vence en ${days}d (${fmtDate(u.planExpiry)})`:`vence ${fmtDate(u.planExpiry)}`}
@@ -6831,34 +6958,65 @@ function AppAdmin({T, user, onBack}) {
                     {/* ── 3. ACTIVAR / CAMBIAR PLAN ── */}
                     <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.borderL}`}}>
                       <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Activar / cambiar plan</div>
-                      <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>
                         {u.plan!=="free"
-                          ? "Si el usuario ya tiene plan vigente, los meses se suman al vencimiento actual."
+                          ? "Si ya tiene plan vigente, los meses se suman al vencimiento actual."
                           : "Activará el plan desde hoy."}
                       </div>
-                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                        <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
-                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                          <option value="plus">⭐ Plus — $29 USDT / $35.000 ARS</option>
-                          <option value="full">💎 Full — $79 USDT / $95.000 ARS</option>
-                        </select>
-                        <select value={selMeses} onChange={e=>setUMeses(prev=>({...prev,[u._id]:e.target.value}))}
-                          style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                          {[["1","1 mes"],["2","2 meses"],["3","3 meses"],["6","6 meses"],["12","12 meses"]].map(([v,l])=>(
-                            <option key={v} value={v}>{l}</option>
-                          ))}
-                        </select>
-                        <AsyncButton
-                          onClick={()=>activarPlan(u._id, selPlan, Number(selMeses))}
-                          style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",background:selPlan==="plus"?T.blue:T.purple}}>
-                          Activar {selMeses} mes{Number(selMeses)>1?"es":""} de {selPlan}
-                        </AsyncButton>
-                        {u.plan!=="free"&&(
-                          <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>
-                            Desactivar plan
+
+                      {/* Pago real */}
+                      <div style={{background:T.surface,borderRadius:8,padding:"12px 14px",marginBottom:10}}>
+                        <div style={{fontSize:11,fontWeight:600,color:T.textMd,marginBottom:8}}>💳 Con cobro — cuenta como ingreso</div>
+                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                          <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
+                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                            <option value="plus">⭐ Plus</option>
+                            <option value="full">💎 Full</option>
+                          </select>
+                          <select value={selMeses} onChange={e=>setUMeses(prev=>({...prev,[u._id]:e.target.value}))}
+                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                            {[["1","1 mes"],["2","2 meses"],["3","3 meses"],["6","6 meses"],["12","12 meses"]].map(([v,l])=>(
+                              <option key={v} value={v}>{l}</option>
+                            ))}
+                          </select>
+                          <AsyncButton
+                            onClick={()=>activarPlan(u._id, selPlan, Number(selMeses))}
+                            style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",background:selPlan==="plus"?T.blue:T.purple}}>
+                            Activar {selMeses} mes{Number(selMeses)>1?"es":""} de {selPlan}
                           </AsyncButton>
-                        )}
+                        </div>
                       </div>
+
+                      {/* Prueba */}
+                      <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:8,padding:"12px 14px",marginBottom:10}}>
+                        <div style={{fontSize:11,fontWeight:600,color:T.yellow,marginBottom:8}}>🎁 Plan de prueba — NO cuenta como ingreso</div>
+                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                          <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
+                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                            <option value="plus">⭐ Plus</option>
+                            <option value="full">💎 Full</option>
+                          </select>
+                          <select
+                            value={uPruebaMeses[u._id]||"1"}
+                            onChange={e=>setUPruebaMeses(prev=>({...prev,[u._id]:e.target.value}))}
+                            style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
+                            {[["1","1 mes"],["2","2 meses"],["3","3 meses"],["6","6 meses"]].map(([v,l])=>(
+                              <option key={v} value={v}>{l}</option>
+                            ))}
+                          </select>
+                          <AsyncButton
+                            onClick={()=>activarPrueba(u._id, selPlan, Number(uPruebaMeses[u._id]||1))}
+                            style={{...BtnSecondary(T),fontSize:12,padding:"7px 16px",color:T.yellow,border:`1px solid ${T.yellow}44`}}>
+                            🎁 Activar prueba
+                          </AsyncButton>
+                        </div>
+                      </div>
+
+                      {u.plan!=="free"&&(
+                        <AsyncButton onClick={()=>desactivarPlan(u._id)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>
+                          Desactivar plan
+                        </AsyncButton>
+                      )}
                     </div>
 
                     {/* ── 4. NOTA INTERNA ── */}
