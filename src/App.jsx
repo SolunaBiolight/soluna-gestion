@@ -1388,6 +1388,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
 // ===========================================
 function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHome, totalOrdersCount, onGenerarCanje, view:viewProp, setView:setViewProp}) {
   const [reclamos,setReclamos]=useState([]);
+  const [showGuia,setShowGuia]=useState(false);
   const [view,setViewState]=useState(viewProp||"reclamos"); // reclamos | config
   React.useEffect(()=>{ if(viewProp!==undefined&&viewProp!==view) setViewState(viewProp); },[viewProp]);
   const setView=(v)=>{ setViewState(v); setViewProp&&setViewProp(v); };
@@ -1755,6 +1756,41 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       ]} active={view} onChange={(v)=>{setView(v);setActiveReclamo(null);}}/>
 
       <div style={{padding:"20px 24px 64px",maxWidth:1400,margin:"0 auto",width:"100%",boxSizing:"border-box",paddingRight:activeReclamo?460:24,transition:`padding-right 0.25s ${DS.ease}`}}>
+
+        {/* Guía colapsable */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:17}}>📖</span>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Reclamos?</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Guía rápida — tocá para {showGuia?"cerrar":"ver"}</div>
+              </div>
+            </div>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s ease",flexShrink:0}}><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {showGuia&&(
+            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
+                {[
+                  {step:"1",title:"Creá un reclamo",desc:"Tocá '+ Nuevo reclamo', buscá el pedido por número o nombre y completá el tipo de problema (cambio, rotura, extravío, etc.) y notas internas. También podés crearlo directo desde un pedido en la sección Envíos.",color:T.accent},
+                  {step:"2",title:"Gestioná con el kanban",desc:"Los reclamos se organizan en columnas: Nuevo → En proceso → Resolución → Cerrado. Arrastrá o cambiá el estado desde el detalle. Filtrá por tipo de reclamo para ver solo cambios, devoluciones, etc.",color:T.blue},
+                  {step:"3",title:"Detalle y comunicación",desc:"Tocá cualquier reclamo para abrir el panel lateral. Ahí podés ver el pedido original, agregar notas de seguimiento, registrar qué se le ofreció al cliente y marcar cuándo se resolvió.",color:T.yellow},
+                  {step:"4",title:"Generá un canje desde el reclamo",desc:"Si vas a reemplazar el producto, tocá 'Generar canje' — Growith crea automáticamente una entrada en Canjes con los datos del cliente y el producto, lista para trackear el envío de reposición.",color:T.green},
+                ].map(s=>(
+                  <div key={s.step} style={{display:"flex",gap:12,padding:14,background:T.bg,borderRadius:10,border:`1px solid ${T.border}`}}>
+                    <div style={{width:30,height:30,borderRadius:8,background:s.color+"18",border:`1px solid ${s.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
+                    <div><div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>{s.title}</div><div style={{fontSize:11,color:T.textMd,lineHeight:1.65}}>{s.desc}</div></div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:12,padding:12,background:T.blueBg,border:`1px solid ${T.blue}33`,borderRadius:10}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.blue,marginBottom:4}}>💡 Integración con Andreani</div>
+                <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>Growith chequea automáticamente los envíos con número de seguimiento y te avisa si hay paquetes con problemas en tránsito (devolución al remitente, extraviado, etc.). El banner verde arriba aparece cuando detecta algo que necesita tu atención.</div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* BANNER ANDREANI - Paquetes listos para retirar */}
         {andreaniAlertas.length > 0 && (
@@ -2460,6 +2496,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [saving,setSaving]=useState(false);
   const [viewTab,setViewTab]=useState("lista"); // lista | kanban | ranking | comisiones | perfiles
+  const [showGuia,setShowGuia]=useState(false);
   // Perfiles de influencers
   const [influencers,setInfluencers]=useState([]);
   const [showInfluencerForm,setShowInfluencerForm]=useState(false);
@@ -2753,6 +2790,43 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
             );
           })}
+        </div>
+
+        {/* Guía colapsable */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:17}}>📖</span>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Canjes?</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Guía rápida — tocá para {showGuia?"cerrar":"ver"}</div>
+              </div>
+            </div>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s ease",flexShrink:0}}><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {showGuia&&(
+            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
+                {[
+                  {step:"1",title:"Creá el perfil del influencer",desc:"Antes de crear un canje, andá a la tab 👤 Perfiles y creá el perfil del influencer con su código de descuento, el % de descuento que le ofrecés al público y el % de comisión que le corresponde. Esos datos se reusan en cada canje nuevo.",color:T.accent},
+                  {step:"2",title:"Registrá el canje",desc:"Tocá '+ Nuevo canje', elegí el perfil del influencer (se autocompleta) o cargalo manual, seleccioná los productos a enviar y el nicho. El estado arranca en 'Pendiente envío'. Desde Envíos también podés crear canjes directo desde un pedido.",color:T.blue},
+                  {step:"3",title:"Seguí el contenido comprometido",desc:"En el detalle del canje configurás cuántos reels, stories o posts acordaste. Cuando el influencer entrega, marcás los entregados. El semáforo verde/rojo en la lista te indica de un vistazo si ya cumplió o tiene contenido pendiente.",color:T.yellow},
+                  {step:"4",title:"Calculá comisiones reales",desc:"En la tab 'Pagos Cupones' conectás con Tienda Nube para ver cuántas ventas generó cada código de descuento en el período. Growith calcula el neto recibido (descontando comisión MP) y la comisión a pagar a cada influencer.",color:T.green},
+                ].map(s=>(
+                  <div key={s.step} style={{display:"flex",gap:12,padding:14,background:T.bg,borderRadius:10,border:`1px solid ${T.border}`}}>
+                    <div style={{width:30,height:30,borderRadius:8,background:s.color+"18",border:`1px solid ${s.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
+                    <div><div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>{s.title}</div><div style={{fontSize:11,color:T.textMd,lineHeight:1.65}}>{s.desc}</div></div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:12,padding:12,background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:10}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.purple,marginBottom:4}}>💡 Vistas disponibles</div>
+                <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>
+                  <strong style={{color:T.text}}>Lista</strong> — con filtros por estado, red y nicho. · <strong style={{color:T.text}}>Kanban</strong> — ver el flujo de todos los canjes por estado. · <strong style={{color:T.text}}>Ranking</strong> — influencers ordenados por alcance y performance. · <strong style={{color:T.text}}>Pagos Cupones</strong> — comisiones reales cruzadas con ventas de TN.
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Tabs de vista */}
@@ -3672,6 +3746,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 // APP ENVIOS
 // ===========================================
 function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenerarCanje, tab:tabProp, setTab:setTabProp}) {
+  const [showGuia,setShowGuia]=useState(false);
   const [tab,setTabState]=useState(tabProp||"panel");
   React.useEffect(()=>{ if(tabProp!==undefined&&tabProp!==tab) setTabState(tabProp); },[tabProp]);
   const setTab=(v)=>{ setTabState(v); setTabProp&&setTabProp(v); };
@@ -4633,6 +4708,43 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       ]} active={tab} onChange={setTab}/>
 
       <div style={{padding:"16px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
+
+        {/* Guía colapsable */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:17}}>📖</span>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Envíos?</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Guía rápida — tocá para {showGuia?"cerrar":"ver"}</div>
+              </div>
+            </div>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s ease",flexShrink:0}}><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {showGuia&&(
+            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
+                {[
+                  {step:"1",title:"Conectá tu tienda",desc:"Desde Config conectás Tienda Nube o Shopify. Los pedidos pagados aparecen automáticamente acá sin que tengas que hacer nada. Growith los trae en tiempo real y los clasifica por estado de preparación.",color:T.accent},
+                  {step:"2",title:"El pipeline de envíos",desc:"Los pedidos se organizan en 4 etapas: 'Por cobrar' (pendientes de pago), 'Por empaquetar' (pagados y listos para armar), 'Por enviar' (armados esperando retiro) y 'Buscar' para localizar cualquier pedido. Avanzá de etapa marcando los pedidos.",color:T.blue},
+                  {step:"3",title:"Generá etiquetas Andreani",desc:"Seleccioná uno o varios pedidos con el checkbox → tocá 'Generar etiquetas Andreani'. Growith crea el Excel en el formato exacto que pide Andreani para importación masiva. Lo descargás y lo subís al portal de Andreani.",color:T.yellow},
+                  {step:"4",title:"SKU en rótulos y seguimientos",desc:"La tab 'SKU en Rótulos' imprime el SKU del producto en las etiquetas para que el empaque sea más rápido. En 'Seguimientos' podés rastrear los envíos por número de tracking y ver el estado en Andreani.",color:T.green},
+                ].map(s=>(
+                  <div key={s.step} style={{display:"flex",gap:12,padding:14,background:T.bg,borderRadius:10,border:`1px solid ${T.border}`}}>
+                    <div style={{width:30,height:30,borderRadius:8,background:s.color+"18",border:`1px solid ${s.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
+                    <div><div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>{s.title}</div><div style={{fontSize:11,color:T.textMd,lineHeight:1.65}}>{s.desc}</div></div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:12,padding:12,background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:10}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.yellow,marginBottom:4}}>💡 Atajos de teclado</div>
+                <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>
+                  <strong style={{color:T.text}}>Ctrl/Cmd+A</strong> — seleccionar todos los pedidos visibles. · <strong style={{color:T.text}}>Escape</strong> — deseleccionar todo. · En la búsqueda podés buscar por número de pedido, nombre del cliente, email o teléfono.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* -- PANEL DE ENVIOS -- */}
         {tab==="panel"&&(
@@ -7300,6 +7412,7 @@ function AppTareas({T, user, onHome}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
+  const [showGuia, setShowGuia] = useState(false);
   const [tab, setTab] = useState("tareas");
   const [viewMode, setViewMode] = useState("lista");
   const [statusFilter, setStatusFilter] = useState("todos");
@@ -7346,27 +7459,13 @@ function AppTareas({T, user, onHome}) {
     return d;
   }
 
-  // Real-time listeners via Firestore onSnapshot
-  useEffect(()=>{
-    if(!user?.uid) return;
+  async function loadData() {
     setLoading(true);
-    // Tareas — field name is "uid" (not ownerId)
-    const qt=query(collection(db,"tareas"),where("uid","==",user.uid));
-    const ut=onSnapshot(qt,snap=>{
-      const tareas=snap.docs.map(d=>({_id:d.id,...d.data()}));
-      tareas.sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
-      setDatos(prev=>({...prev,tareas}));
-      setLoading(false);
-    },(e)=>{appAlert("Error al cargar tareas");setLoading(false);});
-    // Colaboradores — field name is "uid"
-    const qc=query(collection(db,"colaboradores"),where("uid","==",user.uid));
-    const uc=onSnapshot(qc,snap=>{
-      const colaboradores=snap.docs.map(d=>({_id:d.id,...d.data()}));
-      colaboradores.sort((a,b)=>a.nombre?.localeCompare(b.nombre,"es")||0);
-      setDatos(prev=>({...prev,colaboradores}));
-    },()=>{});
-    return ()=>{ut();uc();};
-  },[user?.uid]);
+    try { const d = await tareasApi({action:"getData"}); setDatos(d); }
+    catch(e){ appAlert("Error al cargar tareas: "+e.message); }
+    setLoading(false);
+  }
+  useEffect(()=>{ loadData(); },[]);
 
   function fmtDate(val) {
     if(!val) return "—";
@@ -7440,8 +7539,8 @@ function AppTareas({T, user, onHome}) {
     const colab = colaboradores.find(c=>c.email===ntAsignado);
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||""});
-    // onSnapshot updates datos automatically
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||""});
+    setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
     setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal");
     toast("Tarea creada ✓","success");
   }
@@ -7462,6 +7561,7 @@ function AppTareas({T, user, onHome}) {
     const linksArr = etLinks.filter(l=>l.url.trim());
     const checkArr = etChecklist.filter(i=>i.text.trim());
     await tareasApi({action:"updateTarea",tareaId:editTarea._id,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===editTarea._id?{...t,titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""}:t)}));
     setEditTarea(null);
     toast("Tarea actualizada ✓","success");
   }
@@ -7469,6 +7569,7 @@ function AppTareas({T, user, onHome}) {
   async function crearColaborador() {
     if(!ncNombre.trim()||!ncEmail.trim()) return appAlert("Nombre y email son requeridos");
     const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim()});
+    setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
     setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol("");
     toast("Colaborador agregado ✓","success");
     copyLink(d.token);
@@ -7476,6 +7577,7 @@ function AppTareas({T, user, onHome}) {
 
   async function updateEstado(tareaId, estado, feedback="") {
     await tareasApi({action:"updateEstado",tareaId,estado,feedback});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado,feedbackActual:estado==="revision"?feedback||null:null,correcciones:estado==="revision"?(t.correcciones||0)+1:t.correcciones}:t)}));
     setShowFeedback(prev=>({...prev,[tareaId]:false}));
     setFeedbackText(prev=>({...prev,[tareaId]:""}));
     toast("Estado actualizado","success");
@@ -7486,13 +7588,15 @@ function AppTareas({T, user, onHome}) {
   async function addComment(tareaId) {
     const texto = commentText[tareaId]?.trim();
     if(!texto) return;
-    await tareasApi({action:"addComment",tareaId,texto});
+    const d = await tareasApi({action:"addComment",tareaId,texto});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,comments:[...(t.comments||[]),d.comment]}:t)}));
     setCommentText(prev=>({...prev,[tareaId]:""}));
   }
 
   async function deleteTarea(tareaId) {
     if(!await appConfirm("¿Eliminar esta tarea?",{danger:true,okLabel:"Eliminar"})) return;
     await tareasApi({action:"deleteTarea",tareaId});
+    setDatos(prev=>({...prev,tareas:prev.tareas.filter(t=>t._id!==tareaId)}));
     if(expandedTarea===tareaId) setExpandedTarea(null);
     toast("Tarea eliminada","warning");
   }
@@ -7500,17 +7604,20 @@ function AppTareas({T, user, onHome}) {
   async function deleteColab(colabId) {
     if(!await appConfirm("¿Eliminar este colaborador?",{danger:true,okLabel:"Eliminar"})) return;
     await tareasApi({action:"deleteColaborador",colabId});
+    setDatos(prev=>({...prev,colaboradores:prev.colaboradores.filter(c=>c._id!==colabId)}));
     toast("Colaborador eliminado","warning");
   }
 
   async function duplicateTarea(tareaId) {
-    await tareasApi({action:"duplicateTarea",tareaId});
+    const d = await tareasApi({action:"duplicateTarea",tareaId});
+    setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
     toast("Tarea duplicada ✓","success");
   }
 
   async function regenerateToken(colabId) {
     if(!await appConfirm("¿Regenerar link? El link anterior dejará de funcionar.",{okLabel:"Regenerar"})) return;
-    await tareasApi({action:"regenerateToken",colabId});
+    const d = await tareasApi({action:"regenerateToken",colabId});
+    setDatos(prev=>({...prev,colaboradores:prev.colaboradores.map(c=>c._id===colabId?{...c,token:d.token}:c)}));
     toast("Nuevo link generado","success");
   }
 
@@ -7703,6 +7810,43 @@ function AppTareas({T, user, onHome}) {
       </div>
 
       <div style={{maxWidth:viewMode==="kanban"?1400:viewMode==="cal"?900:960,margin:"0 auto",padding:"20px 24px"}}>
+        {/* Guía colapsable */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:20}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:17}}>📖</span>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Tareas?</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Guía rápida — tocá para {showGuia?"cerrar":"ver"}</div>
+              </div>
+            </div>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s ease",flexShrink:0}}><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {showGuia&&(
+            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
+                {[
+                  {step:"1",title:"Agregá un colaborador",desc:"Tocá '+ Colaborador', poné el nombre y email. Growith genera un link único y secreto para esa persona. Mandáselo por WhatsApp — no necesita crear cuenta ni contraseña, el link es su acceso.",color:T.accent},
+                  {step:"2",title:"Creá y asigná tareas",desc:"Con '+ Nueva tarea' escribís el título, descripción, brief detallado, checklist de puntos, links a referencias o carpetas de Drive, fecha límite y prioridad. Elegís a quién asignarla y se manda email automático al colaborador.",color:T.blue},
+                  {step:"3",title:"El colaborador trabaja en su portal",desc:"Al abrir su link ve todas sus tareas pendientes. Puede marcar el checklist, hacer consultas que te llegan por email, indicar cuánto tiempo le va a llevar (estimación) y subir el link con su entrega.",color:T.yellow},
+                  {step:"4",title:"Revisás, aprobás o pedís cambios",desc:"Cuando entrega aparece en la cola naranja 'Para revisar'. Abrís la tarea, revisás la entrega y tocás ✓ Aprobar o 'Pedir cambios' con tu feedback. El colaborador recibe email con las correcciones y puede entregar de nuevo.",color:T.green},
+                ].map(s=>(
+                  <div key={s.step} style={{display:"flex",gap:12,padding:14,background:T.bg,borderRadius:10,border:`1px solid ${T.border}`}}>
+                    <div style={{width:30,height:30,borderRadius:8,background:s.color+"18",border:`1px solid ${s.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
+                    <div><div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>{s.title}</div><div style={{fontSize:11,color:T.textMd,lineHeight:1.65}}>{s.desc}</div></div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:12,padding:12,background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:10}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.purple,marginBottom:4}}>💡 Vistas disponibles</div>
+                <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>
+                  <strong style={{color:T.text}}>Lista</strong> — todas las tareas con filtros por estado y asignado. · <strong style={{color:T.text}}>Kanban</strong> — arrastrá o tocá para cambiar estados visualmente. · <strong style={{color:T.text}}>Calendario</strong> — ver deadlines del mes. La cola naranja arriba siempre muestra lo más urgente.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Tabs */}
         <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,marginBottom:20,width:"fit-content"}}>
           {[["tareas","📋 Tareas"],["equipo",`👥 Equipo (${colaboradores.length})`]].map(([id,label])=>(
@@ -14285,6 +14429,7 @@ function AppML({T, user, onHome, onGoConfig}) {
 // ===========================================
 function AppStock({T, user, onHome}) {
   const uid = user?.uid;
+  const [showGuia, setShowGuia] = useState(false);
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
@@ -15050,6 +15195,43 @@ function AppStock({T, user, onHome}) {
       </AppTopbar>
 
       <div style={{maxWidth:1200,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
+
+        {/* Guía colapsable */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginBottom:20}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:17}}>📖</span>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Stock?</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Guía rápida — tocá para {showGuia?"cerrar":"ver"}</div>
+              </div>
+            </div>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s ease",flexShrink:0}}><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {showGuia&&(
+            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
+                {[
+                  {step:"1",title:"Conectá tu tienda y elegí el período",desc:"Desde Config conectás Tienda Nube o Shopify. Growith trae automáticamente las ventas y el stock actual de cada producto. Elegí el período de análisis (7, 14, 30 días o rango personalizado) para ver la velocidad de ventas en ese lapso.",color:T.accent},
+                  {step:"2",title:"Análisis de stock y días restantes",desc:"El dashboard muestra para cada producto cuántas unidades vendiste, cuántas te quedan y — lo más importante — los 'días de inventario': cuántos días te dura el stock al ritmo de ventas actual. En rojo = riesgo de quiebre inminente.",color:T.blue},
+                  {step:"3",title:"Configurá alertas de reposición",desc:"Desde la tab 'Alertas' o tocando el ícono de campana en cada producto configurás en cuántos días querés que te avise antes de quedarte sin stock. Growith calcula la fecha estimada de quiebre y te alerta cuando se acerca.",color:T.yellow},
+                  {step:"4",title:"Lead times y historial de quiebres",desc:"En 'Lead Times' registrás cuántos días tarda en llegar el restock de cada proveedor. Eso le permite a Growith calcular exactamente cuándo tenés que pedir para no quedar sin stock. En 'Quiebres' ves el historial de productos que se agotaron.",color:T.green},
+                ].map(s=>(
+                  <div key={s.step} style={{display:"flex",gap:12,padding:14,background:T.bg,borderRadius:10,border:`1px solid ${T.border}`}}>
+                    <div style={{width:30,height:30,borderRadius:8,background:s.color+"18",border:`1px solid ${s.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
+                    <div><div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>{s.title}</div><div style={{fontSize:11,color:T.textMd,lineHeight:1.65}}>{s.desc}</div></div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:12,padding:12,background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.red,marginBottom:4}}>⚠️ Días de inventario</div>
+                <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>
+                  <strong style={{color:T.text}}>Rojo (&lt;7 días)</strong> — riesgo alto, pedí restock urgente. · <strong style={{color:T.text}}>Amarillo (7-14 días)</strong> — zona de atención, planificá. · <strong style={{color:T.text}}>Verde (&gt;14 días)</strong> — nivel seguro. Los días se calculan como stock_actual ÷ ventas_diarias_promedio del período elegido.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Período + date picker */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,flexWrap:"wrap"}}>
@@ -16165,12 +16347,17 @@ export default function App() {
     return ()=>{u1();u2();};
   },[user]);
 
-  // Listener de tareas "entregado" para notificación en topbar (field "uid")
+  // Polling de tareas "entregado" para notificación en topbar (via API, cada 60s)
   useEffect(()=>{
     if(!user?.uid) return;
-    const q=query(collection(db,"tareas"),where("uid","==",user.uid),where("estado","==","entregado"));
-    const unsub=onSnapshot(q,snap=>setTareasForReview(snap.size),()=>{});
-    return ()=>unsub();
+    const poll=()=>{
+      fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getData",uid:user.uid})})
+        .then(r=>r.json()).then(d=>{ if(d.tareas) setTareasForReview(d.tareas.filter(t=>t.estado==="entregado").length); })
+        .catch(()=>{});
+    };
+    poll();
+    const id=setInterval(poll,60000);
+    return ()=>clearInterval(id);
   },[user?.uid]);
 
   // Vista pública de colaborador (sin login, acceso por token)
