@@ -218,7 +218,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
-      subs:[{id:"pendientes",label:"Pendientes"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Histórico"},{id:"cuits",label:"CUITs"}]},
+      subs:[{id:"pendientes",label:"Pendientes"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
   ];
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
   const W = collapsed ? 64 : 224;
@@ -9101,7 +9101,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const msg = `¿Anular Factura ${resumen.letra} N° ${String(resumen.comprobante).padStart(8,"0")}?\n\n` +
       `Se emite una Nota de Crédito ${resumen.letra} por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} que revierte 100% la factura en ARCA. ` +
       `El IVA débito fiscal se descuenta de tu facturado del mes al cerrar el período.${emisorInfo}\n\n` +
-      `${resumen.orden_id?.startsWith?.("ML-") ? "📎 Se DESADJUNTA la factura original del pack de Mercado Libre — la venta queda como no facturada para que puedas re-emitirla con el CUIT correcto.\n\n" : ""}` +
+      `${resumen.orden_id?.startsWith?.("ML-") ? "📎 Se DESADJUNTA la factura original de Mercado Libre — la venta queda como no facturada.\n\n" : ""}` +
       `Esta acción no se puede deshacer.`;
     if (!await appConfirm(msg, { okLabel: "Emitir NC y anular", danger: true })) return;
     const factura = {
@@ -9793,13 +9793,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{maxHeight:420,overflowY:"auto"}}>
                           {items.map(([id,o])=>{
                             const billed = !!o._billed;
+                            const wasAnulada = !billed && !!o._was_anulada;
                             const sel = !billed && !!tnSelected[id];
                             const fechaHora = fmtFechaHora(o.fecha);
                             const tipoFact = esMono ? "C" : (o.doc_tipo === "CUIT" ? "A" : "B");
                             const plat = o._platform;
                             const label = o._platform_label || (plat==="tiendanube"?"TN":plat==="shopify"?"SH":plat==="mercadolibre"?"ML":"—");
-                            const bg = billed ? T.green+"18" : sel ? T.accentSolid+"10" : "transparent";
-                            const bord = billed ? "1px solid "+T.green+"33" : "1px solid "+T.borderL;
+                            const bg = billed ? T.green+"18" : wasAnulada ? T.textSm+"15" : sel ? T.accentSolid+"10" : "transparent";
+                            const bord = billed ? "1px solid "+T.green+"33" : wasAnulada ? "1px solid "+T.textSm+"33" : "1px solid "+T.borderL;
                             return (
                               <div key={id} onClick={()=>{ if(!billed) setTnSelected(prev=>({...prev,[id]:!prev[id]})); }} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,cursor:billed?"default":"pointer",background:bg,borderBottom:bord,opacity:billed?0.85:1}}>
                                 {billed
@@ -9808,12 +9809,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 }
                                 <span style={{fontSize:10,color:T.textSm,minWidth:74}}>{fechaHora}</span>
                                 <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:badgeColor(plat),color:badgeTextColor(plat),fontWeight:700,minWidth:24,textAlign:"center"}}>{label}</span>
+                                {wasAnulada && (
+                                  <span title={`Anulada con NC el ${o._anulada_info?.anulada_at?new Date(o._anulada_info.anulada_at).toLocaleDateString("es-AR"):"—"}`} style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"22",color:T.textSm,fontWeight:700,whiteSpace:"nowrap",flexShrink:0,letterSpacing:0.3}}>🔄 ANULADA</span>
+                                )}
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
                                   <div style={{fontSize:12,fontWeight:600,color:billed?T.green:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
-                                  <div style={{fontSize:10,color:billed?T.green:T.textSm}}>
+                                  <div style={{fontSize:10,color:billed?T.green:wasAnulada?T.textSm:T.textSm}}>
                                     {billed
                                       ? `✓ Ya facturada · F${o._billed_info?.letra||""} N° ${String(o._billed_info?.nro||"").padStart(8,"0")}`
-                                      : `F${tipoFact} · ${o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}`}
+                                      : wasAnulada
+                                        ? `Fue facturada y anulada con NC · podés re-facturar`
+                                        : `F${tipoFact} · ${o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}`}
                                   </div>
                                 </div>
                                 <div style={{fontSize:13,fontWeight:700,color:billed?T.green:T.text,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
@@ -10074,8 +10080,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px",marginTop:24}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                   <div>
-                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>Facturaciones recientes</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Cada lote queda registrado. Tocá uno para ver el detalle o descargar de nuevo los PDFs.</div>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>📚 Registros</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Cada lote es un apartado. Click para ver el detalle, descargar PDFs o anular con Nota de Crédito.</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:14}}>
                     <button onClick={async()=>{
@@ -10098,13 +10104,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   </div>
                 </div>
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}}>
                   {batches.map(b=>{
                     const fechaStr = b.emitido_at ? new Date(b.emitido_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
                     const isExpanded = expandedBatch === b.batch_id;
                     return (
-                      <div key={b.batch_id} style={{border:"1px solid "+T.borderL,borderRadius:10,overflow:"hidden",background:T.bg}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",cursor:"pointer"}} onClick={()=>setExpandedBatch(isExpanded ? null : b.batch_id)}>
+                      <div key={b.batch_id} style={{border:`1px solid ${isExpanded?T.accent+"55":T.border}`,borderRadius:14,overflow:"hidden",background:isExpanded?T.surface:T.card,transition:"all 0.18s ease",boxShadow:isExpanded?`0 4px 18px ${T.accentSolid}22`:"0 1px 3px rgba(0,0,0,0.08)"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",cursor:"pointer"}} onClick={()=>setExpandedBatch(isExpanded ? null : b.batch_id)}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:isExpanded?"rotate(90deg)":"none",transition:"transform 0.15s",flexShrink:0}}><path d="M9 18l6-6-6-6"/></svg>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:13,fontWeight:600,color:T.text}}>{fechaStr}</div>

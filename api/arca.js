@@ -2123,6 +2123,16 @@ export default async function handler(req, res) {
         const data = d.data();
         if (data.orden_id) billedMap.set(data.orden_id, { letra: data.letra, nro: data.nro, emitido_at: data.emitido_at });
       }
+      // IDs que fueron facturadas y luego ANULADAS con NC — para mostrar recordatorio
+      // visual aunque ya no estén "facturadas" (porque borramos de arca_comprobantes al anular)
+      const anuladaMap = new Map();
+      try {
+        const anulSnap = await db.collection("users").doc(uid).collection("arca_facturadas").get();
+        for (const d of anulSnap.docs) {
+          const data = d.data();
+          if (data.anulada) anuladaMap.set(d.id, { anulada_at: data.anulada_at, nc_comprobante: data.nc_comprobante });
+        }
+      } catch (_) {}
 
       const connections = [];
       const ordenes = {};
@@ -2164,6 +2174,8 @@ export default async function handler(req, res) {
             _order_number: String(o.number || o.id),
             _billed: !!billed,
             _billed_info: billed || null,
+            _was_anulada: !!anuladaMap.get(orderId),
+            _anulada_info: anuladaMap.get(orderId) || null,
             nombre: customerName,
             email: o.customer?.email || o.contact_email || "",
             dni: docRaw, ...clas,
@@ -2232,6 +2244,8 @@ export default async function handler(req, res) {
             _order_number: o.name || String(o.order_number || o.id),
             _billed: !!billed,
             _billed_info: billed || null,
+            _was_anulada: !!anuladaMap.get(orderId),
+            _anulada_info: anuladaMap.get(orderId) || null,
             nombre: customerName,
             email: o.email || o.customer?.email || "",
             dni: docRaw, ...clas,
