@@ -1564,7 +1564,7 @@ export default async function handler(req, res) {
           try {
             // Factura A sin CUIT en Firestore: recuperarlo desde ARCA y persistirlo.
             let consultaArca = null;
-            if (tipoFactura === 1 && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
+            if ([1, 2, 3].includes(tipoFactura) && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
               const pvOriginal = parseInt(factura.punto_venta) || pv;
               consultaArca = await consultarComprobante(token, sign, cuitNum, pvOriginal, tipoFactura, parseInt(factura.comprobante), wsfe);
               if (consultaArca && consultaArca.doc_tipo === "CUIT" && consultaArca.doc_nro) {
@@ -1703,7 +1703,7 @@ export default async function handler(req, res) {
 
         // Si es Factura A y nos llegó sin CUIT del receptor, intentar recuperarlo
         // consultando ARCA (FECompConsultar). ARCA siempre tiene los datos originales.
-        if (tipoFactura === 1 && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
+        if ([1, 2, 3].includes(tipoFactura) && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
           const pvOriginal = parseInt(factura.punto_venta) || pv;
           const datos = await consultarComprobante(token, sign, cuitNum, pvOriginal, tipoFactura, parseInt(factura.comprobante), wsfe);
           if (datos && datos.doc_tipo === "CUIT" && datos.doc_nro) {
