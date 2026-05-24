@@ -198,22 +198,27 @@ function DSEmpty({T, icon="📭", title, subtitle, action}) {
   );
 }
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, connectedStores={}}) {
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, connectedStores={}}) {
   const GROUPS = [
     { group:"OPERACIONES" },
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
-    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red"},
-    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
-    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange"},
+    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red",
+      subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
+    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange",
+      subs:[{id:"activos",label:"Activos"},{id:"historial",label:"Historial"},{id:"influencers",label:"Influencers"}]},
+    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
+      subs:[{id:"kanban",label:"Kanban"},{id:"calendario",label:"Calendario"},{id:"lista",label:"Lista"}]},
     { group:"ANALYTICS" },
-    {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red"},
+    {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
+      subs:[{id:"analisis",label:"Análisis"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2zM9 22V12h6v10", integrationKey:"ml"},
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     { group:"FINANZAS" },
-    {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
+    {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
+      subs:[{id:"pendientes",label:"Pendientes"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Histórico"},{id:"cuits",label:"CUITs"}]},
   ];
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
   const W = collapsed ? 64 : 224;
@@ -296,7 +301,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
                   gap:1,
                 }}>
                   {item.subs.map(sub=>{
-                    const subActive = (item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id)||(item.id==="meta"&&metaTab===sub.id);
+                    const subActive = (item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id)||(item.id==="meta"&&metaTab===sub.id)||(item.id==="stock"&&stockTab===sub.id)||(item.id==="arca"&&arcaTab===sub.id)||(item.id==="tareas"&&tareasTab===sub.id)||(item.id==="canjes"&&canjesTab===sub.id);
                     return (
                       <button key={sub.id}
                         onClick={()=>{
@@ -304,6 +309,10 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
                           if(item.id==="envios") setEnviosTab&&setEnviosTab(sub.id);
                           if(item.id==="reclamos") setReclamosView&&setReclamosView(sub.id);
                           if(item.id==="meta") setMetaTab&&setMetaTab(sub.id);
+                          if(item.id==="stock") setStockTab&&setStockTab(sub.id);
+                          if(item.id==="arca") setArcaTab&&setArcaTab(sub.id);
+                          if(item.id==="tareas") setTareasTab&&setTareasTab(sub.id);
+                          if(item.id==="canjes") setCanjesTab&&setCanjesTab(sub.id);
                         }}
                         style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",
                           background:"none",border:"none",
@@ -14336,13 +14345,15 @@ function AppML({T, user, onHome, onGoConfig}) {
 // ===========================================
 // APP STOCK / INVENTARIO
 // ===========================================
-function AppStock({T, user, onHome}) {
+function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const uid = user?.uid;
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [dataPrev, setDataPrev] = useState(null);
-  const [tab, setTab] = useState("analisis");
+  const [tabLocal, setTabLocal] = useState("analisis");
+  const tab = tabProp !== undefined ? tabProp : tabLocal;
+  const setTab = setTabProp || setTabLocal;
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("units");
   const [sortDir, setSortDir] = useState("desc");
@@ -15069,7 +15080,6 @@ function AppStock({T, user, onHome}) {
     {id:"items",label:"📋 Items"},
     {id:"depositos",label:"🏬 Depósitos"},
     {id:"historial",label:"📜 Historial"},
-    {id:"facturacion",label:"💰 Facturación"},
     {id:"alertas",label:`🚨 Alertas${alertas.length>0?` (${alertas.length})`:""}`},
   ];
 
@@ -15979,6 +15989,10 @@ export default function App() {
   const [enviosTab,setEnviosTab]=useState("panel");
   const [reclamosView,setReclamosView]=useState("reclamos");
   const [metaTab,setMetaTab]=useState("productos");
+  const [stockTab,setStockTab]=useState("analisis");
+  const [arcaTab,setArcaTab]=useState("pendientes");
+  const [tareasTab,setTareasTab]=useState("kanban");
+  const [canjesTab,setCanjesTab]=useState("activos");
   const [cmdOpen,setCmdOpen]=useState(false);
   const [tareasForReview,setTareasForReview]=useState(0);
   const [connectedStores,setConnectedStores]=useState({tn:false,shopify:false,ml:false,meta:false});
@@ -16292,7 +16306,7 @@ export default function App() {
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
   else if(page==="arca") pageContent = planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
-  else if(page==="stock") pageContent = planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="stock") pageContent = planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
   else if(page==="ml") pageContent = planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")}/></PageView>;
   else if(page==="meta") pageContent = planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
   else if(page==="tareas") pageContent = planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
@@ -16314,7 +16328,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} connectedStores={connectedStores}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} connectedStores={connectedStores}/>
         <div style={{flex:1,minWidth:0,paddingBottom:"68px"}} className="main-content">
           {/* Mini topbar global con Cmd+K hint */}
           <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:DS.sp.md,height:48}}>

@@ -774,6 +774,12 @@ async function generarPDF(factData, config) {
     console.error("[pdf] no se pudo generar QR:", e.message);
   }
 
+  // Formato moneda argentino: $43.980,90 (punto miles, coma decimal).
+  const fmtAR = (n) => {
+    const num = Number(n) || 0;
+    return num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
   // Banner opcional (config.banner_b64 — data URL "data:image/png;base64,...")
   let bannerImage = null;
   if (config.banner_b64 && typeof config.banner_b64 === "string") {
@@ -817,8 +823,9 @@ async function generarPDF(factData, config) {
     const COL_GREY = rgb(0.45, 0.45, 0.5);
     const COL_LINE = rgb(0.78, 0.78, 0.82);
     const COL_HEAD_BG = rgb(0.96, 0.96, 0.98);
-    const COL_ACCENT = rgb(0.12, 0.16, 0.32); // azul oscuro sobrio
-    const COL_ACCENT_SOFT = rgb(0.93, 0.94, 0.97);
+    // Diseño monocromo: el "acento" pasa a ser negro / gris muy oscuro.
+    const COL_ACCENT = rgb(0, 0, 0);
+    const COL_ACCENT_SOFT = rgb(0.95, 0.95, 0.95);
 
     const draw = (text, x, y, size, bold = false, align = "left", color = COL_BLACK) => {
       const font = bold ? fontB : fontR;
@@ -962,9 +969,9 @@ async function generarPDF(factData, config) {
         nombreItem,
         String(item.cantidad),
         "unidades",
-        precioUnit.toFixed(2),
-        bonif > 0 ? bonif.toFixed(2) : "0,00",
-        subtotal.toFixed(2),
+        fmtAR(precioUnit),
+        bonif > 0 ? fmtAR(bonif) : "0,00",
+        fmtAR(subtotal),
         ...(showIVA ? ["21,00%"] : []),
       ];
 
@@ -1001,10 +1008,10 @@ async function generarPDF(factData, config) {
     if (showIVA) {
       // Discriminación IVA por alícuota (todos en 0 menos 21% que tiene el monto).
       const rows = [
-        ["Importe Neto Gravado:", "$ " + neto.toFixed(2)],
+        ["Importe Neto Gravado:", "$ " + fmtAR(neto)],
         ["IVA 0%:", "$ 0,00"],
         ["IVA 10,5%:", "$ 0,00"],
-        ["IVA 21%:", "$ " + iva21.toFixed(2)],
+        ["IVA 21%:", "$ " + fmtAR(iva21)],
         ["IVA 27%:", "$ 0,00"],
         ["Importe Otros Tributos:", "$ 0,00"],
       ];
@@ -1015,7 +1022,7 @@ async function generarPDF(factData, config) {
       }
     } else {
       draw("Subtotal:", labelX, ty2, 8, false, "right");
-      draw("$ " + total.toFixed(2), valX, ty2, 8, false, "right");
+      draw("$ " + fmtAR(total), valX, ty2, 8, false, "right");
       ty2 += 12;
     }
     // Línea separadora antes del importe total
@@ -1026,7 +1033,7 @@ async function generarPDF(factData, config) {
       color: COL_ACCENT,
     });
     draw("IMPORTE TOTAL:", labelX, ty2 + 22, 10, true, "right", rgb(1, 1, 1));
-    draw("$ " + total.toFixed(2), valX, ty2 + 22, 12, true, "right", rgb(1, 1, 1));
+    draw("$ " + fmtAR(total), valX, ty2 + 22, 12, true, "right", rgb(1, 1, 1));
 
     // ─────── CAE / AUTORIZACIÓN + QR ARCA ───────
     const caeY = totY + totH + 14;
