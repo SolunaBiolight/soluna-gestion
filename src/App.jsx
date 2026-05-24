@@ -1760,10 +1760,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
 
-      <AppTabs T={T} tabs={[
-        {id:"reclamos",label:"Reclamos",badge:stats.urgentes,badgeColor:T.red},
-        {id:"config",label:"Configuración"},
-      ]} active={view} onChange={(v)=>{setView(v);setActiveReclamo(null);}}/>
+      {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
 
       <div style={{padding:"20px 24px 64px",maxWidth:1400,margin:"0 auto",width:"100%",boxSizing:"border-box",paddingRight:activeReclamo?460:24,transition:`padding-right 0.25s ${DS.ease}`}}>
 
@@ -4657,11 +4654,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           ⟳ Sincronizar
         </AsyncButton>
       </AppTopbar>
-      <AppTabs T={T} tabs={[
-        {id:"panel",label:"📦 Panel de Envíos"},
-        {id:"sku",label:"🔖 SKU en Rótulos"},
-        {id:"seguimientos",label:"📮 Seguimientos"},
-      ]} active={tab} onChange={setTab}/>
+      {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
 
       <div style={{padding:"16px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
 
@@ -12236,7 +12229,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           </div>
         )}
       </AppTopbar>
-      <AppTabs T={T} tabs={TABS} active={tab} onChange={setTab}/>
+      {/* Tabs internos REMOVIDOS — navegación va por el sidebar izquierdo */}
 
       {/* Banner si la cuenta esta conectada pero falta seleccionar ad_account_id */}
       {activeAcc && !activeAcc.ad_account_id && (
@@ -15167,7 +15160,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               {[
                 {label:`Unidades vendidas`,val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"📦"},
                 {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||"#3b82f6",icon:"🔢"},
-                {label:"Facturación",val:fmtARS(totalRev),sub:`${fmtARS(totalRev/(days||1))}/día`,color:T.green,icon:"💰"},
+                // KPI Facturación removido — esta info va en la próxima sección de Márgenes.
                 {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||"#eab308"):T.green,icon:"⏳"},
                 {label:"Sin stock",val:kpiEmpty,sub:"agotados",color:T.red,icon:"⛔"},
                 {label:"Stock crítico",val:kpiCritical,sub:"menos de 7 días",color:T.red+"cc",icon:"🔴"},
@@ -15181,15 +15174,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               ))}
             </div>
 
-            {/* Tabs */}
-            <div style={{display:"flex",gap:2,marginBottom:20,background:T.surface,borderRadius:10,padding:3,width:"fit-content"}}>
-              {TABS.map(t=>(
-                <button key={t.id} onClick={()=>setTab(t.id)}
-                  style={{padding:"8px 20px",fontSize:13,fontWeight:tab===t.id?700:500,border:"none",borderRadius:8,background:tab===t.id?T.card:"transparent",color:tab===t.id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===t.id?"0 1px 4px rgba(0,0,0,0.15)":"none",transition:"all 0.15s",whiteSpace:"nowrap"}}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
+            {/* Tabs internos REMOVIDOS — navegación va por el sidebar izquierdo */}
 
             {/* ── BLOQUE COMÚN: Gráfico + Resumen + Donuts ── */}
             {(()=>{
