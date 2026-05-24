@@ -10117,14 +10117,23 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </button>
                     <button onClick={async()=>{
                       if(!cuitSel) return;
-                      if(!await appConfirm("Esto recorre todas las ventas de ML que ya tienen Nota de Crédito emitida y elimina la factura adjunta en cada pack. Útil para limpiar las anuladas viejas que no se desadjuntaron en su momento.\n\n¿Continuar?",{okLabel:"Limpiar ML"})) return;
+                      if(!await appConfirm("Recorre todas las ventas de ML que ya tienen Nota de Crédito emitida e intenta eliminar la factura adjunta en cada pack vía API.\n\nNota: ML no siempre permite borrar fiscal documents via API. Las que fallen te las listo para borrar a mano.\n\n¿Continuar?",{okLabel:"Limpiar ML"})) return;
                       setEmitting(true);
                       const d = await api("cleanup_ml_anuladas","POST",{});
                       setEmitting(false);
                       if(d.error){toast("Error: "+d.error,"error");return;}
                       if(d.total===0){toast(d.message||"Sin pendientes","info");return;}
-                      toast(`${d.detached}/${d.total} ventas limpiadas en ML${d.failed?` · ${d.failed} con error`:""}`,d.failed>0?"warning":"success");
-                    }} disabled={emitting||!cuitSel} title="Recorre las ventas ML ya anuladas con NC y elimina la factura adjunta" style={{background:"transparent",border:`1px solid ${T.textMd}55`,color:T.textMd,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:emitting?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                      // Si hubo errores, mostrar detalle
+                      if(d.failed>0){
+                        const fallidas = (d.results||[]).filter(r=>!r.ok).slice(0,15);
+                        const detalle = fallidas.map(r => `· ${r.order_id} → ${r.reason||"sin detalle"}`).join("\n");
+                        const links = fallidas.map(r => `https://www.mercadolibre.com.ar/ventas/${(r.order_id||"").replace("ML-","")}/detalle`).join("\n");
+                        await appAlert(`Limpieza terminada: ${d.detached}/${d.total} OK · ${d.failed} fallaron\n\nML no permitió eliminar estas vía API:\n${detalle}${fallidas.length<d.failed?`\n…y ${d.failed-fallidas.length} más`:""}\n\nAbrí cada venta en ML y eliminá la factura a mano (3 puntitos del documento adjunto → Eliminar). Te paso los links en consola.\n\n${links}`);
+                        console.log("Links ventas ML a limpiar manualmente:\n"+links);
+                      } else {
+                        toast(`✓ ${d.detached}/${d.total} ventas limpiadas en ML`,"success");
+                      }
+                    }} disabled={emitting||!cuitSel} title="Recorre las ventas ML anuladas con NC e intenta desadjuntar la factura" style={{background:"transparent",border:`1px solid ${T.textMd}55`,color:T.textMd,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:emitting?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
                       🧹 Limpiar ML
                     </button>
                     <div style={{textAlign:"right"}}>

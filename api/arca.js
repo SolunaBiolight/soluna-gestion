@@ -554,14 +554,21 @@ async function desadjuntarFacturaML(db, uid, orderIdFull) {
     );
     if (r1.count > 0) return { ok: true, deleted: r1.count, endpoint: "packs/{pack_id}", tried: triedEndpoints };
 
-    // Intento 2: /orders/{order_id}/fiscal_documents (algunas ventas single-item)
+    // Intento 2: /orders/{order_id}/fiscal_documents
     let r2 = await tryListAndDelete(
       `https://api.mercadolibre.com/orders/${orderIdNum}/fiscal_documents`,
       (docId) => `https://api.mercadolibre.com/orders/${orderIdNum}/fiscal_documents/${docId}`
     );
     if (r2.count > 0) return { ok: true, deleted: r2.count, endpoint: "orders/{id}", tried: triedEndpoints };
 
-    return { ok: false, reason: "no_docs_or_delete_unsupported", tried: triedEndpoints, errors: [...r1.errors, ...r2.errors] };
+    // Reason más específico según lo que pasó
+    const lastStatus = triedEndpoints.length ? triedEndpoints[triedEndpoints.length - 1].status : null;
+    let reason = "no_docs_or_delete_unsupported";
+    if (lastStatus === 401 || lastStatus === 403) reason = `ML rechazó la operación (HTTP ${lastStatus}) — falta permiso en la app o token vencido`;
+    else if (lastStatus === 404) reason = "ML no encontró documentos adjuntos en este pack (ya estaba limpio o nunca se subió)";
+    else if (lastStatus === 405 || lastStatus === 501) reason = "ML no permite eliminar este documento vía API — borrar manualmente desde el panel de Mercado Libre";
+    else if (triedEndpoints.length === 0) reason = "no se pudo contactar a ML";
+    return { ok: false, reason, tried: triedEndpoints, errors: [...r1.errors, ...r2.errors] };
   } catch (e) {
     return { ok: false, reason: "exception", error: e.message };
   }
