@@ -351,6 +351,28 @@ async function getUltimoCbte(token, sign, cuitNum, puntoVenta, tipoCbte, wsfeUrl
   return m ? parseInt(m[1]) : 0;
 }
 
+// Consulta un comprobante ya emitido en ARCA y devuelve sus datos (receptor incluido).
+// Útil para recuperar doc_tipo/doc_nro cuando se perdieron en Firestore pero AFIP los tiene.
+// Devuelve null si el comprobante no existe o no se pudo parsear.
+async function consultarComprobante(token, sign, cuitNum, puntoVenta, tipoCbte, cbteNro, wsfeUrl) {
+  const body = `${authXml(token, sign, cuitNum)}
+    <ar:FeCompConsReq>
+      <ar:CbteTipo>${tipoCbte}</ar:CbteTipo>
+      <ar:CbteNro>${cbteNro}</ar:CbteNro>
+      <ar:PtoVta>${puntoVenta}</ar:PtoVta>
+    </ar:FeCompConsReq>`;
+  let xml;
+  try { xml = await wsfeCall("FECompConsultar", body, wsfeUrl); }
+  catch (_) { return null; }
+  // Si ARCA respondió con errores, devolver null.
+  if (/<Errors>[\s\S]*?<Err>/.test(xml)) return null;
+  const docTipoNum = parseInt((xml.match(/<DocTipo>(\d+)<\/DocTipo>/) || [])[1] || "0");
+  const docNroRaw = (xml.match(/<DocNro>(\d+)<\/DocNro>/) || [])[1] || "";
+  // 80=CUIT, 96=DNI, 99=Consumidor Final
+  const docTipo = docTipoNum === 80 ? "CUIT" : docTipoNum === 96 ? "DNI" : docTipoNum === 99 ? "CF" : "";
+  return { doc_tipo: docTipo, doc_nro: docNroRaw };
+}
+
 // Feriados nacionales AR 2026-2027 (hardcoded — actualizar a futuro).
 // Solo los inamovibles principales — los trasladables Buscan último día hábil.
 const FERIADOS_AR = new Set([
@@ -1540,6 +1562,20 @@ export default async function handler(req, res) {
           const tipoFactura = parseInt(factura.tipo) || 6;
           const tipoNC = tipoNCparaFactura(tipoFactura);
           try {
+            // Factura A sin CUIT en Firestore: recuperarlo desde ARCA y persistirlo.
+            if (tipoFactura === 1 && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
+              const pvOriginal = parseInt(factura.punto_venta) || pv;
+              const datos = await consultarComprobante(token, sign, cuitNum, pvOriginal, tipoFactura, parseInt(factura.comprobante), wsfe);
+              if (datos && datos.doc_tipo === "CUIT" && datos.doc_nro) {
+                factura.doc_tipo = "CUIT";
+                factura.doc_nro = datos.doc_nro;
+                try {
+                  const docId = `${String(cuitEmit).replace(/\D/g, "")}_${tipoFactura}_${String(factura.comprobante).padStart(8, "0")}`;
+                  await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
+                    .set({ doc_tipo: "CUIT", doc_nro: datos.doc_nro }, { merge: true });
+                } catch (_) {}
+              }
+            }
             if (ultimosNC[tipoNC] === undefined) {
               ultimosNC[tipoNC] = await getUltimoCbte(token, sign, cuitNum, pv, tipoNC, wsfe);
             }
@@ -1656,6 +1692,24 @@ export default async function handler(req, res) {
 
         const tipoFactura = parseInt(factura.tipo) || 6;
         const tipoNC = tipoNCparaFactura(tipoFactura);
+
+        // Si es Factura A y nos llegó sin CUIT del receptor, intentar recuperarlo
+        // consultando ARCA (FECompConsultar). ARCA siempre tiene los datos originales.
+        if (tipoFactura === 1 && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
+          const pvOriginal = parseInt(factura.punto_venta) || pv;
+          const datos = await consultarComprobante(token, sign, cuitNum, pvOriginal, tipoFactura, parseInt(factura.comprobante), wsfe);
+          if (datos && datos.doc_tipo === "CUIT" && datos.doc_nro) {
+            factura.doc_tipo = "CUIT";
+            factura.doc_nro = datos.doc_nro;
+            // Actualizar Firestore para que no haga falta volver a consultar
+            try {
+              const docId = `${String(cuitEmit).replace(/\D/g, "")}_${tipoFactura}_${String(factura.comprobante).padStart(8, "0")}`;
+              await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
+                .set({ doc_tipo: "CUIT", doc_nro: datos.doc_nro }, { merge: true });
+            } catch (_) {}
+          }
+        }
+
         const ultimoNC = await getUltimoCbte(token, sign, cuitNum, pv, tipoNC, wsfe);
         const ncNro = ultimoNC + 1;
 
@@ -1826,7 +1880,7 @@ export default async function handler(req, res) {
             fecha: new Date().toLocaleDateString("es-AR"),
             fecha_iso: fechaIso,
             cliente: orden.nombre || "Consumidor Final",
-            doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || "",
+            doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || orden.dni || "",
             letra, tipo_cbte: tipoCbte,
             domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
             total: orden.total, items: orden.items,
@@ -1935,7 +1989,7 @@ export default async function handler(req, res) {
                 cae_vto: result.cae_vto,
                 cliente: orden.nombre || "Consumidor Final",
                 doc_tipo: orden.doc_tipo,
-                doc_nro: orden.doc_nro || "",
+                doc_nro: orden.doc_nro || orden.dni || "",
                 total: orden.total,
                 neto,
                 iva,
