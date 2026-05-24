@@ -353,7 +353,7 @@ async function getUltimoCbte(token, sign, cuitNum, puntoVenta, tipoCbte, wsfeUrl
 
 // Consulta un comprobante ya emitido en ARCA y devuelve sus datos (receptor incluido).
 // Útil para recuperar doc_tipo/doc_nro cuando se perdieron en Firestore pero AFIP los tiene.
-// Devuelve null si el comprobante no existe o no se pudo parsear.
+// Devuelve { doc_tipo, doc_nro } si lo encontró, o { error } con el motivo del fallo.
 async function consultarComprobante(token, sign, cuitNum, puntoVenta, tipoCbte, cbteNro, wsfeUrl) {
   const body = `${authXml(token, sign, cuitNum)}
     <ar:FeCompConsReq>
@@ -363,11 +363,13 @@ async function consultarComprobante(token, sign, cuitNum, puntoVenta, tipoCbte, 
     </ar:FeCompConsReq>`;
   let xml;
   try { xml = await wsfeCall("FECompConsultar", body, wsfeUrl); }
-  catch (_) { return null; }
-  // Si ARCA respondió con errores, devolver null.
-  if (/<Errors>[\s\S]*?<Err>/.test(xml)) return null;
+  catch (e) { return { error: `SOAP: ${e.message}` }; }
+  // Errores de ARCA (bloque <Err><Code>..</Code><Msg>..</Msg></Err>)
+  const errMsg = (xml.match(/<Msg>([\s\S]*?)<\/Msg>/) || [])[1];
+  if (errMsg) return { error: `ARCA: ${errMsg.trim()}` };
   const docTipoNum = parseInt((xml.match(/<DocTipo>(\d+)<\/DocTipo>/) || [])[1] || "0");
   const docNroRaw = (xml.match(/<DocNro>(\d+)<\/DocNro>/) || [])[1] || "";
+  if (!docTipoNum) return { error: `respuesta sin DocTipo (raw: ${xml.replace(/\s+/g, " ").slice(0, 180)})` };
   // 80=CUIT, 96=DNI, 99=Consumidor Final
   const docTipo = docTipoNum === 80 ? "CUIT" : docTipoNum === 96 ? "DNI" : docTipoNum === 99 ? "CF" : "";
   return { doc_tipo: docTipo, doc_nro: docNroRaw };
@@ -1563,10 +1565,14 @@ export default async function handler(req, res) {
           const tipoNC = tipoNCparaFactura(tipoFactura);
           try {
             // Factura A sin CUIT en Firestore: recuperarlo desde ARCA y persistirlo.
-            let consultaArca = null;
             if ([1, 2, 3].includes(tipoFactura) && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
-              const pvOriginal = parseInt(factura.punto_venta) || pv;
-              consultaArca = await consultarComprobante(token, sign, cuitNum, pvOriginal, tipoFactura, parseInt(factura.comprobante), wsfe);
+              // Probar con el PV del comprobante y, si difiere, con el PV del CUIT.
+              const pvCandidatos = [...new Set([parseInt(factura.punto_venta) || pv, pv])];
+              let consultaArca = null;
+              for (const pvTry of pvCandidatos) {
+                consultaArca = await consultarComprobante(token, sign, cuitNum, pvTry, tipoFactura, parseInt(factura.comprobante), wsfe);
+                if (consultaArca && !consultaArca.error && consultaArca.doc_tipo) break;
+              }
               if (consultaArca && consultaArca.doc_tipo === "CUIT" && consultaArca.doc_nro) {
                 factura.doc_tipo = "CUIT";
                 factura.doc_nro = consultaArca.doc_nro;
@@ -1577,10 +1583,10 @@ export default async function handler(req, res) {
                 } catch (_) {}
               } else {
                 // No pudimos recuperar el CUIT desde ARCA. Devolver error diagnóstico.
-                const diag = !consultaArca ? "ARCA no respondió a la consulta del comprobante" :
-                  consultaArca.doc_tipo === "CF" ? "ARCA registra el comprobante como Consumidor Final (sin CUIT). ¿Estás seguro que es Factura A?" :
-                  `ARCA devolvió doc_tipo="${consultaArca.doc_tipo}" doc_nro="${consultaArca.doc_nro}"`;
-                results.push({ ok: false, factura_comprobante: factura.comprobante, error: `[consulta-arca] ${diag}` });
+                const diag = consultaArca?.error ? consultaArca.error :
+                  consultaArca?.doc_tipo === "CF" ? "ARCA registra el comprobante como Consumidor Final (sin CUIT). ¿Es realmente Factura A?" :
+                  `ARCA devolvió doc_tipo="${consultaArca?.doc_tipo}" doc_nro="${consultaArca?.doc_nro}"`;
+                results.push({ ok: false, factura_comprobante: factura.comprobante, error: `[consulta-arca pv=${pvCandidatos.join("/")}] ${diag}` });
                 continue;
               }
             }
@@ -1704,8 +1710,12 @@ export default async function handler(req, res) {
         // Si es Factura A y nos llegó sin CUIT del receptor, intentar recuperarlo
         // consultando ARCA (FECompConsultar). ARCA siempre tiene los datos originales.
         if ([1, 2, 3].includes(tipoFactura) && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
-          const pvOriginal = parseInt(factura.punto_venta) || pv;
-          const datos = await consultarComprobante(token, sign, cuitNum, pvOriginal, tipoFactura, parseInt(factura.comprobante), wsfe);
+          const pvCandidatos = [...new Set([parseInt(factura.punto_venta) || pv, pv])];
+          let datos = null;
+          for (const pvTry of pvCandidatos) {
+            datos = await consultarComprobante(token, sign, cuitNum, pvTry, tipoFactura, parseInt(factura.comprobante), wsfe);
+            if (datos && !datos.error && datos.doc_tipo) break;
+          }
           if (datos && datos.doc_tipo === "CUIT" && datos.doc_nro) {
             factura.doc_tipo = "CUIT";
             factura.doc_nro = datos.doc_nro;
@@ -1715,6 +1725,8 @@ export default async function handler(req, res) {
               await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
                 .set({ doc_tipo: "CUIT", doc_nro: datos.doc_nro }, { merge: true });
             } catch (_) {}
+          } else if (datos?.error) {
+            return res.status(502).json({ error: "No se pudo recuperar el CUIT del receptor desde ARCA", detalle: `[consulta-arca pv=${pvCandidatos.join("/")}] ${datos.error}` });
           }
         }
 
