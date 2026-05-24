@@ -495,6 +495,104 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
   return { cae, cae_vto: caeVto, resultado: resM?.[1] || null, obs: obsM.trim() };
 }
 
+// ─── Nota de Crédito (anula factura emitida) ──────────────
+// Mapeo Factura → Nota de Crédito correspondiente:
+//   Factura A (1)  → Nota de Crédito A (3)
+//   Factura B (6)  → Nota de Crédito B (8)
+//   Factura C (11) → Nota de Crédito C (13)
+function tipoNCparaFactura(tipoFactura) {
+  if (tipoFactura === 1) return 3;
+  if (tipoFactura === 6) return 8;
+  if (tipoFactura === 11) return 13;
+  // Default: NC B
+  return 8;
+}
+
+async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, facturaOriginal, wsfeUrl) {
+  // facturaOriginal: { tipo, punto_venta, comprobante, total, doc_tipo, doc_nro, fecha_iso, monotributo }
+  const tipoFactura = parseInt(facturaOriginal.tipo) || 6;
+  const tipoNC = tipoNCparaFactura(tipoFactura);
+  const monotributo = tipoFactura === 11;
+  const total = parseFloat(facturaOriginal.total) || 0;
+  const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+  const docTipoClas = facturaOriginal.doc_tipo;
+  let tipoDoc, nroDoc, neto, iva;
+  if (monotributo) {
+    tipoDoc = docTipoClas === "CUIT" ? 80 : docTipoClas === "DNI" ? 96 : 99;
+    nroDoc = facturaOriginal.doc_nro || 0;
+    neto = total; iva = 0;
+  } else {
+    neto = Math.round((total / 1.21) * 100) / 100;
+    iva = Math.round((total - neto) * 100) / 100;
+    if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = facturaOriginal.doc_nro; }
+    else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = facturaOriginal.doc_nro; }
+    else { tipoDoc = 99; nroDoc = 0; }
+  }
+
+  const condIva = condicionIvaReceptor(tipoNC, docTipoClas);
+  const ivaXml = (!monotributo && iva > 0) ? `
+    <ar:Iva>
+      <ar:AlicIva>
+        <ar:Id>5</ar:Id>
+        <ar:BaseImp>${neto}</ar:BaseImp>
+        <ar:Importe>${iva}</ar:Importe>
+      </ar:AlicIva>
+    </ar:Iva>` : "";
+
+  // CbtesAsoc: vincula la NC con la factura original — requerido por ARCA
+  // para que se compute como reverso correcto y libere el IVA débito fiscal.
+  const cbtesAsocXml = `
+        <ar:CbtesAsoc>
+          <ar:CbteAsoc>
+            <ar:Tipo>${tipoFactura}</ar:Tipo>
+            <ar:PtoVta>${facturaOriginal.punto_venta || puntoVenta}</ar:PtoVta>
+            <ar:Nro>${facturaOriginal.comprobante}</ar:Nro>
+            <ar:Cuit>${cuitNum}</ar:Cuit>
+          </ar:CbteAsoc>
+        </ar:CbtesAsoc>`;
+
+  const body = `${authXml(token, sign, cuitNum)}
+    <ar:FeCAEReq>
+      <ar:FeCabReq>
+        <ar:CantReg>1</ar:CantReg>
+        <ar:PtoVta>${puntoVenta}</ar:PtoVta>
+        <ar:CbteTipo>${tipoNC}</ar:CbteTipo>
+      </ar:FeCabReq>
+      <ar:FeDetReq>
+        <ar:FECAEDetRequest>
+          <ar:Concepto>1</ar:Concepto>
+          <ar:DocTipo>${tipoDoc}</ar:DocTipo>
+          <ar:DocNro>${nroDoc}</ar:DocNro>
+          <ar:CbteDesde>${cbteNcNro}</ar:CbteDesde>
+          <ar:CbteHasta>${cbteNcNro}</ar:CbteHasta>
+          <ar:CbteFch>${fecha}</ar:CbteFch>
+          <ar:ImpTotal>${total}</ar:ImpTotal>
+          <ar:ImpTotConc>0</ar:ImpTotConc>
+          <ar:ImpNeto>${neto}</ar:ImpNeto>
+          <ar:ImpOpEx>0</ar:ImpOpEx>
+          <ar:ImpTrib>0</ar:ImpTrib>
+          <ar:ImpIVA>${iva}</ar:ImpIVA>
+          <ar:MonId>PES</ar:MonId>
+          <ar:MonCotiz>1</ar:MonCotiz>
+          <ar:CondicionIVAReceptorId>${condIva}</ar:CondicionIVAReceptorId>
+          ${cbtesAsocXml}
+          ${ivaXml}
+        </ar:FECAEDetRequest>
+      </ar:FeDetReq>
+    </ar:FeCAEReq>`;
+
+  const xml = await wsfeCall("FECAESolicitar", body, wsfeUrl);
+  const caeM = xml.match(/<CAE>(\d+)<\/CAE>/);
+  const vtoM = xml.match(/<CAEFchVto>(\d{8})<\/CAEFchVto>/);
+  const resM = xml.match(/<Resultado>([AR])<\/Resultado>/);
+  const obsM = [...xml.matchAll(/<Msg>([\s\S]*?)<\/Msg>/g)].map(m => m[1]).join(" ");
+  const cae = caeM?.[1] || null;
+  let caeVto = vtoM?.[1] || null;
+  if (caeVto) caeVto = `${caeVto.slice(6)}/${caeVto.slice(4, 6)}/${caeVto.slice(0, 4)}`;
+  return { cae, cae_vto: caeVto, resultado: resM?.[1] || null, obs: obsM.trim(), tipo_nc: tipoNC, comprobante: cbteNcNro, neto, iva, total };
+}
+
 // ─── Parseo XLSX de Mercado Libre ─────────────────────
 
 function clasificarDoc(numStr) {
@@ -1297,6 +1395,222 @@ export default async function handler(req, res) {
       const productos = [...new Set(Object.values(pagadas).flatMap(o => o.items.map(i => i.nombre_original)))];
 
       return res.json({ ordenes: pagadas, total: Object.keys(pagadas).length, productos });
+    }
+
+    // ── EMITIR NOTAS DE CRÉDITO EN LOTE (anula múltiples facturas) ──
+    if (action === "emit_nc_batch" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { cuit: cuitEmit, facturas } = body;
+      if (!cuitEmit || !Array.isArray(facturas) || facturas.length === 0) {
+        return res.status(400).json({ error: "Faltan cuit o lista de facturas" });
+      }
+      const cfg = await loadCuitConfig(db, uid, cuitEmit);
+      if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "CUIT sin certificado configurado" });
+      try {
+        const { wsaa, wsfe } = arcaUrls(cfg.arca_prod);
+        const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
+        const { token, sign } = await loginWSAA(cms, wsaa);
+        const cuitNum = parseInt(cfg.cuit);
+        const pv = parseInt(cfg.punto_venta) || 1;
+
+        // Cache último cbte por tipo NC para minimizar API calls
+        const ultimosNC = {};
+        const results = [];
+
+        for (const factura of facturas) {
+          const tipoFactura = parseInt(factura.tipo) || 6;
+          const tipoNC = tipoNCparaFactura(tipoFactura);
+          try {
+            if (ultimosNC[tipoNC] === undefined) {
+              ultimosNC[tipoNC] = await getUltimoCbte(token, sign, cuitNum, pv, tipoNC, wsfe);
+            }
+            const ncNro = ++ultimosNC[tipoNC];
+            const result = await emitirNotaCredito(token, sign, cuitNum, pv, ncNro, factura, wsfe);
+            if (result.resultado !== "A" || !result.cae) {
+              results.push({ ok: false, factura_comprobante: factura.comprobante, error: result.obs || "rechazada" });
+              ultimosNC[tipoNC]--; // rollback contador local
+              continue;
+            }
+            const letra = tipoNC === 3 ? "A" : tipoNC === 8 ? "B" : "C";
+            const ncFactData = {
+              comprobante: ncNro, cae: result.cae, cae_vto: result.cae_vto,
+              fecha: new Date().toLocaleDateString("es-AR"),
+              cliente: factura.cliente || "Consumidor Final",
+              doc_tipo: factura.doc_tipo, doc_nro: factura.doc_nro || "",
+              letra, tipo_cbte: tipoNC,
+              domicilio: factura.domicilio || "",
+              total: parseFloat(factura.total) || 0,
+              items: factura.items || [{ nombre: `Anulación Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}`, cantidad: 1, precio: parseFloat(factura.total) || 0 }],
+              _is_nc: true,
+              _cbte_asoc: factura.comprobante,
+            };
+            const pdfBytes = await generarPDF(ncFactData, cfg);
+            const pdfB64 = Buffer.from(pdfBytes).toString("base64");
+
+            // Persistir
+            try {
+              await db.collection("users").doc(uid).collection("arca_notas_credito").add({
+                cuit: String(cuitEmit), tipo: tipoNC, letra,
+                punto_venta: pv, comprobante: ncNro,
+                cae: result.cae, cae_vto: result.cae_vto,
+                total: parseFloat(factura.total) || 0,
+                cliente: factura.cliente || "",
+                doc_tipo: factura.doc_tipo || "", doc_nro: factura.doc_nro || "",
+                factura_origen: { tipo: tipoFactura, comprobante: factura.comprobante, punto_venta: factura.punto_venta || pv },
+                fecha: new Date().toISOString(),
+                pdf_b64: pdfB64.length < 900000 ? pdfB64 : null,
+              });
+            } catch (e) {}
+
+            // Marcar orden anulada + intentar adjuntar NC a ML si aplica
+            let mlDetached = false;
+            if (factura.order_id) {
+              try {
+                await db.collection("users").doc(uid).collection("arca_facturadas").doc(String(factura.order_id))
+                  .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
+              } catch (_) {}
+              // Si es ML, adjuntamos el PDF de la NC al pack (queda como reversa visible al comprador)
+              if (String(factura.order_id).startsWith("ML-")) {
+                try {
+                  const ml = await getValidMLToken(db, uid);
+                  if (ml?.accessToken) {
+                    const orderIdNum = String(factura.order_id).replace("ML-", "");
+                    // Obtener pack_id
+                    const ordRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdNum}?attributes=pack_id`, {
+                      headers: { Authorization: `Bearer ${ml.accessToken}` },
+                    });
+                    if (ordRes.ok) {
+                      const ordJ = await ordRes.json();
+                      const packId = ordJ.pack_id || orderIdNum;
+                      // Subir NC al pack
+                      const fd = new FormData();
+                      fd.append("fiscal_document", new Blob([Buffer.from(pdfB64, "base64")], { type: "application/pdf" }), `NC-${letra}-${String(ncNro).padStart(8,"0")}.pdf`);
+                      const upRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${ml.accessToken}` },
+                        body: fd,
+                      });
+                      if (upRes.ok) mlDetached = true;
+                    }
+                  }
+                } catch (_) {}
+              }
+            }
+            results.push({
+              ok: true,
+              factura_comprobante: factura.comprobante,
+              nc: { tipo: tipoNC, letra, punto_venta: pv, comprobante: ncNro, cae: result.cae, total: result.total, nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf`, pdf_b64: pdfB64 },
+              ml_attached: mlDetached,
+            });
+          } catch (e) {
+            results.push({ ok: false, factura_comprobante: factura.comprobante, error: e.message });
+          }
+        }
+        const okCount = results.filter(r => r.ok).length;
+        return res.json({ ok: true, total: facturas.length, ok_count: okCount, errors: results.filter(r => !r.ok), results });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
+    // ── EMITIR NOTA DE CRÉDITO (anula factura emitida) ──
+    if (action === "emit_nc" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { cuit: cuitEmit, factura } = body;
+      // factura: { tipo, punto_venta, comprobante, total, doc_tipo, doc_nro, cliente, domicilio, items, fecha_iso, order_id }
+      if (!cuitEmit || !factura) return res.status(400).json({ error: "Faltan cuit o factura" });
+      const cfg = await loadCuitConfig(db, uid, cuitEmit);
+      if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "CUIT sin certificado configurado" });
+
+      try {
+        const { wsaa, wsfe } = arcaUrls(cfg.arca_prod);
+        const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
+        const { token, sign } = await loginWSAA(cms, wsaa);
+        const cuitNum = parseInt(cfg.cuit);
+        const pv = parseInt(cfg.punto_venta) || 1;
+
+        const tipoFactura = parseInt(factura.tipo) || 6;
+        const tipoNC = tipoNCparaFactura(tipoFactura);
+        const ultimoNC = await getUltimoCbte(token, sign, cuitNum, pv, tipoNC, wsfe);
+        const ncNro = ultimoNC + 1;
+
+        const result = await emitirNotaCredito(token, sign, cuitNum, pv, ncNro, factura, wsfe);
+        if (result.resultado !== "A" || !result.cae) {
+          return res.status(502).json({ error: "ARCA rechazó la NC", detalle: result.obs, resultado: result.resultado });
+        }
+
+        // PDF de la NC (reusamos generarPDF con datos modificados)
+        const letra = tipoNC === 3 ? "A" : tipoNC === 8 ? "B" : "C";
+        const ncFactData = {
+          comprobante: ncNro,
+          cae: result.cae,
+          cae_vto: result.cae_vto,
+          fecha: new Date().toLocaleDateString("es-AR"),
+          cliente: factura.cliente || "Consumidor Final",
+          doc_tipo: factura.doc_tipo,
+          doc_nro: factura.doc_nro || "",
+          letra,
+          tipo_cbte: tipoNC,
+          domicilio: factura.domicilio || "",
+          total: parseFloat(factura.total) || 0,
+          items: factura.items || [{ nombre: `Anulación Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}`, cantidad: 1, precio: parseFloat(factura.total) || 0 }],
+          // Marcamos como NC en el PDF título (próximo build podemos enriquecerlo)
+          _is_nc: true,
+          _cbte_asoc: factura.comprobante,
+        };
+        const pdfBytes = await generarPDF(ncFactData, cfg);
+        const pdfB64 = Buffer.from(pdfBytes).toString("base64");
+
+        // Persistir registro de la NC en Firestore
+        const ncRecord = {
+          cuit: String(cuitEmit),
+          tipo: tipoNC,
+          letra,
+          punto_venta: pv,
+          comprobante: ncNro,
+          cae: result.cae,
+          cae_vto: result.cae_vto,
+          total: parseFloat(factura.total) || 0,
+          cliente: factura.cliente || "",
+          doc_tipo: factura.doc_tipo || "",
+          doc_nro: factura.doc_nro || "",
+          factura_origen: {
+            tipo: tipoFactura,
+            comprobante: factura.comprobante,
+            punto_venta: factura.punto_venta || pv,
+          },
+          fecha: new Date().toISOString(),
+          pdf_b64: pdfB64.length < 900000 ? pdfB64 : null,
+        };
+        try {
+          await db.collection("users").doc(uid).collection("arca_notas_credito").add(ncRecord);
+        } catch (e) { /* no crítico */ }
+
+        // Si el factura original tiene un order_id, marcamos esa orden como "anulada"
+        if (factura.order_id) {
+          try {
+            await db.collection("users").doc(uid).collection("arca_facturadas").doc(String(factura.order_id))
+              .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
+          } catch (e) {}
+        }
+
+        return res.json({
+          ok: true,
+          nc: {
+            tipo: tipoNC,
+            letra,
+            punto_venta: pv,
+            comprobante: ncNro,
+            cae: result.cae,
+            cae_vto: result.cae_vto,
+            total: result.total,
+            pdf_b64: pdfB64,
+            nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf`,
+          },
+        });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
     }
 
     // ── EMITIR facturas ────────────────────────────────

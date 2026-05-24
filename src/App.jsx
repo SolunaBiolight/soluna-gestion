@@ -9091,6 +9091,82 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     }, 100);
   }
 
+  // ── Anular facturas con Nota de Crédito ──
+  async function anularUnaFactura(resumen, batch) {
+    if (!cuitSel) return;
+    const cuitActivoData = cuits.find(c => c.cuit === cuitSel);
+    const emisorInfo = cuitActivoData
+      ? `\n📋 CUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
+      : "";
+    const msg = `¿Anular Factura ${resumen.letra} N° ${String(resumen.comprobante).padStart(8,"0")}?\n\n` +
+      `Se emite una **Nota de Crédito ${resumen.letra}** por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} que revierte 100% la factura. ` +
+      `El IVA débito fiscal se libera al cerrar el mes en ARCA — se descuenta de tu facturado del mes.${emisorInfo}\n\n` +
+      `${resumen.orden_id?.startsWith?.("ML-") ? "📎 Se adjunta la NC a la venta de Mercado Libre.\n" : ""}` +
+      `Esta acción no se puede deshacer.`;
+    if (!await appConfirm(msg, { okLabel: "Emitir NC y anular", danger: true })) return;
+    const factura = {
+      tipo: resumen.tipo_cbte || (resumen.letra==="A"?1:resumen.letra==="C"?11:6),
+      punto_venta: resumen.punto_venta || batch.punto_venta || 1,
+      comprobante: resumen.comprobante,
+      total: resumen.total,
+      doc_tipo: resumen.doc_tipo || "",
+      doc_nro: resumen.doc_nro || "",
+      cliente: resumen.cliente || "",
+      domicilio: resumen.domicilio || "",
+      order_id: resumen.orden_id,
+      items: resumen.items,
+    };
+    setEmitting(true);
+    try {
+      const d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
+      if (d.error) { toast(`Error: ${d.error}${d.detalle?" · "+d.detalle:""}`, "error"); return; }
+      toast(`NC ${d.nc.letra} N° ${String(d.nc.comprobante).padStart(8,"0")} emitida ✓`, "success");
+      // Descargar PDF de la NC
+      if (d.nc.pdf_b64) {
+        const a = document.createElement("a");
+        a.href = "data:application/pdf;base64," + d.nc.pdf_b64;
+        a.download = d.nc.nombre_pdf;
+        a.click();
+      }
+      refreshDashboard();
+    } finally { setEmitting(false); }
+  }
+
+  async function anularLoteCompleto(batch) {
+    if (!cuitSel || !batch?.resumen?.length) return;
+    const cuitActivoData = cuits.find(c => c.cuit === cuitSel);
+    const emisorInfo = cuitActivoData
+      ? `\n📋 CUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
+      : "";
+    const totalLote = (batch.total||0).toLocaleString("es-AR",{minimumFractionDigits:2});
+    const msg = `¿Anular las ${batch.cantidad} facturas del lote?\n\n` +
+      `Se emite una Nota de Crédito por CADA factura del lote (mismo importe, mismo cliente). ` +
+      `Total a revertir: **$${totalLote}**.\n\n` +
+      `El IVA débito fiscal se libera al cerrar el mes — se descuenta de tu facturado del mes en ARCA. ` +
+      `Las NCs de ventas de Mercado Libre se adjuntan automáticamente a cada pack.${emisorInfo}\n\n` +
+      `Esta acción no se puede deshacer. ¿Continuar?`;
+    if (!await appConfirm(msg, { okLabel: `Emitir ${batch.cantidad} NCs`, danger: true })) return;
+    const facturas = (batch.resumen||[]).map(r => ({
+      tipo: r.tipo_cbte || (r.letra==="A"?1:r.letra==="C"?11:6),
+      punto_venta: r.punto_venta || batch.punto_venta || 1,
+      comprobante: r.comprobante,
+      total: r.total,
+      doc_tipo: r.doc_tipo || "",
+      doc_nro: r.doc_nro || "",
+      cliente: r.cliente || "",
+      domicilio: r.domicilio || "",
+      order_id: r.orden_id,
+      items: r.items,
+    }));
+    setEmitting(true);
+    try {
+      const d = await api("emit_nc_batch", "POST", { cuit: cuitSel, facturas });
+      if (d.error) { toast(`Error: ${d.error}`, "error"); return; }
+      toast(`${d.ok_count}/${d.total} NCs emitidas${d.errors?.length?` · ${d.errors.length} con error`:""}`, d.errors?.length?"warning":"success");
+      refreshDashboard();
+    } finally { setEmitting(false); }
+  }
+
   async function refreshDashboard() {
     if(!cuitSel) return;
     const d = await api("dashboard_stats","GET",null,{cuit:cuitSel,month:dashMonth,year:dashYear});
@@ -9218,13 +9294,19 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const orderIds = Object.keys(ordenes);
     const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds});
     const duplicates = dupRes?.duplicates || [];
-    let msg = "¿Emitir "+orderIds.length+" facturas en ARCA?";
+    // Confirmación con CUIT emisor BIEN VISIBLE para que el user no facture
+    // con el CUIT equivocado por error.
+    const cuitActivoData = cuits.find(c => c.cuit === cuitSel);
+    const emisorInfo = cuitActivoData
+      ? `\n\n📋 CUIT EMISOR: ${formatCuit(cuitActivoData.cuit)}\n   ${cuitActivoData.razon_social || cuitActivoData.nombre_fantasia || ""}\n   PV ${String(cuitActivoData.punto_venta || 1).padStart(5,"0")} · ${cuitActivoData.arca_prod ? "Producción" : "Homologación"}`
+      : `\n\n⚠ CUIT ${cuitSel} (datos incompletos)`;
+    let msg = `¿Emitir ${orderIds.length} factura${orderIds.length>1?"s":""} en ARCA?${emisorInfo}\n\n⚠ Verificá que este sea el CUIT correcto. Una vez emitidas, sólo se pueden revertir con Nota de Crédito.`;
     if(duplicates.length > 0) {
       const ids = duplicates.slice(0, 5).map(d => `· ${d.orden_id} (F${d.letra} ${String(d.nro).padStart(8,"0")})`).join("\n");
       const masMsg = duplicates.length > 5 ? `\n…y ${duplicates.length - 5} más` : "";
-      msg = `⚠ Hay ${duplicates.length} órden${duplicates.length>1?"es":""} ya facturada${duplicates.length>1?"s":""} este mes:\n${ids}${masMsg}\n\n¿Querés refacturarla${duplicates.length>1?"s":""} igual? Se van a emitir nuevos comprobantes (los anteriores no se anulan).`;
+      msg = `⚠ Hay ${duplicates.length} órden${duplicates.length>1?"es":""} ya facturada${duplicates.length>1?"s":""} este mes:\n${ids}${masMsg}\n\n¿Querés refacturarla${duplicates.length>1?"s":""} igual? Se van a emitir nuevos comprobantes (los anteriores no se anulan).${emisorInfo}`;
     }
-    if(!await appConfirm(msg,{okLabel:"Continuar"})) return;
+    if(!await appConfirm(msg,{okLabel:"Sí, emitir con ese CUIT"})) return;
     const total = orderIds.length;
     setEmitting(true);
     setEmitProgress({active:true,current:0,total,ok:0,fail:0,done:false,errors:[]});
@@ -10029,6 +10111,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <div style={{fontSize:11,color:T.textSm}}>{b.cantidad} factura{b.cantidad===1?"":"s"} · {b.batch_id}</div>
                           </div>
                           <div style={{fontSize:14,fontWeight:700,color:T.text,marginRight:8}}>$ {(b.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                          <button onClick={(e)=>{e.stopPropagation();anularLoteCompleto(b);}} title="Emite NC por cada factura del lote para anularlas todas" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                            🔄 Anular lote
+                          </button>
                           <button onClick={(e)=>{e.stopPropagation();downloadBatchZip(b);}} style={{background:T.accent,border:"none",color:"#fff",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
                             {loadingBatchPdfs===b.batch_id ? <><Spinner size={10} color="#fff"/> ZIP</> : "⬇ ZIP"}
                           </button>
@@ -10050,6 +10135,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                   if(pdf) downloadPDF(pdf);
                                 }} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
                                   ⬇ PDF
+                                </button>
+                                <button onClick={()=>anularUnaFactura(r, b)} title="Emite NC para anular esta factura" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>
+                                  🔄 Anular
                                 </button>
                               </div>
                             ))}
