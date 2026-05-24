@@ -189,9 +189,84 @@ export default async function handler(req, res) {
       });
     }
 
-    // TOTAL: count de todos los pedidos pagados (solo TN por ahora)
+    // ─── Helper: traduce orden Shopify → formato TN-compatible para que la UI
+    // (buildOrdersFromAPI) la procese sin cambios ───
+    const shopifyToTNFormat = (o) => {
+      const sh = o.shipping_address || o.billing_address || {};
+      const fulfillments = o.fulfillments || [];
+      const isFulfilled = (o.fulfillment_status || "").toLowerCase() === "fulfilled" || fulfillments.some(f => (f.status || "").toLowerCase() === "success");
+      const shStatus = isFulfilled ? "shipped" : (fulfillments.length > 0 ? "ready_to_ship" : "unpacked");
+      return {
+        id: o.id,
+        number: o.order_number || (o.name || "").replace("#", "") || o.id,
+        status: o.cancelled_at ? "cancelled" : "open",
+        payment_status: o.financial_status === "paid" ? "paid" : (o.financial_status === "pending" ? "pending" : o.financial_status || ""),
+        shipping_status: shStatus,
+        contact_name: o.customer ? `${o.customer.first_name || ""} ${o.customer.last_name || ""}`.trim() : (sh.name || ""),
+        contact_email: o.email || o.contact_email || o.customer?.email || "",
+        contact_phone: o.phone || sh.phone || o.customer?.phone || "",
+        contact_identification: "",
+        created_at: o.created_at,
+        paid_at: o.processed_at,
+        shipped_at: fulfillments[0]?.created_at || null,
+        total: o.total_price,
+        subtotal: o.subtotal_price,
+        discount: o.total_discounts || "0",
+        shipping_cost_customer: o.total_shipping_price_set?.shop_money?.amount || "0",
+        shipping_address: {
+          name: sh.first_name || "",
+          last_name: sh.last_name || "",
+          address: sh.address1 || "",
+          number: "",
+          floor: sh.address2 || "",
+          locality: sh.city || "",
+          city: sh.city || "",
+          zipcode: sh.zip || "",
+          province: sh.province || "",
+        },
+        billing_address: o.billing_address ? { name: `${o.billing_address.first_name || ""} ${o.billing_address.last_name || ""}`.trim(), email: o.email || "", phone: o.billing_address.phone || "" } : null,
+        shipping_option: o.shipping_lines?.[0]?.title || "Envío",
+        shipping_tracking_number: fulfillments[0]?.tracking_number || "",
+        payment_details: { method: o.payment_gateway_names?.[0] || "" },
+        gateway_name: o.payment_gateway_names?.[0] || "",
+        storefront: "shopify",
+        fulfillments: fulfillments.map(f => ({ status: (f.status || "").toLowerCase() === "success" ? "PACKED" : "PENDING", shipping: { option: { name: f.tracking_company || "" } } })),
+        products: (o.line_items || []).map(li => ({
+          name: li.title || li.name || "",
+          product_name: li.title || li.name || "",
+          quantity: li.quantity || 1,
+          price: li.price || "0",
+          unit_price: li.price || "0",
+          sku: li.sku || "",
+        })),
+        _platform: "shopify",
+      };
+    };
+
+    // Helper Shopify: traer orders con paginación
+    const shopifyFetchOrders = async (extraQuery) => {
+      const out = [];
+      let url = `${SH_BASE}/orders.json?limit=250&status=any&${extraQuery}`;
+      let safety = 0;
+      while (url && safety < 10) {
+        safety++;
+        const r = await fetch(url, { headers: SH_HEADERS });
+        if (!r.ok) break;
+        const d = await r.json();
+        out.push(...(d.orders || []));
+        const link = r.headers.get("Link") || "";
+        const next = link.match(/<([^>]+)>;\s*rel="next"/);
+        url = next ? next[1] : null;
+      }
+      return out;
+    };
+
+    // TOTAL: count de todos los pedidos pagados (TN o Shopify)
     if (tab === 'total') {
-      if (platform === 'shopify') return res.status(200).json([]);
+      if (platform === 'shopify') {
+        const orders = await shopifyFetchOrders("financial_status=paid&fields=id");
+        return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
+      }
       let total = 0;
       for (let p = 1; p <= 20; p++) {
         const page = await fetchPage(storeId, accessToken, "payment_status=paid,partially_paid,partially_refunded", p, 200);
@@ -201,33 +276,53 @@ export default async function handler(req, res) {
       return res.status(200).json(Array.from({length: total}, (_,i) => ({id:i})));
     }
 
-    // POR COBRAR: solo TN (Shopify usa flujo diferente)
+    // POR COBRAR: pedidos sin pagar
     if (tab === 'cobrar') {
-      if (platform === 'shopify') return res.status(200).json([]);
+      if (platform === 'shopify') {
+        const orders = await shopifyFetchOrders("financial_status=pending,partially_paid");
+        const filtered = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
+        if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
+        return res.status(200).json(filtered);
+      }
       const orders = await fetchAllPages(storeId, accessToken, "payment_status=pending,partially_paid&status=open");
       if (countOnly === 'true') return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
       return res.status(200).json(orders);
     }
 
-    // POR EMPAQUETAR: solo TN
+    // POR EMPAQUETAR: pagados, pendientes de fulfillment
     if (tab === 'empaquetar') {
-      if (platform === 'shopify') return res.status(200).json([]);
+      if (platform === 'shopify') {
+        const orders = await shopifyFetchOrders("financial_status=paid&fulfillment_status=unfulfilled,partial");
+        const filtered = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
+        if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
+        return res.status(200).json(filtered);
+      }
       const orders = await fetchAllPages(storeId, accessToken, "payment_status=paid&shipping_status=unpacked&status=open");
       if (countOnly === 'true') return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
       return res.status(200).json(orders);
     }
 
-    // POR ENVIAR: solo TN
+    // POR ENVIAR: empaquetado, listo a enviar
     if (tab === 'enviar') {
-      if (platform === 'shopify') return res.status(200).json([]);
+      if (platform === 'shopify') {
+        // Shopify no tiene "PACKED" — tomamos partial como ready-to-ship aproximado.
+        const orders = await shopifyFetchOrders("financial_status=paid&fulfillment_status=partial");
+        const filtered = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
+        if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
+        return res.status(200).json(filtered);
+      }
       const page1 = await fetchPage(storeId, accessToken, "payment_status=paid&status=open", 1, 200);
       const porEnviar = page1.filter(o => o.fulfillments?.some(f => f.status === 'PACKED'));
       if (countOnly === 'true') return res.status(200).json(Array.from({length: porEnviar.length}, (_,i) => ({id:i})));
       return res.status(200).json(porEnviar);
     }
 
-    // Fallback: últimos 200 pedidos (solo TN)
-    if (platform === 'shopify') return res.status(200).json([]);
+    // Fallback: últimos pedidos pagados
+    if (platform === 'shopify') {
+      const orders = await shopifyFetchOrders("financial_status=paid");
+      const mapped = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
+      return res.status(200).json(mapped);
+    }
     const orders = await fetchPage(storeId, accessToken, "", 1, 200);
     res.status(200).json(orders);
   } catch(e) {

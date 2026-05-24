@@ -2458,7 +2458,7 @@ function NotasInline({value, onSave, T, iS}) {
 }
 
 
-function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail}) {
+function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp}) {
   const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
@@ -2467,7 +2467,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [filterRed,setFilterRed]=useState("");
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [saving,setSaving]=useState(false);
-  const [viewTab,setViewTab]=useState("lista"); // lista | kanban | ranking | comisiones | perfiles
+  // Mapeo sidebar(id) → viewTab interno. Activos=lista, Historial=ranking, Influencers=perfiles
+  const sidebarToInternal = { activos:"lista", historial:"ranking", influencers:"perfiles" };
+  const internalToSidebar = { lista:"activos", kanban:"activos", ranking:"historial", comisiones:"historial", perfiles:"influencers" };
+  const [viewTabLocal,setViewTabLocal]=useState("lista");
+  const viewTab = tabProp !== undefined ? (sidebarToInternal[tabProp] || tabProp) : viewTabLocal;
+  const setViewTab = (v) => {
+    setViewTabLocal(v);
+    if (setTabProp) setTabProp(internalToSidebar[v] || v);
+  };
   const [showGuia,setShowGuia]=useState(false);
   // Perfiles de influencers
   const [influencers,setInfluencers]=useState([]);
@@ -2764,20 +2772,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           })}
         </div>
 
-        {/* Tabs de vista */}
-        <div style={{display:"flex",gap:8,marginBottom:showGuia?8:16,alignItems:"center",flexWrap:"wrap"}}>
-          <div style={{display:"inline-flex",background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:3,gap:2}}>
-            {[{id:"lista",label:"Lista"},{id:"kanban",label:"Kanban"},{id:"ranking",label:"Ranking"},{id:"comisiones",label:"Pagos Cupones"},{id:"perfiles",label:"👤 Perfiles"}].map(t=>{
-              const isActive=viewTab===t.id;
-              return (
-                <button key={t.id} onClick={()=>setViewTab(t.id)}
-                  style={{padding:"7px 16px",fontSize:13,fontWeight:isActive?700:500,borderRadius:8,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s ease",boxShadow:isActive?"0 1px 4px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",fontSize:11,fontWeight:500,background:"transparent",border:`1px solid ${T.border}`,borderRadius:20,cursor:"pointer",color:showGuia?T.textMd:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
+        {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
+        <div style={{display:"flex",gap:8,marginBottom:showGuia?8:16,alignItems:"center",justifyContent:"flex-end"}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",fontSize:11,fontWeight:500,background:"transparent",border:`1px solid ${T.border}`,borderRadius:20,cursor:"pointer",color:showGuia?T.textMd:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
             <span style={{width:14,height:14,borderRadius:"50%",background:T.border,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.textMd,flexShrink:0}}>?</span>
             {showGuia?"Cerrar":"Cómo funciona"}
           </button>
@@ -7320,13 +7317,21 @@ function AppAdmin({T, user, onBack}) {
 // ===========================================
 // APP TAREAS — Delegación a colaboradores externos
 // ===========================================
-function AppTareas({T, user, onHome}) {
+function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
   const [showGuia, setShowGuia] = useState(false);
   const [tab, setTab] = useState("tareas");
-  const [viewMode, setViewMode] = useState("lista");
+  // viewMode: sidebar manda — kanban/calendario/lista
+  const [viewModeLocal, setViewModeLocal] = useState("lista");
+  const sidebarToView = { kanban: "kanban", calendario: "cal", lista: "lista" };
+  const viewToSidebar = { kanban: "kanban", cal: "calendario", lista: "lista" };
+  const viewMode = sidebarTab ? (sidebarToView[sidebarTab] || "lista") : viewModeLocal;
+  const setViewMode = (v) => {
+    setViewModeLocal(v);
+    if (setSidebarTab) setSidebarTab(viewToSidebar[v] || v);
+  };
   const [statusFilter, setStatusFilter] = useState("todos");
   const [assigneeFilter, setAssigneeFilter] = useState("todos");
   const [expandedTarea, setExpandedTarea] = useState(null);
@@ -7711,11 +7716,7 @@ function AppTareas({T, user, onHome}) {
           {enRevision.length>0&&<span style={{background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>{enRevision.length} en corrección</span>}
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          <div style={{display:"flex",background:T.card,border:`1px solid ${T.border}`,borderRadius:8,overflow:"hidden"}}>
-            {[["lista","≡ Lista"],["kanban","⬛ Kanban"],["cal","📅 Cal"]].map(([mode,label])=>(
-              <button key={mode} onClick={()=>setViewMode(mode)} style={{padding:"6px 11px",border:"none",background:viewMode===mode?T.accent:"transparent",color:viewMode===mode?"#fff":T.textMd,cursor:"pointer",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:viewMode===mode?600:400,transition:"all 0.15s"}}>{label}</button>
-            ))}
-          </div>
+          {/* Selector lista/kanban/cal removido — va por sidebar izquierdo */}
           <button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>
           <button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Nueva tarea</button>
         </div>
@@ -8711,7 +8712,7 @@ function ColaboradorPublicView({T, token}) {
 // ===========================================
 // APP ARCA — Facturación electrónica AFIP
 // ===========================================
-function AppArca({T, user, onHome}) {
+function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [cuits, setCuits] = useState([]);
   const [cuitSel, setCuitSel] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -8776,6 +8777,25 @@ function AppArca({T, user, onHome}) {
 
   // Modal facturación manual (mayoristas, etc)
   const [showManual, setShowManual] = useState(false);
+  // Reaccionar al cambio de tab del sidebar: abre el modal/sección correspondiente
+  useEffect(() => {
+    if (sidebarTab === "manual") {
+      setShowManual(true);
+      if (setSidebarTab) setSidebarTab("pendientes"); // reset para que no quede pegado
+    } else if (sidebarTab === "historico") {
+      // Scroll a la sección de Facturas Emitidas (si existe el ancla)
+      setTimeout(() => {
+        const el = document.querySelector('[data-arca-section="historico"]');
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    } else if (sidebarTab === "cuits") {
+      setTimeout(() => {
+        const el = document.querySelector('[data-arca-section="cuits"]');
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
+    /* eslint-disable-next-line */
+  }, [sidebarTab]);
   const [manualNombre, setManualNombre] = useState("");
   const [manualDocTipo, setManualDocTipo] = useState("CUIT");
   const [manualDocNro, setManualDocNro] = useState("");
@@ -16290,13 +16310,13 @@ export default function App() {
   if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
-  else if(page==="arca") pageContent = planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="arca") pageContent = planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
   else if(page==="stock") pageContent = planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
   else if(page==="ml") pageContent = planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")}/></PageView>;
   else if(page==="meta") pageContent = planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
-  else if(page==="tareas") pageContent = planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="tareas") pageContent = planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab}/></PageView>;
   else if(page==="reclamos") pageContent = <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
-  else if(page==="canjes") pageContent = <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)}/></PageView>;
+  else if(page==="canjes") pageContent = <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab}/></PageView>;
   else if(page==="envios") pageContent = <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
