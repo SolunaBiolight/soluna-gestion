@@ -10103,6 +10103,18 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     }} disabled={emitting||!cuitSel} title="Adjuntar a ML las facturas que todavía no se subieron" style={{background:"#FFE600",border:"1px solid #FFE60055",color:"#333",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:emitting?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
                       🟡 Adjuntar pendientes a ML
                     </button>
+                    <button onClick={async()=>{
+                      if(!cuitSel) return;
+                      if(!await appConfirm("Esto recorre todas las ventas de ML que ya tienen Nota de Crédito emitida y elimina la factura adjunta en cada pack. Útil para limpiar las anuladas viejas que no se desadjuntaron en su momento.\n\n¿Continuar?",{okLabel:"Limpiar ML"})) return;
+                      setEmitting(true);
+                      const d = await api("cleanup_ml_anuladas","POST",{});
+                      setEmitting(false);
+                      if(d.error){toast("Error: "+d.error,"error");return;}
+                      if(d.total===0){toast(d.message||"Sin pendientes","info");return;}
+                      toast(`${d.detached}/${d.total} ventas limpiadas en ML${d.failed?` · ${d.failed} con error`:""}`,d.failed>0?"warning":"success");
+                    }} disabled={emitting||!cuitSel} title="Recorre las ventas ML ya anuladas con NC y elimina la factura adjunta" style={{background:"transparent",border:`1px solid ${T.textMd}55`,color:T.textMd,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:emitting?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                      🧹 Limpiar ML
+                    </button>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.4}}>Total facturado · histórico</div>
                       <div style={{fontSize:16,fontWeight:800,color:T.text}}>$ {batches.reduce((s,b)=>s+(b.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>

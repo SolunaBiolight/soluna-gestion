@@ -1469,6 +1469,36 @@ export default async function handler(req, res) {
       return res.json({ ordenes: pagadas, total: Object.keys(pagadas).length, productos });
     }
 
+    // ── LIMPIEZA ML: re-correr desadjuntarFacturaML en TODAS las anuladas ──
+    // Útil para arrastrar ventas que se anularon antes del fix de detach.
+    if (action === "cleanup_ml_anuladas" && req.method === "POST") {
+      try {
+        const anulSnap = await db.collection("users").doc(uid).collection("arca_facturadas").get();
+        const targets = [];
+        for (const d of anulSnap.docs) {
+          const data = d.data();
+          // Solo las anuladas que sean de ML (order_id empieza con ML-)
+          if (data.anulada && String(d.id).startsWith("ML-")) {
+            targets.push(d.id);
+          }
+        }
+        if (targets.length === 0) {
+          return res.json({ ok: true, total: 0, detached: 0, failed: 0, message: "No hay ventas anuladas de ML para limpiar" });
+        }
+        const results = [];
+        let detached = 0, failed = 0;
+        // Procesamos secuencial para no chocar con rate-limit de ML
+        for (const orderIdFull of targets) {
+          const r = await desadjuntarFacturaML(db, uid, orderIdFull);
+          if (r.ok) { detached++; results.push({ order_id: orderIdFull, ok: true, deleted: r.deleted, endpoint: r.endpoint }); }
+          else { failed++; results.push({ order_id: orderIdFull, ok: false, reason: r.reason, errors: r.errors }); }
+        }
+        return res.json({ ok: true, total: targets.length, detached, failed, results });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
     // ── EMITIR NOTAS DE CRÉDITO EN LOTE (anula múltiples facturas) ──
     if (action === "emit_nc_batch" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
