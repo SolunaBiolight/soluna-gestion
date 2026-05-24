@@ -9102,7 +9102,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setEmitting(true);
     try {
       const d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
-      if (d.error) { toast(`Error: ${d.error}${d.detalle?" · "+d.detalle:""}`, "error"); return; }
+      if (d.error) {
+        toast(`Error ARCA: ${d.detalle || d.error}`, "error");
+        await appAlert(`No se pudo emitir la NC de la Factura ${resumen.letra} ${resumen.comprobante}.\n\nMensaje de ARCA:\n${d.detalle || d.error}\n\nEsto suele pasar cuando:\n• La Factura A original se emitió a un receptor sin CUIT (datos quedaron vacíos)\n• El receptor tiene tipo de doc inválido para Factura A (debe ser CUIT)\n• La factura ya fue anulada previamente`);
+        return;
+      }
       const mlMsg = d.nc.ml_detached === false ? " · ⚠ no se pudo desadjuntar de ML (revisá manualmente)" : "";
       toast(`NC ${d.nc.letra} N° ${String(d.nc.comprobante).padStart(8,"0")} emitida ✓${mlMsg}`, d.nc.ml_detached === false ? "warning" : "success");
       if (d.nc.pdf_b64) {
@@ -9150,6 +9154,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       const mlFails = (d.results || []).filter(r => r.ok && r.ml_detached === false).length;
       const extraMsg = mlFails > 0 ? ` · ⚠ ${mlFails} sin desadjuntar de ML` : "";
       toast(`${d.ok_count}/${d.total} NCs emitidas${d.errors?.length?` · ${d.errors.length} con error`:""}${extraMsg}`, (d.errors?.length || mlFails)?"warning":"success");
+      // Mostrar errores detallados de ARCA si hay fallos
+      if (d.errors?.length) {
+        const detalle = d.errors.slice(0, 8).map(e => `· Factura ${e.factura_comprobante}: ${e.error || "sin detalle"}`).join("\n");
+        await appAlert(`No se pudieron anular ${d.errors.length} factura(s):\n\n${detalle}${d.errors.length>8?`\n…y ${d.errors.length-8} más`:""}\n\nMirá el campo "error" — suele decir exactamente qué falló (datos del receptor, IVA, doc_nro vacío, etc.)`);
+      }
       refreshDashboard();
       await loadPendingOrders();
     } finally { setEmitting(false); }

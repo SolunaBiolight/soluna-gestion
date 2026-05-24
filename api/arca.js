@@ -596,6 +596,16 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
   const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   const docTipoClas = facturaOriginal.doc_tipo;
+  // Factura A → NC A requiere SIEMPRE CUIT del receptor (no se puede a Consumidor Final)
+  if (tipoFactura === 1 || tipoFactura === 2 || tipoFactura === 3) {
+    if (docTipoClas !== "CUIT" || !facturaOriginal.doc_nro) {
+      return {
+        cae: null, cae_vto: null, resultado: "R",
+        obs: `Factura A original no tiene CUIT del receptor registrado en Growith (doc_tipo="${docTipoClas||""}", doc_nro="${facturaOriginal.doc_nro||""}"). NC A requiere CUIT obligatorio. Editá los datos del receptor o emití la NC manualmente desde el portal ARCA.`,
+        tipo_nc: tipoNC, comprobante: cbteNcNro, neto: 0, iva: 0, total,
+      };
+    }
+  }
   let tipoDoc, nroDoc, neto, iva;
   if (monotributo) {
     tipoDoc = docTipoClas === "CUIT" ? 80 : docTipoClas === "DNI" ? 96 : 99;
