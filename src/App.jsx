@@ -9099,9 +9099,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       ? `\n📋 CUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
       : "";
     const msg = `¿Anular Factura ${resumen.letra} N° ${String(resumen.comprobante).padStart(8,"0")}?\n\n` +
-      `Se emite una **Nota de Crédito ${resumen.letra}** por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} que revierte 100% la factura. ` +
-      `El IVA débito fiscal se libera al cerrar el mes en ARCA — se descuenta de tu facturado del mes.${emisorInfo}\n\n` +
-      `${resumen.orden_id?.startsWith?.("ML-") ? "📎 Se adjunta la NC a la venta de Mercado Libre.\n" : ""}` +
+      `Se emite una Nota de Crédito ${resumen.letra} por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} que revierte 100% la factura en ARCA. ` +
+      `El IVA débito fiscal se descuenta de tu facturado del mes al cerrar el período.${emisorInfo}\n\n` +
+      `${resumen.orden_id?.startsWith?.("ML-") ? "📎 Se DESADJUNTA la factura original del pack de Mercado Libre — la venta queda como no facturada para que puedas re-emitirla con el CUIT correcto.\n\n" : ""}` +
       `Esta acción no se puede deshacer.`;
     if (!await appConfirm(msg, { okLabel: "Emitir NC y anular", danger: true })) return;
     const factura = {
@@ -9141,10 +9141,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const totalLote = (batch.total||0).toLocaleString("es-AR",{minimumFractionDigits:2});
     const msg = `¿Anular las ${batch.cantidad} facturas del lote?\n\n` +
       `Se emite una Nota de Crédito por CADA factura del lote (mismo importe, mismo cliente). ` +
-      `Total a revertir: **$${totalLote}**.\n\n` +
-      `El IVA débito fiscal se libera al cerrar el mes — se descuenta de tu facturado del mes en ARCA. ` +
-      `Las NCs de ventas de Mercado Libre se adjuntan automáticamente a cada pack.${emisorInfo}\n\n` +
-      `Esta acción no se puede deshacer. ¿Continuar?`;
+      `Total a revertir: $${totalLote}.\n\n` +
+      `El IVA débito fiscal se descuenta de tu facturado del mes en ARCA al cerrar el período. ` +
+      `Las facturas que estaban adjuntadas en Mercado Libre se DESADJUNTAN del pack para que cada venta quede como no facturada y puedas re-emitirla con el CUIT correcto.${emisorInfo}\n\n` +
+      `Esta acción no se puede deshacer.`;
     if (!await appConfirm(msg, { okLabel: `Emitir ${batch.cantidad} NCs`, danger: true })) return;
     const facturas = (batch.resumen||[]).map(r => ({
       tipo: r.tipo_cbte || (r.letra==="A"?1:r.letra==="C"?11:6),

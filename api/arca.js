@@ -1462,35 +1462,53 @@ export default async function handler(req, res) {
               });
             } catch (e) {}
 
-            // Marcar orden anulada + intentar adjuntar NC a ML si aplica
+            // Marcar orden anulada + remover de arca_comprobantes para que vuelva
+            // a aparecer como pendiente de facturar (con el CUIT correcto esta vez)
             let mlDetached = false;
             if (factura.order_id) {
               try {
                 await db.collection("users").doc(uid).collection("arca_facturadas").doc(String(factura.order_id))
                   .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
+                // Borrar todos los registros de arca_comprobantes asociados a esta orden
+                const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+                  .where("orden_id", "==", factura.order_id).get();
+                const batchDel = db.batch();
+                compSnap.docs.forEach(d => batchDel.delete(d.ref));
+                if (!compSnap.empty) await batchDel.commit();
               } catch (_) {}
-              // Si es ML, adjuntamos el PDF de la NC al pack (queda como reversa visible al comprador)
+              // Si es ML, DESADJUNTAMOS la factura original del pack — la venta
+              // queda como "no facturada" y se puede re-emitir con el CUIT correcto.
               if (String(factura.order_id).startsWith("ML-")) {
                 try {
                   const ml = await getValidMLToken(db, uid);
                   if (ml?.accessToken) {
                     const orderIdNum = String(factura.order_id).replace("ML-", "");
-                    // Obtener pack_id
                     const ordRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdNum}?attributes=pack_id`, {
                       headers: { Authorization: `Bearer ${ml.accessToken}` },
                     });
                     if (ordRes.ok) {
                       const ordJ = await ordRes.json();
                       const packId = ordJ.pack_id || orderIdNum;
-                      // Subir NC al pack
-                      const fd = new FormData();
-                      fd.append("fiscal_document", new Blob([Buffer.from(pdfB64, "base64")], { type: "application/pdf" }), `NC-${letra}-${String(ncNro).padStart(8,"0")}.pdf`);
-                      const upRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
-                        method: "POST",
+                      // Listar documentos fiscales del pack
+                      const listRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
                         headers: { Authorization: `Bearer ${ml.accessToken}` },
-                        body: fd,
                       });
-                      if (upRes.ok) mlDetached = true;
+                      if (listRes.ok) {
+                        const docs = await listRes.json();
+                        const docsArr = Array.isArray(docs) ? docs : (docs?.fiscal_documents || docs?.documents || []);
+                        // Borrar cada documento adjunto previo
+                        for (const doc of docsArr) {
+                          const docId = doc.id || doc.fiscal_document_id;
+                          if (!docId) continue;
+                          try {
+                            await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${docId}`, {
+                              method: "DELETE",
+                              headers: { Authorization: `Bearer ${ml.accessToken}` },
+                            });
+                          } catch (_) {}
+                        }
+                        mlDetached = true;
+                      }
                     }
                   }
                 } catch (_) {}
@@ -1500,7 +1518,7 @@ export default async function handler(req, res) {
               ok: true,
               factura_comprobante: factura.comprobante,
               nc: { tipo: tipoNC, letra, punto_venta: pv, comprobante: ncNro, cae: result.cae, total: result.total, nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf`, pdf_b64: pdfB64 },
-              ml_attached: mlDetached,
+              ml_detached: mlDetached,
             });
           } catch (e) {
             results.push({ ok: false, factura_comprobante: factura.comprobante, error: e.message });
@@ -1586,12 +1604,53 @@ export default async function handler(req, res) {
           await db.collection("users").doc(uid).collection("arca_notas_credito").add(ncRecord);
         } catch (e) { /* no crítico */ }
 
-        // Si el factura original tiene un order_id, marcamos esa orden como "anulada"
+        // Si el factura original tiene un order_id, marcamos anulada + borramos
+        // de arca_comprobantes + DESADJUNTAMOS de ML para que vuelva a aparecer como pendiente
+        let mlDetachedSingle = false;
         if (factura.order_id) {
           try {
             await db.collection("users").doc(uid).collection("arca_facturadas").doc(String(factura.order_id))
               .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
+            const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+              .where("orden_id", "==", factura.order_id).get();
+            const batchDel = db.batch();
+            compSnap.docs.forEach(d => batchDel.delete(d.ref));
+            if (!compSnap.empty) await batchDel.commit();
           } catch (e) {}
+          // ML: desadjuntar la factura original del pack
+          if (String(factura.order_id).startsWith("ML-")) {
+            try {
+              const ml = await getValidMLToken(db, uid);
+              if (ml?.accessToken) {
+                const orderIdNum = String(factura.order_id).replace("ML-", "");
+                const ordRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdNum}?attributes=pack_id`, {
+                  headers: { Authorization: `Bearer ${ml.accessToken}` },
+                });
+                if (ordRes.ok) {
+                  const ordJ = await ordRes.json();
+                  const packId = ordJ.pack_id || orderIdNum;
+                  const listRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+                    headers: { Authorization: `Bearer ${ml.accessToken}` },
+                  });
+                  if (listRes.ok) {
+                    const docs = await listRes.json();
+                    const docsArr = Array.isArray(docs) ? docs : (docs?.fiscal_documents || docs?.documents || []);
+                    for (const doc of docsArr) {
+                      const docId = doc.id || doc.fiscal_document_id;
+                      if (!docId) continue;
+                      try {
+                        await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${docId}`, {
+                          method: "DELETE",
+                          headers: { Authorization: `Bearer ${ml.accessToken}` },
+                        });
+                      } catch (_) {}
+                    }
+                    mlDetachedSingle = true;
+                  }
+                }
+              }
+            } catch (_) {}
+          }
         }
 
         return res.json({
