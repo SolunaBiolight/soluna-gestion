@@ -8777,22 +8777,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   // Modal facturación manual (mayoristas, etc)
   const [showManual, setShowManual] = useState(false);
-  // Reaccionar al cambio de tab del sidebar: abre el modal/sección correspondiente
+  // Cuando el sidebar selecciona "manual", también abrimos el modal de factura manual
+  // (además de mostrar el bloque de Emisión). Las secciones se muestran/ocultan
+  // vía display CSS según sidebarTab, así cada sub-tab es su propia "página".
   useEffect(() => {
     if (sidebarTab === "manual") {
       setShowManual(true);
-      if (setSidebarTab) setSidebarTab("pendientes"); // reset para que no quede pegado
-    } else if (sidebarTab === "historico") {
-      // Scroll a la sección de Facturas Emitidas (si existe el ancla)
-      setTimeout(() => {
-        const el = document.querySelector('[data-arca-section="historico"]');
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 100);
-    } else if (sidebarTab === "cuits") {
-      setTimeout(() => {
-        const el = document.querySelector('[data-arca-section="cuits"]');
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 100);
     }
     /* eslint-disable-next-line */
   }, [sidebarTab]);
@@ -9506,8 +9496,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           <>
             {/* ══ CON CUITs → PANEL PRINCIPAL ══ */}
 
-            {/* Guía colapsable */}
-            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,overflow:"hidden",marginBottom:24}}>
+            {/* Guía colapsable — sólo tab Pendientes (default) */}
+            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,overflow:"hidden",marginBottom:24,display:(!sidebarTab||sidebarTab==="pendientes")?"block":"none"}}>
               <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"16px 20px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:18}}>📖</span>
@@ -9547,8 +9537,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               )}
             </div>
 
-            {/* Navegador de meses del dashboard */}
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
+            {/* Navegador de meses del dashboard — sólo tab Pendientes */}
+            <div style={{display:(!sidebarTab||sidebarTab==="pendientes")?"flex":"none",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
               <button onClick={()=>navMes(-1)} style={{background:"transparent",border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"6px 12px",fontSize:14,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>←</button>
               <div style={{flex:1,textAlign:"center"}}>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Mes en vista</div>
@@ -9557,8 +9547,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <button onClick={()=>navMes(1)} disabled={esMesActualReal} style={{background:"transparent",border:"1px solid "+T.border,color:esMesActualReal?T.textSm:T.text,borderRadius:8,padding:"6px 12px",fontSize:14,cursor:esMesActualReal?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:esMesActualReal?0.4:1}}>→</button>
             </div>
 
-            {/* Dashboard del mes */}
-            <div style={{display:"grid",gridTemplateColumns: esRI ? "1fr 1fr 1fr" : "1fr 1fr",gap:14,marginBottom:24}}>
+            {/* Dashboard del mes — sólo tab Pendientes */}
+            <div style={{display:(!sidebarTab||sidebarTab==="pendientes")?"grid":"none",gridTemplateColumns: esRI ? "1fr 1fr 1fr" : "1fr 1fr",gap:14,marginBottom:24}}>
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
                 <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Monto facturado · {mesActual}</div>
                 <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>
@@ -9588,9 +9578,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               </div>
             </div>
 
-            {/* Zona de facturación */}
+            {/* Zona de facturación — wrapper contiene Pendientes y Manual */}
             <div style={{display:"flex",flexDirection:"column",gap:20}}>
-              <div>
+              <div style={{display:(!sidebarTab||sidebarTab==="pendientes")?"block":"none"}}>
                 {/* Upload */}
                 {/* ══ VENTAS PENDIENTES (desde integraciones conectadas) ══ */}
                 <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"22px 24px",marginBottom:16}}>
@@ -10010,8 +10000,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               )}
             </div>
 
-            {/* ══ EMISIÓN DE FACTURAS · Info y acciones ══ */}
-            <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid "+T.border}}>
+            {/* ══ EMISIÓN DE FACTURAS · Info y acciones — sólo tab Manual ══ */}
+            <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid "+T.border,display:sidebarTab==="manual"?"block":"none"}}>
               <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,marginBottom:8}}>
                 <div>
                   <div style={{fontSize:22,fontWeight:800,color:T.text}}>
@@ -10080,9 +10070,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               )}
             </div>
 
-            {/* ══ HISTORIAL DE BATCHES ══ */}
+            {/* ══ REGISTROS — sólo tab Registros ══ */}
             {batches.length > 0 && (
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px",marginTop:24}}>
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px",marginTop:24,display:sidebarTab==="historico"?"block":"none"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                   <div>
                     <div style={{fontSize:14,fontWeight:700,color:T.text}}>📚 Registros</div>
@@ -10172,6 +10162,44 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
               </div>
             )}
+
+            {/* ══ CUITs — gestión completa, sólo tab CUITs ══ */}
+            <div style={{display:sidebarTab==="cuits"?"block":"none",marginTop:0}}>
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>🪪 Mis CUITs</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Gestioná los CUITs que emiten facturas. Tocá uno para editar datos o agregá uno nuevo.</div>
+                  </div>
+                  <button onClick={()=>setShowWizard(true)} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    + Conectar CUIT
+                  </button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))",gap:12,marginTop:14}}>
+                  {cuits.map(c => {
+                    const isActive = cuitSel === c.cuit;
+                    return (
+                      <div key={c.cuit} style={{background:T.bg,border:`1px solid ${isActive?T.accent+"55":T.border}`,borderRadius:12,padding:"16px 18px",position:"relative"}}>
+                        {isActive && <span style={{position:"absolute",top:10,right:12,fontSize:9,padding:"2px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>ACTIVO</span>}
+                        <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4,paddingRight:isActive?60:0}}>{c.nombre_fantasia || c.razon_social}</div>
+                        <div style={{fontSize:11,color:T.textSm,fontFamily:"monospace",marginBottom:10}}>{formatCuit(c.cuit)}</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:11,color:T.textMd,marginBottom:12}}>
+                          <div>📋 {c.condicion_fiscal === "MONOTRIBUTO" ? "Responsable Monotributo" : "Responsable Inscripto"}</div>
+                          <div>🏪 Punto de Venta {String(c.punto_venta || 1).padStart(5,"0")}</div>
+                          <div>{c.arca_prod ? "🟢 Producción" : "🟡 Homologación"}</div>
+                          {c.domicilio && <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📍 {c.domicilio}</div>}
+                        </div>
+                        <div style={{display:"flex",gap:6}}>
+                          {!isActive && <button onClick={()=>setCuitSel(c.cuit)} style={{flex:1,background:"transparent",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Activar</button>}
+                          <button onClick={()=>openEditCuit(c)} style={{flex:1,background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏ Editar</button>
+                          <button onClick={()=>handleDeleteCuit(c.cuit)} style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🗑</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </>
         )}
       </div>
