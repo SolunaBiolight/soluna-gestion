@@ -8777,15 +8777,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   // Modal facturación manual (mayoristas, etc)
   const [showManual, setShowManual] = useState(false);
-  // Cuando el sidebar selecciona "manual", también abrimos el modal de factura manual
-  // (además de mostrar el bloque de Emisión). Las secciones se muestran/ocultan
-  // vía display CSS según sidebarTab, así cada sub-tab es su propia "página".
-  useEffect(() => {
-    if (sidebarTab === "manual") {
-      setShowManual(true);
-    }
-    /* eslint-disable-next-line */
-  }, [sidebarTab]);
+  // Las secciones se muestran/ocultan vía display CSS según sidebarTab.
+  // Factura manual ahora es inline (no modal).
   const [manualNombre, setManualNombre] = useState("");
   const [manualDocTipo, setManualDocTipo] = useState("CUIT");
   const [manualDocNro, setManualDocNro] = useState("");
@@ -10000,74 +9993,103 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               )}
             </div>
 
-            {/* ══ EMISIÓN DE FACTURAS · Info y acciones — sólo tab Manual ══ */}
-            <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid "+T.border,display:sidebarTab==="manual"?"block":"none"}}>
-              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,marginBottom:8}}>
-                <div>
-                  <div style={{fontSize:22,fontWeight:800,color:T.text}}>
-                    Emisión de facturas <span style={{color:T.accent}}>en ARCA</span>
-                  </div>
-                  <div style={{fontSize:13,color:T.textMd,marginTop:6,lineHeight:1.6,maxWidth:650}}>
-                    {esRI && "El bot decide solo el tipo de factura (A o B) según los datos del cliente."}
-                    {esMono && "Se emiten Facturas C automáticamente para todas las ventas."}
-                  </div>
+            {/* ══ FACTURA MANUAL — formulario inline (sólo tab Manual) ══ */}
+            <div style={{display:sidebarTab==="manual"?"block":"none",marginTop:0}}>
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"22px 26px"}}>
+                <div style={{marginBottom:18}}>
+                  <div style={{fontSize:18,fontWeight:800,color:T.text}}>Emitir factura manual</div>
+                  <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Para ventas fuera de tus integraciones (mayoristas, venta directa, etc.)</div>
                 </div>
-                <div style={{display:"flex",flexDirection:"column",gap:8,alignItems:"flex-end",flexShrink:0}}>
-                  <button onClick={()=>setShowManual(true)} disabled={!cuitSel} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:cuitSel?"pointer":"not-allowed",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:cuitSel?1:0.5}}>
-                    + Factura manual
-                  </button>
-                  <button onClick={handleTestConnection} disabled={!cuitSel||testingConn} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:500,cursor:(!cuitSel||testingConn)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",opacity:(!cuitSel||testingConn)?0.5:1}}>
-                    {testingConn ? <><Spinner size={11} color={T.textMd}/> Probando...</> : "🔌 Probar conexión"}
-                  </button>
-                </div>
-              </div>
-              <div style={{fontSize:12,color:T.textSm,marginTop:-4,marginBottom:12}}>
-                ¿Vendiste por afuera de las integraciones? Usá <strong style={{color:T.text}}>Factura manual</strong> para emitir una factura puntual (mayoristas, ventas directas, etc.)
-              </div>
-              {testConnResult && (
-                <div style={{padding:"10px 14px",borderRadius:10,marginBottom:12,fontSize:12,fontWeight:500,lineHeight:1.5,background:testConnResult.ok?T.greenBg:T.redBg,border:"1px solid "+(testConnResult.ok?T.green:T.red)+"33",color:testConnResult.ok?T.green:T.red}}>
-                  {testConnResult.ok ? "✅ Conexión exitosa con ARCA" : "❌ Error conectando con ARCA"} — {testConnResult.msg}
-                </div>
-              )}
 
-              {/* Info condición fiscal */}
-              {cuitActivo && (
-                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginTop:14}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-                    <span style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,border:"1px solid "+T.green+"44",color:T.green,background:T.greenBg,textTransform:"uppercase",letterSpacing:0.4}}>
-                      {esMono?"Monotributista":"Responsable Inscripto"}
-                    </span>
-                    <span style={{fontSize:12,color:T.textMd}}>
-                      {esMono?"Siempre se emite Factura C.":"El tipo de factura se elige automáticamente según el cliente."}
-                    </span>
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {esRI ? [
-                      {icon:"🟢",title:"Cliente con CUIT y es Responsable Inscripto",desc:"Se emite Factura A. Incluye IVA discriminado (21%). Si ARCA rechaza porque ese CUIT no es RI, automáticamente reintenta como Factura B sin que tengas que hacer nada."},
-                      {icon:"🔵",title:"Cliente con DNI (consumidor final)",desc:"Se emite Factura B a nombre del cliente. El IVA va incluido en el precio final, no se discrimina en el comprobante."},
-                      {icon:"⚪",title:"Sin datos del cliente",desc:"Si la plataforma no trae DNI ni CUIT del comprador (porque no completó el campo 'empresa' o 'documento'), se emite Factura B a Consumidor Final con CUIT genérico."},
-                    ].map((r,i)=>(
-                      <div key={i} style={{display:"flex",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:"1px solid "+T.borderL}}>
-                        <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{r.icon}</span>
-                        <div>
-                          <div style={{fontSize:12,fontWeight:700,color:T.text}}>{r.title}</div>
-                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginTop:3}}>{r.desc}</div>
+                {!manualResult ? (
+                  <>
+                    {/* Cliente */}
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8}}>Cliente</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}>
+                      <div>
+                        <label style={labelS}>Nombre / Razón social</label>
+                        <input value={manualNombre} onChange={e=>setManualNombre(e.target.value)} placeholder="Distribuidora SRL" style={iS}/>
+                      </div>
+                      <div>
+                        <label style={labelS}>Tipo de documento</label>
+                        <select value={manualDocTipo} onChange={e=>setManualDocTipo(e.target.value)} style={iS}>
+                          <option value="CUIT">CUIT</option>
+                          <option value="DNI">DNI</option>
+                          <option value="CF">Consumidor Final (sin doc)</option>
+                        </select>
+                      </div>
+                    </div>
+                    {manualDocTipo !== "CF" && (
+                      <div style={{marginBottom:18}}>
+                        <label style={labelS}>{manualDocTipo === "CUIT" ? "CUIT del cliente" : "DNI del cliente"}</label>
+                        <input value={manualDocNro} onChange={e=>setManualDocNro(e.target.value.replace(/\D/g,""))} placeholder={manualDocTipo === "CUIT" ? "30712345678" : "12345678"} style={iS}/>
+                      </div>
+                    )}
+
+                    {/* Items */}
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8,marginTop:6}}>Ítems</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8}}>
+                      {manualItems.map((it,i)=>(
+                        <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 110px 30px",gap:8,alignItems:"center"}}>
+                          <input value={it.nombre} onChange={e=>{const arr=[...manualItems];arr[i].nombre=e.target.value;setManualItems(arr);}} placeholder="Producto / servicio" style={{...iS,fontSize:12}}/>
+                          <input value={it.cantidad} onChange={e=>{const arr=[...manualItems];arr[i].cantidad=parseInt(e.target.value.replace(/\D/g,""))||0;setManualItems(arr);}} placeholder="Cant." style={{...iS,fontSize:12,textAlign:"center"}}/>
+                          <input value={it.precio||""} onChange={e=>{const arr=[...manualItems];arr[i].precio=parseFloat(e.target.value)||0;setManualItems(arr);}} placeholder="Precio s/IVA" type="number" step="0.01" style={{...iS,fontSize:12,textAlign:"right"}}/>
+                          <button onClick={()=>setManualItems(manualItems.filter((_,j)=>j!==i))} disabled={manualItems.length===1} style={{background:"transparent",border:"none",cursor:manualItems.length===1?"not-allowed":"pointer",color:T.red,fontSize:14,opacity:manualItems.length===1?0.3:1}}>🗑</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={()=>setManualItems([...manualItems,{nombre:"",cantidad:1,precio:0}])} style={{background:"transparent",border:"1px dashed "+T.border,color:T.textMd,borderRadius:8,padding:"7px 12px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginBottom:14}}>
+                      + Agregar ítem
+                    </button>
+
+                    {/* Total */}
+                    <div style={{padding:"14px 16px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <div style={{fontSize:12,color:T.textMd}}>Total {esMono ? "(sin IVA discriminado)" : "(IVA incluido al 21%)"}</div>
+                      <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.5}}>
+                        ${manualItems.reduce((s,it)=>s+(it.cantidad||0)*(it.precio||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}
+                      </div>
+                    </div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:18,lineHeight:1.5}}>
+                      Tipo de comprobante: <strong style={{color:T.text}}>
+                        {esMono ? "Factura C" : (manualDocTipo === "CUIT" ? "Factura A (con fallback a B)" : "Factura B")}
+                      </strong> · Punto de venta {String(cuitActivo?.punto_venta||1).padStart(5,"0")} · CUIT emisor {cuitActivo ? formatCuit(cuitActivo.cuit) : "—"}
+                    </div>
+
+                    <div style={{display:"flex",justifyContent:"flex-end"}}>
+                      <button onClick={handleEmitManual} disabled={emittingManual||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"11px 26px",fontSize:14,fontWeight:700,cursor:emittingManual?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:(!cuitSel||emittingManual)?0.5:1}}>
+                        {emittingManual?<><Spinner size={13} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir factura"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {manualResult.r?.ok ? (
+                      <div style={{padding:18,background:T.greenBg,border:"1px solid "+T.green+"33",borderRadius:10,marginBottom:14}}>
+                        <div style={{fontSize:14,fontWeight:700,color:T.green,marginBottom:6}}>✅ Factura emitida</div>
+                        <div style={{fontSize:12,color:T.text,lineHeight:1.7}}>
+                          Factura <strong>{manualResult.r.letra}</strong> N° <strong>{String(manualResult.r.comprobante).padStart(8,"0")}</strong><br/>
+                          CAE: <strong>{manualResult.r.cae}</strong> (vto. {manualResult.r.cae_vto})<br/>
+                          Total: <strong>${manualResult.r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>
                         </div>
                       </div>
-                    )) : [
-                      {icon:"🟣",title:"Todos los clientes → Factura C",desc:"Como monotributista, todos tus comprobantes son Factura C independientemente de si el cliente tiene CUIT, DNI o ningún dato. La Factura C no discrimina IVA — el monto total es lo que figura en el comprobante."},
-                    ].map((r,i)=>(
-                      <div key={i} style={{display:"flex",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:"1px solid "+T.borderL}}>
-                        <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{r.icon}</span>
-                        <div>
-                          <div style={{fontSize:12,fontWeight:700,color:T.text}}>{r.title}</div>
-                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginTop:3}}>{r.desc}</div>
-                        </div>
+                    ) : (
+                      <div style={{padding:14,background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:10,marginBottom:14,fontSize:12,color:T.red}}>
+                        ❌ {manualResult.r?.obs || "Error desconocido"}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    )}
+                    <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                      {manualResult.pdf && (
+                        <button onClick={()=>downloadPDF(manualResult.pdf)} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                          ⬇ Descargar PDF
+                        </button>
+                      )}
+                      <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        Emitir otra
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* ══ REGISTROS — sólo tab Registros ══ */}
@@ -10189,9 +10211,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div>{c.arca_prod ? "🟢 Producción" : "🟡 Homologación"}</div>
                           {c.domicilio && <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📍 {c.domicilio}</div>}
                         </div>
-                        <div style={{display:"flex",gap:6}}>
-                          {!isActive && <button onClick={()=>setCuitSel(c.cuit)} style={{flex:1,background:"transparent",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Activar</button>}
-                          <button onClick={()=>openEditCuit(c)} style={{flex:1,background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏ Editar</button>
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                          {!isActive && <button onClick={()=>setCuitSel(c.cuit)} style={{flex:1,minWidth:90,background:"transparent",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Activar</button>}
+                          <button onClick={()=>openEditCuit(c)} style={{flex:1,minWidth:80,background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏ Editar</button>
+                          <button onClick={async()=>{
+                            const prev = cuitSel; setCuitSel(c.cuit);
+                            setTimeout(async()=>{ await handleTestConnection(); if (prev !== c.cuit) setCuitSel(prev); }, 50);
+                          }} disabled={testingConn} style={{flex:1,minWidth:100,background:"transparent",border:`1px solid ${T.green}55`,color:T.green,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:testingConn?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{testingConn&&cuitSel===c.cuit?"...":"🔌 Probar"}</button>
                           <button onClick={()=>handleDeleteCuit(c.cuit)} style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🗑</button>
                         </div>
                       </div>
