@@ -364,8 +364,11 @@ async function consultarComprobante(token, sign, cuitNum, puntoVenta, tipoCbte, 
   let xml;
   try { xml = await wsfeCall("FECompConsultar", body, wsfeUrl); }
   catch (e) { return { error: `SOAP: ${e.message}` }; }
-  // Errores de ARCA (bloque <Err><Code>..</Code><Msg>..</Msg></Err>)
-  const errMsg = (xml.match(/<Msg>([\s\S]*?)<\/Msg>/) || [])[1];
+  // Errores reales de ARCA viven SOLO dentro de <Errors>. El bloque <Events>
+  // trae avisos informativos (ej: recordatorio de Condición IVA receptor) que
+  // NO son errores — no hay que confundirlos.
+  const errBlock = (xml.match(/<Errors>([\s\S]*?)<\/Errors>/) || [])[1];
+  const errMsg = errBlock && (errBlock.match(/<Msg>([\s\S]*?)<\/Msg>/) || [])[1];
   if (errMsg) return { error: `ARCA: ${errMsg.trim()}` };
   const docTipoNum = parseInt((xml.match(/<DocTipo>(\d+)<\/DocTipo>/) || [])[1] || "0");
   const docNroRaw = (xml.match(/<DocNro>(\d+)<\/DocNro>/) || [])[1] || "";
