@@ -571,6 +571,17 @@ function appAlert(message, opts = {}) {
     _appPromptNotify();
   });
 }
+function appPrompt(message, defaultValue = "", opts = {}) {
+  return new Promise(res => {
+    _appPromptState = {
+      kind:"prompt", message, title: opts.title || "Ingresá un valor",
+      okLabel: opts.okLabel || "Aceptar", cancelLabel: opts.cancelLabel || "Cancelar",
+      defaultValue, placeholder: opts.placeholder || "",
+    };
+    _appPromptResolver = res;
+    _appPromptNotify();
+  });
+}
 function _appPromptClose(val) {
   const r = _appPromptResolver;
   _appPromptState = null;
@@ -587,24 +598,34 @@ function AppPromptHost({ T }) {
     return () => _appPromptListeners.delete(fn);
   }, []);
   const s = _appPromptState;
+  const [inputVal, setInputVal] = React.useState("");
+  React.useEffect(() => { if (s?.kind === "prompt") setInputVal(s.defaultValue || ""); }, [s?.kind, s?.defaultValue]);
   if (!s) return null;
   const isConfirm = s.kind === "confirm";
+  const isPromptInput = s.kind === "prompt";
   const danger = s.danger;
+  const closeWith = (val) => _appPromptClose(val);
   return ReactDOM.createPortal(
     <div style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
-      onClick={() => isConfirm ? _appPromptClose(false) : _appPromptClose(true)}>
+      onClick={() => isConfirm ? closeWith(false) : (isPromptInput ? closeWith(null) : closeWith(true))}>
       <div onClick={e => e.stopPropagation()}
         style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:440,boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
         <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
-          {danger ? <span style={{color:T.red}}>⚠</span> : isConfirm ? <span style={{color:T.accent}}>?</span> : <span style={{color:T.blue||T.accent}}>ℹ</span>}
+          {danger ? <span style={{color:T.red}}>⚠</span> : (isConfirm || isPromptInput) ? <span style={{color:T.accent}}>?</span> : <span style={{color:T.blue||T.accent}}>ℹ</span>}
           {s.title}
         </div>
-        <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:18,whiteSpace:"pre-wrap"}}>{s.message}</div>
+        <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:isPromptInput?12:18,whiteSpace:"pre-wrap"}}>{s.message}</div>
+        {isPromptInput && (
+          <input autoFocus type="text" value={inputVal} onChange={e=>setInputVal(e.target.value)}
+            placeholder={s.placeholder||""}
+            onKeyDown={e=>{ if(e.key==="Enter") closeWith(inputVal); if(e.key==="Escape") closeWith(null); }}
+            style={{width:"100%",padding:"10px 12px",fontSize:14,borderRadius:9,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:18,outline:"none"}} />
+        )}
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-          {isConfirm && (
-            <button onClick={() => _appPromptClose(false)} style={{padding:"9px 16px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:9,background:T.surface,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.cancelLabel}</button>
+          {(isConfirm || isPromptInput) && (
+            <button onClick={() => closeWith(isPromptInput ? null : false)} style={{padding:"9px 16px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:9,background:T.surface,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.cancelLabel}</button>
           )}
-          <button autoFocus onClick={() => _appPromptClose(true)}
+          <button autoFocus={!isPromptInput} onClick={() => closeWith(isPromptInput ? inputVal : true)}
             style={{padding:"9px 18px",fontSize:13,fontWeight:700,border:"none",borderRadius:9,background:danger ? T.red : (T.accentSolid || T.accent),color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.okLabel}</button>
         </div>
       </div>
@@ -9101,10 +9122,35 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     };
     setEmitting(true);
     try {
-      const d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
+      let d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
+      // Caso típico: Factura A sin CUIT en Growith — ofrecer cargarlo y retry
+      const isMissingCuit = d.error && /CUIT del receptor|doc_tipo=""/i.test(d.detalle || "");
+      if (isMissingCuit) {
+        const cuitInput = await appPrompt(`La Factura ${resumen.letra} N° ${resumen.comprobante} no tiene el CUIT del receptor cargado en Growith.\n\nPegá el CUIT del cliente (11 dígitos, sin guiones) para guardarlo y reintentar la NC:`, "");
+        if (cuitInput) {
+          const cuitClean = String(cuitInput).replace(/\D/g, "");
+          if (cuitClean.length === 11) {
+            const u = await api("update_comprobante_receptor", "POST", {
+              cuit_emisor: cuitSel,
+              tipo_cbte: factura.tipo,
+              nro: factura.comprobante,
+              doc_tipo: "CUIT",
+              doc_nro: cuitClean,
+            });
+            if (!u.error) {
+              factura.doc_tipo = "CUIT";
+              factura.doc_nro = cuitClean;
+              d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
+            }
+          } else {
+            toast("CUIT inválido (debe tener 11 dígitos)", "error");
+            return;
+          }
+        }
+      }
       if (d.error) {
         toast(`Error ARCA: ${d.detalle || d.error}`, "error");
-        await appAlert(`No se pudo emitir la NC de la Factura ${resumen.letra} ${resumen.comprobante}.\n\nMensaje de ARCA:\n${d.detalle || d.error}\n\nEsto suele pasar cuando:\n• La Factura A original se emitió a un receptor sin CUIT (datos quedaron vacíos)\n• El receptor tiene tipo de doc inválido para Factura A (debe ser CUIT)\n• La factura ya fue anulada previamente`);
+        await appAlert(`No se pudo emitir la NC de la Factura ${resumen.letra} ${resumen.comprobante}.\n\nMensaje de ARCA:\n${d.detalle || d.error}`);
         return;
       }
       const mlMsg = d.nc.ml_detached === false ? " · ⚠ no se pudo desadjuntar de ML (revisá manualmente)" : "";

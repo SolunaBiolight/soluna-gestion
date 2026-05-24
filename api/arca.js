@@ -1618,6 +1618,26 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── ACTUALIZAR RECEPTOR (CUIT/DNI) de un comprobante registrado ──
+    // Útil para cargar el CUIT cuando el comprobante original se emitió sin él
+    // y ahora hace falta para poder emitir la NC (caso Factura A).
+    if (action === "update_comprobante_receptor" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { cuit_emisor, tipo_cbte, nro, doc_tipo, doc_nro, cliente } = body;
+      if (!cuit_emisor || !tipo_cbte || !nro) return res.status(400).json({ error: "Faltan datos del comprobante" });
+      const docId = `${String(cuit_emisor).replace(/\D/g, "")}_${tipo_cbte}_${String(nro).padStart(8, "0")}`;
+      try {
+        await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).set({
+          doc_tipo: doc_tipo || "",
+          doc_nro: String(doc_nro || "").replace(/\D/g, ""),
+          ...(cliente ? { cliente } : {}),
+        }, { merge: true });
+        return res.json({ ok: true });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
     // ── EMITIR NOTA DE CRÉDITO (anula factura emitida) ──
     if (action === "emit_nc" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
@@ -1849,7 +1869,7 @@ export default async function handler(req, res) {
               const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
               const body = Buffer.concat([head, pdfBuf, tail]);
 
-              const upRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+              const tryUpload = async () => fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
                 method: "POST",
                 headers: {
                   Authorization: `Bearer ${ml.accessToken}`,
@@ -1858,6 +1878,30 @@ export default async function handler(req, res) {
                 },
                 body,
               });
+              let upRes = await tryUpload();
+              // 409 conflict = ya hay una factura adjunta (probablemente la vieja anulada).
+              // Limpiar y reintentar UNA vez.
+              if (upRes.status === 409) {
+                try {
+                  const listR = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+                    headers: { Authorization: `Bearer ${ml.accessToken}` },
+                  });
+                  if (listR.ok) {
+                    const listJ = await listR.json().catch(() => ({}));
+                    const docs = Array.isArray(listJ) ? listJ : (listJ.results || listJ.fiscal_documents || []);
+                    for (const d of docs) {
+                      const did = d.id || d.fiscal_document_id;
+                      if (did) {
+                        await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${did}`, {
+                          method: "DELETE",
+                          headers: { Authorization: `Bearer ${ml.accessToken}` },
+                        }).catch(() => {});
+                      }
+                    }
+                    upRes = await tryUpload();
+                  }
+                } catch (_) {}
+              }
 
               if (upRes.ok) {
                 ml_uploaded = true;
@@ -2022,7 +2066,7 @@ export default async function handler(req, res) {
           const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
           const reqBody = Buffer.concat([head, pdfBuf, tail]);
 
-          const upRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+          const doUpload = async () => fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
             method: "POST",
             headers: {
               Authorization: `Bearer ${ml.accessToken}`,
@@ -2031,6 +2075,29 @@ export default async function handler(req, res) {
             },
             body: reqBody,
           });
+          let upRes = await doUpload();
+          // 409 = ya hay un fiscal doc anterior (típicamente la anulada). Borrar + retry.
+          if (upRes.status === 409) {
+            try {
+              const listR = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
+                headers: { Authorization: `Bearer ${ml.accessToken}` },
+              });
+              if (listR.ok) {
+                const listJ = await listR.json().catch(() => ({}));
+                const docs = Array.isArray(listJ) ? listJ : (listJ.results || listJ.fiscal_documents || []);
+                for (const d of docs) {
+                  const did = d.id || d.fiscal_document_id;
+                  if (did) {
+                    await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${did}`, {
+                      method: "DELETE",
+                      headers: { Authorization: `Bearer ${ml.accessToken}` },
+                    }).catch(() => {});
+                  }
+                }
+                upRes = await doUpload();
+              }
+            } catch (_) {}
+          }
 
           if (upRes.ok) {
             await c.ref.set({ ml_uploaded: true, ml_uploaded_at: new Date().toISOString() }, { merge: true });
