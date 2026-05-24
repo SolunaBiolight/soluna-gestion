@@ -9153,13 +9153,19 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         await appAlert(`No se pudo emitir la NC de la Factura ${resumen.letra} ${resumen.comprobante}.\n\nMensaje de ARCA:\n${d.detalle || d.error}`);
         return;
       }
-      const mlMsg = d.nc.ml_detached === false ? " · ⚠ no se pudo desadjuntar de ML (revisá manualmente)" : "";
-      toast(`NC ${d.nc.letra} N° ${String(d.nc.comprobante).padStart(8,"0")} emitida ✓${mlMsg}`, d.nc.ml_detached === false ? "warning" : "success");
+      const mlFailed = d.nc.ml_detached === false && resumen.orden_id?.startsWith?.("ML-");
+      const mlMsg = mlFailed ? " · ⚠ borrá la factura en ML a mano (botón 🔗 Ver en ML)" : "";
+      toast(`NC ${d.nc.letra} N° ${String(d.nc.comprobante).padStart(8,"0")} emitida ✓${mlMsg}`, mlFailed ? "warning" : "success");
       if (d.nc.pdf_b64) {
         const a = document.createElement("a");
         a.href = "data:application/pdf;base64," + d.nc.pdf_b64;
         a.download = d.nc.nombre_pdf;
         a.click();
+      }
+      if (mlFailed) {
+        const link = `https://www.mercadolibre.com.ar/ventas/${String(resumen.orden_id).replace("ML-","")}/detalle`;
+        window.open(link, "_blank", "noopener");
+        await appAlert(`La NC se emitió bien ✓, pero Mercado Libre no permitió desadjuntar la factura automáticamente.\n\nTe abrí la venta en una pestaña nueva. Para borrarla a mano:\n1. Andá a "Ver más detalles" de la venta\n2. Buscá la factura adjunta\n3. 3 puntitos del documento → Eliminar\n\nSi no se abrió la pestaña, usá el botón 🔗 Ver en ML de la factura.`);
       }
       refreshDashboard();
       // Recargar pendientes para que la venta vuelva a aparecer + pierda el verde
@@ -9197,13 +9203,25 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       const d = await api("emit_nc_batch", "POST", { cuit: cuitSel, facturas });
       if (d.error) { toast(`Error: ${d.error}`, "error"); return; }
-      const mlFails = (d.results || []).filter(r => r.ok && r.ml_detached === false).length;
+      const mlFailResults = (d.results || []).filter(r => r.ok && r.ml_detached === false);
+      const mlFails = mlFailResults.length;
       const extraMsg = mlFails > 0 ? ` · ⚠ ${mlFails} sin desadjuntar de ML` : "";
       toast(`${d.ok_count}/${d.total} NCs emitidas${d.errors?.length?` · ${d.errors.length} con error`:""}${extraMsg}`, (d.errors?.length || mlFails)?"warning":"success");
       // Mostrar errores detallados de ARCA si hay fallos
       if (d.errors?.length) {
         const detalle = d.errors.slice(0, 8).map(e => `· Factura ${e.factura_comprobante}: ${e.error || "sin detalle"}`).join("\n");
         await appAlert(`No se pudieron anular ${d.errors.length} factura(s):\n\n${detalle}${d.errors.length>8?`\n…y ${d.errors.length-8} más`:""}\n\nMirá el campo "error" — suele decir exactamente qué falló (datos del receptor, IVA, doc_nro vacío, etc.)`);
+      }
+      // Ventas de ML que no se pudieron desadjuntar: listar links para borrarlas a mano
+      if (mlFails > 0) {
+        const links = mlFailResults.map(r => {
+          const res = (batch.resumen||[]).find(x => x.comprobante === r.factura_comprobante);
+          const oid = res?.orden_id || "";
+          return oid.startsWith("ML-") ? `https://www.mercadolibre.com.ar/ventas/${oid.replace("ML-","")}/detalle` : null;
+        }).filter(Boolean);
+        if (links.length) {
+          await appAlert(`${links.length} factura(s) de Mercado Libre no se pudieron desadjuntar automáticamente.\n\nBorralas a mano: en cada venta andá a "Ver más detalles" → factura adjunta → 3 puntitos → Eliminar. Usá el botón 🔗 Ver en ML de cada factura, o estos links:\n\n${links.join("\n")}`);
+        }
       }
       refreshDashboard();
       await loadPendingOrders();
@@ -10170,27 +10188,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     }} disabled={emitting||!cuitSel} title="Adjuntar a ML las facturas que todavía no se subieron" style={{background:"#FFE600",border:"1px solid #FFE60055",color:"#333",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:emitting?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
                       🟡 Adjuntar pendientes a ML
                     </button>
-                    <button onClick={async()=>{
-                      if(!cuitSel) return;
-                      if(!await appConfirm("Recorre todas las ventas de ML que ya tienen Nota de Crédito emitida e intenta eliminar la factura adjunta en cada pack vía API.\n\nNota: ML no siempre permite borrar fiscal documents via API. Las que fallen te las listo para borrar a mano.\n\n¿Continuar?",{okLabel:"Limpiar ML"})) return;
-                      setEmitting(true);
-                      const d = await api("cleanup_ml_anuladas","POST",{});
-                      setEmitting(false);
-                      if(d.error){toast("Error: "+d.error,"error");return;}
-                      if(d.total===0){toast(d.message||"Sin pendientes","info");return;}
-                      // Si hubo errores, mostrar detalle
-                      if(d.failed>0){
-                        const fallidas = (d.results||[]).filter(r=>!r.ok).slice(0,15);
-                        const detalle = fallidas.map(r => `· ${r.order_id} → ${r.reason||"sin detalle"}`).join("\n");
-                        const links = fallidas.map(r => `https://www.mercadolibre.com.ar/ventas/${(r.order_id||"").replace("ML-","")}/detalle`).join("\n");
-                        await appAlert(`Limpieza terminada: ${d.detached}/${d.total} OK · ${d.failed} fallaron\n\nML no permitió eliminar estas vía API:\n${detalle}${fallidas.length<d.failed?`\n…y ${d.failed-fallidas.length} más`:""}\n\nAbrí cada venta en ML y eliminá la factura a mano (3 puntitos del documento adjunto → Eliminar). Te paso los links en consola.\n\n${links}`);
-                        console.log("Links ventas ML a limpiar manualmente:\n"+links);
-                      } else {
-                        toast(`✓ ${d.detached}/${d.total} ventas limpiadas en ML`,"success");
-                      }
-                    }} disabled={emitting||!cuitSel} title="Recorre las ventas ML anuladas con NC e intenta desadjuntar la factura" style={{background:"transparent",border:`1px solid ${T.textMd}55`,color:T.textMd,borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:emitting?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
-                      🧹 Limpiar ML
-                    </button>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.4}}>Total facturado · histórico</div>
                       <div style={{fontSize:16,fontWeight:800,color:T.text}}>$ {batches.reduce((s,b)=>s+(b.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
@@ -10235,6 +10232,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 }} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
                                   ⬇ PDF
                                 </button>
+                                {String(r.orden_id||"").startsWith("ML-") && (
+                                  <a href={`https://www.mercadolibre.com.ar/ventas/${String(r.orden_id).replace("ML-","")}/detalle`} target="_blank" rel="noopener" title="Abrí la venta en Mercado Libre para borrar la factura adjunta a mano (3 puntitos del documento → Eliminar)" style={{background:"#FFE600",border:"1px solid #FFE60055",color:"#333",borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap",textDecoration:"none"}}>
+                                    🔗 Ver en ML
+                                  </a>
+                                )}
                                 <button onClick={()=>anularUnaFactura(r, b)} title="Emite NC para anular esta factura" style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:6,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>
                                   🔄 Anular
                                 </button>
