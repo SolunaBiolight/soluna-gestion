@@ -495,6 +495,78 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
   return { cae, cae_vto: caeVto, resultado: resM?.[1] || null, obs: obsM.trim() };
 }
 
+// ─── Helper: desadjuntar TODOS los documentos fiscales adjuntos a una venta ML ──
+// ML expone varios endpoints según versión. Probamos en orden:
+//   1) /packs/{pack_id}/fiscal_documents → DELETE /packs/{pack_id}/fiscal_documents/{doc_id}
+//   2) /sites/MLA/fiscal_documents?orders={order_id} → DELETE /fiscal_documents/{doc_id}
+//   3) /orders/{order_id}/fiscal_documents
+// Si ninguno responde con docs, devolvemos { ok: false, reason }.
+async function desadjuntarFacturaML(db, uid, orderIdFull) {
+  try {
+    const ml = await getValidMLToken(db, uid);
+    if (!ml?.accessToken) return { ok: false, reason: "ml_no_token" };
+    const orderIdNum = String(orderIdFull).replace("ML-", "");
+
+    // Resolver pack_id (puede ser igual a order_id si la venta no está en un pack)
+    let packId = orderIdNum;
+    try {
+      const ordRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdNum}?attributes=pack_id`, {
+        headers: { Authorization: `Bearer ${ml.accessToken}` },
+      });
+      if (ordRes.ok) {
+        const ordJ = await ordRes.json();
+        if (ordJ.pack_id) packId = ordJ.pack_id;
+      }
+    } catch (_) {}
+
+    const triedEndpoints = [];
+    const auth = { Authorization: `Bearer ${ml.accessToken}` };
+
+    // Helper para listar docs en un endpoint y borrar cada uno
+    const tryListAndDelete = async (listUrl, deleteUrlBuilder) => {
+      try {
+        const r = await fetch(listUrl, { headers: auth });
+        triedEndpoints.push({ url: listUrl, status: r.status });
+        if (!r.ok) return { count: 0, errors: [`list ${r.status}`] };
+        const j = await r.json();
+        const docs = Array.isArray(j) ? j : (j?.fiscal_documents || j?.documents || j?.results || []);
+        const errors = [];
+        let deleted = 0;
+        for (const doc of docs) {
+          const docId = doc.id || doc.fiscal_document_id || doc.document_id || doc.uuid;
+          if (!docId) continue;
+          try {
+            const delUrl = deleteUrlBuilder(docId);
+            const dr = await fetch(delUrl, { method: "DELETE", headers: auth });
+            triedEndpoints.push({ url: delUrl, status: dr.status, method: "DELETE" });
+            if (dr.ok) deleted++;
+            else errors.push(`delete ${docId} → ${dr.status}`);
+          } catch (e) { errors.push(`delete ${docId} → ${e.message}`); }
+        }
+        return { count: deleted, errors };
+      } catch (e) { return { count: 0, errors: [e.message] }; }
+    };
+
+    // Intento 1: /packs/{pack_id}/fiscal_documents
+    let r1 = await tryListAndDelete(
+      `https://api.mercadolibre.com/packs/${packId}/fiscal_documents`,
+      (docId) => `https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${docId}`
+    );
+    if (r1.count > 0) return { ok: true, deleted: r1.count, endpoint: "packs/{pack_id}", tried: triedEndpoints };
+
+    // Intento 2: /orders/{order_id}/fiscal_documents (algunas ventas single-item)
+    let r2 = await tryListAndDelete(
+      `https://api.mercadolibre.com/orders/${orderIdNum}/fiscal_documents`,
+      (docId) => `https://api.mercadolibre.com/orders/${orderIdNum}/fiscal_documents/${docId}`
+    );
+    if (r2.count > 0) return { ok: true, deleted: r2.count, endpoint: "orders/{id}", tried: triedEndpoints };
+
+    return { ok: false, reason: "no_docs_or_delete_unsupported", tried: triedEndpoints, errors: [...r1.errors, ...r2.errors] };
+  } catch (e) {
+    return { ok: false, reason: "exception", error: e.message };
+  }
+}
+
 // ─── Nota de Crédito (anula factura emitida) ──────────────
 // Mapeo Factura → Nota de Crédito correspondiente:
 //   Factura A (1)  → Nota de Crédito A (3)
@@ -1476,42 +1548,10 @@ export default async function handler(req, res) {
                 compSnap.docs.forEach(d => batchDel.delete(d.ref));
                 if (!compSnap.empty) await batchDel.commit();
               } catch (_) {}
-              // Si es ML, DESADJUNTAMOS la factura original del pack — la venta
-              // queda como "no facturada" y se puede re-emitir con el CUIT correcto.
+              // ML: desadjuntar factura original del pack/orden
               if (String(factura.order_id).startsWith("ML-")) {
-                try {
-                  const ml = await getValidMLToken(db, uid);
-                  if (ml?.accessToken) {
-                    const orderIdNum = String(factura.order_id).replace("ML-", "");
-                    const ordRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdNum}?attributes=pack_id`, {
-                      headers: { Authorization: `Bearer ${ml.accessToken}` },
-                    });
-                    if (ordRes.ok) {
-                      const ordJ = await ordRes.json();
-                      const packId = ordJ.pack_id || orderIdNum;
-                      // Listar documentos fiscales del pack
-                      const listRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
-                        headers: { Authorization: `Bearer ${ml.accessToken}` },
-                      });
-                      if (listRes.ok) {
-                        const docs = await listRes.json();
-                        const docsArr = Array.isArray(docs) ? docs : (docs?.fiscal_documents || docs?.documents || []);
-                        // Borrar cada documento adjunto previo
-                        for (const doc of docsArr) {
-                          const docId = doc.id || doc.fiscal_document_id;
-                          if (!docId) continue;
-                          try {
-                            await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${docId}`, {
-                              method: "DELETE",
-                              headers: { Authorization: `Bearer ${ml.accessToken}` },
-                            });
-                          } catch (_) {}
-                        }
-                        mlDetached = true;
-                      }
-                    }
-                  }
-                } catch (_) {}
+                const mlR = await desadjuntarFacturaML(db, uid, factura.order_id);
+                mlDetached = mlR.ok;
               }
             }
             results.push({
@@ -1617,39 +1657,10 @@ export default async function handler(req, res) {
             compSnap.docs.forEach(d => batchDel.delete(d.ref));
             if (!compSnap.empty) await batchDel.commit();
           } catch (e) {}
-          // ML: desadjuntar la factura original del pack
+          // ML: desadjuntar la factura original del pack/orden
           if (String(factura.order_id).startsWith("ML-")) {
-            try {
-              const ml = await getValidMLToken(db, uid);
-              if (ml?.accessToken) {
-                const orderIdNum = String(factura.order_id).replace("ML-", "");
-                const ordRes = await fetch(`https://api.mercadolibre.com/orders/${orderIdNum}?attributes=pack_id`, {
-                  headers: { Authorization: `Bearer ${ml.accessToken}` },
-                });
-                if (ordRes.ok) {
-                  const ordJ = await ordRes.json();
-                  const packId = ordJ.pack_id || orderIdNum;
-                  const listRes = await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents`, {
-                    headers: { Authorization: `Bearer ${ml.accessToken}` },
-                  });
-                  if (listRes.ok) {
-                    const docs = await listRes.json();
-                    const docsArr = Array.isArray(docs) ? docs : (docs?.fiscal_documents || docs?.documents || []);
-                    for (const doc of docsArr) {
-                      const docId = doc.id || doc.fiscal_document_id;
-                      if (!docId) continue;
-                      try {
-                        await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${docId}`, {
-                          method: "DELETE",
-                          headers: { Authorization: `Bearer ${ml.accessToken}` },
-                        });
-                      } catch (_) {}
-                    }
-                    mlDetachedSingle = true;
-                  }
-                }
-              }
-            } catch (_) {}
+            const mlResult = await desadjuntarFacturaML(db, uid, factura.order_id);
+            mlDetachedSingle = mlResult.ok;
           }
         }
 
@@ -1665,6 +1676,7 @@ export default async function handler(req, res) {
             total: result.total,
             pdf_b64: pdfB64,
             nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf`,
+            ml_detached: factura.order_id && String(factura.order_id).startsWith("ML-") ? mlDetachedSingle : null,
           },
         });
       } catch (e) {

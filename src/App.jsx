@@ -9120,8 +9120,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       const d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
       if (d.error) { toast(`Error: ${d.error}${d.detalle?" · "+d.detalle:""}`, "error"); return; }
-      toast(`NC ${d.nc.letra} N° ${String(d.nc.comprobante).padStart(8,"0")} emitida ✓`, "success");
-      // Descargar PDF de la NC
+      const mlMsg = d.nc.ml_detached === false ? " · ⚠ no se pudo desadjuntar de ML (revisá manualmente)" : "";
+      toast(`NC ${d.nc.letra} N° ${String(d.nc.comprobante).padStart(8,"0")} emitida ✓${mlMsg}`, d.nc.ml_detached === false ? "warning" : "success");
       if (d.nc.pdf_b64) {
         const a = document.createElement("a");
         a.href = "data:application/pdf;base64," + d.nc.pdf_b64;
@@ -9129,6 +9129,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         a.click();
       }
       refreshDashboard();
+      // Recargar pendientes para que la venta vuelva a aparecer + pierda el verde
+      await loadPendingOrders();
     } finally { setEmitting(false); }
   }
 
@@ -9162,8 +9164,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       const d = await api("emit_nc_batch", "POST", { cuit: cuitSel, facturas });
       if (d.error) { toast(`Error: ${d.error}`, "error"); return; }
-      toast(`${d.ok_count}/${d.total} NCs emitidas${d.errors?.length?` · ${d.errors.length} con error`:""}`, d.errors?.length?"warning":"success");
+      const mlFails = (d.results || []).filter(r => r.ok && r.ml_detached === false).length;
+      const extraMsg = mlFails > 0 ? ` · ⚠ ${mlFails} sin desadjuntar de ML` : "";
+      toast(`${d.ok_count}/${d.total} NCs emitidas${d.errors?.length?` · ${d.errors.length} con error`:""}${extraMsg}`, (d.errors?.length || mlFails)?"warning":"success");
       refreshDashboard();
+      await loadPendingOrders();
     } finally { setEmitting(false); }
   }
 
