@@ -1563,17 +1563,25 @@ export default async function handler(req, res) {
           const tipoNC = tipoNCparaFactura(tipoFactura);
           try {
             // Factura A sin CUIT en Firestore: recuperarlo desde ARCA y persistirlo.
+            let consultaArca = null;
             if (tipoFactura === 1 && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
               const pvOriginal = parseInt(factura.punto_venta) || pv;
-              const datos = await consultarComprobante(token, sign, cuitNum, pvOriginal, tipoFactura, parseInt(factura.comprobante), wsfe);
-              if (datos && datos.doc_tipo === "CUIT" && datos.doc_nro) {
+              consultaArca = await consultarComprobante(token, sign, cuitNum, pvOriginal, tipoFactura, parseInt(factura.comprobante), wsfe);
+              if (consultaArca && consultaArca.doc_tipo === "CUIT" && consultaArca.doc_nro) {
                 factura.doc_tipo = "CUIT";
-                factura.doc_nro = datos.doc_nro;
+                factura.doc_nro = consultaArca.doc_nro;
                 try {
                   const docId = `${String(cuitEmit).replace(/\D/g, "")}_${tipoFactura}_${String(factura.comprobante).padStart(8, "0")}`;
                   await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
-                    .set({ doc_tipo: "CUIT", doc_nro: datos.doc_nro }, { merge: true });
+                    .set({ doc_tipo: "CUIT", doc_nro: consultaArca.doc_nro }, { merge: true });
                 } catch (_) {}
+              } else {
+                // No pudimos recuperar el CUIT desde ARCA. Devolver error diagnóstico.
+                const diag = !consultaArca ? "ARCA no respondió a la consulta del comprobante" :
+                  consultaArca.doc_tipo === "CF" ? "ARCA registra el comprobante como Consumidor Final (sin CUIT). ¿Estás seguro que es Factura A?" :
+                  `ARCA devolvió doc_tipo="${consultaArca.doc_tipo}" doc_nro="${consultaArca.doc_nro}"`;
+                results.push({ ok: false, factura_comprobante: factura.comprobante, error: `[consulta-arca] ${diag}` });
+                continue;
               }
             }
             if (ultimosNC[tipoNC] === undefined) {
