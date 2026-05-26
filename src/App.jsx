@@ -12112,8 +12112,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         }
       };
     };
-    const VIDEO_CONCURRENT = 40;
-    const IMAGE_CONCURRENT = 40;
+    const VIDEO_CONCURRENT = 2;
+    const IMAGE_CONCURRENT = 4;
     const videoWorker = makeWorker(videoIndices);
     const imageWorker = makeWorker(imageIndices);
     await Promise.all([
