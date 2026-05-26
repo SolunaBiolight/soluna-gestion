@@ -546,7 +546,7 @@ const TIPOS_R = ["Cambio","Devolución"];
 const PRODUCTOS = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Líquido Limpia Cristales"];
 const SKU_LENTE = { "AMARILLO-NN":"Amarillo","AMARILLO-TT":"Amarillo","NARAN-NN":"Naranja","NARAN-TT":"Naranja","ROJ-NN":"Rojo","ROJ-TT":"Rojo","N-N":"Negro","N-R":"Negro/Rojo","R-R":"Rojo/Rojo","CLIP-ON":"Clip-On","LIQ":"Líquido" };
 const LENTE_DOT = { Amarillo:"#fbbf24",Naranja:"#fb923c",Rojo:"#f87171",Negro:"#a1a1aa","Clip-On":"#c084fc",Líquido:"#60a5fa" };
-const ESTADOS_C = ["Pendiente envío","Enviado","Contenido pendiente","Contenido entregado","Finalizado","Cancelado"];
+const ESTADOS_C = ["Por enviar","Enviado","Contenido pendiente","Cerrado"];
 const REDES = ["Instagram","TikTok","YouTube","Twitter/X","Otro"];
 const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
 const NICHOS = ["Fitness","Biohacking","Nutrición","Lifestyle","Wellness","Tech","Futbolista","Streamer","Otro"];
@@ -811,12 +811,14 @@ function getEstadoRC(T, estado) {
 }
 function getEstadoCC(T, estado) {
   const m = {
-    "Pendiente envío":     { dot:T.yellow, bg:T.yellowBg, text:T.yellow },
+    "Por enviar":          { dot:T.yellow, bg:T.yellowBg, text:T.yellow },
+    "Pendiente envío":     { dot:T.yellow, bg:T.yellowBg, text:T.yellow }, // compat
     "Enviado":             { dot:T.blue,   bg:T.blueBg,   text:T.blue   },
     "Contenido pendiente": { dot:T.orange, bg:T.orangeBg, text:T.orange },
-    "Contenido entregado": { dot:T.purple, bg:T.purpleBg, text:T.purple },
-    "Finalizado":          { dot:T.green,  bg:T.greenBg,  text:T.green  },
-    "Cancelado":           { dot:T.red,    bg:T.redBg,    text:T.red    },
+    "Contenido entregado": { dot:T.green,  bg:T.greenBg,  text:T.green  }, // compat
+    "Cerrado":             { dot:T.green,  bg:T.greenBg,  text:T.green  },
+    "Finalizado":          { dot:T.green,  bg:T.greenBg,  text:T.green  }, // compat
+    "Cancelado":           { dot:T.red,    bg:T.redBg,    text:T.red    }, // compat
   };
   return m[estado] || { dot:T.textSm, bg:T.borderL, text:T.textSm };
 }
@@ -2493,8 +2495,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [saving,setSaving]=useState(false);
   // Mapeo sidebar(id) → viewTab interno. Activos=lista, Historial=ranking, Influencers=perfiles
-  const sidebarToInternal = { activos:"lista", historial:"ranking", influencers:"perfiles" };
-  const internalToSidebar = { lista:"activos", kanban:"activos", ranking:"historial", comisiones:"historial", perfiles:"influencers" };
+  const sidebarToInternal = { activos:"lista", historial:"comisiones", influencers:"perfiles" };
+  const internalToSidebar = { lista:"activos", kanban:"activos", comisiones:"historial", perfiles:"influencers" };
   const [viewTabLocal,setViewTabLocal]=useState("lista");
   const viewTab = tabProp !== undefined ? (sidebarToInternal[tabProp] || tabProp) : viewTabLocal;
   const setViewTab = (v) => {
@@ -2618,11 +2620,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   const emptyForm=()=>({
     _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"", linkInstagram:"", pedidoRef:"",
-    producto:"", productosCanje:[], estado:"Pendiente envío", tracking:"", notas:"", linkContenido:"",
+    producto:"", productosCanje:[], estado:"Por enviar", tracking:"", notas:"", linkContenido:"",
     fechaEnvio:"", fechaPublicacion:"",
     foto:"", nicho:"",
     contenido: ACTIVIDADES.map(tipo=>({tipo, acordados:0, entregados:0})),
-    alcance:"", reproducciones:"", likes:"", guardados:"",
     historial:[],
     recordatorio:"",
     codigoDescuento:"", comisionPct:"",
@@ -2642,8 +2643,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         fechaEnvio:form.fechaEnvio||"", fechaPublicacion:form.fechaPublicacion||"",
         foto:form.foto||"", nicho:form.nicho||"",
         contenido:form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),
-        alcance:form.alcance||"", reproducciones:form.reproducciones||"",
-        likes:form.likes||"", guardados:form.guardados||"",
         historial:form.historial||[],
         recordatorio:form.recordatorio||"",
         codigoDescuento:(form.codigoDescuento||"").toUpperCase().trim(),
@@ -2651,7 +2650,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       };
       if(form._docId) {
         const prev=canjes.find(c=>c._docId===form._docId);
-        await updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Finalizado"&&prev?.estado!=="Finalizado"?{finalizadoAt:serverTimestamp()}:{})});
+        await updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Cerrado"&&prev?.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});
       } else {
         await addDoc(collection(db,"canjes"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
       }
@@ -2755,14 +2754,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
   function exportCSV() {
     const headers=["Nombre","Usuario","Red","Nicho","Seguidores","Producto","Estado","Fecha Envío","Tracking","Alcance","Reproducciones","Likes","Guardados","Email","Teléfono","Notas"];
-    const rows=canjes.map(c=>[c.influencer,c.usuario,c.red,c.nicho||"",c.seguidores||"",c.producto,c.estado,c.fechaEnvio||"",c.tracking||"",c.alcance||"",c.reproducciones||"",c.likes||"",c.guardados||"",c.email||"",c.telefono||"",(c.notas||"").replace(/\n/g," ")]);
+    const rows=canjes.map(c=>[c.influencer,c.usuario,c.red,c.nicho||"",c.seguidores||"",c.producto,c.estado,c.fechaEnvio||"",c.tracking||"",c.codigoDescuento||"",c.comisionPct||"",c.email||"",c.telefono||"",(c.notas||"").replace(/\n/g," ")]);
     const csv=[headers,...rows].map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");a.href=url;a.download="canjes-growith.csv";a.click();URL.revokeObjectURL(url);
   }
 
-  const stats={total:canjes.length,pendientes:canjes.filter(c=>c.estado==="Pendiente envío").length,enviados:canjes.filter(c=>c.estado==="Enviado").length,contPend:canjes.filter(c=>c.estado==="Contenido pendiente").length,publicados:canjes.filter(c=>c.estado==="Contenido entregado").length,finalizados:canjes.filter(c=>c.estado==="Finalizado").length};
+  const stats={
+    total:canjes.length,
+    porEnviar:canjes.filter(c=>c.estado==="Por enviar"||c.estado==="Pendiente envío").length,
+    enviados:canjes.filter(c=>c.estado==="Enviado").length,
+    contPend:canjes.filter(c=>c.estado==="Contenido pendiente").length,
+    cerrados:canjes.filter(c=>c.estado==="Cerrado"||c.estado==="Finalizado"||c.estado==="Contenido entregado").length,
+  };
   const detailC=canjes.find(c=>c._docId===detail);
 
   return (
@@ -2777,11 +2782,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         <div style={{display:"flex",gap:0,background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:20}}>
           {[
             {label:"Total",value:stats.total,color:T.textMd,estado:""},
-            {label:"Pend. envío",value:stats.pendientes,color:T.yellow,estado:"Pendiente envío"},
+            {label:"Por enviar",value:stats.porEnviar,color:T.yellow,estado:"Por enviar"},
             {label:"Enviados",value:stats.enviados,color:T.blue,estado:"Enviado"},
             {label:"Cont. pendiente",value:stats.contPend,color:T.orange,estado:"Contenido pendiente"},
-            {label:"Publicados",value:stats.publicados,color:T.purple,estado:"Contenido entregado"},
-            {label:"Finalizados",value:stats.finalizados,color:T.green,estado:"Finalizado"},
+            {label:"Cerrados",value:stats.cerrados,color:T.green,estado:"Cerrado"},
           ].map((s,i,arr)=>{
             const isActive=filterEstado===s.estado;
             return (
@@ -2808,7 +2812,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",flexDirection:"column",gap:5}}>
             {[
               {n:"1",t:"Perfiles",d:"Creá el perfil del influencer con su código, % descuento y % comisión — se reutiliza en cada canje."},
-              {n:"2",t:"Nuevo canje",d:"Elegí el perfil (se autocompleta), productos y nicho. El estado arranca en 'Pendiente envío'."},
+              {n:"2",t:"Nuevo canje",d:"Elegí el perfil (se autocompleta), productos y nicho. El estado arranca en 'Por enviar'."},
               {n:"3",t:"Contenido",d:"En el detalle configurás reels/stories acordados y marcás los entregados. El semáforo indica si cumplió."},
               {n:"4",t:"Pagos Cupones",d:"Cruzá las ventas reales de TN con cada código para calcular la comisión exacta a pagar."},
             ].map(s=>(
@@ -2821,7 +2825,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         )}
 
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-          {viewTab!=="ranking"&&viewTab!=="comisiones"&&<>
+          {viewTab!=="comisiones"&&<>
             <div style={{position:"relative",flex:"1 1 220px",minWidth:180}}>
               <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:14}}>🔍</span>
               <input placeholder="Buscar influencer..." value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,paddingLeft:36,fontSize:14}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
@@ -2872,27 +2876,23 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <span style={{fontSize:13,color:T.textMd}}>{c.red}</span>
                     <span style={{fontSize:13,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.producto||"--"}</span>
                     <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                      <Badge T={T} colors={sc}>{c.estado}</Badge>
-                      {(()=>{const diasEnviado=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24)):null;const sinContenido=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0)===0;return (c.estado==="Enviado"||c.estado==="Contenido pendiente")&&diasEnviado>=7&&sinContenido?<span style={{fontSize:10,background:T.orangeBg,color:T.orange,borderRadius:4,padding:"2px 6px",fontWeight:700,whiteSpace:"nowrap"}}>⚠ {diasEnviado}d sin contenido</span>:null;})()}
-                    </div>
-                    <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                      <Badge T={T} colors={sc}>{c.estado==="Pendiente envío"?"Por enviar":c.estado}</Badge>
                       {(()=>{
-                        const cont=c.contenido||[];
-                        const total=cont.reduce((s,x)=>s+(x.acordados||0),0);
-                        const entregados=cont.reduce((s,x)=>s+(x.entregados||0),0);
-                        if(total===0) return <span style={{fontSize:12,color:T.textSm}}>Sin acordar</span>;
-                        const p=Math.round((entregados/total)*100);
-                        return (
-                          <>
-                            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:T.textSm,marginBottom:2}}>
-                              <span>{entregados}/{total} contenidos</span>
-                              <span style={{color:p===100?T.green:T.textSm,fontWeight:600}}>{p}%</span>
-                            </div>
-                            <div style={{height:5,background:T.borderL,borderRadius:20,overflow:"hidden",width:"100%"}}>
-                              <div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accentSolid,borderRadius:20}}/>
-                            </div>
-                          </>
-                        );
+                        if(!c.fechaEnvio||(c.estado!=="Enviado"&&c.estado!=="Contenido pendiente")) return null;
+                        const dias=Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24));
+                        const col=dias>=15?T.red:dias>=7?T.orange:T.green;
+                        const bg=dias>=15?T.redBg:dias>=7?T.orangeBg:T.greenBg;
+                        return <span style={{fontSize:10,background:bg,color:col,borderRadius:4,padding:"2px 6px",fontWeight:700,whiteSpace:"nowrap"}}>📦 {dias}d</span>;
+                      })()}
+                    </div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4,alignItems:"flex-start"}}>
+                      {(()=>{
+                        const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
+                        if(cont.length===0) return <span style={{fontSize:11,color:T.textSm}}>Sin acordar</span>;
+                        return cont.map(x=>{
+                          const done=(x.entregados||0)>=(x.acordados||0);
+                          return <span key={x.tipo} style={{fontSize:10,padding:"2px 7px",borderRadius:20,fontWeight:600,background:done?T.greenBg:T.orangeBg,color:done?T.green:T.orange,border:`1px solid ${done?T.green:T.orange}33`,whiteSpace:"nowrap"}}>{x.tipo} {x.entregados||0}/{x.acordados}</span>;
+                        });
                       })()}
                     </div>
                     <span style={{fontSize:12,color:T.textSm}}>{fmtTs(c.createdAt)}</span>
@@ -2906,8 +2906,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         {/* KANBAN */}
         {viewTab==="kanban"&&(
           <div key="kanban" className="gh-tab-content" style={{paddingBottom:48}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,paddingBottom:8}}>
-              {ESTADOS_C.filter(e=>e!=="Cancelado").map(estado=>{
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,paddingBottom:8}}>
+              {ESTADOS_C.map(estado=>{
                 const sc=getEstadoCC(T,estado);
                 const cols=canjes.filter(c=>c.estado===estado);
                 return (
@@ -2925,7 +2925,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px",cursor:"pointer",transition:"all 0.15s"}}
                           onMouseEnter={e=>{e.currentTarget.style.borderColor=sc.dot;e.currentTarget.style.transform="translateY(-1px)";}}
                           onMouseLeave={e=>{e.currentTarget.style.borderColor=T.borderL;e.currentTarget.style.transform="none";}}>
-                          {(()=>{const dias=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24)):null;const sinC=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0)===0;return (c.estado==="Enviado"||c.estado==="Contenido pendiente")&&dias>=7&&sinC?<div style={{background:T.orangeBg,border:`1px solid ${T.orange}44`,borderRadius:5,padding:"2px 7px",fontSize:10,fontWeight:700,color:T.orange,marginBottom:6}}>⚠ {dias}d sin contenido</div>:null;})()}
+                          {(()=>{
+                            if(!c.fechaEnvio||(c.estado!=="Enviado"&&c.estado!=="Contenido pendiente")) return null;
+                            const dias=Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24));
+                            const col=dias>=15?T.red:dias>=7?T.orange:T.green;
+                            const bg=dias>=15?T.redBg:dias>=7?T.orangeBg:T.greenBg;
+                            return <div style={{background:bg,border:`1px solid ${col}44`,borderRadius:5,padding:"2px 7px",fontSize:10,fontWeight:700,color:col,marginBottom:6}}>📦 {dias}d</div>;
+                          })()}
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                             <Avatar src={c.foto} name={c.influencer} size={28} radius={7} T={T}/>
                             <div>
@@ -2935,12 +2941,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           </div>
                           {c.nicho&&<span style={{fontSize:10,background:T.purpleBg,color:T.purple,borderRadius:4,padding:"2px 6px",fontWeight:500}}>{c.nicho}</span>}
                           {(()=>{
-                            const cont=c.contenido||[];
-                            const total=cont.reduce((s,x)=>s+(x.acordados||0),0);
-                            const ent=cont.reduce((s,x)=>s+(x.entregados||0),0);
-                            if(!total) return null;
-                            const p=Math.round((ent/total)*100);
-                            return <div style={{marginTop:8}}><div style={{height:4,background:T.borderL,borderRadius:20,overflow:"hidden"}}><div style={{height:"100%",width:`${p}%`,background:p===100?T.green:T.accentSolid,borderRadius:20}}/></div><div style={{fontSize:10,color:T.textSm,marginTop:3}}>{ent}/{total} contenidos</div></div>;
+                            const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
+                            if(!cont.length) return null;
+                            return <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:6}}>{cont.map(x=>{const done=(x.entregados||0)>=(x.acordados||0);return <span key={x.tipo} style={{fontSize:9,padding:"2px 6px",borderRadius:20,fontWeight:700,background:done?T.greenBg:T.orangeBg,color:done?T.green:T.orange,whiteSpace:"nowrap"}}>{x.tipo} {x.entregados||0}/{x.acordados}</span>;})}</div>;
                           })()}
                         </div>
                       ))}
@@ -2949,63 +2952,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 );
               })}
             </div>
-          </div>
-        )}
-
-        {/* RANKING */}
-        {viewTab==="ranking"&&(
-          <div key="ranking" className="gh-tab-content" style={{paddingBottom:48}}>
-            {canjes.filter(c=>c.alcance||c.reproducciones).length===0?(
-              <div style={{textAlign:"center",padding:"80px 20px"}}>
-                <div style={{fontSize:48,marginBottom:16}}>🏆</div>
-                <div style={{fontSize:18,fontWeight:600,color:T.textMd}}>Sin métricas cargadas todavía</div>
-                <div style={{fontSize:14,color:T.textSm,marginTop:8}}>Editá los canjes y cargá alcance, reproducciones, likes y guardados para ver el ranking.</div>
-              </div>
-            ):(()=>{
-              const ranked=[...canjes]
-                .filter(c=>c.alcance||c.reproducciones||c.likes)
-                .map(c=>({
-                  ...c,
-                  score: (Number(c.alcance||0)*1) + (Number(c.reproducciones||0)*0.8) + (Number(c.likes||0)*2) + (Number(c.guardados||0)*3),
-                  totalContenido:(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0),
-                  totalAcordado:(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0),
-                }))
-                .sort((a,b)=>b.score-a.score);
-              const maxScore=ranked[0]?.score||1;
-              return (
-                <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:8}}>
-                  <div style={{fontSize:12,color:T.textSm,marginBottom:4,padding:"0 4px"}}>Ordenados por score combinado: alcance + reproducciones + likes + guardados</div>
-                  {ranked.map((c,idx)=>{
-                    const pct=Math.round((c.score/maxScore)*100);
-                    const medal=["🥇","🥈","🥉"][idx]||`${idx+1}.`;
-                    return (
-                      <div key={c._docId} onClick={()=>setDetail(c._docId)}
-                        style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px",cursor:"pointer",transition:"all 0.15s"}}
-                        onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.transform="translateY(-1px)";}}
-                        onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-                          <div style={{display:"flex",alignItems:"center",gap:12}}>
-                            <span style={{fontSize:22}}>{medal}</span>
-                            <div>
-                              <div style={{fontSize:16,fontWeight:700,color:T.text}}>{c.influencer}</div>
-                              <div style={{fontSize:13,color:T.accent}}>@{c.usuario} · {c.red}</div>
-                            </div>
-                          </div>
-                          <div style={{textAlign:"right"}}>
-                            <div style={{fontSize:20,fontWeight:800,color:idx===0?T.yellow:T.text,letterSpacing:-0.5}}>{Math.round(c.score).toLocaleString('es-AR')}</div>
-                            <div style={{fontSize:11,color:T.textSm}}>score</div>
-                          </div>
-                        </div>
-                        {/* Barra de score */}
-                        <div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:12}}>
-                          <div style={{height:"100%",width:`${pct}%`,background:idx===0?T.yellow:idx===1?T.textSm:T.accentSolid,borderRadius:20}}/>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
           </div>
         )}
 
@@ -3222,7 +3168,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               }).map(inf=>{
                 // Cross-ref canjes
                 const canjesDeEste=canjes.filter(c=>(c.codigoDescuento&&inf.codigoDescuento&&c.codigoDescuento.toUpperCase()===inf.codigoDescuento.toUpperCase())||(c.influencer&&inf.nombre&&c.influencer===inf.nombre));
-                const canjesActivos=canjesDeEste.filter(c=>c.estado!=="Finalizado"&&c.estado!=="Rechazado");
+                const canjesActivos=canjesDeEste.filter(c=>c.estado!=="Cerrado"&&c.estado!=="Finalizado"&&c.estado!=="Cancelado");
                 return (
                   <div key={inf._docId} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 18px 14px",display:"flex",flexDirection:"column",gap:0,transition:"box-shadow 0.15s",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
                     {/* Header del perfil */}
@@ -3392,10 +3338,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {/* Estado: chips clickeables */}
               <div style={{marginBottom:14}}>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                  {ESTADOS_C.filter(e=>e!=="Cancelado").map(est=>{
+                  {ESTADOS_C.map(est=>{
                     const s2=getEstadoCC(T,est);
-                    const active=c.estado===est;
-                    return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Finalizado"?{finalizadoAt:serverTimestamp()}:{})});}}
+                    const active=c.estado===est||(est==="Por enviar"&&c.estado==="Pendiente envío");
+                    return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});}}
                       style={{fontSize:11,fontWeight:active?700:500,padding:"5px 12px",borderRadius:20,border:"2px solid "+(active?s2.dot:T.border),background:active?s2.bg:"transparent",color:active?s2.text:T.textMd,cursor:active?"default":"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
                       <span style={{width:7,height:7,borderRadius:"50%",background:s2.dot,flexShrink:0}}/>{est}
                     </button>;
@@ -3565,7 +3511,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {/* Footer */}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4,paddingTop:10,borderTop:"1px solid "+T.borderL}}>
                 <div style={{fontSize:11,color:T.textSm}}>
-                  Creado {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?" · Finalizado "+fmtTs(c.finalizadoAt):""}
+                  Creado {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?" · Cerrado "+fmtTs(c.finalizadoAt):""}
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   {deleteConfirm===c._docId
@@ -3575,7 +3521,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                      </>
                     :<button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>Eliminar</button>
                   }
-                  {!deleteConfirm&&<button onClick={()=>{setForm({...c,contenido:c.contenido||[],alcance:c.alcance||"",reproducciones:c.reproducciones||"",likes:c.likes||"",guardados:c.guardados||"",historial:c.historial||[],recordatorio:c.recordatorio||""});setDetail(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>✏️ Editar datos</button>}
+                  {!deleteConfirm&&<button onClick={()=>{setForm({...c,contenido:c.contenido||[],historial:c.historial||[],recordatorio:c.recordatorio||""});setDetail(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>✏️ Editar datos</button>}
                 </div>
               </div>
 
@@ -3695,11 +3641,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nombre</label><input style={iS} value={form.influencer||""} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Nombre del influencer"/></div>
               <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>@Usuario IG</label><input style={iS} value={form.usuario||""} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="@usuario"/></div>
-            </div>
-            <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Link Instagram</label><input style={iS} value={form.linkInstagram||""} onChange={e=>{const v=e.target.value;const m=v.match(/instagram\.com\/([^/?#\s]+)/);const u=m?m[1].replace("@",""):"";setForm(f=>({...f,linkInstagram:v,...(u?{usuario:u}:{})}));}} placeholder="https://instagram.com/usuario"/></div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Teléfono WA</label><input style={iS} value={form.telefono||""} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="5491155..."/></div>
-              <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Email</label><input style={iS} value={form.email||""} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="email@..."/></div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Seguidores</label><input style={iS} type="number" value={form.seguidores||""} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></div>
