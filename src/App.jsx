@@ -862,7 +862,11 @@ function buildOrdersFromAPI(data) {
       piso:sh.floor||'', localidad:sh.locality||'', ciudad:sh.city||'',
       cp:sh.zipcode||'', provincia:sh.province||'',
       medioEnvio:o.shipping_option||'', medioPago:o.payment_details?.method||o.gateway_name||'',
-      esSucursal:o.fulfillments?.some(f=>f.shipping?.option?.name?.toLowerCase().includes('sucursal'))||o.shipping_option==="Punto de retiro"||false,
+      esSucursal:(()=>{
+        const name=(o.shipping_option||'').toLowerCase();
+        const fulfillName=o.fulfillments?.some(f=>{const n=(f.shipping?.option?.name||'').toLowerCase();return n.includes('sucursal')||n.includes('hop')||n.includes('retiro')||n.includes('andreani punto');});
+        return fulfillName||name.includes('sucursal')||name.includes('hop')||name.includes('retiro')||name==='punto de retiro'||!!o.shipping_pickup_details||false;
+      })(),
       pickupDetails:o.shipping_pickup_details||null,
       canal:o.storefront||'', tracking:o.shipping_tracking_number||'',
       linkOrden:o.id?`https://www.tiendanube.com/admin/orders/${o.id}`:"",
@@ -3965,10 +3969,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
     // Separate domicilio vs sucursal
     // NOTA: por pedido del usuario, TODOS los envíos a Andreani se generan como
-    // "Domicilio" sin importar lo que diga el método de envío de la tienda.
-    // Si en el futuro quiere reactivar sucursal, restaurar la lógica original.
     function isSucursal(o){
-      return false;
+      return !!o.esSucursal;
     }
     const domicilioOrders=ordersData.filter(o=>!isSucursal(o));
     const sucursalOrders=ordersData.filter(o=>isSucursal(o));
@@ -4160,11 +4162,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   },[]);
 
   function isSucursalOrder(o) {
-    // NOTA: por pedido del usuario, TODOS los envíos van como Domicilio
-    // independientemente del método de envío de la tienda. Si querés reactivar
-    // detección de sucursal, restaurar la lógica original (esSucursal || dir
-    // contiene PUNTO ANDREANI / HOP / SUCURSAL).
-    return false;
+    return !!o.esSucursal;
   }
 
   async function exportAndreani() {
