@@ -1851,11 +1851,11 @@ export default async function handler(req, res) {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const cfg = await loadMetaAccount(db, uid, acc_id);
       if (!cfg?.ad_account_id) return res.status(400).json({ error: "Cuenta sin ad_account_id" });
-      const { name, objective, cbo_daily_budget_ars, bid_strategy, special_ad_categories } = req.body || {};
+      const { name, objective, cbo_daily_budget_ars, bid_strategy, special_ad_categories, active } = req.body || {};
       const payload = {
         name: (name || "").trim() || `Campaña ${new Date().toLocaleDateString("es-AR")}`,
         objective: objective || "OUTCOME_SALES",
-        status: "PAUSED",
+        status: active ? "ACTIVE" : "PAUSED",
         special_ad_categories: JSON.stringify(special_ad_categories || []),
         buying_type: "AUCTION",
       };
@@ -1871,14 +1871,14 @@ export default async function handler(req, res) {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const cfg = await loadMetaAccount(db, uid, acc_id);
       if (!cfg?.ad_account_id) return res.status(400).json({ error: "Cuenta sin ad_account_id" });
-      const { name, campaign_id, billing_event, optimization_goal, daily_budget_ars, bid_strategy, is_cbo, start_time, pixel_id, custom_event_type, targeting } = req.body || {};
+      const { name, campaign_id, billing_event, optimization_goal, daily_budget_ars, bid_strategy, is_cbo, start_time, pixel_id, custom_event_type, targeting, active } = req.body || {};
       if (!campaign_id) return res.status(400).json({ error: "Falta campaign_id" });
       const payload = {
         name: (name || "").trim() || `AdSet ${new Date().toLocaleTimeString("es-AR")}`,
         campaign_id,
         billing_event: billing_event || "IMPRESSIONS",
         optimization_goal: optimization_goal || "OFFSITE_CONVERSIONS",
-        status: "PAUSED",
+        status: active ? "ACTIVE" : "PAUSED",
         targeting: JSON.stringify(targeting || { geo_locations: { countries: ["AR"] }, age_min: 30, age_max: 65, publisher_platforms: ["facebook","instagram"] }),
       };
       if (!is_cbo) {
@@ -1900,7 +1900,7 @@ export default async function handler(req, res) {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const cfg = await loadMetaAccount(db, uid, acc_id);
       if (!cfg?.ad_account_id) return res.status(400).json({ error: "Cuenta sin ad_account_id" });
-      const { name, objective, mode, daily_budget, adsets } = req.body || {};
+      const { name, objective, mode, daily_budget, adsets, active } = req.body || {};
       if (!name?.trim()) return res.status(400).json({ error: "Falta nombre de campaña" });
       if (!Array.isArray(adsets) || adsets.length === 0) return res.status(400).json({ error: "Necesitás al menos 1 adset" });
       const isCbo = mode === "cbo";
@@ -1908,7 +1908,7 @@ export default async function handler(req, res) {
       const campPayload = {
         name: name.trim(),
         objective: objective || "OUTCOME_SALES",
-        status: "PAUSED",
+        status: active ? "ACTIVE" : "PAUSED",
         special_ad_categories: JSON.stringify([]),
         buying_type: "AUCTION",
       };
@@ -1930,7 +1930,7 @@ export default async function handler(req, res) {
           campaign_id: campRes.id,
           billing_event: "IMPRESSIONS",
           optimization_goal: "OFFSITE_CONVERSIONS",
-          status: "PAUSED",
+          status: active ? "ACTIVE" : "PAUSED",
           targeting: JSON.stringify({ geo_locations: { countries: ["AR"] }, age_min: 25, age_max: 65, publisher_platforms: ["facebook","instagram"] }),
         };
         if (!isCbo) {

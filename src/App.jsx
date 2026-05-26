@@ -774,6 +774,10 @@ function DateRangePicker({ T, since, until, onChange, presets }) {
 // --- Helpers ---
 function fmtMoney(v) { const n=parseFloat(v); if(isNaN(n)) return '--'; return '$'+n.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
 function fmtDate(d) { if(!d) return '--'; const p=d.split(' ')[0].split('/'); if(p.length===3) return `${p[0]}/${p[1]}/${p[2]}`; return d; }
+// Convierte el valor de un <input datetime-local> (hora local del navegador, sin
+// zona) al instante UTC ISO que Meta interpreta sin ambigüedad. Sin esto, Meta
+// tomaba "2026-05-25T21:00" como UTC y programaba los ads 3h antes (AR = UTC-3).
+function localToMetaISO(s) { if(!s) return ""; const d=new Date(s); return isNaN(d.getTime()) ? s : d.toISOString(); }
 function fmtTs(ts) { if(!ts?.seconds) return '--'; return new Date(ts.seconds*1000).toLocaleDateString('es-AR'); }
 function fullAddress(o) { let a=o.direccion||''; if(o.dirNumero) a+=' '+o.dirNumero; if(o.piso) a+=', Piso '+o.piso; return [a,o.localidad,o.ciudad,o.cp?`CP ${o.cp}`:'',o.provincia].filter(Boolean).join(', '); }
 function getLensColors(productos) { const s=new Set(); for(const p of productos){const c=SKU_LENTE[p.sku];if(c)s.add(c);} return [...s]; }
@@ -11367,10 +11371,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     objective:"OUTCOME_SALES",
     mode:"abo", // "abo" | "cbo"
     daily_budget:"5000",
+    active:false, // crear campaña+adsets en ACTIVE
     adsets:[{name:`AdSet 1 · ${new Date().toLocaleDateString("es-AR")}`,daily_budget:"3000",start_time:""}],
   });
   const [creatingMulti,setCreatingMulti]=useState(false);
-  const [newAdsetForm,setNewAdsetForm]=useState({campaign_id:"",name:"",daily_budget:"3000",start_time:""});
+  const [newAdsetForm,setNewAdsetForm]=useState({campaign_id:"",name:"",daily_budget:"3000",start_time:"",active:false});
   const [savingAdset,setSavingAdset]=useState(false);
   // Drop zone state
   const [dragOver,setDragOver]=useState(false);
@@ -11878,6 +11883,27 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     return videoId;
   }
 
+  // Genera copy text-only (sin cid, sin analizar el video) con reintentos
+  // silenciosos. Devuelve {copy,title,description} o null. Al no mandar cid,
+  // el backend no busca el creative en Firestore — evita el error "creativo no
+  // encontrado" del upload en paralelo (era la fuente del spam de errores).
+  async function generateCopyTextOnly() {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const r = await fetch(`/api/meta?action=generate_copy&uid=${uid}`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ length: "nativo" }),
+        });
+        const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+        if (!d.error && (d.copy || d.title || d.description)) {
+          return { copy: d.copy || "", title: d.title || "", description: d.description || "" };
+        }
+      } catch (_) {}
+      await new Promise(res => setTimeout(res, 1200 * (attempt + 1)));
+    }
+    return null;
+  }
+
   // tempId = id placeholder en la cola; localPreviewUrl = blob URL preview.
   // preFetchedCreds = creds compartidas del bulk upload (evita 1 call extra
   // por archivo).
@@ -11895,6 +11921,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       if(tempId) setCreatives(prev=>prev.map(c=>c.id===tempId?{...c,_uploading:false,_error:msg,ia_status:"error"}:c));
     };
     try {
+      // Copy en paralelo con el upload: no depende del video subido, así que
+      // arranca ya y suele estar listo antes de que termine la subida.
+      const copyPromise = generateCopyTextOnly();
       const creds = preFetchedCreds || await metaApi("upload_creds","GET",null,{acc_id:activeAccId});
       if(creds.error){ failTemp("Error: "+creds.error); return; }
       const accIdStr = creds.ad_account_id.startsWith("act_") ? creds.ad_account_id : `act_${creds.ad_account_id}`;
@@ -11973,11 +12002,25 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         ...(isVideo ? { _processing: true } : {}),
         ...(isVideo && localPreviewUrl ? { _localPreview: localPreviewUrl } : {}),
       };
+
+      // El copy ya venía generándose en paralelo: lo esperamos (suele estar listo)
+      // y lo pegamos al creative. Como se generó sin cid, lo persistimos ahora.
+      const copyRes = await copyPromise;
+      if (copyRes && (copyRes.copy || copyRes.title || copyRes.description)) {
+        cWithMeta.copy = copyRes.copy;
+        cWithMeta.title = copyRes.title;
+        cWithMeta.description = copyRes.description;
+        cWithMeta.ia_status = "ok";
+      }
       if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? cWithMeta : c));
       else setCreatives(prev => [cWithMeta, ...prev]);
 
-      // Copy en background
-      handleAnalyzeCreative(cWithMeta, { skip_vision: true });
+      if (cWithMeta.ia_status === "ok") {
+        metaApi("patch_creative","PATCH",{copy:cWithMeta.copy,title:cWithMeta.title,description:cWithMeta.description,ia_status:"ok"},{cid:cWithMeta.id}).catch(()=>{});
+      } else {
+        // El copy paralelo no salió — reintento silencioso en background
+        handleAnalyzeCreative(cWithMeta, { skip_vision: true });
+      }
 
       // Para video: arrancar polling en background del status de procesamiento
       // en Meta. Apenas Meta termina (5-30s tipicamente) marcamos el creative
@@ -12204,10 +12247,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         objective: newCampMulti.objective,
         mode: newCampMulti.mode,
         daily_budget: newCampMulti.mode === "cbo" ? newCampMulti.daily_budget : "",
+        active: !!newCampMulti.active,
         adsets: newCampMulti.adsets.map(a => ({
           name: a.name?.trim() || "",
           daily_budget: a.daily_budget || "",
-          start_time: a.start_time || "",
+          start_time: localToMetaISO(a.start_time),
         })),
       };
       const d = await metaApi("create_full","POST",body,{acc_id:activeAccId});
@@ -12218,20 +12262,21 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       // Update optimista del state local — los dropdowns ven los nuevos al toque
       // sin esperar a que loadCampaigns sincronice con Meta (que tiene un delay
       // de eventual consistency en /adsets).
+      const newStatus = newCampMulti.active ? "ACTIVE" : "PAUSED";
       const newCampObj = {
         id: d.campaign_id,
         name: d.campaign_name,
         objective: newCampMulti.objective,
-        status: "PAUSED",
-        effective_status: "PAUSED",
+        status: newStatus,
+        effective_status: newStatus,
         daily_budget: newCampMulti.mode === "cbo" ? Math.round(parseFloat(newCampMulti.daily_budget) * 100) : null,
       };
       const newAdsetObjs = (d.adsets || []).map((a, i) => ({
         id: a.id,
         name: a.name || newCampMulti.adsets[i]?.name || `AdSet ${i+1}`,
         campaign_id: d.campaign_id,
-        status: "PAUSED",
-        effective_status: "PAUSED",
+        status: newStatus,
+        effective_status: newStatus,
         daily_budget: newCampMulti.mode === "abo" ? Math.round(parseFloat(newCampMulti.adsets[i]?.daily_budget || 0) * 100) : null,
       }));
       setCampaigns(prev => [newCampObj, ...prev.filter(c => c.id !== d.campaign_id)]);
@@ -12262,17 +12307,19 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         campaign_id: newAdsetForm.campaign_id,
         is_cbo: isCbo,
         daily_budget_ars: isCbo ? "" : newAdsetForm.daily_budget,
-        start_time: newAdsetForm.start_time || "",
+        start_time: localToMetaISO(newAdsetForm.start_time),
+        active: !!newAdsetForm.active,
       },{acc_id:activeAccId});
       if (d.error) { toast(d.error,"error"); setSavingAdset(false); return; }
       toast(`AdSet "${d.name}" creado ✓`,"success");
       // Update optimista del state local — el adset nuevo aparece al toque
+      const adsetStatus = newAdsetForm.active ? "ACTIVE" : "PAUSED";
       const newAdsetObj = {
         id: d.id,
         name: d.name || newAdsetForm.name,
         campaign_id: newAdsetForm.campaign_id,
-        status: "PAUSED",
-        effective_status: "PAUSED",
+        status: adsetStatus,
+        effective_status: adsetStatus,
         daily_budget: isCbo ? null : Math.round(parseFloat(newAdsetForm.daily_budget || 0) * 100),
       };
       setAdsets(prev => [newAdsetObj, ...prev.filter(a => a.id !== d.id)]);
@@ -12454,7 +12501,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         campaign_id: campRes.id,
         is_cbo: isCbo,
         daily_budget_ars: isCbo ? "" : pubForm.daily_budget_ars,
-        start_time: pubForm.start_time || "",
+        start_time: localToMetaISO(pubForm.start_time),
       };
       const asRes = await metaApi("create_adset","POST",aBody,{acc_id:activeAccId});
       if(asRes.error){toast("Campaña creada pero falló el adset: "+asRes.error,"error");setPubCreating(false);loadCampaigns();return;}
@@ -13547,7 +13594,7 @@ LONGITUD Y FORMATO
               {/* ── Sección 4: PUBLICAR ADS ──────────────────── */}
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
                 <SectionHeader n="4" title="Publicar ads"/>
-                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos. Gemini escribe el copy de cada uno usando el contexto de tu marca y el estilo del agente que definiste arriba — sin analizar el video, así es más rápido.</div>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos. Gemini escribe el copy de cada uno usando el contexto de tu marca y el estilo del agente que definiste arriba.</div>
 
                 {/* Mode toggle */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
@@ -13724,7 +13771,7 @@ LONGITUD Y FORMATO
                           <button onClick={()=>handleGenerateCopy(c)} disabled={generatingCopy===c.id} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:`linear-gradient(135deg, ${T.accent}, ${T.purple||"#a855f7"})`,color:"#fff",cursor:generatingCopy===c.id?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
                             {generatingCopy===c.id?<><Spinner size={12} color="#fff"/>Generando...</>:"♻ Regenerar copy"}
                           </button>
-                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.55,flex:1}}>Gemini escribe el copy en base al contexto de tu marca, el estilo del agente que elegiste y las notas que pongas arriba. No analiza el video (más rápido) — cada vez que tocás "Regenerar" te da una variante distinta.</div>
+                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.55,flex:1}}>Gemini escribe el copy en base al contexto de tu marca, el estilo del agente y las notas que pongas arriba. Cada vez que tocás "Regenerar" te da una variante distinta.</div>
                         </div>
 
                         {/* Copy preview (si hay) */}
@@ -13880,6 +13927,14 @@ LONGITUD Y FORMATO
                       </div>
                     ))}
 
+                    <label style={{display:"flex",alignItems:"center",gap:9,marginTop:14,padding:"11px 13px",borderRadius:10,border:`1px solid ${newCampMulti.active?T.green+"66":T.border}`,background:newCampMulti.active?T.green+"12":"transparent",cursor:"pointer"}}>
+                      <input type="checkbox" checked={newCampMulti.active} onChange={e=>setNewCampMulti(p=>({...p,active:e.target.checked}))} style={{width:16,height:16,accentColor:T.green,cursor:"pointer"}}/>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700,color:T.text}}>Crear en activo (ACTIVE)</div>
+                        <div style={{fontSize:10.5,color:T.textSm,lineHeight:1.45}}>Campaña y adsets arrancan prendidos. Si lo dejás destildado, quedan en pausa para que revises antes de publicar.</div>
+                      </div>
+                    </label>
+
                     <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
                       <button onClick={()=>setShowNewCampModal(false)} style={BtnSec}>Cancelar</button>
                       <button onClick={handleCreateCampaignMulti} disabled={creatingMulti} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:`linear-gradient(135deg, ${T.green}, ${T.accent})`,color:"#fff",cursor:creatingMulti?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
@@ -13910,6 +13965,13 @@ LONGITUD Y FORMATO
                     <input type="number" value={newAdsetForm.daily_budget} onChange={e=>setNewAdsetForm(p=>({...p,daily_budget:e.target.value}))} style={{...iS,marginBottom:10}}/>
                     <label style={Label}>Inicio (opcional)</label>
                     <input type="datetime-local" value={newAdsetForm.start_time} onChange={e=>setNewAdsetForm(p=>({...p,start_time:e.target.value}))} style={iS}/>
+                    <label style={{display:"flex",alignItems:"center",gap:9,marginTop:12,padding:"11px 13px",borderRadius:10,border:`1px solid ${newAdsetForm.active?T.green+"66":T.border}`,background:newAdsetForm.active?T.green+"12":"transparent",cursor:"pointer"}}>
+                      <input type="checkbox" checked={newAdsetForm.active} onChange={e=>setNewAdsetForm(p=>({...p,active:e.target.checked}))} style={{width:16,height:16,accentColor:T.green,cursor:"pointer"}}/>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700,color:T.text}}>Crear en activo (ACTIVE)</div>
+                        <div style={{fontSize:10.5,color:T.textSm,lineHeight:1.45}}>Destildado = queda en pausa para revisar antes.</div>
+                      </div>
+                    </label>
                     <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
                       <button onClick={()=>setShowNewAdsetModal(false)} style={BtnSec}>Cancelar</button>
                       <button onClick={handleCreateAdsetOnly} disabled={savingAdset} style={BtnPri}>
