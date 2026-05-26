@@ -3851,13 +3851,27 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
 
   function findAndreaniSucursal(locs, direccion, pickupDetails) {
-    // Solo match EXACTO con el nombre que da TiendaNube.
-    // Cualquier ambigüedad → null → el usuario decide en el modal.
     if(!locs.sucursales||!pickupDetails) return null;
     function cl(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
+
+    // Paso 1: match exacto con pickupDetails.name normalizado
     const tnName=cl(pickupDetails.name||"");
-    if(!tnName) return null;
-    return locs.sucursales.find(s=>cl(s)===tnName)||null;
+    if(tnName){
+      const exact=locs.sucursales.find(s=>cl(s)===tnName);
+      if(exact) return exact;
+    }
+
+    // Paso 2: construir query igual que el prefill del modal (calle + número)
+    // y buscar en la lista — solo auto-seleccionar si hay resultado ÚNICO
+    const addr=(pickupDetails.address?.address||"").trim();
+    const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
+    const query=(addr+(num?" "+num:"")).trim().toUpperCase();
+    if(query.length>=3){
+      const results=locs.sucursales.filter(s=>s.toUpperCase().includes(query));
+      if(results.length===1) return results[0];
+    }
+
+    return null; // 0 o 2+ resultados → modal obligatorio
   }
 
   function searchSucursales(locs, query) {
