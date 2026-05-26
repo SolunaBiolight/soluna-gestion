@@ -11826,6 +11826,58 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     }
   }
 
+  // Subida resumable (chunked) de video a Meta. Robusta para archivos grandes
+  // y conexiones lentas: parte el archivo en los chunks que Meta indica y
+  // reintenta cada chunk hasta 3 veces. Reemplaza el POST único que se caía
+  // con "Network error" al cortarse la conexión a mitad de subida.
+  async function uploadVideoResumableToMeta(file, accessToken, apiVersion, accIdStr, onProgress) {
+    const base = `https://graph.facebook.com/${apiVersion}/${accIdStr}/advideos`;
+    const postForm = async (params) => {
+      let lastErr;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const fd = new FormData();
+          fd.append("access_token", accessToken);
+          for (const [k, v] of Object.entries(params)) {
+            if (v instanceof Blob) fd.append(k, v, file.name);
+            else fd.append(k, v);
+          }
+          const r = await fetch(base, { method: "POST", body: fd });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data.error) throw new Error(data.error?.message || `HTTP ${r.status}`);
+          return data;
+        } catch (e) {
+          lastErr = e;
+          await new Promise(res => setTimeout(res, (attempt + 1) * 1500));
+        }
+      }
+      throw lastErr;
+    };
+    // 1) Iniciar sesión de subida
+    const start = await postForm({ upload_phase: "start", file_size: String(file.size) });
+    const videoId = start.video_id;
+    const sessionId = start.upload_session_id;
+    let startOffset = parseInt(start.start_offset);
+    let endOffset = parseInt(start.end_offset);
+    // 2) Transferir chunks hasta cubrir todo el archivo
+    while (startOffset < endOffset) {
+      const chunk = file.slice(startOffset, endOffset);
+      const res = await postForm({
+        upload_phase: "transfer",
+        upload_session_id: sessionId,
+        start_offset: String(startOffset),
+        video_file_chunk: chunk,
+      });
+      startOffset = parseInt(res.start_offset);
+      endOffset = parseInt(res.end_offset);
+      if (onProgress && file.size > 0) onProgress(Math.min(99, Math.round((startOffset / file.size) * 100)));
+    }
+    // 3) Finalizar
+    await postForm({ upload_phase: "finish", upload_session_id: sessionId });
+    if (onProgress) onProgress(100);
+    return videoId;
+  }
+
   // tempId = id placeholder en la cola; localPreviewUrl = blob URL preview.
   // preFetchedCreds = creds compartidas del bulk upload (evita 1 call extra
   // por archivo).
@@ -11848,40 +11900,51 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const accIdStr = creds.ad_account_id.startsWith("act_") ? creds.ad_account_id : `act_${creds.ad_account_id}`;
       const isVideo = (file.type||"").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(file.name);
 
-      const fd = new FormData();
-      fd.append("access_token", creds.access_token);
-      fd.append(isVideo ? "source" : "filename", file, file.name);
-      const metaUrl = `https://graph.facebook.com/${creds.api_version}/${accIdStr}/${isVideo?"advideos":"adimages"}`;
       let up;
-      try {
-        const j = await new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open("POST", metaUrl, true);
-          xhr.upload.onprogress = (e) => {
-            if (!e.lengthComputable) return;
-            const pct = Math.round((e.loaded / e.total) * 100);
-            if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? { ...c, _uploadPct: pct } : c));
-          };
-          xhr.onload = () => {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              if (xhr.status >= 200 && xhr.status < 300 && !data.error) resolve(data);
-              else reject(new Error(data.error?.message || `HTTP ${xhr.status}`));
-            } catch (e) { reject(new Error(`HTTP ${xhr.status}: respuesta no-JSON`)); }
-          };
-          xhr.onerror = () => reject(new Error("Network error"));
-          xhr.ontimeout = () => reject(new Error("Timeout"));
-          xhr.send(fd);
-        });
-        if (isVideo) up = { kind: "video", id: j.id, url: localPreviewUrl || null };
-        else {
+      if (isVideo) {
+        // Subida resumable por chunks — soporta videos grandes sin caerse.
+        try {
+          const videoId = await uploadVideoResumableToMeta(
+            file, creds.access_token, creds.api_version, accIdStr,
+            (pct) => { if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? { ...c, _uploadPct: pct } : c)); }
+          );
+          up = { kind: "video", id: videoId, url: localPreviewUrl || null };
+        } catch (e) {
+          failTemp(`Error subiendo "${file.name}": ${e.message}`);
+          return;
+        }
+      } else {
+        const fd = new FormData();
+        fd.append("access_token", creds.access_token);
+        fd.append("filename", file, file.name);
+        const metaUrl = `https://graph.facebook.com/${creds.api_version}/${accIdStr}/adimages`;
+        try {
+          const j = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", metaUrl, true);
+            xhr.upload.onprogress = (e) => {
+              if (!e.lengthComputable) return;
+              const pct = Math.round((e.loaded / e.total) * 100);
+              if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? { ...c, _uploadPct: pct } : c));
+            };
+            xhr.onload = () => {
+              try {
+                const data = JSON.parse(xhr.responseText);
+                if (xhr.status >= 200 && xhr.status < 300 && !data.error) resolve(data);
+                else reject(new Error(data.error?.message || `HTTP ${xhr.status}`));
+              } catch (e) { reject(new Error(`HTTP ${xhr.status}: respuesta no-JSON`)); }
+            };
+            xhr.onerror = () => reject(new Error("Network error"));
+            xhr.ontimeout = () => reject(new Error("Timeout"));
+            xhr.send(fd);
+          });
           const img = Object.values(j.images || {})[0];
           if (!img) throw new Error("Meta no devolvió image hash");
           up = { kind: "image", hash: img.hash, url: img.url, width: img.width, height: img.height };
+        } catch (e) {
+          failTemp(`Error subiendo "${file.name}": ${e.message}`);
+          return;
         }
-      } catch (e) {
-        failTemp(`Error subiendo "${file.name}": ${e.message}`);
-        return;
       }
 
       // add_creative: ya incluye link + cta del shared dest, evitamos un
@@ -13484,7 +13547,7 @@ LONGITUD Y FORMATO
               {/* ── Sección 4: PUBLICAR ADS ──────────────────── */}
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
                 <SectionHeader n="4" title="Publicar ads"/>
-                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos. Gemini analiza cada uno (imagen o video) y escribe el copy usando el contexto de tu marca y el estilo del agente que definiste arriba.</div>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos. Gemini escribe el copy de cada uno usando el contexto de tu marca y el estilo del agente que definiste arriba — sin analizar el video, así es más rápido.</div>
 
                 {/* Mode toggle */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
@@ -13654,14 +13717,14 @@ LONGITUD Y FORMATO
                         )}
 
                         {/* Notas */}
-                        <input value={c.notes||""} onChange={e=>{const u={...c,notes:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{notes:e.target.value})} placeholder="Notas extra opcionales (override / detalles que Gemini no vio)" style={{...iS,marginBottom:10,fontSize:12}}/>
+                        <input value={c.notes||""} onChange={e=>{const u={...c,notes:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{notes:e.target.value})} placeholder="Notas extra opcionales (ángulo, oferta, detalle del producto…)" style={{...iS,marginBottom:10,fontSize:12}}/>
 
                         {/* Regenerar copy + explicación */}
                         <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
                           <button onClick={()=>handleGenerateCopy(c)} disabled={generatingCopy===c.id} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:`linear-gradient(135deg, ${T.accent}, ${T.purple||"#a855f7"})`,color:"#fff",cursor:generatingCopy===c.id?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
                             {generatingCopy===c.id?<><Spinner size={12} color="#fff"/>Generando...</>:"♻ Regenerar copy"}
                           </button>
-                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.55,flex:1}}>Gemini usa el ángulo que detectó del creativo + el estilo que elegiste. Si no querés esperar al análisis, podés tocar igual y la IA usa solo el nombre del archivo (ej: "anticelulitis prevenir video 1") como referencia.</div>
+                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.55,flex:1}}>Gemini escribe el copy en base al contexto de tu marca, el estilo del agente que elegiste y las notas que pongas arriba. No analiza el video (más rápido) — cada vez que tocás "Regenerar" te da una variante distinta.</div>
                         </div>
 
                         {/* Copy preview (si hay) */}
