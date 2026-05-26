@@ -3851,94 +3851,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
 
   function findAndreaniSucursal(locs, direccion, pickupDetails) {
-    if(!locs.sucursales) return null;
-
+    // Solo match EXACTO con el nombre que da TiendaNube.
+    // Cualquier ambigüedad → null → el usuario decide en el modal.
+    if(!locs.sucursales||!pickupDetails) return null;
     function cl(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
-    function firstNum(s){ const m=String(s||"").match(/(\d+)/); return m?m[1]:""; }
-
-    if(!pickupDetails) return null;
-
-    const nombre=cl(pickupDetails.name);
-    const calle=cl(pickupDetails.address?.address);
-    const numero=firstNum(pickupDetails.address?.number);
-    const localidad=cl(pickupDetails.address?.locality);
-    const esHop=nombre.includes("HOP");
-    const sucs=locs.sucursales;
-
-    // Palabras significativas de la calle (no genéricas ni números)
-    const GENERICAS=new Set(["CALLE","AVENIDA","AVDA","AV","PASAJE","BULEVAR","BOULEVARD","RUTA","CAMINO","AUTOPISTA","ACCESO","DIAGONAL","ROTONDA","COLECTORA"]);
-    const calWordsRaw=calle.split(' ').filter(w=>w.length>=4&&!GENERICAS.has(w)&&!/^\d+$/.test(w));
-    const tieneCalleSignif=calWordsRaw.length>0;
-
-    // ESTRATEGIA 1: calle significativa + número como PALABRA SEPARADA (alta confianza)
-    // El número debe ser palabra exacta para evitar falsos positivos (ej: 832 dentro de 3832)
-    if(tieneCalleSignif&&numero){
-      const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.split(' ').includes(numero);});
-      if(m) return m;
-      for(const cw of calWordsRaw){
-        const candidates=sucs.filter(s=>{const su=cl(s);return su.includes(cw)&&su.split(' ').includes(numero);});
-        if(candidates.length===1) return candidates[0];
-        if(candidates.length>1&&calWordsRaw.length>1){
-          for(const cw2 of calWordsRaw.filter(w=>w!==cw)){
-            const refined=candidates.filter(s=>cl(s).includes(cw2));
-            if(refined.length===1) return refined[0];
-          }
-        }
-      }
-    }
-    // HOP con calle significativa → buscar por palabras
-    if(esHop&&tieneCalleSignif){
-      for(const cw of calWordsRaw){
-        const candidates=sucs.filter(s=>cl(s).includes('HOP')&&cl(s).includes(cw));
-        if(candidates.length===1) return candidates[0];
-        if(candidates.length>1&&numero){
-          const refined=candidates.filter(s=>cl(s).split(' ').includes(numero));
-          if(refined.length===1) return refined[0];
-        }
-      }
-    }
-    // HOP sin calle significativa (ej: "Av Boedo 832") → null → modal obligatorio
-    if(esHop&&!tieneCalleSignif) return null;
-    // ESTRATEGIA 2: Para SUCURSAL ANDREANI, buscar por localidad+calle
-    // Las sucursales clásicas tienen nombres propios que no podemos construir
-    if(!esHop){
-      // Calle + número
-      if(calle&&numero){
-        const m=sucs.find(s=>{const su=cl(s);return su.includes(calle)&&su.includes(numero);});
-        if(m) return m;
-      }
-      // Localidad sola
-      if(localidad){
-        const locWords=localidad.split(' ').filter(w=>w.length>=3);
-        for(const lw of locWords){
-          const matches=sucs.filter(s=>cl(s).includes(lw)&&!cl(s).includes('HOP'));
-          if(matches.length===1) return matches[0];
-          if(matches.length>1&&calle){
-            const calWords=calle.split(' ').filter(w=>w.length>=3);
-            for(const cw of calWords){
-              const wc=matches.find(s=>cl(s).includes(cw));
-              if(wc) return wc;
-            }
-          }
-        }
-      }
-      // Palabras de calle
-      if(calle){
-        const words=calle.split(' ').filter(w=>w.length>=4);
-        for(const w of words){
-          const matches=sucs.filter(s=>cl(s).includes(w)&&!cl(s).includes('HOP'));
-          if(matches.length===1) return matches[0];
-        }
-      }
-    }
-
-    // 4. Número único en lista
-    if(numero&&numero.length>=3){
-      const byNum=sucs.filter(s=>cl(s).split(' ').includes(numero));
-      if(byNum.length===1) return byNum[0];
-    }
-
-    return null; // Mostrar modal solo para SUCURSAL ANDREANI sin match
+    const tnName=cl(pickupDetails.name||"");
+    if(!tnName) return null;
+    return locs.sucursales.find(s=>cl(s)===tnName)||null;
   }
 
   function searchSucursales(locs, query) {
