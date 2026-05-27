@@ -7368,6 +7368,25 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ncNombre, setNcNombre] = useState("");
   const [ncEmail, setNcEmail] = useState("");
   const [ncRol, setNcRol] = useState("");
+  // ── PRODUCCIÓN CREATIVA ──
+  const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
+  const [prodLoading, setProdLoading] = useState(false);
+  const [prodTab, setProdTab] = useState("dashboard");
+  const [prodFilter, setProdFilter] = useState({tanda:"",editor:"",estado:"",tipo:"",etapa:""});
+  // Modal Tanda
+  const [showNT2, setShowNT2] = useState(false);
+  const [editTanda, setEditTanda] = useState(null);
+  const [tNombre, setTNombre] = useState(""); const [tFecha, setTFecha] = useState(""); const [tEstado2, setTEstado2] = useState("activa"); const [tDesc, setTDesc] = useState(""); const [tRecursos, setTRecursos] = useState([]);
+  // Modal Creativo
+  const [showNC2, setShowNC2] = useState(false);
+  const [editCreativo2, setEditCreativo2] = useState(null);
+  const [cCodigo, setCCodigo] = useState(""); const [cTanda, setCTanda] = useState(""); const [cTipo, setCTipo] = useState("estatico"); const [cPersona, setCPersona] = useState("General"); const [cEtapa, setCEtapa] = useState("TOF"); const [cAngulo, setCAngulo] = useState(""); const [cEditor, setCEditor] = useState(""); const [cEstado2, setCEstado2] = useState("idea"); const [cNotas, setCNotas] = useState(""); const [cCampana, setCCampana] = useState(""); const [cRoas, setCRoas] = useState(""); const [cCpa, setCCpa] = useState(""); const [cPerformance, setCPerformance] = useState("pendiente");
+  // Modal Idea
+  const [showNI, setShowNI] = useState(false);
+  const [editIdea, setEditIdea] = useState(null);
+  const [iConcepto, setIConcepto] = useState(""); const [iPersona, setIPersona] = useState("General"); const [iEtapa, setIEtapa] = useState("TOF"); const [iPrioridad, setIPrioridad] = useState("media"); const [iEditor, setIEditor] = useState(""); const [iNotas, setINotas] = useState("");
+  // Nuevo editor
+  const [nuevoEditor, setNuevoEditor] = useState("");
 
   async function tareasApi(body) {
     const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
@@ -7382,7 +7401,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     catch(e){ appAlert("Error al cargar tareas: "+e.message); }
     setLoading(false);
   }
-  useEffect(()=>{ loadData(); },[]);
+  async function loadProduccion() {
+    setProdLoading(true);
+    try { const d = await tareasApi({action:"getProduccion"}); setProduccion(d); }
+    catch(e){ /* silently use defaults */ }
+    setProdLoading(false);
+  }
+  useEffect(()=>{ loadData(); loadProduccion(); },[]);
 
   function fmtDate(val) {
     if(!val) return "—";
@@ -7449,6 +7474,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     padding:"5px 12px",borderRadius:20,fontSize:12,border:"none",
     background:active?T.accent:T.surface,color:active?"#fff":T.textMd,
     fontWeight:active?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",
+  });
+  const prodTabSty = id => ({
+    padding:"6px 14px",borderRadius:7,fontSize:12,border:"none",
+    background:prodTab===id?T.card:"transparent",color:prodTab===id?T.text:T.textMd,
+    fontWeight:prodTab===id?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",
+    boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap",
   });
 
   async function crearTarea() {
@@ -7537,6 +7568,32 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setDatos(prev=>({...prev,colaboradores:prev.colaboradores.map(c=>c._id===colabId?{...c,token:d.token}:c)}));
     toast("Nuevo link generado","success");
   }
+
+  // ── PRODUCCIÓN: helpers & CRUD ──
+  function mkProdId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  async function saveProd(newData) {
+    setProduccion(newData);
+    try { await tareasApi({action:"saveProduccion",data:newData}); }
+    catch(e){ toast("Error al guardar","error"); }
+  }
+  // Tanda
+  function openTanda(t=null){ setEditTanda(t); setTNombre(t?.nombre||""); setTFecha(t?.fecha_brief||""); setTEstado2(t?.estado||"activa"); setTDesc(t?.descripcion||""); setTRecursos((t?.recursos||[]).map(r=>({...r}))); setShowNT2(true); }
+  async function guardarTanda(){ if(!tNombre.trim()) return appAlert("El nombre es requerido"); const tanda={id:editTanda?.id||mkProdId(),nombre:tNombre.trim(),fecha_brief:tFecha,estado:tEstado2,descripcion:tDesc.trim(),recursos:tRecursos.filter(r=>r.nombre&&r.url)}; const nt=editTanda?produccion.tandas.map(t=>t.id===editTanda.id?tanda:t):[...produccion.tandas,tanda]; await saveProd({...produccion,tandas:nt}); setShowNT2(false); toast(editTanda?"Tanda actualizada ✓":"Tanda creada ✓","success"); }
+  async function deleteTandaProd(id){ if(!await appConfirm("¿Eliminar esta tanda?",{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,tandas:produccion.tandas.filter(t=>t.id!==id)}); toast("Tanda eliminada","warning"); }
+  // Creativo
+  function openCreativo(c=null,tandaId=""){ setEditCreativo2(c); setCCodigo(c?.codigo||""); setCTanda(c?.tanda_id||tandaId||""); setCTipo(c?.tipo||"estatico"); setCPersona(c?.persona||"General"); setCEtapa(c?.etapa||"TOF"); setCAngulo(c?.angulo||""); setCEditor(c?.editor||(produccion.editores[0]||"")); setCEstado2(c?.estado||"idea"); setCNotas(c?.notas||""); setCCampana(c?.campana||""); setCRoas(c?.roas!=null?String(c.roas):""); setCCpa(c?.cpa!=null?String(c.cpa):""); setCPerformance(c?.performance||"pendiente"); setShowNC2(true); }
+  async function guardarCreativo(){ const tipoStr={estatico:"EST","video-ugc":"UGC","video-normal":"VN"}[cTipo]||"CR"; const auto=tipoStr+String(produccion.creativos.length+1).padStart(2,"0"); const creativo={id:editCreativo2?.id||mkProdId(),codigo:cCodigo.trim()||auto,tanda_id:cTanda,tipo:cTipo,persona:cPersona,etapa:cEtapa,angulo:cAngulo.trim(),editor:cEditor,estado:cEstado2,pagado:editCreativo2?.pagado||false,campana:cCampana.trim(),roas:cRoas?parseFloat(cRoas):null,cpa:cCpa?parseFloat(cCpa):null,performance:cPerformance,notas:cNotas.trim()}; const nc=editCreativo2?produccion.creativos.map(c=>c.id===editCreativo2.id?creativo:c):[...produccion.creativos,creativo]; await saveProd({...produccion,creativos:nc}); setShowNC2(false); toast(editCreativo2?"Creativo actualizado ✓":"Creativo creado ✓","success"); }
+  async function deleteCreativoProd(id){ if(!await appConfirm("¿Eliminar este creativo?",{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,creativos:produccion.creativos.filter(c=>c.id!==id)}); toast("Eliminado","warning"); }
+  async function updateCEstado(id,estado){ const nc=produccion.creativos.map(c=>c.id===id?{...c,estado}:c); await saveProd({...produccion,creativos:nc}); }
+  async function togglePagado(id){ const nc=produccion.creativos.map(c=>c.id===id?{...c,pagado:!c.pagado}:c); await saveProd({...produccion,creativos:nc}); }
+  // Idea
+  function openIdea(i=null){ setEditIdea(i); setIConcepto(i?.concepto||""); setIPersona(i?.persona||"General"); setIEtapa(i?.etapa||"TOF"); setIPrioridad(i?.prioridad||"media"); setIEditor(i?.editor_sugerido||""); setINotas(i?.notas||""); setShowNI(true); }
+  async function guardarIdea(){ if(!iConcepto.trim()) return appAlert("El concepto es requerido"); const idea={id:editIdea?.id||mkProdId(),concepto:iConcepto.trim(),persona:iPersona,etapa:iEtapa,prioridad:iPrioridad,editor_sugerido:iEditor.trim(),notas:iNotas.trim()}; const ni=editIdea?produccion.ideas.map(i=>i.id===editIdea.id?idea:i):[...produccion.ideas,idea]; await saveProd({...produccion,ideas:ni}); setShowNI(false); toast(editIdea?"Idea actualizada ✓":"Idea guardada ✓","success"); }
+  async function deleteIdeaProd(id){ if(!await appConfirm("¿Eliminar?",{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,ideas:produccion.ideas.filter(i=>i.id!==id)}); toast("Idea eliminada","warning"); }
+  async function promoverIdea(idea){ setEditCreativo2(null); setCCodigo(""); setCTanda(""); setCTipo("estatico"); setCPersona(idea.persona); setCEtapa(idea.etapa); setCAngulo(idea.concepto); setCEditor(idea.editor_sugerido||(produccion.editores[0]||"")); setCEstado2("idea"); setCNotas(idea.notas||""); setCCampana(""); setCRoas(""); setCCpa(""); setCPerformance("pendiente"); await saveProd({...produccion,ideas:produccion.ideas.filter(i=>i.id!==idea.id)}); setShowNC2(true); }
+  // Editor
+  async function agregarEditor(){ if(!nuevoEditor.trim()) return; if(produccion.editores.includes(nuevoEditor.trim())) return appAlert("Ya existe ese editor"); await saveProd({...produccion,editores:[...produccion.editores,nuevoEditor.trim()]}); setNuevoEditor(""); toast("Editor agregado ✓","success"); }
+  async function eliminarEditor(nombre){ if(!await appConfirm(`¿Eliminar editor "${nombre}"?`,{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,editores:produccion.editores.filter(e=>e!==nombre)}); toast("Editor eliminado","warning"); }
 
   // Helper para renderizar el detalle expandido de una tarea (función, no componente React)
   function renderDetalle(t) {
@@ -7716,9 +7773,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           {enRevision.length>0&&<span style={{background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>{enRevision.length} en corrección</span>}
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          {/* Selector lista/kanban/cal removido — va por sidebar izquierdo */}
-          <button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>
-          <button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Nueva tarea</button>
+          {tab!=="creativos"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
+          {tab!=="creativos"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Nueva tarea</button>}
+          {tab==="creativos"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
+          {tab==="creativos"&&prodTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
+          {tab==="creativos"&&prodTab!=="ideas"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
         </div>
       </div>
 
@@ -7726,7 +7785,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         {/* Tabs */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showGuia?8:20,flexWrap:"wrap"}}>
           <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,width:"fit-content"}}>
-            {[["tareas","📋 Tareas"],["equipo",`👥 Equipo (${colaboradores.length})`]].map(([id,label])=>(
+            {[["tareas","📋 Tareas"],["equipo",`👥 Equipo (${colaboradores.length})`],["creativos","🎬 Creativos"]].map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)} style={tabStyle(id)}>{label}</button>
             ))}
           </div>
@@ -8022,6 +8081,320 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         )}
       </div>
 
+      {/* ── TAB CREATIVOS ── */}
+      {!loading&&tab==="creativos"&&(
+        <div>
+          {/* Sub-nav */}
+          <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,marginBottom:20,width:"fit-content",flexWrap:"wrap"}}>
+            {[["dashboard","📊 Dashboard"],["tandas",`📦 Tandas${produccion.tandas.length?" ("+produccion.tandas.length+")":""}`],["creativos",`🎬 Creativos${produccion.creativos.length?" ("+produccion.creativos.length+")":""}`],["ideas",`💡 Ideas${produccion.ideas.length?" ("+produccion.ideas.length+")":""}`],["editores","👥 Editores"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setProdTab(id)} style={prodTabSty(id)}>{label}</button>
+            ))}
+          </div>
+
+          {prodLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
+
+          {/* ── Dashboard ── */}
+          {!prodLoading&&prodTab==="dashboard"&&(()=>{
+            const total=produccion.creativos.length;
+            const pub=produccion.creativos.filter(c=>c.estado==="publicado").length;
+            const enProd=produccion.creativos.filter(c=>c.estado==="en-produccion").length;
+            const sinCobrar=produccion.creativos.filter(c=>c.estado==="entregado"&&!c.pagado).length;
+            const PEST=[["idea","💡 Idea"],["brief-enviado","📋 Brief enviado"],["en-produccion","🔄 En producción"],["entregado","📦 Entregado"],["publicado","✅ Publicado"],["archivado","🗄 Archivado"]];
+            return (
+              <div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:12,marginBottom:20}}>
+                  {[{l:"Total creativos",v:total,c:T.accent},{l:"Publicados",v:pub,c:T.green},{l:"En producción",v:enProd,c:T.blue},{l:"Sin cobrar",v:sinCobrar,c:T.red}].map(k=>(
+                    <div key={k.l} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",textAlign:"center"}}>
+                      <div style={{fontSize:30,fontWeight:800,color:k.c,lineHeight:1,marginBottom:4}}>{k.v}</div>
+                      <div style={{fontSize:11,color:T.textSm,fontWeight:500}}>{k.l}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Por estado</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                      {PEST.map(([est,label])=>{
+                        const cnt=produccion.creativos.filter(c=>c.estado===est).length;
+                        const pct=total>0?Math.round(cnt/total*100):0;
+                        return <div key={est}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                            <span style={{color:T.textMd}}>{label}</span>
+                            <span style={{color:T.textSm,fontWeight:600}}>{cnt}</span>
+                          </div>
+                          <div style={{height:4,background:T.surface,borderRadius:2,overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${pct}%`,background:T.accentSolid,borderRadius:2,transition:"width 0.4s"}}/>
+                          </div>
+                        </div>;
+                      })}
+                    </div>
+                  </div>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Ranking editores</div>
+                    {produccion.editores.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin editores configurados.</div>}
+                    {produccion.editores.map(ed=>{
+                      const edC=produccion.creativos.filter(c=>c.editor===ed);
+                      const edPub=edC.filter(c=>c.estado==="publicado").length;
+                      const edTotal=edC.length;
+                      const pct=edTotal>0?Math.round(edPub/edTotal*100):0;
+                      return <div key={ed} style={{marginBottom:12}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                          <span style={{fontSize:12,fontWeight:600,color:T.text}}>{ed}</span>
+                          <span style={{fontSize:10,color:T.textSm}}>{edPub}/{edTotal} pub.</span>
+                        </div>
+                        <div style={{height:5,background:T.surface,borderRadius:3,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${pct}%`,background:T.green,borderRadius:3,transition:"width 0.4s"}}/>
+                        </div>
+                      </div>;
+                    })}
+                    {produccion.ideas.length>0&&(
+                      <div style={{marginTop:14,padding:"10px 12px",background:T.yellowBg||T.surface,border:`1px solid ${(T.yellow||"#d97706")+"55"}`,borderRadius:8}}>
+                        <div style={{fontSize:12,color:T.text}}>💡 <strong>{produccion.ideas.length}</strong> idea{produccion.ideas.length!==1?"s":""} en backlog</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Tandas ── */}
+          {!prodLoading&&prodTab==="tandas"&&(
+            <div>
+              {produccion.tandas.length===0&&(
+                <div style={{textAlign:"center",padding:"60px 0",color:T.textSm}}>
+                  <div style={{fontSize:44,marginBottom:12}}>📦</div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:8}}>Sin tandas aún</div>
+                  <div style={{fontSize:13,marginBottom:20}}>Una tanda agrupa creativos bajo un brief y recursos compartidos (Drive, PDFs, fotos de referencia)</div>
+                  <button onClick={()=>openTanda()} style={{...BtnPrimary(T),margin:"0 auto"}}>+ Crear primera tanda</button>
+                </div>
+              )}
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {produccion.tandas.map(tanda=>{
+                  const tc=produccion.creativos.filter(c=>c.tanda_id===tanda.id);
+                  const pub=tc.filter(c=>c.estado==="publicado").length;
+                  const EC={activa:{c:T.green,bg:T.greenBg,l:"Activa"},completada:{c:T.blue,bg:T.blueBg,l:"Completada"},pausada:{c:T.yellow||"#d97706",bg:T.yellowBg||"#d9770620",l:"Pausada"}};
+                  const ec=EC[tanda.estado]||EC.activa;
+                  return (
+                    <div key={tanda.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+                            <span style={{fontSize:15,fontWeight:700,color:T.text}}>{tanda.nombre}</span>
+                            <span style={{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:20,background:ec.bg,color:ec.c}}>{ec.l}</span>
+                            {tanda.fecha_brief&&<span style={{fontSize:11,color:T.textSm}}>📅 {tanda.fecha_brief}</span>}
+                          </div>
+                          {tanda.descripcion&&<div style={{fontSize:12,color:T.textMd,marginBottom:8,lineHeight:1.5}}>{tanda.descripcion}</div>}
+                          {tc.length>0&&(
+                            <div style={{marginBottom:8}}>
+                              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:T.textSm,marginBottom:4}}>
+                                <span>{tc.length} creativo{tc.length!==1?"s":""}</span>
+                                <span>{pub} publicado{pub!==1?"s":""}</span>
+                              </div>
+                              <div style={{height:5,background:T.surface,borderRadius:3,overflow:"hidden"}}>
+                                <div style={{height:"100%",width:`${tc.length>0?Math.round(pub/tc.length*100):0}%`,background:T.green,borderRadius:3}}/>
+                              </div>
+                            </div>
+                          )}
+                          {(tanda.recursos||[]).length>0&&(
+                            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:6}}>
+                              {tanda.recursos.map((r,ri)=>(
+                                <a key={ri} href={r.url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,color:T.accent,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:6,padding:"3px 8px",textDecoration:"none"}}>
+                                  🔗 {r.nombre||"Recurso"}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
+                          <button onClick={()=>{setProdTab("creativos");setProdFilter(f=>({...f,tanda:tanda.id}));}} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Ver creativos</button>
+                          <button onClick={()=>openCreativo(null,tanda.id)} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px"}}>+ Creativo</button>
+                          <button onClick={()=>openTanda(tanda)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>✏️ Editar</button>
+                          <AsyncButton onClick={()=>deleteTandaProd(tanda.id)} style={{...BtnDanger(T),fontSize:11,padding:"4px 10px"}}>Eliminar</AsyncButton>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Creativos ── */}
+          {!prodLoading&&prodTab==="creativos"&&(()=>{
+            const {tanda:fT,editor:fE,estado:fSt,tipo:fTi,etapa:fEt}=prodFilter;
+            const CEST={idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},"brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blueBg},"en-produccion":{l:"En producción",c:T.orange||"#f97316",bg:(T.orangeBg||"#f9731615")},entregado:{l:"Entregado",c:T.yellow||"#d97706",bg:(T.yellowBg||"#d9770615")},publicado:{l:"Publicado",c:T.green,bg:T.greenBg},archivado:{l:"Archivado",c:T.textSm,bg:T.surface}};
+            const filtered=produccion.creativos.filter(c=>(!fT||c.tanda_id===fT)&&(!fE||c.editor===fE)&&(!fSt||c.estado===fSt)&&(!fTi||c.tipo===fTi)&&(!fEt||c.etapa===fEt));
+            const anyFilter=fT||fE||fSt||fTi||fEt;
+            return (
+              <div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+                  <select value={fT} onChange={e=>setProdFilter(f=>({...f,tanda:e.target.value}))} style={{...iS,fontSize:12,padding:"5px 8px",width:"auto"}}>
+                    <option value="">Todas las tandas</option>
+                    {produccion.tandas.map(t=><option key={t.id} value={t.id}>{t.nombre}</option>)}
+                  </select>
+                  <select value={fE} onChange={e=>setProdFilter(f=>({...f,editor:e.target.value}))} style={{...iS,fontSize:12,padding:"5px 8px",width:"auto"}}>
+                    <option value="">Todos los editores</option>
+                    {produccion.editores.map(e=><option key={e} value={e}>{e}</option>)}
+                  </select>
+                  <select value={fSt} onChange={e=>setProdFilter(f=>({...f,estado:e.target.value}))} style={{...iS,fontSize:12,padding:"5px 8px",width:"auto"}}>
+                    <option value="">Todos los estados</option>
+                    {Object.entries(CEST).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}
+                  </select>
+                  <select value={fTi} onChange={e=>setProdFilter(f=>({...f,tipo:e.target.value}))} style={{...iS,fontSize:12,padding:"5px 8px",width:"auto"}}>
+                    <option value="">Todos los tipos</option>
+                    <option value="estatico">🖼 Estático</option>
+                    <option value="video-ugc">📱 Video UGC</option>
+                    <option value="video-normal">🎬 Video Normal</option>
+                  </select>
+                  <select value={fEt} onChange={e=>setProdFilter(f=>({...f,etapa:e.target.value}))} style={{...iS,fontSize:12,padding:"5px 8px",width:"auto"}}>
+                    <option value="">TOF/MOF/BOF</option>
+                    <option value="TOF">TOF</option><option value="MOF">MOF</option><option value="BOF">BOF</option>
+                  </select>
+                  {anyFilter&&<button onClick={()=>setProdFilter({tanda:"",editor:"",estado:"",tipo:"",etapa:""})} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red}}>✕ Limpiar filtros</button>}
+                  <span style={{marginLeft:"auto",fontSize:11,color:T.textSm}}>{filtered.length} creativo{filtered.length!==1?"s":""}</span>
+                </div>
+                {filtered.length===0&&(
+                  <div style={{textAlign:"center",padding:"48px 0",color:T.textSm,background:T.surface,borderRadius:12,border:`1px dashed ${T.border}`}}>
+                    <div style={{fontSize:36,marginBottom:10}}>🎬</div>
+                    <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:8}}>{produccion.creativos.length===0?"Sin creativos aún":"Sin resultados con estos filtros"}</div>
+                    {produccion.creativos.length===0&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),margin:"12px auto 0"}}>+ Crear primer creativo</button>}
+                    {produccion.creativos.length>0&&anyFilter&&<button onClick={()=>setProdFilter({tanda:"",editor:"",estado:"",tipo:"",etapa:""})} style={{...BtnSecondary(T),margin:"12px auto 0"}}>Limpiar filtros</button>}
+                  </div>
+                )}
+                {filtered.length>0&&(
+                  <div style={{overflowX:"auto",borderRadius:12,border:`1px solid ${T.border}`}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:680}}>
+                      <thead>
+                        <tr style={{background:T.surface}}>
+                          {["Código","Ángulo / Persona","Tipo","Etapa","Editor","Estado","💰",""].map((h,i)=>(
+                            <th key={i} style={{padding:"9px 10px",fontWeight:600,color:T.textSm,fontSize:11,borderBottom:`1px solid ${T.border}`,textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map((c,i)=>{
+                          const ce=CEST[c.estado]||CEST.idea;
+                          const tanda=produccion.tandas.find(t=>t.id===c.tanda_id);
+                          return (
+                            <tr key={c.id} style={{background:i%2===0?T.card:T.surface,borderBottom:`1px solid ${T.borderL}`}}>
+                              <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
+                                <span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}30`,borderRadius:5,padding:"2px 7px"}}>{c.codigo}</span>
+                                {tanda&&<div style={{fontSize:9,color:T.textSm,marginTop:2,maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tanda.nombre}</div>}
+                              </td>
+                              <td style={{padding:"8px 10px",maxWidth:200}}>
+                                <div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text,fontWeight:500}}>{c.angulo||"—"}</div>
+                                <div style={{fontSize:10,color:T.textSm}}>{c.persona}</div>
+                              </td>
+                              <td style={{padding:"8px 10px",whiteSpace:"nowrap",color:T.textMd,fontSize:11}}>
+                                {c.tipo==="estatico"?"🖼 Est.":c.tipo==="video-ugc"?"📱 UGC":"🎬 Video"}
+                              </td>
+                              <td style={{padding:"8px 10px"}}>
+                                <span style={{fontSize:10,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:4,padding:"2px 6px"}}>{c.etapa}</span>
+                              </td>
+                              <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap",fontSize:11}}>{c.editor||"—"}</td>
+                              <td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
+                                <select value={c.estado} onChange={e=>updateCEstado(c.id,e.target.value)}
+                                  style={{fontSize:11,fontWeight:600,padding:"3px 6px",borderRadius:6,border:`1px solid ${ce.c}55`,background:ce.bg,color:ce.c,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}>
+                                  {Object.entries(CEST).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}
+                                </select>
+                              </td>
+                              <td style={{padding:"8px 10px",textAlign:"center"}}>
+                                <button onClick={()=>togglePagado(c.id)} title={c.pagado?"Marcado como pagado":"Sin cobrar"}
+                                  style={{width:30,height:16,borderRadius:8,border:"none",cursor:"pointer",background:c.pagado?T.green:"#d1d5db",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
+                                  <div style={{position:"absolute",top:2,left:c.pagado?16:2,width:12,height:12,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
+                                </button>
+                              </td>
+                              <td style={{padding:"8px 8px",whiteSpace:"nowrap"}}>
+                                <div style={{display:"flex",gap:4}}>
+                                  <button onClick={()=>openCreativo(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>✏️</button>
+                                  <AsyncButton onClick={()=>deleteCreativoProd(c.id)} style={{...BtnDanger(T),fontSize:10,padding:"3px 8px"}}>×</AsyncButton>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Ideas ── */}
+          {!prodLoading&&prodTab==="ideas"&&(
+            <div>
+              {produccion.ideas.length===0&&(
+                <div style={{textAlign:"center",padding:"60px 0",color:T.textSm}}>
+                  <div style={{fontSize:44,marginBottom:12}}>💡</div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:8}}>Sin ideas en backlog</div>
+                  <div style={{fontSize:13,marginBottom:20}}>Guardá ideas antes de convertirlas en creativos. Cuando estés listo, promovenlas con un click.</div>
+                  <button onClick={()=>openIdea()} style={{...BtnPrimary(T),margin:"0 auto"}}>+ Agregar primera idea</button>
+                </div>
+              )}
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {[...produccion.ideas].sort((a,b)=>{const p={alta:0,media:1,baja:2};return (p[a.prioridad]||1)-(p[b.prioridad]||1);}).map(idea=>{
+                  const PC={alta:{l:"Alta",c:T.red,bg:T.redBg},media:{l:"Media",c:T.yellow||"#d97706",bg:T.yellowBg||"#d9770620"},baja:{l:"Baja",c:T.textMd,bg:T.surface}};
+                  const pc=PC[idea.prioridad]||PC.media;
+                  return (
+                    <div key={idea.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5,flexWrap:"wrap"}}>
+                            <span style={{fontSize:14,fontWeight:600,color:T.text}}>{idea.concepto}</span>
+                            <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:pc.bg,color:pc.c}}>{pc.l}</span>
+                          </div>
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap",fontSize:11,color:T.textSm,marginBottom:idea.notas?6:0}}>
+                            <span>{idea.persona}</span><span>·</span><span>{idea.etapa}</span>
+                            {idea.editor_sugerido&&<><span>·</span><span>→ {idea.editor_sugerido}</span></>}
+                          </div>
+                          {idea.notas&&<div style={{fontSize:12,color:T.textMd,lineHeight:1.5}}>{idea.notas}</div>}
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
+                          <AsyncButton onClick={()=>promoverIdea(idea)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>▶ Promover</AsyncButton>
+                          <button onClick={()=>openIdea(idea)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>✏️ Editar</button>
+                          <AsyncButton onClick={()=>deleteIdeaProd(idea.id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Eliminar</AsyncButton>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Editores ── */}
+          {!prodLoading&&prodTab==="editores"&&(
+            <div>
+              <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center"}}>
+                <input value={nuevoEditor} onChange={e=>setNuevoEditor(e.target.value)} onKeyDown={e=>e.key==="Enter"&&agregarEditor()} placeholder="Nombre del editor (ej: Val, Editor IA…)" style={{...iS,fontSize:13,flex:1}}/>
+                <AsyncButton onClick={agregarEditor} style={{...BtnPrimary(T),flexShrink:0}}>+ Agregar</AsyncButton>
+              </div>
+              {produccion.editores.length===0&&<div style={{textAlign:"center",padding:"40px 0",color:T.textSm,fontSize:13}}>Sin editores. Agregá el primero arriba.</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {produccion.editores.map(ed=>{
+                  const edC=produccion.creativos.filter(c=>c.editor===ed);
+                  const edPub=edC.filter(c=>c.estado==="publicado").length;
+                  return (
+                    <div key={ed} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{width:36,height:36,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.accent,flexShrink:0}}>
+                        {ed[0].toUpperCase()}
+                      </div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:14,fontWeight:600,color:T.text}}>{ed}</div>
+                        <div style={{fontSize:11,color:T.textSm}}>{edC.length} creativo{edC.length!==1?"s":""} · {edPub} publicado{edPub!==1?"s":""}</div>
+                      </div>
+                      <AsyncButton onClick={()=>eliminarEditor(ed)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Eliminar</AsyncButton>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* MODAL Kanban — detalle tarea */}
       {kanbanSelected&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setKanbanSelected(null);}}>
@@ -8202,6 +8575,222 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       )}
 
       {/* MODAL Nuevo Colaborador */}
+      {/* MODAL Nueva/Editar Tanda */}
+      {showNT2&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editTanda?"✏️ Editar tanda":"📦 Nueva tanda"}</div>
+              <button onClick={()=>setShowNT2(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Nombre *</div>
+                <input value={tNombre} onChange={e=>setTNombre(e.target.value)} placeholder="Ej: Tanda Black Friday 2024" style={{...iS,fontSize:13,width:"100%"}}/>
+              </div>
+              <div style={{display:"flex",gap:12}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha del brief</div>
+                  <input type="date" value={tFecha} onChange={e=>setTFecha(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
+                </div>
+                <div style={{minWidth:140}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Estado</div>
+                  <select value={tEstado2} onChange={e=>setTEstado2(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
+                    <option value="activa">Activa</option>
+                    <option value="pausada">Pausada</option>
+                    <option value="completada">Completada</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Descripción</div>
+                <textarea value={tDesc} onChange={e=>setTDesc(e.target.value)} placeholder="Objetivo, público, contexto, instrucciones generales..." style={{...iS,fontSize:12,width:"100%",minHeight:80,resize:"vertical"}}/>
+              </div>
+              <div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Recursos (links a briefs, Drive, fotos de ref…)</div>
+                  <button onClick={()=>setTRecursos(prev=>[...prev,{id:mkProdId(),nombre:"",tipo:"otro",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                </div>
+                {tRecursos.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin recursos. Podés agregar links a Drive, PDFs, WeTransfer, etc.</div>}
+                {tRecursos.map((r,i)=>(
+                  <div key={r.id||i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+                    <input value={r.nombre} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))} placeholder="Nombre" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
+                    <input value={r.url} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))} placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
+                    <button onClick={()=>setTRecursos(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+              <button onClick={()=>setShowNT2(false)} style={BtnSecondary(T)}>Cancelar</button>
+              <AsyncButton onClick={guardarTanda} style={BtnPrimary(T)}>{editTanda?"Guardar cambios":"Crear tanda"}</AsyncButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL Nuevo/Editar Creativo */}
+      {showNC2&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editCreativo2?"✏️ Editar creativo":"🎬 Nuevo creativo"}</div>
+              <button onClick={()=>setShowNC2(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Ángulo creativo *</div>
+                <input value={cAngulo} onChange={e=>setCAngulo(e.target.value)} placeholder="Ej: Mamá que trabaja hasta tarde y necesita dormir bien" style={{...iS,fontSize:13,width:"100%"}}/>
+              </div>
+              <div style={{display:"flex",gap:12}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tanda</div>
+                  <select value={cTanda} onChange={e=>setCTanda(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
+                    <option value="">Sin tanda</option>
+                    {produccion.tandas.map(t=><option key={t.id} value={t.id}>{t.nombre}</option>)}
+                  </select>
+                </div>
+                <div style={{minWidth:130}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Código (opcional)</div>
+                  <input value={cCodigo} onChange={e=>setCCodigo(e.target.value)} placeholder="Auto-generado" style={{...iS,fontSize:12,width:"100%"}}/>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo</div>
+                  <select value={cTipo} onChange={e=>setCTipo(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
+                    <option value="estatico">🖼 Estático</option>
+                    <option value="video-ugc">📱 Video UGC</option>
+                    <option value="video-normal">🎬 Video Normal</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Persona</div>
+                  <select value={cPersona} onChange={e=>setCPersona(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
+                    {["Biohacker","Holístico","Conductor","Oficinista","Futbolista","General"].map(p=><option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Etapa</div>
+                  <select value={cEtapa} onChange={e=>setCEtapa(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
+                    <option value="TOF">TOF</option><option value="MOF">MOF</option><option value="BOF">BOF</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:12}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Editor</div>
+                  <select value={cEditor} onChange={e=>setCEditor(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
+                    <option value="">Sin asignar</option>
+                    {produccion.editores.map(e=><option key={e} value={e}>{e}</option>)}
+                  </select>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Estado</div>
+                  <select value={cEstado2} onChange={e=>setCEstado2(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
+                    <option value="idea">Idea</option>
+                    <option value="brief-enviado">Brief enviado</option>
+                    <option value="en-produccion">En producción</option>
+                    <option value="entregado">Entregado</option>
+                    <option value="publicado">Publicado</option>
+                    <option value="archivado">Archivado</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Notas</div>
+                <textarea value={cNotas} onChange={e=>setCNotas(e.target.value)} placeholder="Referencias, instrucciones específicas, link al brief..." style={{...iS,fontSize:12,width:"100%",minHeight:60,resize:"vertical"}}/>
+              </div>
+              {(cEstado2==="publicado"||editCreativo2?.campana)&&(
+                <div style={{background:T.surface,borderRadius:10,padding:"12px 14px",border:`1px solid ${T.borderL}`}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Performance (opcional)</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+                    <div>
+                      <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:4}}>ROAS</div>
+                      <input type="number" step="0.01" value={cRoas} onChange={e=>setCRoas(e.target.value)} placeholder="Ej: 2.5" style={{...iS,fontSize:13,width:"100%"}}/>
+                    </div>
+                    <div>
+                      <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:4}}>CPA ($)</div>
+                      <input type="number" step="0.01" value={cCpa} onChange={e=>setCCpa(e.target.value)} placeholder="Ej: 850" style={{...iS,fontSize:13,width:"100%"}}/>
+                    </div>
+                    <div>
+                      <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:4}}>Performance</div>
+                      <select value={cPerformance} onChange={e=>setCPerformance(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="ganador">🏆 Ganador</option>
+                        <option value="neutro">➡️ Neutro</option>
+                        <option value="perdedor">❌ Perdedor</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:4}}>Campaña Meta (nombre)</div>
+                    <input value={cCampana} onChange={e=>setCCampana(e.target.value)} placeholder="Nombre de la campaña en Meta Ads" style={{...iS,fontSize:12,width:"100%"}}/>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+              <button onClick={()=>setShowNC2(false)} style={BtnSecondary(T)}>Cancelar</button>
+              <AsyncButton onClick={guardarCreativo} style={BtnPrimary(T)}>{editCreativo2?"Guardar cambios":"Crear creativo"}</AsyncButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL Nueva/Editar Idea */}
+      {showNI&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:480}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editIdea?"✏️ Editar idea":"💡 Nueva idea"}</div>
+              <button onClick={()=>setShowNI(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Concepto *</div>
+                <input value={iConcepto} onChange={e=>setIConcepto(e.target.value)} placeholder="Ej: Mamá con niños pequeños que no puede dormir" style={{...iS,fontSize:13,width:"100%"}}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Persona</div>
+                  <select value={iPersona} onChange={e=>setIPersona(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
+                    {["Biohacker","Holístico","Conductor","Oficinista","Futbolista","General"].map(p=><option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Etapa</div>
+                  <select value={iEtapa} onChange={e=>setIEtapa(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
+                    <option value="TOF">TOF</option><option value="MOF">MOF</option><option value="BOF">BOF</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Prioridad</div>
+                  <select value={iPrioridad} onChange={e=>setIPrioridad(e.target.value)} style={{...iS,fontSize:12,width:"100%"}}>
+                    <option value="alta">🔴 Alta</option><option value="media">🟡 Media</option><option value="baja">⬇️ Baja</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Editor sugerido</div>
+                <select value={iEditor} onChange={e=>setIEditor(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
+                  <option value="">Sin asignar</option>
+                  {produccion.editores.map(e=><option key={e} value={e}>{e}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Notas</div>
+                <textarea value={iNotas} onChange={e=>setINotas(e.target.value)} placeholder="Contexto, referencias, detalles del ángulo..." style={{...iS,fontSize:12,width:"100%",minHeight:70,resize:"vertical"}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+              <button onClick={()=>setShowNI(false)} style={BtnSecondary(T)}>Cancelar</button>
+              <AsyncButton onClick={guardarIdea} style={BtnPrimary(T)}>{editIdea?"Guardar cambios":"Guardar idea"}</AsyncButton>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNC&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:440}}>

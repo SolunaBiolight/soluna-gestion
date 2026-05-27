@@ -457,6 +457,22 @@ export default async function handler(req, res) {
       return res.json({ ok:true, comment });
     }
 
+    if (action === "getProduccion") {
+      const ref = db.collection("produccion").doc(uid);
+      const snap = await ref.get();
+      if (!snap.exists) return res.json({ editores:["Val","Editor IA","Editor Video","Hector"], tandas:[], creativos:[], ideas:[] });
+      const d = snap.data();
+      delete d.updatedAt;
+      return res.json(d);
+    }
+
+    if (action === "saveProduccion") {
+      const { data: prodData } = body;
+      if (!prodData || typeof prodData !== "object") return res.status(400).json({ error:"Data requerida" });
+      await db.collection("produccion").doc(uid).set({ ...prodData, updatedAt: now });
+      return res.json({ ok: true });
+    }
+
     return res.status(400).json({ error:"Acción desconocida" });
 
   } catch(e) {
