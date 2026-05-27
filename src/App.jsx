@@ -3855,32 +3855,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     function cl(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
 
     if(pickupDetails) {
-      // Paso 1: match exacto con pickupDetails.name normalizado
+      // Solo auto-asignar si TN da el nombre EXACTO del branch (normalizado sin acentos/simbolos)
+      // Si TN solo da "PUNTO ANDREANI HOP" sin dirección, el match falla y va al modal
       const tnName=cl(pickupDetails.name||"");
       if(tnName){
         const exact=locs.sucursales.find(s=>cl(s)===tnName);
         if(exact) return exact;
       }
-      // Paso 2: calle + número → solo si resultado ÚNICO
-      const addr=(pickupDetails.address?.address||"").trim();
-      const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
-      const query=(addr+(num?" "+num:"")).trim().toUpperCase();
-      if(query.length>=3){
-        const results=locs.sucursales.filter(s=>s.toUpperCase().includes(query));
-        if(results.length===1) return results[0];
-      }
-    } else if(direccion) {
-      // Sucursal Andreani clásica: la dirección de entrega ES la dirección de la sucursal
-      // Buscar palabras significativas de la dirección en el nombre de la sucursal
-      const words=cl(direccion).split(' ').filter(w=>w.length>=4);
-      if(words.length>=1){
-        const q=words.join(' ');
-        const results=locs.sucursales.filter(s=>cl(s).includes(q));
-        if(results.length===1) return results[0];
-      }
+      // NO hay Step 2 por dirección: demasiado ambiguo (misma calle en distintas ciudades)
     }
 
-    return null; // 0 o 2+ resultados → modal obligatorio
+    return null; // sin match exacto → modal siempre
   }
 
   function searchSucursales(locs, query) {
@@ -4125,16 +4110,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(locationOverridesRef.current[o.numero]) return false;
         return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
       });
-      // Forzar modal si la dirección es una esquina (nombre ambiguo en el template)
-      function isEsquina(o){
-        const pd=o.pickupDetails;
-        if(!pd) return false;
-        const txt=((pd.name||'')+(pd.address?.address||'')+(pd.address?.floor||'')).toUpperCase();
-        return /ESQ|ESQUINA|\bY\b/.test(txt);
-      }
       const unresolvedSuc=sucursalOrders.filter(o=>{
         if(sucursalOverridesRef.current[o.numero]) return false;
-        if(isEsquina(o)) return true; // esquina → modal siempre
         const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
         return !_sf||_sf.trim()==="";
       });
@@ -4205,12 +4182,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         } else {
           const pd=o.pickupDetails;
           if(pd){
+            // Usar localidad como prefill — más confiable que la calle (que puede ser ambigua)
+            const loc=(pd.address?.locality||pd.address?.city||"").trim();
             const addr=(pd.address?.address||"").trim();
             const num=(pd.address?.number||"").replace(/\D.*/,"").trim();
-            const fullAddr=(addr+(num?" "+num:"")).trim();
-            // Para esquinas usar localidad (más útil que "Mitre Esq Belgrano")
-            const esEsquina=/ESQ|ESQUINA|\bY\b/i.test(fullAddr);
-            prefill=esEsquina?(pd.address?.locality||fullAddr):fullAddr;
+            prefill=loc||(addr+(num?" "+num:"")).trim();
           } else {
             prefill=o.direccion||"";
           }
