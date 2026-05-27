@@ -3855,17 +3855,31 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     function cl(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
 
     if(pickupDetails) {
-      // Solo auto-asignar si TN da el nombre EXACTO del branch (normalizado sin acentos/simbolos)
-      // Si TN solo da "PUNTO ANDREANI HOP" sin dirección, el match falla y va al modal
+      // Step 1: match exacto con pickupDetails.name normalizado
       const tnName=cl(pickupDetails.name||"");
       if(tnName){
         const exact=locs.sucursales.find(s=>cl(s)===tnName);
         if(exact) return exact;
       }
-      // NO hay Step 2 por dirección: demasiado ambiguo (misma calle en distintas ciudades)
+      // Step 2: calle + número → solo si resultado ÚNICO
+      const addr=(pickupDetails.address?.address||"").trim();
+      const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
+      const query=(addr+(num?" "+num:"")).trim().toUpperCase();
+      if(query.length>=3){
+        const results=locs.sucursales.filter(s=>s.toUpperCase().includes(query));
+        if(results.length===1) return results[0];
+      }
+    } else if(direccion) {
+      // Sucursal Andreani clásica: la dirección de entrega ES la dirección de la sucursal
+      const words=cl(direccion).split(' ').filter(w=>w.length>=4);
+      if(words.length>=1){
+        const q=words.join(' ');
+        const results=locs.sucursales.filter(s=>cl(s).includes(q));
+        if(results.length===1) return results[0];
+      }
     }
 
-    return null; // sin match exacto → modal siempre
+    return null; // 0 o 2+ resultados → modal obligatorio
   }
 
   function searchSucursales(locs, query) {
