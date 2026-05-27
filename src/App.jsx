@@ -4125,9 +4125,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(locationOverridesRef.current[o.numero]) return false;
         return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
       });
-      // Todos los pedidos a sucursal pasan por el modal para confirmación manual.
-      // findAndreaniSucursal se usa solo como pre-fill sugerido, no para auto-asignar.
-      const unresolvedSuc=sucursalOrders.filter(o=>!sucursalOverridesRef.current[o.numero]);
+      // Forzar modal si la dirección es una esquina (nombre ambiguo en el template)
+      function isEsquina(o){
+        const pd=o.pickupDetails;
+        if(!pd) return false;
+        const txt=((pd.name||'')+(pd.address?.address||'')+(pd.address?.floor||'')).toUpperCase();
+        return /ESQ|ESQUINA|\bY\b/.test(txt);
+      }
+      const unresolvedSuc=sucursalOrders.filter(o=>{
+        if(sucursalOverridesRef.current[o.numero]) return false;
+        if(isEsquina(o)) return true; // esquina → modal siempre
+        const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+        return !_sf||_sf.trim()==="";
+      });
 
       if(unresolvedDom.length>0||unresolvedSuc.length>0){
         setExporting(false);
@@ -4191,14 +4201,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const autoMatch=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
         let prefill='';
         if(autoMatch){
-          // Mostrar el nombre sugerido directamente en el buscador para confirmación con un click
           prefill=autoMatch;
         } else {
-          // Sin match: pre-fill con calle+numero (HOP) o dirección del pedido (clásica)
           const pd=o.pickupDetails;
-          prefill=pd
-            ?`${pd.address?.address||""} ${(pd.address?.number||"").replace(/\D.*/,"").trim()}`.trim()
-            :o.direccion||"";
+          if(pd){
+            const addr=(pd.address?.address||"").trim();
+            const num=(pd.address?.number||"").replace(/\D.*/,"").trim();
+            const fullAddr=(addr+(num?" "+num:"")).trim();
+            // Para esquinas usar localidad (más útil que "Mitre Esq Belgrano")
+            const esEsquina=/ESQ|ESQUINA|\bY\b/i.test(fullAddr);
+            prefill=esEsquina?(pd.address?.locality||fullAddr):fullAddr;
+          } else {
+            prefill=o.direccion||"";
+          }
         }
         setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch});
         setLocSearch(prefill);setLocSearchType("ciudad");
