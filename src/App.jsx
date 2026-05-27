@@ -3861,13 +3861,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const exact=locs.sucursales.find(s=>cl(s)===tnName);
         if(exact) return exact;
       }
-      // Step 2: calle + número → solo si resultado ÚNICO
+      // Step 2: calle + número → único match Y el nombre de la sucursal debe incluir la localidad
+      // (evita falsos positivos: "MITRE 186" existe en otra ciudad → modal)
       const addr=(pickupDetails.address?.address||"").trim();
       const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
       const query=(addr+(num?" "+num:"")).trim().toUpperCase();
+      const locality=cl(pickupDetails.address?.locality||pickupDetails.address?.city||"");
       if(query.length>=3){
         const results=locs.sucursales.filter(s=>s.toUpperCase().includes(query));
-        if(results.length===1) return results[0];
+        if(results.length===1&&(!locality||cl(results[0]).includes(locality))) return results[0];
       }
     } else if(direccion) {
       // Sucursal Andreani clásica: la dirección de entrega ES la dirección de la sucursal
