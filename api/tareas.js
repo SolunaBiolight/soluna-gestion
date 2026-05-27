@@ -267,6 +267,41 @@ export default async function handler(req, res) {
       return res.json({ ok: true, entrega });
     }
 
+    // ── ACCIONES PÚBLICAS EDITOR PRODUCCIÓN ──────────────────────────────────
+
+    if (action === "getEditorProduccion") {
+      const { token: edToken } = body;
+      if (!edToken) return res.status(400).json({ error:"Token requerido" });
+      const tokenSnap = await db.collection("produccionTokens").doc(edToken).get();
+      if (!tokenSnap.exists) return res.status(404).json({ error:"Link inválido o expirado" });
+      const { uid: tUid, editorNombre } = tokenSnap.data();
+      const prodSnap = await db.collection("produccion").doc(tUid).get();
+      if (!prodSnap.exists) return res.json({ editorNombre, tandas:[], creativos:[] });
+      const prod = prodSnap.data();
+      return res.json({
+        editorNombre,
+        tandas: prod.tandas || [],
+        creativos: (prod.creativos || []).filter(c => c.editor === editorNombre),
+      });
+    }
+
+    if (action === "publicUpdateEditorCEstado") {
+      const { editorToken, creativoId, estado } = body;
+      if (!editorToken || !creativoId || !estado) return res.status(400).json({ error:"Faltan parámetros" });
+      const tokenSnap = await db.collection("produccionTokens").doc(editorToken).get();
+      if (!tokenSnap.exists) return res.status(403).json({ error:"Token inválido" });
+      const { uid: tUid, editorNombre } = tokenSnap.data();
+      const prodRef = db.collection("produccion").doc(tUid);
+      const prodSnap = await prodRef.get();
+      if (!prodSnap.exists) return res.status(404).json({ error:"Sin data" });
+      const prod = prodSnap.data();
+      const creativo = (prod.creativos || []).find(c => c.id === creativoId);
+      if (!creativo || creativo.editor !== editorNombre) return res.status(403).json({ error:"No autorizado" });
+      const newCreativos = prod.creativos.map(c => c.id === creativoId ? { ...c, estado } : c);
+      await prodRef.update({ creativos: newCreativos, updatedAt: now });
+      return res.json({ ok: true });
+    }
+
     // ── ACCIONES AUTENTICADAS (uid requerido) ─────────────────────────────────
 
     if (!uid) return res.status(403).json({ error: "No autorizado" });
@@ -455,6 +490,15 @@ export default async function handler(req, res) {
       const comment = { texto: texto.trim(), autor:"manager", fecha:now, tipo:"mensaje" };
       await ref.update({ comments:[...(snap.data().comments||[]), comment] });
       return res.json({ ok:true, comment });
+    }
+
+    if (action === "generateEditorToken") {
+      const { editorNombre } = body;
+      if (!editorNombre) return res.status(400).json({ error:"Editor requerido" });
+      const token = randomToken(24);
+      await db.collection("produccionTokens").doc(token).set({ uid, editorNombre, createdAt: now });
+      await db.collection("produccion").doc(uid).set({ editorTokens: { [editorNombre]: token } }, { merge: true });
+      return res.json({ ok: true, token });
     }
 
     if (action === "getProduccion") {

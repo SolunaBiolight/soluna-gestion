@@ -7582,7 +7582,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   async function deleteTandaProd(id){ if(!await appConfirm("¿Eliminar esta tanda?",{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,tandas:produccion.tandas.filter(t=>t.id!==id)}); toast("Tanda eliminada","warning"); }
   // Creativo
   function openCreativo(c=null,tandaId=""){ setEditCreativo2(c); setCCodigo(c?.codigo||""); setCTanda(c?.tanda_id||tandaId||""); setCTipo(c?.tipo||"estatico"); setCPersona(c?.persona||"General"); setCEtapa(c?.etapa||"TOF"); setCAngulo(c?.angulo||""); setCEditor(c?.editor||(produccion.editores[0]||"")); setCEstado2(c?.estado||"idea"); setCNotas(c?.notas||""); setCCampana(c?.campana||""); setCRoas(c?.roas!=null?String(c.roas):""); setCCpa(c?.cpa!=null?String(c.cpa):""); setCPerformance(c?.performance||"pendiente"); setShowNC2(true); }
-  async function guardarCreativo(){ const tipoStr={estatico:"EST","video-ugc":"UGC","video-normal":"VN"}[cTipo]||"CR"; const auto=tipoStr+String(produccion.creativos.length+1).padStart(2,"0"); const creativo={id:editCreativo2?.id||mkProdId(),codigo:cCodigo.trim()||auto,tanda_id:cTanda,tipo:cTipo,persona:cPersona,etapa:cEtapa,angulo:cAngulo.trim(),editor:cEditor,estado:cEstado2,pagado:editCreativo2?.pagado||false,campana:cCampana.trim(),roas:cRoas?parseFloat(cRoas):null,cpa:cCpa?parseFloat(cCpa):null,performance:cPerformance,notas:cNotas.trim()}; const nc=editCreativo2?produccion.creativos.map(c=>c.id===editCreativo2.id?creativo:c):[...produccion.creativos,creativo]; await saveProd({...produccion,creativos:nc}); setShowNC2(false); toast(editCreativo2?"Creativo actualizado ✓":"Creativo creado ✓","success"); }
+  async function guardarCreativo(){ const tipoStr={estatico:"EST","video-ugc":"UGC","video-normal":"VN"}[cTipo]||"CR"; const tanda=produccion.tandas.find(t=>t.id===cTanda); const pfx=tanda?tanda.nombre.replace(/[^A-Za-z0-9]/g,"").slice(0,3).toUpperCase()+"-":""; const baseCount=produccion.creativos.filter(c=>!editCreativo2||c.id!==editCreativo2.id).length; const auto=pfx+tipoStr+String(baseCount+1).padStart(2,"0"); const creativo={id:editCreativo2?.id||mkProdId(),codigo:cCodigo.trim()||auto,tanda_id:cTanda,tipo:cTipo,persona:cPersona,etapa:cEtapa,angulo:cAngulo.trim(),editor:cEditor,estado:cEstado2,pagado:editCreativo2?.pagado||false,campana:cCampana.trim(),roas:cRoas?parseFloat(cRoas):null,cpa:cCpa?parseFloat(cCpa):null,performance:cPerformance,notas:cNotas.trim()}; const nc=editCreativo2?produccion.creativos.map(c=>c.id===editCreativo2.id?creativo:c):[...produccion.creativos,creativo]; await saveProd({...produccion,creativos:nc}); setShowNC2(false); toast(editCreativo2?"Creativo actualizado ✓":"Creativo creado ✓","success"); }
   async function deleteCreativoProd(id){ if(!await appConfirm("¿Eliminar este creativo?",{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,creativos:produccion.creativos.filter(c=>c.id!==id)}); toast("Eliminado","warning"); }
   async function updateCEstado(id,estado){ const nc=produccion.creativos.map(c=>c.id===id?{...c,estado}:c); await saveProd({...produccion,creativos:nc}); }
   async function togglePagado(id){ const nc=produccion.creativos.map(c=>c.id===id?{...c,pagado:!c.pagado}:c); await saveProd({...produccion,creativos:nc}); }
@@ -7594,6 +7594,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // Editor
   async function agregarEditor(){ if(!nuevoEditor.trim()) return; if(produccion.editores.includes(nuevoEditor.trim())) return appAlert("Ya existe ese editor"); await saveProd({...produccion,editores:[...produccion.editores,nuevoEditor.trim()]}); setNuevoEditor(""); toast("Editor agregado ✓","success"); }
   async function eliminarEditor(nombre){ if(!await appConfirm(`¿Eliminar editor "${nombre}"?`,{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,editores:produccion.editores.filter(e=>e!==nombre)}); toast("Editor eliminado","warning"); }
+  async function generarLinkEditor(editorNombre){ const d=await tareasApi({action:"generateEditorToken",editorNombre}); const newToks={...(produccion.editorTokens||{}),[editorNombre]:d.token}; setProduccion(prev=>({...prev,editorTokens:newToks})); const link=`${window.location.origin}/#/editor-produccion/${d.token}`; try{await navigator.clipboard.writeText(link); toast("Link generado y copiado ✓","success");}catch(e){toast("Link: "+link,"success");} return d.token; }
+  function editorPortalLink(editorNombre){ const tok=produccion.editorTokens?.[editorNombre]; return tok?`${window.location.origin}/#/editor-produccion/${tok}`:null; }
+  // Export CSV
+  function exportCreativosCSV(creativos){ const LABELS={idea:"Idea","brief-enviado":"Brief enviado","en-produccion":"En producción",entregado:"Entregado",publicado:"Publicado",archivado:"Archivado"}; const headers=["Código","Tanda","Ángulo","Tipo","Persona","Etapa","Editor","Estado","Pagado","ROAS","CPA","Performance","Notas"]; const rows=[headers,...creativos.map(c=>{const tanda=produccion.tandas.find(t=>t.id===c.tanda_id)?.nombre||"";return[c.codigo,tanda,c.angulo,c.tipo,c.persona,c.etapa,c.editor||"",LABELS[c.estado]||c.estado,c.pagado?"Sí":"No",c.roas!=null?c.roas:"",c.cpa!=null?c.cpa:"",c.performance||"",c.notas||""];})]; const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n"); const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a");a.href=url;a.download=`creativos-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url); toast("CSV exportado ✓","success"); }
 
   // Helper para renderizar el detalle expandido de una tarea (función, no componente React)
   function renderDetalle(t) {
@@ -8103,8 +8107,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             return (
               <div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:12,marginBottom:20}}>
-                  {[{l:"Total creativos",v:total,c:T.accent},{l:"Publicados",v:pub,c:T.green},{l:"En producción",v:enProd,c:T.blue},{l:"Sin cobrar",v:sinCobrar,c:T.red}].map(k=>(
-                    <div key={k.l} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",textAlign:"center"}}>
+                  {[{l:"Total creativos",v:total,c:T.accent,f:{}},{l:"Publicados",v:pub,c:T.green,f:{estado:"publicado"}},{l:"En producción",v:enProd,c:T.blue,f:{estado:"en-produccion"}},{l:"Sin cobrar",v:sinCobrar,c:T.red,f:{estado:"entregado"}}].map(k=>(
+                    <div key={k.l} onClick={()=>{setProdTab("creativos");setProdFilter(f=>({...f,...k.f}));}} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",textAlign:"center",cursor:"pointer",transition:"box-shadow 0.15s"}} onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 14px rgba(0,0,0,0.12)"} onMouseLeave={e=>e.currentTarget.style.boxShadow=""}>
                       <div style={{fontSize:30,fontWeight:800,color:k.c,lineHeight:1,marginBottom:4}}>{k.v}</div>
                       <div style={{fontSize:11,color:T.textSm,fontWeight:500}}>{k.l}</div>
                     </div>
@@ -8117,7 +8121,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       {PEST.map(([est,label])=>{
                         const cnt=produccion.creativos.filter(c=>c.estado===est).length;
                         const pct=total>0?Math.round(cnt/total*100):0;
-                        return <div key={est}>
+                        return <div key={est} onClick={()=>{setProdTab("creativos");setProdFilter(f=>({...f,estado:est}));}} style={{cursor:"pointer",padding:"3px 0",borderRadius:4}} title={`Ver creativos: ${label}`}>
                           <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
                             <span style={{color:T.textMd}}>{label}</span>
                             <span style={{color:T.textSm,fontWeight:600}}>{cnt}</span>
@@ -8253,6 +8257,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </select>
                   {anyFilter&&<button onClick={()=>setProdFilter({tanda:"",editor:"",estado:"",tipo:"",etapa:""})} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red}}>✕ Limpiar filtros</button>}
                   <span style={{marginLeft:"auto",fontSize:11,color:T.textSm}}>{filtered.length} creativo{filtered.length!==1?"s":""}</span>
+                  {filtered.length>0&&<button onClick={()=>exportCreativosCSV(filtered)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>⬇ CSV</button>}
                 </div>
                 {filtered.length===0&&(
                   <div style={{textAlign:"center",padding:"48px 0",color:T.textSm,background:T.surface,borderRadius:12,border:`1px dashed ${T.border}`}}>
@@ -8376,16 +8381,36 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {produccion.editores.map(ed=>{
                   const edC=produccion.creativos.filter(c=>c.editor===ed);
                   const edPub=edC.filter(c=>c.estado==="publicado").length;
+                  const edLink=editorPortalLink(ed);
+                  const waLink=edLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${ed.split(" ")[0]} 👋, acá podés ver tus creativos asignados en Growith:\n${edLink}`)}`:null;
                   return (
-                    <div key={ed} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
-                      <div style={{width:36,height:36,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.accent,flexShrink:0}}>
-                        {ed[0].toUpperCase()}
+                    <div key={ed} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:edLink?10:0}}>
+                        <div style={{width:36,height:36,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.accent,flexShrink:0}}>
+                          {ed[0].toUpperCase()}
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:14,fontWeight:600,color:T.text}}>{ed}</div>
+                          <div style={{fontSize:11,color:T.textSm}}>{edC.length} creativo{edC.length!==1?"s":""} · {edPub} publicado{edPub!==1?"s":""}</div>
+                        </div>
+                        <div style={{display:"flex",gap:6,flexShrink:0}}>
+                          {!edLink
+                            ? <AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>🔗 Generar link</AsyncButton>
+                            : <AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔄 Regenerar</AsyncButton>
+                          }
+                          <AsyncButton onClick={()=>eliminarEditor(ed)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Eliminar</AsyncButton>
+                        </div>
                       </div>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:14,fontWeight:600,color:T.text}}>{ed}</div>
-                        <div style={{fontSize:11,color:T.textSm}}>{edC.length} creativo{edC.length!==1?"s":""} · {edPub} publicado{edPub!==1?"s":""}</div>
-                      </div>
-                      <AsyncButton onClick={()=>eliminarEditor(ed)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Eliminar</AsyncButton>
+                      {edLink&&(
+                        <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:11,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🔗 {edLink}</span>
+                          <button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Link copiado 📋","success"))} style={{...BtnSecondary(T),fontSize:11,padding:"3px 9px",flexShrink:0}}>Copiar</button>
+                          {waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"3px 9px",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:3,color:"#22c55e",border:"1px solid #22c55e44",flexShrink:0}}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                            WA
+                          </a>}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -8652,7 +8677,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
                 <div style={{minWidth:130}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Código (opcional)</div>
-                  <input value={cCodigo} onChange={e=>setCCodigo(e.target.value)} placeholder="Auto-generado" style={{...iS,fontSize:12,width:"100%"}}/>
+                  {(()=>{ const ts2={estatico:"EST","video-ugc":"UGC","video-normal":"VN"}[cTipo]||"CR"; const tt2=produccion.tandas.find(t=>t.id===cTanda); const pp2=tt2?tt2.nombre.replace(/[^A-Za-z0-9]/g,"").slice(0,3).toUpperCase()+"-":""; const ss2=String(produccion.creativos.filter(c=>!editCreativo2||c.id!==editCreativo2.id).length+1).padStart(2,"0"); return <input value={cCodigo} onChange={e=>setCCodigo(e.target.value)} placeholder={`Auto: ${pp2}${ts2}${ss2}`} style={{...iS,fontSize:12,width:"100%"}}/>; })()}
                 </div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
@@ -8822,6 +8847,155 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ===========================================
+// VISTA PÚBLICA EDITOR PRODUCCIÓN — Sin login, acceso por token
+// ===========================================
+function EditorProduccionView({T, token}) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [tandaFilter, setTandaFilter] = useState("");
+
+  useEffect(()=>{
+    fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getEditorProduccion",token})})
+      .then(r=>r.json())
+      .then(d=>{ if(d.error) setError(d.error); else setData(d); })
+      .catch(e=>setError(e.message))
+      .finally(()=>setLoading(false));
+  },[token]);
+
+  async function updateEstado(creativoId, estado) {
+    try {
+      const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEditorCEstado",editorToken:token,creativoId,estado})});
+      const d=await r.json();
+      if(!r.ok||d.error) throw new Error(d.error||"Error");
+      setData(prev=>({...prev,creativos:prev.creativos.map(c=>c.id===creativoId?{...c,estado}:c)}));
+      toast("Estado actualizado ✓","success");
+    } catch(e){ toast("Error: "+e.message,"error"); }
+  }
+
+  const CEST={
+    idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},
+    "brief-enviado":{l:"Brief enviado",c:"#3b82f6",bg:"#3b82f615"},
+    "en-produccion":{l:"En producción",c:"#f97316",bg:"#f9731615"},
+    entregado:{l:"Entregado",c:"#d97706",bg:"#d9770615"},
+    publicado:{l:"Publicado",c:"#22c55e",bg:"#22c55e15"},
+    archivado:{l:"Archivado",c:"#9ca3af",bg:"#9ca3af15"},
+  };
+
+  if(loading) return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <Spinner size={32} color="#7c3aed"/>
+    </div>
+  );
+  if(error) return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{textAlign:"center",maxWidth:380}}>
+        <div style={{fontSize:48,marginBottom:16}}>🔒</div>
+        <div style={{fontSize:18,fontWeight:700,color:T.text,marginBottom:8}}>Link inválido</div>
+        <div style={{fontSize:14,color:T.textMd,lineHeight:1.5}}>{error}</div>
+      </div>
+    </div>
+  );
+  if(!data) return null;
+
+  const {editorNombre,tandas=[],creativos=[]}=data;
+  const uniqueTandas=tandas.filter(t=>creativos.some(c=>c.tanda_id===t.id));
+  const filtered=tandaFilter?creativos.filter(c=>c.tanda_id===tandaFilter):creativos;
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",paddingBottom:40}}>
+      {/* Header */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e8",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 20px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:30}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:3,height:16,borderRadius:2,background:"linear-gradient(180deg,#7c3aed,#a78bfa)",flexShrink:0}}/>
+          <span style={{fontWeight:700,fontSize:14,color:T.text}}>🎬 Portal de Editor</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:30,height:30,borderRadius:"50%",background:"#7c3aed20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:"#7c3aed"}}>
+            {editorNombre[0]?.toUpperCase()}
+          </div>
+          <span style={{fontSize:13,fontWeight:600,color:T.text}}>{editorNombre}</span>
+        </div>
+      </div>
+
+      <div style={{maxWidth:860,margin:"0 auto",padding:"20px 16px"}}>
+        {/* KPIs */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:10,marginBottom:20}}>
+          {[{l:"Mis creativos",v:creativos.length,c:"#7c3aed"},{l:"En producción",v:creativos.filter(c=>c.estado==="en-produccion").length,c:"#f97316"},{l:"Entregados",v:creativos.filter(c=>c.estado==="entregado").length,c:"#d97706"},{l:"Publicados",v:creativos.filter(c=>c.estado==="publicado").length,c:"#22c55e"}].map(k=>(
+            <div key={k.l} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px",textAlign:"center"}}>
+              <div style={{fontSize:24,fontWeight:800,color:k.c,lineHeight:1,marginBottom:4}}>{k.v}</div>
+              <div style={{fontSize:10,color:T.textSm,fontWeight:500}}>{k.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Filtro tanda */}
+        {uniqueTandas.length>1&&(
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+            <button onClick={()=>setTandaFilter("")} style={{padding:"5px 14px",borderRadius:20,fontSize:12,border:"none",background:!tandaFilter?"#7c3aed":"transparent",color:!tandaFilter?"#fff":T.textMd,fontWeight:!tandaFilter?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Todas</button>
+            {uniqueTandas.map(t=>(
+              <button key={t.id} onClick={()=>setTandaFilter(t.id)} style={{padding:"5px 14px",borderRadius:20,fontSize:12,border:"none",background:tandaFilter===t.id?"#7c3aed":"transparent",color:tandaFilter===t.id?"#fff":T.textMd,fontWeight:tandaFilter===t.id?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.nombre}</button>
+            ))}
+          </div>
+        )}
+
+        {filtered.length===0&&(
+          <div style={{textAlign:"center",padding:"60px 0",color:T.textSm,background:T.card,borderRadius:12,border:`1px dashed ${T.border}`}}>
+            <div style={{fontSize:44,marginBottom:12}}>🎬</div>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Sin creativos asignados aún</div>
+          </div>
+        )}
+
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {filtered.map(c=>{
+            const ce=CEST[c.estado]||CEST.idea;
+            const tanda=tandas.find(t=>t.id===c.tanda_id);
+            return (
+              <div key={c.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                <div style={{padding:"14px 16px"}}>
+                  <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:180}}>
+                      <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7,flexWrap:"wrap"}}>
+                        <span style={{fontSize:10,fontWeight:700,color:"#7c3aed",background:"#7c3aed15",border:"1px solid #7c3aed30",borderRadius:5,padding:"2px 7px"}}>{c.codigo}</span>
+                        <span style={{fontSize:10,fontWeight:600,padding:"2px 6px",borderRadius:4,background:T.surface,border:`1px solid ${T.borderL}`,color:T.textMd}}>{c.etapa}</span>
+                        <span style={{fontSize:10,color:T.textSm}}>{c.tipo==="estatico"?"🖼 Est.":c.tipo==="video-ugc"?"📱 UGC":"🎬 Video"}</span>
+                        {tanda&&<span style={{fontSize:10,color:T.textSm}}>· {tanda.nombre}</span>}
+                      </div>
+                      <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:4,lineHeight:1.4}}>{c.angulo||"Sin ángulo"}</div>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:c.notas?8:0}}>{c.persona}</div>
+                      {c.notas&&<div style={{fontSize:12,color:T.textMd,padding:"8px 10px",background:T.surface,borderRadius:7,lineHeight:1.5}}>{c.notas}</div>}
+                    </div>
+                    <select value={c.estado} onChange={e=>updateEstado(c.id,e.target.value)}
+                      style={{fontSize:12,fontWeight:700,padding:"6px 10px",borderRadius:8,border:`1px solid ${ce.c}55`,background:ce.bg,color:ce.c,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",outline:"none",flexShrink:0}}>
+                      {Object.entries(CEST).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {tanda&&(tanda.recursos||[]).length>0&&(
+                  <div style={{borderTop:`1px solid ${T.borderL}`,padding:"10px 16px",background:T.surface}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Recursos de la tanda</div>
+                    <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                      {tanda.recursos.map((r,ri)=>(
+                        <a key={ri} href={r.url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,color:"#7c3aed",background:"#7c3aed10",border:"1px solid #7c3aed30",borderRadius:6,padding:"4px 8px",textDecoration:"none"}}>
+                          🔗 {r.nombre||"Recurso"}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{textAlign:"center",marginTop:32,fontSize:11,color:T.textSm}}>Growith — Sistema de producción creativa</div>
+      </div>
+      <ToastContainer T={T}/>
+      <AppPromptHost T={T}/>
     </div>
   );
 }
@@ -16881,6 +17055,8 @@ export default function App() {
   // Detectar ruta pública de colaborador: #/colaborador/TOKEN
   const _colabMatch = _initialHash.match(/^colaborador\/([a-z0-9]{8,})/i);
   const [colabToken, setColabToken] = useState(_colabMatch ? _colabMatch[1] : null);
+  const _editorMatch = _initialHash.match(/^editor-produccion\/([a-z0-9]{8,})/i);
+  const [editorProdToken, setEditorProdToken] = useState(_editorMatch ? _editorMatch[1] : null);
   const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "home");
   const setPage = (p) => {
     _setPage(p);
@@ -16896,8 +17072,10 @@ export default function App() {
     const onHash = () => {
       const h = window.location.hash.replace(/^#\/?/, "") || "home";
       const cm = h.match(/^colaborador\/([a-z0-9]{8,})/i);
-      if (cm) { setColabToken(cm[1]); return; }
-      setColabToken(null);
+      if (cm) { setColabToken(cm[1]); setEditorProdToken(null); return; }
+      const em = h.match(/^editor-produccion\/([a-z0-9]{8,})/i);
+      if (em) { setEditorProdToken(em[1]); setColabToken(null); return; }
+      setColabToken(null); setEditorProdToken(null);
       if (VALID_PAGES.includes(h)) _setPage(h);
     };
     window.addEventListener("hashchange", onHash);
@@ -17170,7 +17348,8 @@ export default function App() {
     return ()=>clearInterval(id);
   },[user?.uid]);
 
-  // Vista pública de colaborador (sin login, acceso por token)
+  // Vistas públicas (sin login, acceso por token)
+  if(editorProdToken) return <EditorProduccionView T={T} token={editorProdToken}/>;
   if(colabToken) return <ColaboradorPublicView T={T} token={colabToken}/>;
 
   // Loading
