@@ -4125,11 +4125,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(locationOverridesRef.current[o.numero]) return false;
         return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
       });
-      const unresolvedSuc=sucursalOrders.filter(o=>{
-        if(sucursalOverridesRef.current[o.numero]) return false;
-        const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
-        return !_sf||_sf.trim()==="";
-      });
+      // Todos los pedidos a sucursal pasan por el modal para confirmación manual.
+      // findAndreaniSucursal se usa solo como pre-fill sugerido, no para auto-asignar.
+      const unresolvedSuc=sucursalOrders.filter(o=>!sucursalOverridesRef.current[o.numero]);
 
       if(unresolvedDom.length>0||unresolvedSuc.length>0){
         setExporting(false);
@@ -4189,12 +4187,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     }
     for(const o of unresolvedSuc){
       const chosen=await new Promise(resolve=>{
-        // Pre-fill search con calle+numero del pickupDetails (HOP) o direccion del pedido (sucursal clásica)
-        const pd=o.pickupDetails;
-        const prefill=pd
-          ?`${pd.address?.address||""} ${(pd.address?.number||"").replace(/\D.*/,"").trim()}`.trim()
-          :o.direccion||""; // sucursal clásica: la dirección del pedido ES la dirección de la sucursal
-        setLocationModal({order:o,locs,resolve,type:"sucursal"});
+        // Pre-fill: primero intentar auto-match para sugerir la sucursal como búsqueda
+        const autoMatch=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
+        let prefill='';
+        if(autoMatch){
+          // Mostrar el nombre sugerido directamente en el buscador para confirmación con un click
+          prefill=autoMatch;
+        } else {
+          // Sin match: pre-fill con calle+numero (HOP) o dirección del pedido (clásica)
+          const pd=o.pickupDetails;
+          prefill=pd
+            ?`${pd.address?.address||""} ${(pd.address?.number||"").replace(/\D.*/,"").trim()}`.trim()
+            :o.direccion||"";
+        }
+        setLocationModal({order:o,locs,resolve,type:"sucursal",autoMatch});
         setLocSearch(prefill);setLocSearchType("ciudad");
       });
       if(chosen===null) return; // cancelar todo
@@ -5155,25 +5161,25 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Location / Sucursal Resolution Modal */}
       <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);}}} title={locationModal?.type==="sucursal"?"Confirmar sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
         {locationModal&&(()=>{
-          const {order,locs,resolve,type}=locationModal;
+          const {order,locs,resolve,type,autoMatch}=locationModal;
           const isSuc=type==="sucursal";
           const results=isSuc?searchSucursales(locs,locSearch):searchAndreaniLocations(locs,locSearch,locSearchType);
           return (
             <div>
-              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:4}}>
-                  ⚠ {isSuc?"No se encontró la sucursal exacta":"No se encontró la localidad exacta"}
+              <div style={{background:autoMatch?T.greenBg||T.surface:T.yellowBg,border:`1px solid ${autoMatch?T.green||T.accent:T.yellow}44`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:700,color:autoMatch?T.green||T.accent:T.yellow,marginBottom:4}}>
+                  {isSuc?(autoMatch?"✓ Sucursal sugerida — confirmá o cambiala":"⚠ No se encontró la sucursal exacta"):"⚠ No se encontró la localidad exacta"}
                 </div>
                 <div style={{fontSize:13,color:T.text}}>Pedido <strong>#{order.numero}</strong> - {order.comprador}</div>
                 {isSuc&&order.pickupDetails&&(
-                  <div style={{fontSize:12,color:T.text,marginTop:6,background:T.surface,borderRadius:8,padding:"8px 10px"}}>
+                  <div style={{fontSize:12,color:T.text,marginTop:6,background:T.bg,borderRadius:8,padding:"8px 10px"}}>
                     <div style={{fontWeight:600,color:T.accent,marginBottom:2}}>{order.pickupDetails.name}</div>
                     <div>{order.pickupDetails.address?.address} {order.pickupDetails.address?.number}</div>
                     <div style={{color:T.textSm}}>{order.pickupDetails.address?.locality}, {order.pickupDetails.address?.province}</div>
                   </div>
                 )}
                 {isSuc&&!order.pickupDetails&&(
-                  <div style={{fontSize:12,color:T.text,marginTop:6,background:T.surface,borderRadius:8,padding:"8px 10px"}}>
+                  <div style={{fontSize:12,color:T.text,marginTop:6,background:T.bg,borderRadius:8,padding:"8px 10px"}}>
                     <div style={{fontWeight:600,color:T.textSm,marginBottom:2}}>Dirección registrada en el pedido:</div>
                     <div>{order.direccion} {order.dirNumero}</div>
                     <div style={{color:T.textSm}}>{order.localidad||order.ciudad}, {order.provincia}</div>
@@ -5208,12 +5214,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,maxHeight:280,overflow:"auto"}}>
                     {results.map((item,i)=>{
                       if(isSuc){
+                        const isSugerido=autoMatch&&item===autoMatch;
                         return (
                           <div key={i} onClick={()=>{resolve(item);setLocationModal(null);}}
-                            style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}}
-                            onMouseEnter={e=>e.currentTarget.style.background=T.card}
-                            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{item}</div>
+                            style={{padding:"11px 14px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${T.borderL}`:"none",transition:"background 0.1s",background:isSugerido?`${T.accent}18`:"transparent"}}
+                            onMouseEnter={e=>e.currentTarget.style.background=isSugerido?`${T.accent}30`:T.card}
+                            onMouseLeave={e=>e.currentTarget.style.background=isSugerido?`${T.accent}18`:"transparent"}>
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <div style={{fontSize:13,fontWeight:600,color:T.text,flex:1}}>{item}</div>
+                              {isSugerido&&<span style={{fontSize:10,fontWeight:700,color:T.accent,background:`${T.accent}22`,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:0.5}}>Sugerido</span>}
+                            </div>
                           </div>
                         );
                       }
