@@ -3873,15 +3873,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         const exact=locs.sucursales.find(s=>cl(s)===tnName);
         if(exact) return exact;
       }
-      // Step 2: calle + número → único match Y el nombre de la sucursal debe incluir la localidad
-      // (evita falsos positivos: "MITRE 186" existe en otra ciudad → modal)
+      // Step 2: calle + número → solo si resultado ÚNICO
       const addr=(pickupDetails.address?.address||"").trim();
       const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
       const query=(addr+(num?" "+num:"")).trim().toUpperCase();
-      const locality=cl(pickupDetails.address?.locality||pickupDetails.address?.city||"");
       if(query.length>=3){
         const results=locs.sucursales.filter(s=>s.toUpperCase().includes(query));
-        if(results.length===1&&(!locality||cl(results[0]).includes(locality))) return results[0];
+        if(results.length===1) return results[0];
       }
     } else if(direccion) {
       // Sucursal Andreani clásica: la dirección de entrega ES la dirección de la sucursal
@@ -4162,9 +4160,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         !esquinaSet.has(o.numero)
       );
       if(!finalOrders.length){
-        toast("Todos los pedidos fueron excluidos","warning");
         setExporting(false);
         setExportProgress({step:"",pct:0,current:0,total:0});
+        if(esquinaOrders.length>0){
+          setEsquinaModal({orders:esquinaOrders});
+        } else {
+          toast("Todos los pedidos fueron excluidos","warning");
+        }
         return;
       }
 
@@ -4217,11 +4219,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         } else {
           const pd=o.pickupDetails;
           if(pd){
-            // Usar localidad como prefill — más confiable que la calle (que puede ser ambigua)
+            // Prefill: dirección primero, localidad como fallback
             const loc=(pd.address?.locality||pd.address?.city||"").trim();
             const addr=(pd.address?.address||"").trim();
             const num=(pd.address?.number||"").replace(/\D.*/,"").trim();
-            prefill=loc||(addr+(num?" "+num:"")).trim();
+            prefill=(addr+(num?" "+num:"")).trim()||loc;
           } else {
             prefill=o.direccion||"";
           }
