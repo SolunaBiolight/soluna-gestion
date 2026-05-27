@@ -3690,6 +3690,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [locSearch,setLocSearch]=useState("");
   const [locSearchType,setLocSearchType]=useState("ciudad");
   const [sucursalConfirmed,setSucursalConfirmed]=useState(null);
+  const [esquinaModal,setEsquinaModal]=useState(null); // {orders:[...]} pedidos con esquina excluidos del export
   const [copiedToast,setCopiedToast]=useState(null);
   const [orderDetail,setOrderDetail]=useState(null);
   const [skuBlob,setSkuBlob]=useState(null);
@@ -3848,6 +3849,17 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     if(type==="ciudad") return locs.list.filter(l=>l.toUpperCase().includes(q)).slice(0,20);
     if(type==="calle") return locs.list.filter(l=>l.toUpperCase().includes(q)).slice(0,20);
     return [];
+  }
+
+  function hasEsquinaAddress(o) {
+    const fields=[
+      o.direccion, o.dirNumero,
+      o.pickupDetails?.address?.address,
+      o.pickupDetails?.address?.number,
+      o.pickupDetails?.address?.floor,
+      o.pickupDetails?.name,
+    ];
+    return fields.some(f=>f&&/\bESQ\.?(\b|$)|\bESQUINA\b/i.test(f));
   }
 
   function findAndreaniSucursal(locs, direccion, pickupDetails) {
@@ -4122,11 +4134,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const domicilioOrders=selOrders.filter(o=>!isSucursalOrder(o));
       const sucursalOrders=selOrders.filter(o=>isSucursalOrder(o));
 
+      // Órdenes con dirección en esquina → excluir del export, mostrar modal informativo después
+      const esquinaOrders=sucursalOrders.filter(o=>hasEsquinaAddress(o));
+      const esquinaSet=new Set(esquinaOrders.map(o=>o.numero));
+      const sucursalOrdersSinEsquina=sucursalOrders.filter(o=>!esquinaSet.has(o.numero));
+
       const unresolvedDom=domicilioOrders.filter(o=>{
         if(locationOverridesRef.current[o.numero]) return false;
         return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
       });
-      const unresolvedSuc=sucursalOrders.filter(o=>{
+      const unresolvedSuc=sucursalOrdersSinEsquina.filter(o=>{
         if(sucursalOverridesRef.current[o.numero]) return false;
         const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails);
         return !_sf||_sf.trim()==="";
@@ -4141,7 +4158,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       const finalOrders=selOrders.filter(o=>
         locationOverridesRef.current[o.numero]!=="EXCLUIR" &&
-        sucursalOverridesRef.current[o.numero]!=="EXCLUIR"
+        sucursalOverridesRef.current[o.numero]!=="EXCLUIR" &&
+        !esquinaSet.has(o.numero)
       );
       if(!finalOrders.length){
         toast("Todos los pedidos fueron excluidos","warning");
@@ -4169,6 +4187,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       locationOverridesRef.current={};
       sucursalOverridesRef.current={};
       setTimeout(()=>setExportProgress({step:"",pct:0,current:0,total:0}),2000);
+      if(esquinaOrders.length>0) setEsquinaModal({orders:esquinaOrders});
     } catch(e){
       console.error("exportAndreani:",e);
       toast("Error al exportar: "+e.message,"error");
@@ -5317,6 +5336,51 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         </div>
           );
         })()}
+      </Modal>
+
+      {/* Modal: pedidos con esquina excluidos del export */}
+      <Modal T={T} open={!!esquinaModal} onClose={()=>setEsquinaModal(null)} title="Pedidos no incluidos en el Excel" width={500}>
+        {esquinaModal&&(
+          <div>
+            <div style={{background:T.yellowBg||T.surface,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:6}}>⚠ Dirección en esquina detectada</div>
+              <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>
+                Los siguientes pedidos tienen una dirección de Punto HOP en esquina (Esq.), lo que puede causar errores en la carga masiva de Andreani. <strong>No fueron incluidos en el Excel.</strong>
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+              {esquinaModal.orders.map(o=>{
+                const pd=o.pickupDetails;
+                const dirDisplay=pd
+                  ?`${pd.address?.address||""} ${pd.address?.number||""}`.trim()
+                  :(o.direccion||"");
+                const locDisplay=pd
+                  ?(pd.address?.locality||pd.address?.city||"")
+                  :(o.localidad||o.ciudad||"");
+                return (
+                  <div key={o.numero} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 12px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                      <div>
+                        <span style={{fontWeight:700,color:T.text,fontSize:13}}>#{o.numero}</span>
+                        <span style={{color:T.textSm,fontSize:12,marginLeft:8}}>{o.comprador}</span>
+                      </div>
+                      {pd?.name&&<span style={{fontSize:11,color:T.accent,fontWeight:600,textAlign:"right",maxWidth:180}}>{pd.name}</span>}
+                    </div>
+                    {dirDisplay&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{dirDisplay}{locDisplay?` — ${locDisplay}`:""}</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:12,color:T.textMd,lineHeight:1.6}}>
+              <strong style={{color:T.text}}>¿Qué hacer?</strong><br/>
+              Ingresá estos pedidos manualmente en{" "}
+              <strong>Andreani Empresas → Carga individual</strong> buscando la sucursal por la otra calle de la esquina.
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end"}}>
+              <button onClick={()=>setEsquinaModal(null)} style={{...BtnPrimary(T),fontSize:13}}>Entendido</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
