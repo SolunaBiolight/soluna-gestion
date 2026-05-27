@@ -3924,18 +3924,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const tel=(o.telefono||"").replace(/[^0-9]/g,'');
       const clean0=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
       // Quitar el 9 inicial de celulares argentinos (ej: 91156333118 → 1156333118)
-      const clean=clean0.startsWith('9')&&clean0.length===11?clean0.slice(1):clean0;
+      const clean=clean0.startsWith('9')&&clean0.length===10?clean0.slice(1):clean0;
       let telCod='',telNum='';
-      if(clean.length>=10){
-        // En Argentina, solo "11" (Buenos Aires) tiene código de área de 2 dígitos.
-        // Todas las demás ciudades tienen código de 3 dígitos (221, 341, 351, 385, etc.)
-        if(clean.startsWith('11')){
-          telCod='11';telNum=clean.slice(2); // BA: área 2 dígitos, local 8 dígitos
-        } else {
-          const codeLen=clean.length-7; // otras ciudades: área 3 dígitos, local 7 dígitos
-          telCod=clean.slice(0,codeLen);telNum=clean.slice(codeLen);
-        }
-      }
+      if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
       else if(clean.length>=8){telCod=clean.slice(0,clean.length-8)||'';telNum=clean.slice(clean.length-8);}
       else if(clean.length>0){telNum=clean;}
       return {nombre,apellido,telCod,telNum};
