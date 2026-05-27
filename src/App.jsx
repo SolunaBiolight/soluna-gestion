@@ -1182,15 +1182,17 @@ function TabView({children, tabKey}) {
 // --- Shared AppTopbar ---
 function AppTopbar({T, section, onHome, children}) {
   return (
-    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"cc",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"0 24px",position:"sticky",top:48,zIndex:30}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:56,gap:16,maxWidth:1400,margin:"0 auto"}}>
+    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e0",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 24px",position:"sticky",top:48,zIndex:30}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:52,gap:16,maxWidth:1400,margin:"0 auto"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button onClick={onHome} className="mobile-only" style={{display:"none",alignItems:"center",gap:6,padding:"5px 10px",fontSize:DS.font.sm,fontWeight:DS.w.medium,borderRadius:DS.r.md,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           </button>
-          <span style={{fontWeight:DS.w.bold,fontSize:DS.font.xl,color:T.text,letterSpacing:-0.3}}>{section}</span>
+          {/* Accent bar — identidad de marca */}
+          <div style={{width:3,height:16,borderRadius:2,background:`linear-gradient(180deg,${T.accentSolid},#a78bfa)`,flexShrink:0}}/>
+          <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2}}>{section}</span>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
           {children}
         </div>
       </div>
@@ -1353,8 +1355,8 @@ function InputStyle(T) {
   };
 }
 
-function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.isDark?"#f0f0f0":"#111113",color:T.isDark?"#111113":"#ffffff",letterSpacing:"0.01em"}; }
-function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.card,color:T.text}; }
+function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid,color:"#fff",letterSpacing:"0.01em",boxShadow:`0 2px 12px ${T.accentSolid}44`}; }
+function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:"transparent",color:T.textMd}; }
 function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
 function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
 function OrderSearchField({T, orders, onSelect, uid}) {
