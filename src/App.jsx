@@ -3851,24 +3851,33 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
 
   function findAndreaniSucursal(locs, direccion, pickupDetails) {
-    if(!locs.sucursales||!pickupDetails) return null;
+    if(!locs.sucursales) return null;
     function cl(s){ return (s||"").toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
 
-    // Paso 1: match exacto con pickupDetails.name normalizado
-    const tnName=cl(pickupDetails.name||"");
-    if(tnName){
-      const exact=locs.sucursales.find(s=>cl(s)===tnName);
-      if(exact) return exact;
-    }
-
-    // Paso 2: construir query igual que el prefill del modal (calle + número)
-    // y buscar en la lista — solo auto-seleccionar si hay resultado ÚNICO
-    const addr=(pickupDetails.address?.address||"").trim();
-    const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
-    const query=(addr+(num?" "+num:"")).trim().toUpperCase();
-    if(query.length>=3){
-      const results=locs.sucursales.filter(s=>s.toUpperCase().includes(query));
-      if(results.length===1) return results[0];
+    if(pickupDetails) {
+      // Paso 1: match exacto con pickupDetails.name normalizado
+      const tnName=cl(pickupDetails.name||"");
+      if(tnName){
+        const exact=locs.sucursales.find(s=>cl(s)===tnName);
+        if(exact) return exact;
+      }
+      // Paso 2: calle + número → solo si resultado ÚNICO
+      const addr=(pickupDetails.address?.address||"").trim();
+      const num=(pickupDetails.address?.number||"").replace(/\D.*/,"").trim();
+      const query=(addr+(num?" "+num:"")).trim().toUpperCase();
+      if(query.length>=3){
+        const results=locs.sucursales.filter(s=>s.toUpperCase().includes(query));
+        if(results.length===1) return results[0];
+      }
+    } else if(direccion) {
+      // Sucursal Andreani clásica: la dirección de entrega ES la dirección de la sucursal
+      // Buscar palabras significativas de la dirección en el nombre de la sucursal
+      const words=cl(direccion).split(' ').filter(w=>w.length>=4);
+      if(words.length>=1){
+        const q=words.join(' ');
+        const results=locs.sucursales.filter(s=>cl(s).includes(q));
+        if(results.length===1) return results[0];
+      }
     }
 
     return null; // 0 o 2+ resultados → modal obligatorio
@@ -3915,9 +3924,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const tel=(o.telefono||"").replace(/[^0-9]/g,'');
       const clean0=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
       // Quitar el 9 inicial de celulares argentinos (ej: 91156333118 → 1156333118)
-      const clean=clean0.startsWith('9')&&clean0.length===10?clean0.slice(1):clean0;
+      const clean=clean0.startsWith('9')&&clean0.length===11?clean0.slice(1):clean0;
       let telCod='',telNum='';
-      if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
+      if(clean.length>=10){
+        // En Argentina, solo "11" (Buenos Aires) tiene código de área de 2 dígitos.
+        // Todas las demás ciudades tienen código de 3 dígitos (221, 341, 351, 385, etc.)
+        if(clean.startsWith('11')){
+          telCod='11';telNum=clean.slice(2); // BA: área 2 dígitos, local 8 dígitos
+        } else {
+          const codeLen=clean.length-7; // otras ciudades: área 3 dígitos, local 7 dígitos
+          telCod=clean.slice(0,codeLen);telNum=clean.slice(codeLen);
+        }
+      }
       else if(clean.length>=8){telCod=clean.slice(0,clean.length-8)||'';telNum=clean.slice(clean.length-8);}
       else if(clean.length>0){telNum=clean;}
       return {nombre,apellido,telCod,telNum};
@@ -4180,9 +4198,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     }
     for(const o of unresolvedSuc){
       const chosen=await new Promise(resolve=>{
-        // Pre-fill search with calle+numero from pickupDetails for easier finding
+        // Pre-fill search con calle+numero del pickupDetails (HOP) o direccion del pedido (sucursal clásica)
         const pd=o.pickupDetails;
-        const prefill=pd?`${pd.address?.address||""} ${(pd.address?.number||"").replace(/\D.*/,"").trim()}`.trim():"";
+        const prefill=pd
+          ?`${pd.address?.address||""} ${(pd.address?.number||"").replace(/\D.*/,"").trim()}`.trim()
+          :o.direccion||""; // sucursal clásica: la dirección del pedido ES la dirección de la sucursal
         setLocationModal({order:o,locs,resolve,type:"sucursal"});
         setLocSearch(prefill);setLocSearchType("ciudad");
       });
@@ -5159,6 +5179,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     <div style={{fontWeight:600,color:T.accent,marginBottom:2}}>{order.pickupDetails.name}</div>
                     <div>{order.pickupDetails.address?.address} {order.pickupDetails.address?.number}</div>
                     <div style={{color:T.textSm}}>{order.pickupDetails.address?.locality}, {order.pickupDetails.address?.province}</div>
+                  </div>
+                )}
+                {isSuc&&!order.pickupDetails&&(
+                  <div style={{fontSize:12,color:T.text,marginTop:6,background:T.surface,borderRadius:8,padding:"8px 10px"}}>
+                    <div style={{fontWeight:600,color:T.textSm,marginBottom:2}}>Dirección registrada en el pedido:</div>
+                    <div>{order.direccion} {order.dirNumero}</div>
+                    <div style={{color:T.textSm}}>{order.localidad||order.ciudad}, {order.provincia}</div>
                   </div>
                 )}
                 {!isSuc&&<div style={{fontSize:12,color:T.textSm,marginTop:3}}>
