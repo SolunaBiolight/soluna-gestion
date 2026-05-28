@@ -7936,7 +7936,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         </div>
       </div>
 
-      <div style={{maxWidth:tab==="tareas"&&viewMode==="kanban"?1400:viewMode==="cal"?900:960,margin:"0 auto",padding:"20px 24px"}}>
+      <div style={{maxWidth:840,margin:"0 auto",padding:"20px 24px"}}>
         {/* Tabs */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showGuia?8:20,flexWrap:"wrap"}}>
           <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,width:"fit-content"}}>
@@ -8135,7 +8135,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
             {/* VISTA KANBAN */}
             {viewMode==="kanban"&&(
-              <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:24,alignItems:"flex-start"}}>
+              <div style={{margin:"0 -24px",padding:"0 24px 24px",overflowX:"auto"}}>
+              <div style={{display:"flex",gap:12,paddingBottom:8,alignItems:"flex-start",width:"max-content",minWidth:"100%"}}>
                 {KANBAN_COLS.map(colKey=>{
                   const col=ESTADOS[colKey];
                   const isDragOver=dragOverCol===colKey;
@@ -8206,6 +8207,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   );
                 })}
+              </div>
               </div>
             )}
 
