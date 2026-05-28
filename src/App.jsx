@@ -8396,10 +8396,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       {!loading&&tab==="creativos"&&(
         <div>
           {/* Sub-nav */}
-          <div style={{display:"flex",gap:4,marginBottom:24,borderBottom:`1px solid ${T.border}`,paddingBottom:0}}>
-            {[["dashboard","📊 Dashboard"],["tandas",`📦 Tandas${produccion.tandas.length?" ("+produccion.tandas.length+")":""}`],["creativos",`🎬 Creativos${produccion.creativos.length?" ("+produccion.creativos.length+")":""}`],["ideas",`💡 Ideas${produccion.ideas.length?" ("+produccion.ideas.length+")":""}`],["editores","👥 Editores"]].map(([id,label])=>(
-              <button key={id} onClick={()=>setProdTab(id)} style={{padding:"8px 16px",fontSize:13,fontWeight:prodTab===id?600:400,border:"none",borderBottom:prodTab===id?`2px solid ${T.accent}`:"2px solid transparent",background:"transparent",color:prodTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:-1,transition:"all 0.15s",whiteSpace:"nowrap"}}>{label}</button>
-            ))}
+          <div style={{display:"flex",marginBottom:20}}>
+            <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:1}}>
+              {[["dashboard","📊 Dashboard"],["tandas",`📦 Tandas${produccion.tandas.length?" ("+produccion.tandas.length+")":""}`],["creativos",`🎬 Creativos${produccion.creativos.length?" ("+produccion.creativos.length+")":""}`],["ideas",`💡 Ideas${produccion.ideas.length?" ("+produccion.ideas.length+")":""}`],["editores","👥 Editores"]].map(([id,label])=>(
+                <button key={id} onClick={()=>setProdTab(id)} style={{padding:"5px 12px",fontSize:12,fontWeight:prodTab===id?600:500,border:"none",borderRadius:8,background:prodTab===id?T.card:"transparent",color:prodTab===id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap"}}>{label}</button>
+              ))}
+            </div>
           </div>
 
           {prodLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
