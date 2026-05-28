@@ -7901,15 +7901,35 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Header */}
-      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 16px 0 24px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,position:"sticky",top:48,zIndex:90}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 20px 0 24px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,position:"sticky",top:48,zIndex:90}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontWeight:700,fontSize:15,color:T.text}}>📋 Tareas</span>
-          {paraRevisar.length>0&&<span style={{background:T.orange||"#f97316",color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>{paraRevisar.length} para revisar</span>}
-          {enRevision.length>0&&<span style={{background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>{enRevision.length} en corrección</span>}
+          <span style={{fontWeight:700,fontSize:15,color:T.text,letterSpacing:"-0.01em"}}>Tareas</span>
+          {paraRevisar.length>0&&(
+            <span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f97316",color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 9px",letterSpacing:"0.01em"}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:"rgba(255,255,255,0.7)",display:"inline-block",animation:"pulse 1.5s infinite"}}/>
+              {paraRevisar.length} para revisar
+            </span>
+          )}
+          {enRevision.length>0&&(
+            <span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 9px"}}>
+              🔁 {enRevision.length} en corrección
+            </span>
+          )}
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          {/* View mode toggle — only on tareas tab */}
+          {tab==="tareas"&&(
+            <div style={{display:"flex",background:T.bg,borderRadius:8,padding:2,border:`1px solid ${T.border}`,gap:1}}>
+              {[["lista","☰"],["kanban","⠿"],["cal","📅"]].map(([v,icon])=>(
+                <button key={v} onClick={()=>setViewMode(v)} title={v==="lista"?"Lista":v==="kanban"?"Kanban":"Calendario"}
+                  style={{padding:"3px 8px",borderRadius:6,border:"none",background:viewMode===v?T.card:"transparent",color:viewMode===v?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:600,boxShadow:viewMode===v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s"}}>
+                  {icon}
+                </button>
+              ))}
+            </div>
+          )}
           {tab!=="creativos"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
-          {tab!=="creativos"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Nueva tarea</button>}
+          {tab!=="creativos"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Nueva tarea</button>}
           {tab==="creativos"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
           {tab==="creativos"&&prodTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
           {tab==="creativos"&&prodTab!=="ideas"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
@@ -7950,53 +7970,98 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         {/* ── TAB TAREAS ── */}
         {!loading&&tab==="tareas"&&(
           <>
-            {/* Cola: para revisar */}
-            {paraRevisar.length>0&&statusFilter==="todos"&&(
-              <div style={{background:(T.orangeBg||"#f9731610"),border:`1px solid ${T.orange||"#f97316"}44`,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
-                <div style={{fontSize:12,fontWeight:700,color:T.orange||"#f97316",marginBottom:10}}>📦 {paraRevisar.length} entrega{paraRevisar.length!==1?"s":""} esperando revisión</div>
-                {paraRevisar.map(t=>(
-                  <div key={t._id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
-                    <span style={{fontSize:13,color:T.text,fontWeight:500,flex:1,minWidth:120}}>{t.titulo}</span>
-                    <span style={{fontSize:11,color:T.textSm}}>{t.asignadoNombre}</span>
-                    <div style={{display:"flex",gap:4}}>
-                      <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{...BtnPrimary(T),fontSize:11,padding:"3px 10px",background:T.green}}>✓ Aprobar</AsyncButton>
-                      <button onClick={()=>{setStatusFilter("todos");setExpandedTarea(t._id);}} style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>Ver</button>
+            {/* Cola de revisión — sección destacada */}
+            {(paraRevisar.length>0||enRevision.length>0)&&statusFilter==="todos"&&(
+              <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:8}}>
+                {/* Para revisar */}
+                {paraRevisar.length>0&&(
+                  <div style={{background:T.card,border:`1.5px solid #f97316`,borderRadius:12,overflow:"hidden"}}>
+                    <div style={{background:"#f97316",padding:"8px 16px",display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:12,fontWeight:700,color:"#fff",flex:1}}>📦 {paraRevisar.length} entrega{paraRevisar.length!==1?"s":""} esperando tu revisión</span>
+                      <span style={{fontSize:11,color:"rgba(255,255,255,0.8)"}}>Acción requerida</span>
+                    </div>
+                    <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:6}}>
+                      {paraRevisar.map(t=>{
+                        const versionCount = (t.deliverables||[]).length;
+                        const lastDelivery = versionCount>0?t.deliverables[versionCount-1]:null;
+                        const deliveredAgo = lastDelivery?.fecha?Math.floor((Date.now()-(lastDelivery.fecha._seconds||0)*1000)/60000):null;
+                        const agoStr = deliveredAgo===null?"":(deliveredAgo<60?`hace ${deliveredAgo}m`:deliveredAgo<1440?`hace ${Math.floor(deliveredAgo/60)}h`:`hace ${Math.floor(deliveredAgo/1440)}d`);
+                        const initials = (t.asignadoNombre||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+                        return (
+                          <div key={t._id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 4px",borderBottom:`1px solid ${T.border}`,lastChild:{borderBottom:"none"}}}>
+                            <div style={{width:32,height:32,borderRadius:"50%",background:"#f9731625",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#f97316",flexShrink:0}}>{initials}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
+                              <div style={{display:"flex",gap:6,alignItems:"center",marginTop:2}}>
+                                <span style={{fontSize:11,color:T.textMd}}>{t.asignadoNombre}</span>
+                                {versionCount>0&&<span style={{fontSize:10,color:"#f97316",fontWeight:600,background:"#f9731615",borderRadius:20,padding:"1px 6px"}}>v{versionCount}</span>}
+                                {agoStr&&<span style={{fontSize:10,color:T.textSm}}>{agoStr}</span>}
+                                {(t.correcciones||0)>0&&<span style={{fontSize:10,color:T.red,fontWeight:700}}>{t.correcciones}ª corr.</span>}
+                              </div>
+                            </div>
+                            <div style={{display:"flex",gap:5,flexShrink:0}}>
+                              <button onClick={()=>{setExpandedTarea(t._id);setTimeout(()=>{document.getElementById(`tarea-${t._id}`)?.scrollIntoView({behavior:"smooth",block:"nearest"})},100);}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Ver</button>
+                              <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:11,padding:"5px 12px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                ))}
+                )}
+                {/* En corrección */}
+                {enRevision.length>0&&(
+                  <div style={{background:T.redBg||T.card,border:`1px solid ${T.red}44`,borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,fontWeight:700,color:T.red}}>🔁 En corrección:</span>
+                    {enRevision.map(t=>(
+                      <button key={t._id} onClick={()=>setExpandedTarea(t._id)} style={{fontSize:11,background:T.red+"15",color:T.red,padding:"2px 9px",borderRadius:20,border:`1px solid ${T.red}33`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
+                        {t.titulo}{(t.correcciones||0)>1?` · ${t.correcciones}ª corr.`:""}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-            {/* Cola: en corrección */}
-            {enRevision.length>0&&statusFilter==="todos"&&(
-              <div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:12,padding:"10px 16px",marginBottom:12}}>
-                <div style={{fontSize:12,fontWeight:700,color:T.red,marginBottom:6}}>🔁 {enRevision.length} tarea{enRevision.length!==1?"s":""} aguardando corrección del colaborador</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {enRevision.map(t=><span key={t._id} style={{fontSize:11,background:T.red+"15",color:T.red,padding:"2px 8px",borderRadius:20}}>{t.titulo}{(t.correcciones||0)>1?` (${t.correcciones}ª)`:""}</span>)}
-                </div>
+
+            {/* Stats KPI bar */}
+            {tareas.length>0&&(
+              <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                {[
+                  {label:"Total",val:tareas.length,color:T.textMd,bg:T.surface},
+                  {label:"En proceso",val:(countByStatus.en_proceso||0)+(countByStatus.bloqueada||0),color:"#3b82f6",bg:"#3b82f610"},
+                  {label:"Para revisar",val:paraRevisar.length,color:"#f97316",bg:"#f9731610"},
+                  {label:"Aprobadas",val:countByStatus.aprobado||0,color:T.green||"#22c55e",bg:"#22c55e10"},
+                ].map(kpi=>(
+                  <div key={kpi.label} style={{display:"flex",alignItems:"baseline",gap:7,padding:"7px 14px",background:kpi.bg,border:`1px solid ${kpi.color}22`,borderRadius:10,flex:"1 1 auto",minWidth:100}}>
+                    <span style={{fontSize:18,fontWeight:800,color:kpi.color,lineHeight:1}}>{kpi.val}</span>
+                    <span style={{fontSize:11,color:kpi.color,opacity:0.85,fontWeight:500}}>{kpi.label}</span>
+                  </div>
+                ))}
               </div>
             )}
 
             {/* VISTA LISTA */}
             {viewMode==="lista"&&(
               <>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                    {[["todos","Todos",tareas.length],["pendiente","⏳ Pendiente",countByStatus.pendiente||0],["en_proceso","🔄 En proceso",countByStatus.en_proceso||0],["bloqueada","🚫 Bloqueada",countByStatus.bloqueada||0],["entregado","📦 Entregado",countByStatus.entregado||0],["revision","🔁 A revisar",countByStatus.revision||0],["aprobado","✅ Aprobado",countByStatus.aprobado||0]].map(([id,label,count])=>(
-                      <button key={id} onClick={()=>setStatusFilter(id)} style={pillStyle(statusFilter===id)}>
-                        {label}{count>0&&<span style={{opacity:0.7,fontSize:11}}> ({count})</span>}
+                {/* Toolbar: filtros */}
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",marginBottom:12,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{display:"flex",gap:4,flexWrap:"wrap",flex:1}}>
+                    {[["todos","Todos",tareas.length],["pendiente","⏳ Sin empezar",countByStatus.pendiente||0],["en_proceso","🔄 En proceso",countByStatus.en_proceso||0],["bloqueada","🚫 Bloqueada",countByStatus.bloqueada||0],["entregado","📦 Entregado",countByStatus.entregado||0],["revision","🔁 En corrección",countByStatus.revision||0],["aprobado","✅ Aprobado",countByStatus.aprobado||0]].map(([id,label,count])=>(
+                      <button key={id} onClick={()=>setStatusFilter(id)} style={{...pillStyle(statusFilter===id),fontSize:11,padding:"4px 10px"}}>
+                        {label}{count>0&&statusFilter!==id&&<span style={{opacity:0.6,fontSize:10,marginLeft:3}}>{count}</span>}
                       </button>
                     ))}
                   </div>
                   {colaboradores.length>0&&(
-                    <select value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)} style={{...iS,fontSize:12,padding:"5px 10px",width:"auto",marginLeft:"auto"}}>
-                      <option value="todos">Todos los asignados</option>
+                    <select value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)} style={{...iS,fontSize:11,padding:"4px 8px",width:"auto",height:"auto"}}>
+                      <option value="todos">Todos</option>
                       {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre}</option>)}
                     </select>
                   )}
                 </div>
                 {/* Label filter */}
                 {TASK_LABELS.some(lb=>tareas.some(t=>(t.labels||[]).includes(lb.id)))&&(
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
                     <button onClick={()=>setLabelFilter("")} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${!labelFilter?T.accent:T.border}`,background:!labelFilter?T.accent+"20":"transparent",color:!labelFilter?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Todos</button>
                     {TASK_LABELS.filter(lb=>tareas.some(t=>(t.labels||[]).includes(lb.id))).map(lb=>(
                       <button key={lb.id} onClick={()=>setLabelFilter(labelFilter===lb.id?"":lb.id)} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${labelFilter===lb.id?lb.color:T.border}`,background:labelFilter===lb.id?lb.color+"25":"transparent",color:labelFilter===lb.id?lb.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{lb.label}</button>
@@ -8011,35 +8076,54 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {tareas.length===0&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),margin:"0 auto"}}>+ Crear primera tarea</button>}
                   </div>
                 )}
-                <div style={{display:"flex",flexDirection:"column",gap:0}}>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {tareasFiltradas.map(t=>{
                     const expanded = expandedTarea===t._id;
                     const est = ESTADOS[t.estado]||ESTADOS.pendiente;
                     const days = daysUntil(t.deadline);
                     const hasDels = (t.deliverables||[]).length>0;
                     const isUrgente = t.prioridad==="urgente";
+                    const leftBorderColor = t.estado==="entregado"?"#f97316":t.estado==="revision"?T.red:t.estado==="aprobado"?(T.green||"#22c55e"):t.estado==="bloqueada"?T.red:t.estado==="en_proceso"?"#3b82f6":T.border;
+                    const initials = (t.asignadoNombre||"").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()||"?";
+                    const avatarColor = t.asignadoNombre?`hsl(${t.asignadoNombre.charCodeAt(0)*17%360},55%,55%)`:"#94a3b8";
+                    const commCount = (t.comments||[]).length;
+                    const checkDone = (t.checklist||[]).filter(i=>i.done).length;
+                    const checkTotal = (t.checklist||[]).length;
                     return (
-                      <div key={t._id} style={{background:T.card,border:`1px solid ${t.estado==="entregado"?(T.orange||"#f97316")+"55":t.estado==="revision"?T.red+"44":isUrgente?T.red+"22":T.border}`,borderRadius:12,overflow:"hidden",marginBottom:8}}>
-                        <div onClick={()=>setExpandedTarea(expanded?null:t._id)} style={{padding:"13px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                      <div key={t._id} id={`tarea-${t._id}`} style={{background:T.card,border:`1px solid ${expanded?est.color+"55":T.border}`,borderRadius:10,overflow:"hidden",borderLeft:`4px solid ${leftBorderColor}`,transition:"border-color 0.15s"}}>
+                        <div onClick={()=>setExpandedTarea(expanded?null:t._id)} style={{padding:"11px 14px 11px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                          {/* Avatar */}
+                          {t.asignadoNombre?(
+                            <div style={{width:30,height:30,borderRadius:"50%",background:avatarColor,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#fff",flexShrink:0,letterSpacing:"0.02em"}}>{initials}</div>
+                          ):(
+                            <div style={{width:30,height:30,borderRadius:"50%",background:T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>?</div>
+                          )}
+                          {/* Content */}
                           <div style={{flex:1,minWidth:0}}>
-                            <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:5,flexWrap:"wrap"}}>
-                              {isUrgente&&<span style={{fontSize:10,color:T.red,fontWeight:800}}>🔴</span>}
+                            {/* Row 1: urgente + num + title + badges */}
+                            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
+                              {isUrgente&&<span style={{fontSize:9,color:T.red,fontWeight:800,background:T.red+"15",borderRadius:4,padding:"1px 5px",flexShrink:0}}>URGENTE</span>}
                               {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600,flexShrink:0}}>#{t.tareaNumStr}</span>}
-                              <span style={{fontSize:14,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
-                              {(t.correcciones||0)>0&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:20,background:T.red+"22",color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
-                              {hasDels&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:(T.orange||"#f97316")+"22",color:T.orange||"#f97316",fontWeight:700,flexShrink:0}}>📦 {(t.deliverables||[]).length}</span>}
+                              <span style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.3}}>{t.titulo}</span>
+                              {(t.correcciones||0)>0&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:20,background:T.red+"18",color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corr.</span>}
+                              {hasDels&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#f9731618",color:"#f97316",fontWeight:700,flexShrink:0}}>📦 {(t.deliverables||[]).length}</span>}
                             </div>
-                            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                              <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
-                              {t.progresoLabel==="Listo para entregar"&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#22c55e15",color:"#22c55e",fontWeight:700}}>✋ Listo para entregar</span>}
-                              {t.progresoLabel==="En proceso"&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#3b82f615",color:"#3b82f6",fontWeight:600}}>🔄 En proceso</span>}
-                              {t.estado==="bloqueada"&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#ef444415",color:"#ef4444",fontWeight:700}}>⚠️ Bloqueado</span>}
-                              {t.asignadoNombre&&<span style={{fontSize:11,color:T.textMd}}>→ {t.asignadoNombre}</span>}
-                              {t.deadline&&<span style={{fontSize:11,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅 {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Vence hoy":`${days}d`):fmtDate(t.deadline)}</span>}
+                            {/* Row 2: status + progreso + deadline + meta */}
+                            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                              <span style={{fontSize:10,padding:"2px 7px",borderRadius:5,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
+                              {t.progresoLabel==="Listo para entregar"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#22c55e15",color:"#22c55e",fontWeight:700}}>✋ Listo</span>}
+                              {t.progresoLabel==="En proceso"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#3b82f615",color:"#3b82f6",fontWeight:600}}>🔄 En proceso</span>}
+                              {t.estado==="bloqueada"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#ef444415",color:"#ef4444",fontWeight:700}}>⚠️ Bloqueado</span>}
+                              {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=2?T.red:days!==null&&days<=5?"#f97316":T.textSm,fontWeight:days!==null&&days<=2?700:400}}>📅 {days!==null?(days<0?`−${Math.abs(days)}d`:days===0?"hoy":`${days}d`):fmtDate(t.deadline)}</span>}
+                              {checkTotal>0&&<span style={{fontSize:10,color:checkDone===checkTotal?(T.green||"#22c55e"):T.textSm}}>✓ {checkDone}/{checkTotal}</span>}
+                              {commCount>0&&<span style={{fontSize:10,color:T.textSm}}>💬 {commCount}</span>}
                             </div>
                             {(t.labels||[]).length>0&&<div style={{marginTop:4}}><LabelChips labels={t.labels}/></div>}
                           </div>
-                          <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>{expanded?"▲":"▼"}</span>
+                          {/* Expand indicator */}
+                          <div style={{width:20,height:20,borderRadius:6,background:expanded?T.accent+"18":T.surface,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s"}}>
+                            <span style={{fontSize:9,color:expanded?T.accent:T.textSm,fontWeight:700,lineHeight:1}}>{expanded?"▲":"▼"}</span>
+                          </div>
                         </div>
                         {expanded&&renderDetalle(t)}
                       </div>
@@ -8051,7 +8135,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
             {/* VISTA KANBAN */}
             {viewMode==="kanban"&&(
-              <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:20,alignItems:"flex-start"}}>
+              <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:24,alignItems:"flex-start"}}>
                 {KANBAN_COLS.map(colKey=>{
                   const col=ESTADOS[colKey];
                   const isDragOver=dragOverCol===colKey;
@@ -8060,48 +8144,64 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     return pa-pb||(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0);
                   });
                   return (
-                    <div key={colKey} style={{flex:"0 0 230px",minWidth:0}}
+                    <div key={colKey} style={{flex:"0 0 260px",minWidth:0}}
                       onDragOver={e=>{e.preventDefault();setDragOverCol(colKey);}}
                       onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverCol(null);}}
                       onDrop={e=>{e.preventDefault();setDragOverCol(null);const id=dragRef.current.id,from=dragRef.current.fromCol;if(!id||from===colKey)return;quickUpdateTareaEstado(id,colKey);dragRef.current={id:null,fromCol:null};}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,padding:"7px 10px",background:isDragOver?col.color+"28":col.bg,borderRadius:8,border:isDragOver?`2px dashed ${col.color}60`:"2px solid transparent",transition:"all 0.15s"}}>
-                        <span style={{fontSize:11,fontWeight:700,color:col.color,flex:1}}>{col.label}</span>
-                        <span style={{fontSize:11,color:col.color,opacity:0.8,background:col.color+"22",padding:"1px 7px",borderRadius:20}}>{colTareas.length}</span>
+                      {/* Column header */}
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,padding:"8px 12px",background:isDragOver?col.color+"25":col.bg||T.surface,borderRadius:10,border:isDragOver?`2px dashed ${col.color}80`:`2px solid ${col.color}30`,transition:"all 0.15s"}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:col.color,flexShrink:0}}/>
+                        <span style={{fontSize:12,fontWeight:700,color:col.color,flex:1,letterSpacing:"0.01em"}}>{col.label}</span>
+                        <span style={{fontSize:11,color:col.color,background:col.color+"25",padding:"2px 8px",borderRadius:20,fontWeight:700}}>{colTareas.length}</span>
                       </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:6,minHeight:40}}>
+                      {/* Column cards */}
+                      <div style={{display:"flex",flexDirection:"column",gap:7,minHeight:48}}>
                         {colTareas.map(t=>{
                           const days=daysUntil(t.deadline);
                           const isUrgente=t.prioridad==="urgente";
                           const commCount=(t.comments||[]).length;
                           const checkDone=(t.checklist||[]).filter(i=>i.done).length;
                           const checkTotal=(t.checklist||[]).length;
+                          const initials=(t.asignadoNombre||"").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()||"?";
+                          const avatarColor=t.asignadoNombre?`hsl(${t.asignadoNombre.charCodeAt(0)*17%360},55%,55%)`:"#94a3b8";
                           return (
                             <div key={t._id}
                               draggable="true"
                               onDragStart={()=>{dragRef.current={id:t._id,fromCol:colKey};}}
                               onDragEnd={()=>{dragRef.current={id:null,fromCol:null};setDragOverCol(null);}}
                               onClick={()=>setKanbanSelected(t)}
-                              style={{background:T.card,border:`1px solid ${isUrgente?T.red+"44":T.border}`,borderRadius:9,padding:"10px 12px",cursor:"grab",userSelect:"none",boxShadow:"0 1px 3px rgba(0,0,0,0.06)",transition:"box-shadow 0.15s"}}
-                              onMouseEnter={e=>e.currentTarget.style.boxShadow="0 3px 10px rgba(0,0,0,0.12)"}
-                              onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.06)"}>
-                              <div style={{display:"flex",alignItems:"flex-start",gap:5,marginBottom:6}}>
-                                {isUrgente&&<span style={{fontSize:9,color:T.red,fontWeight:800,flexShrink:0,marginTop:1}}>🔴</span>}
-                                <span style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.3,flex:1}}>{t.titulo}</span>
+                              style={{background:T.card,border:`1px solid ${isUrgente?T.red+"55":T.border}`,borderLeft:`3px solid ${col.color}`,borderRadius:9,padding:"10px 12px",cursor:"grab",userSelect:"none",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",transition:"box-shadow 0.15s,border-color 0.15s"}}
+                              onMouseEnter={e=>{e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.13)";e.currentTarget.style.borderColor=isUrgente?T.red+"88":T.accent+"55";}}
+                              onMouseLeave={e=>{e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.06)";e.currentTarget.style.borderColor=isUrgente?T.red+"55":T.border;}}>
+                              {/* Title row */}
+                              <div style={{display:"flex",alignItems:"flex-start",gap:6,marginBottom:7}}>
+                                {isUrgente&&<span style={{fontSize:9,color:T.red,fontWeight:800,background:T.red+"15",borderRadius:4,padding:"1px 4px",flexShrink:0,marginTop:1}}>URG</span>}
+                                <span style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.35,flex:1}}>{t.titulo}</span>
                               </div>
-                              {(t.labels||[]).length>0&&<div style={{marginBottom:5}}><LabelChips labels={t.labels}/></div>}
-                              {t.progresoLabel==="Listo para entregar"&&<div style={{marginBottom:4,fontSize:10,color:"#22c55e",fontWeight:700,background:"#22c55e15",borderRadius:4,padding:"1px 6px",display:"inline-block"}}>✋ Listo para entregar</div>}
-                              <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-                                {t.asignadoNombre&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 5px"}}>{t.asignadoNombre.split(" ")[0]}</span>}
-                                {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅{days!==null?(days<0?"Vencida":days===0?"Hoy":`${days}d`):"—"}</span>}
-                                {(t.correcciones||0)>0&&<span style={{fontSize:9,color:T.red,fontWeight:700}}>{t.correcciones}ª corr.</span>}
-                                {(t.deliverables||[]).length>0&&<span style={{fontSize:10,color:T.orange||"#f97316"}}>📦{(t.deliverables||[]).length}</span>}
-                                {checkTotal>0&&<span style={{fontSize:10,color:T.textSm}}>✅{checkDone}/{checkTotal}</span>}
-                                {commCount>0&&<span style={{fontSize:10,color:T.textSm}}>💬{commCount}</span>}
+                              {(t.labels||[]).length>0&&<div style={{marginBottom:6}}><LabelChips labels={t.labels}/></div>}
+                              {t.progresoLabel==="Listo para entregar"&&<div style={{marginBottom:6,fontSize:10,color:"#22c55e",fontWeight:700,background:"#22c55e12",borderRadius:20,padding:"2px 8px",display:"inline-block"}}>✋ Listo para entregar</div>}
+                              {/* Footer row */}
+                              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:4}}>
+                                {t.asignadoNombre&&(
+                                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                                    <div style={{width:18,height:18,borderRadius:"50%",background:avatarColor,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#fff"}}>{initials}</div>
+                                    <span style={{fontSize:10,color:T.textMd}}>{t.asignadoNombre.split(" ")[0]}</span>
+                                  </div>
+                                )}
+                                {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅 {days!==null?(days<0?"Venc.":days===0?"Hoy":`${days}d`):"—"}</span>}
+                                {(t.correcciones||0)>0&&<span style={{fontSize:9,color:T.red,fontWeight:700,background:T.red+"12",borderRadius:4,padding:"1px 4px"}}>{t.correcciones}ª</span>}
+                                {(t.deliverables||[]).length>0&&<span style={{fontSize:10,color:"#f97316"}}>📦 {(t.deliverables||[]).length}</span>}
+                                {checkTotal>0&&<span style={{fontSize:10,color:checkDone===checkTotal?"#22c55e":T.textSm}}>✓{checkDone}/{checkTotal}</span>}
+                                {commCount>0&&<span style={{fontSize:10,color:T.textSm}}>💬 {commCount}</span>}
                               </div>
                             </div>
                           );
                         })}
-                        {colTareas.length===0&&<div style={{fontSize:11,color:isDragOver?col.color:T.textSm,textAlign:"center",padding:"18px 0",border:`1px dashed ${isDragOver?col.color:T.border}`,borderRadius:8,transition:"all 0.15s"}}>{isDragOver?"Soltar aquí ↓":"—"}</div>}
+                        {colTareas.length===0&&(
+                          <div style={{fontSize:11,color:isDragOver?col.color:T.textSm,textAlign:"center",padding:"20px 0",border:`2px dashed ${isDragOver?col.color:T.border}`,borderRadius:9,transition:"all 0.15s",background:isDragOver?col.color+"08":"transparent"}}>
+                            {isDragOver?"Soltar aquí ↓":"Sin tareas"}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
