@@ -198,7 +198,69 @@ function DSEmpty({T, icon="📭", title, subtitle, action}) {
   );
 }
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, connectedStores={}}) {
+// ─── Org Switcher (multi-org Fase 1) ───
+// Chip clickable abajo del sidebar que abre un popover para cambiar entre las
+// organizaciones del user. Si el user tiene 1 sola org, el switcher se ve igual
+// y el popover solo muestra "+ Nueva (próximamente)" — F2 implementa la creación.
+function OrgSwitcher({T, orgs, activeOrgId, onSwitchOrg, collapsed}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(()=>{
+    if (!open) return;
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onEsc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onEsc);
+    };
+  },[open]);
+
+  if (!Array.isArray(orgs) || orgs.length === 0) return null;
+  const active = orgs.find(o => o.id === activeOrgId) || orgs[0];
+
+  return (
+    <div ref={ref} style={{position:"relative",padding:`${DS.sp.xs}px ${DS.sp.sm}px 0`}}>
+      <button
+        onClick={()=>setOpen(o=>!o)}
+        title={collapsed?`Organización: ${active.name}`:undefined}
+        style={{
+          width:"100%",display:"flex",alignItems:"center",gap:DS.sp.sm,
+          padding:collapsed?"8px 6px":"8px 10px",
+          background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.md,
+          color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",
+        }}>
+        <span style={{width:14,height:14,borderRadius:DS.r.full,background:active.color||T.accent,flexShrink:0,boxShadow:`0 0 0 2px ${T.bg}, 0 0 0 3px ${T.border}`}}/>
+        {!collapsed && (
+          <>
+            <span style={{flex:1,minWidth:0,fontSize:DS.font.md,fontWeight:DS.w.semibold,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"left"}}>{active.name}</span>
+            <span style={{fontSize:DS.font.sm,color:T.textSm,flexShrink:0,marginLeft:2}}>▾</span>
+          </>
+        )}
+      </button>
+      {open && (
+        <div style={{position:"absolute",bottom:"calc(100% + 4px)",left:DS.sp.sm,right:DS.sp.sm,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:DS.sp.xs,zIndex:50,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
+          <div style={{fontSize:DS.font.xs,color:T.textSm,padding:`${DS.sp.xs}px ${DS.sp.sm}px`,textTransform:"uppercase",fontWeight:DS.w.bold,letterSpacing:0.5}}>Organizaciones</div>
+          {orgs.map(org => (
+            <button key={org.id}
+              onClick={()=>{ if(org.id !== activeOrgId) onSwitchOrg(org.id); setOpen(false); }}
+              style={{display:"flex",alignItems:"center",gap:DS.sp.sm,width:"100%",padding:"7px 10px",border:"none",background:org.id===activeOrgId?T.bg:"transparent",borderRadius:DS.r.md,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <span style={{width:12,height:12,borderRadius:DS.r.full,background:org.color||T.accent,flexShrink:0}}/>
+              <span style={{flex:1,minWidth:0,fontSize:DS.font.md,fontWeight:DS.w.medium,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"left"}}>{org.name}</span>
+              {org.id===activeOrgId && <span style={{fontSize:DS.font.sm,color:T.accent}}>✓</span>}
+            </button>
+          ))}
+          <div style={{borderTop:`1px solid ${T.border}`,marginTop:DS.sp.xs,paddingTop:DS.sp.xs,padding:"7px 10px",fontSize:DS.font.xs,color:T.textSm,fontStyle:"italic"}}>
+            + Nueva organización (próximamente)
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}}) {
   const GROUPS = [
     { group:"OPERACIONES" },
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
@@ -339,8 +401,11 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
         })}
       </nav>
 
+      {/* Org Switcher (multi-org F1) — encima del User Section */}
+      <OrgSwitcher T={T} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} collapsed={collapsed}/>
+
       {/* User Section */}
-      <div style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm}}>
+      <div style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm,marginTop:DS.sp.sm}}>
         {!collapsed&&(
           <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:DS.sp.sm,marginBottom:DS.sp.xs}}>
             {user?.photoURL
@@ -14443,7 +14508,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const A = ad.analysis;
                         const adBe = effectiveBeForRow(ad, "ad", aRoasBe) || 2;
                         const roasColor = ad.roas >= adBe ? T.green : ad.roas >= adBe * 0.5 ? T.text : ad.roas > 0 ? T.red : T.textSm;
-                        const hasVideo = !!ad.creative_video_url;
+                        // hasVideo: usar video_id (no la URL del MP4) — Meta a veces no
+                        // expone "source" pero sí embed_html/permalink, así que igual se
+                        // reproduce. Sin esto el play overlay no aparecía nunca.
+                        const hasVideo = !!ad.creative_video_id || !!ad.creative_video_url;
                         const previewImage = ad.creative_image_hd || ad.creative_thumbnail;
                         return (
                           <div key={ad.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
@@ -14748,7 +14816,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {/* Brand context */}
             <div style={Card}>
               <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Contexto de marca</div>
-              <div style={{fontSize:12,color:T.textSm,marginBottom:12,lineHeight:1.5}}>La IA usa esta info para generar el copy. Producto, beneficios, target, precio, URL de destino.</div>
+              <div style={{fontSize:12,color:T.textSm,marginBottom:12,lineHeight:1.5}}>La IA usa esta info para generar el copy. Productos, beneficios, target, precio, URL de destino.</div>
               <textarea value={brand} onChange={e=>setBrand(e.target.value)}
                 placeholder="Ej: Describí tu marca y producto/s — qué vendés, beneficios principales, target (edad, género, ocupación), precio, USP, link de destino. Cuanto más detalle, mejor copy genera la IA."
                 style={{...iS,minHeight:200,resize:"vertical",lineHeight:1.6,marginBottom:12}}/>
@@ -15783,6 +15851,21 @@ LONGITUD Y FORMATO
               <video src={previewingAd.creative_video_url} controls autoPlay playsInline style={{width:"100%",maxHeight:"82vh",borderRadius:12,background:"#000",display:"block"}}>
                 Tu navegador no soporta video HTML5.
               </video>
+            ) : (previewingAd.creative_video_embed_html && previewingAd.creative_video_embeddable !== false) ? (
+              // Meta no expuso el MP4 "source" — usamos su embed_html (iframe oficial).
+              // Wrapper con aspect-ratio 9:16 (vertical) que es el formato dominante en
+              // Reels/Stories; con object-fit el iframe se acomoda igual a otros ratios.
+              <div style={{width:"100%",maxHeight:"82vh",aspectRatio:"9/16",borderRadius:12,overflow:"hidden",background:"#000"}} dangerouslySetInnerHTML={{__html: previewingAd.creative_video_embed_html}}/>
+            ) : (previewingAd.creative_video_id && previewingAd.creative_permalink) ? (
+              // Último fallback: armamos el embed desde el permalink del post.
+              <iframe
+                title="video-preview"
+                src={`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(previewingAd.creative_permalink)}&show_text=false&width=560&t=0`}
+                width="560" height="800"
+                style={{maxWidth:"100%",maxHeight:"82vh",borderRadius:12,background:"#000",border:"none"}}
+                scrolling="no" frameBorder="0" allowFullScreen
+                allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+              />
             ) : previewingAd.creative_image_hd ? (
               <img src={previewingAd.creative_image_hd} alt="" style={{width:"100%",maxHeight:"82vh",borderRadius:12,objectFit:"contain",background:"#000",display:"block"}}/>
             ) : (
@@ -17799,6 +17882,12 @@ export default function App() {
   const [cmdOpen,setCmdOpen]=useState(false);
   const [tareasForReview,setTareasForReview]=useState(0);
   const [connectedStores,setConnectedStores]=useState({tn:false,shopify:false,ml:false,meta:false});
+  // Multi-org Fase 1 — orgs[] vive en el user doc; active_org_id es el actual.
+  // F1 sólo muestra el switcher y persiste la org activa. Las secciones siguen
+  // leyendo de userDoc top-level (espejo); F2+ refactorea sección por sección
+  // a leer desde la org activa directamente.
+  const [orgs,setOrgs]=useState([]);
+  const [activeOrgId,setActiveOrgId]=useState(null);
   const [onboardingDone,setOnboardingDone]=useState(()=>{try{return localStorage.getItem("growith_onb_done")==="1";}catch(e){return true;}});
   const [orders,setOrders]=useState([]);
   const [ordersStatus,setOrdersStatus]=useState("idle");
@@ -17985,6 +18074,7 @@ export default function App() {
 
   // Re-fetch when store connects/disconnects
   const prevTnRef=useRef(null);
+  const orgsMigratedRef=useRef(false);
   useEffect(()=>{
     if(!user) return;
     const unsub=onSnapshot(doc(db,"users",user.uid),snap=>{
@@ -18002,8 +18092,51 @@ export default function App() {
         fetchOrders(user.uid, "empaquetar");
       }
       prevTnRef.current=newId;
+
+      // ── Multi-org F1: capturar orgs y migrar si hace falta ──
+      const userOrgs = Array.isArray(d.orgs) ? d.orgs : [];
+      const userActiveOrgId = d.active_org_id || (userOrgs[0]?.id || null);
+      setOrgs(userOrgs);
+      setActiveOrgId(userActiveOrgId);
+
+      // Migración default-org: una vez por sesión, si no hay orgs creadas.
+      // Crea "Mi organización" con una COPIA de los datos top-level actuales —
+      // así el switcher tiene algo que mostrar y nada se rompe. Las secciones
+      // siguen leyendo top-level (espejo) hasta que F2+ las refactoree.
+      if (!orgsMigratedRef.current && userOrgs.length === 0) {
+        orgsMigratedRef.current = true;
+        const defaultOrg = {
+          id: "org_default",
+          name: "Mi organización",
+          color: "#7c3aed",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          // Snapshot de datos actuales del user — cada org se autocontiene a futuro:
+          stores: Array.isArray(d.stores) ? d.stores : [],
+          cuits: Array.isArray(d.cuits) ? d.cuits : [],
+          meta_active_account: d.meta_active_account || null,
+          brand_context: d.brand_context || "",
+          alertas: d.alertas || {recordatorio:true,sinrespuesta:true,contenido:true},
+        };
+        updateDoc(doc(db,"users",user.uid),{
+          orgs: [defaultOrg],
+          active_org_id: "org_default",
+        }).catch(e => console.error("[multi-org] migración default falló:", e?.message));
+      }
     });
     return ()=>unsub();
+  },[user?.uid]);
+
+  // Multi-org F1: switch entre orgs. Por ahora sólo persiste active_org_id;
+  // F2+ va a sincronizar los espejos top-level (stores, meta_active_account, etc.)
+  // con la org elegida para que las secciones se rerenderean al cambiar.
+  const onSwitchOrg = React.useCallback(async (orgId) => {
+    if (!user || !orgId) return;
+    try {
+      await updateDoc(doc(db,"users",user.uid),{ active_org_id: orgId });
+    } catch (e) {
+      console.error("[multi-org] switch org falló:", e?.message);
+    }
   },[user?.uid]);
 
   useEffect(()=>{
@@ -18132,7 +18265,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} connectedStores={connectedStores}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg}/>
         <div style={{flex:1,minWidth:0,paddingBottom:"68px"}} className="main-content">
           {/* Mini topbar global con Cmd+K hint */}
           <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:DS.sp.md,height:48}}>
