@@ -13152,11 +13152,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab,activeAccId]);
 
-  async function loadLibrary() {
+  // opts.fresh = true salta el cache de 2min en el backend (botón 🔄 refresh manual).
+  async function loadLibrary(opts={}) {
     if(!activeAccId) return;
     setLibLoading(true);
     try {
-      const d = await metaApi("ads_library","GET",null,{acc_id:activeAccId,since:libSince,until:libUntil});
+      const params = {acc_id:activeAccId,since:libSince,until:libUntil};
+      if (opts.fresh) params.fresh = "1";
+      const d = await metaApi("ads_library","GET",null,params);
       if(d.error) { toast("Error: "+d.error,"error"); setLibAds([]); }
       else setLibAds(d.ads||[]);
     } finally { setLibLoading(false); }
@@ -14624,7 +14627,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Biblioteca de anuncios</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Métricas reales del período. Filtrá, ordená y tocá "Analizar con IA" solo si querés desglose detallado de un anuncio.</div>
                     </div>
-                    <button onClick={loadLibrary} disabled={libLoading} style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
+                    <button onClick={()=>loadLibrary({fresh:true})} disabled={libLoading} title="Refrescar (saltea el cache)" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
                   </div>
                   {/* Filtros: calendario + búsqueda + sort */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>

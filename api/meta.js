@@ -1266,6 +1266,27 @@ export default async function handler(req, res) {
       const since = String(req.query.since || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
       const until = String(req.query.until || new Date().toISOString().slice(0, 10));
 
+      // ── Cache de la respuesta completa (TTL 2 min) por (uid, acc_id, rango).
+      // Antes la Biblioteca tardaba +60s en cargar porque hace pagineo de /ads +
+      // un metaGet por cada video. Con este cache, abrir/refrescar dentro de los
+      // 2 min siguientes es instantáneo. Botón "🔄" del front pasa fresh=1 para
+      // saltearlo cuando el user quiere data nueva sí o sí.
+      const libCacheKey = `lib_${String(accIdQ).replace(/[^a-zA-Z0-9_]/g,"_")}_${since}_${until}`;
+      const libCacheRef = db.collection("users").doc(uid).collection("meta_lib_cache").doc(libCacheKey);
+      const LIB_CACHE_TTL_MS = 2 * 60 * 1000;
+      const forceFresh = req.query.fresh === "1";
+      if (!forceFresh) {
+        try {
+          const snap = await libCacheRef.get();
+          if (snap.exists) {
+            const c = snap.data();
+            if (c.ts && (Date.now() - c.ts) < LIB_CACHE_TTL_MS && c.payload) {
+              return res.json({ ...c.payload, _cached: true, _cache_age_ms: Date.now() - c.ts });
+            }
+          }
+        } catch (_) { /* sigue al fetch real */ }
+      }
+
       try {
         // 1) Ads con creative detallado — paginamos en lotes chicos para no exceder limites de Meta.
         // El error "Please reduce the amount of data" salta con limit alto + muchos fields.
@@ -1300,8 +1321,41 @@ export default async function handler(req, res) {
         //   El front, además, elige entre <video src>, embed_html, e iframe permalink.
         const videoIds = [...new Set(ads.map(a => a.creative?.video_id).filter(Boolean))];
         const videoSources = {};
+
+        // ── Cache permanente de metadata de videos (videos son inmutables) ──
+        // Antes cada carga rebuscaba todos los videos desde Meta. Ahora pre-cargamos
+        // de Firestore los que ya conocemos y solo vamos a Meta por los nuevos.
+        const VIDEO_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días (un video raro vez cambia)
+        const videoCacheCol = db.collection("users").doc(uid).collection("meta_video_cache");
+        const unknownVideoIds = [];
         if (videoIds.length > 0) {
+          // Firestore: leemos hasta 100 en paralelo (un .get por doc — Firestore no
+          // soporta IN > 30 mezclado con TTL, así que esto es lo más simple).
           await Promise.all(videoIds.slice(0, 100).map(async vid => {
+            try {
+              const snap = await videoCacheCol.doc(String(vid)).get();
+              if (snap.exists) {
+                const c = snap.data();
+                if (c.ts && (Date.now() - c.ts) < VIDEO_CACHE_TTL_MS && c.data) {
+                  videoSources[vid] = c.data;
+                  return;
+                }
+              }
+            } catch (_) {}
+            unknownVideoIds.push(vid);
+          }));
+        }
+
+        // Helper: batches secuenciales para no triggear rate-limits de Meta
+        async function inBatches(items, batchSize, fn) {
+          for (let i = 0; i < items.length; i += batchSize) {
+            const batch = items.slice(i, i + batchSize);
+            await Promise.all(batch.map(fn));
+          }
+        }
+
+        if (unknownVideoIds.length > 0) {
+          await inBatches(unknownVideoIds, 10, async vid => {
             let v = {};
             let thumbs = { data: [] };
             try {
@@ -1335,14 +1389,18 @@ export default async function handler(req, res) {
             // Permalink sintético como red de seguridad: el plugin de Facebook embed
             // acepta /watch/?v=<id> para casi cualquier video público de un Ad.
             const syntheticPermalink = `https://www.facebook.com/watch/?v=${vid}`;
-            videoSources[vid] = {
+            const vidData = {
               source: v.source || null,
               picture: bestThumb || v.picture || null,
               permalink: v.permalink_url || syntheticPermalink,
               embed_html: v.embed_html || null,
               embeddable: v.embeddable !== false, // default true
             };
-          }));
+            videoSources[vid] = vidData;
+            // Persistir el lookup — la próxima vez no rehacemos los 1-4 calls a Meta
+            try { await videoCacheCol.doc(String(vid)).set({ data: vidData, ts: Date.now() }, { merge: true }); }
+            catch (_) {}
+          });
         }
 
         // 2) Insights del rango por ad
@@ -1415,7 +1473,11 @@ export default async function handler(req, res) {
           };
         });
 
-        return res.json({ ads: result, since, until });
+        const payload = { ads: result, since, until };
+        // Persistir el response — el próximo load (dentro de 2 min) sale instant.
+        try { await libCacheRef.set({ payload, ts: Date.now() }, { merge: true }); }
+        catch (_) {}
+        return res.json(payload);
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }
