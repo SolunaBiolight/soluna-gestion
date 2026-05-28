@@ -8031,7 +8031,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </div>
                             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                               <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
-                              {t.progresoLabel&&t.estado==="en_proceso"&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#6366f115",color:"#6366f1",fontWeight:600}}>{t.progresoLabel}</span>}
+                              {t.progresoLabel==="Listo para entregar"&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#22c55e15",color:"#22c55e",fontWeight:700}}>✋ Listo para entregar</span>}
+                              {t.progresoLabel==="En proceso"&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#3b82f615",color:"#3b82f6",fontWeight:600}}>🔄 En proceso</span>}
                               {t.estado==="bloqueada"&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#ef444415",color:"#ef4444",fontWeight:700}}>⚠️ Bloqueado</span>}
                               {t.asignadoNombre&&<span style={{fontSize:11,color:T.textMd}}>→ {t.asignadoNombre}</span>}
                               {t.deadline&&<span style={{fontSize:11,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅 {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Vence hoy":`${days}d`):fmtDate(t.deadline)}</span>}
@@ -8088,7 +8089,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <span style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.3,flex:1}}>{t.titulo}</span>
                               </div>
                               {(t.labels||[]).length>0&&<div style={{marginBottom:5}}><LabelChips labels={t.labels}/></div>}
-                              {t.progresoLabel&&t.estado==="en_proceso"&&<div style={{marginBottom:4,fontSize:10,color:"#6366f1",fontWeight:600,background:"#6366f115",borderRadius:4,padding:"1px 6px",display:"inline-block"}}>{t.progresoLabel}</div>}
+                              {t.progresoLabel==="Listo para entregar"&&<div style={{marginBottom:4,fontSize:10,color:"#22c55e",fontWeight:700,background:"#22c55e15",borderRadius:4,padding:"1px 6px",display:"inline-block"}}>✋ Listo para entregar</div>}
                               <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
                                 {t.asignadoNombre&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 5px"}}>{t.asignadoNombre.split(" ")[0]}</span>}
                                 {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅{days!==null?(days<0?"Vencida":days===0?"Hoy":`${days}d`):"—"}</span>}
@@ -9785,93 +9786,88 @@ function ColaboradorPublicView({T, token}) {
                   {/* ── SELECTOR DE PROGRESO ── */}
                   {!isAprobado&&t.estado!=="entregado"&&(()=>{
                     const STEPS=[
-                      {id:"pendiente",       label:"Sin empezar",         icon:"⏳", desc:"Todavía no arranqué",          color:"#d97706", bg:"#d9770615"},
-                      {id:"leyendo",         label:"Leyendo el brief",    icon:"👀", desc:"Revisando las instrucciones",   color:"#6366f1", bg:"#6366f115"},
-                      {id:"en_proceso",      label:"Trabajando en esto",  icon:"🔄", desc:"Ya arranqué, todo bien",       color:"#3b82f6", bg:"#3b82f615"},
-                      {id:"produciendo",     label:"Creando / Diseñando", icon:"🎨", desc:"En plena producción",           color:"#a855f7", bg:"#a855f715"},
-                      {id:"revisando",       label:"Revisando mi trabajo",icon:"🔍", desc:"Chequeando antes de entregar",  color:"#0ea5e9", bg:"#0ea5e915"},
+                      {id:"pendiente",  label:"Sin empezar",           icon:"⏳", desc:"Todavía no arranqué",             estado:"pendiente",  progresoLabel:""},
+                      {id:"en_proceso", label:"En proceso",             icon:"🔄", desc:"Ya arranqué, estoy trabajando",   estado:"en_proceso", progresoLabel:"En proceso"},
+                      {id:"listo",      label:"Listo para entregar",    icon:"✋", desc:"Terminé, lo subo en un momento",  estado:"en_proceso", progresoLabel:"Listo para entregar"},
                     ];
-                    // currentStep: map estado+progresoLabel to step id
                     const currentStep = t.estado==="bloqueada"?"bloqueada"
-                      : t.progresoLabel==="Leyendo el brief"?"leyendo"
-                      : t.progresoLabel==="Creando / Diseñando"?"produciendo"
-                      : t.progresoLabel==="Revisando mi trabajo"?"revisando"
+                      : t.progresoLabel==="Listo para entregar"?"listo"
                       : t.estado==="en_proceso"?"en_proceso"
                       : "pendiente";
+                    const stepColors={pendiente:"#d97706",en_proceso:"#3b82f6",listo:"#22c55e",bloqueada:"#ef4444"};
+                    const stepBgs  ={pendiente:"#d9770615",en_proceso:"#3b82f615",listo:"#22c55e15",bloqueada:"#ef444412"};
+                    const curColor = stepColors[currentStep]||"#6b7280";
+                    const curBg    = stepBgs[currentStep]||"#6b728015";
                     return (
                       <div style={{marginBottom:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>¿En qué etapa estás?</div>
-                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                          {STEPS.map(step=>{
-                            const active = currentStep===step.id;
+                        {/* Stepper visual */}
+                        <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:12,background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`,overflow:"hidden"}}>
+                          {STEPS.map((step,i)=>{
+                            const active=currentStep===step.id;
+                            const passed=STEPS.findIndex(s=>s.id===currentStep)>i;
                             return (
-                              <AsyncButton key={step.id}
-                                onClick={async()=>{
-                                  const progresoLabel = step.id==="pendiente"?"":step.label;
-                                  const estado = step.id==="pendiente"?"pendiente":"en_proceso";
-                                  await publicSetEstado(t._id, estado, progresoLabel);
-                                }}
-                                style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:10,border:`1.5px solid ${active?step.color:T.border}`,background:active?step.bg:T.surface,cursor:"pointer",textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",width:"100%"}}>
-                                <span style={{fontSize:20,flexShrink:0,lineHeight:1}}>{step.icon}</span>
-                                <div style={{flex:1,minWidth:0}}>
-                                  <div style={{fontSize:13,fontWeight:active?700:500,color:active?step.color:T.text}}>{step.label}</div>
-                                  <div style={{fontSize:11,color:active?step.color:T.textSm,opacity:active?0.85:0.7}}>{step.desc}</div>
-                                </div>
-                                {active&&<span style={{fontSize:16,color:step.color,flexShrink:0}}>✓</span>}
-                              </AsyncButton>
+                              <div key={step.id} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"10px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="listo"?"#22c55e18":step.id==="en_proceso"?"#3b82f615":"#d9770615":"transparent",transition:"background 0.2s"}}>
+                                <span style={{fontSize:18,marginBottom:3,opacity:passed||active?1:0.35}}>{step.icon}</span>
+                                <span style={{fontSize:10,fontWeight:active?700:500,color:active?(step.id==="listo"?"#22c55e":step.id==="en_proceso"?"#3b82f6":"#d97706"):T.textSm,textAlign:"center",lineHeight:1.3}}>{step.label}</span>
+                                {active&&<div style={{width:18,height:3,borderRadius:2,background:step.id==="listo"?"#22c55e":step.id==="en_proceso"?"#3b82f6":"#d97706",marginTop:4}}/>}
+                              </div>
                             );
                           })}
-                          {/* Bloqueado — separado, con motivo obligatorio */}
-                          <div>
-                            {currentStep!=="bloqueada"?(
-                              <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:!p[t._id]}))}
-                                style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,background:T.surface,cursor:"pointer",width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                <span style={{fontSize:20,flexShrink:0}}>🚫</span>
-                                <div style={{flex:1,textAlign:"left"}}>
-                                  <div style={{fontSize:13,fontWeight:500,color:"#ef4444"}}>Estoy bloqueado</div>
-                                  <div style={{fontSize:11,color:T.textSm,opacity:0.7}}>Necesito ayuda para continuar</div>
-                                </div>
-                              </button>
-                            ):(
-                              <div style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:10,border:"1.5px solid #ef4444",background:"#ef444412"}}>
-                                <span style={{fontSize:20,flexShrink:0}}>🚫</span>
-                                <div style={{flex:1}}>
-                                  <div style={{fontSize:13,fontWeight:700,color:"#ef4444"}}>Bloqueado</div>
-                                  <div style={{fontSize:11,color:"#ef4444",opacity:0.8}}>El equipo ya fue notificado</div>
-                                </div>
-                                <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso","Trabajando en esto")}
-                                  style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#3b82f620",color:"#3b82f6",border:"1px solid #3b82f644",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,flexShrink:0}}>
-                                  Retomé ✓
-                                </AsyncButton>
-                              </div>
-                            )}
-                            {showBloqueo[t._id]&&currentStep!=="bloqueada"&&(
-                              <div style={{marginTop:6,background:"#ef444410",borderRadius:10,padding:"12px",border:"1px solid #ef444430"}}>
-                                <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:0.7}}>(requerido)</span></div>
-                                <textarea value={bloqueoMotivo[t._id]||""} onChange={e=>setBloqueoMotivo(p=>({...p,[t._id]:e.target.value}))}
-                                  placeholder="Ej: No tengo acceso al archivo de Figma, falta el logo en alta resolución..."
-                                  style={{...iS,fontSize:12,width:"100%",minHeight:60,resize:"none",marginBottom:8,borderColor:"#ef444444"}}/>
-                                <div style={{display:"flex",gap:7}}>
-                                  <AsyncButton onClick={async()=>{
-                                    const motivo=(bloqueoMotivo[t._id]||"").trim();
-                                    if(!motivo)return appAlert("Explicá qué te está frenando para que el equipo pueda ayudarte.");
-                                    await publicSetEstado(t._id,"bloqueada","",motivo);
-                                    setShowBloqueo(p=>({...p,[t._id]:false}));
-                                  }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:"#ef4444",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
-                                    Avisar al equipo
-                                  </AsyncButton>
-                                  <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:false}))} style={{fontSize:12,padding:"7px 12px",borderRadius:8,background:"transparent",color:T.textMd,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                    Cancelar
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
                         </div>
-                        {/* Actualización de texto */}
+                        {/* Botones de acción según estado actual */}
+                        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                          {currentStep!=="bloqueada"&&STEPS.filter(s=>s.id!==currentStep).map(step=>(
+                            <AsyncButton key={step.id}
+                              onClick={()=>publicSetEstado(t._id, step.estado, step.progresoLabel)}
+                              style={{fontSize:12,padding:"8px 14px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,display:"flex",alignItems:"center",gap:6}}>
+                              {step.icon} {step.label}
+                            </AsyncButton>
+                          ))}
+                          {currentStep==="bloqueada"&&(
+                            <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso","En proceso")}
+                              style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"#3b82f615",color:"#3b82f6",border:"1px solid #3b82f640",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                              🔄 Retomé el trabajo
+                            </AsyncButton>
+                          )}
+                          {/* Botón Bloqueado */}
+                          {currentStep!=="bloqueada"&&(
+                            <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:!p[t._id]}))}
+                              style={{fontSize:12,padding:"8px 14px",borderRadius:8,border:"1px solid #ef444440",background:"#ef444410",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
+                              🚫 Estoy bloqueado
+                            </button>
+                          )}
+                        </div>
+                        {/* Bloqueado — texto obligatorio */}
+                        {showBloqueo[t._id]&&currentStep!=="bloqueada"&&(
+                          <div style={{marginTop:8,background:"#ef444410",borderRadius:10,padding:"12px",border:"1px solid #ef444430"}}>
+                            <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:0.7}}>(el equipo va a ver esto)</span></div>
+                            <textarea value={bloqueoMotivo[t._id]||""} onChange={e=>setBloqueoMotivo(p=>({...p,[t._id]:e.target.value}))}
+                              placeholder="Ej: No tengo acceso al Drive, falta el logo en alta resolución..."
+                              style={{...iS,fontSize:12,width:"100%",minHeight:55,resize:"none",marginBottom:8,borderColor:"#ef444444"}}/>
+                            <div style={{display:"flex",gap:7}}>
+                              <AsyncButton onClick={async()=>{
+                                const motivo=(bloqueoMotivo[t._id]||"").trim();
+                                if(!motivo)return appAlert("Contanos qué te está frenando para poder ayudarte.");
+                                await publicSetEstado(t._id,"bloqueada","",motivo);
+                                setShowBloqueo(p=>({...p,[t._id]:false}));
+                              }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:"#ef4444",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                                Avisar al equipo
+                              </AsyncButton>
+                              <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:false}))} style={{fontSize:12,padding:"7px 12px",borderRadius:8,background:"transparent",color:T.textMd,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                            </div>
+                          </div>
+                        )}
+                        {/* Estado bloqueado activo */}
+                        {currentStep==="bloqueada"&&(
+                          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#ef444412",borderRadius:10,border:"1px solid #ef444430"}}>
+                            <span style={{fontSize:18}}>🚫</span>
+                            <div style={{flex:1,fontSize:12,color:"#ef4444",fontWeight:600}}>Bloqueado — el equipo ya fue notificado</div>
+                          </div>
+                        )}
+                        {/* Mensaje al equipo */}
                         <div style={{marginTop:10}}>
                           <button onClick={()=>setShowProgress(p=>({...p,[t._id]:!p[t._id]}))}
-                            style={{fontSize:12,color:T.textMd,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted"}}>
+                            style={{fontSize:12,color:T.textSm,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted"}}>
                             {showProgress[t._id]?"Cerrar":"💬 Mandar un mensaje al equipo"}
                           </button>
                           {showProgress[t._id]&&(
