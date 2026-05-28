@@ -198,11 +198,13 @@ function DSEmpty({T, icon="📭", title, subtitle, action}) {
   );
 }
 
-// ─── Org Switcher (multi-org Fase 1) ───
-// Chip clickable abajo del sidebar que abre un popover para cambiar entre las
-// organizaciones del user. Si el user tiene 1 sola org, el switcher se ve igual
-// y el popover solo muestra "+ Nueva (próximamente)" — F2 implementa la creación.
-function OrgSwitcher({T, orgs, activeOrgId, onSwitchOrg, collapsed}) {
+// ─── Org Switcher (multi-org F1+F2) ───
+// Chip estilo "workspace switcher" estilo Shopify/Linear:
+// - Pill abajo del sidebar con avatar del user + icono+nombre de la org activa + ▾
+// - Popover arriba muestra: card de la org activa (con Gestionar), lista de otras
+//   orgs o empty state "No hay otras organizaciones", botón "+ Crear organización"
+// - Plan gate: free/starter/pro → máx 2 orgs; total → ilimitado
+function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenCreateOrg, onOpenManageOrg, collapsed}) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
   React.useEffect(()=>{
@@ -219,6 +221,17 @@ function OrgSwitcher({T, orgs, activeOrgId, onSwitchOrg, collapsed}) {
 
   if (!Array.isArray(orgs) || orgs.length === 0) return null;
   const active = orgs.find(o => o.id === activeOrgId) || orgs[0];
+  const others = orgs.filter(o => o.id !== active.id);
+  const planAllowsMore = userPlan === "total" || orgs.length < 2;
+  const initialOf = (name) => (name||"?").trim().charAt(0).toUpperCase() || "?";
+  const userInitial = (user?.displayName||user?.email||"?").trim().charAt(0).toUpperCase();
+
+  // Avatar de la org: cuadrado redondeado con la inicial sobre color de la org
+  const OrgAvatar = ({org, size=22}) => (
+    <span style={{width:size,height:size,borderRadius:Math.max(4, size/4.5),background:org.color||T.accent,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:Math.round(size*0.5),flexShrink:0,letterSpacing:0.3,boxShadow:"inset 0 -1px 0 rgba(0,0,0,0.15)"}}>
+      {initialOf(org.name)}
+    </span>
+  );
 
   return (
     <div ref={ref} style={{position:"relative",padding:`${DS.sp.xs}px ${DS.sp.sm}px 0`}}>
@@ -227,11 +240,16 @@ function OrgSwitcher({T, orgs, activeOrgId, onSwitchOrg, collapsed}) {
         title={collapsed?`Organización: ${active.name}`:undefined}
         style={{
           width:"100%",display:"flex",alignItems:"center",gap:DS.sp.sm,
-          padding:collapsed?"8px 6px":"8px 10px",
+          padding:collapsed?"6px":"7px 10px",
           background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.md,
           color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",
         }}>
-        <span style={{width:14,height:14,borderRadius:DS.r.full,background:active.color||T.accent,flexShrink:0,boxShadow:`0 0 0 2px ${T.bg}, 0 0 0 3px ${T.border}`}}/>
+        {/* avatar user (chiquito) */}
+        {user?.photoURL
+          ? <img src={user.photoURL} alt="" style={{width:18,height:18,borderRadius:DS.r.full,flexShrink:0,border:`1px solid ${T.border}`}}/>
+          : <span style={{width:18,height:18,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:10,flexShrink:0}}>{userInitial}</span>
+        }
+        <OrgAvatar org={active} size={20}/>
         {!collapsed && (
           <>
             <span style={{flex:1,minWidth:0,fontSize:DS.font.md,fontWeight:DS.w.semibold,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"left"}}>{active.name}</span>
@@ -240,27 +258,192 @@ function OrgSwitcher({T, orgs, activeOrgId, onSwitchOrg, collapsed}) {
         )}
       </button>
       {open && (
-        <div style={{position:"absolute",bottom:"calc(100% + 4px)",left:DS.sp.sm,right:DS.sp.sm,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:DS.sp.xs,zIndex:50,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
-          <div style={{fontSize:DS.font.xs,color:T.textSm,padding:`${DS.sp.xs}px ${DS.sp.sm}px`,textTransform:"uppercase",fontWeight:DS.w.bold,letterSpacing:0.5}}>Organizaciones</div>
-          {orgs.map(org => (
-            <button key={org.id}
-              onClick={()=>{ if(org.id !== activeOrgId) onSwitchOrg(org.id); setOpen(false); }}
-              style={{display:"flex",alignItems:"center",gap:DS.sp.sm,width:"100%",padding:"7px 10px",border:"none",background:org.id===activeOrgId?T.bg:"transparent",borderRadius:DS.r.md,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-              <span style={{width:12,height:12,borderRadius:DS.r.full,background:org.color||T.accent,flexShrink:0}}/>
-              <span style={{flex:1,minWidth:0,fontSize:DS.font.md,fontWeight:DS.w.medium,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"left"}}>{org.name}</span>
-              {org.id===activeOrgId && <span style={{fontSize:DS.font.sm,color:T.accent}}>✓</span>}
+        <div style={{position:"absolute",bottom:"calc(100% + 6px)",left:DS.sp.sm,right:DS.sp.sm,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:DS.sp.xs,zIndex:50,boxShadow:"0 10px 30px rgba(0,0,0,0.5)",minWidth:260}}>
+          {/* Card de la org activa con Gestionar */}
+          <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,padding:`${DS.sp.sm}px ${DS.sp.sm}px`,background:T.bg,borderRadius:DS.r.md,marginBottom:DS.sp.xs}}>
+            <OrgAvatar org={active} size={34}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{active.name}</div>
+              <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1}}>Admin</div>
+            </div>
+            <button onClick={()=>{ setOpen(false); onOpenManageOrg(active.id); }} title="Gestionar organización" style={{display:"flex",alignItems:"center",gap:5,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textMd,padding:"6px 10px",fontSize:DS.font.sm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+              Gestionar
             </button>
-          ))}
-          <div style={{borderTop:`1px solid ${T.border}`,marginTop:DS.sp.xs,paddingTop:DS.sp.xs,padding:"7px 10px",fontSize:DS.font.xs,color:T.textSm,fontStyle:"italic"}}>
-            + Nueva organización (próximamente)
           </div>
+
+          {/* Otras orgs — empty state estilo screenshot */}
+          {others.length === 0 ? (
+            <div style={{padding:"22px 14px",textAlign:"center",background:T.bg,borderRadius:DS.r.md,marginBottom:DS.sp.xs}}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{color:T.textSm,marginBottom:6,opacity:0.7}}>
+                <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/>
+              </svg>
+              <div style={{fontSize:DS.font.sm,color:T.textSm}}>No hay otras organizaciones</div>
+            </div>
+          ) : (
+            <div style={{marginBottom:DS.sp.xs}}>
+              {others.map(org => (
+                <button key={org.id}
+                  onClick={()=>{ onSwitchOrg(org.id); setOpen(false); }}
+                  style={{display:"flex",alignItems:"center",gap:DS.sp.sm,width:"100%",padding:"8px 10px",border:"none",background:"transparent",borderRadius:DS.r.md,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}
+                  onMouseEnter={e=>{e.currentTarget.style.background=T.bg;}}
+                  onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                  <OrgAvatar org={org} size={26}/>
+                  <span style={{flex:1,minWidth:0,fontSize:DS.font.md,fontWeight:DS.w.medium,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"left"}}>{org.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Crear organización */}
+          <button
+            onClick={()=>{ setOpen(false); onOpenCreateOrg(); }}
+            disabled={!planAllowsMore}
+            title={planAllowsMore?"Crear nueva organización":"Tu plan permite hasta 2 organizaciones. Pasate a Total para más."}
+            style={{display:"flex",alignItems:"center",gap:DS.sp.sm,width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,background:planAllowsMore?T.bg:"transparent",borderRadius:DS.r.md,cursor:planAllowsMore?"pointer":"not-allowed",color:planAllowsMore?T.text:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",opacity:planAllowsMore?1:0.65}}>
+            <span style={{width:26,height:26,borderRadius:DS.r.md,background:planAllowsMore?T.accentSolid+"22":"transparent",border:planAllowsMore?"none":`1px dashed ${T.border}`,color:planAllowsMore?T.accent:T.textSm,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:DS.w.bold,flexShrink:0,lineHeight:1}}>+</span>
+            <span style={{flex:1,fontSize:DS.font.md,fontWeight:DS.w.semibold,textAlign:"left"}}>Crear organización</span>
+            {!planAllowsMore && <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.accent+"22",color:T.accent,fontWeight:DS.w.bold,letterSpacing:0.3,textTransform:"uppercase"}}>Total</span>}
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}}) {
+// ─── Modal "Crear organización" (F2) ───
+function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
+  const [name, setName] = React.useState("");
+  const [color, setColor] = React.useState("#7c3aed");
+  const [saving, setSaving] = React.useState(false);
+  const COLORS = ["#7c3aed","#ec4899","#f97316","#eab308","#22c55e","#06b6d4","#3b82f6","#ef4444"];
+  const overLimit = userPlan !== "total" && existingCount >= 2;
+
+  async function handleSave() {
+    if (!name.trim()) return;
+    if (overLimit) return;
+    setSaving(true);
+    const ok = await onCreate({ name: name.trim(), color });
+    setSaving(false);
+    if (ok) onClose();
+  }
+
+  return ReactDOM.createPortal(
+    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onClose()}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div>
+            <div style={{fontSize:17,fontWeight:700,color:T.text}}>Nueva organización</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Vas a empezar de cero — vas a conectar TN/Shopify/ML/Meta y ARCA después.</div>
+          </div>
+          <button onClick={onClose} disabled={saving} style={{background:"transparent",border:"none",color:T.textMd,cursor:saving?"wait":"pointer",fontSize:18,padding:4}}>✕</button>
+        </div>
+
+        {overLimit ? (
+          <div style={{padding:"18px 16px",background:T.yellowBg||T.bg,border:`1px solid ${T.yellow||T.border}55`,borderRadius:12,marginBottom:14}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>🔒 Llegaste al límite de tu plan</div>
+            <div style={{fontSize:12,color:T.textMd,lineHeight:1.5}}>Tu plan permite hasta 2 organizaciones. Para tener más, pasate al plan <strong>Total</strong>.</div>
+          </div>
+        ) : (
+          <>
+            <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5}}>Nombre</label>
+            <input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder='Ej. "Inditropic" o "Soluna"'
+              maxLength={40}
+              style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",marginBottom:16}}/>
+
+            <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Color</label>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              {COLORS.map(c => (
+                <button key={c} onClick={()=>setColor(c)} title={c}
+                  style={{width:32,height:32,borderRadius:8,background:c,border:color===c?`2px solid ${T.text}`:`2px solid transparent`,cursor:"pointer",padding:0,outline:"none"}}/>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div style={{display:"flex",gap:8,marginTop:18}}>
+          <button onClick={onClose} disabled={saving} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:10,background:"transparent",color:T.textMd,cursor:saving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+          {overLimit
+            ? <button onClick={()=>{ window.location.hash="#/planes"; onClose(); }} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver planes</button>
+            : <button onClick={handleSave} disabled={saving||!name.trim()} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:saving||!name.trim()?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:saving||!name.trim()?0.6:1}}>{saving?"Creando...":"Crear y entrar"}</button>
+          }
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Modal "Gestionar organización" (F2) ───
+function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
+  const [name, setName] = React.useState(org.name||"");
+  const [color, setColor] = React.useState(org.color||"#7c3aed");
+  const [saving, setSaving] = React.useState(false);
+  const [confirmDel, setConfirmDel] = React.useState(false);
+  const COLORS = ["#7c3aed","#ec4899","#f97316","#eab308","#22c55e","#06b6d4","#3b82f6","#ef4444"];
+  const canDelete = totalOrgs > 1; // no se puede borrar la única org
+
+  async function handleSave() {
+    if (!name.trim()) return;
+    setSaving(true);
+    const ok = await onSave({ ...org, name: name.trim(), color, updated_at: new Date().toISOString() });
+    setSaving(false);
+    if (ok) onClose();
+  }
+  async function handleDelete() {
+    setSaving(true);
+    const ok = await onDelete(org.id);
+    setSaving(false);
+    if (ok) onClose();
+  }
+
+  return ReactDOM.createPortal(
+    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onClose()}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div style={{fontSize:17,fontWeight:700,color:T.text}}>Gestionar organización</div>
+          <button onClick={onClose} disabled={saving} style={{background:"transparent",border:"none",color:T.textMd,cursor:saving?"wait":"pointer",fontSize:18,padding:4}}>✕</button>
+        </div>
+
+        <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5}}>Nombre</label>
+        <input value={name} onChange={e=>setName(e.target.value)} maxLength={40}
+          style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",marginBottom:16}}/>
+
+        <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Color</label>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+          {COLORS.map(c => (
+            <button key={c} onClick={()=>setColor(c)} title={c}
+              style={{width:32,height:32,borderRadius:8,background:c,border:color===c?`2px solid ${T.text}`:`2px solid transparent`,cursor:"pointer",padding:0}}/>
+          ))}
+        </div>
+
+        {canDelete && (
+          <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:8}}>
+            {!confirmDel ? (
+              <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{background:"transparent",border:`1px solid ${T.red}44`,color:T.red,borderRadius:10,padding:"8px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🗑 Borrar esta organización</button>
+            ) : (
+              <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px"}}>
+                <div style={{fontSize:12,color:T.text,fontWeight:600,marginBottom:8}}>¿Borrar "{org.name}"? Se pierden las integraciones de esa org. Esta acción no se puede deshacer.</div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>setConfirmDel(false)} disabled={saving} style={{flex:1,padding:"7px",fontSize:11,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                  <button onClick={handleDelete} disabled={saving} style={{flex:1,padding:"7px",fontSize:11,fontWeight:700,border:"none",borderRadius:8,background:T.red,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{saving?"Borrando...":"Sí, borrar"}</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:8,marginTop:18}}>
+          <button onClick={onClose} disabled={saving} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:10,background:"transparent",color:T.textMd,cursor:saving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving||!name.trim()} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:saving||!name.trim()?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:saving||!name.trim()?0.6:1}}>{saving?"Guardando...":"Guardar"}</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}}) {
   const GROUPS = [
     { group:"OPERACIONES" },
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
@@ -279,7 +462,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
-      subs:[{id:"pendientes",label:"Pendientes"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
+      subs:[{id:"metricas",label:"Métricas"},{id:"pendientes",label:"Pendientes"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
   ];
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
   const W = collapsed ? 64 : 224;
@@ -402,7 +585,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
       </nav>
 
       {/* Org Switcher (multi-org F1) — encima del User Section */}
-      <OrgSwitcher T={T} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} collapsed={collapsed}/>
+      <OrgSwitcher T={T} user={user} userPlan={userPlan} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={onOpenCreateOrg} onOpenManageOrg={onOpenManageOrg} collapsed={collapsed}/>
 
       {/* User Section */}
       <div style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm,marginTop:DS.sp.sm}}>
@@ -11110,8 +11293,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               )}
             </div>
 
-            {/* Navegador de meses del dashboard — sólo tab Pendientes */}
-            <div style={{display:(!sidebarTab||sidebarTab==="pendientes")?"flex":"none",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
+            {/* Navegador de meses del dashboard — vive en la subsección Métricas */}
+            <div style={{display:sidebarTab==="metricas"?"flex":"none",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
               <button onClick={()=>navMes(-1)} style={{background:"transparent",border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"6px 12px",fontSize:14,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>←</button>
               <div style={{flex:1,textAlign:"center"}}>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Mes en vista</div>
@@ -11120,8 +11303,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <button onClick={()=>navMes(1)} disabled={esMesActualReal} style={{background:"transparent",border:"1px solid "+T.border,color:esMesActualReal?T.textSm:T.text,borderRadius:8,padding:"6px 12px",fontSize:14,cursor:esMesActualReal?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:esMesActualReal?0.4:1}}>→</button>
             </div>
 
-            {/* Dashboard del mes — sólo tab Pendientes */}
-            <div style={{display:(!sidebarTab||sidebarTab==="pendientes")?"grid":"none",gridTemplateColumns: esRI ? "1fr 1fr 1fr" : "1fr 1fr",gap:14,marginBottom:24}}>
+            {/* Dashboard del mes — vive en la subsección Métricas (primera del sidenav) */}
+            <div style={{display:sidebarTab==="metricas"?"grid":"none",gridTemplateColumns: esRI ? "1fr 1fr 1fr" : "1fr 1fr",gap:14,marginBottom:24}}>
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
                 <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Monto facturado · {mesActual}</div>
                 <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>
@@ -12784,6 +12967,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [libLoading,setLibLoading]=useState(false);
   const [libQuery,setLibQuery]=useState("");
   const [libSort,setLibSort]=useState("spend"); // spend | roas | recent
+  const [libFilterStatus,setLibFilterStatus]=useState("all"); // all | active | paused
+  const [inlinePlayingId,setInlinePlayingId]=useState(null); // ad.id que está reproduciendo inline
   const [libSince,setLibSince]=useState(()=>new Date(Date.now()-7*86400000).toISOString().slice(0,10));
   const [libUntil,setLibUntil]=useState(()=>new Date().toISOString().slice(0,10));
   const [analyzingId,setAnalyzingId]=useState(null);
@@ -14444,6 +14629,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <DateRangePicker T={T} since={libSince} until={libUntil} onChange={(s,u)=>{setLibSince(s);setLibUntil(u);}}/>
                     <span style={{flex:1}}/>
                     <input type="text" placeholder="🔍 Buscar…" value={libQuery} onChange={e=>setLibQuery(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,minWidth:160,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <select value={libFilterStatus} onChange={e=>setLibFilterStatus(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
+                      <option value="all">Todos los estados</option>
+                      <option value="active">Solo activos</option>
+                      <option value="paused">Solo pausados</option>
+                    </select>
                     <select value={libSort} onChange={e=>setLibSort(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
                       <option value="spend">Más gasto</option>
                       <option value="roas">Mejor ROAS</option>
@@ -14463,6 +14653,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                 ) : (() => {
                   let filtered = libAds;
+                  if (libFilterStatus === "active") filtered = filtered.filter(a => a.effective_status === "ACTIVE");
+                  if (libFilterStatus === "paused") filtered = filtered.filter(a => a.effective_status !== "ACTIVE");
                   if (libQuery.trim()) {
                     const q = libQuery.trim().toLowerCase();
                     filtered = filtered.filter(a => (a.name||"").toLowerCase().includes(q) || (a.creative_body||"").toLowerCase().includes(q) || (a.creative_title||"").toLowerCase().includes(q));
@@ -14515,22 +14707,58 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const previewImage = ad.creative_image_hd || ad.creative_thumbnail;
                         return (
                           <div key={ad.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-                            {/* Preview: imagen/poster en HD, click abre modal con video grande */}
-                            <div onClick={()=>setPreviewingAd(ad)} style={{width:"100%",aspectRatio:"1/1",background:"#000",position:"relative",overflow:"hidden",cursor:"pointer"}}>
-                              {previewImage
-                                ? <img src={previewImage} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
-                                : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>{hasVideo?"🎬":"🖼️"}</div>
-                              }
-                              {/* Play button overlay para videos */}
-                              {hasVideo && (
-                                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
-                                  <div style={{width:60,height:60,borderRadius:"50%",background:"rgba(0,0,0,0.55)",border:"2px solid rgba(255,255,255,0.9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,color:"#fff",paddingLeft:4,backdropFilter:"blur(2px)"}}>▶</div>
-                                </div>
+                            {/* Preview: imagen/poster, click ▶ reproduce video INLINE (no modal) — estilo gethooked.
+                                Si no es video → click abre el modal HD para zoom en imagen.
+                                Cascada de fallback para video: <video src> → embed_html → iframe permalink. */}
+                            <div style={{width:"100%",aspectRatio:"1/1",background:"#000",position:"relative",overflow:"hidden",cursor:hasVideo?"default":"pointer"}}
+                                 onClick={()=>{ if(!hasVideo) setPreviewingAd(ad); }}>
+                              {inlinePlayingId === ad.id && hasVideo ? (
+                                ad.creative_video_url ? (
+                                  <video src={ad.creative_video_url} controls autoPlay playsInline style={{width:"100%",height:"100%",objectFit:"cover",background:"#000"}}/>
+                                ) : (ad.creative_video_embed_html && ad.creative_video_embeddable !== false) ? (
+                                  <div style={{width:"100%",height:"100%"}} dangerouslySetInnerHTML={{__html: ad.creative_video_embed_html}}/>
+                                ) : ad.creative_permalink ? (
+                                  <iframe title={`preview-${ad.id}`}
+                                    src={`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(ad.creative_permalink)}&show_text=false&autoplay=true&width=560&t=0`}
+                                    width="100%" height="100%"
+                                    style={{border:"none",background:"#000"}}
+                                    scrolling="no" frameBorder="0" allowFullScreen
+                                    allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"/>
+                                ) : (
+                                  <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:T.textSm,padding:20,textAlign:"center"}}>Video no disponible</div>
+                                )
+                              ) : previewImage ? (
+                                <img src={previewImage} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
+                              ) : (
+                                <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>{hasVideo?"🎬":"🖼️"}</div>
                               )}
+
+                              {/* Play button overlay (click → reproducir inline) */}
+                              {hasVideo && inlinePlayingId !== ad.id && (
+                                <button onClick={e=>{e.stopPropagation();setInlinePlayingId(ad.id);}} title="Reproducir"
+                                  style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",border:"none",cursor:"pointer",padding:0}}>
+                                  <div style={{width:60,height:60,borderRadius:"50%",background:"rgba(0,0,0,0.55)",border:"2px solid rgba(255,255,255,0.9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,color:"#fff",paddingLeft:4,backdropFilter:"blur(2px)"}}>▶</div>
+                                </button>
+                              )}
+
+                              {/* Botón expandir (zoom modal HD) — esquina inferior derecha, sólo cuando NO reproduce inline */}
+                              {inlinePlayingId !== ad.id && (
+                                <button onClick={e=>{e.stopPropagation();setPreviewingAd(ad);}} title="Ver en grande"
+                                  style={{position:"absolute",bottom:8,right:8,width:28,height:28,borderRadius:6,background:"rgba(0,0,0,0.6)",color:"#fff",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3}}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                </button>
+                              )}
+
+                              {/* Cerrar inline (cuando reproduce) — esquina inferior derecha */}
+                              {inlinePlayingId === ad.id && (
+                                <button onClick={e=>{e.stopPropagation();setInlinePlayingId(null);}} title="Cerrar video"
+                                  style={{position:"absolute",bottom:8,right:8,width:28,height:28,borderRadius:6,background:"rgba(0,0,0,0.65)",color:"#fff",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3,fontSize:14,fontWeight:700}}>✕</button>
+                              )}
+
                               <span style={{position:"absolute",top:8,right:8,fontSize:10,padding:"3px 8px",borderRadius:5,background:isActive?T.green:T.red,color:"#fff",fontWeight:700,letterSpacing:0.3,zIndex:2,pointerEvents:"none"}}>
                                 {isActive ? "ACTIVO" : (ad.effective_status||"PAUSADO")}
                               </span>
-                              {hasVideo && (
+                              {hasVideo && inlinePlayingId !== ad.id && (
                                 <span style={{position:"absolute",top:8,left:8,fontSize:9,padding:"2px 7px",borderRadius:4,background:"rgba(0,0,0,0.6)",color:"#fff",fontWeight:600,zIndex:2,pointerEvents:"none"}}>VIDEO</span>
                               )}
                             </div>
@@ -17876,7 +18104,7 @@ export default function App() {
   const [reclamosView,setReclamosView]=useState("reclamos");
   const [metaTab,setMetaTab]=useState("productos");
   const [stockTab,setStockTab]=useState("analisis");
-  const [arcaTab,setArcaTab]=useState("pendientes");
+  const [arcaTab,setArcaTab]=useState("metricas");
   const [tareasTab,setTareasTab]=useState("kanban");
   const [canjesTab,setCanjesTab]=useState("activos");
   const [cmdOpen,setCmdOpen]=useState(false);
@@ -18139,6 +18367,66 @@ export default function App() {
     }
   },[user?.uid]);
 
+  // Multi-org F2: modales de Crear y Gestionar
+  const [createOrgOpen, setCreateOrgOpen] = useState(false);
+  const [manageOrgId, setManageOrgId] = useState(null);
+
+  const onCreateOrg = React.useCallback(async ({name, color}) => {
+    if (!user) return false;
+    if (!name?.trim()) return false;
+    if (userPlan !== "total" && orgs.length >= 2) return false;
+    const newOrg = {
+      id: "org_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,7),
+      name: name.trim(),
+      color: color || "#7c3aed",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      // arranca en 0 — sin integraciones; el user las conecta desde Config
+      stores: [],
+      cuits: [],
+      meta_active_account: null,
+      brand_context: "",
+      alertas: {recordatorio:true,sinrespuesta:true,contenido:true},
+    };
+    try {
+      await updateDoc(doc(db,"users",user.uid),{
+        orgs: [...orgs, newOrg],
+        active_org_id: newOrg.id,
+      });
+      return true;
+    } catch (e) {
+      console.error("[multi-org] crear org falló:", e?.message);
+      return false;
+    }
+  },[user?.uid, userPlan, orgs]);
+
+  const onSaveOrg = React.useCallback(async (orgPatch) => {
+    if (!user || !orgPatch?.id) return false;
+    try {
+      const updated = orgs.map(o => o.id === orgPatch.id ? {...o, ...orgPatch} : o);
+      await updateDoc(doc(db,"users",user.uid),{ orgs: updated });
+      return true;
+    } catch (e) {
+      console.error("[multi-org] guardar org falló:", e?.message);
+      return false;
+    }
+  },[user?.uid, orgs]);
+
+  const onDeleteOrg = React.useCallback(async (orgId) => {
+    if (!user || !orgId) return false;
+    if (orgs.length <= 1) return false; // no borrar la única
+    try {
+      const filtered = orgs.filter(o => o.id !== orgId);
+      const patch = { orgs: filtered };
+      if (activeOrgId === orgId) patch.active_org_id = filtered[0].id;
+      await updateDoc(doc(db,"users",user.uid),patch);
+      return true;
+    } catch (e) {
+      console.error("[multi-org] borrar org falló:", e?.message);
+      return false;
+    }
+  },[user?.uid, orgs, activeOrgId]);
+
   useEffect(()=>{
     if(!user) return;
     const q1=query(collection(db,"reclamos"),where("ownerId","==",user.uid));
@@ -18265,7 +18553,10 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)}/>
+      {/* Multi-org F2 modals */}
+      {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
+      {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}
         <div style={{flex:1,minWidth:0,paddingBottom:"68px"}} className="main-content">
           {/* Mini topbar global con Cmd+K hint */}
           <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:DS.sp.md,height:48}}>
