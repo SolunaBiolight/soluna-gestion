@@ -7387,6 +7387,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [iConcepto, setIConcepto] = useState(""); const [iPersona, setIPersona] = useState("General"); const [iEtapa, setIEtapa] = useState("TOF"); const [iPrioridad, setIPrioridad] = useState("media"); const [iEditor, setIEditor] = useState(""); const [iNotas, setINotas] = useState("");
   // Nuevo editor
   const [nuevoEditor, setNuevoEditor] = useState("");
+  // ── WORKSPACE BOARD ──
+  const dragRef = useRef({id:null, fromCol:null});
+  const [dragOverCol, setDragOverCol] = useState(null);
+  const [prodView, setProdView] = useState("tabla"); // tabla | tablero
+  const [creativoDetail, setCreativoDetail] = useState(null);
+  const [creativoCommentText, setCreativoCommentText] = useState({});
+  const [showColabPermisos, setShowColabPermisos] = useState({});
 
   async function tareasApi(body) {
     const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
@@ -7598,6 +7605,28 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   function editorPortalLink(editorNombre){ const tok=produccion.editorTokens?.[editorNombre]; return tok?`${window.location.origin}/#/editor-produccion/${tok}`:null; }
   // Export CSV
   function exportCreativosCSV(creativos){ const LABELS={idea:"Idea","brief-enviado":"Brief enviado","en-produccion":"En producción",entregado:"Entregado",publicado:"Publicado",archivado:"Archivado"}; const headers=["Código","Tanda","Ángulo","Tipo","Persona","Etapa","Editor","Estado","Pagado","ROAS","CPA","Performance","Notas"]; const rows=[headers,...creativos.map(c=>{const tanda=produccion.tandas.find(t=>t.id===c.tanda_id)?.nombre||"";return[c.codigo,tanda,c.angulo,c.tipo,c.persona,c.etapa,c.editor||"",LABELS[c.estado]||c.estado,c.pagado?"Sí":"No",c.roas!=null?c.roas:"",c.cpa!=null?c.cpa:"",c.performance||"",c.notas||""];})]; const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n"); const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a");a.href=url;a.download=`creativos-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url); toast("CSV exportado ✓","success"); }
+
+  // ── FUNCIONES WORKSPACE ──
+  async function quickUpdateTareaEstado(tareaId, estado) {
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado}:t)}));
+    try { await tareasApi({action:"quickUpdateTareaEstado",tareaId,estado}); }
+    catch(e){ loadData(); toast("Error al mover la tarea","error"); }
+  }
+  async function addCreativoComment(creativoId) {
+    const texto=(creativoCommentText[creativoId]||"").trim();
+    if(!texto) return;
+    const d=await tareasApi({action:"addCreativoComment",creativoId,texto});
+    setProduccion(prev=>({...prev,creativos:prev.creativos.map(c=>c.id===creativoId?{...c,comentarios:[...(c.comentarios||[]),d.comment]}:c)}));
+    if(creativoDetail?.id===creativoId) setCreativoDetail(prev=>({...prev,comentarios:[...(prev.comentarios||[]),d.comment]}));
+    setCreativoCommentText(prev=>({...prev,[creativoId]:""}));
+  }
+  async function updateColabPermisos(colabId, key, value) {
+    const colab=colaboradores.find(c=>c._id===colabId);
+    const newPermisos={...(colab?.permisos||{}),[key]:value};
+    setDatos(prev=>({...prev,colaboradores:prev.colaboradores.map(c=>c._id===colabId?{...c,permisos:newPermisos}:c)}));
+    try { await tareasApi({action:"updateColaboradorPermisos",colabId,permisos:newPermisos}); }
+    catch(e){ loadData(); }
+  }
 
   // Helper para renderizar el detalle expandido de una tarea (función, no componente React)
   function renderDetalle(t) {
@@ -7909,38 +7938,53 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             {viewMode==="kanban"&&(
               <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:20,alignItems:"flex-start"}}>
                 {KANBAN_COLS.map(colKey=>{
-                  const col = ESTADOS[colKey];
-                  const colTareas = tareas.filter(t=>t.estado===colKey).sort((a,b)=>{
-                    const pa=a.prioridad==="urgente"?0:1, pb=b.prioridad==="urgente"?0:1;
+                  const col=ESTADOS[colKey];
+                  const isDragOver=dragOverCol===colKey;
+                  const colTareas=tareas.filter(t=>t.estado===colKey).sort((a,b)=>{
+                    const pa=a.prioridad==="urgente"?0:1,pb=b.prioridad==="urgente"?0:1;
                     return pa-pb||(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0);
                   });
                   return (
-                    <div key={colKey} style={{flex:"0 0 230px",minWidth:0}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,padding:"7px 10px",background:col.bg,borderRadius:8}}>
+                    <div key={colKey} style={{flex:"0 0 230px",minWidth:0}}
+                      onDragOver={e=>{e.preventDefault();setDragOverCol(colKey);}}
+                      onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverCol(null);}}
+                      onDrop={e=>{e.preventDefault();setDragOverCol(null);const id=dragRef.current.id,from=dragRef.current.fromCol;if(!id||from===colKey)return;quickUpdateTareaEstado(id,colKey);dragRef.current={id:null,fromCol:null};}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,padding:"7px 10px",background:isDragOver?col.color+"28":col.bg,borderRadius:8,border:isDragOver?`2px dashed ${col.color}60`:"2px solid transparent",transition:"all 0.15s"}}>
                         <span style={{fontSize:11,fontWeight:700,color:col.color,flex:1}}>{col.label}</span>
                         <span style={{fontSize:11,color:col.color,opacity:0.8,background:col.color+"22",padding:"1px 7px",borderRadius:20}}>{colTareas.length}</span>
                       </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,minHeight:40}}>
                         {colTareas.map(t=>{
                           const days=daysUntil(t.deadline);
                           const isUrgente=t.prioridad==="urgente";
+                          const commCount=(t.comments||[]).length;
+                          const checkDone=(t.checklist||[]).filter(i=>i.done).length;
+                          const checkTotal=(t.checklist||[]).length;
                           return (
-                            <div key={t._id} onClick={()=>setKanbanSelected(t)}
-                              style={{background:T.card,border:`1px solid ${isUrgente?T.red+"44":T.border}`,borderRadius:9,padding:"10px 12px",cursor:"pointer"}}>
-                              <div style={{display:"flex",alignItems:"flex-start",gap:5,marginBottom:5}}>
+                            <div key={t._id}
+                              draggable="true"
+                              onDragStart={()=>{dragRef.current={id:t._id,fromCol:colKey};}}
+                              onDragEnd={()=>{dragRef.current={id:null,fromCol:null};setDragOverCol(null);}}
+                              onClick={()=>setKanbanSelected(t)}
+                              style={{background:T.card,border:`1px solid ${isUrgente?T.red+"44":T.border}`,borderRadius:9,padding:"10px 12px",cursor:"grab",userSelect:"none",boxShadow:"0 1px 3px rgba(0,0,0,0.06)",transition:"box-shadow 0.15s"}}
+                              onMouseEnter={e=>e.currentTarget.style.boxShadow="0 3px 10px rgba(0,0,0,0.12)"}
+                              onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.06)"}>
+                              <div style={{display:"flex",alignItems:"flex-start",gap:5,marginBottom:6}}>
                                 {isUrgente&&<span style={{fontSize:9,color:T.red,fontWeight:800,flexShrink:0,marginTop:1}}>🔴</span>}
-                                <span style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.3}}>{t.titulo}</span>
+                                <span style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.3,flex:1}}>{t.titulo}</span>
                               </div>
                               <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-                                {t.asignadoNombre&&<span style={{fontSize:10,color:T.textSm}}>{t.asignadoNombre}</span>}
+                                {t.asignadoNombre&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 5px"}}>{t.asignadoNombre.split(" ")[0]}</span>}
                                 {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅{days!==null?(days<0?"Vencida":days===0?"Hoy":`${days}d`):"—"}</span>}
                                 {(t.correcciones||0)>0&&<span style={{fontSize:9,color:T.red,fontWeight:700}}>{t.correcciones}ª corr.</span>}
-                                {(t.deliverables||[]).length>0&&<span style={{fontSize:10,color:T.orange||"#f97316"}}>📦</span>}
+                                {(t.deliverables||[]).length>0&&<span style={{fontSize:10,color:T.orange||"#f97316"}}>📦{(t.deliverables||[]).length}</span>}
+                                {checkTotal>0&&<span style={{fontSize:10,color:T.textSm}}>✅{checkDone}/{checkTotal}</span>}
+                                {commCount>0&&<span style={{fontSize:10,color:T.textSm}}>💬{commCount}</span>}
                               </div>
                             </div>
                           );
                         })}
-                        {colTareas.length===0&&<div style={{fontSize:11,color:T.textSm,textAlign:"center",padding:"18px 0",border:`1px dashed ${T.border}`,borderRadius:8}}>—</div>}
+                        {colTareas.length===0&&<div style={{fontSize:11,color:isDragOver?col.color:T.textSm,textAlign:"center",padding:"18px 0",border:`1px dashed ${isDragOver?col.color:T.border}`,borderRadius:8,transition:"all 0.15s"}}>{isDragOver?"Soltar aquí ↓":"—"}</div>}
                       </div>
                     </div>
                   );
@@ -8048,6 +8092,37 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                             Enviar por WA
                           </a>
+                        </div>
+                        {/* Permisos */}
+                        <div style={{marginTop:10}}>
+                          <button onClick={()=>setShowColabPermisos(p=>({...p,[c._id]:!p[c._id]}))}
+                            style={{fontSize:11,color:T.textMd,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}>
+                            🔐 Permisos de acceso {showColabPermisos[c._id]?"▲":"▼"}
+                          </button>
+                          {showColabPermisos[c._id]&&(
+                            <div style={{marginTop:8,background:T.surface,borderRadius:8,padding:"10px 12px",border:`1px solid ${T.borderL}`}}>
+                              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>¿Qué puede ver en su portal?</div>
+                              {[
+                                {key:"verCreativos",label:"🎬 Ver board de Creativos",desc:"Accede al tablero de producción completo"},
+                                {key:"comentarTareas",label:"💬 Comentar en tareas",desc:"Puede dejar notas en sus tareas asignadas"},
+                              ].map(({key,label,desc})=>{
+                                const val=!!(c.permisos||{})[key];
+                                return (
+                                  <div key={key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                                    <div style={{flex:1}}>
+                                      <div style={{fontSize:12,fontWeight:500,color:T.text}}>{label}</div>
+                                      <div style={{fontSize:10,color:T.textSm}}>{desc}</div>
+                                    </div>
+                                    <button onClick={()=>updateColabPermisos(c._id,key,!val)}
+                                      title={val?"Desactivar":"Activar"}
+                                      style={{width:36,height:20,borderRadius:10,border:"none",cursor:"pointer",background:val?T.green:"#d1d5db",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
+                                      <div style={{position:"absolute",top:3,left:val?18:3,width:14,height:14,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
@@ -8256,8 +8331,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <option value="TOF">TOF</option><option value="MOF">MOF</option><option value="BOF">BOF</option>
                   </select>
                   {anyFilter&&<button onClick={()=>setProdFilter({tanda:"",editor:"",estado:"",tipo:"",etapa:""})} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red}}>✕ Limpiar filtros</button>}
-                  <span style={{marginLeft:"auto",fontSize:11,color:T.textSm}}>{filtered.length} creativo{filtered.length!==1?"s":""}</span>
-                  {filtered.length>0&&<button onClick={()=>exportCreativosCSV(filtered)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>⬇ CSV</button>}
+                  <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,color:T.textSm}}>{filtered.length} creativo{filtered.length!==1?"s":""}</span>
+                    {filtered.length>0&&<button onClick={()=>exportCreativosCSV(filtered)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>⬇ CSV</button>}
+                    <div style={{display:"flex",background:T.surface,borderRadius:6,border:`1px solid ${T.border}`,padding:2,gap:1}}>
+                      {[["tabla","☰ Tabla"],["tablero","⬛ Board"]].map(([v,ico])=>(
+                        <button key={v} onClick={()=>setProdView(v)} style={{padding:"3px 9px",borderRadius:4,fontSize:11,fontWeight:600,border:"none",background:prodView===v?T.card:"transparent",color:prodView===v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodView===v?"0 1px 2px rgba(0,0,0,0.1)":"none",whiteSpace:"nowrap"}}>{ico}</button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 {filtered.length===0&&(
                   <div style={{textAlign:"center",padding:"48px 0",color:T.textSm,background:T.surface,borderRadius:12,border:`1px dashed ${T.border}`}}>
@@ -8267,7 +8349,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {produccion.creativos.length>0&&anyFilter&&<button onClick={()=>setProdFilter({tanda:"",editor:"",estado:"",tipo:"",etapa:""})} style={{...BtnSecondary(T),margin:"12px auto 0"}}>Limpiar filtros</button>}
                   </div>
                 )}
-                {filtered.length>0&&(
+                {filtered.length>0&&prodView==="tabla"&&(
                   <div style={{overflowX:"auto",borderRadius:12,border:`1px solid ${T.border}`}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:680}}>
                       <thead>
@@ -8284,8 +8366,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           return (
                             <tr key={c.id} style={{background:i%2===0?T.card:T.surface,borderBottom:`1px solid ${T.borderL}`}}>
                               <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
-                                <span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}30`,borderRadius:5,padding:"2px 7px"}}>{c.codigo}</span>
+                                <button onClick={()=>setCreativoDetail(c)} style={{background:"none",border:"none",cursor:"pointer",padding:0,textAlign:"left"}}>
+                                  <span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}30`,borderRadius:5,padding:"2px 7px"}}>{c.codigo}</span>
+                                </button>
                                 {tanda&&<div style={{fontSize:9,color:T.textSm,marginTop:2,maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tanda.nombre}</div>}
+                                {(c.comentarios||[]).length>0&&<div style={{fontSize:9,color:T.textSm}}>💬 {(c.comentarios||[]).length}</div>}
                               </td>
                               <td style={{padding:"8px 10px",maxWidth:200}}>
                                 <div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text,fontWeight:500}}>{c.angulo||"—"}</div>
@@ -8312,6 +8397,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               </td>
                               <td style={{padding:"8px 8px",whiteSpace:"nowrap"}}>
                                 <div style={{display:"flex",gap:4}}>
+                                  <button onClick={()=>setCreativoDetail(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>💬</button>
                                   <button onClick={()=>openCreativo(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>✏️</button>
                                   <AsyncButton onClick={()=>deleteCreativoProd(c.id)} style={{...BtnDanger(T),fontSize:10,padding:"3px 8px"}}>×</AsyncButton>
                                 </div>
@@ -8321,6 +8407,54 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         })}
                       </tbody>
                     </table>
+                  </div>
+                )}
+                {filtered.length>0&&prodView==="tablero"&&(
+                  <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:20,alignItems:"flex-start"}}>
+                    {Object.entries(CEST).map(([colKey,col])=>{
+                      const colCreativos=filtered.filter(c=>c.estado===colKey);
+                      const isDragOver2=dragOverCol===("c_"+colKey);
+                      return (
+                        <div key={colKey} style={{flex:"0 0 200px",minWidth:0}}
+                          onDragOver={e=>{e.preventDefault();setDragOverCol("c_"+colKey);}}
+                          onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverCol(null);}}
+                          onDrop={e=>{e.preventDefault();setDragOverCol(null);const id=dragRef.current.id,from=dragRef.current.fromCol;if(!id||from===colKey)return;updateCEstado(id,colKey);dragRef.current={id:null,fromCol:null};}}>
+                          <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:8,padding:"6px 10px",background:isDragOver2?col.c+"22":col.bg,borderRadius:8,border:isDragOver2?`2px dashed ${col.c}60`:"2px solid transparent",transition:"all 0.15s"}}>
+                            <span style={{fontSize:10,fontWeight:700,color:col.c,flex:1,textTransform:"uppercase",letterSpacing:"0.04em"}}>{col.l}</span>
+                            <span style={{fontSize:10,color:col.c,background:col.c+"25",padding:"1px 6px",borderRadius:20}}>{colCreativos.length}</span>
+                          </div>
+                          <div style={{display:"flex",flexDirection:"column",gap:6,minHeight:40}}>
+                            {colCreativos.map(c=>{
+                              const tanda2=produccion.tandas.find(t=>t.id===c.tanda_id);
+                              return (
+                                <div key={c.id}
+                                  draggable="true"
+                                  onDragStart={()=>{dragRef.current={id:c.id,fromCol:colKey};}}
+                                  onDragEnd={()=>{dragRef.current={id:null,fromCol:null};setDragOverCol(null);}}
+                                  onClick={()=>setCreativoDetail(c)}
+                                  style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:9,padding:"10px 12px",cursor:"grab",userSelect:"none",boxShadow:"0 1px 3px rgba(0,0,0,0.06)",transition:"box-shadow 0.15s"}}
+                                  onMouseEnter={e=>e.currentTarget.style.boxShadow="0 3px 10px rgba(0,0,0,0.12)"}
+                                  onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.06)"}>
+                                  <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:5}}>
+                                    <span style={{fontSize:9,fontWeight:700,color:T.accent,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}30`,borderRadius:4,padding:"1px 5px",flexShrink:0}}>{c.codigo}</span>
+                                    <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{c.tipo==="estatico"?"🖼":c.tipo==="video-ugc"?"📱":"🎬"}</span>
+                                    <span style={{fontSize:9,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:3,padding:"1px 4px",flexShrink:0}}>{c.etapa}</span>
+                                  </div>
+                                  <div style={{fontSize:11,fontWeight:500,color:T.text,lineHeight:1.3,marginBottom:6,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{c.angulo||"Sin ángulo"}</div>
+                                  <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                                    {c.editor&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 5px"}}>{c.editor}</span>}
+                                    {tanda2&&<span style={{fontSize:9,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:80}}>{tanda2.nombre}</span>}
+                                    {(c.comentarios||[]).length>0&&<span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>💬{(c.comentarios||[]).length}</span>}
+                                    {c.pagado&&<span style={{fontSize:9,color:T.green,fontWeight:600}}>✓</span>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {colCreativos.length===0&&<div style={{fontSize:11,color:isDragOver2?col.c:T.textSm,textAlign:"center",padding:"16px 0",border:`1px dashed ${isDragOver2?col.c:T.border}`,borderRadius:8,transition:"all 0.15s"}}>{isDragOver2?"Soltar aquí ↓":"—"}</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -8435,6 +8569,110 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           </div>
         </div>
       )}
+
+      {/* MODAL Detalle Creativo */}
+      {creativoDetail&&(()=>{
+        const c=produccion.creativos.find(cr=>cr.id===creativoDetail.id)||creativoDetail;
+        const tanda=produccion.tandas.find(t=>t.id===c.tanda_id);
+        const CEST2={idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},"brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blueBg},"en-produccion":{l:"En producción",c:T.orange||"#f97316",bg:(T.orangeBg||"#f9731615")},entregado:{l:"Entregado",c:T.yellow||"#d97706",bg:(T.yellowBg||"#d9770615")},publicado:{l:"Publicado",c:T.green,bg:T.greenBg},archivado:{l:"Archivado",c:T.textSm,bg:T.surface}};
+        const ce=CEST2[c.estado]||CEST2.idea;
+        const fmtC=v=>{if(!v)return"—";try{const d=v._seconds?new Date(v._seconds*1000):new Date(v);return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});}catch(e){return"—";}};
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setCreativoDetail(null);}}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
+              {/* Header */}
+              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",position:"sticky",top:0,background:T.card,zIndex:1,gap:10}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,fontWeight:700,color:T.accent,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}30`,borderRadius:5,padding:"2px 8px",flexShrink:0}}>{c.codigo}</span>
+                    <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:ce.bg,color:ce.c,fontWeight:600,flexShrink:0}}>{ce.l}</span>
+                  </div>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.3}}>{c.angulo||"Sin ángulo"}</div>
+                </div>
+                <button onClick={()=>setCreativoDetail(null)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16,flexShrink:0}}>✕</button>
+              </div>
+              <div style={{padding:"16px 18px"}}>
+                {/* Meta chips */}
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+                  <span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>{c.tipo==="estatico"?"🖼 Estático":c.tipo==="video-ugc"?"📱 Video UGC":"🎬 Video Normal"}</span>
+                  <span style={{fontSize:11,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:4,padding:"3px 8px"}}>{c.etapa}</span>
+                  <span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>{c.persona}</span>
+                  {c.editor&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>👤 {c.editor}</span>}
+                  {tanda&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"3px 8px"}}>📦 {tanda.nombre}</span>}
+                </div>
+                {/* Estado */}
+                <div style={{marginBottom:14}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Estado</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {Object.entries(CEST2).map(([k,v])=>(
+                      <button key={k} onClick={()=>{updateCEstado(c.id,k);setCreativoDetail(prev=>({...prev,estado:k}));}}
+                        style={{padding:"4px 10px",borderRadius:20,fontSize:11,border:`1px solid ${c.estado===k?v.c:T.border}`,background:c.estado===k?v.bg:"transparent",color:c.estado===k?v.c:T.textMd,cursor:"pointer",fontWeight:c.estado===k?700:400,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
+                        {v.l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Performance */}
+                {(c.campana||c.roas!=null||c.cpa!=null)&&(
+                  <div style={{marginBottom:14,background:T.surface,borderRadius:10,padding:"10px 14px"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>📊 Performance</div>
+                    <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12}}>
+                      {c.campana&&<span style={{color:T.textMd}}>📣 {c.campana}</span>}
+                      {c.roas!=null&&<span style={{color:T.green,fontWeight:600}}>ROAS: {c.roas}x</span>}
+                      {c.cpa!=null&&<span style={{color:T.blue,fontWeight:600}}>CPA: ${c.cpa}</span>}
+                      {c.performance&&c.performance!=="pendiente"&&<span style={{fontWeight:600,color:c.performance==="ganador"?T.green:T.red}}>{c.performance==="ganador"?"🏆 Ganador":"📉 Perdedor"}</span>}
+                    </div>
+                  </div>
+                )}
+                {c.notas&&(
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:5}}>Notas</div>
+                    <div style={{fontSize:13,color:T.text,lineHeight:1.5,whiteSpace:"pre-wrap",background:T.surface,borderRadius:8,padding:"10px 12px"}}>{c.notas}</div>
+                  </div>
+                )}
+                {/* Pagado toggle */}
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.surface,borderRadius:10}}>
+                  <span style={{fontSize:12,color:T.textMd,flex:1}}>💰 Pago al editor</span>
+                  <button onClick={()=>{togglePagado(c.id);setCreativoDetail(prev=>({...prev,pagado:!prev.pagado}));}}
+                    style={{width:36,height:20,borderRadius:10,border:"none",cursor:"pointer",background:c.pagado?T.green:"#d1d5db",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
+                    <div style={{position:"absolute",top:3,left:c.pagado?18:3,width:14,height:14,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
+                  </button>
+                  <span style={{fontSize:11,color:c.pagado?T.green:T.textSm,fontWeight:600}}>{c.pagado?"Pagado":"Sin cobrar"}</span>
+                </div>
+                {/* Comentarios */}
+                <div style={{marginBottom:14}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>💬 Comentarios</div>
+                  {(c.comentarios||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin comentarios aún.</div>}
+                  <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+                    {(c.comentarios||[]).map((com,i)=>(
+                      <div key={com.id||i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                        <div style={{width:24,height:24,borderRadius:"50%",background:T.accent+"25",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:T.accent,flexShrink:0}}>
+                          {com.autor==="manager"?"M":com.autor?.[0]?.toUpperCase()||"?"}
+                        </div>
+                        <div style={{flex:1,background:T.surface,borderRadius:8,padding:"7px 10px",border:`1px solid ${T.borderL}`}}>
+                          <div style={{fontSize:10,color:T.textSm,marginBottom:2}}>{com.autor==="manager"?"Vos":com.autor} · {fmtC(com.fecha)}</div>
+                          <div style={{fontSize:12,color:T.text,lineHeight:1.4}}>{com.texto}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <input value={creativoCommentText[c.id]||""} onChange={e=>setCreativoCommentText(p=>({...p,[c.id]:e.target.value}))}
+                      onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();addCreativoComment(c.id);}}}
+                      placeholder="Agregar comentario..." style={{...iS,fontSize:12,flex:1,padding:"6px 10px"}}/>
+                    <AsyncButton onClick={()=>addCreativoComment(c.id)} style={{...BtnSecondary(T),fontSize:11,padding:"6px 12px"}}>Enviar</AsyncButton>
+                  </div>
+                </div>
+                {/* Acciones */}
+                <div style={{display:"flex",gap:6,justifyContent:"flex-end",borderTop:`1px solid ${T.borderL}`,paddingTop:12}}>
+                  <button onClick={()=>{setCreativoDetail(null);openCreativo(produccion.creativos.find(cr=>cr.id===c.id)||c);}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>✏️ Editar</button>
+                  <AsyncButton onClick={async()=>{await deleteCreativoProd(c.id);setCreativoDetail(null);}} style={{...BtnDanger(T),fontSize:11,padding:"5px 12px"}}>Eliminar</AsyncButton>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL Nueva Tarea */}
       {showNT&&(
@@ -9145,7 +9383,7 @@ function ColaboradorPublicView({T, token}) {
     </div>
   );
 
-  const { colab, tareas=[] } = data;
+  const { colab, tareas=[], creativos=null, tandas=[] } = data;
   const aprobadas = tareas.filter(t=>t.estado==="aprobado");
   const totalTareas = tareas.length;
   const progressPct = totalTareas>0?Math.round(aprobadas.length/totalTareas*100):0;
@@ -9467,6 +9705,66 @@ function ColaboradorPublicView({T, token}) {
             </div>
           );
         })}
+
+        {/* ── SECCIÓN CREATIVOS (si tiene permiso) ── */}
+        {creativos&&creativos.length>=0&&(
+          <div style={{marginTop:28}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,#7c3aed22,#a78bfa15)",borderRadius:12,border:"1px solid #7c3aed30"}}>
+              <span style={{fontSize:18}}>🎬</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#7c3aed"}}>Board de Producción</div>
+                <div style={{fontSize:11,color:T.textSm}}>{creativos.length} creativo{creativos.length!==1?"s":""} en total</div>
+              </div>
+            </div>
+            {creativos.length===0&&(
+              <div style={{textAlign:"center",padding:"32px 0",color:T.textSm,fontSize:13}}>
+                <div style={{fontSize:36,marginBottom:8}}>🎬</div>
+                Sin creativos aún.
+              </div>
+            )}
+            {creativos.length>0&&(()=>{
+              const CEST_PUB={idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},"brief-enviado":{l:"Brief enviado",c:"#3b82f6",bg:"#3b82f615"},"en-produccion":{l:"En producción",c:"#f97316",bg:"#f9731615"},entregado:{l:"Entregado",c:"#d97706",bg:"#d9770615"},publicado:{l:"Publicado",c:"#22c55e",bg:"#22c55e15"},archivado:{l:"Archivado",c:"#9ca3af",bg:"#9ca3af10"}};
+              const activeGroups=Object.entries(CEST_PUB).map(([estado,meta])=>({estado,meta,items:creativos.filter(c=>c.estado===estado)})).filter(g=>g.items.length>0);
+              return (
+                <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                  {activeGroups.map(({estado,meta,items})=>(
+                    <div key={estado}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <span style={{fontSize:10,fontWeight:700,color:meta.c,background:meta.bg,borderRadius:20,padding:"3px 10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{meta.l}</span>
+                        <span style={{fontSize:11,color:T.textSm}}>{items.length}</span>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        {items.map(c=>{
+                          const tanda=tandas.find(t=>t.id===c.tanda_id);
+                          return (
+                            <div key={c.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px"}}>
+                              <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
+                                    <span style={{fontSize:10,fontWeight:700,color:"#7c3aed",background:"#7c3aed15",border:"1px solid #7c3aed30",borderRadius:4,padding:"1px 6px"}}>{c.codigo}</span>
+                                    <span style={{fontSize:10,color:T.textSm}}>{c.tipo==="estatico"?"🖼 Estático":c.tipo==="video-ugc"?"📱 UGC":"🎬 Video"}</span>
+                                    <span style={{fontSize:10,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:3,padding:"1px 5px"}}>{c.etapa}</span>
+                                  </div>
+                                  <div style={{fontSize:13,fontWeight:500,color:T.text,lineHeight:1.3,marginBottom:4}}>{c.angulo||"Sin ángulo"}</div>
+                                  <div style={{display:"flex",gap:8,flexWrap:"wrap",fontSize:11,color:T.textSm}}>
+                                    {c.persona&&<span>{c.persona}</span>}
+                                    {c.editor&&<span>· 👤 {c.editor}</span>}
+                                    {tanda&&<span>· 📦 {tanda.nombre}</span>}
+                                  </div>
+                                </div>
+                                {c.pagado&&<span style={{fontSize:11,color:"#22c55e",fontWeight:600,flexShrink:0}}>✓ Pago</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
     </div>
   );

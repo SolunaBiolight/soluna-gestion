@@ -137,7 +137,18 @@ export default async function handler(req, res) {
       const tareas = tarSnap.docs
         .map(d=>({_id:d.id,...d.data()}))
         .sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
-      return res.json({ colab, tareas });
+      let creativos = null, tandas = null;
+      if (colab.permisos?.verCreativos) {
+        try {
+          const prodSnap = await db.collection("produccion").doc(colab.uid).get();
+          if (prodSnap.exists) {
+            const prod = prodSnap.data();
+            creativos = prod.creativos || [];
+            tandas = prod.tandas || [];
+          }
+        } catch(e) { console.error("[getPublicData creativos]", e.message); }
+      }
+      return res.json({ colab, tareas, creativos, tandas });
     }
 
     if (action === "publicUpdateEstado") {
@@ -499,6 +510,39 @@ export default async function handler(req, res) {
       await db.collection("produccionTokens").doc(token).set({ uid, editorNombre, createdAt: now });
       await db.collection("produccion").doc(uid).set({ editorTokens: { [editorNombre]: token } }, { merge: true });
       return res.json({ ok: true, token });
+    }
+
+    if (action === "quickUpdateTareaEstado") {
+      const { tareaId, estado } = body;
+      if (!tareaId || !estado) return res.status(400).json({ error:"Faltan parámetros" });
+      const ref = db.collection("tareas").doc(tareaId);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
+      const act = { tipo:"estado", autor:"manager", fecha:now, detalle:`Estado: ${estado}` };
+      await ref.update({ estado, updatedAt:now, activity:[...(snap.data().activity||[]), act] });
+      return res.json({ ok:true });
+    }
+
+    if (action === "updateColaboradorPermisos") {
+      const { colabId, permisos } = body;
+      if (!colabId || !permisos) return res.status(400).json({ error:"Faltan parámetros" });
+      const snap = await db.collection("colaboradores").doc(colabId).get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
+      await db.collection("colaboradores").doc(colabId).update({ permisos });
+      return res.json({ ok:true });
+    }
+
+    if (action === "addCreativoComment") {
+      const { creativoId, texto } = body;
+      if (!creativoId || !texto?.trim()) return res.status(400).json({ error:"Faltan parámetros" });
+      const prodRef = db.collection("produccion").doc(uid);
+      const snap = await prodRef.get();
+      if (!snap.exists) return res.status(404).json({ error:"Sin data" });
+      const prod = snap.data();
+      const comment = { id:randomToken(8), texto:texto.trim(), autor:"manager", fecha:now };
+      const newCreativos = (prod.creativos||[]).map(c=>c.id===creativoId?{...c,comentarios:[...(c.comentarios||[]),comment]}:c);
+      await prodRef.update({ creativos:newCreativos, updatedAt:now });
+      return res.json({ ok:true, comment });
     }
 
     if (action === "getProduccion") {
