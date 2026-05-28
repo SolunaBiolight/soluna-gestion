@@ -8389,7 +8389,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* ── TAB CREATIVOS ── */}
       {!loading&&tab==="creativos"&&(
-        <div>
+        <div style={{width:"100%"}}>
           {/* Sub-nav */}
           <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,marginBottom:20,width:"fit-content",flexWrap:"wrap"}}>
             {[["dashboard","📊 Dashboard"],["tandas",`📦 Tandas${produccion.tandas.length?" ("+produccion.tandas.length+")":""}`],["creativos",`🎬 Creativos${produccion.creativos.length?" ("+produccion.creativos.length+")":""}`],["ideas",`💡 Ideas${produccion.ideas.length?" ("+produccion.ideas.length+")":""}`],["editores","👥 Editores"]].map(([id,label])=>(
@@ -8407,8 +8407,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             const sinCobrar=produccion.creativos.filter(c=>c.estado==="entregado"&&!c.pagado).length;
             const PEST=[["idea","💡 Idea"],["brief-enviado","📋 Brief enviado"],["en-produccion","🔄 En producción"],["entregado","📦 Entregado"],["publicado","✅ Publicado"],["archivado","🗄 Archivado"]];
             return (
-              <div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+              <div style={{width:"100%"}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20,width:"100%"}}>
                   {[{l:"Total creativos",v:total,c:T.accent,f:{}},{l:"Publicados",v:pub,c:T.green,f:{estado:"publicado"}},{l:"En producción",v:enProd,c:T.blue,f:{estado:"en-produccion"}},{l:"Sin cobrar",v:sinCobrar,c:T.red,f:{estado:"entregado"}}].map(k=>(
                     <div key={k.l} onClick={()=>{setProdTab("creativos");setProdFilter(f=>({...f,...k.f}));}} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",textAlign:"center",cursor:"pointer",transition:"box-shadow 0.15s"}} onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 14px rgba(0,0,0,0.12)"} onMouseLeave={e=>e.currentTarget.style.boxShadow=""}>
                       <div style={{fontSize:30,fontWeight:800,color:k.c,lineHeight:1,marginBottom:4}}>{k.v}</div>
@@ -8416,7 +8416,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   ))}
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,width:"100%"}}>
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
                     <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Por estado</div>
                     <div style={{display:"flex",flexDirection:"column",gap:7}}>
