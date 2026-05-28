@@ -1403,6 +1403,8 @@ export default async function handler(req, res) {
             clicks: parseInt(ins.clicks) || 0,
             ctr: parseFloat(ins.ctr) || 0,
             cpm: parseFloat(ins.cpm) || 0,
+            cpc: parseFloat(ins.cpc) || 0,
+            reach: parseInt(ins.reach) || 0,
             frequency: parseFloat(ins.frequency) || 0,
             purchases: parseInt(purchases?.value) || 0,
             purchase_value: parseFloat(purchaseValue?.value) || 0,
