@@ -14738,9 +14738,31 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>{hasVideo?"🎬":"🖼️"}</div>
                               )}
 
-                              {/* Play button overlay (click → reproducir inline) */}
+                              {/* Play button overlay (click → reproducir inline).
+                                  Si no hay source/embed_html cargado (caso por defecto post-perf),
+                                  llamamos lazy a video_source para upgradear y reproducir mejor.
+                                  Si no hay nada, igual reproducimos con permalink sintético. */}
                               {hasVideo && inlinePlayingId !== ad.id && (
-                                <button onClick={e=>{e.stopPropagation();setInlinePlayingId(ad.id);}} title="Reproducir"
+                                <button onClick={async e => {
+                                  e.stopPropagation();
+                                  setInlinePlayingId(ad.id);
+                                  // Si ya tenemos source o embed → arranca al toque (estado set arriba)
+                                  if (ad.creative_video_url || ad.creative_video_embed_html) return;
+                                  // Lazy fetch: pedimos data del video y la mergeamos en libAds[i]
+                                  if (!ad.creative_video_id || !activeAccId) return;
+                                  try {
+                                    const d = await metaApi("video_source","GET",null,{acc_id:activeAccId,video_id:ad.creative_video_id});
+                                    if (d && (d.source || d.embed_html || d.permalink)) {
+                                      setLibAds(prev => prev.map(a => a.id === ad.id ? {
+                                        ...a,
+                                        creative_video_url: d.source || a.creative_video_url,
+                                        creative_video_embed_html: d.embed_html || a.creative_video_embed_html,
+                                        creative_video_embeddable: d.embeddable !== false,
+                                        creative_permalink: d.permalink || a.creative_permalink,
+                                      } : a));
+                                    }
+                                  } catch (_) { /* permalink sintético ya alcanza */ }
+                                }} title="Reproducir"
                                   style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",border:"none",cursor:"pointer",padding:0}}>
                                   <div style={{width:60,height:60,borderRadius:"50%",background:"rgba(0,0,0,0.55)",border:"2px solid rgba(255,255,255,0.9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,color:"#fff",paddingLeft:4,backdropFilter:"blur(2px)"}}>▶</div>
                                 </button>

@@ -1319,88 +1319,35 @@ export default async function handler(req, res) {
         //   3° fallback: aunque ambos fallen, construimos un permalink sintético
         //               (facebook.com/watch/?v=VIDEO_ID) que el iframe embed sabe abrir.
         //   El front, además, elige entre <video src>, embed_html, e iframe permalink.
+        // ── Videos: NO hacemos lookup a Meta acá (era el cuello de botella +60s).
+        // Para cada video_id devolvemos un permalink sintético (facebook.com/watch/?v=<id>)
+        // que el iframe embed reproduce bien para cualquier ad video público. Si el user
+        // hace click en ▶ y queremos el MP4 directo, el front llama al endpoint nuevo
+        // ?action=video_source que sí hace el lookup (con cache permanente).
         const videoIds = [...new Set(ads.map(a => a.creative?.video_id).filter(Boolean))];
         const videoSources = {};
-
-        // ── Cache permanente de metadata de videos (videos son inmutables) ──
-        // Antes cada carga rebuscaba todos los videos desde Meta. Ahora pre-cargamos
-        // de Firestore los que ya conocemos y solo vamos a Meta por los nuevos.
-        const VIDEO_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días (un video raro vez cambia)
+        // Aprovechamos lo que ya esté cacheado en Firestore (sin hacer Meta calls).
         const videoCacheCol = db.collection("users").doc(uid).collection("meta_video_cache");
-        const unknownVideoIds = [];
         if (videoIds.length > 0) {
-          // Firestore: leemos hasta 100 en paralelo (un .get por doc — Firestore no
-          // soporta IN > 30 mezclado con TTL, así que esto es lo más simple).
-          await Promise.all(videoIds.slice(0, 100).map(async vid => {
+          await Promise.all(videoIds.slice(0, 200).map(async vid => {
             try {
               const snap = await videoCacheCol.doc(String(vid)).get();
-              if (snap.exists) {
-                const c = snap.data();
-                if (c.ts && (Date.now() - c.ts) < VIDEO_CACHE_TTL_MS && c.data) {
-                  videoSources[vid] = c.data;
-                  return;
-                }
+              if (snap.exists && snap.data()?.data) {
+                videoSources[vid] = snap.data().data;
               }
             } catch (_) {}
-            unknownVideoIds.push(vid);
+            // Si no estaba cacheado, dejamos un placeholder con permalink sintético —
+            // el front puede llamar video_source on-demand si quiere upgrade a MP4.
+            if (!videoSources[vid]) {
+              videoSources[vid] = {
+                source: null,
+                picture: null,
+                permalink: `https://www.facebook.com/watch/?v=${vid}`,
+                embed_html: null,
+                embeddable: true,
+              };
+            }
           }));
-        }
-
-        // Helper: batches secuenciales para no triggear rate-limits de Meta
-        async function inBatches(items, batchSize, fn) {
-          for (let i = 0; i < items.length; i += batchSize) {
-            const batch = items.slice(i, i + batchSize);
-            await Promise.all(batch.map(fn));
-          }
-        }
-
-        if (unknownVideoIds.length > 0) {
-          await inBatches(unknownVideoIds, 10, async vid => {
-            let v = {};
-            let thumbs = { data: [] };
-            try {
-              const [v1, t1] = await Promise.all([
-                metaGet(vid, { fields: "source,picture,permalink_url,embed_html,embeddable" }, cfg.access_token),
-                metaGet(`${vid}/thumbnails`, { fields: "uri,is_preferred,height,width", limit: 20 }, cfg.access_token).catch(() => ({ data: [] })),
-              ]);
-              v = v1 || {};
-              thumbs = t1 || { data: [] };
-            } catch (_) { /* seguimos con page token */ }
-            // Si quedó incompleto y hay page_access_token, reintentamos.
-            const needsRetry = !v.source && !v.embed_html && !v.permalink_url;
-            if (needsRetry && cfg.page_access_token) {
-              try {
-                const [v2, t2] = await Promise.all([
-                  metaGet(vid, { fields: "source,picture,permalink_url,embed_html,embeddable" }, cfg.page_access_token),
-                  metaGet(`${vid}/thumbnails`, { fields: "uri,is_preferred,height,width", limit: 20 }, cfg.page_access_token).catch(() => ({ data: [] })),
-                ]);
-                if (v2) v = { ...v, ...v2 };
-                if (t2 && Array.isArray(t2.data) && t2.data.length) thumbs = t2;
-              } catch (_) { /* sigue sin source — se usa fallback sintético */ }
-            }
-            // Mejor thumbnail
-            let bestThumb = null;
-            const ts = Array.isArray(thumbs.data) ? thumbs.data : [];
-            if (ts.length > 0) {
-              const sized = ts.filter(t => t.uri).map(t => ({ ...t, area: (t.width || 0) * (t.height || 0) }));
-              sized.sort((a, b) => b.area - a.area);
-              bestThumb = sized[0]?.uri || ts.find(t => t.is_preferred)?.uri || ts[0]?.uri || null;
-            }
-            // Permalink sintético como red de seguridad: el plugin de Facebook embed
-            // acepta /watch/?v=<id> para casi cualquier video público de un Ad.
-            const syntheticPermalink = `https://www.facebook.com/watch/?v=${vid}`;
-            const vidData = {
-              source: v.source || null,
-              picture: bestThumb || v.picture || null,
-              permalink: v.permalink_url || syntheticPermalink,
-              embed_html: v.embed_html || null,
-              embeddable: v.embeddable !== false, // default true
-            };
-            videoSources[vid] = vidData;
-            // Persistir el lookup — la próxima vez no rehacemos los 1-4 calls a Meta
-            try { await videoCacheCol.doc(String(vid)).set({ data: vidData, ts: Date.now() }, { merge: true }); }
-            catch (_) {}
-          });
         }
 
         // 2) Insights del rango por ad
@@ -1481,6 +1428,67 @@ export default async function handler(req, res) {
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }
+    }
+
+    // ── LAZY: traer source/embed_html de UN video on-demand al hacer click ▶
+    // Permite mantener la Biblioteca rápida sin perder MP4 directo cuando el
+    // user efectivamente quiere reproducir. Cache permanente por video_id.
+    if (action === "video_source" && req.method === "GET") {
+      const accIdQ = req.query.acc_id;
+      const videoId = String(req.query.video_id || "");
+      if (!accIdQ || !videoId) return res.status(400).json({ error: "Falta acc_id o video_id" });
+      const cfg = await loadMetaAccount(db, uid, accIdQ);
+      if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
+
+      const cacheRef = db.collection("users").doc(uid).collection("meta_video_cache").doc(videoId);
+      // ¿Ya cacheado con datos útiles?
+      try {
+        const snap = await cacheRef.get();
+        if (snap.exists) {
+          const c = snap.data();
+          if (c.data && (c.data.source || c.data.embed_html)) {
+            return res.json({ ...c.data, _cached: true });
+          }
+        }
+      } catch (_) {}
+
+      // Resolver desde Meta
+      let v = {};
+      let thumbs = { data: [] };
+      try {
+        const [v1, t1] = await Promise.all([
+          metaGet(videoId, { fields: "source,picture,permalink_url,embed_html,embeddable" }, cfg.access_token),
+          metaGet(`${videoId}/thumbnails`, { fields: "uri,is_preferred,height,width", limit: 20 }, cfg.access_token).catch(() => ({ data: [] })),
+        ]);
+        v = v1 || {};
+        thumbs = t1 || { data: [] };
+      } catch (_) { /* sigue con page token */ }
+      if (!v.source && !v.embed_html && cfg.page_access_token) {
+        try {
+          const [v2, t2] = await Promise.all([
+            metaGet(videoId, { fields: "source,picture,permalink_url,embed_html,embeddable" }, cfg.page_access_token),
+            metaGet(`${videoId}/thumbnails`, { fields: "uri,is_preferred,height,width", limit: 20 }, cfg.page_access_token).catch(() => ({ data: [] })),
+          ]);
+          if (v2) v = { ...v, ...v2 };
+          if (t2?.data?.length) thumbs = t2;
+        } catch (_) {}
+      }
+      let bestThumb = null;
+      const ts = Array.isArray(thumbs.data) ? thumbs.data : [];
+      if (ts.length > 0) {
+        const sized = ts.filter(t => t.uri).map(t => ({ ...t, area: (t.width || 0) * (t.height || 0) }));
+        sized.sort((a, b) => b.area - a.area);
+        bestThumb = sized[0]?.uri || ts.find(t => t.is_preferred)?.uri || ts[0]?.uri || null;
+      }
+      const data = {
+        source: v.source || null,
+        picture: bestThumb || v.picture || null,
+        permalink: v.permalink_url || `https://www.facebook.com/watch/?v=${videoId}`,
+        embed_html: v.embed_html || null,
+        embeddable: v.embeddable !== false,
+      };
+      try { await cacheRef.set({ data, ts: Date.now() }, { merge: true }); } catch (_) {}
+      return res.json(data);
     }
 
     // ── ANALIZAR UN AD CON GEMINI (cachea en Firestore) ──
