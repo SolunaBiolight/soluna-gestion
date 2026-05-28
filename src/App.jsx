@@ -7334,6 +7334,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   };
   const [statusFilter, setStatusFilter] = useState("todos");
   const [assigneeFilter, setAssigneeFilter] = useState("todos");
+  const [labelFilter, setLabelFilter] = useState("");
   const [expandedTarea, setExpandedTarea] = useState(null);
   const [kanbanSelected, setKanbanSelected] = useState(null);
   const [commentText, setCommentText] = useState({});
@@ -7368,6 +7369,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ncNombre, setNcNombre] = useState("");
   const [ncEmail, setNcEmail] = useState("");
   const [ncRol, setNcRol] = useState("");
+  const [ncTelefono, setNcTelefono] = useState("");
+  // Notificación post-creación
+  const [notifPanel, setNotifPanel] = useState(null); // {tarea, colab}
+  // Labels
+  const [ntLabels, setNtLabels] = useState([]);
+  const [etLabels, setEtLabels] = useState([]);
   // ── PRODUCCIÓN CREATIVA ──
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
@@ -7449,6 +7456,37 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   };
   const KANBAN_COLS = ["pendiente","en_proceso","bloqueada","revision","entregado","aprobado"];
 
+  // ── LABELS ──
+  const TASK_LABELS = [
+    {id:"diseño",label:"Diseño",color:"#6366f1"},
+    {id:"copy",label:"Copy",color:"#8b5cf6"},
+    {id:"video",label:"Video",color:"#ec4899"},
+    {id:"ads",label:"Ads",color:"#f97316"},
+    {id:"admin",label:"Admin",color:"#6b7280"},
+    {id:"cliente",label:"Cliente",color:"#22c55e"},
+    {id:"urgente",label:"Urgente",color:"#ef4444"},
+    {id:"revision",label:"Revisión",color:"#d97706"},
+    {id:"contenido",label:"Contenido",color:"#0ea5e9"},
+    {id:"social",label:"Social",color:"#a855f7"},
+  ];
+  function toggleLabel(id, arr, setArr) {
+    setArr(prev=>prev.includes(id)?prev.filter(l=>l!==id):[...prev,id]);
+  }
+  function LabelChips({labels=[]}) {
+    if(!labels?.length) return null;
+    return <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{labels.map(id=>{const lb=TASK_LABELS.find(l=>l.id===id);return lb?<span key={id} style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:20,background:lb.color+"22",color:lb.color,border:`1px solid ${lb.color}44`,letterSpacing:"0.03em"}}>{lb.label}</span>:null;})}</div>;
+  }
+  function LabelPicker({selected=[], onChange}) {
+    return (
+      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+        {TASK_LABELS.map(lb=>{
+          const active=selected.includes(lb.id);
+          return <button key={lb.id} onClick={()=>onChange(lb.id)} style={{fontSize:10,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${active?lb.color:T.border}`,background:active?lb.color+"25":"transparent",color:active?lb.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>{lb.label}</button>;
+        })}
+      </div>
+    );
+  }
+
   // Helpers para links y checklist
   function mkId() { return Date.now().toString(36)+Math.random().toString(36).slice(2); }
   function normalizeLinksArr(links) {
@@ -7464,6 +7502,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const tareasFiltradas = tareas
     .filter(t => statusFilter==="todos"||t.estado===statusFilter)
     .filter(t => assigneeFilter==="todos"||t.asignadoEmail===assigneeFilter)
+    .filter(t => !labelFilter||(t.labels||[]).includes(labelFilter))
     .sort((a,b)=>{
       const pa = a.prioridad==="urgente"?0:a.prioridad==="normal"?1:2;
       const pb = b.prioridad==="urgente"?0:b.prioridad==="normal"?1:2;
@@ -7494,10 +7533,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const colab = colaboradores.find(c=>c.email===ntAsignado);
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||""});
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,labels:ntLabels,managerEmail:user?.email||""});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal");
-    toast("Tarea creada ✓","success");
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal"); setNtLabels([]);
+    // Panel de notificación
+    if(colab) setNotifPanel({tarea:d,colab});
   }
 
   function openEditModal(t) {
@@ -7510,24 +7550,30 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setEtDeadline(t.deadline?._seconds?new Date(t.deadline._seconds*1000).toISOString().slice(0,10):"");
     setEtPrioridad(t.prioridad||"normal");
     setEtAsignado(t.asignadoEmail||"");
+    setEtLabels(t.labels||[]);
   }
   async function guardarEdicion() {
     const colab = colaboradores.find(c=>c.email===etAsignado);
     const linksArr = etLinks.filter(l=>l.url.trim());
     const checkArr = etChecklist.filter(i=>i.text.trim());
-    await tareasApi({action:"updateTarea",tareaId:editTarea._id,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===editTarea._id?{...t,titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""}:t)}));
+    await tareasApi({action:"updateTarea",tareaId:editTarea._id,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,labels:etLabels,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===editTarea._id?{...t,titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,labels:etLabels,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""}:t)}));
     setEditTarea(null);
     toast("Tarea actualizada ✓","success");
   }
 
   async function crearColaborador() {
     if(!ncNombre.trim()||!ncEmail.trim()) return appAlert("Nombre y email son requeridos");
-    const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim()});
+    const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim(),telefono:ncTelefono.trim()});
     setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
-    setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol("");
+    setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
     toast("Colaborador agregado ✓","success");
     copyLink(d.token);
+  }
+
+  async function updateColabTelefono(colabId, telefono) {
+    await tareasApi({action:"updateColaborador",colabId,telefono});
+    setDatos(prev=>({...prev,colaboradores:prev.colaboradores.map(c=>c._id===colabId?{...c,telefono}:c)}));
   }
 
   async function updateEstado(tareaId, estado, feedback="") {
@@ -7892,6 +7938,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </select>
                   )}
                 </div>
+                {/* Label filter */}
+                {TASK_LABELS.some(lb=>tareas.some(t=>(t.labels||[]).includes(lb.id)))&&(
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+                    <button onClick={()=>setLabelFilter("")} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${!labelFilter?T.accent:T.border}`,background:!labelFilter?T.accent+"20":"transparent",color:!labelFilter?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Todos</button>
+                    {TASK_LABELS.filter(lb=>tareas.some(t=>(t.labels||[]).includes(lb.id))).map(lb=>(
+                      <button key={lb.id} onClick={()=>setLabelFilter(labelFilter===lb.id?"":lb.id)} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${labelFilter===lb.id?lb.color:T.border}`,background:labelFilter===lb.id?lb.color+"25":"transparent",color:labelFilter===lb.id?lb.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{lb.label}</button>
+                    ))}
+                  </div>
+                )}
                 {tareasFiltradas.length===0&&(
                   <div style={{textAlign:"center",padding:"60px 24px",color:T.textSm,background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`,margin:"8px 0"}}>
                     <div style={{fontSize:44,marginBottom:12}}>{tareas.length===0?"🚀":"🔍"}</div>
@@ -7923,6 +7978,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               {t.asignadoNombre&&<span style={{fontSize:11,color:T.textMd}}>→ {t.asignadoNombre}</span>}
                               {t.deadline&&<span style={{fontSize:11,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅 {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Vence hoy":`${days}d`):fmtDate(t.deadline)}</span>}
                             </div>
+                            {(t.labels||[]).length>0&&<div style={{marginTop:4}}><LabelChips labels={t.labels}/></div>}
                           </div>
                           <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>{expanded?"▲":"▼"}</span>
                         </div>
@@ -7973,6 +8029,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 {isUrgente&&<span style={{fontSize:9,color:T.red,fontWeight:800,flexShrink:0,marginTop:1}}>🔴</span>}
                                 <span style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.3,flex:1}}>{t.titulo}</span>
                               </div>
+                              {(t.labels||[]).length>0&&<div style={{marginBottom:5}}><LabelChips labels={t.labels}/></div>}
                               <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
                                 {t.asignadoNombre&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 5px"}}>{t.asignadoNombre.split(" ")[0]}</span>}
                                 {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅{days!==null?(days<0?"Vencida":days===0?"Hoy":`${days}d`):"—"}</span>}
@@ -8061,7 +8118,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 const pending = userTareas.filter(t=>t.estado==="pendiente"||t.estado==="en_proceso").length;
                 const entregado = userTareas.filter(t=>t.estado==="entregado").length;
                 const aprobado = userTareas.filter(t=>t.estado==="aprobado").length;
-                const waColabLink = `https://wa.me/?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal de tareas:\n${colabLink(c.token)}`)}`;
+                const waColabLink = c.telefono
+                  ? `https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal de tareas:\n${colabLink(c.token)}`)}`
+                  : `https://wa.me/?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal de tareas:\n${colabLink(c.token)}`)}`;
                 return (
                   <div key={c._id} style={{background:T.card,border:`1px solid ${entregado>0?((T.orange||"#f97316")+"55"):T.border}`,borderRadius:12,padding:"16px 18px"}}>
                     <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:userTareas.length>0?12:0}}>
@@ -8075,7 +8134,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             {c.rol&&<div style={{fontSize:12,color:T.textSm}}>{c.rol}</div>}
                           </div>
                         </div>
-                        <div style={{fontSize:12,color:T.textSm,marginBottom:8}}>{c.email}</div>
+                        <div style={{fontSize:12,color:T.textSm,marginBottom:c.telefono?4:8}}>{c.email}</div>
+                        {c.telefono?(
+                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+                            <span style={{fontSize:11,color:T.textSm}}>📱 {c.telefono}</span>
+                            <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#22c55e",textDecoration:"none",fontWeight:600,border:"1px solid #22c55e44",borderRadius:20,padding:"1px 7px",fontFamily:"'Inter',system-ui,sans-serif"}}>WA</a>
+                            <button onClick={()=>{const t2=prompt("Nuevo WhatsApp:",c.telefono||"");if(t2!==null)updateColabTelefono(c._id,t2.trim());}} style={{fontSize:10,color:T.textSm,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
+                          </div>
+                        ):(
+                          <button onClick={()=>{const t2=prompt("WhatsApp (con código de país, ej: 5491112345678):");if(t2)updateColabTelefono(c._id,t2.trim());}} style={{fontSize:10,color:T.textSm,background:"transparent",border:"none",cursor:"pointer",padding:"0 0 8px 0",textDecoration:"underline",fontFamily:"'Inter',system-ui,sans-serif",display:"block"}}>+ Agregar WhatsApp</button>
+                        )}
                         <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10,fontSize:12}}>
                           <span style={{color:T.textMd}}>{userTareas.length} tarea{userTareas.length!==1?"s":""}</span>
                           {pending>0&&<span style={{color:T.blue}}>· {pending} en curso</span>}
@@ -8746,6 +8814,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 ))}
               </div>
               <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:6}}>Etiquetas (opcional)</div>
+                <LabelPicker selected={ntLabels} onChange={id=>toggleLabel(id,ntLabels,setNtLabels)}/>
+              </div>
+              <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite (opcional)</div>
                 <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
               </div>
@@ -8823,6 +8895,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <button onClick={()=>setEtChecklist(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:6}}>Etiquetas</div>
+                <LabelPicker selected={etLabels} onChange={id=>toggleLabel(id,etLabels,setEtLabels)}/>
               </div>
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
@@ -9054,6 +9130,41 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         </div>
       )}
 
+      {/* PANEL NOTIFICACIÓN post-creación de tarea */}
+      {notifPanel&&(
+        <div style={{position:"fixed",bottom:24,right:24,zIndex:300,maxWidth:340,width:"100%",background:T.card,border:`1px solid ${T.green}55`,borderRadius:16,padding:18,boxShadow:"0 8px 32px rgba(0,0,0,0.22)",animation:"slideUp 0.25s ease"}}>
+          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:12}}>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>✅ Tarea creada</div>
+              <div style={{fontSize:12,color:T.textMd,lineHeight:1.4}}>
+                <strong style={{color:T.text}}>{notifPanel.tarea?.titulo}</strong>
+                {notifPanel.colab&&<> → {notifPanel.colab.nombre}</>}
+              </div>
+            </div>
+            <button onClick={()=>setNotifPanel(null)} style={{fontSize:16,background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:0,lineHeight:1}}>✕</button>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,padding:"7px 10px",background:T.green+"12",borderRadius:8}}>
+            <span style={{fontSize:12}}>📧</span>
+            <span style={{fontSize:12,color:T.green,fontWeight:500}}>Email enviado a {notifPanel.colab?.email}</span>
+          </div>
+          {notifPanel.colab?.telefono&&(
+            <a
+              href={`https://wa.me/${(notifPanel.colab.telefono||"").replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${notifPanel.colab.nombre.split(" ")[0]} 👋, te asigné una tarea en Growith:\n\n*${notifPanel.tarea?.titulo||""}*${notifPanel.tarea?.prioridad==="urgente"?"\n🔴 URGENTE":""}\n\nPodés verla acá:\n${colabLink(notifPanel.colab.token)}`)}`}
+              target="_blank" rel="noreferrer"
+              onClick={()=>setNotifPanel(null)}
+              style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%",padding:"8px 0",borderRadius:8,background:"#22c55e20",border:"1px solid #22c55e44",color:"#22c55e",fontWeight:600,fontSize:12,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+              Notificar por WhatsApp
+            </a>
+          )}
+          {!notifPanel.colab?.telefono&&(
+            <div style={{fontSize:11,color:T.textSm,textAlign:"center",padding:"4px 0"}}>
+              Agregá el WhatsApp al colaborador para poder notificar por WA
+            </div>
+          )}
+        </div>
+      )}
+
       {showNC&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:440}}>
@@ -9076,6 +9187,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Rol (opcional)</div>
                 <input value={ncRol} onChange={e=>setNcRol(e.target.value)} placeholder="Ej: Editora de video, Community Manager…" style={{...iS,fontSize:13,width:"100%"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>WhatsApp (opcional)</div>
+                <input type="tel" value={ncTelefono} onChange={e=>setNcTelefono(e.target.value)} placeholder="Ej: 5491112345678" style={{...iS,fontSize:13,width:"100%"}}/>
+                <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Con código de país, sin + ni espacios. Para notificar por WA.</div>
               </div>
             </div>
             <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
