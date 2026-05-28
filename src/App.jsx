@@ -6119,8 +6119,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             </div>
             <AsyncButton onClick={async()=>{
               if(!user?.email) return;
-              await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"sendTestEmail",uid:user.uid,to:user.email})});
-              toast("📧 Email de prueba enviado a "+user.email,"success");
+              const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"sendTestEmail",uid:user.uid,to:user.email})});
+              const d = await r.json();
+              if(!r.ok||d.error) {
+                appAlert(`❌ Error al enviar: ${d.error||"desconocido"}${d.detail?.status?" (HTTP "+d.detail.status+")":""}\n\nVerificá:\n• RESEND_API_KEY en Vercel\n• Dominio growith.app verificado en Resend`);
+              } else {
+                toast("📧 Email de prueba enviado a "+user.email+" (id: "+d.id+")","success");
+              }
             }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>
               📧 Enviar email de prueba a {user?.email}
             </AsyncButton>

@@ -28,15 +28,20 @@ function colabPortalLink(origin, token) {
 
 async function sendEmail({ to, subject, html }) {
   const key = process.env.RESEND_API_KEY;
-  if (!key || !to) return;
+  if (!key) { console.error("[email] RESEND_API_KEY no configurada"); return { error: "RESEND_API_KEY no configurada" }; }
+  if (!to)  { console.error("[email] destinatario vacío"); return { error: "Sin destinatario" }; }
   try {
-    await fetch("https://api.resend.com/emails", {
+    const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from: "Growith <notificaciones@growith.app>", to: [to], subject, html }),
     });
+    const data = await r.json();
+    if (!r.ok) { console.error("[email] Resend error:", JSON.stringify(data)); return { error: data?.message || "Error Resend", status: r.status }; }
+    return { ok: true, id: data.id };
   } catch(e) {
-    console.error("[email]", e.message);
+    console.error("[email] fetch error:", e.message);
+    return { error: e.message };
   }
 }
 
@@ -671,8 +676,9 @@ export default async function handler(req, res) {
         </div>
         <p style="font-size:11px;color:#9ca3af;text-align:center;margin-top:24px">Enviado desde Growith — notificaciones@growith.app</p>
       </div>`;
-      await sendEmail({ to, subject:"✅ Email de prueba — Growith funciona correctamente", html });
-      return res.json({ ok:true });
+      const result = await sendEmail({ to, subject:"✅ Email de prueba — Growith funciona correctamente", html });
+      if (result?.error) return res.status(500).json({ error: result.error, detail: result });
+      return res.json({ ok:true, id: result?.id });
     }
 
     if (action === "addCreativoComment") {
