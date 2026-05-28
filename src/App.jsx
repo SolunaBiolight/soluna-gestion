@@ -8391,9 +8391,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       {!loading&&tab==="creativos"&&(
         <div style={{width:"100%"}}>
           {/* Sub-nav */}
-          <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,marginBottom:20,width:"fit-content",flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:4,marginBottom:24,borderBottom:`1px solid ${T.border}`,paddingBottom:0}}>
             {[["dashboard","📊 Dashboard"],["tandas",`📦 Tandas${produccion.tandas.length?" ("+produccion.tandas.length+")":""}`],["creativos",`🎬 Creativos${produccion.creativos.length?" ("+produccion.creativos.length+")":""}`],["ideas",`💡 Ideas${produccion.ideas.length?" ("+produccion.ideas.length+")":""}`],["editores","👥 Editores"]].map(([id,label])=>(
-              <button key={id} onClick={()=>setProdTab(id)} style={prodTabSty(id)}>{label}</button>
+              <button key={id} onClick={()=>setProdTab(id)} style={{padding:"8px 16px",fontSize:13,fontWeight:prodTab===id?600:400,border:"none",borderBottom:prodTab===id?`2px solid ${T.accent}`:"2px solid transparent",background:"transparent",color:prodTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:-1,transition:"all 0.15s",whiteSpace:"nowrap"}}>{label}</button>
             ))}
           </div>
 
@@ -8408,7 +8408,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             const PEST=[["idea","💡 Idea"],["brief-enviado","📋 Brief enviado"],["en-produccion","🔄 En producción"],["entregado","📦 Entregado"],["publicado","✅ Publicado"],["archivado","🗄 Archivado"]];
             return (
               <div style={{width:"100%"}}>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20,width:"100%"}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24,width:"100%"}}>
                   {[{l:"Total creativos",v:total,c:T.accent,f:{}},{l:"Publicados",v:pub,c:T.green,f:{estado:"publicado"}},{l:"En producción",v:enProd,c:T.blue,f:{estado:"en-produccion"}},{l:"Sin cobrar",v:sinCobrar,c:T.red,f:{estado:"entregado"}}].map(k=>(
                     <div key={k.l} onClick={()=>{setProdTab("creativos");setProdFilter(f=>({...f,...k.f}));}} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",textAlign:"center",cursor:"pointer",transition:"box-shadow 0.15s"}} onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 14px rgba(0,0,0,0.12)"} onMouseLeave={e=>e.currentTarget.style.boxShadow=""}>
                       <div style={{fontSize:30,fontWeight:800,color:k.c,lineHeight:1,marginBottom:4}}>{k.v}</div>
@@ -8416,9 +8416,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   ))}
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,width:"100%"}}>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Por estado</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,width:"100%"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 24px"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:16}}>Por estado</div>
                     <div style={{display:"flex",flexDirection:"column",gap:7}}>
                       {PEST.map(([est,label])=>{
                         const cnt=produccion.creativos.filter(c=>c.estado===est).length;
@@ -8435,8 +8435,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       })}
                     </div>
                   </div>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Ranking editores</div>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 24px"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:16}}>Ranking editores</div>
                     {produccion.editores.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin editores configurados.</div>}
                     {produccion.editores.map(ed=>{
                       const edC=produccion.creativos.filter(c=>c.editor===ed);
