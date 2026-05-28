@@ -7936,7 +7936,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         </div>
       </div>
 
-      <div style={{maxWidth:tab==="creativos"?900:viewMode==="kanban"?1400:viewMode==="cal"?900:960,margin:"0 auto",padding:"20px 24px"}}>
+      <div style={{maxWidth:tab==="tareas"&&viewMode==="kanban"?1400:viewMode==="cal"?900:960,margin:"0 auto",padding:"20px 24px"}}>
         {/* Tabs */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showGuia?8:20,flexWrap:"wrap"}}>
           <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,width:"fit-content"}}>
@@ -8390,7 +8390,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* ── TAB CREATIVOS ── */}
       {!loading&&tab==="creativos"&&(
-        <div style={{maxWidth:860,margin:"0 auto"}}>
+        <div>
           {/* Sub-nav */}
           <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,marginBottom:20,width:"fit-content",flexWrap:"wrap"}}>
             {[["dashboard","📊 Dashboard"],["tandas",`📦 Tandas${produccion.tandas.length?" ("+produccion.tandas.length+")":""}`],["creativos",`🎬 Creativos${produccion.creativos.length?" ("+produccion.creativos.length+")":""}`],["ideas",`💡 Ideas${produccion.ideas.length?" ("+produccion.ideas.length+")":""}`],["editores","👥 Editores"]].map(([id,label])=>(
