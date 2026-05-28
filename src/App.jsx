@@ -5796,6 +5796,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [showMetaModal,setShowMetaModal]=useState(false);
   const [metaMode,setMetaMode]=useState("oauth"); // "oauth" | "token"
   const [metaToken,setMetaToken]=useState("");
+  const [adminWaPhone,setAdminWaPhone]=useState("");
+  const [waPhoneSaved,setWaPhoneSaved]=useState(false);
 
   // Detectar callback OAuth (Shopify / ML) al volver
   useEffect(()=>{
@@ -5902,13 +5904,25 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   useEffect(()=>{
     if(!user) return;
     const unsub=onSnapshot(doc(db,"users",user.uid),snap=>{
-      if(snap.exists()) setUserDoc(snap.data());
+      if(snap.exists()){
+        const d=snap.data();
+        setUserDoc(d);
+        setAdminWaPhone(d.adminWaPhone||"");
+      }
     });
     return ()=>unsub();
   },[user]);
 
   async function handleSignOut() {
     await signOut(auth);
+  }
+
+  async function saveAdminWaPhone() {
+    const phone = adminWaPhone.trim().replace(/\D/g,"");
+    await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"saveAdminWaPhone",uid:user?.uid,phone})});
+    setAdminWaPhone(phone);
+    setWaPhoneSaved(true);
+    setTimeout(()=>setWaPhoneSaved(false),2500);
   }
 
   async function connectTiendaNube() {
@@ -6090,6 +6104,17 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             </div>
           </div>
           <button onClick={handleSignOut} style={{...BtnDanger(T),fontSize:13,width:"100%",justifyContent:"center"}}>Cerrar sesión</button>
+        </div>
+
+        {/* Notificaciones de equipo */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>📱 Mi WhatsApp (Tareas)</div>
+          <div style={{fontSize:12,color:T.textMd,marginBottom:10,lineHeight:1.5}}>Cuando un colaborador entrega trabajo o hace una consulta, puede enviarte un WA directo a tu número. Ingresalo acá para que el botón funcione automáticamente.</div>
+          <div style={{display:"flex",gap:8}}>
+            <input value={adminWaPhone} onChange={e=>setAdminWaPhone(e.target.value)} placeholder="Ej: 5491112345678 (con código de país, sin +)" style={{...InputStyle(T),fontSize:13,flex:1}}/>
+            <button onClick={saveAdminWaPhone} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",flexShrink:0}}>{waPhoneSaved?"✓ Guardado":"Guardar"}</button>
+          </div>
+          {adminWaPhone&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>Los colaboradores van a poder avisarte directamente en <strong>wa.me/{adminWaPhone.replace(/\D/g,"")}</strong></div>}
         </div>
 
         {/* Tiendas */}
@@ -7706,12 +7731,20 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   {ESTADOS.revision.label}
                 </button>
               : <div style={{width:"100%",marginTop:8,background:T.surface,borderRadius:10,padding:10,border:`1px solid ${T.red}44`}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.red,marginBottom:6}}>¿Qué debe corregir? <span style={{fontWeight:400,color:T.textSm}}>(recomendado)</span></div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.red,marginBottom:6}}>¿Qué debe corregir? <span style={{fontWeight:700,color:T.red}}>*</span> <span style={{fontWeight:400,color:T.textSm}}>— el colaborador ve este texto</span></div>
                   <textarea value={feedbackText[t._id]||""} onChange={e=>setFeedbackText(p=>({...p,[t._id]:e.target.value}))}
-                    placeholder="Describí los cambios necesarios..."
-                    style={{...iS,fontSize:12,width:"100%",minHeight:60,resize:"vertical",marginBottom:8}}/>
-                  <div style={{display:"flex",gap:6}}>
-                    <AsyncButton onClick={()=>pedirCambios(t._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 12px"}}>🔁 Pedir cambios</AsyncButton>
+                    placeholder="Describí exactamente qué cambiar (este mensaje le llega al colaborador por email y WA)..."
+                    style={{...iS,fontSize:12,width:"100%",minHeight:72,resize:"vertical",marginBottom:8,borderColor:(feedbackText[t._id]||"").trim()?"":T.red+"66"}}/>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                    <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador — es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:11,padding:"5px 12px"}}>🔁 Pedir cambios</AsyncButton>
+                    {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
+                      <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
+                        target="_blank" rel="noreferrer"
+                        style={{fontSize:11,padding:"5px 12px",borderRadius:8,background:"#22c55e20",color:"#22c55e",border:"1px solid #22c55e44",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                        WA con feedback
+                      </a>
+                    )}
                     <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Cancelar</button>
                   </div>
                 </div>
@@ -7773,9 +7806,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </div>
                 )}
                 {i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&(
-                  <div style={{display:"flex",gap:6,marginTop:8}}>
+                  <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
                     <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px",background:T.green}}>✓ Aprobar</AsyncButton>
-                    <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>Pedir cambios</button>
+                    <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>🔁 Pedir cambios</button>
+                    {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
                   </div>
                 )}
               </div>
@@ -7791,10 +7825,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div style={{width:24,height:24,borderRadius:"50%",background:c.autor==="manager"?T.accent+"25":c.tipo==="consulta"?"#3b82f620":T.green+"25",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:c.autor==="manager"?T.accent:c.tipo==="consulta"?"#3b82f6":T.green,flexShrink:0}}>
                 {c.autor==="manager"?"M":c.autor[0]?.toUpperCase()}
               </div>
-              <div style={{flex:1,background:T.surface,borderRadius:8,padding:"7px 10px",border:`1px solid ${c.tipo==="consulta"?"#3b82f640":T.borderL}`}}>
+              <div style={{flex:1,background:T.surface,borderRadius:8,padding:"7px 10px",border:`1px solid ${c.tipo==="consulta"?"#3b82f640":c.tipo==="progreso"?"#22c55e30":T.borderL}`}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
                   <span style={{fontSize:10,color:T.textSm}}>{c.autor==="manager"?"Vos":c.autor} · {fmtDate(c.fecha)}</span>
                   {c.tipo==="consulta"&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:"#3b82f620",color:"#3b82f6",fontWeight:600}}>CONSULTA</span>}
+                  {c.tipo==="progreso"&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:"#22c55e20",color:"#22c55e",fontWeight:600}}>ACTUALIZACIÓN</span>}
                 </div>
                 <div style={{fontSize:12,color:T.text,lineHeight:1.4}}>{c.texto}</div>
               </div>
@@ -9372,6 +9407,8 @@ function ColaboradorPublicView({T, token}) {
   const [showConsulta, setShowConsulta] = useState({});
   const [estimacionText, setEstimacionText] = useState({});
   const [showEstimacion, setShowEstimacion] = useState({});
+  const [progressText, setProgressText] = useState({});
+  const [showProgress, setShowProgress] = useState({});
   const [bannerClosed, setBannerClosed] = useState(()=>{
     try{return localStorage.getItem(`growith_colab_banner_${token}`)==="1";}catch(e){return false;}
   });
@@ -9468,6 +9505,21 @@ function ColaboradorPublicView({T, token}) {
     setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,checklist:d.checklist}:t)}));
   }
 
+  async function publicSetEstado(tareaId, estado) {
+    await publicApi({action:"publicUpdateEstado",tareaId,estado});
+    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado}:t)}));
+  }
+
+  async function submitProgress(tareaId) {
+    const texto = (progressText[tareaId]||"").trim();
+    if(!texto) return;
+    const d = await publicApi({action:"publicAddProgress",tareaId,texto});
+    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,comments:[...(t.comments||[]),d.comment]}:t)}));
+    setProgressText(prev=>({...prev,[tareaId]:""}));
+    setShowProgress(prev=>({...prev,[tareaId]:false}));
+    toast("Actualización enviada ✓","success");
+  }
+
   async function copyBrief(brief) {
     try{await navigator.clipboard.writeText(brief);toast("Brief copiado 📋","success");}
     catch(e){appAlert(brief);}
@@ -9499,7 +9551,7 @@ function ColaboradorPublicView({T, token}) {
     </div>
   );
 
-  const { colab, tareas=[], creativos=null, tandas=[] } = data;
+  const { colab, tareas=[], creativos=null, tandas=[], adminWaPhone:adminWa=null } = data;
   const aprobadas = tareas.filter(t=>t.estado==="aprobado");
   const totalTareas = tareas.length;
   const progressPct = totalTareas>0?Math.round(aprobadas.length/totalTareas*100):0;
@@ -9704,6 +9756,46 @@ function ColaboradorPublicView({T, token}) {
                       ))}
                     </div>
                   )}
+                  {/* Actualizar estado propio */}
+                  {!isAprobado&&t.estado!=="entregado"&&(
+                    <div style={{marginBottom:14}}>
+                      <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Mi estado</div>
+                      <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                        {t.estado!=="en_proceso"&&t.estado!=="revision"&&(
+                          <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso")}
+                            style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"#3b82f620",color:"#3b82f6",border:"1px solid #3b82f644",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                            🔄 Empecé a trabajar en esto
+                          </AsyncButton>
+                        )}
+                        {t.estado==="en_proceso"&&(
+                          <AsyncButton onClick={()=>publicSetEstado(t._id,"bloqueada")}
+                            style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"#6b728018",color:"#6b7280",border:"1px solid #6b728030",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                            🚫 Necesito ayuda / Estoy bloqueado
+                          </AsyncButton>
+                        )}
+                        {t.estado==="bloqueada"&&(
+                          <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso")}
+                            style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"#3b82f620",color:"#3b82f6",border:"1px solid #3b82f644",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                            🔄 Retomé el trabajo
+                          </AsyncButton>
+                        )}
+                        <button onClick={()=>setShowProgress(p=>({...p,[t._id]:!p[t._id]}))}
+                          style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"transparent",color:T.textMd,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                          💬 Enviar actualización
+                        </button>
+                      </div>
+                      {showProgress[t._id]&&(
+                        <div style={{marginTop:8,display:"flex",gap:7}}>
+                          <input value={progressText[t._id]||""} onChange={e=>setProgressText(p=>({...p,[t._id]:e.target.value}))}
+                            placeholder="Ej: Voy por el 60%, lo entrego mañana…"
+                            style={{...iS,fontSize:12,flex:1}}
+                            onKeyDown={e=>{if(e.key==="Enter")submitProgress(t._id);}}/>
+                          <AsyncButton onClick={()=>submitProgress(t._id)} style={{fontSize:12,padding:"6px 14px",borderRadius:8,background:"#6366f1",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Enviar</AsyncButton>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Entrega + WA post-submit */}
                   {!isAprobado&&(
                     <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?"#ef444440":T.borderL}`,marginBottom:14}}>
@@ -9714,10 +9806,10 @@ function ColaboradorPublicView({T, token}) {
                           <div style={{fontSize:12,color:T.textMd,marginBottom:14}}>El equipo va a revisarla y te avisamos pronto.</div>
                           <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
                             <button onClick={()=>setEntregaEnviada(prev=>({...prev,[t._id]:null}))} style={{...BtnSecondary(T),fontSize:12}}>+ Enviar otra versión</button>
-                            <a href={`https://wa.me/?text=${encodeURIComponent(`Hola! Acabo de subir mi entrega para "${t.titulo}". Por favor revisala cuando puedas 👍`)}`} target="_blank" rel="noreferrer"
+                            <a href={`https://wa.me/${adminWa?adminWa.replace(/\D/g,""):""}?text=${encodeURIComponent(`Hola! Acabo de subir mi entrega para "${t.titulo}". Por favor revisala cuando puedas 👍`)}`} target="_blank" rel="noreferrer"
                               style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5,color:"#22c55e",border:"1px solid #22c55e44"}}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                              Avisar por WhatsApp
+                              Avisar por WhatsApp{adminWa?"":" →"}
                             </a>
                           </div>
                         </div>

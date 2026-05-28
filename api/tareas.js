@@ -78,6 +78,36 @@ function emailEntregaRecibida({ colab, tarea, entrega, link }) {
 </div>`;
 }
 
+function emailTareaAprobada({ colab, tarea, link }) {
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#22c55e,#4ade80);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">🎉</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">¡Tu entrega fue aprobada!</div>
+  </div>
+  <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
+  <p style="font-size:14px;color:#6b7280">El equipo revisó y aprobó tu trabajo. ¡Excelente labor!</p>
+  <div style="background:#f0fdf4;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #22c55e">
+    <div style="font-size:16px;font-weight:700;color:#111827">✅ ${tarea.titulo}</div>
+  </div>
+  <a href="${link}" style="display:block;text-align:center;background:#22c55e;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver tarea →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
+function emailNuevoComentario({ colab, tarea, comentario, link }) {
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#818cf8);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">💬</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Nuevo comentario en tu tarea</div>
+  </div>
+  <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
+  <p style="font-size:14px;color:#6b7280">El equipo dejó un comentario en <strong>${tarea.titulo}</strong>:</p>
+  <div style="background:#f8fafc;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #6366f1;font-size:14px;color:#374151;line-height:1.6;font-style:italic">"${comentario}"</div>
+  <a href="${link}" style="display:block;text-align:center;background:#6366f1;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver tarea y responder →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
 function emailCambiosSolicitados({ colab, tarea, feedback, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:#ef4444;padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
@@ -148,7 +178,13 @@ export default async function handler(req, res) {
           }
         } catch(e) { console.error("[getPublicData creativos]", e.message); }
       }
-      return res.json({ colab, tareas, creativos, tandas });
+      // Fetch admin WA phone for collab portal notifications
+      let adminWaPhone = null;
+      try {
+        const userSnap = await db.collection("users").doc(colab.uid).get();
+        if (userSnap.exists) adminWaPhone = userSnap.data()?.adminWaPhone || null;
+      } catch(e) { /* non-critical */ }
+      return res.json({ colab, tareas, creativos, tandas, adminWaPhone });
     }
 
     if (action === "publicUpdateEstado") {
@@ -220,6 +256,33 @@ export default async function handler(req, res) {
       if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error:"No autorizado" });
       const comment = { texto: texto.trim(), autor: colab.nombre, fecha:now, tipo:"mensaje" };
       await ref.update({ comments:[...(t.data().comments||[]), comment] });
+      return res.json({ ok:true, comment });
+    }
+
+    if (action === "publicAddProgress") {
+      const { tareaId, texto } = body;
+      if (!token || !tareaId || !texto?.trim()) return res.status(400).json({ error:"Faltan parámetros" });
+      const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (snap.empty) return res.status(403).json({ error:"Token inválido" });
+      const colab = snap.docs[0].data();
+      const ref = db.collection("tareas").doc(tareaId);
+      const t = await ref.get();
+      if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error:"No autorizado" });
+      const comment = { texto: texto.trim(), autor: colab.nombre, fecha:now, tipo:"progreso" };
+      const act = { tipo:"progreso", autor:colab.nombre, fecha:now, detalle:`Actualización: ${texto.trim().slice(0,80)}` };
+      await ref.update({
+        comments:[...(t.data().comments||[]), comment],
+        activity:[...(t.data().activity||[]), act],
+      });
+      // Notificar al manager por email
+      const managerEmail = t.data().managerEmail;
+      if (managerEmail) {
+        sendEmail({
+          to: managerEmail,
+          subject: `💬 Actualización de ${colab.nombre} — ${t.data().titulo}`,
+          html: emailNuevoComentario({ colab, tarea:t.data(), comentario:texto.trim(), link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }),
+        });
+      }
       return res.json({ ok:true, comment });
     }
 
@@ -329,21 +392,22 @@ export default async function handler(req, res) {
     }
 
     if (action === "createColaborador") {
-      const { nombre, email, rol="" } = body;
+      const { nombre, email, rol="", telefono="" } = body;
       if (!nombre||!email) return res.status(400).json({ error:"Nombre y email requeridos" });
       const ex = await db.collection("colaboradores").where("uid","==",uid).where("email","==",email.toLowerCase()).limit(1).get();
       if (!ex.empty) return res.json({ _id:ex.docs[0].id, ...ex.docs[0].data() });
       const tok = randomToken(24);
-      const data = { uid, nombre, email:email.toLowerCase(), rol, token:tok, createdAt:now };
+      const data = { uid, nombre, email:email.toLowerCase(), rol, telefono:telefono.trim(), token:tok, createdAt:now };
       const ref = await db.collection("colaboradores").add(data);
       return res.json({ _id:ref.id, ...data });
     }
 
     if (action === "updateColaborador") {
-      const { colabId, nombre, rol } = body;
+      const { colabId, nombre, rol, telefono } = body;
       const upd = { updatedAt:now };
       if (nombre!==undefined) upd.nombre = nombre;
       if (rol!==undefined) upd.rol = rol;
+      if (telefono!==undefined) upd.telefono = telefono;
       await db.collection("colaboradores").doc(colabId).update(upd);
       return res.json({ ok:true });
     }
@@ -447,6 +511,19 @@ export default async function handler(req, res) {
         }
       } else {
         upd.feedbackActual = null;
+        // Email al colaborador cuando se aprueba
+        if (estado === "aprobado") {
+          const colabSnapAp = await db.collection("colaboradores")
+            .where("uid","==",uid).where("email","==",snap.data().asignadoEmail).limit(1).get();
+          if (!colabSnapAp.empty) {
+            const colabAp = colabSnapAp.docs[0].data();
+            sendEmail({
+              to: snap.data().asignadoEmail,
+              subject: `🎉 ¡Aprobado! — ${snap.data().titulo}`,
+              html: emailTareaAprobada({ colab:colabAp, tarea:snap.data(), link:colabPortalLink(origin, colabAp.token) }),
+            });
+          }
+        }
       }
       await ref.update(upd);
       return res.json({ ok: true });
@@ -500,6 +577,18 @@ export default async function handler(req, res) {
       if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
       const comment = { texto: texto.trim(), autor:"manager", fecha:now, tipo:"mensaje" };
       await ref.update({ comments:[...(snap.data().comments||[]), comment] });
+      // Notificar al colaborador por email
+      const tdata = snap.data();
+      const colabSnap2 = await db.collection("colaboradores")
+        .where("uid","==",uid).where("email","==",tdata.asignadoEmail).limit(1).get();
+      if (!colabSnap2.empty) {
+        const colab2 = colabSnap2.docs[0].data();
+        sendEmail({
+          to: tdata.asignadoEmail,
+          subject: `💬 Nuevo comentario en "${tdata.titulo}"`,
+          html: emailNuevoComentario({ colab:colab2, tarea:tdata, comentario:texto.trim(), link:colabPortalLink(origin, colab2.token) }),
+        });
+      }
       return res.json({ ok:true, comment });
     }
 
@@ -529,6 +618,12 @@ export default async function handler(req, res) {
       const snap = await db.collection("colaboradores").doc(colabId).get();
       if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
       await db.collection("colaboradores").doc(colabId).update({ permisos });
+      return res.json({ ok:true });
+    }
+
+    if (action === "saveAdminWaPhone") {
+      const { phone } = body;
+      await db.collection("users").doc(uid).set({ adminWaPhone: phone||"" }, { merge:true });
       return res.json({ ok:true });
     }
 
