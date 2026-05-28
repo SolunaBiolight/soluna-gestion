@@ -79,22 +79,55 @@ export const VALID_CTAS = [
 
 // ─── Helpers Meta Graph API ────────────────────────────
 
+// Códigos de error de Meta que indican rate-limit transitorio — reintentamos
+// con backoff exponencial en vez de tirar al usuario. Más info:
+//  4    Application request limit reached (app-level, compartido entre users)
+//  17   User request limit reached (per-user)
+//  32   Page-level throttling (per-page)
+//  613  Custom-level throttling (per-feature)
+//  80004 Ads insights throttling (when fetching insights)
+const META_RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80004]);
+const META_RETRY_DELAYS_MS = [1500, 3500, 7500]; // total ~12.5s antes de rendirse
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 async function metaGet(path, params, token) {
   const url = new URL(`${META_BASE}/${path.replace(/^\//, "")}`);
   url.searchParams.set("access_token", token);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
-  const r = await fetch(url.toString());
-  const d = await r.json();
-  if (d.error) throw new Error(`Meta · ${d.error.message} (${d.error.code})`);
-  return d;
+  let lastErr = null;
+  for (let attempt = 0; attempt <= META_RETRY_DELAYS_MS.length; attempt++) {
+    const r = await fetch(url.toString());
+    const d = await r.json();
+    if (!d.error) return d;
+    const code = d.error.code;
+    const errMsg = `Meta · ${d.error.message} (${code})`;
+    if (!META_RATE_LIMIT_CODES.has(code) || attempt === META_RETRY_DELAYS_MS.length) {
+      throw new Error(errMsg);
+    }
+    lastErr = errMsg;
+    console.warn(`[meta-rate-limit] GET ${path} → ${errMsg}; reintentando en ${META_RETRY_DELAYS_MS[attempt]}ms (intento ${attempt+1}/${META_RETRY_DELAYS_MS.length})`);
+    await sleep(META_RETRY_DELAYS_MS[attempt]);
+  }
+  throw new Error(lastErr || "Meta retries exhausted");
 }
 
 async function metaPost(path, payload, token) {
-  const body = new URLSearchParams({ ...payload, access_token: token });
-  const r = await fetch(`${META_BASE}/${path.replace(/^\//, "")}`, { method: "POST", body });
-  const d = await r.json();
-  if (d.error) throw new Error(`Meta · ${d.error.message} (${d.error.code})`);
-  return d;
+  let lastErr = null;
+  for (let attempt = 0; attempt <= META_RETRY_DELAYS_MS.length; attempt++) {
+    const body = new URLSearchParams({ ...payload, access_token: token });
+    const r = await fetch(`${META_BASE}/${path.replace(/^\//, "")}`, { method: "POST", body });
+    const d = await r.json();
+    if (!d.error) return d;
+    const code = d.error.code;
+    const errMsg = `Meta · ${d.error.message} (${code})`;
+    if (!META_RATE_LIMIT_CODES.has(code) || attempt === META_RETRY_DELAYS_MS.length) {
+      throw new Error(errMsg);
+    }
+    lastErr = errMsg;
+    console.warn(`[meta-rate-limit] POST ${path} → ${errMsg}; reintentando en ${META_RETRY_DELAYS_MS[attempt]}ms (intento ${attempt+1}/${META_RETRY_DELAYS_MS.length})`);
+    await sleep(META_RETRY_DELAYS_MS[attempt]);
+  }
+  throw new Error(lastErr || "Meta retries exhausted");
 }
 
 async function metaIntrospect(token) {
