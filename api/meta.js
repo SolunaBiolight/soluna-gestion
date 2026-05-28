@@ -1272,7 +1272,7 @@ export default async function handler(req, res) {
       // 2 min siguientes es instantáneo. Botón "🔄" del front pasa fresh=1 para
       // saltearlo cuando el user quiere data nueva sí o sí.
       // v2: bump cuando cambie shape del payload o cuando queramos invalidar caches viejos
-      const libCacheKey = `libv3_${String(accIdQ).replace(/[^a-zA-Z0-9_]/g,"_")}_${since}_${until}`;
+      const libCacheKey = `libv4_${String(accIdQ).replace(/[^a-zA-Z0-9_]/g,"_")}_${since}_${until}`;
       const libCacheRef = db.collection("users").doc(uid).collection("meta_lib_cache").doc(libCacheKey);
       const LIB_CACHE_TTL_MS = 2 * 60 * 1000;
       const forceFresh = req.query.fresh === "1";
@@ -1298,11 +1298,12 @@ export default async function handler(req, res) {
         // (description, link, cta) el front llama lazy si es necesario (AI analyzer).
         const ads = [];
         let nextUrl = null;
-        // Drop image_url del list (es el HD, sólo se usa en modal) — thumbnail_url
-        // alcanza para la card y pesa 1/10. Cap hard de 200 ads (4 páginas) — antes
-        // 600 ads quemaban el front con 600 DOM nodes + 600 imágenes en paralelo.
+        // image_url restituido — es solo URL string (no binario), peso despreciable.
+        // Sin él las cards salían pixeladas porque thumbnail_url es 128×128. Lo que
+        // SÍ era pesado y dejamos afuera es object_story_spec + asset_feed_spec.
+        // Cap hard de 200 ads (4 páginas) sigue vigente — el front pagina de 30.
         let page = await metaGet(`${cfg.ad_account_id}/ads`, {
-          fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,video_id,object_type,body,title}",
+          fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,image_url,video_id,object_type,body,title}",
           limit: 50,
         }, cfg.access_token);
         ads.push(...(page.data || []));
@@ -1396,9 +1397,11 @@ export default async function handler(req, res) {
             effective_status: ad.effective_status,
             campaign_id: ad.campaign_id,
             adset_id: ad.adset_id,
-            // Imagen HD (image_url) + thumbnail como fallback
-            creative_thumbnail: creative.thumbnail_url || creative.image_url || vidInfo?.picture || null,
-            creative_image_hd: creative.image_url || vidInfo?.picture || creative.thumbnail_url || null,
+            // Imagen HD (image_url) + thumbnail como fallback.
+            // Para videos sin image_url, usamos /<vid>/picture?type=large — Meta CDN
+            // sirve el thumb HD del video directamente sin pasar por la API.
+            creative_thumbnail: creative.image_url || creative.thumbnail_url || vidInfo?.picture || (creative.video_id ? `https://graph.facebook.com/${creative.video_id}/picture?type=large` : null),
+            creative_image_hd: creative.image_url || vidInfo?.picture || (creative.video_id ? `https://graph.facebook.com/${creative.video_id}/picture?type=large` : null) || creative.thumbnail_url,
             // Video reproducible si existe.
             // Tres fuentes posibles: MP4 source directo (poco frecuente), embed_html
             // (iframe HTML de Meta) o permalink (URL del post para armar embed propio).
