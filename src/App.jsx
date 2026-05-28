@@ -7936,7 +7936,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         </div>
       </div>
 
-      <div style={{maxWidth:viewMode==="kanban"?1400:viewMode==="cal"?900:960,margin:"0 auto",padding:"20px 24px"}}>
+      <div style={{maxWidth:tab==="creativos"?1100:viewMode==="kanban"?1400:viewMode==="cal"?900:960,margin:"0 auto",padding:"20px 24px"}}>
         {/* Tabs */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showGuia?8:20,flexWrap:"wrap"}}>
           <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,width:"fit-content"}}>
