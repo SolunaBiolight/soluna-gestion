@@ -8390,10 +8390,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
           </div>
         )}
-      </div>
 
-      {/* ── TAB CREATIVOS ── */}
-      {!loading&&tab==="creativos"&&(
+        {/* ── TAB CREATIVOS ── */}
+        {!loading&&tab==="creativos"&&(
         <div>
           {/* Sub-nav */}
           <div style={{display:"flex",marginBottom:20}}>
@@ -8787,6 +8786,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
         </div>
       )}
+      </div>{/* cierre: div padding 20px 24px */}
 
       {/* MODAL Kanban — detalle tarea */}
       {kanbanSelected&&(
