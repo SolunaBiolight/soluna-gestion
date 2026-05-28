@@ -648,16 +648,18 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
     }
   }
   // Helper: ¿este node (campaign/adset/ad id) pertenece a alguno de los products filtrados?
-  // NOTA: Si no se pudo resolver la URL del ad pero el ad tiene spend significativo,
-  // dejamos pasar (incluir) en vez de skipear — vale más over-actuar que perder dinero
-  // en ads que la URL no se resolvió. El usuario validó esta política tras ver ads con
-  // $50k+ gastado sin apagar por product_filter strict.
+  // POLÍTICA ESTRICTA (cambiada 28/5/2026): si la regla tiene product_ids seleccionados,
+  // SOLO se actúa sobre nodos cuya URL de destino matchee alguno de esos productos. Antes
+  // se aplicaba una política "loose" (incluir igual cuando la URL no resolvía) pero
+  // generaba falsos positivos — ej. pausar ads que no eran del producto seleccionado.
+  // Trade-off: si la URL del ad no se resuelve, no se actúa (el usuario debe corregir
+  // la URL del producto o de la regla). Para reglas que deben aplicar a TODO, dejar
+  // product_ids vacío.
   const nodeMatchesProductFilter = (level, nodeId, filterIds) => {
     if (!Array.isArray(filterIds) || filterIds.length === 0) return true; // sin filtro = aplica a todos
     const productSet = adProductsByNode[level]?.get(nodeId);
-    if (productSet && productSet.size > 0) return filterIds.some(pid => productSet.has(pid));
-    // URL no resuelta — política: incluir igual (la condición de spend/roas decide)
-    return true;
+    if (!productSet || productSet.size === 0) return false; // URL no resuelta → no actuamos
+    return filterIds.some(pid => productSet.has(pid));
   };
 
   let totalActions = 0;
@@ -689,22 +691,70 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
 
       if (!matched) continue;
 
-      // Aplicar acción
+      // Aplicar acción con verificación + retry.
+      // IMPORTANTE: Meta a veces devuelve `{success: true}` aunque el cambio no se
+      // aplique (token sin permisos exactos sobre la asset, eventual consistency,
+      // delivery review, etc.). Por eso después de cada acción releemos el nodo y
+      // verificamos. Damos margen a la consistencia eventual con un pequeño delay
+      // y un reintento — si tras eso sigue sin tomar el cambio, marcamos ok=false
+      // con un mensaje accionable para que el usuario revise BM.
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       let ok = true, errMsg = null;
+
       if (rule.action === "pause") {
-        try { await metaPost(nodeId, { status: "PAUSED" }, cfg.access_token); }
-        catch (e) { ok = false; errMsg = e.message; }
+        const tryPause = async () => {
+          await metaPost(nodeId, { status: "PAUSED" }, cfg.access_token);
+        };
+        const verifyPaused = async () => {
+          const after = await metaGet(nodeId, { fields: "status,effective_status" }, cfg.access_token);
+          const s = String(after.status || after.effective_status || "").toUpperCase();
+          return s === "PAUSED" || s === "DELETED" || s === "ARCHIVED";
+        };
+        try {
+          await tryPause();
+          await sleep(1200); // dar margen a la consistencia eventual de Meta
+          let applied = await verifyPaused();
+          if (!applied) {
+            // Reintento — a veces el primer POST cae en una replica que tarda más.
+            await tryPause();
+            await sleep(2500);
+            applied = await verifyPaused();
+          }
+          if (!applied) {
+            ok = false;
+            errMsg = "Meta aceptó el POST de pausa (2 intentos) pero el ad sigue activo. Es casi siempre permisos: en Business Manager → Usuarios del sistema → tu System User → Asignar activos, confirmá que esta cuenta publicitaria tenga 'Administrar campañas' tildado (no solo 'Ver rendimiento').";
+          }
+        } catch (e) { ok = false; errMsg = e.message; }
       } else if (rule.action === "reduce_budget") {
         try {
           const node = await metaGet(nodeId, { fields: "daily_budget,lifetime_budget" }, cfg.access_token);
           const dailyOld = parseInt(node.daily_budget) || 0;
           const lifetimeOld = parseInt(node.lifetime_budget) || 0;
           const oldBudget = dailyOld || lifetimeOld;
-          if (oldBudget <= 0) throw new Error("Sin presupuesto editable");
+          if (oldBudget <= 0) throw new Error("Sin presupuesto editable (puede tener CBO/Advantage+ Budget en la campaña)");
           const pctNum = parseFloat(rule.action_pct) || 20;
           const newBudget = Math.max(100, Math.round(oldBudget * (100 - pctNum) / 100));
           const field = dailyOld > 0 ? "daily_budget" : "lifetime_budget";
-          await metaPost(nodeId, { [field]: String(newBudget) }, cfg.access_token);
+
+          const tryReduce = async () => {
+            await metaPost(nodeId, { [field]: String(newBudget) }, cfg.access_token);
+          };
+          const verifyReduced = async () => {
+            const after = await metaGet(nodeId, { fields: "daily_budget,lifetime_budget" }, cfg.access_token);
+            return (parseInt(after[field]) || 0) === newBudget;
+          };
+          await tryReduce();
+          await sleep(1200);
+          let applied = await verifyReduced();
+          if (!applied) {
+            await tryReduce();
+            await sleep(2500);
+            applied = await verifyReduced();
+          }
+          if (!applied) {
+            ok = false;
+            errMsg = `Meta aceptó el POST de presupuesto (2 intentos) pero ${field} no quedó en ${newBudget}. Revisar permisos del System User en BM ('Administrar campañas') o si la campaña usa CBO/Advantage+ Budget (en ese caso hay que bajar el presupuesto de la CAMPAÑA, no del adset).`;
+          }
         } catch (e) { ok = false; errMsg = e.message; }
       }
 
@@ -1067,19 +1117,53 @@ export default async function handler(req, res) {
           action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]),
         };
         if (filteringParam) insightsParams.filtering = filteringParam;
-        const data = await metaGet(`${cfg.ad_account_id}/insights`, insightsParams, cfg.access_token);
+        // Paginar insights — sin esto, accounts con > 500 nodos cortan los datos
+        // y los nodos sobrantes caían como "sin gasto" aunque hayan gastado.
+        const insightsAll = [];
+        const firstInsPage = await metaGet(`${cfg.ad_account_id}/insights`, insightsParams, cfg.access_token);
+        insightsAll.push(...(firstInsPage.data || []));
+        let insNext = firstInsPage.paging?.next || null;
+        let insSafety = 0;
+        while (insNext && insSafety < 20) {
+          insSafety++;
+          try {
+            const r = await fetch(insNext);
+            const j = await r.json();
+            if (!r.ok || j.error) break;
+            insightsAll.push(...(j.data || []));
+            insNext = j.paging?.next || null;
+          } catch (_) { break; }
+        }
+        const data = { data: insightsAll };
 
         // También necesitamos el status de cada nodo (que insights no devuelve).
         // Filtrar la lista de nodos por parent si aplica.
+        // OJO: NO pedir creative{} acá — con limit:500 + object_story_spec Meta
+        // rechaza con "Please reduce the amount of data" y nodeMap queda vacío,
+        // lo que deja todas las rows con effective_status:null y el filtro
+        // "Solo activos" del front las oculta a todas (bug todos-los-ads vacíos).
         const nodeMap = {};
         const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget"
                          : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id"
-                         : "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,object_story_spec}";
+                         : "id,name,status,effective_status,adset_id,campaign_id";
         try {
-          const nodesParams = { fields: nodeFields, limit: 500 };
+          const nodesParams = { fields: nodeFields, limit: 200 };
           if (filteringParam) nodesParams.filtering = filteringParam;
-          const nodes = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads"}`, nodesParams, cfg.access_token);
-          for (const n of (nodes.data || [])) nodeMap[n.id] = n;
+          const edge = level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads";
+          let nodePage = await metaGet(`${cfg.ad_account_id}/${edge}`, nodesParams, cfg.access_token);
+          for (const n of (nodePage.data || [])) nodeMap[n.id] = n;
+          let nNext = nodePage.paging?.next || null;
+          let nSafety = 0;
+          while (nNext && nSafety < 20) {
+            nSafety++;
+            try {
+              const r = await fetch(nNext);
+              const j = await r.json();
+              if (!r.ok || j.error) break;
+              for (const n of (j.data || [])) nodeMap[n.id] = n;
+              nNext = j.paging?.next || null;
+            } catch (_) { break; }
+          }
         } catch (e) { /* seguimos sin status */ }
 
         const rows = (data.data || []).map(r => {
@@ -1172,31 +1256,59 @@ export default async function handler(req, res) {
           } catch (_) { break; }
         }
 
-        // 1.b) Para los ads que tienen video_id, resolver el MP4 source + thumbnail HD
+        // 1.b) Para los ads que tienen video_id, resolver el MP4 source + thumbnail HD.
+        // Garantizamos que SIEMPRE haya un fallback reproducible:
+        //   1° intento: metaGet con cfg.access_token (System User Token).
+        //   2° intento: si falla o no devolvió source/embed_html/permalink, reintento con
+        //               cfg.page_access_token (cuando exista) — algunos videos sólo son
+        //               legibles desde el token de la página dueña.
+        //   3° fallback: aunque ambos fallen, construimos un permalink sintético
+        //               (facebook.com/watch/?v=VIDEO_ID) que el iframe embed sabe abrir.
+        //   El front, además, elige entre <video src>, embed_html, e iframe permalink.
         const videoIds = [...new Set(ads.map(a => a.creative?.video_id).filter(Boolean))];
         const videoSources = {};
         if (videoIds.length > 0) {
           await Promise.all(videoIds.slice(0, 100).map(async vid => {
+            let v = {};
+            let thumbs = { data: [] };
             try {
-              // Pedimos source + picture base, y tambien la lista de thumbnails (Meta tiene varias resoluciones)
-              const [v, thumbs] = await Promise.all([
-                metaGet(vid, { fields: "source,picture,permalink_url" }, cfg.access_token),
+              const [v1, t1] = await Promise.all([
+                metaGet(vid, { fields: "source,picture,permalink_url,embed_html,embeddable" }, cfg.access_token),
                 metaGet(`${vid}/thumbnails`, { fields: "uri,is_preferred,height,width", limit: 20 }, cfg.access_token).catch(() => ({ data: [] })),
               ]);
-              // Elegimos el thumbnail mas grande (mejor resolucion) o el preferred si tiene tamano decente
-              let bestThumb = null;
-              const ts = Array.isArray(thumbs.data) ? thumbs.data : [];
-              if (ts.length > 0) {
-                const sized = ts.filter(t => t.uri).map(t => ({ ...t, area: (t.width || 0) * (t.height || 0) }));
-                sized.sort((a, b) => b.area - a.area);
-                bestThumb = sized[0]?.uri || ts.find(t => t.is_preferred)?.uri || ts[0]?.uri || null;
-              }
-              videoSources[vid] = {
-                source: v.source || null,
-                picture: bestThumb || v.picture || null,
-                permalink: v.permalink_url || null,
-              };
-            } catch (_) { /* ignorar */ }
+              v = v1 || {};
+              thumbs = t1 || { data: [] };
+            } catch (_) { /* seguimos con page token */ }
+            // Si quedó incompleto y hay page_access_token, reintentamos.
+            const needsRetry = !v.source && !v.embed_html && !v.permalink_url;
+            if (needsRetry && cfg.page_access_token) {
+              try {
+                const [v2, t2] = await Promise.all([
+                  metaGet(vid, { fields: "source,picture,permalink_url,embed_html,embeddable" }, cfg.page_access_token),
+                  metaGet(`${vid}/thumbnails`, { fields: "uri,is_preferred,height,width", limit: 20 }, cfg.page_access_token).catch(() => ({ data: [] })),
+                ]);
+                if (v2) v = { ...v, ...v2 };
+                if (t2 && Array.isArray(t2.data) && t2.data.length) thumbs = t2;
+              } catch (_) { /* sigue sin source — se usa fallback sintético */ }
+            }
+            // Mejor thumbnail
+            let bestThumb = null;
+            const ts = Array.isArray(thumbs.data) ? thumbs.data : [];
+            if (ts.length > 0) {
+              const sized = ts.filter(t => t.uri).map(t => ({ ...t, area: (t.width || 0) * (t.height || 0) }));
+              sized.sort((a, b) => b.area - a.area);
+              bestThumb = sized[0]?.uri || ts.find(t => t.is_preferred)?.uri || ts[0]?.uri || null;
+            }
+            // Permalink sintético como red de seguridad: el plugin de Facebook embed
+            // acepta /watch/?v=<id> para casi cualquier video público de un Ad.
+            const syntheticPermalink = `https://www.facebook.com/watch/?v=${vid}`;
+            videoSources[vid] = {
+              source: v.source || null,
+              picture: bestThumb || v.picture || null,
+              permalink: v.permalink_url || syntheticPermalink,
+              embed_html: v.embed_html || null,
+              embeddable: v.embeddable !== false, // default true
+            };
           }));
         }
 
@@ -1239,9 +1351,13 @@ export default async function handler(req, res) {
             // Imagen HD (image_url) + thumbnail como fallback
             creative_thumbnail: creative.thumbnail_url || creative.image_url || vidInfo?.picture || null,
             creative_image_hd: creative.image_url || vidInfo?.picture || creative.thumbnail_url || null,
-            // Video reproducible si existe
+            // Video reproducible si existe.
+            // Tres fuentes posibles: MP4 source directo (poco frecuente), embed_html
+            // (iframe HTML de Meta) o permalink (URL del post para armar embed propio).
             creative_video_url: vidInfo?.source || null,
             creative_video_id: creative.video_id || null,
+            creative_video_embed_html: vidInfo?.embed_html || null,
+            creative_video_embeddable: vidInfo?.embeddable !== false,
             creative_permalink: vidInfo?.permalink || null,
             creative_body: creative.body || linkData.message || "",
             creative_title: creative.title || linkData.name || "",
