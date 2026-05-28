@@ -5464,17 +5464,17 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
     let cfg={}, global=14;
     try{ cfg=JSON.parse(localStorage.getItem(`growith_alert_config_${uid}`)||"{}"); }catch(e){}
     try{ global=parseInt(localStorage.getItem(`growith_alert_global_${uid}`))||14; }catch(e){}
-    fetch(`/api/stock?action=products&uid=${uid}&days=7`)
+    fetch(`/api/stock?action=products&uid=${uid}&days=30`)
       .then(r=>r.json()).then(data=>{
         if(!data.products) return;
         const al=(data.products||[]).filter(p=>(cfg[p.id]?.enabled)!==false).flatMap(p=>{
           const thr=cfg[p.id]?.threshold??global;
           return p.variants.filter(v=>{
-            const vrate=v.units_sold>0?v.units_sold/7:0;
+            const vrate=v.units_sold>0?v.units_sold/30:0;
             const vd=vrate>0?Math.round(v.stock/vrate):null;
             return v.stock===0||(vd!==null&&vd<=thr);
           }).map(v=>{
-            const vrate=v.units_sold>0?v.units_sold/7:0;
+            const vrate=v.units_sold>0?v.units_sold/30:0;
             const vd=vrate>0?Math.round(v.stock/vrate):null;
             return {producto:p.nombre,variante:v.nombre,stock:v.stock,daysLeft:vd,status:v.stock===0?"empty":vd<=7?"critical":"low"};
           });
