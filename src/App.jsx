@@ -11252,8 +11252,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           <>
             {/* ══ CON CUITs → PANEL PRINCIPAL ══ */}
 
-            {/* Guía colapsable — sólo tab Pendientes (default) */}
-            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,overflow:"hidden",marginBottom:24,display:(!sidebarTab||sidebarTab==="pendientes")?"block":"none"}}>
+            {/* Guía colapsable — vive en Métricas (primera del sidenav, default landing) */}
+            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,overflow:"hidden",marginBottom:24,display:sidebarTab==="metricas"?"block":"none"}}>
               <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"16px 20px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:18}}>📖</span>
