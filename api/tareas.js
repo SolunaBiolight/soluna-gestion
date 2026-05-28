@@ -188,7 +188,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "publicUpdateEstado") {
-      const { tareaId, estado } = body;
+      const { tareaId, estado, progresoLabel="", motivo="" } = body;
       if (!token || !tareaId) return res.status(400).json({ error: "Faltan parámetros" });
       const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
       if (snap.empty) return res.status(403).json({ error: "Token inválido" });
@@ -196,8 +196,28 @@ export default async function handler(req, res) {
       const ref = db.collection("tareas").doc(tareaId);
       const t = await ref.get();
       if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error: "No autorizado" });
-      const act = { tipo:"estado", autor:colab.nombre, fecha:now, detalle:`Estado: ${estado}` };
-      await ref.update({ estado, updatedAt: now, activity: [...(t.data().activity||[]), act] });
+      // Only allow self-service states (not entregado/aprobado/revision - those go through proper flows)
+      const allowed = ["pendiente","en_proceso","bloqueada"];
+      if (!allowed.includes(estado)) return res.status(400).json({ error:"Estado no permitido" });
+      const label = progresoLabel || estado;
+      const detalle = estado==="bloqueada" && motivo ? `🚫 Bloqueado: ${motivo}` : `Progreso: ${label}`;
+      const act = { tipo:"progreso", autor:colab.nombre, fecha:now, detalle };
+      const upd = { estado, progresoLabel: progresoLabel||"", updatedAt: now, activity: [...(t.data().activity||[]), act] };
+      if (estado==="bloqueada" && motivo) {
+        // Add motivo as a comment so admin sees it
+        const comment = { texto: `🚫 Bloqueado: ${motivo}`, autor:colab.nombre, fecha:now, tipo:"bloqueo" };
+        upd.comments = [...(t.data().comments||[]), comment];
+        // Notify manager
+        const managerEmail2 = t.data().managerEmail;
+        if (managerEmail2) {
+          sendEmail({
+            to: managerEmail2,
+            subject: `🚫 ${colab.nombre} está bloqueado — ${t.data().titulo}`,
+            html: emailConsultaRecibida({ colab, tarea:t.data(), texto:`🚫 Bloqueado: ${motivo}`, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }),
+          });
+        }
+      }
+      await ref.update(upd);
       return res.json({ ok: true });
     }
 
@@ -624,6 +644,34 @@ export default async function handler(req, res) {
     if (action === "saveAdminWaPhone") {
       const { phone } = body;
       await db.collection("users").doc(uid).set({ adminWaPhone: phone||"" }, { merge:true });
+      return res.json({ ok:true });
+    }
+
+    if (action === "sendTestEmail") {
+      const { to } = body;
+      if (!to) return res.status(400).json({ error:"Email requerido" });
+      const html = `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+        <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+          <div style="font-size:32px;margin-bottom:8px">✅</div>
+          <div style="font-size:20px;font-weight:700;color:#fff">Email de prueba</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:6px">Growith — Sistema de Notificaciones</div>
+        </div>
+        <p style="font-size:15px;color:#374151">¡Todo funciona correctamente!</p>
+        <p style="font-size:13px;color:#6b7280;line-height:1.6">Este email confirma que el sistema de notificaciones está configurado y funcionando. Los colaboradores van a recibir emails como este cuando se les asignen tareas, y vos vas a recibir notificaciones cuando entreguen trabajo.</p>
+        <div style="margin:24px 0;padding:16px;background:#f0fdf4;border-radius:10px;border:1px solid #86efac">
+          <div style="font-size:13px;font-weight:700;color:#16a34a;margin-bottom:8px">📬 Emails activos en tu cuenta:</div>
+          <ul style="font-size:12px;color:#374151;margin:0;padding-left:18px;line-height:2">
+            <li>Tarea asignada → colaborador recibe email</li>
+            <li>Entrega recibida → vos recibís email</li>
+            <li>Consulta de colaborador → vos recibís email</li>
+            <li>Admin comenta → colaborador recibe email</li>
+            <li>Corrección solicitada → colaborador recibe email</li>
+            <li>Tarea aprobada → colaborador recibe email</li>
+          </ul>
+        </div>
+        <p style="font-size:11px;color:#9ca3af;text-align:center;margin-top:24px">Enviado desde Growith — notificaciones@growith.app</p>
+      </div>`;
+      await sendEmail({ to, subject:"✅ Email de prueba — Growith funciona correctamente", html });
       return res.json({ ok:true });
     }
 

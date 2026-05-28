@@ -6108,13 +6108,33 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
         {/* Notificaciones de equipo */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>📱 Mi WhatsApp (Tareas)</div>
-          <div style={{fontSize:12,color:T.textMd,marginBottom:10,lineHeight:1.5}}>Cuando un colaborador entrega trabajo o hace una consulta, puede enviarte un WA directo a tu número. Ingresalo acá para que el botón funcione automáticamente.</div>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>🔔 Notificaciones (Tareas)</div>
+
+          {/* Email info */}
+          <div style={{marginBottom:16,padding:"14px",background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8}}>📧 Sistema de emails</div>
+            <div style={{fontSize:11,color:T.textSm,lineHeight:1.8,marginBottom:10}}>
+              <div><strong style={{color:T.text}}>Desde:</strong> notificaciones@growith.app</div>
+              <div><strong style={{color:T.text}}>Vos recibís:</strong> entregas, consultas y actualizaciones → en <strong style={{color:T.accent}}>{user?.email}</strong></div>
+              <div><strong style={{color:T.text}}>Colaborador recibe:</strong> asignación, aprobación, correcciones y comentarios → en su email</div>
+            </div>
+            <AsyncButton onClick={async()=>{
+              if(!user?.email) return;
+              await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"sendTestEmail",uid:user.uid,to:user.email})});
+              toast("📧 Email de prueba enviado a "+user.email,"success");
+            }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>
+              📧 Enviar email de prueba a {user?.email}
+            </AsyncButton>
+          </div>
+
+          {/* WhatsApp */}
+          <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:6}}>📱 Mi WhatsApp para notificaciones</div>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Cuando un colaborador entrega trabajo, el botón "Avisar por WA" te escribe directo a este número.</div>
           <div style={{display:"flex",gap:8}}>
             <input value={adminWaPhone} onChange={e=>setAdminWaPhone(e.target.value)} placeholder="Ej: 5491112345678 (con código de país, sin +)" style={{...InputStyle(T),fontSize:13,flex:1}}/>
             <button onClick={saveAdminWaPhone} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",flexShrink:0}}>{waPhoneSaved?"✓ Guardado":"Guardar"}</button>
           </div>
-          {adminWaPhone&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>Los colaboradores van a poder avisarte directamente en <strong>wa.me/{adminWaPhone.replace(/\D/g,"")}</strong></div>}
+          {adminWaPhone&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>✓ Los colaboradores van a escribirte a <strong>wa.me/{adminWaPhone.replace(/\D/g,"")}</strong></div>}
         </div>
 
         {/* Tiendas */}
@@ -7830,6 +7850,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <span style={{fontSize:10,color:T.textSm}}>{c.autor==="manager"?"Vos":c.autor} · {fmtDate(c.fecha)}</span>
                   {c.tipo==="consulta"&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:"#3b82f620",color:"#3b82f6",fontWeight:600}}>CONSULTA</span>}
                   {c.tipo==="progreso"&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:"#22c55e20",color:"#22c55e",fontWeight:600}}>ACTUALIZACIÓN</span>}
+                  {c.tipo==="bloqueo"&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:"#ef444420",color:"#ef4444",fontWeight:600}}>🚫 BLOQUEADO</span>}
                 </div>
                 <div style={{fontSize:12,color:T.text,lineHeight:1.4}}>{c.texto}</div>
               </div>
@@ -8010,6 +8031,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </div>
                             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                               <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
+                              {t.progresoLabel&&t.estado==="en_proceso"&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#6366f115",color:"#6366f1",fontWeight:600}}>{t.progresoLabel}</span>}
+                              {t.estado==="bloqueada"&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#ef444415",color:"#ef4444",fontWeight:700}}>⚠️ Bloqueado</span>}
                               {t.asignadoNombre&&<span style={{fontSize:11,color:T.textMd}}>→ {t.asignadoNombre}</span>}
                               {t.deadline&&<span style={{fontSize:11,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅 {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Vence hoy":`${days}d`):fmtDate(t.deadline)}</span>}
                             </div>
@@ -8065,6 +8088,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <span style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.3,flex:1}}>{t.titulo}</span>
                               </div>
                               {(t.labels||[]).length>0&&<div style={{marginBottom:5}}><LabelChips labels={t.labels}/></div>}
+                              {t.progresoLabel&&t.estado==="en_proceso"&&<div style={{marginBottom:4,fontSize:10,color:"#6366f1",fontWeight:600,background:"#6366f115",borderRadius:4,padding:"1px 6px",display:"inline-block"}}>{t.progresoLabel}</div>}
                               <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
                                 {t.asignadoNombre&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 5px"}}>{t.asignadoNombre.split(" ")[0]}</span>}
                                 {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅{days!==null?(days<0?"Vencida":days===0?"Hoy":`${days}d`):"—"}</span>}
@@ -9409,6 +9433,8 @@ function ColaboradorPublicView({T, token}) {
   const [showEstimacion, setShowEstimacion] = useState({});
   const [progressText, setProgressText] = useState({});
   const [showProgress, setShowProgress] = useState({});
+  const [showBloqueo, setShowBloqueo] = useState({});
+  const [bloqueoMotivo, setBloqueoMotivo] = useState({});
   const [bannerClosed, setBannerClosed] = useState(()=>{
     try{return localStorage.getItem(`growith_colab_banner_${token}`)==="1";}catch(e){return false;}
   });
@@ -9505,9 +9531,9 @@ function ColaboradorPublicView({T, token}) {
     setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,checklist:d.checklist}:t)}));
   }
 
-  async function publicSetEstado(tareaId, estado) {
-    await publicApi({action:"publicUpdateEstado",tareaId,estado});
-    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado}:t)}));
+  async function publicSetEstado(tareaId, estado, progresoLabel="", motivo="") {
+    await publicApi({action:"publicUpdateEstado",tareaId,estado,progresoLabel,motivo});
+    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado,progresoLabel}:t)}));
   }
 
   async function submitProgress(tareaId) {
@@ -9756,45 +9782,111 @@ function ColaboradorPublicView({T, token}) {
                       ))}
                     </div>
                   )}
-                  {/* Actualizar estado propio */}
-                  {!isAprobado&&t.estado!=="entregado"&&(
-                    <div style={{marginBottom:14}}>
-                      <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Mi estado</div>
-                      <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                        {t.estado!=="en_proceso"&&t.estado!=="revision"&&(
-                          <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso")}
-                            style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"#3b82f620",color:"#3b82f6",border:"1px solid #3b82f644",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
-                            🔄 Empecé a trabajar en esto
-                          </AsyncButton>
-                        )}
-                        {t.estado==="en_proceso"&&(
-                          <AsyncButton onClick={()=>publicSetEstado(t._id,"bloqueada")}
-                            style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"#6b728018",color:"#6b7280",border:"1px solid #6b728030",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
-                            🚫 Necesito ayuda / Estoy bloqueado
-                          </AsyncButton>
-                        )}
-                        {t.estado==="bloqueada"&&(
-                          <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso")}
-                            style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"#3b82f620",color:"#3b82f6",border:"1px solid #3b82f644",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
-                            🔄 Retomé el trabajo
-                          </AsyncButton>
-                        )}
-                        <button onClick={()=>setShowProgress(p=>({...p,[t._id]:!p[t._id]}))}
-                          style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"transparent",color:T.textMd,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                          💬 Enviar actualización
-                        </button>
-                      </div>
-                      {showProgress[t._id]&&(
-                        <div style={{marginTop:8,display:"flex",gap:7}}>
-                          <input value={progressText[t._id]||""} onChange={e=>setProgressText(p=>({...p,[t._id]:e.target.value}))}
-                            placeholder="Ej: Voy por el 60%, lo entrego mañana…"
-                            style={{...iS,fontSize:12,flex:1}}
-                            onKeyDown={e=>{if(e.key==="Enter")submitProgress(t._id);}}/>
-                          <AsyncButton onClick={()=>submitProgress(t._id)} style={{fontSize:12,padding:"6px 14px",borderRadius:8,background:"#6366f1",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Enviar</AsyncButton>
+                  {/* ── SELECTOR DE PROGRESO ── */}
+                  {!isAprobado&&t.estado!=="entregado"&&(()=>{
+                    const STEPS=[
+                      {id:"pendiente",       label:"Sin empezar",         icon:"⏳", desc:"Todavía no arranqué",          color:"#d97706", bg:"#d9770615"},
+                      {id:"leyendo",         label:"Leyendo el brief",    icon:"👀", desc:"Revisando las instrucciones",   color:"#6366f1", bg:"#6366f115"},
+                      {id:"en_proceso",      label:"Trabajando en esto",  icon:"🔄", desc:"Ya arranqué, todo bien",       color:"#3b82f6", bg:"#3b82f615"},
+                      {id:"produciendo",     label:"Creando / Diseñando", icon:"🎨", desc:"En plena producción",           color:"#a855f7", bg:"#a855f715"},
+                      {id:"revisando",       label:"Revisando mi trabajo",icon:"🔍", desc:"Chequeando antes de entregar",  color:"#0ea5e9", bg:"#0ea5e915"},
+                    ];
+                    // currentStep: map estado+progresoLabel to step id
+                    const currentStep = t.estado==="bloqueada"?"bloqueada"
+                      : t.progresoLabel==="Leyendo el brief"?"leyendo"
+                      : t.progresoLabel==="Creando / Diseñando"?"produciendo"
+                      : t.progresoLabel==="Revisando mi trabajo"?"revisando"
+                      : t.estado==="en_proceso"?"en_proceso"
+                      : "pendiente";
+                    return (
+                      <div style={{marginBottom:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>¿En qué etapa estás?</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                          {STEPS.map(step=>{
+                            const active = currentStep===step.id;
+                            return (
+                              <AsyncButton key={step.id}
+                                onClick={async()=>{
+                                  const progresoLabel = step.id==="pendiente"?"":step.label;
+                                  const estado = step.id==="pendiente"?"pendiente":"en_proceso";
+                                  await publicSetEstado(t._id, estado, progresoLabel);
+                                }}
+                                style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:10,border:`1.5px solid ${active?step.color:T.border}`,background:active?step.bg:T.surface,cursor:"pointer",textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",width:"100%"}}>
+                                <span style={{fontSize:20,flexShrink:0,lineHeight:1}}>{step.icon}</span>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:13,fontWeight:active?700:500,color:active?step.color:T.text}}>{step.label}</div>
+                                  <div style={{fontSize:11,color:active?step.color:T.textSm,opacity:active?0.85:0.7}}>{step.desc}</div>
+                                </div>
+                                {active&&<span style={{fontSize:16,color:step.color,flexShrink:0}}>✓</span>}
+                              </AsyncButton>
+                            );
+                          })}
+                          {/* Bloqueado — separado, con motivo obligatorio */}
+                          <div>
+                            {currentStep!=="bloqueada"?(
+                              <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:!p[t._id]}))}
+                                style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,background:T.surface,cursor:"pointer",width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                <span style={{fontSize:20,flexShrink:0}}>🚫</span>
+                                <div style={{flex:1,textAlign:"left"}}>
+                                  <div style={{fontSize:13,fontWeight:500,color:"#ef4444"}}>Estoy bloqueado</div>
+                                  <div style={{fontSize:11,color:T.textSm,opacity:0.7}}>Necesito ayuda para continuar</div>
+                                </div>
+                              </button>
+                            ):(
+                              <div style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:10,border:"1.5px solid #ef4444",background:"#ef444412"}}>
+                                <span style={{fontSize:20,flexShrink:0}}>🚫</span>
+                                <div style={{flex:1}}>
+                                  <div style={{fontSize:13,fontWeight:700,color:"#ef4444"}}>Bloqueado</div>
+                                  <div style={{fontSize:11,color:"#ef4444",opacity:0.8}}>El equipo ya fue notificado</div>
+                                </div>
+                                <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso","Trabajando en esto")}
+                                  style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#3b82f620",color:"#3b82f6",border:"1px solid #3b82f644",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,flexShrink:0}}>
+                                  Retomé ✓
+                                </AsyncButton>
+                              </div>
+                            )}
+                            {showBloqueo[t._id]&&currentStep!=="bloqueada"&&(
+                              <div style={{marginTop:6,background:"#ef444410",borderRadius:10,padding:"12px",border:"1px solid #ef444430"}}>
+                                <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:0.7}}>(requerido)</span></div>
+                                <textarea value={bloqueoMotivo[t._id]||""} onChange={e=>setBloqueoMotivo(p=>({...p,[t._id]:e.target.value}))}
+                                  placeholder="Ej: No tengo acceso al archivo de Figma, falta el logo en alta resolución..."
+                                  style={{...iS,fontSize:12,width:"100%",minHeight:60,resize:"none",marginBottom:8,borderColor:"#ef444444"}}/>
+                                <div style={{display:"flex",gap:7}}>
+                                  <AsyncButton onClick={async()=>{
+                                    const motivo=(bloqueoMotivo[t._id]||"").trim();
+                                    if(!motivo)return appAlert("Explicá qué te está frenando para que el equipo pueda ayudarte.");
+                                    await publicSetEstado(t._id,"bloqueada","",motivo);
+                                    setShowBloqueo(p=>({...p,[t._id]:false}));
+                                  }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:"#ef4444",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                                    Avisar al equipo
+                                  </AsyncButton>
+                                  <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:false}))} style={{fontSize:12,padding:"7px 12px",borderRadius:8,background:"transparent",color:T.textMd,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  )}
+                        {/* Actualización de texto */}
+                        <div style={{marginTop:10}}>
+                          <button onClick={()=>setShowProgress(p=>({...p,[t._id]:!p[t._id]}))}
+                            style={{fontSize:12,color:T.textMd,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted"}}>
+                            {showProgress[t._id]?"Cerrar":"💬 Mandar un mensaje al equipo"}
+                          </button>
+                          {showProgress[t._id]&&(
+                            <div style={{marginTop:8,display:"flex",gap:7}}>
+                              <input value={progressText[t._id]||""} onChange={e=>setProgressText(p=>({...p,[t._id]:e.target.value}))}
+                                placeholder="Ej: Voy bien, lo entrego mañana al mediodía…"
+                                style={{...iS,fontSize:12,flex:1}}
+                                onKeyDown={e=>{if(e.key==="Enter")submitProgress(t._id);}}/>
+                              <AsyncButton onClick={()=>submitProgress(t._id)} style={{fontSize:12,padding:"6px 14px",borderRadius:8,background:"#6366f1",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Enviar</AsyncButton>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Entrega + WA post-submit */}
                   {!isAprobado&&(
