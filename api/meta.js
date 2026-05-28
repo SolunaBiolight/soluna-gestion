@@ -1271,7 +1271,8 @@ export default async function handler(req, res) {
       // un metaGet por cada video. Con este cache, abrir/refrescar dentro de los
       // 2 min siguientes es instantáneo. Botón "🔄" del front pasa fresh=1 para
       // saltearlo cuando el user quiere data nueva sí o sí.
-      const libCacheKey = `lib_${String(accIdQ).replace(/[^a-zA-Z0-9_]/g,"_")}_${since}_${until}`;
+      // v2: bump cuando cambie shape del payload o cuando queramos invalidar caches viejos
+      const libCacheKey = `libv2_${String(accIdQ).replace(/[^a-zA-Z0-9_]/g,"_")}_${since}_${until}`;
       const libCacheRef = db.collection("users").doc(uid).collection("meta_lib_cache").doc(libCacheKey);
       const LIB_CACHE_TTL_MS = 2 * 60 * 1000;
       const forceFresh = req.query.fresh === "1";
@@ -1287,19 +1288,24 @@ export default async function handler(req, res) {
         } catch (_) { /* sigue al fetch real */ }
       }
 
+      const _t0 = Date.now();
+      const _timings = {};
       try {
-        // 1) Ads con creative detallado — paginamos en lotes chicos para no exceder limites de Meta.
-        // El error "Please reduce the amount of data" salta con limit alto + muchos fields.
+        // 1) Ads — fields ULTRA reducidos. Antes el endpoint pedía object_story_spec
+        // COMPLETO + asset_feed_spec, que serializaba muchísimos KB por página (Meta
+        // tarda más cuando los objetos anidados son grandes). Ahora solo pedimos los
+        // campos que la card realmente renderiza. Para detalle completo del creative
+        // (description, link, cta) el front llama lazy si es necesario (AI analyzer).
         const ads = [];
         let nextUrl = null;
         let page = await metaGet(`${cfg.ad_account_id}/ads`, {
-          fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,image_url,image_hash,video_id,object_story_spec,object_type,body,title,asset_feed_spec}",
-          limit: 75,
+          fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,image_url,video_id,object_type,body,title}",
+          limit: 50,
         }, cfg.access_token);
         ads.push(...(page.data || []));
         nextUrl = page.paging?.next || null;
         let safety = 0;
-        while (nextUrl && safety < 10 && ads.length < 600) {
+        while (nextUrl && safety < 12 && ads.length < 600) {
           safety++;
           try {
             const r = await fetch(nextUrl);
@@ -1309,6 +1315,8 @@ export default async function handler(req, res) {
             nextUrl = j.paging?.next || null;
           } catch (_) { break; }
         }
+        _timings.ads_fetch_ms = Date.now() - _t0;
+        _timings.ads_count = ads.length;
 
         // 1.b) Para los ads que tienen video_id, resolver el MP4 source + thumbnail HD.
         // Garantizamos que SIEMPRE haya un fallback reproducible:
@@ -1350,22 +1358,21 @@ export default async function handler(req, res) {
           }));
         }
 
-        // 2) Insights del rango por ad
-        let insightsRows = [];
-        try {
-          const ins = await metaGet(`${cfg.ad_account_id}/insights`, {
+        // 2) Insights del rango por ad — y análisis en paralelo (independientes)
+        const _tIns = Date.now();
+        const [insightsRes, analysesSnap] = await Promise.all([
+          metaGet(`${cfg.ad_account_id}/insights`, {
             level: "ad",
             "time_range[since]": since,
             "time_range[until]": until,
             action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]),
             fields: "ad_id,spend,impressions,clicks,ctr,cpm,cpc,frequency,reach,actions,action_values,purchase_roas,cost_per_action_type",
             limit: 500,
-          }, cfg.access_token);
-          insightsRows = ins.data || [];
-        } catch (e) { /* sin insights */ }
-
-        // 3) Análisis cacheados
-        const analysesSnap = await db.collection("users").doc(uid).collection("meta_ad_analyses").get();
+          }, cfg.access_token).catch(e => { console.warn("[ads_library] insights fail:", e.message); return { data: [] }; }),
+          db.collection("users").doc(uid).collection("meta_ad_analyses").get(),
+        ]);
+        const insightsRows = insightsRes.data || [];
+        _timings.insights_ms = Date.now() - _tIns;
         const cachedAnalyses = {};
         analysesSnap.docs.forEach(d => { cachedAnalyses[d.id] = d.data(); });
 
@@ -1420,7 +1427,8 @@ export default async function handler(req, res) {
           };
         });
 
-        const payload = { ads: result, since, until };
+        _timings.total_ms = Date.now() - _t0;
+        const payload = { ads: result, since, until, _timings };
         // Persistir el response — el próximo load (dentro de 2 min) sale instant.
         try { await libCacheRef.set({ payload, ts: Date.now() }, { merge: true }); }
         catch (_) {}
