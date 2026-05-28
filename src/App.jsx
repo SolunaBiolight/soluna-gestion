@@ -12971,6 +12971,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [libSort,setLibSort]=useState("spend"); // spend | roas | recent
   const [libFilterStatus,setLibFilterStatus]=useState("all"); // all | active | paused
   const [inlinePlayingId,setInlinePlayingId]=useState(null); // ad.id que está reproduciendo inline
+  const [libVisibleCount,setLibVisibleCount]=useState(30); // paginación incremental — 30 cards iniciales, +30 por click
   const [libSince,setLibSince]=useState(()=>new Date(Date.now()-7*86400000).toISOString().slice(0,10));
   const [libUntil,setLibUntil]=useState(()=>new Date().toISOString().slice(0,10));
   const [analyzingId,setAnalyzingId]=useState(null);
@@ -14696,9 +14697,16 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   const fmt = (n) => (n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
+                  // Paginación incremental — renderizar 600 cards × 600 <img> a la vez
+                  // bloqueaba el browser >1 min. Mostramos los primeros N y un botón
+                  // "Cargar más" pinta los siguientes 30. El filtro/sort se aplica a
+                  // toda la lista; solo el render se limita.
+                  const visibleAds = filtered.slice(0, libVisibleCount);
+                  const remaining = filtered.length - visibleAds.length;
                   return (
+                    <>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(340px, 1fr))",gap:16}}>
-                      {filtered.map(ad => {
+                      {visibleAds.map(ad => {
                         const isActive = ad.effective_status === "ACTIVE";
                         const isExpanded = expandedAdId === ad.id;
                         const analyzing = analyzingId === ad.id;
@@ -14836,6 +14844,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         );
                       })}
                     </div>
+                    {/* Cargar más — incremental, evita ahogar el DOM con 600 cards */}
+                    {remaining > 0 && (
+                      <div style={{marginTop:18,textAlign:"center"}}>
+                        <button onClick={()=>setLibVisibleCount(c=>c+30)} style={{padding:"10px 22px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:10,background:T.card,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                          Cargar más <span style={{color:T.textSm,fontWeight:500,marginLeft:4}}>(+{Math.min(30,remaining)} de {remaining} restantes)</span>
+                        </button>
+                      </div>
+                    )}
+                    </>
                   );
                 })()}
               </>

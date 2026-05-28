@@ -1272,7 +1272,7 @@ export default async function handler(req, res) {
       // 2 min siguientes es instantáneo. Botón "🔄" del front pasa fresh=1 para
       // saltearlo cuando el user quiere data nueva sí o sí.
       // v2: bump cuando cambie shape del payload o cuando queramos invalidar caches viejos
-      const libCacheKey = `libv2_${String(accIdQ).replace(/[^a-zA-Z0-9_]/g,"_")}_${since}_${until}`;
+      const libCacheKey = `libv3_${String(accIdQ).replace(/[^a-zA-Z0-9_]/g,"_")}_${since}_${until}`;
       const libCacheRef = db.collection("users").doc(uid).collection("meta_lib_cache").doc(libCacheKey);
       const LIB_CACHE_TTL_MS = 2 * 60 * 1000;
       const forceFresh = req.query.fresh === "1";
@@ -1298,14 +1298,17 @@ export default async function handler(req, res) {
         // (description, link, cta) el front llama lazy si es necesario (AI analyzer).
         const ads = [];
         let nextUrl = null;
+        // Drop image_url del list (es el HD, sólo se usa en modal) — thumbnail_url
+        // alcanza para la card y pesa 1/10. Cap hard de 200 ads (4 páginas) — antes
+        // 600 ads quemaban el front con 600 DOM nodes + 600 imágenes en paralelo.
         let page = await metaGet(`${cfg.ad_account_id}/ads`, {
-          fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,image_url,video_id,object_type,body,title}",
+          fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,thumbnail_url,video_id,object_type,body,title}",
           limit: 50,
         }, cfg.access_token);
         ads.push(...(page.data || []));
         nextUrl = page.paging?.next || null;
         let safety = 0;
-        while (nextUrl && safety < 12 && ads.length < 600) {
+        while (nextUrl && safety < 4 && ads.length < 200) {
           safety++;
           try {
             const r = await fetch(nextUrl);
