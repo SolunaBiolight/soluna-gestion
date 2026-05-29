@@ -445,21 +445,23 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
 
 function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}}) {
   const GROUPS = [
-    { group:"OPERACIONES" },
+    // Inicio queda suelto arriba de todo, sin etiqueta de grupo
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
-    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
-      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
-    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red",
-      subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
-    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange",
-      subs:[{id:"activos",label:"Activos"},{id:"historial",label:"Historial"},{id:"influencers",label:"Influencers"}]},
-    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange"},
     { group:"ANALYTICS" },
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
       subs:[{id:"analisis",label:"Análisis"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2zM9 22V12h6v10", integrationKey:"ml"},
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
+    { group:"OPERACIONES" },
+    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
+      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
+    {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red",
+      subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
+    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange",
+      subs:[{id:"activos",label:"Activos"},{id:"historial",label:"Historial"},{id:"influencers",label:"Influencers"}]},
+    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
+      subs:[{id:"tareas",label:"Tareas"},{id:"equipo",label:"Equipo"},{id:"creativos",label:"Creativos"}]},
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
       subs:[{id:"metricas",label:"Métricas"},{id:"pendientes",label:"Pendientes"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
@@ -8189,13 +8191,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       </div>
 
       <div style={{padding:"20px 24px"}}>
-        {/* Tabs */}
+        {/* Tabs internos removidos — navegación vive en el sidebar izquierdo. Dejamos
+            solo el toggle de la guía "Cómo funciona" para que siga estando a mano. */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showGuia?8:20,flexWrap:"wrap"}}>
-          <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,width:"fit-content"}}>
-            {[["tareas","📋 Tareas"],["equipo",`👥 Equipo (${colaboradores.length})`],["creativos","🎬 Creativos"]].map(([id,label])=>(
-              <button key={id} onClick={()=>setTab(id)} style={tabStyle(id)}>{label}</button>
-            ))}
-          </div>
           <button onClick={()=>setShowGuia(s=>!s)} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",fontSize:11,fontWeight:500,background:"transparent",border:`1px solid ${T.border}`,borderRadius:20,cursor:"pointer",color:showGuia?T.textMd:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
             <span style={{width:14,height:14,borderRadius:"50%",background:T.border,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.textMd,flexShrink:0}}>?</span>
             {showGuia?"Cerrar":"Cómo funciona"}
@@ -18234,7 +18232,7 @@ export default function App() {
   const [metaTab,setMetaTab]=useState("productos");
   const [stockTab,setStockTab]=useState("analisis");
   const [arcaTab,setArcaTab]=useState("metricas");
-  const [tareasTab,setTareasTab]=useState("kanban");
+  const [tareasTab,setTareasTab]=useState("tareas");
   const [canjesTab,setCanjesTab]=useState("activos");
   const [cmdOpen,setCmdOpen]=useState(false);
   const [tareasForReview,setTareasForReview]=useState(0);
