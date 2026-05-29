@@ -531,23 +531,30 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
             );
           }
           const active = page===item.id;
-          const activeSub = active && item.subs && !collapsed;
+          // Subs siempre desplegadas (cuando el sidebar no está colapsado) —
+          // estilo bloques de Escalafy/Linear. Antes solo aparecían cuando el
+          // user estaba dentro del módulo; ahora son visibles en todo momento
+          // para que la navegación sea de un solo click sin importar dónde estés.
+          const showSubs = item.subs && !collapsed;
           return (
             <React.Fragment key={item.id}>
               <NavBtn item={item}/>
-              {activeSub && (
+              {showSubs && (
                 <div style={{
                   marginLeft:22,
                   paddingLeft:14,
                   borderLeft:`1.5px solid ${T.border}`,
                   marginTop:2,
-                  marginBottom:4,
+                  marginBottom:6,
                   display:"flex",
                   flexDirection:"column",
                   gap:1,
                 }}>
                   {item.subs.map(sub=>{
-                    const subActive = (item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id)||(item.id==="meta"&&metaTab===sub.id)||(item.id==="stock"&&stockTab===sub.id)||(item.id==="arca"&&arcaTab===sub.id)||(item.id==="tareas"&&tareasTab===sub.id)||(item.id==="canjes"&&canjesTab===sub.id);
+                    // subActive solo cuando el módulo padre es el activo —
+                    // antes daba highlight aún navegando otra sección, ahora
+                    // que las subs son visibles siempre eso confundía.
+                    const subActive = active && ((item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id)||(item.id==="meta"&&metaTab===sub.id)||(item.id==="stock"&&stockTab===sub.id)||(item.id==="arca"&&arcaTab===sub.id)||(item.id==="tareas"&&tareasTab===sub.id)||(item.id==="canjes"&&canjesTab===sub.id));
                     return (
                       <button key={sub.id}
                         onClick={()=>{
