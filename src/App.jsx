@@ -12921,6 +12921,72 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
 // ===========================================
 // APP META ADS
 // ===========================================
+
+// Selector de cuenta publicitaria activa (usado en el topbar de Meta Ads).
+// Mismo patrón que el selector de CUIT del Facturador: chip clickable con
+// punto verde + nombre + ▾, popover con la lista de cuentas conectadas, y
+// shortcut "+ Conectar otra cuenta" que lleva al tab Cuenta.
+function AccountSwitcher({T, accounts, activeAcc, onSwitch, onGoConnect}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(()=>{
+    if (!open) return;
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onEsc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onEsc);
+    };
+  },[open]);
+  const list = Array.isArray(accounts) ? accounts : [];
+  const label = activeAcc.ad_account_name || activeAcc.user_name || "Conectado";
+  return (
+    <div ref={ref} style={{position:"relative"}}>
+      <button onClick={()=>setOpen(o=>!o)} title="Cambiar cuenta publicitaria"
+        style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",border:`1px solid ${T.border}`,borderRadius:8,background:T.card,color:T.text,fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <span style={{width:6,height:6,borderRadius:"50%",background:T.green,display:"inline-block"}}/>
+        <span style={{maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
+        <span style={{color:T.textSm,fontSize:10,marginLeft:2}}>▾</span>
+      </button>
+      {open && (
+        <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:280,maxWidth:360,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:6,zIndex:60,boxShadow:"0 10px 28px rgba(0,0,0,0.5)"}}>
+          <div style={{fontSize:9,color:T.textSm,padding:"6px 10px 4px",textTransform:"uppercase",fontWeight:700,letterSpacing:0.6}}>Cuentas publicitarias</div>
+          {list.length === 0 ? (
+            <div style={{padding:"14px 12px",fontSize:12,color:T.textSm}}>No hay cuentas conectadas.</div>
+          ) : list.map(a => {
+            const isActive = a.id === activeAcc.id;
+            const name = a.ad_account_name || a.user_name || "Sin nombre";
+            const sub = a.ad_account_id || a.bm_id || "";
+            return (
+              <button key={a.id}
+                onClick={()=>{ onSwitch(a); setOpen(false); }}
+                style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 10px",border:"none",background:isActive?T.bg:"transparent",borderRadius:8,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}
+                onMouseEnter={e=>{ if(!isActive) e.currentTarget.style.background=T.bg+"99"; }}
+                onMouseLeave={e=>{ if(!isActive) e.currentTarget.style.background="transparent"; }}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:isActive?T.green:T.borderL,flexShrink:0}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>
+                  {sub && <div style={{fontSize:10,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{sub}</div>}
+                </div>
+                {isActive && <span style={{fontSize:10,color:T.green,fontWeight:700}}>ACTIVA</span>}
+              </button>
+            );
+          })}
+          <div style={{borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:4}}>
+            <button onClick={()=>{ setOpen(false); onGoConnect(); }}
+              style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 10px",border:"none",background:"transparent",borderRadius:8,cursor:"pointer",color:T.accent,fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600}}>
+              <span style={{width:18,height:18,borderRadius:5,background:T.accentSolid+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:14,lineHeight:1}}>+</span>
+              Conectar otra cuenta
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const OBJECTIVES=[
     {id:"OUTCOME_SALES",label:"Ventas"},{id:"OUTCOME_TRAFFIC",label:"Tráfico"},
@@ -14278,10 +14344,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Meta Ads" onHome={onHome}>
         {activeAcc&&(
-          <div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:5}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:T.green,display:"inline-block"}}/>
-            {activeAcc.ad_account_name||activeAcc.user_name||"Conectado"}
-          </div>
+          <AccountSwitcher T={T} accounts={accounts} activeAcc={activeAcc}
+            onSwitch={async (a)=>{
+              if (a.id === activeAccId) return;
+              setActiveAccId(a.id);
+              try { await metaApi("set_active","POST",{id:a.id}); }
+              catch(e) { toast("No se pudo cambiar la cuenta: "+(e?.message||""),"error"); }
+            }}
+            onGoConnect={()=>setTab("cuenta")}/>
         )}
       </AppTopbar>
       {/* Tabs internos REMOVIDOS — navegación va por el sidebar izquierdo */}
