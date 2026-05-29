@@ -532,11 +532,10 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
             );
           }
           const active = page===item.id;
-          // Subs siempre desplegadas (cuando el sidebar no está colapsado) —
-          // estilo bloques de Escalafy/Linear. Antes solo aparecían cuando el
-          // user estaba dentro del módulo; ahora son visibles en todo momento
-          // para que la navegación sea de un solo click sin importar dónde estés.
-          const showSubs = item.subs && !collapsed;
+          // Subs solo cuando estás dentro del módulo (revertido del bloque
+          // siempre-desplegado de Escalafy — el usuario prefiere la fluidez
+          // del despliegue al click). Se ocultan otra vez al cambiar de módulo.
+          const showSubs = active && item.subs && !collapsed;
           return (
             <React.Fragment key={item.id}>
               <NavBtn item={item}/>
@@ -546,7 +545,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
                   paddingLeft:14,
                   borderLeft:`1.5px solid ${T.border}`,
                   marginTop:2,
-                  marginBottom:6,
+                  marginBottom:4,
                   display:"flex",
                   flexDirection:"column",
                   gap:1,
