@@ -16742,8 +16742,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     } finally { setWhSaving(false); }
   }
   async function deleteWarehouse(w) {
-    if (w.id === "main") return toast("No se puede borrar el depósito principal","warning");
-    if (!await appConfirm(`¿Borrar "${w.name}"?\nEl stock que tenga este depósito se mueve al principal.`,{danger:true,okLabel:"Borrar"})) return;
+    if (!await appConfirm(`¿Borrar "${w.name}"?\nLas asignaciones de stock a este depósito se sueltan (el stock_total del item no cambia; lo podés re-asignar a otro depósito).`,{danger:true,okLabel:"Borrar"})) return;
     const r = await fetch(`/api/inventory?action=warehouse_delete&uid=${uid}&warehouse_id=${w.id}`,{method:"DELETE"});
     const j = await r.json();
     if (j.error) return toast(j.error,"error");

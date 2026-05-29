@@ -414,8 +414,12 @@ export default async function handler(req, res) {
 
     if (action === "warehouses_list" && req.method === "GET") {
       const snap = await db.collection("users").doc(uid).collection("warehouses").get();
-      const warehouses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // No auto-creamos "main": los depósitos son los que el usuario decide crear.
+      // Excluimos el legacy id="main" (Depósito principal autogenerado) — el cliente
+      // sólo debe ver los depósitos que crea. El stock que esté ahí sigue contado en
+      // stock_total del item, no se pierde nada; sólo deja de mostrarse como card.
+      const warehouses = snap.docs
+        .filter(d => d.id !== "main")
+        .map(d => ({ id: d.id, ...d.data() }));
       warehouses.sort((a,b) => (a.created_at || "").localeCompare(b.created_at || ""));
       return res.json({ warehouses });
     }
