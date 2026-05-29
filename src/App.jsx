@@ -14737,9 +14737,12 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 </div>
 
                 {libLoading && libAds.length===0 ? (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 24px",textAlign:"center"}}>
                     <Spinner size={20} color={T.accent}/>
-                    <div style={{fontSize:13,color:T.textSm,marginTop:14}}>Cargando tus anuncios desde Meta...</div>
+                    <div style={{fontSize:14,fontWeight:600,color:T.text,marginTop:16}}>Cargando tus anuncios desde Meta…</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:6,lineHeight:1.55,maxWidth:480,margin:"6px auto 0"}}>
+                      La primera carga tarda <strong style={{color:T.text}}>entre 20 y 35 segundos</strong> porque Growith trae todas tus campañas, adsets y métricas en vivo desde la API de Meta. Las siguientes cargas (dentro de los 2 min) salen al instante gracias al cache.
+                    </div>
                   </div>
                 ) : (() => {
                   let filtered = libAds;
