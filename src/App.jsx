@@ -5706,30 +5706,47 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[user?.uid, statsPeriod, statsPeriod==="custom"?customFrom:null, statsPeriod==="custom"?customTo:null]);
 
-  // Fetch alertas de stock (sin cambios)
+  // Fetch alertas de stock — SOLO para productos que el usuario tiene como
+  // inventory_item creado en Growith. Antes mostraba alertas para TODOS los
+  // products de TN/Shopify (incluyendo cosas tipo "Guía Digital" que ni se
+  // trackean en stock), generando ruido. Match por SKU exacto o por nombre
+  // exacto (case-insensitive) — alcanza para el caso típico.
   React.useEffect(()=>{
     if(!user?.uid) return;
     const uid=user.uid;
     let cfg={}, global=14;
     try{ cfg=JSON.parse(localStorage.getItem(`growith_alert_config_${uid}`)||"{}"); }catch(e){}
     try{ global=parseInt(localStorage.getItem(`growith_alert_global_${uid}`))||14; }catch(e){}
-    fetch(`/api/stock?action=products&uid=${uid}&days=30`)
-      .then(r=>r.json()).then(data=>{
-        if(!data.products) return;
-        const al=(data.products||[]).filter(p=>(cfg[p.id]?.enabled)!==false).flatMap(p=>{
-          const thr=cfg[p.id]?.threshold??global;
-          return p.variants.filter(v=>{
-            const vrate=v.units_sold>0?v.units_sold/30:0;
-            const vd=vrate>0?Math.round(v.stock/vrate):null;
-            return v.stock===0||(vd!==null&&vd<=thr);
-          }).map(v=>{
-            const vrate=v.units_sold>0?v.units_sold/30:0;
-            const vd=vrate>0?Math.round(v.stock/vrate):null;
-            return {producto:p.nombre,variante:v.nombre,stock:v.stock,daysLeft:vd,status:v.stock===0?"empty":vd<=7?"critical":"low"};
-          });
-        }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1)).slice(0,4);
-        setStockAlertas(al);
-      }).catch(()=>{});
+    Promise.all([
+      fetch(`/api/stock?action=products&uid=${uid}&days=30`).then(r=>r.json()).catch(()=>({})),
+      fetch(`/api/inventory?action=list_items&uid=${uid}`).then(r=>r.json()).catch(()=>({items:[]})),
+    ]).then(([data, inv])=>{
+      if(!data?.products) return;
+      const items = Array.isArray(inv?.items) ? inv.items : [];
+      // Sin items creados → sin alertas. El sistema de tracking no está activo
+      // y no queremos spamear con productos que el user no decidió monitorear.
+      if (items.length === 0) { setStockAlertas([]); return; }
+      const norm = (s) => String(s||"").trim().toLowerCase();
+      const trackedSkus = new Set(items.map(i => norm(i.sku)).filter(Boolean));
+      const trackedNames = new Set(items.map(i => norm(i.nombre)).filter(Boolean));
+      const matches = (p, v) =>
+        (v.sku && trackedSkus.has(norm(v.sku))) ||
+        (p.nombre && trackedNames.has(norm(p.nombre)));
+      const al=(data.products||[]).filter(p=>(cfg[p.id]?.enabled)!==false).flatMap(p=>{
+        const thr=cfg[p.id]?.threshold??global;
+        return p.variants.filter(v=>{
+          if (!matches(p, v)) return false; // sólo lo que está como inventory_item
+          const vrate=v.units_sold>0?v.units_sold/30:0;
+          const vd=vrate>0?Math.round(v.stock/vrate):null;
+          return v.stock===0||(vd!==null&&vd<=thr);
+        }).map(v=>{
+          const vrate=v.units_sold>0?v.units_sold/30:0;
+          const vd=vrate>0?Math.round(v.stock/vrate):null;
+          return {producto:p.nombre,variante:v.nombre,stock:v.stock,daysLeft:vd,status:v.stock===0?"empty":vd<=7?"critical":"low"};
+        });
+      }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1)).slice(0,4);
+      setStockAlertas(al);
+    }).catch(()=>{});
   },[user?.uid]);
 
   const fmt = n => (n||0).toLocaleString("es-AR");
