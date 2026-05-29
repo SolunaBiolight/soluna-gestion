@@ -15084,6 +15084,17 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
         {/* ── CUENTA ──────────────────────────────────── */}
         {tab==="cuenta"&&(
+          <>
+          {/* Banner permanente: requisito clave para que TODAS las cuentas funcionen.
+              Aparece arriba sí o sí, no dentro de la guía colapsable, para que el
+              usuario no se lo pierda cuando suma su 2ª/3ª ad_account. */}
+          <div style={{background:T.yellowBg||(T.yellow+"15"),border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"14px 18px",marginBottom:18,display:"flex",gap:12,alignItems:"flex-start"}}>
+            <div style={{fontSize:20,lineHeight:1,flexShrink:0,marginTop:2}}>⚠️</div>
+            <div style={{flex:1,fontSize:12,color:T.textMd,lineHeight:1.6}}>
+              <div style={{fontWeight:700,color:T.text,fontSize:13,marginBottom:4}}>Cada cuenta publicitaria que conectes acá tiene que estar agregada como activo en tu app de Meta</div>
+              Si ya tenés una app creada en <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" style={{color:T.accent,textDecoration:"none",fontWeight:600}}>Meta for Developers</a>, andá a <strong>tu app → Configuración → Casos de uso / Activos → Cuentas publicitarias → Añadir</strong> y sumá ahí <strong>todas</strong> las ad_accounts que vayas a usar en Growith (la primera y todas las que sumes después). Si no, el System User Token genera bien pero las llamadas a esa cuenta devuelven <code style={{background:T.bg,padding:"1px 5px",borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:10}}>(#200) does not have permission</code> y Análisis/Biblioteca van a tirar vacío.
+            </div>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"start"}}>
             <div>
               {/* Cuentas conectadas */}
@@ -15171,6 +15182,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               </button>
             </div>
           </div>
+          </>
         )}
 
         {/* ── CAMPAÑAS ────────────────────────────────── */}
