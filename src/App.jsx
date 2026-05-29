@@ -14337,6 +14337,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:11,color:T.green}}>
         ✓ El token "Nunca vence" — no vas a tener que renovarlo ni reconectar la cuenta
       </div>
+      <div style={{background:T.yellowBg||(T.yellow+"15"),border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:11,color:T.textMd,lineHeight:1.55}}>
+        <div style={{fontWeight:700,color:T.text,marginBottom:4}}>💡 ¿Estás conectando una <em>nueva</em> cuenta publicitaria y ya tenés una app de Meta creada?</div>
+        Además del paso 3 (asignar la cuenta al System User), tenés que <strong>agregar la nueva ad_account como activo de tu app</strong> en <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" style={{color:T.accent,textDecoration:"none"}}>Meta for Developers</a> → tu app → <strong>Configuración → Casos de uso / Activos</strong> → Cuentas publicitarias → <strong>Añadir</strong>. Si saltás este paso, el token nuevo va a leer perfecto a tu System User pero <strong>seguirá sin acceso real a la cuenta nueva</strong> y vas a ver errores tipo <code style={{background:T.bg,padding:"1px 5px",borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:10}}>(#200) does not have permission</code> al refrescar Análisis o Biblioteca.
+      </div>
     </div>
   );
 
