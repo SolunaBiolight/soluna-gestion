@@ -13763,17 +13763,40 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
       let up;
       if (isVideo) {
-        // Subida resumable por chunks — soporta videos grandes sin caerse.
-        try {
-          const videoId = await uploadVideoResumableToMeta(
-            file, creds.access_token, creds.api_version, accIdStr,
-            (pct) => { if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? { ...c, _uploadPct: pct } : c)); }
-          );
-          up = { kind: "video", id: videoId, url: localPreviewUrl || null };
-        } catch (e) {
-          failTemp(`Error subiendo "${file.name}": ${e.message}`);
-          return;
+        // Fast-path: para videos chicos (<60MB) usamos POST único (multipart),
+        // que es ~2-3x más rápido que el resumable chunked. Reels y ads típicos
+        // pesan 5-30MB, así que entran. Si el POST único falla por timeout o
+        // network blip, caemos al resumable que es más robusto.
+        const VIDEO_FAST_PATH_LIMIT = 60 * 1024 * 1024;
+        let videoId = null;
+        if (file.size < VIDEO_FAST_PATH_LIMIT) {
+          try {
+            const fd = new FormData();
+            fd.append("access_token", creds.access_token);
+            fd.append("source", file, file.name);
+            const fastUrl = `https://graph.facebook.com/${creds.api_version}/${accIdStr}/advideos`;
+            const r = await fetch(fastUrl, { method: "POST", body: fd });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || j.error) throw new Error(j.error?.message || `HTTP ${r.status}`);
+            videoId = j.id || j.video_id || null;
+          } catch (e) {
+            // fast-path falló — fallback a resumable
+            console.warn(`[upload] fast-path falló para ${file.name}: ${e.message}; cayendo a resumable`);
+            videoId = null;
+          }
         }
+        if (!videoId) {
+          try {
+            videoId = await uploadVideoResumableToMeta(
+              file, creds.access_token, creds.api_version, accIdStr,
+              (pct) => { if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? { ...c, _uploadPct: pct } : c)); }
+            );
+          } catch (e) {
+            failTemp(`Error subiendo "${file.name}": ${e.message}`);
+            return;
+          }
+        }
+        up = { kind: "video", id: videoId, url: localPreviewUrl || null };
       } else {
         const fd = new FormData();
         fd.append("access_token", creds.access_token);
@@ -14056,8 +14079,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         }
       };
     };
-    const VIDEO_CONCURRENT = 5;
-    const IMAGE_CONCURRENT = 6;
+    const VIDEO_CONCURRENT = 8;
+    const IMAGE_CONCURRENT = 8;
     const videoWorker = makeWorker(videoIndices);
     const imageWorker = makeWorker(imageIndices);
     await Promise.all([
