@@ -268,13 +268,19 @@ async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes
     : COPY_SYSTEM;
   // Variabilidad: temperature alta + seed que cambia cada vez para que copies
   // del mismo creativo salgan distintos cada generacion.
-  // Hasta 3 intentos. Si Gemini devuelve vacío o JSON truncado, reintentamos con
-  // tokens cada vez más grandes y temperature más conservadora.
+  // Hasta 4 intentos con tokens escalando agresivo. Critico: si Gemini corta
+  // por MAX_TOKENS (finishReason), NO usamos la respuesta truncada — el JSON
+  // se "repara" cerrando comillas pero el contenido del campo `copy` queda
+  // cortado en mitad de oración. Antes esto pasaba silencioso. Ahora forzamos
+  // retry con mas tokens hasta que finishReason sea STOP (o que el ultimo
+  // intento devuelva algo aunque sea truncado, para no perder la generacion).
   let lastErr = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     const randSeed = Math.floor(Math.random() * 100000);
-    const maxTok = attempt === 0 ? 3000 : attempt === 1 ? 4500 : 6000;
-    const temp = attempt === 0 ? 0.95 : 0.7;
+    // Escala mas agresiva: 6000 → 8500 → 12000 → 16000.
+    const maxTok = [6000, 8500, 12000, 16000][attempt];
+    const temp = attempt === 0 ? 0.95 : 0.75;
+    const isLastAttempt = attempt === 3;
     const payload = {
       system_instruction: { parts: [{ text: systemText }] },
       contents: [{ role: "user", parts: [{ text: userPrompt + `\n\n(seed: ${randSeed})` }] }],
@@ -294,19 +300,26 @@ async function geminiGenerateCopy({ brand, analysis, tone, length, format, notes
       lastErr = new Error(`Gemini devolvió respuesta vacía (finish: ${finishReason || "sin razón"})`);
       continue;
     }
+    // Si cortó por límite de tokens y todavía nos quedan reintentos → reintentar
+    // con más tokens en vez de aceptar un copy truncado. Esta era la causa
+    // raíz del bug "copies por la mitad" — antes se aceptaba igual.
+    if (finishReason === "MAX_TOKENS" && !isLastAttempt) {
+      lastErr = new Error(`Copy truncado (MAX_TOKENS @ ${maxTok}). Reintentando con más tokens.`);
+      console.warn(`[generate_copy] ${lastErr.message}`);
+      continue;
+    }
     let cleaned = text;
     if (cleaned.includes("```")) { cleaned = cleaned.split("```")[1] || ""; if (cleaned.startsWith("json")) cleaned = cleaned.slice(4); }
     const s = cleaned.indexOf("{"), e = cleaned.lastIndexOf("}");
     if (s >= 0 && e > s) cleaned = cleaned.slice(s, e + 1);
     // Intento 1: parse directo
     try { return JSON.parse(cleaned); } catch (_) {}
-    // Intento 2: si JSON truncado (Unterminated string), reparar cerrando comillas y llaves
+    // Intento 2: si JSON truncado (Unterminated string), reparar — pero SOLO
+    // si no fue MAX_TOKENS y este ya es el último intento (sino reintentamos arriba).
     try {
       let repaired = cleaned;
-      // Si terminó sin cerrar string: agregar comilla
       const dquotes = (repaired.match(/(?<!\\)"/g) || []).length;
       if (dquotes % 2 === 1) repaired += '"';
-      // Cerrar llaves abiertas que sobren
       const opens = (repaired.match(/\{/g) || []).length;
       const closes = (repaired.match(/\}/g) || []).length;
       for (let i = 0; i < opens - closes; i++) repaired += "}";

@@ -13127,9 +13127,20 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [sharedDest,setSharedDest]=useState({campaign_id:"",adset_id:"",link:"",cta:"LEARN_MORE"});
   const [publishActiveByDefault,setPublishActiveByDefault]=useState(false);
   const [bulkPublishing,setBulkPublishing]=useState(false);
+  // Auto-publish "al toque": cuando un upload termina (image directo, video
+  // cuando Meta termina de procesarlo), dispara publish solo en background.
+  // Requiere studioMode=shared con dest válido; se persiste en localStorage.
+  const [autoPublishEnabled,setAutoPublishEnabled]=useState(()=>{
+    try { return localStorage.getItem(`growith_auto_publish_${user?.uid}`) === "1"; } catch(_) { return false; }
+  });
+  useEffect(()=>{ try { localStorage.setItem(`growith_auto_publish_${user?.uid}`, autoPublishEnabled?"1":"0"); } catch(_) {} },[autoPublishEnabled, user?.uid]);
+  const autoPubFiredRef = React.useRef(new Set());
+  const [autoPubStats,setAutoPubStats]=useState({ok:0,errors:[]});
   const [bulkProgress,setBulkProgress]=useState({done:0,total:0,errors:[]});
   const [publishBatches,setPublishBatches]=useState([]);
   const [showBrandEdit,setShowBrandEdit]=useState(false);
+  const [showBrandTemplate,setShowBrandTemplate]=useState(false);
+  const [brandTemplateCopied,setBrandTemplateCopied]=useState(false);
   // Modal Nueva campaña + adsets
   const [showNewCampModal,setShowNewCampModal]=useState(false);
   const [showNewAdsetModal,setShowNewAdsetModal]=useState(false);
@@ -13591,6 +13602,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           setCreatives(prev => prev.map(c => c.id === creativeId ? {...c, video_ready: true, _processing: false} : c));
           // Persistir en backend para que publish lo sepa sin re-pollear
           try { await metaApi("patch_creative","PATCH",{video_ready:true},{cid:creativeId}); } catch (_) {}
+          // Auto-publish: el video ya procesó del lado de Meta, si el toggle
+          // está prendido y el dest está armado, disparamos publish solo.
+          // Buscamos el creative fresco del state (sin _processing) y lo pasamos.
+          setCreatives(prev => {
+            const fresh = prev.find(c => c.id === creativeId);
+            if (fresh) tryAutoPublish({...fresh, video_ready: true, _processing: false});
+            return prev;
+          });
           return;
         }
         if (vs === "error") {
@@ -13598,6 +13617,49 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           return;
         }
       } catch (_) { /* network blip, retry */ }
+    }
+  }
+
+  // Auto-publish helper — dispara publish para UN creative cuando está listo
+  // (no _processing, no _error, no _uploading) si el toggle está prendido y
+  // hay dest shared válido. Es idempotente: usa autoPubFiredRef para no
+  // disparar dos veces por race conditions del state update.
+  async function tryAutoPublish(creative) {
+    if (!autoPublishEnabled) return;
+    if (!creative?.id) return;
+    if (studioMode !== "shared") return;
+    const dest = sharedDest || {};
+    if (!dest.adset_id || !dest.link) return;
+    if (creative._processing || creative._uploading || creative._error || creative.video_error) return;
+    if (autoPubFiredRef.current.has(creative.id)) return;
+    autoPubFiredRef.current.add(creative.id);
+    // Marca el creative como "publicando" para feedback visual
+    setCreatives(prev => prev.map(c => c.id === creative.id ? {...c, _autoPubStatus: "publishing"} : c));
+    try {
+      await metaApi("patch_creative","PATCH",{adset_id:dest.adset_id,link:dest.link,cta:dest.cta||"LEARN_MORE"},{cid:creative.id}).catch(()=>{});
+      const d = await metaApi("publish","POST",{creative_id:creative.id, activate: publishActiveByDefault, default_link: dest.link, default_cta: dest.cta||"LEARN_MORE"},{acc_id:activeAccId});
+      if (d.error) {
+        setCreatives(prev => prev.map(c => c.id === creative.id ? {...c, _autoPubStatus: "error", _autoPubError: d.error} : c));
+        setAutoPubStats(s => ({ ok: s.ok, errors: [...s.errors, { filename: creative.filename, error: d.error }] }));
+      } else {
+        // Publicado OK — sacamos el creative de la cola al instante (mismo
+        // patron que el bulk publish)
+        try { await fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${creative.id}`,{method:"DELETE"}); } catch(_) {}
+        setCreatives(prev => prev.filter(c => c.id !== creative.id));
+        setAutoPubStats(s => ({ ok: s.ok + 1, errors: s.errors }));
+        // Registrar como single-item batch para que quede historial
+        try {
+          await metaApi("publish_batch_save","POST",{
+            items: [{ ad_id: d.ad_id, ig_status: d.ig_status, filename: creative.filename, kind: creative.kind, status: publishActiveByDefault?"ACTIVE":"PAUSED", ok: true, error: null, creative_id: creative.id, auto: true }],
+            dest_mode: "shared",
+            dest,
+            errors: [],
+          },{acc_id:activeAccId});
+          loadPublishBatches();
+        } catch(_) {}
+      }
+    } catch (e) {
+      setCreatives(prev => prev.map(c => c.id === creative.id ? {...c, _autoPubStatus: "error", _autoPubError: e.message||"error"} : c));
     }
   }
 
@@ -13797,6 +13859,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       // como video_ready=true. Asi al publicar no hay que esperar.
       if (isVideo && up.id) {
         pollVideoReady(up.id, creds.access_token, creds.api_version, cWithMeta.id);
+      } else {
+        // Imagen: ya está lista (no hay polling). Si auto-publish está prendido,
+        // disparamos publish on-the-spot. Para video el trigger vive en
+        // pollVideoReady cuando el status pasa a "ready".
+        tryAutoPublish(cWithMeta);
       }
     } catch(e){
       failTemp("Error: "+(e.message||"upload falló"));
@@ -13971,9 +14038,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       return;
     }
 
-    // Concurrencia adaptativa: imagenes 4 (chicas, no saturan bandwidth),
-    // videos 2 (grandes, mas concurrencia = cada video mas lento). Dos
-    // pools independientes corriendo al mismo tiempo.
+    // Concurrencia adaptativa — subimos en paralelo agresivo para sensación
+    // "al toque". Videos antes iban de a 2 → bumpeo a 5 (cada uno chunked
+    // internamente, asi que aun con conexion media saturamos el upstream
+    // sin colgar nada). Imagenes 6 (más livianas).
     const isVideoFile = (f) => (f.type||"").startsWith("video/") || /\.(mp4|mov|m4v|avi|webm)$/i.test(f.name);
     const videoIndices = [];
     const imageIndices = [];
@@ -13983,13 +14051,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       return async () => {
         while (i < indices.length) {
           const idx = indices[i++];
-          setCreatives(prev => prev.map(c => c.id === temps[idx].id ? { ...c, _queued: false, _uploading: true, _uploadPct: 0 } : c));
+          setCreatives(prev => prev.map(c => c.id === temps[idx].id ? { ...c, _queued: false, _uploading: true } : c));
           await handleUploadFile(files[idx], temps[idx].id, temps[idx].url, creds);
         }
       };
     };
-    const VIDEO_CONCURRENT = 2;
-    const IMAGE_CONCURRENT = 4;
+    const VIDEO_CONCURRENT = 5;
+    const IMAGE_CONCURRENT = 6;
     const videoWorker = makeWorker(videoIndices);
     const imageWorker = makeWorker(imageIndices);
     await Promise.all([
@@ -15367,6 +15435,190 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               {/* ── Sección 2: MARCA Y PRODUCTOS ─────────────── */}
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
                 <SectionHeader n="2" title="Marca y productos"/>
+
+                {/* Disclosure con la plantilla recomendada para darle al copy creator
+                    la máxima cantidad de data útil. Inspirado en sistemas Agora-style:
+                    avatar + offer brief + necessary beliefs + copies por ángulo. */}
+                <div style={{marginBottom:14}}>
+                  <button onClick={()=>setShowBrandTemplate(s=>!s)}
+                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,fontSize:12,fontWeight:600}}>
+                    <span style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:14}}>📋</span>
+                      Plantilla recomendada — copiá, completá con tu producto y pegá acá abajo
+                    </span>
+                    <span style={{fontSize:10,color:T.textSm,transform:showBrandTemplate?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
+                  </button>
+                  {showBrandTemplate && (() => {
+                    const BRAND_TEMPLATE = `# PROMPT PARA CREAR SISTEMA COMPLETO DE COPY FUNDACIONAL
+## Instrucciones: Completá los campos marcados con [PRODUCTO] con los datos de UN producto específico. Repetí este proceso por cada producto de tu tienda. Pegá todo en Claude y dejalo trabajar.
+
+---
+
+Sos mi copywriter experto en respuesta directa estilo Agora. Necesito que crees un SISTEMA COMPLETO DE COPY FUNDACIONAL para UN producto específico de mi tienda. Este sistema incluye 3 documentos fundacionales + copies nativos listos para usar. Todo en UN SOLO documento.
+
+IMPORTANTE: Este sistema es POR PRODUCTO. Si tengo 3 productos, hago este proceso 3 veces, uno por cada producto. Cada producto tiene su propio avatar, su propio argumento, sus propias creencias y sus propios copies.
+
+## DATOS DEL PRODUCTO:
+
+- **Nombre del producto:** [PRODUCTO - nombre completo tal como aparece en tu tienda]
+- **Marca:** [PRODUCTO - nombre de la marca que lo vende]
+- **URL de la página de producto:** [PRODUCTO - link directo a la página de venta]
+- **Precio:** [PRODUCTO - precio principal + precios de bundles si los hay]
+- **Qué es físicamente:** [PRODUCTO - formato: cápsulas, gomitas, crema, polvo, líquido, dispositivo, curso, etc.]
+- **Ingredientes o componentes clave:** [PRODUCTO - fórmula, ingredientes activos, dosis, certificaciones. Sé específico]
+- **Los 2-3 problemas principales que resuelve:** [PRODUCTO - dolor articular, insomnio, caída de pelo, acné, sobrepeso, ansiedad, etc.]
+- **Cómo funciona (mecanismo de acción):** [PRODUCTO - explicá cómo actúa el producto a nivel técnico/científico. Si no sabés, poné lo que dice tu proveedor o la etiqueta]
+- **Qué lo hace diferente a la competencia:** [PRODUCTO - ingrediente único, formato, origen, pureza, historia, tecnología, lo que sea]
+- **Historia del producto o ingrediente principal:** [PRODUCTO - si tiene alguna historia interesante: quién lo descubrió, desde cuándo se usa, algún dato curioso. Si no tiene, poné "No tiene historia particular"]
+
+## DATOS DEL CLIENTE DE ESTE PRODUCTO:
+
+- **Edad del comprador típico:** [PRODUCTO - rango de edad de quien compra ESTE producto específico]
+- **Género predominante:** [PRODUCTO - % aproximado hombre/mujer]
+- **País y región:** [PRODUCTO - de dónde son tus compradores. Si vendés en varios países, poné el principal]
+- **Nivel socioeconómico:** [PRODUCTO - clase baja, media, media-alta, alta. Qué capacidad de gasto tienen]
+- **Qué soluciones ya probaron antes de llegar a tu producto:** [PRODUCTO - listá todo lo que ya usaron: otros suplementos, medicamentos, tratamientos, profesionales, remedios caseros]
+- **Qué les gustó de esas soluciones:** [PRODUCTO - qué rescatan de lo que ya probaron]
+- **Qué odian de esas soluciones:** [PRODUCTO - efectos secundarios, precio, que no funcionó, que tardó mucho, etc.]
+- **Cuánto gastan actualmente en esas alternativas:** [PRODUCTO - en pesos/dólares por mes aproximado]
+
+## TESTIMONIOS REALES DE ESTE PRODUCTO:
+
+[PRODUCTO - Pegá acá al menos 5-10 de tus mejores testimonios/reseñas TEXTUALES. Con nombre (o iniciales), edad si la tenés, y lo que dijeron tal cual. Cuanto más específicos y emocionales, mejor. Si tenés 20, pegá 20. Más es mejor. Estos son la materia prima más importante de todo el sistema.]
+
+Ejemplo de formato:
+- "Nombre, edad: lo que dijo la persona textual"
+- "Nombre, edad: lo que dijo la persona textual"
+
+## DATOS COMERCIALES:
+
+- **Garantía:** [PRODUCTO - política de devolución. Ej: "30 días, devolvemos el dinero sin preguntas"]
+- **Métodos de pago:** [PRODUCTO - tarjeta, PayPal, Mercado Pago, cuotas, transferencia, etc.]
+- **Envío:** [PRODUCTO - cómo llega, qué empresa, cuánto tarda, si tiene seguimiento]
+- **Soporte al cliente:** [PRODUCTO - email, WhatsApp, teléfono, chat]
+
+## IDIOMA Y TONO:
+
+- **Idioma del copy:** [PRODUCTO - español Argentina, español México, español España, inglés USA, portugués Brasil, etc.]
+- **Tono:** [PRODUCTO - cercano/informal, profesional, científico, emocional. Ej: "Cercano, como si le hablara a mi tío de 60 años"]
+
+---
+
+## LO QUE NECESITO QUE CREES:
+
+Creá un documento único con las siguientes 4 partes PARA ESTE PRODUCTO ESPECÍFICO. Cada parte debe ser completa y detallada, no superficial. El documento completo debe tener al menos 4.000 palabras.
+
+---
+
+### PARTE 1: AVATAR SHEET (de quién compra ESTE producto)
+
+Creá un perfil psicográfico completo del cliente ideal DE ESTE PRODUCTO basándote en los datos que te di. Incluí:
+
+1. **Información demográfica:** edad, género, ubicación, nivel socioeconómico, ocupación, identidades típicas. Sé específico al segmento que compra ESTE producto, no al mercado general.
+
+2. **Desafíos y puntos de dolor (al menos 3 categorías con 4-5 bullets cada una):** NO escribas dolores genéricos. Escribí dolores ESPECÍFICOS y cotidianos que una persona real describiría. No "quiere estar sano" sino "no puede agacharse a atarle los cordones a su nieto." Usá el lenguaje que aparece en los testimonios que te pasé.
+
+3. **Metas y aspiraciones:** divididas en corto plazo (primeras 2-4 semanas con el producto) y largo plazo (2-6 meses). Específicas y cotidianas, no abstractas.
+
+4. **Drivers emocionales:** las emociones dominantes ANTES de encontrar el producto (frustración, miedo, vergüenza, resignación) y DESPUÉS de encontrar la solución (asombro, orgullo, gratitud). Incluí un "insight psicológico central" que capture la emoción más poderosa del mercado de ESTE producto.
+
+5. **Citas del mercado:** usando los testimonios que te di + lenguaje típico, organizá citas textuales por tema: sobre el problema, sobre soluciones fallidas, sobre el alivio.
+
+6. **Retrato del avatar:** un párrafo completo que resuma quién es esta persona.
+
+---
+
+### PARTE 2: OFFER BRIEF (cómo posicionar ESTE producto)
+
+Creá el brief estratégico completo. Incluí:
+
+1. **Product Name Ideas:** el nombre real + 3-4 variaciones para copy.
+2. **Level of Awareness (Eugene Schwartz):** ¿el mercado de ESTE producto es Unaware, Problem-Aware, Solution-Aware, Product-Aware, o Most Aware? Explicá por qué y qué implica para el copy.
+3. **Stage of Sophistication (Eugene Schwartz):** ¿en qué Stage está el mercado de ESTE producto (1-5)? ¿Qué necesita: una promesa simple, una promesa más grande, un mecanismo, un mecanismo único, o conexión con identidad?
+4. **Big Idea:** el concepto central que ancla toda la comunicación de ESTE producto. Una versión principal y una de curiosidad.
+5. **Metáforas (2):** que traduzcan el mecanismo técnico de ESTE producto a lenguaje que el avatar entienda instantáneamente.
+6. **UMP (Mecanismo Único del Problema):** ¿por qué el avatar tiene este problema específico y por qué nada le funcionó hasta ahora? Debe reframear toda su experiencia pasada con soluciones fallidas.
+7. **UMS (Mecanismo Único de la Solución):** ¿cómo funciona ESTE producto específicamente y por qué es diferente a todo lo demás?
+8. **Guru:** la figura de autoridad detrás de ESTE producto.
+9. **Discovery Story:** 2 versiones de la narrativa de origen.
+10. **Headlines (8-10):** organizados por nivel de awareness.
+11. **Objeciones y respuestas (5-7):** las objeciones específicas que tiene el comprador de ESTE producto con las respuestas exactas.
+12. **Funnel Architecture:** cómo se conectan las piezas para ESTE producto: ad → precalentamiento → página de producto → post-compra.
+
+---
+
+### PARTE 3: NECESSARY BELIEFS (las creencias que venden ESTE producto)
+
+Identificá las creencias absolutamente necesarias que el prospecto DEBE tener antes de comprar ESTE PRODUCTO ESPECÍFICO. NO MÁS DE 6 CREENCIAS. Estructuradas como "Yo creo que..."
+
+Para cada creencia incluí:
+- El statement "Yo creo que..."
+- La creencia ACTUAL del prospecto (qué piensa ANTES)
+- Cómo instalar la creencia en el copy
+- Su función en el argumento total
+
+Al final:
+- El argumento completo en 6 pasos
+- Mapeo de qué creencias van en cada parte del funnel
+
+---
+
+### PARTE 4: COPIES NATIVOS PARA ESTE PRODUCTO (mínimo 2 ángulos)
+
+Escribí al menos 2 copies nativos de +500 palabras cada uno. Cada uno con un ángulo diferente — un problema o síntoma distinto que ESTE producto resuelve.
+
+Estructura de cada copy:
+1. Hook de dolor (historia de una persona real, basada en los testimonios)
+2. Empatía y conexión → Creencia #1
+3. Metáfora que explica la causa raíz → Creencia #2
+4. Por qué nada funcionó antes → Creencia #3
+5. Discovery Story del producto → Creencia #4
+6. Testimonios reales → Creencia #5
+7. Garantía + precio + pago → Creencia #6
+8. CTA orientado a beneficio
+
+REGLAS:
+- Escribí como ARGUMENTO, no como lista de power words. Cada párrafo avanza el argumento. Si sacás uno y la lógica no se rompe, sobra.
+- Usá el lenguaje REAL del mercado sacado de los testimonios.
+- Usá el dialecto local indicado en "Idioma del copy."
+- Prosa narrativa, no listas ni emojis.
+- Testimonios integrados en el flujo, no como bloques separados.
+- CTA con texto de beneficio, no "Comprar ahora."
+
+---
+
+## FILOSOFÍA DE COPY:
+
+Este sistema se basa en una premisa: el marketing no se trata de palabras poderosas, se trata de argumentos poderosos.
+
+NO estamos escribiendo copy. Estamos CONSTRUYENDO ARGUMENTOS. Un argumento lógico y emocional irrefutable que lleva al prospecto a una sola conclusión: "necesito esto."
+
+Cada pieza existe para llevar al prospecto por un viaje de creencias. Desde "mi problema no tiene solución" hasta "tengo que probar esto y no tengo nada que perder."
+
+No busques la palabra perfecta. Buscá el argumento perfecto. Después pulís las palabras.
+
+---
+
+Generá todo el sistema en un documento único para ESTE PRODUCTO. Empezá ahora.`;
+                    return (
+                      <div style={{marginTop:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+                        <div style={{padding:"10px 14px",background:T.bg,borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                          <div style={{fontSize:11,color:T.textMd,lineHeight:1.55,flex:1,minWidth:280}}>
+                            Completá los campos marcados con <code style={{background:T.card,padding:"1px 5px",borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:10,color:T.accent}}>[PRODUCTO]</code> con tus datos reales. Si tenés varios productos, hacé un set por cada uno y pegá todo. Cuanto más data, mejor copy.
+                          </div>
+                          <button onClick={async()=>{
+                            try { await navigator.clipboard.writeText(BRAND_TEMPLATE); setBrandTemplateCopied(true); setTimeout(()=>setBrandTemplateCopied(false),2000); }
+                            catch(_) { /* fallback: select-all manual */ }
+                          }} style={{padding:"6px 12px",fontSize:11,fontWeight:700,border:"none",borderRadius:8,background:brandTemplateCopied?T.green:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+                            {brandTemplateCopied ? "✓ Copiado" : "📋 Copiar plantilla"}
+                          </button>
+                        </div>
+                        <pre style={{margin:0,padding:"14px 16px",maxHeight:380,overflow:"auto",fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:11,color:T.textMd,lineHeight:1.55,whiteSpace:"pre-wrap",wordBreak:"break-word",background:T.bg}}>{BRAND_TEMPLATE}</pre>
+                      </div>
+                    );
+                  })()}
+                </div>
+
                 {!showBrandEdit ? (
                   brand?.trim() ? (
                     <div style={{background:T.surface,border:`1px solid ${T.green}33`,borderRadius:10,padding:"14px 16px"}}>
@@ -15573,14 +15825,8 @@ LONGITUD Y FORMATO
                             })()}
                             <span style={{position:"absolute",bottom:4,left:4,fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(0,0,0,0.7)",color:"#fff",fontWeight:700,letterSpacing:0.3}}>{c.kind==="video"?"🎬 VID":"🖼️ IMG"}</span>
                             {c._uploading && (
-                              <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(2px)",flexDirection:"column",gap:6}}>
-                                <Spinner size={20} color="#fff"/>
-                                {typeof c._uploadPct === "number" && <div style={{fontSize:11,fontWeight:700,color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,0.5)"}}>{c._uploadPct}%</div>}
-                              </div>
-                            )}
-                            {c._uploading && typeof c._uploadPct === "number" && (
-                              <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:"rgba(0,0,0,0.4)"}}>
-                                <div style={{height:"100%",width:`${c._uploadPct}%`,background:T.blue,transition:"width 0.2s"}}/>
+                              <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(2px)"}}>
+                                <Spinner size={22} color="#fff"/>
                               </div>
                             )}
                           </div>
@@ -15590,7 +15836,7 @@ LONGITUD Y FORMATO
                               {c._queued
                                 ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.surface,color:T.textSm,fontWeight:700,letterSpacing:0.3,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:4}}>⏳ En cola</span>
                                 : c._uploading
-                                  ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo {typeof c._uploadPct === "number" ? `${c._uploadPct}%` : "a Meta…"}</span>
+                                  ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.blue+"22",color:T.blue,fontWeight:700,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}><Spinner size={9} color={T.blue}/> Subiendo</span>
                                   : c._error || c.video_error
                                     ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>✗ ERROR</span>
                                     : c.copy?.trim()
@@ -15684,7 +15930,16 @@ LONGITUD Y FORMATO
                           : (studioMode==="shared" ? "📌 Destino compartido configurado arriba" : "🎯 Cada ad tiene su propio destino")
                         }
                       </div>
-                      <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                        <label title="Cuando un ad termina de subir y procesarse en Meta, se publica solo. No esperás nada — al final ves el panel de resultados." style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:autoPublishEnabled?T.accent:T.textMd,cursor:studioMode==="shared"?"pointer":"not-allowed",fontWeight:autoPublishEnabled?700:400,opacity:studioMode==="shared"?1:0.5}}>
+                          <input type="checkbox" checked={autoPublishEnabled} disabled={studioMode!=="shared"} onChange={e=>setAutoPublishEnabled(e.target.checked)} style={{width:14,height:14}}/>
+                          ⚡ Auto-publicar al toque
+                        </label>
+                        {autoPublishEnabled && (autoPubStats.ok>0 || autoPubStats.errors.length>0) && (
+                          <span title={autoPubStats.errors.length>0 ? autoPubStats.errors.map(e=>`${e.filename}: ${e.error}`).join("\n") : "Todos OK"} style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:autoPubStats.errors.length>0?T.red+"22":T.green+"22",color:autoPubStats.errors.length>0?T.red:T.green,fontWeight:700,letterSpacing:0.3,cursor:autoPubStats.errors.length>0?"help":"default"}}>
+                            ⚡ {autoPubStats.ok} ✓{autoPubStats.errors.length>0?` · ${autoPubStats.errors.length} ✗`:""}
+                          </span>
+                        )}
                         <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer"}}>
                           <input type="checkbox" checked={publishActiveByDefault} onChange={e=>setPublishActiveByDefault(e.target.checked)} style={{width:14,height:14}}/>
                           Publicar ACTIVE (default: PAUSED)
