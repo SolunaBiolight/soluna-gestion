@@ -150,7 +150,6 @@ function processTN(orders) {
       orderRevenue+=rev;
       const vname=item.variant_values?.join(" / ")||item.name||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
-      byVariant[vname+"__orders"]=(byVariant[vname+"__orders"]||0)+1;
     }
     if(day)  { daily[day]=(daily[day]||0)+orderUnits; dailyRevenue[day]=(dailyRevenue[day]||0)+orderRevenue; }
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
