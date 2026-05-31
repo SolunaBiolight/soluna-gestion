@@ -3040,7 +3040,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo canje</button>
       </AppTopbar>
 
-      <div style={{padding:"24px 24px 64px",maxWidth:1200,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"24px 24px 64px",maxWidth:1280,margin:"0 auto",width:"100%"}}>
         {/* Stats bar - clickeable para filtrar */}
         <div style={{display:"flex",gap:0,background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:20}}>
           {[
@@ -3433,7 +3433,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 const canjesDeEste=canjes.filter(c=>(c.codigoDescuento&&inf.codigoDescuento&&c.codigoDescuento.toUpperCase()===inf.codigoDescuento.toUpperCase())||(c.influencer&&inf.nombre&&c.influencer===inf.nombre));
                 const canjesActivos=canjesDeEste.filter(c=>c.estado!=="Cerrado"&&c.estado!=="Finalizado"&&c.estado!=="Cancelado");
                 return (
-                  <div key={inf._docId} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 18px 14px",display:"flex",flexDirection:"column",gap:0,transition:"box-shadow 0.15s",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                  <div key={inf._docId} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 18px 14px",display:"flex",flexDirection:"column",gap:0,transition:"box-shadow 0.15s",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
                     {/* Header del perfil */}
                     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                       <div style={{width:42,height:42,borderRadius:"50%",background:T.accentSolid+"20",border:`2px solid ${T.accentSolid}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accentSolid,flexShrink:0}}>
@@ -4854,7 +4854,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       </AppTopbar>
       {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
 
-      <div style={{padding:"16px 24px 64px",maxWidth:1100,margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"16px 24px 64px",maxWidth:1280,margin:"0 auto",width:"100%"}}>
 
         {/* -- PANEL DE ENVIOS -- */}
         {tab==="panel"&&(
@@ -5812,15 +5812,15 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   );
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"28px 32px 48px",maxWidth:1100,margin:"0 auto"}} className="home-wrap">
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"20px 24px 48px",maxWidth:1280,margin:"0 auto"}} className="home-wrap">
 
       {/* Hero — estilo limpio */}
-      <div style={{marginBottom:DS.sp["3xl"]}}>
-        <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:6,fontWeight:DS.w.medium}}>{fechaCap}</div>
-        <h1 style={{fontSize:DS.font["4xl"],fontWeight:DS.w.black,margin:"0 0 6px",letterSpacing:-1,lineHeight:1.1,color:T.text}}>
+      <div style={{marginBottom:DS.sp["2xl"]}}>
+        <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:4,fontWeight:DS.w.medium}}>{fechaCap}</div>
+        <h1 style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,margin:"0 0 4px",letterSpacing:-0.5,lineHeight:1.15,color:T.text}}>
           {saludo}, {nombre} 👋
         </h1>
-        <p style={{margin:0,fontSize:DS.font.base,color:T.textMd,fontWeight:DS.w.regular}}>¿Qué tenés que hacer hoy?</p>
+        <p style={{margin:0,fontSize:DS.font.sm,color:T.textMd,fontWeight:DS.w.regular}}>¿Qué tenés que hacer hoy?</p>
       </div>
 
       {/* Selector de período — controla Facturado y Pedidos */}
@@ -6353,21 +6353,14 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 24px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:60,maxWidth:800,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
-            <span style={{color:T.borderL,fontSize:15}}>/</span>
-            <span style={{fontWeight:700,fontSize:14,color:T.text}}>Configuración</span>
-          </div>
-          <button onClick={onToggleDark} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.textSm}}>{darkMode?"☀︎ Modo claro":"◑ Modo oscuro"}</button>
-        </div>
-      </div>
+      <AppTopbar T={T} section="Configuración" onHome={onBack}>
+        <button onClick={onToggleDark} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.textSm}}>{darkMode?"☀︎ Modo claro":"◑ Modo oscuro"}</button>
+      </AppTopbar>
 
-      <div style={{maxWidth:800,margin:"0 auto",padding:"20px 16px 80px"}}>
+      <div style={{maxWidth:960,margin:"0 auto",padding:"20px 24px 80px"}}>
 
         {/* Perfil */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuenta</div>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
             {user?.photoURL?<img src={user.photoURL} style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${T.border}`,flexShrink:0}} alt=""/>:<div style={{width:44,height:44,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>👤</div>}
@@ -6377,12 +6370,12 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               <div style={{fontSize:11,color:T.accent,marginTop:3,fontWeight:500}}>Plan {userDoc?.plan||"free"}</div>
             </div>
           </div>
-          <button onClick={handleSignOut} style={{...BtnDanger(T),fontSize:13,width:"100%",justifyContent:"center"}}>Cerrar sesión</button>
+          <button onClick={handleSignOut} style={{...BtnSecondary(T),fontSize:12,color:T.red,border:`1px solid ${T.red}33`,justifyContent:"center",width:"100%"}}>Cerrar sesión</button>
         </div>
 
         {/* Notificaciones de equipo */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>🔔 Notificaciones (Tareas)</div>
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Notificaciones (Tareas)</div>
 
           {/* Email info */}
           <div style={{marginBottom:16,padding:"14px",background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`}}>
@@ -6417,7 +6410,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
         </div>
 
         {/* Tiendas */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Tiendas conectadas</div>
           <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>
             Conectá <strong style={{color:T.text}}>una</strong> plataforma de e-commerce (TN <em>o</em> Shopify), <strong style={{color:T.text}}>Mercado Libre</strong> y <strong style={{color:T.text}}>Meta Ads</strong> (Facebook + Instagram) para el módulo de análisis y optimización de campañas.
@@ -6494,7 +6487,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
         {/* Troubleshooting: ya conectado pero sin publicaciones en Stock */}
         {(shStore || mlStore) && (
-          <details style={{background:T.card,border:`1px solid ${T.yellow||"#eab308"}55`,borderRadius:14,padding:"14px 18px",marginTop:14}}>
+          <details style={{background:T.card,border:`1px solid ${T.yellow||"#eab308"}55`,borderRadius:12,padding:"14px 18px",marginTop:14}}>
             <summary style={{cursor:"pointer",fontSize:13,fontWeight:700,color:T.yellow||"#eab308",listStyle:"none",display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:16}}>⚠</span> ¿Ya conectaste pero no aparecen publicaciones en Stock o Gestión ML?
             </summary>
@@ -6740,7 +6733,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
         {msg&&<div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.green,marginBottom:16}}>{msg}</div>}
 
         {/* Plan / Suscripción */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16}}>
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Plan actual</div>
 
           {/* Plan cards — Free / Plus / Full */}
@@ -6980,7 +6973,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {/* Cripto — próximamente */}
-          <div style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:14,padding:"22px 20px",display:"flex",alignItems:"center",gap:16,opacity:0.45,cursor:"default",position:"relative"}}>
+          <div style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:12,padding:"22px 20px",display:"flex",alignItems:"center",gap:16,opacity:0.45,cursor:"default",position:"relative"}}>
             <div style={{position:"absolute",top:12,right:12,background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,fontSize:10,fontWeight:700,color:T.textSm,padding:"2px 9px"}}>Próximamente</div>
             <div style={{fontSize:36,flexShrink:0,lineHeight:1}}>₮</div>
             <div>
@@ -6989,7 +6982,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
             </div>
           </div>
           <div onClick={()=>{setMetodo("transfer");setStep("pago_transfer");}}
-            style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:14,padding:"22px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,transition:"border-color 0.15s"}}
+            style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:12,padding:"22px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,transition:"border-color 0.15s"}}
             onMouseEnter={e=>e.currentTarget.style.borderColor=T.blue}
             onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
             <div style={{fontSize:36,flexShrink:0,lineHeight:1}}>🏦</div>
@@ -7034,7 +7027,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
             return (
               <div key={p.id}
                 onClick={()=>!esFree&&setPlanSel(seleccionado?null:p.id)}
-                style={{background:T.card,border:`2px solid ${seleccionado?p.color:p.popular?p.color+"55":T.border}`,borderTop:p.popular?`3px solid ${p.color}`:"none",borderRadius:14,padding:"24px 20px",position:"relative",cursor:esFree?"default":"pointer",transition:"all 0.15s",boxShadow:seleccionado?`0 0 0 3px ${p.color}22`:"",opacity:esFree?0.7:1}}>
+                style={{background:T.card,border:`2px solid ${seleccionado?p.color:p.popular?p.color+"55":T.border}`,borderTop:p.popular?`3px solid ${p.color}`:"none",borderRadius:12,padding:"24px 20px",position:"relative",cursor:esFree?"default":"pointer",transition:"all 0.15s",boxShadow:seleccionado?`0 0 0 3px ${p.color}22`:"",opacity:esFree?0.7:1}}>
                 {p.popular&&<div style={{position:"absolute",top:-1,left:"50%",transform:"translateX(-50%) translateY(-50%)",background:p.color,color:"#fff",fontSize:10,fontWeight:700,padding:"3px 12px",borderRadius:20}}>MÁS POPULAR</div>}
                 {esPlanActual&&<div style={{position:"absolute",top:12,right:12,background:p.color+"22",color:p.color,fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:20}}>PLAN ACTUAL</div>}
                 <div style={{fontSize:28,marginBottom:10}}>{p.icon}</div>
@@ -10024,7 +10017,7 @@ function ColaboradorPublicView({T, token}) {
           const linksNorm = normalizeLinks(t.links);
           const lastEntregaJustSent = entregaEnviada[t._id];
           return (
-            <div key={t._id} style={{background:T.card,border:`1px solid ${isRevision?"#ef444455":isUrgente?"#ef444433":isAprobado?"#22c55e44":T.border}`,borderRadius:14,marginBottom:12,overflow:"hidden",opacity:isAprobado?0.85:1}}>
+            <div key={t._id} style={{background:T.card,border:`1px solid ${isRevision?"#ef444455":isUrgente?"#ef444433":isAprobado?"#22c55e44":T.border}`,borderRadius:12,marginBottom:12,overflow:"hidden",opacity:isAprobado?0.85:1}}>
               {/* Banner deadline urgente */}
               {t.deadline&&days!==null&&days<=2&&!isAprobado&&(
                 <div style={{background:"#ef4444",padding:"6px 16px",fontSize:12,color:"#fff",fontWeight:600}}>
@@ -11127,7 +11120,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   if(loading) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Facturador" onHome={onHome}/>
-      <div style={{flex:1,maxWidth:1100,margin:"0 auto",padding:"28px 24px",width:"100%",animation:"growith-fadeInFast 0.3s ease"}}>
+      <div style={{flex:1,maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%",animation:"growith-fadeInFast 0.3s ease"}}>
         {/* Skeleton dashboard */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
           {[1,2,3].map(i=>(
@@ -11139,7 +11132,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
           ))}
         </div>
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",position:"relative",overflow:"hidden"}}>
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"22px 24px",position:"relative",overflow:"hidden"}}>
           <div style={{height:14,width:"30%",background:T.surface,borderRadius:5,marginBottom:14}}/>
           {[1,2,3,4].map(i=>(
             <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
@@ -11215,7 +11208,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         </div>
       </AppTopbar>
 
-      <div style={{maxWidth:1100,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
         {/* ══ SIN CUITs → ONBOARDING ══ */}
         {cuits.length===0 ? (
@@ -11263,7 +11256,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             {/* ══ CON CUITs → PANEL PRINCIPAL ══ */}
 
             {/* Guía colapsable — vive en Métricas (primera del sidenav, default landing) */}
-            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,overflow:"hidden",marginBottom:24,display:sidebarTab==="metricas"?"block":"none"}}>
+            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:24,display:sidebarTab==="metricas"?"block":"none"}}>
               <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"16px 20px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:18}}>📖</span>
@@ -11351,7 +11344,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div style={{display:(!sidebarTab||sidebarTab==="pendientes")?"block":"none"}}>
                 {/* Upload */}
                 {/* ══ VENTAS PENDIENTES (desde integraciones conectadas) ══ */}
-                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"22px 24px",marginBottom:16}}>
+                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"22px 24px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
                     <div>
                       <div style={{fontSize:14,fontWeight:700,color:T.text}}>Ventas pendientes de facturar</div>
@@ -11610,7 +11603,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   const netoTotal = esMono ? totalGeneral : Math.round((totalGeneral / 1.21) * 100) / 100;
                   const ivaTotal = esMono ? 0 : Math.round((totalGeneral - netoTotal) * 100) / 100;
                   return (
-                  <div id="arca-preview-ordenes" style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px",marginBottom:16}}>
+                  <div id="arca-preview-ordenes" style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 22px",marginBottom:16}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
                         <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.green}}>2</span>
@@ -11697,7 +11690,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                 {/* Resultados */}
                 {resultados&&(
-                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"18px 22px"}}>
+                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 22px"}}>
                     <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Resultado de emisión</div>
                     {resultados.map((r,i)=>(
                       <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 0",borderBottom:"1px solid "+T.borderL}}>
@@ -11770,7 +11763,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
             {/* ══ FACTURA MANUAL — formulario inline (sólo tab Manual) ══ */}
             <div style={{display:sidebarTab==="manual"?"block":"none",marginTop:0}}>
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"22px 26px"}}>
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"22px 26px"}}>
                 <div style={{marginBottom:18}}>
                   <div style={{fontSize:18,fontWeight:800,color:T.text}}>Emitir factura manual</div>
                   <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Para ventas fuera de tus integraciones (mayoristas, venta directa, etc.)</div>
@@ -11869,7 +11862,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
             {/* ══ REGISTROS — sólo tab Registros ══ */}
             {batches.length > 0 && (
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px",marginTop:24,display:sidebarTab==="historico"?"block":"none"}}>
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"20px 22px",marginTop:24,display:sidebarTab==="historico"?"block":"none"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                   <div>
                     <div style={{fontSize:14,fontWeight:700,color:T.text}}>📚 Registros</div>
@@ -11955,7 +11948,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
             {/* ══ CUITs — gestión completa, sólo tab CUITs ══ */}
             <div style={{display:sidebarTab==="cuits"?"block":"none",marginTop:0}}>
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:14,padding:"20px 22px"}}>
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"20px 22px"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:14,flexWrap:"wrap"}}>
                   <div>
                     <div style={{fontSize:14,fontWeight:700,color:T.text}}>🪪 Mis CUITs</div>
@@ -13172,7 +13165,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const iS={width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
   const BtnPri={background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
   const BtnSec={background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
-  const Card={background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16};
+  const Card={background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16};
   const Label={fontSize:11,color:T.textSm,fontWeight:500,marginBottom:5,display:"block"};
 
   const metaApi=async(action,method="GET",body=null,extra={})=>{
@@ -14408,12 +14401,12 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   );
 
   const TABS=[
-    {id:"productos",label:"🎯 Productos"},
-    {id:"analisis",label:"📊 Análisis"},
-    {id:"biblioteca",label:"📚 Biblioteca"},
-    {id:"reglas",label:"⚡ Reglas"},
-    {id:"creativos",label:"🚀 Publicar"},
-    {id:"cuenta",label:"⚙ Cuenta"},
+    {id:"productos",label:"Productos"},
+    {id:"analisis",label:"Análisis"},
+    {id:"biblioteca",label:"Biblioteca"},
+    {id:"reglas",label:"Reglas"},
+    {id:"creativos",label:"Publicar"},
+    {id:"cuenta",label:"Cuenta"},
   ];
 
   // Guía paso a paso para obtener System User Token
@@ -14479,18 +14472,18 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               </div>
             ) : (
               <>
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 22px",marginBottom:16}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 22px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                     <div>
-                      <div style={{fontSize:17,fontWeight:800,color:T.text}}>🎯 Productos</div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Productos</div>
                       <div style={{fontSize:12,color:T.textSm,marginTop:4,lineHeight:1.5,maxWidth:720}}>Asociá cada producto a sus URLs de destino y a su ROAS break-even. Growith clasifica automáticamente cada ad/adset/campaña según el link al que dirige, y usa el BE del producto para colorear el ROAS en Análisis y filtrar reglas. Si un adset/campaña tiene varios productos, se promedia el BE.</div>
                     </div>
-                    <button onClick={()=>setEditingProduct("new")} style={{padding:"9px 18px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:`linear-gradient(135deg, ${T.green}, ${T.accent})`,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo producto</button>
+                    <button onClick={()=>setEditingProduct("new")} style={{padding:"9px 18px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo producto</button>
                   </div>
                 </div>
 
                 {productsLoading ? (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"60px 20px",textAlign:"center"}}>
                     <Spinner size={20} color={T.accent}/>
                     <div style={{fontSize:13,color:T.textSm,marginTop:14}}>Cargando productos...</div>
                   </div>
@@ -14499,12 +14492,12 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{fontSize:36,marginBottom:8}}>🎯</div>
                     <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Todavía no clasificaste productos</div>
                     <div style={{fontSize:12,color:T.textSm,maxWidth:480,margin:"0 auto 16px",lineHeight:1.6}}>Creá un producto con sus URLs de destino (página de producto, landing, etc) y su ROAS BE. Después Growith puede colorear cada anuncio según ese BE y aplicar reglas por producto.</div>
-                    <button onClick={()=>setEditingProduct("new")} style={{padding:"10px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:`linear-gradient(135deg, ${T.green}, ${T.accent})`,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear primer producto</button>
+                    <button onClick={()=>setEditingProduct("new")} style={{padding:"10px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear primer producto</button>
                   </div>
                 ) : (
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(360px, 1fr))",gap:14}}>
                     {products.map(p => (
-                      <div key={p.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",gap:10}}>
+                      <div key={p.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",display:"flex",flexDirection:"column",gap:10}}>
                         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:15,fontWeight:700,color:T.text,wordBreak:"break-word"}}>{p.name}</div>
@@ -14550,7 +14543,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               <>
                 {/* Breadcrumb de drill-down */}
                 {aDrill.length > 0 && (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",fontSize:12}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",fontSize:12}}>
                     <button onClick={()=>drillTo(-1)} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:"2px 4px"}}>← Todas las campañas</button>
                     {aDrill.map((b,i)=>(
                       <React.Fragment key={i}>
@@ -14564,7 +14557,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 )}
 
                 {/* Header con controles */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                     {/* Sub-tabs nivel (solo cambia si NO hay drill activo, sino se desactivan) */}
                     {aDrill.length === 0 ? (
@@ -14640,7 +14633,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                 {/* Tabla de insights */}
                 {aLoading && aRows.length === 0 ? (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"60px 20px",textAlign:"center"}}>
                     <Spinner size={20} color={T.accent}/>
                     <div style={{fontSize:13,color:T.textSm,marginTop:14}}>Trayendo métricas de Meta...</div>
                   </div>
@@ -14661,7 +14654,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   if (filtered.length === 0) {
                     return (
-                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
                         <div style={{fontSize:32,marginBottom:8}}>📭</div>
                         <div style={{fontSize:13,color:T.textSm}}>No hay {aLevel === "campaign" ? "campañas" : aLevel === "adset" ? "adsets" : "ads"} en este rango.</div>
                       </div>
@@ -14705,7 +14698,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   const canDrill = aLevel !== "ad";
 
                   return (
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
                       <div style={{overflowX:"auto"}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Inter',system-ui,sans-serif"}}>
                           <thead style={{background:T.bg,position:"sticky",top:0,zIndex:1}}>
@@ -14797,7 +14790,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               </div>
             ) : (
               <>
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:10}}>
                     <div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Biblioteca de anuncios</div>
@@ -14828,7 +14821,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 </div>
 
                 {libLoading && libAds.length===0 ? (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 24px",textAlign:"center"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"60px 24px",textAlign:"center"}}>
                     <Spinner size={20} color={T.accent}/>
                     <div style={{fontSize:14,fontWeight:600,color:T.text,marginTop:16}}>Cargando tus anuncios desde Meta…</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:6,lineHeight:1.55,maxWidth:480,margin:"6px auto 0"}}>
@@ -14866,7 +14859,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   if (filtered.length === 0) {
                     return (
-                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
                         <div style={{fontSize:32,marginBottom:8}}>📭</div>
                         <div style={{fontSize:13,color:T.textSm}}>No hay anuncios para mostrar.</div>
                       </div>
@@ -14897,7 +14890,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const hasVideo = !!ad.creative_video_id || !!ad.creative_video_url;
                         const previewImage = ad.creative_image_hd || ad.creative_thumbnail;
                         return (
-                          <div key={ad.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+                          <div key={ad.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",display:"flex",flexDirection:"column"}}>
                             {/* Preview: imagen/poster, click ▶ reproduce video INLINE (no modal) — estilo gethooked.
                                 Si no es video → click abre el modal HD para zoom en imagen.
                                 Cascada de fallback para video: <video src> → embed_html → iframe permalink. */}
@@ -15054,7 +15047,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                 )}
 
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>Reglas de optimización</div>
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Se auto-evalúan cada 30 minutos mientras tengas Growith abierto. También podés disparar manualmente.</div>
@@ -15072,11 +15065,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                 {/* Lista de reglas */}
                 {rulesLoading && rules.length===0 ? (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"40px 20px",textAlign:"center"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"40px 20px",textAlign:"center"}}>
                     <Spinner size={18} color={T.accent}/>
                   </div>
                 ) : rules.length===0 ? (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
                     <div style={{fontSize:32,marginBottom:8}}>⚡</div>
                     <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:6}}>Sin reglas todavía</div>
                     <div style={{fontSize:12,color:T.textSm,maxWidth:420,margin:"0 auto"}}>Creá tu primera regla para que Growith pause automáticamente ads que cumplan ciertos criterios (gasto, ROAS, CPA, etc.).</div>
@@ -15417,7 +15410,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 if (!hasPixel) missing.push("píxel");
                 const allReady = missing.length === 0;
                 return (
-                <div style={{background:T.card,border:`1px solid ${allReady?T.green+"44":T.yellow+"44"}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+                <div style={{background:T.card,border:`1px solid ${allReady?T.green+"44":T.yellow+"44"}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
                   <SectionHeader n="1" title="Configuración activa"/>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:14}}>
                     <ConfigCard icon="📊" label="Cuenta publicitaria" value={hasAd?`${activeAcc?.ad_account_name||""} (${curCode})`:""} sub={activeAcc?.ad_account_id}/>
@@ -15456,7 +15449,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               })()}
 
               {/* ── Sección 2: MARCA Y PRODUCTOS ─────────────── */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
                 <SectionHeader n="2" title="Marca y productos"/>
 
                 {/* Disclosure con la plantilla recomendada para darle al copy creator
@@ -15677,7 +15670,7 @@ Generá todo el sistema en un documento único para ESTE PRODUCTO. Empezá ahora
               </div>
 
               {/* ── Sección 3: ESTILO DEL COPY (instrucciones del agente) ── */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
                 <SectionHeader n="3" title="Estilo del copy"/>
                 <div style={{fontSize:12,color:T.textMd,marginBottom:12,lineHeight:1.6}}>Definí cómo tiene que escribir el agente. Estas instrucciones se inyectan con prioridad máxima en cada copy generado — sobreescriben los defaults.</div>
                 {!showCopyAgentEdit ? (
@@ -15744,7 +15737,7 @@ LONGITUD Y FORMATO
               </div>
 
               {/* ── Sección 4: PUBLICAR ADS ──────────────────── */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
                 <SectionHeader n="4" title="Publicar ads"/>
                 <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos. Gemini escribe el copy de cada uno usando el contexto de tu marca y el estilo del agente que definiste arriba.</div>
 
@@ -15830,7 +15823,7 @@ LONGITUD Y FORMATO
                       <button onClick={handleClearQueue} style={BtnSec}>Limpiar todo</button>
                     </div>
                     {creatives.map(c => (
-                      <div key={c.id} style={{background:T.card,border:`2px solid ${c._uploading?T.blue+"55":c._queued?T.borderL:c._error?T.red+"55":c.copy?.trim()?T.green+"55":T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:18,boxShadow:c.copy?.trim()?`0 4px 14px ${T.green}10`:"0 2px 8px rgba(0,0,0,0.15)",position:"relative",opacity:c._queued?0.65:(c._uploading?0.85:1),transition:"all 0.2s"}}>
+                      <div key={c.id} style={{background:T.card,border:`2px solid ${c._uploading?T.blue+"55":c._queued?T.borderL:c._error?T.red+"55":c.copy?.trim()?T.green+"55":T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:18,boxShadow:c.copy?.trim()?`0 4px 14px ${T.green}10`:"0 2px 8px rgba(0,0,0,0.15)",position:"relative",opacity:c._queued?0.65:(c._uploading?0.85:1),transition:"all 0.2s"}}>
                         <div style={{position:"absolute",top:-9,left:14,padding:"2px 10px",borderRadius:6,background:c._uploading?T.blue:c._queued?T.borderL:c._error?T.red:c.copy?.trim()?T.green:T.borderL,color:c._uploading||c._error||c.copy?.trim()?"#fff":T.textSm,fontSize:9,fontWeight:800,letterSpacing:0.6,textTransform:"uppercase"}}>Ad #{creatives.indexOf(c)+1}</div>
                         {/* Top row: thumbnail + filename + badges + remove */}
                         <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:10}}>
@@ -15983,7 +15976,7 @@ LONGITUD Y FORMATO
 
               {/* ── Historial de batches publicados ──────────────── */}
               {publishBatches.length > 0 && (
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginBottom:16}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
                   <SectionHeader n="📜" title={`Lotes publicados (${publishBatches.length})`}/>
                   <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:480,overflowY:"auto"}}>
                     {publishBatches.map(b => (
@@ -16092,7 +16085,7 @@ LONGITUD Y FORMATO
 
                     <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
                       <button onClick={()=>setShowNewCampModal(false)} style={BtnSec}>Cancelar</button>
-                      <button onClick={handleCreateCampaignMulti} disabled={creatingMulti} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:`linear-gradient(135deg, ${T.green}, ${T.accent})`,color:"#fff",cursor:creatingMulti?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                      <button onClick={handleCreateCampaignMulti} disabled={creatingMulti} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:T.accentSolid,color:"#fff",cursor:creatingMulti?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
                         {creatingMulti?<><Spinner size={12} color="#fff"/>Creando...</>:<>🚀 Crear todo</>}
                       </button>
                     </div>
@@ -16141,7 +16134,7 @@ LONGITUD Y FORMATO
               {/* ── Modal: Cambiar recursos (ad accounts, pages, IG, pixels) ── */}
               {showResourcesModal && ReactDOM.createPortal(
                 <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowResourcesModal(false)}>
-                  <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:760,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"22px 24px",width:"100%",maxWidth:760,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                       <h3 style={{margin:0,fontSize:18,fontWeight:800,background:`linear-gradient(90deg, ${T.text}, ${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Cambiar recursos</h3>
                       <button onClick={()=>setShowResourcesModal(false)} style={{...BtnSec,padding:"4px 8px"}}>✕</button>
@@ -16270,7 +16263,7 @@ LONGITUD Y FORMATO
                     {!resourcesLoading && (
                       <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:18,paddingTop:14,borderTop:`1px solid ${T.border}`}}>
                         <button onClick={()=>setShowResourcesModal(false)} style={BtnSec}>Cancelar</button>
-                        <button onClick={saveResources} disabled={resSaving || !resSel.ad_account_id} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:(!resSel.ad_account_id?T.border:`linear-gradient(135deg, ${T.green}, ${T.accent})`),color:!resSel.ad_account_id?T.textSm:"#fff",cursor:resSaving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:!resSel.ad_account_id?0.6:1}}>
+                        <button onClick={saveResources} disabled={resSaving || !resSel.ad_account_id} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:(!resSel.ad_account_id?T.border:T.accentSolid),color:!resSel.ad_account_id?T.textSm:"#fff",cursor:resSaving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:!resSel.ad_account_id?0.6:1}}>
                           {resSaving?<><Spinner size={12} color="#fff"/>Guardando…</>:"💾 Guardar selección"}
                         </button>
                       </div>
@@ -16714,7 +16707,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
         ) : (
         <>
         {/* Filtros */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
             {[{id:"active",l:"Activas"},{id:"paused",l:"Pausadas"},{id:"closed",l:"Cerradas"},{id:"all",l:"Todas"}].map(s=>(
               <button key={s.id} onClick={()=>setStatusFilter(s.id)} style={{padding:"6px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:statusFilter===s.id?T.card:"transparent",color:statusFilter===s.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.l}</button>
@@ -16794,7 +16787,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
             <button onClick={runDiagnose} disabled={diagnosing} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{diagnosing?<Spinner size={11} color={T.textMd}/>:"🔍"} Diagnosticar conexión</button>
           </div>
         ) : (
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <thead style={{background:T.bg,position:"sticky",top:0}}>
@@ -17495,7 +17488,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const tR=filtered.reduce((a,p)=>a+p.revenue,0);
 
     return (
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflowY:"hidden",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflowY:"hidden",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"9px 16px",alignItems:"center",minWidth:640}}>
           {[{l:"Producto",c:null},{l:"Stock",c:"stock"},{l:"Vendidos",c:"units"},{l:"Tasa/día",c:"rate"},{l:"Días",c:"days"},{l:"Facturación",c:"revenue"},{l:"Proyección",c:null},{l:"",c:null}].map((h,i)=>(
             <div key={i} onClick={()=>h.c&&toggleSort(h.c)}
@@ -17663,7 +17656,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         </div>
       </AppTopbar>
 
-      <div style={{maxWidth:1200,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
 
         {/* Período + date picker */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,flexWrap:"wrap"}}>
@@ -17707,7 +17700,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         </div>
 
         {loading&&!data?(
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"80px 20px",textAlign:"center"}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"80px 20px",textAlign:"center"}}>
             <Spinner size={24} color={T.accent}/>
             <div style={{fontSize:13,color:T.textSm,marginTop:12}}>Cargando datos...</div>
           </div>
@@ -17763,7 +17756,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   {/* Fila superior: Gráfico + Resumen */}
                   <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(280px,300px)",gap:16,alignItems:"start"}} className="stack-mobile">
                     {/* Gráfico barras */}
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 20px 14px"}}>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 20px 14px"}}>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
                         <div>
                           <div style={{fontSize:13,fontWeight:700,color:T.text}}>{tabTitle}</div>
@@ -17784,7 +17777,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                     {/* Resumen período */}
                     <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                         <div style={{fontSize:11,color:T.textSm,marginBottom:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Resumen del período</div>
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                           {(showingVentas?[
@@ -17815,7 +17808,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const top5=Object.entries(tabDaily||{}).sort(([,a],[,b])=>b-a).slice(0,5);
                         const maxV=top5[0]?.[1]||1;
                         return (
-                          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 16px"}}>
+                          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
                             <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>🏆 Mejores días</div>
                             {top5.map(([date,val],i)=>(
                               <div key={date} style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
@@ -17835,7 +17828,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   {/* Donuts — siempre los mismos 3, el título/enfoque cambia por tab */}
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>
                         {isFact?"Revenue por variante":showingVentas?"Variantes más vendidas":"Unidades por variante"}
                       </div>
@@ -17844,12 +17837,12 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       </div>
                       <DonutChart data={tabDonutVariante} centerLabel={isFact?{val:fmtARS(totalRev),label:"revenue"}:showingVentas?{val:fmt(totalOrders),label:"órdenes"}:{val:fmt(totalUnits),label:"uds"}}/>
                     </div>
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Distribución geográfica</div>
                       <DonutChart data={data.by_province||{}} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(data.by_province||{}).length,label:"provincias"}}/>
                     </div>
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 16px"}}>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Método de pago</div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Plataforma de cobro</div>
                       <DonutChart data={data.by_payment||{}} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1","#ec4899"]} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
@@ -17911,7 +17904,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                       {(tab==="facturacion"||viewMode==="tabla")&&<ProductTable products={allProducts}/>}
                       {tab==="productos"&&viewMode==="tabla"&&kpiDead>0&&(
-                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
                           <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
                             <span>💤</span>
                             <div style={{fontSize:13,fontWeight:700,color:T.text}}>Sin ventas en el período</div>
@@ -17921,7 +17914,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         </div>
                       )}
                       {tab==="facturacion"&&(
-                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px"}}>
                           <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>Revenue por producto</div>
                           {[...allProducts].sort((a,b)=>b.revenue-a.revenue).map((p,i)=>{
                             const pct=totalRev>0?(p.revenue/totalRev*100).toFixed(1):0;
@@ -17955,7 +17948,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {tab==="depositos"&&(
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
                 {/* Header */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>🏬 Depósitos</div>
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Gestioná los depósitos donde tenés stock. El stock total de cada item es la suma de los depósitos.</div>
@@ -18051,7 +18044,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               return (
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 {/* Header con KPIs y acciones */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px"}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
                     <div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>📋 Items de inventario</div>
@@ -18097,7 +18090,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                   </div>
                 ) : (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
                     <div style={{overflowX:"auto"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
                         <thead style={{background:T.bg}}>
@@ -18174,7 +18167,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               });
               return (
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>📜 Historial de movimientos</div>
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimos 200 movimientos de stock. Las ventas descuentan, los ajustes manuales se ven con el origen "manual".</div>
@@ -18210,7 +18203,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {movements.length === 0 ? "Sin movimientos registrados." : "Sin resultados con esos filtros."}
                   </div>
                 ) : (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
                     <div style={{overflowX:"auto"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
                         <thead style={{background:T.bg}}>
@@ -18257,7 +18250,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {/* ── MODAL Crear/Editar Item ── */}
             {editingItem && ReactDOM.createPortal(
               <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
-                <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,width:"100%",maxWidth:720,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
+                <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,width:"100%",maxWidth:720,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
                   {/* Header */}
                   <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
                     <div style={{flex:1,minWidth:0}}>
@@ -18408,7 +18401,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 </div>
 
                 {alertas.length===0?(
-                  <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
+                  <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
                     <div style={{fontSize:36,marginBottom:10}}>✅</div>
                     <div style={{fontSize:15,fontWeight:700,color:T.green}}>Todo el stock está OK</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Ningún producto supera el umbral de alerta configurado</div>
@@ -18456,7 +18449,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   const hist=getHistorialAgotados().slice(0,20);
                   if(!hist.length) return null;
                   return (
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px"}}>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>📋 Historial de agotados</div>
                       <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
                         {hist.map((h,i)=>(
@@ -18476,7 +18469,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             )}
           </>
         ):(
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"60px 20px",textAlign:"center"}}>
             <div style={{fontSize:32,marginBottom:12}}>🔌</div>
             <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Conectá tu tienda</div>
             <div style={{fontSize:13,color:T.textSm}}>Conectá Tienda Nube o Shopify desde Configuración para ver tu stock y estadísticas.</div>
