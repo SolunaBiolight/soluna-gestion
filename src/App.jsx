@@ -647,17 +647,17 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   },[open, onClose]);
 
   const items = [
-    {label:"Inicio",       page:"home",     icon:"🏠"},
-    {label:"Envíos",       page:"envios",   icon:"📦"},
-    {label:"Reclamos",     page:"reclamos", icon:"💬"},
-    {label:"Canjes",       page:"canjes",   icon:"🤝"},
-    {label:"Stock & Estadísticas", page:"stock", icon:"📊"},
-    {label:"Gestión Mercado Libre", page:"ml", icon:"🛒"},
-    {label:"Meta Ads",     page:"meta",     icon:"📣"},
-    {label:"Facturador", page:"arca", icon:"📄"},
-    {label:"Configuración", page:"config",  icon:"⚙"},
-    {label:"Planes",       page:"planes",   icon:"💎"},
-    ...(isAdmin?[{label:"Admin Panel", page:"admin", icon:"👑"}]:[]),
+    {label:"Inicio",              page:"home",     icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
+    {label:"Envíos",              page:"envios",   icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
+    {label:"Reclamos",            page:"reclamos", icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
+    {label:"Canjes",              page:"canjes",   icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
+    {label:"Stock & Estadísticas", page:"stock",   icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"},
+    {label:"Gestión Mercado Libre", page:"ml",     icon:"M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2zM9 22V12h6v10"},
+    {label:"Meta Ads",            page:"meta",     icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
+    {label:"Facturador",          page:"arca",     icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
+    {label:"Configuración",        page:"config",   icon:"M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"},
+    {label:"Planes",              page:"planes",   icon:"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"},
+    ...(isAdmin?[{label:"Admin Panel", page:"admin", icon:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"}]:[]),
   ];
   const filtered = items.filter(i => !q || i.label.toLowerCase().includes(q.toLowerCase()));
 
@@ -681,7 +681,7 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
               style={{display:"flex", alignItems:"center", gap:DS.sp.md, padding:"10px 12px", width:"100%", border:"none", background:"transparent", borderRadius:DS.r.md, cursor:"pointer", textAlign:"left", color:T.text, fontSize:DS.font.base, transition:`background 0.1s`}}
               onMouseEnter={e=>e.currentTarget.style.background=T.surface}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              <span style={{fontSize:16}}>{item.icon}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.85}}><path d={item.icon}/></svg>
               <span style={{flex:1, fontWeight:DS.w.medium}}>{item.label}</span>
               <span style={{fontSize:DS.font.xs, color:T.textSm}}>↵</span>
             </button>
@@ -6375,7 +6375,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
         {/* Notificaciones de equipo */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Notificaciones (Tareas)</div>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14,display:"flex",alignItems:"center",gap:5}}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+            Notificaciones (Tareas)
+          </div>
 
           {/* Email info */}
           <div style={{marginBottom:16,padding:"14px",background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`}}>
@@ -8648,8 +8651,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           {/* Sub-nav */}
           <div style={{display:"flex",marginBottom:20}}>
             <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:1}}>
-              {[["dashboard","📊 Dashboard"],["tandas",`📦 Tandas${produccion.tandas.length?" ("+produccion.tandas.length+")":""}`],["creativos",`🎬 Creativos${produccion.creativos.length?" ("+produccion.creativos.length+")":""}`],["ideas",`💡 Ideas${produccion.ideas.length?" ("+produccion.ideas.length+")":""}`],["editores","👥 Editores"]].map(([id,label])=>(
-                <button key={id} onClick={()=>setProdTab(id)} style={{padding:"5px 12px",fontSize:12,fontWeight:prodTab===id?600:500,border:"none",borderRadius:8,background:prodTab===id?T.card:"transparent",color:prodTab===id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap"}}>{label}</button>
+              {[
+              ["dashboard","Dashboard","M18 20V10M12 20V4M6 20v-6"],
+              ["tandas",,"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"],
+              ["creativos",,"M15 10l4.553-2.069A1 1 0 0121 8.855v6.29a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"],
+              ["ideas",,"M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26A7 7 0 0112 2z"],
+              ["editores","Editores","M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"]
+            ].map(([id,label,icon])=>(
+                <button key={id} onClick={()=>setProdTab(id)} style={{padding:"5px 12px",fontSize:12,fontWeight:prodTab===id?600:500,border:"none",borderRadius:8,background:prodTab===id?T.card:"transparent",color:prodTab===id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:prodTab===id?1:0.6}}><path d={icon}/></svg>{label}</button>
               ))}
             </div>
           </div>
@@ -14475,7 +14484,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 22px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                     <div>
-                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Productos</div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:7}}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:0.65}}><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0"/></svg>
+                        Productos
+                      </div>
                       <div style={{fontSize:12,color:T.textSm,marginTop:4,lineHeight:1.5,maxWidth:720}}>Asociá cada producto a sus URLs de destino y a su ROAS break-even. Growith clasifica automáticamente cada ad/adset/campaña según el link al que dirige, y usa el BE del producto para colorear el ROAS en Análisis y filtrar reglas. Si un adset/campaña tiene varios productos, se promedia el BE.</div>
                     </div>
                     <button onClick={()=>setEditingProduct("new")} style={{padding:"9px 18px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo producto</button>
@@ -18926,18 +18938,18 @@ export default function App() {
       padding:"6px 4px 8px",
     }}>
       {[
-        {id:"home",label:"Inicio",icon:"🏠"},
-        {id:"envios",label:"Envíos",icon:"📦"},
-        {id:"stock",label:"Stock",icon:"📊"},
-        {id:"reclamos",label:"Reclamos",icon:"💬"},
-        {id:"canjes",label:"Canjes",icon:"🤝"},
+        {id:"home",label:"Inicio",icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
+        {id:"envios",label:"Envíos",icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
+        {id:"stock",label:"Stock",icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"},
+        {id:"reclamos",label:"Reclamos",icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
+        {id:"canjes",label:"Canjes",icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
       ].map(it=>(
         <button key={it.id} onClick={()=>setPage(it.id)} style={{
           flex:1, background:"transparent", border:"none", cursor:"pointer",
           display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"6px 4px",
           color: page===it.id?T.accent:T.textMd, fontFamily:"'Inter',system-ui,sans-serif",
         }}>
-          <span style={{fontSize:18}}>{it.icon}</span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={page===it.id?"2.2":"1.7"} strokeLinecap="round" strokeLinejoin="round"><path d={it.icon}/></svg>
           <span style={{fontSize:10, fontWeight:page===it.id?700:500}}>{it.label}</span>
         </button>
       ))}
