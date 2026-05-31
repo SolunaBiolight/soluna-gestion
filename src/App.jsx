@@ -3972,6 +3972,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [hiddenCols,setHiddenCols]=useState(new Set());
   const [showColMenu,setShowColMenu]=useState(false);
   function toggleCol(col){setHiddenCols(s=>{const n=new Set(s);n.has(col)?n.delete(col):n.add(col);return n;});}
+  const [orderPage,setOrderPage]=useState(0);
+  const [showPagePicker,setShowPagePicker]=useState(false);
   // SKU tab
   const [skuFile,setSkuFile]=useState(null);
   const [skuPending,setSkuPending]=useState(false); // file selected, waiting confirm
@@ -3999,6 +4001,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     }
     return base;
   },[tabOrders,searchEnvios,filterTipoEnvio]);
+
+  // Paginación de pedidos — 50 por página
+  const PAGE_SIZE=50;
+  useEffect(()=>setOrderPage(0),[tabEnvio,filterTipoEnvio,searchEnvios]);
+  const totalPages=Math.max(1,Math.ceil(exportables.length/PAGE_SIZE));
+  const pageOrders=exportables.slice(orderPage*PAGE_SIZE,(orderPage+1)*PAGE_SIZE);
+  const pageNums=pageOrders.map(o=>o.numero);
+  const allPageSelected=pageNums.length>0&&pageNums.every(n=>selected.has(n));
+  function getPageNums(pi){return exportables.slice(pi*PAGE_SIZE,(pi+1)*PAGE_SIZE).map(o=>o.numero);}
+  function isPageFullSel(pi){const ns=getPageNums(pi);return ns.length>0&&ns.every(n=>selected.has(n));}
+  function togglePageSel(pi){
+    const ns=getPageNums(pi);const full=isPageFullSel(pi);
+    setSelected(prev=>{const n=new Set(prev);if(full)ns.forEach(x=>n.delete(x));else ns.forEach(x=>n.add(x));return n;});
+  }
+  function toggleCurrentPage(){togglePageSel(orderPage);}
 
   // Fetch contadores de los 3 tabs activos en paralelo
   async function fetchTabCounts(uid) {
@@ -4931,9 +4948,53 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Set());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
                 ))}
               </div>}
-              <button onClick={toggleAll} style={{...BtnSecondary(T),fontSize:13}}>
-                {selected.size===exportables.length&&exportables.length>0?"✕ Deseleccionar todo":"☑ Seleccionar todo"}
+              {/* Seleccionar página actual */}
+              <button onClick={toggleCurrentPage} style={{...BtnSecondary(T),fontSize:12,color:allPageSelected?T.accent:T.textMd,borderColor:allPageSelected?T.accent:T.border}}>
+                {allPageSelected?"✕ Des-sel. página":"☑ Página"}
               </button>
+              {/* Seleccionar por páginas */}
+              {totalPages>1&&(
+                <div style={{position:"relative"}}>
+                  <button onClick={e=>{e.stopPropagation();setShowPagePicker(v=>!v);}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:showPagePicker?T.accent:T.textMd}}>
+                    Páginas ▾
+                  </button>
+                  {showPagePicker&&(
+                    <>
+                      <div onClick={()=>setShowPagePicker(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
+                      <div style={{position:"absolute",top:"110%",left:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"6px",zIndex:200,minWidth:220,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
+                        <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,padding:"4px 10px 8px"}}>Seleccionar por página</div>
+                        {Array.from({length:totalPages},(_,pi)=>{
+                          const start=pi*PAGE_SIZE+1;
+                          const end=Math.min((pi+1)*PAGE_SIZE,exportables.length);
+                          const full=isPageFullSel(pi);
+                          const ns=getPageNums(pi);
+                          const cnt=ns.filter(n=>selected.has(n)).length;
+                          return (
+                            <div key={pi} onClick={()=>togglePageSel(pi)}
+                              style={{display:"flex",alignItems:"center",gap:9,padding:"7px 10px",cursor:"pointer",fontSize:12,color:T.text,borderRadius:7,background:full?T.accentSolid+"12":"transparent",userSelect:"none",transition:"background 0.1s"}}
+                              onMouseEnter={e=>{if(!full)e.currentTarget.style.background=T.surface;}}
+                              onMouseLeave={e=>{if(!full)e.currentTarget.style.background="transparent";}}>
+                              <div style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${full?T.accentSolid:cnt>0?T.accent:T.border}`,background:full?T.accentSolid:cnt>0?T.accent+"25":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                                {full&&<span style={{color:"#fff",fontSize:9,lineHeight:1}}>✓</span>}
+                                {!full&&cnt>0&&<span style={{color:T.accent,fontSize:10,lineHeight:1}}>–</span>}
+                              </div>
+                              <span style={{flex:1,fontWeight:full?600:400}}>Página {pi+1}</span>
+                              <span style={{fontSize:11,color:T.textSm}}>{start}–{end}</span>
+                              {cnt>0&&<span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accent+"15",borderRadius:4,padding:"1px 5px"}}>{cnt}</span>}
+                            </div>
+                          );
+                        })}
+                        <div style={{borderTop:`1px solid ${T.borderL}`,margin:"4px 0",paddingTop:4,display:"flex",gap:4,padding:"6px 6px 2px"}}>
+                          <button onClick={()=>{toggleAll();}} style={{flex:1,fontSize:11,padding:"5px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                            {selected.size===exportables.length&&exportables.length>0?"✕ Limpiar todo":"☑ Seleccionar todo"}
+                          </button>
+                          {selected.size>0&&<button onClick={()=>{setSelected(new Set());}} style={{fontSize:11,padding:"5px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               <button onClick={()=>setCompactMode(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:compactMode?T.accent:T.textMd,borderColor:compactMode?T.accent:T.border}} title={compactMode?"Vista normal":"Vista compacta"}>
                 {compactMode?"⊟":"⊞"} Compacto
               </button>
@@ -4960,7 +5021,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 </button>
               )}
               <span style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center"}}>
-                <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}</span>
+                <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
                 <span style={{opacity:0.5}}>· Ctrl+A todos · Shift+click rango · Esc limpiar · Enter exportar</span>
               </span>
             </div>
@@ -4996,7 +5057,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   {!hiddenCols.has("envio")&&<span>Envío</span>}
                   {!hiddenCols.has("total")&&<span>Total</span>}
                 </div>
-                {exportables.map((o,idx)=>{
+                {pageOrders.map((o,idx)=>{
                   const sel=selected.has(o.numero);
                   const ec=getEstadoEnvioC(T,o.estadoEnvio);
                   const isSuc=o.medioEnvio&&(o.medioEnvio.toLowerCase().includes('sucursal')||o.medioEnvio.toLowerCase().includes('hop')||o.medioEnvio.toLowerCase().includes('punto'));
@@ -5032,6 +5093,31 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     </div>
                   );
                 })}
+                {/* Paginador */}
+                {totalPages>1&&(
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,padding:"14px 14px",borderTop:`0.5px solid ${T.borderL}`}}>
+                    <button onClick={()=>setOrderPage(p=>p-1)} disabled={orderPage===0}
+                      style={{...BtnSecondary(T),padding:"5px 10px",fontSize:12,opacity:orderPage===0?0.35:1,cursor:orderPage===0?"default":"pointer"}}>←</button>
+                    {Array.from({length:totalPages},(_,i)=>{
+                      const hasSel=getPageNums(i).some(n=>selected.has(n));
+                      const isActive=orderPage===i;
+                      return (
+                        <button key={i} onClick={()=>setOrderPage(i)}
+                          style={{minWidth:34,height:32,borderRadius:8,border:`1px solid ${isActive?T.accentSolid:T.border}`,cursor:"pointer",fontSize:12,fontWeight:isActive?700:500,
+                            background:isActive?T.accentSolid:"transparent",color:isActive?"#fff":T.textMd,
+                            fontFamily:"'Inter',system-ui,sans-serif",position:"relative",transition:"all 0.12s",flexShrink:0}}>
+                          {i+1}
+                          {hasSel&&<span style={{position:"absolute",top:4,right:4,width:5,height:5,borderRadius:"50%",background:isActive?"rgba(255,255,255,0.8)":T.accent}}/>}
+                        </button>
+                      );
+                    })}
+                    <button onClick={()=>setOrderPage(p=>p+1)} disabled={orderPage===totalPages-1}
+                      style={{...BtnSecondary(T),padding:"5px 10px",fontSize:12,opacity:orderPage===totalPages-1?0.35:1,cursor:orderPage===totalPages-1?"default":"pointer"}}>→</button>
+                    <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>
+                      {orderPage*PAGE_SIZE+1}–{Math.min((orderPage+1)*PAGE_SIZE,exportables.length)} de {exportables.length}
+                    </span>
+                  </div>
+                )}
               </>
             )}
           </div>
