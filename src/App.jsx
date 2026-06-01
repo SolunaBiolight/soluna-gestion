@@ -457,6 +457,23 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   );
 }
 
+// ── Logo Growith — G circular con flecha de crecimiento ────────────────
+function GrowithLogo({size=28, color="#7c3aed"}) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* G arc: arco circular grande desde top-right, da la vuelta completa y termina con la pestaña horizontal */}
+      <path d="M 66 14 A 42 42 0 1 1 84 68 L 56 68"
+            stroke={color} strokeWidth="13.5" strokeLinecap="round" strokeLinejoin="round"/>
+      {/* Zigzag de crecimiento: pasa a través de la G de abajo-izquierda a arriba-derecha */}
+      <polyline points="9,71 27,44 43,57 87,14"
+                stroke={color} strokeWidth="13" strokeLinecap="round" strokeLinejoin="round"/>
+      {/* Arrowhead superior derecho */}
+      <polyline points="66,11 87,14 84,35"
+                stroke={color} strokeWidth="13" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
 function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}}) {
   const GROUPS = [
     // Inicio queda suelto arriba de todo, sin etiqueta de grupo
@@ -520,7 +537,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     }} className="hide-mobile">
       {/* Logo */}
       <div style={{padding:DS.sp.lg,display:"flex",alignItems:"center",gap:10,borderBottom:`1px solid ${T.border}`,height:60}}>
-        <div style={{width:28,height:28,borderRadius:DS.r.md,background:`linear-gradient(135deg,${T.accentSolid},#a78bfa)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,boxShadow:`0 2px 8px ${T.accentSolid}40`,flexShrink:0}}>🌙</div>
+        <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <GrowithLogo size={collapsed?26:24} color={T.accentSolid}/>
+        </div>
         {!collapsed&&<span style={{fontWeight:DS.w.bold,fontSize:DS.font.xl,color:T.text,letterSpacing:-0.3}}>Growith</span>}
         {!collapsed&&(
           <button onClick={()=>setCollapsed(true)} title="Colapsar" style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,color:T.textSm,cursor:"pointer",padding:"3px 5px",display:"flex",alignItems:"center",justifyContent:"center",transition:`all 0.15s ${DS.ease}`}}
@@ -1469,8 +1488,8 @@ function AppTopbar({T, section, onHome, children}) {
           <button onClick={onHome} className="mobile-only" style={{display:"none",alignItems:"center",gap:6,padding:"5px 10px",fontSize:DS.font.sm,fontWeight:DS.w.medium,borderRadius:DS.r.md,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           </button>
-          {/* Accent bar — identidad de marca */}
-          <div style={{width:3,height:16,borderRadius:2,background:`linear-gradient(180deg,${T.accentSolid},#a78bfa)`,flexShrink:0}}/>
+          {/* Logo pequeño */}
+          <GrowithLogo size={20} color={T.accentSolid}/>
           <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2}}>{section}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
@@ -6049,12 +6068,18 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",color:T.text,padding:"20px 24px 48px",maxWidth:1280,margin:"0 auto"}} className="home-wrap">
 
       {/* Hero — estilo limpio */}
-      <div style={{marginBottom:DS.sp["2xl"]}}>
-        <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:4,fontWeight:DS.w.medium}}>{fechaCap}</div>
-        <h1 style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,margin:"0 0 4px",letterSpacing:-0.5,lineHeight:1.15,color:T.text}}>
-          {saludo}, {nombre} 👋
-        </h1>
-        <p style={{margin:0,fontSize:DS.font.sm,color:T.textMd,fontWeight:DS.w.regular}}>¿Qué tenés que hacer hoy?</p>
+      <div style={{marginBottom:DS.sp["2xl"],display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16}}>
+        <div>
+          <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:4,fontWeight:DS.w.medium}}>{fechaCap}</div>
+          <h1 style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,margin:"0 0 4px",letterSpacing:-0.5,lineHeight:1.15,color:T.text}}>
+            {saludo}, {nombre} 👋
+          </h1>
+          <p style={{margin:0,fontSize:DS.font.sm,color:T.textMd,fontWeight:DS.w.regular}}>¿Qué tenés que hacer hoy?</p>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginTop:2}}>
+          <GrowithLogo size={32} color={T.accentSolid}/>
+          <span style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.5,lineHeight:1}}>Growith</span>
+        </div>
       </div>
 
       {/* Selector de período — controla Facturado y Pedidos */}
@@ -6235,9 +6260,11 @@ function AuthScreen({T, darkMode, onToggleDark}) {
       <div style={{width:"100%",maxWidth:400}}>
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:36}}>
-          <div style={{width:40,height:40,borderRadius:10,background:T.accentSolid,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,margin:"0 auto 12px"}}>🌙</div>
-          <div style={{fontSize:22,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Growith</div>
-          <div style={{fontSize:13,color:T.textSm,marginTop:3}}>{mode==="login"?"Iniciá sesión":"Creá tu cuenta"}</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:10}}>
+            <GrowithLogo size={52} color={T.accentSolid}/>
+            <div style={{fontSize:32,fontWeight:800,color:T.text,letterSpacing:-1,lineHeight:1}}>Growith</div>
+          </div>
+          <div style={{fontSize:13,color:T.textSm,marginTop:4}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
         </div>
 
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:28}}>
