@@ -457,20 +457,21 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   );
 }
 
-// ── Logo Growith — G circular con flecha de crecimiento ────────────────
-function GrowithLogo({size=28, color="#7c3aed"}) {
+// ── Logo Growith — usa los archivos PNG reales del brand ───────────────
+// variant: "color" (púrpura), "blanco" (blanco), "negro" (negro), "trazo" (outline)
+function GrowithLogo({size=28, variant="color", darkMode=false}) {
+  // En dark mode usamos el logo blanco; en light mode el de color
+  const src = variant === "auto"
+    ? (darkMode ? "/logo-blanco.png" : "/logo-color.png")
+    : `/logo-${variant}.png`;
   return (
-    <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* G arc: arco circular grande desde top-right, da la vuelta completa y termina con la pestaña horizontal */}
-      <path d="M 66 14 A 42 42 0 1 1 84 68 L 56 68"
-            stroke={color} strokeWidth="13.5" strokeLinecap="round" strokeLinejoin="round"/>
-      {/* Zigzag de crecimiento: pasa a través de la G de abajo-izquierda a arriba-derecha */}
-      <polyline points="9,71 27,44 43,57 87,14"
-                stroke={color} strokeWidth="13" strokeLinecap="round" strokeLinejoin="round"/>
-      {/* Arrowhead superior derecho */}
-      <polyline points="66,11 87,14 84,35"
-                stroke={color} strokeWidth="13" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
+    <img
+      src={src}
+      alt="Growith"
+      width={size}
+      height={size}
+      style={{objectFit:"contain",flexShrink:0,display:"block"}}
+    />
   );
 }
 
@@ -538,7 +539,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       {/* Logo */}
       <div style={{padding:DS.sp.lg,display:"flex",alignItems:"center",gap:10,borderBottom:`1px solid ${T.border}`,height:60}}>
         <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <GrowithLogo size={collapsed?26:24} color={T.accentSolid}/>
+          <GrowithLogo size={collapsed?26:24} variant="color"/>
         </div>
         {!collapsed&&<span style={{fontWeight:DS.w.bold,fontSize:DS.font.xl,color:T.text,letterSpacing:-0.3}}>Growith</span>}
         {!collapsed&&(
@@ -1489,7 +1490,7 @@ function AppTopbar({T, section, onHome, children}) {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           </button>
           {/* Logo pequeño */}
-          <GrowithLogo size={20} color={T.accentSolid}/>
+          <GrowithLogo size={20} variant="color"/>
           <span style={{fontWeight:DS.w.semibold,fontSize:14,color:T.text,letterSpacing:-0.2}}>{section}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
@@ -6077,7 +6078,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           <p style={{margin:0,fontSize:DS.font.sm,color:T.textMd,fontWeight:DS.w.regular}}>¿Qué tenés que hacer hoy?</p>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginTop:2}}>
-          <GrowithLogo size={32} color={T.accentSolid}/>
+          <GrowithLogo size={32} variant="color"/>
           <span style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.5,lineHeight:1}}>Growith</span>
         </div>
       </div>
@@ -6261,7 +6262,7 @@ function AuthScreen({T, darkMode, onToggleDark}) {
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:36}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:10}}>
-            <GrowithLogo size={52} color={T.accentSolid}/>
+            <GrowithLogo size={52} variant="color"/>
             <div style={{fontSize:32,fontWeight:800,color:T.text,letterSpacing:-1,lineHeight:1}}>Growith</div>
           </div>
           <div style={{fontSize:13,color:T.textSm,marginTop:4}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
