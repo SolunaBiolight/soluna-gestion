@@ -464,7 +464,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
       subs:[{id:"tareas",label:"Tareas"},{id:"equipo",label:"Equipo"},{id:"creativos",label:"Creativos"}]},
     { group:"FINANZAS" },
-    {id:"rendimiento", label:"Rendimiento", icon:"M18 20V10M12 20V4M6 20v-6"},
+    {id:"rendimiento", label:"Rendimiento", icon:"M18 20V10M12 20V4M6 20v-6", adminOnly:true},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
       subs:[{id:"metricas",label:"Métricas"},{id:"pendientes",label:"Pendientes"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
   ];
@@ -526,7 +526,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
 
       {/* Nav */}
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
-        {GROUPS.map((item,i)=>{
+        {GROUPS.filter(item=>!item.adminOnly||isAdmin).map((item,i)=>{
           if(item.group) {
             if(collapsed) return null;
             return (
@@ -661,7 +661,10 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
     {label:"Facturador",          page:"arca",     icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     {label:"Configuración",        page:"config",   icon:"M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"},
     {label:"Planes",              page:"planes",   icon:"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"},
-    ...(isAdmin?[{label:"Admin Panel", page:"admin", icon:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"}]:[]),
+    ...(isAdmin?[
+      {label:"Admin Panel",  page:"admin",       icon:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"},
+      {label:"Rendimiento",  page:"rendimiento", icon:"M18 20V10M12 20V4M6 20v-6"},
+    ]:[]),
   ];
   const filtered = items.filter(i => !q || i.label.toLowerCase().includes(q.toLowerCase()));
 
@@ -7699,6 +7702,7 @@ function AppAdmin({T, user, onBack}) {
                           {days<0?`vencido hace ${Math.abs(days)}d`:days===0?"vence hoy":`${days}d restantes`}
                         </span>
                       )}
+                      {u.isAdmin&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:"#7c3aed22",color:"#a78bfa"}}>🔐 admin</span>}
                       {u.adminNote&&<span style={{fontSize:10,color:T.textSm}}>📝</span>}
                     </div>
                   </div>
@@ -7804,6 +7808,20 @@ function AppAdmin({T, user, onBack}) {
                           <button onClick={()=>setNoteEdit(prev=>({...prev,[u._id]:u.adminNote||""}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",flexShrink:0}}>Editar</button>
                         </div>
                       )}
+                    </div>
+
+                    {/* Acceso Admin */}
+                    <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+                      <div>
+                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>🔐 Acceso Admin</div>
+                        <div style={{fontSize:11,color:T.textSm}}>Permite ver secciones exclusivas de administrador (Rendimiento, etc.)</div>
+                      </div>
+                      <AsyncButton onClick={async()=>{
+                        const d=await adminApi({action:"toggleAdmin",targetUid:u._id});
+                        if(d.ok) setDatos(prev=>({...prev,usuarios:prev.usuarios.map(x=>x._id===u._id?{...x,isAdmin:d.isAdmin}:x)}));
+                      }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",color:u.isAdmin?T.red:T.green,borderColor:u.isAdmin?T.red+"44":T.green+"44",flexShrink:0}}>
+                        {u.isAdmin?"🔴 Quitar admin":"🟢 Dar admin"}
+                      </AsyncButton>
                     </div>
 
                     {/* Historial */}
@@ -19525,7 +19543,7 @@ export default function App() {
             setPlanExpiry(d.planExpiry?.toDate?.()||null);
           }
           // Check admin
-          setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"].includes(u.uid));
+          setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid) || d?.isAdmin===true);
         } catch(e){}
       } else {
         setUserPlan("free");
@@ -19812,12 +19830,23 @@ export default function App() {
       return <UpgradeWall T={T} requiredPlan={req} onNavigate={setPage}/>;
     return null;
   };
+  const adminGate = () => {
+    if (!isAdmin) return (
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"70vh",fontFamily:"'Inter',system-ui,sans-serif",gap:16,padding:24}}>
+        <div style={{fontSize:48}}>🔒</div>
+        <div style={{fontSize:20,fontWeight:800,color:"var(--T-text,#fff)"}}>Acceso restringido</div>
+        <div style={{fontSize:14,color:"var(--T-textMd,#aaa)",textAlign:"center",maxWidth:360}}>Esta sección es exclusiva para administradores de Growith.</div>
+        <button onClick={()=>setPage("home")} style={{background:"#6366f1",border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver al inicio</button>
+      </div>
+    );
+    return null;
+  };
 
   let pageContent = null;
   if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
-  else if(page==="rendimiento") pageContent = <PageView T={T} pageKey="rendimiento"><AppRendimiento T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="rendimiento") pageContent = adminGate() || <PageView T={T} pageKey="rendimiento"><AppRendimiento T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="arca") pageContent = planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
   else if(page==="stock") pageContent = planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
   else if(page==="ml") pageContent = planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;

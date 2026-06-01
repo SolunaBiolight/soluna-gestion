@@ -287,6 +287,18 @@ export default async function handler(req, res) {
       return res.json({ ok: true, expiry });
     }
 
+    // ── toggleAdmin — dar/quitar acceso admin a un usuario ──────────────
+    if (action === "toggleAdmin") {
+      const { targetUid } = body;
+      if (!targetUid) return res.status(400).json({ error: "Falta targetUid" });
+      // No se puede auto-quitar admin (seguridad mínima)
+      if (targetUid === uid) return res.status(400).json({ error: "No podés quitarte el admin a vos mismo" });
+      const userDoc = await db.collection("users").doc(targetUid).get();
+      const current = userDoc.data()?.isAdmin || false;
+      await db.collection("users").doc(targetUid).set({ isAdmin: !current }, { merge: true });
+      return res.json({ ok: true, isAdmin: !current });
+    }
+
     return res.status(400).json({ error: "Acción desconocida" });
 
   } catch (e) {
