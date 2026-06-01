@@ -206,10 +206,22 @@ function DSEmpty({T, icon="📭", title, subtitle, action}) {
 // - Plan gate: free/starter/pro → máx 2 orgs; total → ilimitado
 function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenCreateOrg, onOpenManageOrg, collapsed}) {
   const [open, setOpen] = React.useState(false);
-  const ref = React.useRef(null);
+  const [dropPos, setDropPos] = React.useState({top:0,left:0,width:260});
+  const btnRef = React.useRef(null);
+  const dropRef = React.useRef(null);
+
   React.useEffect(()=>{
     if (!open) return;
-    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    // Compute position from button
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setDropPos({top: r.top - 6, left: r.left, width: Math.max(260, r.width)});
+    }
+    const onClick = (e) => {
+      if (btnRef.current?.contains(e.target)) return;
+      if (dropRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     const onEsc = (e) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onEsc);
@@ -234,8 +246,9 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
   );
 
   return (
-    <div ref={ref} style={{position:"relative",padding:`${DS.sp.xs}px ${DS.sp.sm}px 0`}}>
+    <div style={{padding:`${DS.sp.xs}px ${DS.sp.sm}px 0`}}>
       <button
+        ref={btnRef}
         onClick={()=>setOpen(o=>!o)}
         title={collapsed?`Organización: ${active.name}`:undefined}
         style={{
@@ -257,8 +270,8 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
           </>
         )}
       </button>
-      {open && (
-        <div style={{position:"absolute",bottom:"calc(100% + 6px)",left:DS.sp.sm,right:DS.sp.sm,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:DS.sp.xs,zIndex:50,boxShadow:"0 10px 30px rgba(0,0,0,0.5)",minWidth:260}}>
+      {open && ReactDOM.createPortal(
+        <div ref={dropRef} style={{position:"fixed",bottom:`calc(100vh - ${dropPos.top}px)`,left:dropPos.left,width:dropPos.width,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:DS.sp.xs,zIndex:9998,boxShadow:"0 10px 40px rgba(0,0,0,0.55)"}}>
           {/* Card de la org activa con Gestionar */}
           <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,padding:`${DS.sp.sm}px ${DS.sp.sm}px`,background:T.bg,borderRadius:DS.r.md,marginBottom:DS.sp.xs}}>
             <OrgAvatar org={active} size={34}/>
@@ -305,7 +318,8 @@ function OrgSwitcher({T, user, userPlan, orgs, activeOrgId, onSwitchOrg, onOpenC
             <span style={{flex:1,fontSize:DS.font.md,fontWeight:DS.w.semibold,textAlign:"left"}}>Crear organización</span>
             {!planAllowsMore && <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.accent+"22",color:T.accent,fontWeight:DS.w.bold,letterSpacing:0.3,textTransform:"uppercase"}}>Total</span>}
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
