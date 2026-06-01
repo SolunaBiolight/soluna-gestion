@@ -24,6 +24,8 @@ function addMonths(date, n) {
   return d;
 }
 
+const CONFIG_DOC = "growith_app_config"; // colección "config", doc fijo
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -33,14 +35,42 @@ export default async function handler(req, res) {
   const body = req.method === "GET" ? req.query : req.body;
   const { action, uid } = body;
 
-  if (!uid || !ADMIN_UIDS.includes(uid)) {
-    return res.status(403).json({ error: "No autorizado" });
+  const db = initAdmin();
+
+  // ── getSectionsConfig — público (no requiere admin) ──────────────────
+  if (action === "getSectionsConfig") {
+    try {
+      const snap = await db.collection("config").doc(CONFIG_DOC).get();
+      const d = snap.exists ? snap.data() : {};
+      return res.json({ adminOnlySections: d.adminOnlySections || ["rendimiento"] });
+    } catch(e) {
+      return res.json({ adminOnlySections: ["rendimiento"] });
+    }
   }
 
-  const db = initAdmin();
+  if (!uid || (!ADMIN_UIDS.includes(uid) && uid !== "check_firestore")) {
+    // Check Firestore isAdmin for non-hardcoded admins
+    try {
+      const snap = await db.collection("users").doc(uid).get();
+      if (!snap.exists || !snap.data()?.isAdmin) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+    } catch(_) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+  }
+
   const now = new Date();
 
   try {
+
+    // ── setSectionsConfig — solo admin ────────────────────────────────────────
+    if (action === "setSectionsConfig") {
+      const { adminOnlySections } = body;
+      if (!Array.isArray(adminOnlySections)) return res.status(400).json({ error: "adminOnlySections debe ser un array" });
+      await db.collection("config").doc(CONFIG_DOC).set({ adminOnlySections, updatedAt: now, updatedBy: uid }, { merge: true });
+      return res.json({ ok: true, adminOnlySections });
+    }
 
     // ── getData ───────────────────────────────────────────────────────────────
     if (action === "getData") {

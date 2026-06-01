@@ -443,7 +443,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   );
 }
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}}) {
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}}) {
   const GROUPS = [
     // Inicio queda suelto arriba de todo, sin etiqueta de grupo
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
@@ -526,7 +526,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
 
       {/* Nav */}
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
-        {GROUPS.filter(item=>!item.adminOnly||isAdmin).map((item,i)=>{
+        {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin).map((item,i)=>{
           if(item.group) {
             if(collapsed) return null;
             return (
@@ -7297,6 +7297,8 @@ function AppAdmin({T, user, onBack}) {
   const [datos, setDatos] = useState({ pagos:[], usuarios:[], stats:{} });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("resumen");
+  const [sectionsConfig, setSectionsConfig] = useState([]);
+  const [savingSections, setSavingSections] = useState(false);
   const [filterPlan, setFilterPlan] = useState("todos");
   const [search, setSearch] = useState("");
   const [expandedUser, setExpandedUser] = useState(null);
@@ -7322,7 +7324,30 @@ function AppAdmin({T, user, onBack}) {
     } catch(e){ appAlert("Error: "+e.message); }
     setLoading(false);
   }
-  useEffect(()=>{ loadData(); },[]);
+
+  async function loadSectionsConfig() {
+    try {
+      const r=await fetch(`/api/admin?action=getSectionsConfig&uid=${user.uid}`);
+      const j=await r.json();
+      if(Array.isArray(j.adminOnlySections)) setSectionsConfig(j.adminOnlySections);
+    }catch(_){}
+  }
+
+  async function saveSectionsConfig(newList) {
+    setSavingSections(true);
+    try {
+      await adminApi({action:"setSectionsConfig", adminOnlySections:newList});
+      setSectionsConfig(newList);
+      toast("Configuración guardada ✓","success");
+    } catch(e){ toast(e.message,"error"); }
+    setSavingSections(false);
+  }
+
+  function toggleSection(id) {
+    const next = sectionsConfig.includes(id) ? sectionsConfig.filter(s=>s!==id) : [...sectionsConfig,id];
+    saveSectionsConfig(next);
+  }
+  useEffect(()=>{ loadData(); loadSectionsConfig(); },[]);
 
   function fmtDate(val) {
     if (!val) return "—";
@@ -7476,6 +7501,7 @@ function AppAdmin({T, user, onBack}) {
           {[
             ["resumen", pagosPendientes.length>0 ? `📊 Resumen  🔴${pagosPendientes.length}` : "📊 Resumen"],
             ["usuarios", "👥 Usuarios"],
+            ["secciones", "🔐 Secciones"],
           ].map(([id,label])=>(
             <button key={id} onClick={()=>setTab(id)} style={tabStyle(id)}>{label}</button>
           ))}
@@ -7851,6 +7877,58 @@ function AppAdmin({T, user, onBack}) {
           })}
         </div>
       )}
+
+      {/* ===== TAB SECCIONES ===== */}
+      {tab==="secciones"&&(
+        <div style={{maxWidth:720,margin:"0 auto",padding:"0 20px"}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>🔐 Control de acceso por sección</div>
+            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>
+              Las secciones marcadas como <strong style={{color:T.accent}}>solo admin</strong> se ocultan del sidebar y son inaccesibles para usuarios comunes.
+              Solo vos y quienes tengan el flag de admin pueden verlas.
+            </div>
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {[
+              {id:"rendimiento", label:"Rendimiento", icon:"M18 20V10M12 20V4M6 20v-6", desc:"Dashboard financiero automático (Revenue, Profit, ROAS, Ad Spend)"},
+              {id:"meta",        label:"Meta Ads",    icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", desc:"Campañas Facebook e Instagram"},
+              {id:"stock",       label:"Stock & Estadísticas", icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z", desc:"Analytics de ventas, inventario, alertas"},
+              {id:"ml",          label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20z", desc:"Gestión de publicaciones de Mercado Libre"},
+              {id:"arca",        label:"Facturador",  icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z", desc:"Facturación electrónica AFIP/ARCA"},
+              {id:"envios",      label:"Envíos",      icon:"M16 16h6m-3-3v6M1 3h15v13H1z", desc:"Pedidos, etiquetas Andreani, seguimientos"},
+              {id:"reclamos",    label:"Reclamos",    icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7", desc:"Kanban de reclamos y devoluciones"},
+              {id:"canjes",      label:"Canjes",      icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2", desc:"Gestión de influencers y canjes"},
+              {id:"tareas",      label:"Tareas",      icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2", desc:"Delegación a colaboradores externos"},
+            ].map(s=>{
+              const isAdminOnly = sectionsConfig.includes(s.id);
+              return (
+                <div key={s.id} style={{background:T.card,border:`1px solid ${isAdminOnly?T.accent+"55":T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",gap:14,transition:"border-color 0.15s"}}>
+                  <div style={{width:36,height:36,borderRadius:9,background:isAdminOnly?T.accentSolid+"18":T.surface,border:`1px solid ${isAdminOnly?T.accentSolid+"44":T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isAdminOnly?T.accentSolid:T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={s.icon}/></svg>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{s.label}</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:1}}>{s.desc}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+                    {isAdminOnly && <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.accentSolid+"18",color:T.accentSolid}}>🔐 Solo admin</span>}
+                    <button disabled={savingSections} onClick={()=>toggleSection(s.id)}
+                      style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${isAdminOnly?T.red+"44":T.accentSolid+"55"}`,borderRadius:8,background:"transparent",color:isAdminOnly?T.red:T.accentSolid,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:savingSections?0.5:1,whiteSpace:"nowrap"}}>
+                      {isAdminOnly?"🔓 Hacer pública":"🔒 Solo admin"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{marginTop:16,padding:"12px 16px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,fontSize:12,color:T.textSm,lineHeight:1.6}}>
+            💡 <strong style={{color:T.text}}>Tip:</strong> Los cambios se aplican a todos los usuarios en tiempo real. Las secciones que hagas "solo admin" desaparecen del sidebar de los usuarios comunes inmediatamente.
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -19434,6 +19512,7 @@ export default function App() {
   const [userPlan,setUserPlan]=useState("free"); // free | starter | pro | total
   const [planExpiry,setPlanExpiry]=useState(null); // Date or null
   const [isAdmin,setIsAdmin]=useState(false);
+  const [adminOnlySections,setAdminOnlySections]=useState(["rendimiento"]); // default, se sobreescribe al cargar
 
   const ADMIN_UIDS=["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"]; // ADMIN_UID_2: completar cuando tengas el segundo
   const USDT_ADDRESS="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; // ← completar: dirección TRC20
@@ -19545,6 +19624,11 @@ export default function App() {
           // Check admin
           setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid) || d?.isAdmin===true);
         } catch(e){}
+        // Load sections config (available for all users)
+        try {
+          const r=await fetch(`/api/admin?action=getSectionsConfig&uid=${u.uid}`);
+          if(r.ok){const j=await r.json();if(Array.isArray(j.adminOnlySections))setAdminOnlySections(j.adminOnlySections);}
+        }catch(_){}
       } else {
         setUserPlan("free");
         setIsAdmin(false);
@@ -19830,13 +19914,14 @@ export default function App() {
       return <UpgradeWall T={T} requiredPlan={req} onNavigate={setPage}/>;
     return null;
   };
-  const adminGate = () => {
-    if (!isAdmin) return (
-      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"70vh",fontFamily:"'Inter',system-ui,sans-serif",gap:16,padding:24}}>
+  // adminGate — bloquea acceso a secciones admin-only para usuarios sin admin
+  const adminGate = (pageId) => {
+    if (adminOnlySections.includes(pageId) && !isAdmin) return (
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"70vh",fontFamily:"'Inter',system-ui,sans-serif",gap:16,padding:24,background:T.bg}}>
         <div style={{fontSize:48}}>🔒</div>
-        <div style={{fontSize:20,fontWeight:800,color:"var(--T-text,#fff)"}}>Acceso restringido</div>
-        <div style={{fontSize:14,color:"var(--T-textMd,#aaa)",textAlign:"center",maxWidth:360}}>Esta sección es exclusiva para administradores de Growith.</div>
-        <button onClick={()=>setPage("home")} style={{background:"#6366f1",border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver al inicio</button>
+        <div style={{fontSize:20,fontWeight:800,color:T.text}}>Acceso restringido</div>
+        <div style={{fontSize:14,color:T.textMd,textAlign:"center",maxWidth:360}}>Esta sección es exclusiva para administradores de Growith.</div>
+        <button onClick={()=>setPage("home")} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver al inicio</button>
       </div>
     );
     return null;
@@ -19846,15 +19931,15 @@ export default function App() {
   if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
-  else if(page==="rendimiento") pageContent = adminGate() || <PageView T={T} pageKey="rendimiento"><AppRendimiento T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
-  else if(page==="arca") pageContent = planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
-  else if(page==="stock") pageContent = planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
-  else if(page==="ml") pageContent = planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
-  else if(page==="meta") pageContent = planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
-  else if(page==="tareas") pageContent = planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab}/></PageView>;
-  else if(page==="reclamos") pageContent = <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
-  else if(page==="canjes") pageContent = <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab}/></PageView>;
-  else if(page==="envios") pageContent = <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
+  else if(page==="rendimiento") pageContent = adminGate("rendimiento") || <PageView T={T} pageKey="rendimiento"><AppRendimiento T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="arca") pageContent = adminGate("arca") || planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
+  else if(page==="stock") pageContent = adminGate("stock") || planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
+  else if(page==="ml") pageContent = adminGate("ml") || planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
+  else if(page==="meta") pageContent = adminGate("meta") || planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
+  else if(page==="tareas") pageContent = adminGate("tareas") || planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab}/></PageView>;
+  else if(page==="reclamos") pageContent = adminGate("reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
+  else if(page==="canjes") pageContent = adminGate("canjes") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab}/></PageView>;
+  else if(page==="envios") pageContent = adminGate("envios") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     setPage(p);
@@ -19870,7 +19955,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}
