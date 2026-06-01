@@ -1362,7 +1362,16 @@ export default async function handler(req, res) {
 
     if (action === "list_cuits" && req.method === "GET") {
       const cuits = await listCuits(db, uid);
-      return res.json({ cuits: cuits.map(c => ({ ...c, cert_pem: undefined, key_pem: undefined, has_cert: Boolean(c.cert_pem), has_key: Boolean(c.key_pem) })) });
+      return res.json({ cuits: cuits.map(c => {
+        let cert_expiry = null;
+        if (c.cert_pem) {
+          try {
+            const parsed = forge.pki.certificateFromPem(c.cert_pem);
+            cert_expiry = parsed.validity.notAfter.toISOString();
+          } catch(_) {}
+        }
+        return { ...c, cert_pem: undefined, key_pem: undefined, has_cert: Boolean(c.cert_pem), has_key: Boolean(c.key_pem), cert_expiry };
+      }) });
     }
 
     // ── CUITS: guardar config ──────────────────────────

@@ -453,7 +453,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
       subs:[{id:"analisis",label:"Análisis"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
-      subs:[{id:"gestion",label:"Gestión"}]},
+      subs:[{id:"gestion",label:"Gestión"},{id:"analytics",label:"Analytics"}]},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
@@ -10621,6 +10621,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [manualItems, setManualItems] = useState([{nombre:"",cantidad:1,precio:0}]);
   const [emittingManual, setEmittingManual] = useState(false);
   const [manualResult, setManualResult] = useState(null);
+  const [conceptoAcIdx, setConceptoAcIdx] = useState(null);
+  const conceptosKey = user?.uid ? `growith_conceptos_${user.uid}` : null;
+  const getConceptos = () => { try { return JSON.parse(localStorage.getItem(conceptosKey)||"[]"); } catch(_) { return []; } };
+  const saveConcepto = (nombre) => { if (!conceptosKey||!nombre.trim()) return; const prev=getConceptos(); if(!prev.includes(nombre.trim())) localStorage.setItem(conceptosKey,JSON.stringify([nombre.trim(),...prev].slice(0,50))); };
   const [testingCuit, setTestingCuit] = useState(null);
   const [testResult, setTestResult] = useState(null);
 
@@ -11148,7 +11152,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const r = (d.resultados||[])[0];
     const pdf = (d.pdfs||[])[0];
     setManualResult({r, pdf});
-    if(r?.ok) { toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`,"success"); refreshDashboard(); }
+    if(r?.ok) { toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`,"success"); refreshDashboard(); itemsValid.forEach(it=>saveConcepto(it.nombre.trim())); }
     else toast("Error: "+(r?.obs||"falló la emisión"),"error");
     setEmittingManual(false);
   }
@@ -11329,6 +11333,26 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
         </div>
       </AppTopbar>
+
+      {/* ── Alerta vencimiento certificado AFIP ── */}
+      {cuitActivo?.cert_expiry && (()=>{
+        const exp = new Date(cuitActivo.cert_expiry);
+        const daysLeft = Math.ceil((exp - Date.now()) / 86400000);
+        if (daysLeft > 30) return null;
+        const isExpired = daysLeft <= 0;
+        const color = isExpired ? T.red : daysLeft <= 7 ? T.red : (T.yellow||"#eab308");
+        const bg = isExpired ? T.redBg : daysLeft <= 7 ? T.redBg : (T.yellowBg||T.yellow+"18");
+        return (
+          <div style={{background:bg,borderBottom:`1px solid ${color}44`,padding:"10px 24px",display:"flex",alignItems:"center",gap:10,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <span style={{fontSize:16}}>{isExpired?"⛔":"⚠️"}</span>
+            <div style={{flex:1}}>
+              <span style={{fontSize:12,fontWeight:700,color}}>{isExpired?"Certificado AFIP vencido":"Certificado AFIP próximo a vencer"}</span>
+              <span style={{fontSize:12,color,marginLeft:8}}>{isExpired?`Venció el ${exp.toLocaleDateString("es-AR")} — renovalo en ARCA para seguir emitiendo.`:`Vence el ${exp.toLocaleDateString("es-AR")} (${daysLeft}d restantes) — renovalo pronto.`}</span>
+            </div>
+            <a href="https://www.arca.gob.ar" target="_blank" rel="noopener" style={{fontSize:11,fontWeight:600,color,textDecoration:"underline",whiteSpace:"nowrap"}}>Ir a ARCA →</a>
+          </div>
+        );
+      })()}
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
@@ -11919,14 +11943,25 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {/* Items */}
                     <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8,marginTop:6}}>Ítems</div>
                     <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8}}>
-                      {manualItems.map((it,i)=>(
+                      {manualItems.map((it,i)=>{
+                        const suggestions = it.nombre.trim() ? getConceptos().filter(c=>c.toLowerCase().includes(it.nombre.trim().toLowerCase())&&c!==it.nombre.trim()) : getConceptos().slice(0,5);
+                        const showAc = conceptoAcIdx===`a${i}` && suggestions.length>0;
+                        return (
                         <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 110px 30px",gap:8,alignItems:"center"}}>
-                          <input value={it.nombre} onChange={e=>{const arr=[...manualItems];arr[i].nombre=e.target.value;setManualItems(arr);}} placeholder="Producto / servicio" style={{...iS,fontSize:12}}/>
+                          <div style={{position:"relative"}}>
+                            <input value={it.nombre} onChange={e=>{const arr=[...manualItems];arr[i].nombre=e.target.value;setManualItems(arr);}} onFocus={()=>setConceptoAcIdx(`a${i}`)} onBlur={()=>setTimeout(()=>setConceptoAcIdx(null),150)} placeholder="Producto / servicio" style={{...iS,fontSize:12}}/>
+                            {showAc&&<div style={{position:"absolute",top:"100%",left:0,right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,zIndex:50,boxShadow:"0 4px 16px rgba(0,0,0,0.25)",marginTop:2,overflow:"hidden"}}>
+                              {suggestions.map((s,si)=>(
+                                <div key={si} onMouseDown={()=>{const arr=[...manualItems];arr[i].nombre=s;setManualItems(arr);setConceptoAcIdx(null);}} style={{padding:"7px 10px",fontSize:12,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{s}</div>
+                              ))}
+                            </div>}
+                          </div>
                           <input value={it.cantidad} onChange={e=>{const arr=[...manualItems];arr[i].cantidad=parseInt(e.target.value.replace(/\D/g,""))||0;setManualItems(arr);}} placeholder="Cant." style={{...iS,fontSize:12,textAlign:"center"}}/>
                           <input value={it.precio||""} onChange={e=>{const arr=[...manualItems];arr[i].precio=parseFloat(e.target.value)||0;setManualItems(arr);}} placeholder="Precio s/IVA" type="number" step="0.01" style={{...iS,fontSize:12,textAlign:"right"}}/>
                           <button onClick={()=>setManualItems(manualItems.filter((_,j)=>j!==i))} disabled={manualItems.length===1} style={{background:"transparent",border:"none",cursor:manualItems.length===1?"not-allowed":"pointer",color:T.red,fontSize:14,opacity:manualItems.length===1?0.3:1}}>🗑</button>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     <button onClick={()=>setManualItems([...manualItems,{nombre:"",cantidad:1,precio:0}])} style={{background:"transparent",border:"1px dashed "+T.border,color:T.textMd,borderRadius:8,padding:"7px 12px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginBottom:14}}>
                       + Agregar ítem
@@ -12551,14 +12586,25 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {/* Items */}
                 <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8,marginTop:6}}>Ítems</div>
                 <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8}}>
-                  {manualItems.map((it,i)=>(
+                  {manualItems.map((it,i)=>{
+                    const suggestions = it.nombre.trim() ? getConceptos().filter(c=>c.toLowerCase().includes(it.nombre.trim().toLowerCase())&&c!==it.nombre.trim()) : getConceptos().slice(0,5);
+                    const showAc = conceptoAcIdx===`b${i}` && suggestions.length>0;
+                    return (
                     <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 110px 30px",gap:8,alignItems:"center"}}>
-                      <input value={it.nombre} onChange={e=>{const arr=[...manualItems];arr[i].nombre=e.target.value;setManualItems(arr);}} placeholder="Producto / servicio" style={{...iS,fontSize:12}}/>
+                      <div style={{position:"relative"}}>
+                        <input value={it.nombre} onChange={e=>{const arr=[...manualItems];arr[i].nombre=e.target.value;setManualItems(arr);}} onFocus={()=>setConceptoAcIdx(`b${i}`)} onBlur={()=>setTimeout(()=>setConceptoAcIdx(null),150)} placeholder="Producto / servicio" style={{...iS,fontSize:12}}/>
+                        {showAc&&<div style={{position:"absolute",top:"100%",left:0,right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,zIndex:50,boxShadow:"0 4px 16px rgba(0,0,0,0.25)",marginTop:2,overflow:"hidden"}}>
+                          {suggestions.map((s,si)=>(
+                            <div key={si} onMouseDown={()=>{const arr=[...manualItems];arr[i].nombre=s;setManualItems(arr);setConceptoAcIdx(null);}} style={{padding:"7px 10px",fontSize:12,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{s}</div>
+                          ))}
+                        </div>}
+                      </div>
                       <input value={it.cantidad} onChange={e=>{const arr=[...manualItems];arr[i].cantidad=parseInt(e.target.value.replace(/\D/g,""))||0;setManualItems(arr);}} placeholder="Cant." style={{...iS,fontSize:12,textAlign:"center"}}/>
                       <input value={it.precio||""} onChange={e=>{const arr=[...manualItems];arr[i].precio=parseFloat(e.target.value)||0;setManualItems(arr);}} placeholder="Precio s/IVA" type="number" step="0.01" style={{...iS,fontSize:12,textAlign:"right"}}/>
                       <button onClick={()=>setManualItems(manualItems.filter((_,j)=>j!==i))} disabled={manualItems.length===1} style={{background:"transparent",border:"none",cursor:manualItems.length===1?"not-allowed":"pointer",color:T.red,fontSize:14,opacity:manualItems.length===1?0.3:1}}>🗑</button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <button onClick={()=>setManualItems([...manualItems,{nombre:"",cantidad:1,precio:0}])} style={{background:"transparent",border:"1px dashed "+T.border,color:T.textMd,borderRadius:8,padding:"7px 12px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",marginBottom:14}}>
                   + Agregar ítem
@@ -16681,6 +16727,8 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
 
   const [diagnostic, setDiagnostic] = useState(null);
   const [diagnosing, setDiagnosing] = useState(false);
+  const [mlPage, setMlPage] = useState(0);
+  const ML_PAGE_SIZE = 50;
   async function loadItems() {
     if (!uid) return;
     setLoading(true);
@@ -16707,6 +16755,8 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
     finally { setDiagnosing(false); }
   }
   useEffect(() => { if (uid) loadItems(); /* eslint-disable-next-line */ }, [uid, statusFilter]);
+
+  React.useEffect(()=>{ setMlPage(0); },[search,sortBy]);
 
   const filtered = items
     .filter(i => !search.trim() || (i.title||"").toLowerCase().includes(search.trim().toLowerCase()) || (i.id||"").toLowerCase().includes(search.trim().toLowerCase()))
@@ -16820,6 +16870,16 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
       </AppTopbar>
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
+        {tab==="analytics" ? (
+          <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 30px",textAlign:"center"}}>
+            <div style={{fontSize:42,marginBottom:12}}>📈</div>
+            <div style={{fontSize:18,fontWeight:700,color:T.text,marginBottom:8}}>Analytics de Mercado Libre</div>
+            <div style={{fontSize:13,color:T.textSm,maxWidth:520,margin:"0 auto 18px",lineHeight:1.6}}>
+              Próximamente: dashboard con ventas por publicación, top productos, health score, evolución de visitas, conversión y comparativa con el período anterior. Mientras tanto las métricas de stock y unidades vendidas por canal viven en <strong style={{color:T.text}}>Stock → Análisis</strong> (incluye ML).
+            </div>
+            <button onClick={()=>setTab&&setTab("gestion")} style={{padding:"9px 18px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:10,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver a Gestión</button>
+          </div>
+        ) : (
         <>
         {/* Filtros */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -16914,12 +16974,15 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
                     <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Vendidos</th>
                     <th style={{padding:"10px 12px",textAlign:"center",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Handling</th>
                     <th style={{padding:"10px 12px",textAlign:"center",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Estado</th>
+                    <th style={{padding:"10px 12px",textAlign:"center",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Health</th>
                     <th style={{padding:"10px 12px",borderBottom:`1px solid ${T.border}`}}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(it => {
+                  {filtered.slice(mlPage*ML_PAGE_SIZE,(mlPage+1)*ML_PAGE_SIZE).map(it => {
                     const sel = selectedIds.has(it.id);
+                    const hPct = it.health!=null ? Math.round(it.health*100) : null;
+                    const hColor = hPct==null ? T.textSm : hPct>=70 ? T.green : hPct>=40 ? (T.yellow||"#eab308") : T.red;
                     return (
                       <tr key={it.id} style={{borderBottom:`1px solid ${T.borderL}`,background:sel?T.accent+"08":"transparent"}}>
                         <td style={{padding:"10px 12px"}}><input type="checkbox" checked={sel} onChange={()=>toggleOne(it.id)} style={{width:14,height:14,cursor:"pointer"}}/></td>
@@ -16939,6 +17002,11 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
                         <td style={{padding:"10px 12px",textAlign:"center"}}>
                           <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:700,letterSpacing:0.3,textTransform:"uppercase",background:it.status==="active"?T.green+"22":it.status==="paused"?T.yellow+"22":T.textSm+"22",color:it.status==="active"?T.green:it.status==="paused"?T.yellow:T.textSm}}>{it.status}</span>
                         </td>
+                        <td style={{padding:"10px 12px",textAlign:"center"}}>
+                          {hPct!=null
+                            ? <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:hColor+"22",color:hColor}}>{hPct}%</span>
+                            : <span style={{fontSize:10,color:T.textSm}}>—</span>}
+                        </td>
                         <td style={{padding:"10px 12px",textAlign:"right"}}>
                           <button onClick={()=>openEdit(it)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
                         </td>
@@ -16948,6 +17016,19 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
                 </tbody>
               </table>
             </div>
+            {/* Paginación ML */}
+            {filtered.length > ML_PAGE_SIZE && (
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderTop:`1px solid ${T.border}`,background:T.bg}}>
+                <span style={{fontSize:11,color:T.textSm}}>{mlPage*ML_PAGE_SIZE+1}–{Math.min((mlPage+1)*ML_PAGE_SIZE,filtered.length)} de {filtered.length}</span>
+                <div style={{display:"flex",gap:4}}>
+                  <button disabled={mlPage===0} onClick={()=>setMlPage(p=>p-1)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:mlPage===0?T.textSm:T.text,cursor:mlPage===0?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Ant.</button>
+                  {Array.from({length:Math.ceil(filtered.length/ML_PAGE_SIZE)}).map((_,i)=>(
+                    <button key={i} onClick={()=>setMlPage(i)} style={{padding:"4px 8px",fontSize:11,border:`1px solid ${i===mlPage?T.accentSolid:T.border}`,borderRadius:6,background:i===mlPage?T.accentSolid:"transparent",color:i===mlPage?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{i+1}</button>
+                  ))}
+                  <button disabled={mlPage>=Math.ceil(filtered.length/ML_PAGE_SIZE)-1} onClick={()=>setMlPage(p=>p+1)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:mlPage>=Math.ceil(filtered.length/ML_PAGE_SIZE)-1?T.textSm:T.text,cursor:mlPage>=Math.ceil(filtered.length/ML_PAGE_SIZE)-1?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Sig. →</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -16995,6 +17076,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
           document.body
         )}
         </>
+        )}
       </div>
     </div>
   );
@@ -17775,6 +17857,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {/* Período + date picker */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,flexWrap:"wrap"}}>
           <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período:</span>
+          {[{d:1,l:"Hoy"},{d:7,l:"7d"},{d:30,l:"30d"}].map(p=>(
+            <button key={p.d} onClick={()=>{setUseCustomDate(false);setDays(p.d);loadStock(p.d);}}
+              style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:`1px solid ${!useCustomDate&&days===p.d?T.accentSolid:T.border}`,borderRadius:6,background:!useCustomDate&&days===p.d?T.accentSolid:"transparent",color:!useCustomDate&&days===p.d?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>{p.l}</button>
+          ))}
           <DateRangePicker
             T={T}
             since={useCustomDate ? dateFrom : new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
@@ -17822,19 +17908,26 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <>
             {/* KPIs siempre visibles */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:20}}>
-              {[
-                {label:`Unidades vendidas`,val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"📦"},
-                {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||"#3b82f6",icon:"🔢"},
-                // KPI Facturación removido — esta info va en la próxima sección de Márgenes.
-                {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||"#eab308"):T.green,icon:"⏳"},
-                {label:"Sin stock",val:kpiEmpty,sub:"agotados",color:T.red,icon:"⛔"},
-                {label:"Stock crítico",val:kpiCritical,sub:"menos de 7 días",color:T.red+"cc",icon:"🔴"},
-                {label:"Sin ventas",val:kpiDead,sub:"prod. inactivos",color:T.textSm,icon:"💤"},
-              ].map(k=>(
+              {(()=>{
+                const prevU=dataPrev?.total_units||0;
+                const deltaU=prevU>0?((totalUnits-prevU)/prevU*100):null;
+                const prevR=dataPrev?.total_revenue||0;
+                const currR=totalRev;
+                const deltaR=prevR>0?((currR-prevR)/prevR*100):null;
+                return [
+                  {label:`Unidades vendidas`,val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"📦",delta:deltaU},
+                  {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||"#3b82f6",icon:"🔢",delta:null},
+                  {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||"#eab308"):T.green,icon:"⏳",delta:null},
+                  {label:"Sin stock",val:kpiEmpty,sub:"agotados",color:T.red,icon:"⛔",delta:null},
+                  {label:"Stock crítico",val:kpiCritical,sub:"menos de 7 días",color:T.red+"cc",icon:"🔴",delta:null},
+                  {label:"Sin ventas",val:kpiDead,sub:"prod. inactivos",color:T.textSm,icon:"💤",delta:null},
+                ];
+              })().map(k=>(
                 <div key={k.label} style={{background:T.card,border:`1px solid ${((k.label==="Sin stock"||k.label==="Stock crítico")&&k.val>0)?T.red+"55":T.border}`,borderRadius:12,padding:"13px 14px"}}>
                   <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:5}}>{k.icon} {k.label}</div>
                   <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
                   <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.sub}</div>
+                  {k.delta!==null&&<div style={{fontSize:9,fontWeight:700,color:k.delta>=0?T.green:T.red,marginTop:4}}>{k.delta>=0?"+":""}{k.delta.toFixed(1)}% vs anterior</div>}
                 </div>
               ))}
             </div>
@@ -18286,7 +18379,22 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>📜 Historial de movimientos</div>
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimos 200 movimientos de stock. Las ventas descuentan, los ajustes manuales se ven con el origen "manual".</div>
                   </div>
-                  <button onClick={loadMovements} disabled={movementsLoading} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{movementsLoading?<Spinner size={11} color={T.textMd}/>:"↻"} Refrescar</button>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={loadMovements} disabled={movementsLoading} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{movementsLoading?<Spinner size={11} color={T.textMd}/>:"↻"} Refrescar</button>
+                    <button onClick={()=>{
+                      const cols=["fecha","producto","variante","origen","evento","cantidad","stock_resultante","orden"];
+                      const rows=filteredMov.map(m=>[
+                        m.date||(m.timestamp?new Date(m.timestamp).toISOString():""),
+                        m.item_name||"",m.variant_name||"",m.source||"",m.event||"",
+                        m.quantity||"",m.stock_after||"",m.order_id||""
+                      ].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","));
+                      const csv=[cols.join(","),...rows].join("\n");
+                      const a=document.createElement("a");
+                      a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));
+                      a.download=`movimientos_stock_${new Date().toISOString().slice(0,10)}.csv`;
+                      a.click();
+                    }} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⬇ Exportar CSV</button>
+                  </div>
                 </div>
                 {/* Filtros */}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
