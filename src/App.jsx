@@ -4054,7 +4054,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       setTimeout(()=>setCopiedToast(null), 1500);
     }).catch(()=>{});
   }
-  const [tabCounts,setTabCounts]=useState({cobrar:null,empaquetar:null,enviar:null});
+  const [tabCounts,setTabCounts]=useState({empaquetar:null,enviar:null});
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
   const [tabOrders,setTabOrders]=useState([]);
   const [tabLoading,setTabLoading]=useState(false);
@@ -4110,9 +4110,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
   function toggleCurrentPage(){togglePageSel(orderPage);}
 
-  // Fetch contadores de los 3 tabs activos en paralelo
+  // Fetch contadores de los 2 tabs activos en paralelo
   async function fetchTabCounts(uid) {
-    const tabs=["cobrar","empaquetar","enviar"];
+    const tabs=["empaquetar","enviar"];
     const results = await Promise.all(
       tabs.map(tab=>
         fetch(`/api/orders?uid=${uid}&tab=${tab}&countOnly=true`)
@@ -4121,7 +4121,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           .catch(()=>0)
       )
     );
-    setTabCounts({cobrar:results[0],empaquetar:results[1],enviar:results[2]});
+    setTabCounts({empaquetar:results[0],enviar:results[1]});
   }
 
   const counts=tabCounts;
@@ -4977,7 +4977,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               {/* Segmented control */}
               <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:0}}>
                 {[
-                  {id:"cobrar",    label:"Por cobrar",     color:T.orange},
                   {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
                   {id:"enviar",    label:"Por enviar",     color:T.blue},
                   {id:"buscar",    label:"🔍 Buscar",      color:T.accent},
@@ -5157,13 +5156,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             ):exportables.length===0?(
               <div style={{textAlign:"center",padding:"72px 20px"}}>
                 <div style={{width:60,height:60,borderRadius:14,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 18px"}}>
-                  {tabEnvio==="buscar"?"🔍":tabEnvio==="cobrar"?"💰":tabEnvio==="empaquetar"?"📦":"🚀"}
+                  {tabEnvio==="buscar"?"🔍":tabEnvio==="empaquetar"?"📦":"🚀"}
                 </div>
                 <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>
-                  {tabEnvio==="buscar"?"Buscá por número, nombre o email":tabEnvio==="cobrar"?"Sin pedidos pendientes de cobro":tabEnvio==="empaquetar"?"Todo empaquetado 🎉":"Sin pedidos para enviar"}
+                  {tabEnvio==="buscar"?"Buscá por número, nombre o email":tabEnvio==="empaquetar"?"Todo empaquetado 🎉":"Sin pedidos para enviar"}
                 </div>
                 <div style={{fontSize:12,color:T.textSm,maxWidth:300,margin:"0 auto"}}>
-                  {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar":tabEnvio==="cobrar"?"Los pedidos pagados pasan a Por empaquetar":tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados en Tienda Nube"}
+                  {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar":tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados en Tienda Nube"}
                 </div>
               </div>
             ):(
