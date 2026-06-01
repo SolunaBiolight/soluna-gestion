@@ -3939,6 +3939,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [exportModal,setExportModal]=useState(false);
   const [exporting,setExporting]=useState(false);
   const [exportProgress,setExportProgress]=useState({step:"",pct:0,current:0,total:0});
+  const [exportDone,setExportDone]=useState(null); // null | {count,esquinas}
   const [exportCfg,setExportCfg]=useState(()=>{
     try {
       const saved=localStorage.getItem("growith_exportCfg");
@@ -4466,12 +4467,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         localStorage.setItem("growith_exportHistory",JSON.stringify(hist.slice(0,50)));
       }catch(_){}
       setExportProgress({step:"¡Listo!",pct:100,current:finalOrders.length,total:finalOrders.length});
-      toast(`${finalOrders.length} etiquetas generadas`,"success");
       setSelected(new Set());
       locationOverridesRef.current={};
       sucursalOverridesRef.current={};
-      setTimeout(()=>setExportProgress({step:"",pct:0,current:0,total:0}),2000);
-      if(esquinaOrders.length>0) setEsquinaModal({orders:esquinaOrders});
+      setExportDone({count:finalOrders.length, esquinas:esquinaOrders.length, esquinaOrders});
     } catch(e){
       console.error("exportAndreani:",e);
       toast("Error al exportar: "+e.message,"error");
@@ -4714,141 +4713,148 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
 
       {/* Seguimientos batch progress modal */}
-      {seguimientoProgress.active&&ReactDOM.createPortal(
-        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)",fontFamily:"'Inter',system-ui,sans-serif"}}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:360,maxWidth:"min(440px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.green}44`}}>
-            <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
-              <div style={{width:44,height:44,borderRadius:12,background:T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                <div style={{width:22,height:22,border:`3px solid ${T.green}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
-              </div>
-              <div>
-                <div style={{fontSize:16,fontWeight:700,color:T.text}}>Enviando seguimientos</div>
-                <div style={{fontSize:13,color:T.textSm,marginTop:2}}>{seguimientoProgress.last||"Iniciando..."}</div>
-              </div>
-            </div>
-            {/* Barra */}
-            <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
-              <div style={{height:"100%",width:`${Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100)}%`,background:T.green,borderRadius:20,transition:"width 0.3s ease"}}/>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:T.textSm,marginBottom:20}}>
-              <span>{seguimientoProgress.current} de {seguimientoProgress.total}</span>
-              <span style={{fontWeight:700,color:T.green}}>{Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100)}%</span>
-            </div>
-            {/* Contador ok/fail en tiempo real */}
-            <div style={{display:"flex",gap:12}}>
-              <div style={{flex:1,background:T.green+"12",border:`1px solid ${T.green}33`,borderRadius:10,padding:"10px 14px",textAlign:"center"}}>
-                <div style={{fontSize:20,fontWeight:800,color:T.green}}>{seguimientoProgress.ok}</div>
-                <div style={{fontSize:11,color:T.textSm}}>enviados</div>
-              </div>
-              <div style={{flex:1,background:seguimientoProgress.fail>0?T.red+"12":T.borderL+"44",border:`1px solid ${seguimientoProgress.fail>0?T.red+"33":T.borderL}`,borderRadius:10,padding:"10px 14px",textAlign:"center"}}>
-                <div style={{fontSize:20,fontWeight:800,color:seguimientoProgress.fail>0?T.red:T.textSm}}>{seguimientoProgress.fail}</div>
-                <div style={{fontSize:11,color:T.textSm}}>con error</div>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Seguimientos resultado final */}
-      {seguimientoProgress.done&&!seguimientoProgress.active&&ReactDOM.createPortal(
-        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)",fontFamily:"'Inter',system-ui,sans-serif"}}
-          onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:360,maxWidth:"min(440px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.fail>0?T.orange:T.green}44`}}
+      {/* Seguimientos — portal unificado activo + resultado */}
+      {(seguimientoProgress.active||seguimientoProgress.done)&&ReactDOM.createPortal(
+        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
+          onClick={seguimientoProgress.done?()=>setSeguimientoProgress(p=>({...p,done:false})):undefined}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.fail>0?T.orange+"55":T.green+"55"):T.green+"44"}`}}
             onClick={e=>e.stopPropagation()}>
-            <div style={{textAlign:"center",marginBottom:24}}>
-              <div style={{fontSize:52,marginBottom:10}}>{seguimientoProgress.fail===0?"✅":seguimientoProgress.ok===0?"❌":"⚠️"}</div>
-              <div style={{fontSize:18,fontWeight:800,color:T.text,marginBottom:6}}>
-                {seguimientoProgress.fail===0?"Todos enviados":seguimientoProgress.ok===0?"Error al enviar":"Envío parcial"}
-              </div>
-              <div style={{fontSize:13,color:T.textSm}}>{seguimientoProgress.total} seguimiento{seguimientoProgress.total!==1?"s":""} procesados</div>
-            </div>
-            {/* Cards resultado */}
-            <div style={{display:"flex",gap:12,marginBottom:seguimientoProgress.errors?.length>0?16:24}}>
-              <div style={{flex:1,background:T.green+"12",border:`1px solid ${T.green}33`,borderRadius:12,padding:"16px",textAlign:"center"}}>
-                <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{seguimientoProgress.ok}</div>
-                <div style={{fontSize:12,color:T.green,fontWeight:600}}>enviados OK</div>
-              </div>
-              {seguimientoProgress.fail>0&&(
-                <div style={{flex:1,background:T.red+"12",border:`1px solid ${T.red}33`,borderRadius:12,padding:"16px",textAlign:"center"}}>
-                  <div style={{fontSize:28,fontWeight:800,color:T.red,letterSpacing:-1}}>{seguimientoProgress.fail}</div>
-                  <div style={{fontSize:12,color:T.red,fontWeight:600}}>con error</div>
-                </div>
-              )}
-            </div>
-            {/* Detalle errores */}
-            {seguimientoProgress.errors?.length>0&&(
-              <div style={{background:T.redBg,border:`1px solid ${T.red}22`,borderRadius:10,padding:"12px 14px",marginBottom:20,maxHeight:140,overflowY:"auto"}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Detalle de errores</div>
-                {seguimientoProgress.errors.map((e,i)=>(
-                  <div key={i} style={{fontSize:12,color:T.red,marginBottom:4}}>
-                    <span style={{fontWeight:600}}>#{e.pedido}:</span> {e.msg}
+            {!seguimientoProgress.done ? (
+              <>
+                <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
+                  <div style={{width:44,height:44,borderRadius:12,background:T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <div style={{width:22,height:22,border:`3px solid ${T.green}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
                   </div>
-                ))}
-              </div>
-            )}
-            <button onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"12px"}}>
-              Cerrar
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Export progress - overlay prominente centrado via portal */}
-      {exporting&&ReactDOM.createPortal(
-        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(3px)"}}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:340,maxWidth:"min(420px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.blue}44`,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            {/* Spinner + título */}
-            <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
-              <div style={{width:44,height:44,borderRadius:12,background:T.blue+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                {exportProgress.pct>=100
-                  ? <span style={{fontSize:22,color:T.green}}>✓</span>
-                  : <div style={{width:22,height:22,border:`3px solid ${T.blue}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
-                }
-              </div>
-              <div>
-                <div style={{fontSize:16,fontWeight:700,color:T.text}}>Generando etiquetas</div>
-                <div style={{fontSize:13,color:T.textSm,marginTop:2}}>{exportProgress.step||"Iniciando..."}</div>
-              </div>
-            </div>
-
-            {/* Barra de progreso */}
-            <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
-              <div style={{height:"100%",width:`${exportProgress.pct||0}%`,background:exportProgress.pct>=100?T.green:T.blue,borderRadius:20,transition:"width 0.4s ease"}}/>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:T.textSm}}>
-              <span>{exportProgress.current>0?`${exportProgress.current} pedidos`:""}</span>
-              <span style={{fontWeight:700,color:exportProgress.pct>=100?T.green:T.blue}}>{exportProgress.pct||0}%</span>
-            </div>
-
-            {/* Pasos */}
-            <div style={{display:"flex",gap:6,marginTop:20}}>
-              {[
-                {label:"Ubicaciones",done:exportProgress.pct>=30},
-                {label:"Verificar",done:exportProgress.pct>=50},
-                {label:"Generar",done:exportProgress.pct>=90},
-                {label:"Descargar",done:exportProgress.pct>=100},
-              ].map((s,i)=>(
-                <div key={i} style={{flex:1,textAlign:"center"}}>
-                  <div style={{width:8,height:8,borderRadius:"50%",background:s.done?T.green:T.borderL,margin:"0 auto 4px",transition:"background 0.3s ease"}}/>
-                  <div style={{fontSize:9,color:s.done?T.green:T.textSm,fontWeight:s.done?600:400,transition:"color 0.3s ease"}}>{s.label}</div>
+                  <div>
+                    <div style={{fontSize:16,fontWeight:700,color:T.text}}>Enviando seguimientos</div>
+                    <div style={{fontSize:13,color:T.textSm,marginTop:2}}>{seguimientoProgress.last||"Iniciando..."}</div>
+                  </div>
                 </div>
-              ))}
-            </div>
+                <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
+                  <div style={{height:"100%",width:`${Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100)}%`,background:T.green,borderRadius:20,transition:"width 0.4s ease"}}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:T.textSm,marginBottom:20}}>
+                  <span>{seguimientoProgress.current} de {seguimientoProgress.total}</span>
+                  <span style={{fontWeight:700,color:T.green}}>{Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100)}%</span>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                    <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{seguimientoProgress.ok}</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Enviados</div>
+                  </div>
+                  <div style={{background:seguimientoProgress.fail>0?T.redBg:T.surface,border:`1px solid ${seguimientoProgress.fail>0?T.red+"33":T.border}`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                    <div style={{fontSize:28,fontWeight:800,color:seguimientoProgress.fail>0?T.red:T.textSm,letterSpacing:-1}}>{seguimientoProgress.fail}</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Con error</div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{textAlign:"center",marginBottom:24}}>
+                  <div style={{fontSize:48,marginBottom:12}}>{seguimientoProgress.fail===0?"✅":seguimientoProgress.ok===0?"❌":"⚠️"}</div>
+                  <div style={{fontSize:18,fontWeight:800,color:seguimientoProgress.fail===0?T.green:seguimientoProgress.ok===0?T.red:(T.orange||"#f97316"),marginBottom:6}}>
+                    {seguimientoProgress.fail===0?"¡Seguimientos enviados!":seguimientoProgress.ok===0?"Error al enviar":"Envío parcial"}
+                  </div>
+                  <div style={{fontSize:13,color:T.textSm}}>{seguimientoProgress.total} seguimiento{seguimientoProgress.total!==1?"s":""} procesados</div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:seguimientoProgress.errors?.length>0?16:24}}>
+                  <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                    <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{seguimientoProgress.ok}</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Enviados OK</div>
+                  </div>
+                  <div style={{background:seguimientoProgress.fail>0?T.redBg:T.surface,border:`1px solid ${seguimientoProgress.fail>0?T.red+"33":T.border}`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                    <div style={{fontSize:28,fontWeight:800,color:seguimientoProgress.fail>0?T.red:T.textSm,letterSpacing:-1}}>{seguimientoProgress.fail}</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Con error</div>
+                  </div>
+                </div>
+                {seguimientoProgress.errors?.length>0&&(
+                  <div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",marginBottom:20,maxHeight:130,overflowY:"auto"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Detalle de errores</div>
+                    {seguimientoProgress.errors.map((e,i)=>(
+                      <div key={i} style={{fontSize:12,color:T.red,marginBottom:3}}>· <span style={{fontWeight:600}}>#{e.pedido}:</span> {e.msg}</div>
+                    ))}
+                  </div>
+                )}
+                <button onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))} style={{width:"100%",background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  Cerrar
+                </button>
+              </>
+            )}
           </div>
         </div>,
         document.body
       )}
 
-      {/* SKU + seguimientos progress - esquina inferior derecha */}
-      {((skuGenerating&&skuProgress>0)||seguimientoProgress.active)&&(()=>{
-        const isSku=skuGenerating&&skuProgress>0;
-        const isSeg=seguimientoProgress.active&&!isSku;
-        const pct=isSku?skuProgress:Math.round((seguimientoProgress.current/Math.max(1,seguimientoProgress.total))*100);
-        const step=isSku?(skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rotulos...":"Generando PDF..."):("Enviando "+seguimientoProgress.current+"/"+seguimientoProgress.total);
+      {/* Generar etiquetas — portal unificado activo + resultado */}
+      {(exporting||!!exportDone)&&ReactDOM.createPortal(
+        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
+          onClick={exportDone?()=>{const d=exportDone;setExportDone(null);setExportProgress({step:"",pct:0,current:0,total:0});if(d.esquinas>0&&d.esquinaOrders?.length>0)setEsquinaModal({orders:d.esquinaOrders});}:undefined}>
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${exportDone?T.green+"55":T.blue+"44"}`}}
+            onClick={e=>e.stopPropagation()}>
+            {!exportDone ? (
+              <>
+                <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
+                  <div style={{width:44,height:44,borderRadius:12,background:T.blue+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {exportProgress.pct>=90
+                      ? <span style={{fontSize:22,color:T.green}}>✓</span>
+                      : <div style={{width:22,height:22,border:`3px solid ${T.blue}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>}
+                  </div>
+                  <div>
+                    <div style={{fontSize:16,fontWeight:700,color:T.text}}>Generando etiquetas</div>
+                    <div style={{fontSize:13,color:T.textSm,marginTop:2}}>{exportProgress.step||"Iniciando..."}</div>
+                  </div>
+                </div>
+                <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
+                  <div style={{height:"100%",width:`${exportProgress.pct||0}%`,background:exportProgress.pct>=90?T.green:T.blue,borderRadius:20,transition:"width 0.4s ease"}}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:T.textSm,marginBottom:20}}>
+                  <span>{exportProgress.current>0?`${exportProgress.current} pedidos`:""}</span>
+                  <span style={{fontWeight:700,color:exportProgress.pct>=90?T.green:T.blue}}>{exportProgress.pct||0}%</span>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  {[{label:"Ubicaciones",done:exportProgress.pct>=30},{label:"Verificar",done:exportProgress.pct>=50},{label:"Generar",done:exportProgress.pct>=80},{label:"Descargar",done:exportProgress.pct>=90}].map((s,i)=>(
+                    <div key={i} style={{flex:1,textAlign:"center"}}>
+                      <div style={{width:8,height:8,borderRadius:"50%",background:s.done?T.green:T.borderL,margin:"0 auto 4px",transition:"background 0.3s"}}/>
+                      <div style={{fontSize:9,color:s.done?T.green:T.textSm,fontWeight:s.done?600:400,transition:"color 0.3s"}}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{textAlign:"center",marginBottom:24}}>
+                  <div style={{fontSize:48,marginBottom:12}}>✅</div>
+                  <div style={{fontSize:18,fontWeight:800,color:T.green,marginBottom:6}}>¡Etiquetas generadas!</div>
+                  <div style={{fontSize:13,color:T.textSm}}>El archivo Excel fue descargado a tu computadora</div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:exportDone.esquinas>0?"1fr 1fr":"1fr",gap:12,marginBottom:24}}>
+                  <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                    <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{exportDone.count}</div>
+                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Etiquetas incluidas</div>
+                  </div>
+                  {exportDone.esquinas>0&&(
+                    <div style={{background:T.yellowBg||(T.yellow+"18"),border:`1px solid ${T.yellow||"#eab308"}33`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                      <div style={{fontSize:28,fontWeight:800,color:T.yellow||"#eab308",letterSpacing:-1}}>{exportDone.esquinas}</div>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:2}}>En esquina (excluidas)</div>
+                    </div>
+                  )}
+                </div>
+                <button onClick={()=>{const d=exportDone;setExportDone(null);setExportProgress({step:"",pct:0,current:0,total:0});if(d.esquinas>0&&d.esquinaOrders?.length>0)setEsquinaModal({orders:d.esquinaOrders});}} style={{width:"100%",background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  Cerrar
+                </button>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* SKU progress - esquina inferior derecha */}
+      {(skuGenerating&&skuProgress>0)&&(()=>{
+        const pct=skuProgress;
+        const step=skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rotulos...":"Generando PDF...";
         const isDone=pct>=100;
-        const accent=isDone?T.green:isSku?T.purple:T.green;
+        const accent=isDone?T.green:T.purple;
         return (
           <div style={{position:"fixed",bottom:28,right:28,zIndex:9998,width:300,background:T.card,border:`1px solid ${accent}44`,borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.3)",padding:"16px 18px"}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
