@@ -453,7 +453,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
       subs:[{id:"analisis",label:"Análisis"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
-      subs:[{id:"gestion",label:"Gestión"},{id:"analytics",label:"Analytics"}]},
+      subs:[{id:"gestion",label:"Gestión"}]},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
@@ -486,7 +486,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
         onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.card;}}
         onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
         {item.id==="ml"
-          ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{flexShrink:0}}><circle cx="12" cy="12" r="11" fill="#FFE600"/><circle cx="8" cy="9.5" r="1.5" fill="#222"/><circle cx="16" cy="9.5" r="1.5" fill="#222"/><path d="M6 14c1.2 2.8 3.5 4.2 6 4.2s4.8-1.4 6-4.2H6z" fill="#222"/></svg>
+          ? <svg width="16" height="16" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" style={{flexShrink:0,opacity:active?1:0.65}}><ellipse cx="24" cy="24" rx="19.5" ry="12.978"/><path d="M9.7044,15.5305A20.8345,20.8345,0,0,0,16.09,17.3957a22.8207,22.8207,0,0,0,4.546-.7731"/><path d="M38.8824,15.6143a8.6157,8.6157,0,0,1-5.1653,1.4849c-3.3351,0-6.2255-2.1987-9.2148-2.1987-2.6681,0-7.189,4.3727-7.189,5.1633s1.3094,1.26,2.3717.7411c.6215-.3036,3.31-2.9151,5.4843-2.9151s9.2186,7.1361,9.8571,7.8066c.9882,1.0376-.9264,3.2733-2.1493,2.05s-3.4092-3.1621-3.4092-3.1621"/><path d="M43.4,22.6826a23.9981,23.9981,0,0,0-8.5467,2.6926"/><path d="M32.5807,27.4555c.9881,1.0376-.9265,3.2733-2.1493,2.05S27.85,26.9933,27.85,26.9933"/><path d="M30.1349,29.2147c.9882,1.0376-.9264,3.2733-2.1493,2.05S25.96,29.3032,25.96,29.3032"/><path d="M24.2015,31.3156A2.309,2.309,0,0,0,27.85,31.13"/><path d="M24.2015,31.3156c.5306-.6964.49-3.1817-2.2437-2.6876.6423-1.2188.0658-3.1457-2.3881-2.0093A1.69,1.69,0,0,0,16.424,25.96a1.4545,1.4545,0,0,0-2.8-.28c-.5435,1.1035.2964,3.0963,2.0916,1.9763-.1812,1.9435.84,2.5364,2.6845,1.7788.0989,1.91,1.367,1.7457,2.2728,1.3011A1.9376,1.9376,0,0,0,24.2015,31.3156Z"/><path d="M4.6706,22.2785a18.3081,18.3081,0,0,1,9.0635,3.2144"/></svg>
           : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?"2.2":"1.8"} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.65}}><path d={item.icon}/></svg>
         }
         {!collapsed&&<span style={{flex:1}}>{item.label}</span>}
@@ -685,7 +685,7 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
               onMouseEnter={e=>e.currentTarget.style.background=T.surface}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               {item.page==="ml"
-                ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{flexShrink:0}}><circle cx="12" cy="12" r="11" fill="#FFE600"/><circle cx="8" cy="9.5" r="1.5" fill="#222"/><circle cx="16" cy="9.5" r="1.5" fill="#222"/><path d="M6 14c1.2 2.8 3.5 4.2 6 4.2s4.8-1.4 6-4.2H6z" fill="#222"/></svg>
+                ? <svg width="16" height="16" viewBox="0 0 48 48" fill="none" stroke={T.accent} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" style={{flexShrink:0,opacity:0.85}}><ellipse cx="24" cy="24" rx="19.5" ry="12.978"/><path d="M9.7044,15.5305A20.8345,20.8345,0,0,0,16.09,17.3957a22.8207,22.8207,0,0,0,4.546-.7731"/><path d="M38.8824,15.6143a8.6157,8.6157,0,0,1-5.1653,1.4849c-3.3351,0-6.2255-2.1987-9.2148-2.1987-2.6681,0-7.189,4.3727-7.189,5.1633s1.3094,1.26,2.3717.7411c.6215-.3036,3.31-2.9151,5.4843-2.9151s9.2186,7.1361,9.8571,7.8066c.9882,1.0376-.9264,3.2733-2.1493,2.05s-3.4092-3.1621-3.4092-3.1621"/><path d="M43.4,22.6826a23.9981,23.9981,0,0,0-8.5467,2.6926"/><path d="M32.5807,27.4555c.9881,1.0376-.9265,3.2733-2.1493,2.05S27.85,26.9933,27.85,26.9933"/><path d="M30.1349,29.2147c.9882,1.0376-.9264,3.2733-2.1493,2.05S25.96,29.3032,25.96,29.3032"/><path d="M24.2015,31.3156A2.309,2.309,0,0,0,27.85,31.13"/><path d="M24.2015,31.3156c.5306-.6964.49-3.1817-2.2437-2.6876.6423-1.2188.0658-3.1457-2.3881-2.0093A1.69,1.69,0,0,0,16.424,25.96a1.4545,1.4545,0,0,0-2.8-.28c-.5435,1.1035.2964,3.0963,2.0916,1.9763-.1812,1.9435.84,2.5364,2.6845,1.7788.0989,1.91,1.367,1.7457,2.2728,1.3011A1.9376,1.9376,0,0,0,24.2015,31.3156Z"/><path d="M4.6706,22.2785a18.3081,18.3081,0,0,1,9.0635,3.2144"/></svg>
                 : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.85}}><path d={item.icon}/></svg>
               }
               <span style={{flex:1, fontWeight:DS.w.medium}}>{item.label}</span>
@@ -16820,16 +16820,6 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
       </AppTopbar>
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
-        {tab==="analytics" ? (
-          <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 30px",textAlign:"center"}}>
-            <div style={{fontSize:42,marginBottom:12}}>📈</div>
-            <div style={{fontSize:18,fontWeight:700,color:T.text,marginBottom:8}}>Analytics de Mercado Libre</div>
-            <div style={{fontSize:13,color:T.textSm,maxWidth:520,margin:"0 auto 18px",lineHeight:1.6}}>
-              Próximamente: dashboard con ventas por publicación, top productos, health score, evolución de visitas, conversión y comparativa con el período anterior. Mientras tanto las métricas de stock y unidades vendidas por canal viven en <strong style={{color:T.text}}>Stock → Análisis</strong> (incluye ML).
-            </div>
-            <button onClick={()=>setTab&&setTab("gestion")} style={{padding:"9px 18px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:10,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver a Gestión</button>
-          </div>
-        ) : (
         <>
         {/* Filtros */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -17005,7 +16995,6 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
           document.body
         )}
         </>
-        )}
       </div>
     </div>
   );
