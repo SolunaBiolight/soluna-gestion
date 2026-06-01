@@ -1709,6 +1709,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [slaConfig,setSlaConfig]=useState({dias:3});
   const [andreaniAlertas,setAndreaniAlertas]=useState([]);
   const [andreaniChecked,setAndreaniChecked]=useState(false);
+  const [bulkSelected,setBulkSelected]=useState(new Set());
+  const [bulkEstado,setBulkEstado]=useState("");
+  const [dragOverEstado,setDragOverEstado]=useState(null);
 
   // Atajos de teclado en reclamos
   useEffect(()=>{
@@ -2052,6 +2055,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
       {/* Topbar */}
       <AppTopbar T={T} section="Reclamos" onHome={onHome}>
+        <button onClick={()=>{
+          const headers=["Pedido","Cliente","Email","Tipo","Estado","Días abierto","Tracking cambio","Tracking devolución","Motivo","Notas"];
+          const rows=reclamos.map(r=>{const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):"";;return[r.orderNum,r.clienteNombre||"",r.clienteEmail||"",r.tipo,r.estado,dias,r.trackingCambio||"",r.trackingDevolucion||"",(r.motivo||"").replace(/\n/g," "),(r.notasInternas||"").replace(/\n/g," ")];});
+          const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+          const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));a.download=`reclamos_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+          toast("CSV exportado ✓","success");
+        }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>⬇ CSV</button>
+        <button onClick={()=>setView("config")} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:T.textSm}} title="Configurar SLA">⚙ SLA</button>
         <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
         <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
@@ -2156,42 +2167,75 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 </div>
               )}
             </div>
-            {/* Filtro tipo kanban */}
-            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>
+            {/* Filtro tipo kanban + bulk actions */}
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
               {["Todos","Cambio","Devolución"].map(t=>(
-                <button key={t} onClick={()=>setKanbanTipo(t)} style={{padding:"5px 12px",fontSize:12,fontWeight:kanbanTipo===t?700:400,borderRadius:DS.r.full,border:`1px solid ${kanbanTipo===t?T.accentSolid:T.border}`,background:kanbanTipo===t?T.accentSolid:"transparent",color:kanbanTipo===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.12s ${DS.ease}`}}>{t}</button>
+                <button key={t} onClick={()=>{setKanbanTipo(t);setBulkSelected(new Set());}} style={{padding:"5px 12px",fontSize:12,fontWeight:kanbanTipo===t?700:400,borderRadius:DS.r.full,border:`1px solid ${kanbanTipo===t?T.accentSolid:T.border}`,background:kanbanTipo===t?T.accentSolid:"transparent",color:kanbanTipo===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.12s ${DS.ease}`}}>{t}</button>
               ))}
+              {bulkSelected.size>0&&(
+                <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:"auto",background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}44`,borderRadius:8,padding:"5px 10px"}}>
+                  <span style={{fontSize:12,fontWeight:600,color:T.accent}}>{bulkSelected.size} seleccionados</span>
+                  <select value={bulkEstado} onChange={e=>setBulkEstado(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"4px 8px",fontSize:11,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <option value="">Mover a...</option>
+                    {ESTADOS_R.map(e=><option key={e} value={e}>{e}</option>)}
+                  </select>
+                  <button disabled={!bulkEstado} onClick={async()=>{
+                    for(const id of bulkSelected){const r=reclamos.find(r=>r._docId===id);if(r&&r.estado!==bulkEstado){const entry={accion:`Estado > ${bulkEstado}`,fecha:new Date().toISOString()};await updateDoc(doc(db,"reclamos",id),{estado:bulkEstado,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(bulkEstado==="Resuelto"&&r.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});}}
+                    toast(`${bulkSelected.size} reclamos movidos a ${bulkEstado}`,"success");setBulkSelected(new Set());setBulkEstado("");
+                  }} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px",opacity:bulkEstado?1:0.5}}>Aplicar</button>
+                  <button onClick={()=>setBulkSelected(new Set())} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:14,padding:0}}>✕</button>
+                </div>
+              )}
             </div>
             {/* KANBAN */}
             <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16}}>
                 {ESTADOS_R.map(estado=>{
                   const sc=getEstadoRC(T,estado);
                   const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo));
+                  const isDragOver=dragOverEstado===estado;
                   return(
-                    <div key={estado} style={{flex:"0 0 220px",minWidth:220,background:T.card,border:`1px solid ${sc.dot}33`,borderRadius:DS.r.xl,overflow:"hidden"}}>
-                      <div style={{padding:"10px 14px",background:sc.dot+"18",borderBottom:`1px solid ${sc.dot}22`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div key={estado}
+                      onDragOver={e=>{e.preventDefault();setDragOverEstado(estado);}}
+                      onDragLeave={()=>setDragOverEstado(null)}
+                      onDrop={async e=>{
+                        e.preventDefault();setDragOverEstado(null);
+                        const docId=e.dataTransfer.getData("reclamoId");
+                        const r=reclamos.find(r=>r._docId===docId);
+                        if(!r||r.estado===estado) return;
+                        const entry={accion:`Estado > ${estado}`,fecha:new Date().toISOString()};
+                        await updateDoc(doc(db,"reclamos",docId),{estado,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(estado==="Resuelto"&&r.estado!=="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
+                        toast(`Movido a ${estado}`,"success");
+                      }}
+                      style={{flex:"0 0 220px",minWidth:220,background:T.card,border:`1.5px solid ${isDragOver?sc.dot:sc.dot+"33"}`,borderRadius:DS.r.xl,overflow:"hidden",transition:"border-color 0.15s",boxShadow:isDragOver?`0 0 0 2px ${sc.dot}44`:"none"}}>
+                      <div style={{padding:"10px 14px",background:isDragOver?sc.dot+"30":sc.dot+"18",borderBottom:`1px solid ${sc.dot}22`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                         <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{width:8,height:8,borderRadius:"50%",background:sc.dot}}/><span style={{fontSize:12,fontWeight:700,color:sc.text}}>{estado}</span></div>
                         <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:DS.r.full,padding:"1px 8px"}}>{items.length}</span>
                       </div>
                       <div style={{padding:8,display:"flex",flexDirection:"column",gap:6,maxHeight:440,overflowY:"auto"}}>
-                        {items.length===0&&<div style={{textAlign:"center",padding:"20px 8px",fontSize:12,color:T.textSm,opacity:0.5}}>Sin reclamos</div>}
+                        {items.length===0&&<div style={{textAlign:"center",padding:"20px 8px",fontSize:12,color:T.textSm,opacity:0.5}}>Soltá aquí</div>}
                         {items.map(r=>{
                           const o=orders.find(o=>o.numero===r.orderNum);
                           const nombre=r.clienteNombre||o?.comprador;
                           const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):null;
                           const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=slaConfig.dias;
                           const isActive=activeReclamo===r._docId;
+                          const isBulk=bulkSelected.has(r._docId);
                           const tc=getTipoRC(T,r.tipo);
+                          const hasTracking=!!(r.trackingCambio||r.trackingDevolucion);
                           return(
-                            <div key={r._docId} onClick={()=>setActiveReclamo(isActive?null:r._docId)}
-                              style={{background:isActive?T.accentSolid+"18":T.bg,border:`1px solid ${isActive?T.accentSolid:urgente?T.red+"55":T.borderL}`,borderLeft:`3px solid ${urgente?T.red:sc.dot}`,borderRadius:DS.r.md,padding:"10px 12px",cursor:"pointer",transition:`all 0.12s ${DS.ease}`}}
-                              onMouseEnter={e=>{if(!isActive)e.currentTarget.style.background=T.surface;}}
-                              onMouseLeave={e=>{if(!isActive)e.currentTarget.style.background=T.bg;}}>
+                            <div key={r._docId}
+                              draggable
+                              onDragStart={e=>{e.dataTransfer.setData("reclamoId",r._docId);e.dataTransfer.effectAllowed="move";}}
+                              onClick={(e)=>{if(e.shiftKey||e.metaKey||e.ctrlKey){const ns=new Set(bulkSelected);ns.has(r._docId)?ns.delete(r._docId):ns.add(r._docId);setBulkSelected(ns);}else{setActiveReclamo(isActive?null:r._docId);}}}
+                              style={{background:isBulk?T.accentSolid+"28":isActive?T.accentSolid+"18":T.bg,border:`1px solid ${isBulk?T.accentSolid:isActive?T.accentSolid:urgente?T.red+"55":T.borderL}`,borderLeft:`3px solid ${isBulk?T.accentSolid:urgente?T.red:sc.dot}`,borderRadius:DS.r.md,padding:"10px 12px",cursor:"grab",transition:`all 0.12s ${DS.ease}`,userSelect:"none"}}
+                              onMouseEnter={e=>{if(!isActive&&!isBulk)e.currentTarget.style.background=T.surface;}}
+                              onMouseLeave={e=>{if(!isActive&&!isBulk)e.currentTarget.style.background=T.bg;}}>
                               {nombre&&<div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
                               <div style={{fontSize:11,color:T.accent,marginBottom:5}}>#{r.orderNum}</div>
                               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4}}>
                                 <span style={{fontSize:10,fontWeight:600,color:tc.text,background:tc.bg,borderRadius:DS.r.sm,padding:"2px 6px"}}>{r.tipo}</span>
                                 <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                                  {hasTracking&&<span title="Tiene tracking" style={{fontSize:10,color:T.blue}}>📦</span>}
                                   {r.notasInternas&&<span title="Tiene notas" style={{fontSize:10,color:T.yellow}}>🔒</span>}
                                   {dias!==null&&<span style={{fontSize:10,color:urgente?T.red:T.textSm,fontWeight:urgente?700:400}}>{dias}d</span>}
                                 </div>
@@ -2782,7 +2826,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [infSearch,setInfSearch]=useState("");
   const [filterNicho,setFilterNicho]=useState("");
   const [filterSoloPendientes,setFilterSoloPendientes]=useState(false);
-  // Comisiones UGC - overrides guardados localmente por código
+  // Comisiones pagadas (persiste en Firestore + localStorage como fallback)
+  const [comisionesPagadas,setComisionesPagadas]=useState(()=>{try{return JSON.parse(localStorage.getItem(`growith_compaid_${user?.uid}`)||"{}}");}catch(_){return {};}});
+  async function markComisionPagada(code){
+    const monto=comData?.coupons?.find(c=>c.code===code)?.comisionPagar||0;
+    const updated={...comisionesPagadas,[code]:{fecha:new Date().toISOString(),monto}};
+    setComisionesPagadas(updated);
+    try{localStorage.setItem(`growith_compaid_${user?.uid}`,JSON.stringify(updated));}catch(_){}
+    if(user?.uid){try{await setDoc(doc(db,"users",user.uid),{comisionesPagadas:updated},{merge:true});}catch(_){}}
+    toast(`Comisión de ${code} marcada como pagada ✓`,"success");
+  }
+  // Comisiones UGC - overrides guardados en localStorage + Firestore
   const [comisionOverrides,setComisionOverrides]=useState(()=>{
     try{return JSON.parse(localStorage.getItem("growith_comisionOverrides")||"{}");}catch(_){return {};}
   });
@@ -3212,7 +3266,25 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           {(()=>{
                             const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
                             if(!cont.length) return null;
-                            return <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:6}}>{cont.map(x=>{const done=(x.entregados||0)>=(x.acordados||0);return <span key={x.tipo} style={{fontSize:9,padding:"2px 6px",borderRadius:20,fontWeight:700,background:done?T.greenBg:T.orangeBg,color:done?T.green:T.orange,whiteSpace:"nowrap"}}>{x.tipo} {x.entregados||0}/{x.acordados}</span>;})}</div>;
+                            const diasEnviado=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio))/(86400000)):null;
+                            const pendiente=cont.some(x=>(x.entregados||0)<(x.acordados||0));
+                            const vencido=pendiente&&diasEnviado!==null&&diasEnviado>14;
+                            return(
+                              <div style={{marginTop:6}}>
+                                {vencido&&<div style={{fontSize:9,color:T.red,fontWeight:700,background:T.redBg,borderRadius:4,padding:"2px 6px",marginBottom:4,display:"inline-block"}}>⚠ Contenido vencido ({diasEnviado}d)</div>}
+                                <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+                                  {cont.map(x=>{
+                                    const done=(x.entregados||0)>=(x.acordados||0);
+                                    return(
+                                      <button key={x.tipo} onClick={async e=>{e.stopPropagation();const newEnt=Math.min((x.acordados||0),(x.entregados||0)+1);const newCont=(c.contenido||[]).map(xx=>xx.tipo===x.tipo?{...xx,entregados:newEnt}:xx);await updateDoc(doc(db,"canjes",c._docId),{contenido:newCont,updatedAt:serverTimestamp()});}} title={done?"Ya completado":"Marcar 1 entregado"}
+                                        style={{fontSize:9,padding:"2px 6px",borderRadius:20,fontWeight:700,background:done?T.greenBg:T.orangeBg,color:done?T.green:T.orange,whiteSpace:"nowrap",border:"none",cursor:done?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                        {done?"✓":"+"} {x.tipo} {x.entregados||0}/{x.acordados}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
                           })()}
                         </div>
                       ))}
@@ -3367,15 +3439,23 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         <span style={{width:7,height:7,borderRadius:"50%",background:T.orange}}/>
                         <span style={{fontSize:12,fontWeight:700,color:T.orange,textTransform:"uppercase",letterSpacing:0.5}}>Comisiones a pagar en el período</span>
                       </div>
-                      {conComision.map((r,i)=>(
-                        <div key={r.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",borderBottom:i<conComision.length-1?`1px solid ${T.borderL}`:"none"}}>
-                          <div>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.influencer} <span style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:12,color:T.accent}}>({r.code})</span></div>
-                            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{r.usosPeriodo} uso{r.usosPeriodo!==1?"s":""} · neto {fmtARS(r.netoRecibido||0)} (MP -{mpComision}%) · {r.comisionPct}% sobre neto</div>
+                      {conComision.map((r,i)=>{
+                        const paid=comisionesPagadas[r.code];
+                        return(
+                        <div key={r.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",borderBottom:i<conComision.length-1?`1px solid ${T.borderL}`:"none",opacity:paid?0.6:1,background:paid?T.greenBg:"transparent"}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.influencer} <span style={{fontFamily:"monospace",fontSize:12,color:T.accent}}>({r.code})</span>{paid&&<span style={{fontSize:10,color:T.green,marginLeft:8,fontWeight:700}}>✓ Pagado {new Date(paid.fecha).toLocaleDateString("es-AR")}</span>}</div>
+                            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{r.usosPeriodo} uso{r.usosPeriodo!==1?"s":""} · neto {fmtARS(r.netoRecibido||0)} · {r.comisionPct}% sobre neto</div>
                           </div>
-                          <div style={{fontSize:18,fontWeight:800,color:T.orange}}>{fmtARS(r.comisionPagar)}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+                            <div style={{fontSize:18,fontWeight:800,color:paid?T.textSm:T.orange}}>{fmtARS(r.comisionPagar)}</div>
+                            {!paid
+                              ?<button onClick={()=>markComisionPagada(r.code)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,border:`1px solid ${T.green}55`,borderRadius:6,background:T.greenBg,color:T.green,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>✓ Pagar</button>
+                              :<button onClick={()=>{const u={...comisionesPagadas};delete u[r.code];setComisionesPagadas(u);try{localStorage.setItem(`growith_compaid_${user?.uid}`,JSON.stringify(u));}catch(_){}}} style={{padding:"5px 10px",fontSize:10,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Deshacer</button>}
+                          </div>
                         </div>
-                      ))}
+                        );
+                      })}
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",background:T.surface,borderTop:`1px solid ${T.border}`}}>
                         <span style={{fontSize:13,fontWeight:700,color:T.text}}>Total a pagar</span>
                         <span style={{fontSize:20,fontWeight:800,color:T.orange}}>{fmtARS(totalComision)}</span>
@@ -3791,6 +3871,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     :<button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>Eliminar</button>
                   }
                   {!deleteConfirm&&<button onClick={()=>{setForm({...c,contenido:c.contenido||[],historial:c.historial||[],recordatorio:c.recordatorio||""});setDetail(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>✏️ Editar datos</button>}
+                  {!deleteConfirm&&c.telefono&&<button onClick={()=>{
+                    const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
+                    const brief=`Hola ${c.influencer||c.usuario||""}! 👋\n\nTe mandamos el canje de Soluna Biolight:\n📦 Producto: ${c.producto||"Anteojos blue light"}\n🎁 Código descuento: ${c.codigoDescuento||"(ver tu código)"}\n💰 Tu comisión: ${c.comisionPct||0}% de ventas con tu código\n\n${cont.length>0?`📸 Contenido acordado:\n${cont.map(x=>`• ${x.tipo}: ${x.acordados} publicación${x.acordados!==1?"es":""}`).join("\n")}\n\n`:""}✨ ¡Muchas gracias por ser parte del equipo Soluna! Cualquier duda respondé por acá 💬`;
+                    navigator.clipboard.writeText(brief);
+                    window.open(`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(brief)}`,"_blank");
+                  }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.green,borderColor:T.green+"55"}}>💬 Brief WA</button>}
                 </div>
               </div>
 
@@ -4353,8 +4439,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+total+'" uniqueCount="'+total+'">'+newSsItems+'</sst>');
     return zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
   }
-  const locationOverridesRef=useRef({});
-  const sucursalOverridesRef=useRef({});
+  const locationOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem("growith_locOverrides")||"{}");}catch(_){return {};}})());
+  const sucursalOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem("growith_sucOverrides")||"{}");}catch(_){return {};}})());
+  function persistOverrides(){try{localStorage.setItem("growith_locOverrides",JSON.stringify(locationOverridesRef.current));localStorage.setItem("growith_sucOverrides",JSON.stringify(sucursalOverridesRef.current));}catch(_){}}
 
   // Atajos de teclado
   useEffect(()=>{
@@ -4468,8 +4555,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }catch(_){}
       setExportProgress({step:"¡Listo!",pct:100,current:finalOrders.length,total:finalOrders.length});
       setSelected(new Set());
-      locationOverridesRef.current={};
-      sucursalOverridesRef.current={};
+      locationOverridesRef.current={}; sucursalOverridesRef.current={};
+      try{localStorage.removeItem("growith_locOverrides");localStorage.removeItem("growith_sucOverrides");}catch(_){}
       setExportDone({count:finalOrders.length, esquinas:esquinaOrders.length, esquinaOrders});
     } catch(e){
       console.error("exportAndreani:",e);
@@ -4487,8 +4574,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         setLocSearch("");setLocSearchType("ciudad");
       });
       if(chosen===null) return; // cancelar todo
-      if(chosen==="EXCLUIR"){ locationOverridesRef.current[o.numero]="EXCLUIR"; continue; }
-      locationOverridesRef.current[o.numero]=chosen;
+      if(chosen==="EXCLUIR"){ locationOverridesRef.current[o.numero]="EXCLUIR"; persistOverrides(); continue; }
+      locationOverridesRef.current[o.numero]=chosen; persistOverrides();
     }
     for(const o of unresolvedSuc){
       const chosen=await new Promise(resolve=>{
@@ -4513,8 +4600,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         setLocSearch(prefill);setLocSearchType("ciudad");
       });
       if(chosen===null) return; // cancelar todo
-      if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[o.numero]="EXCLUIR"; continue; }
-      sucursalOverridesRef.current[o.numero]=chosen;
+      if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[o.numero]="EXCLUIR"; persistOverrides(); continue; }
+      sucursalOverridesRef.current[o.numero]=chosen; persistOverrides();
       setSucursalConfirmed({numero:o.numero,nombre:chosen});
       await new Promise(r=>setTimeout(r,1200));
       setSucursalConfirmed(null);
@@ -4575,11 +4662,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }
       resultSetter(results);
       if(results.length===0) toast("No se encontraron rótulos válidos en el PDF","warning");
-      if(type==="sku"&&results.length>0&&results.some(r=>r.found)){
-        setter(false);
-        autoGenerateSkuPdf(results,file);
-        return;
-      }
+      // No auto-generar — el usuario confirma con botón
+      if(type==="sku"&&results.length>0) { setter(false); return; }
     } catch(e){ toast("Error al procesar el PDF: "+e.message,"error"); }
     setter(false);
   }
@@ -5335,9 +5419,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
                 {/* Botones acción */}
                 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                  {found.length>0&&(
-                    <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
-                      {skuGenerating?"Generando...":"Regenerar PDF"}
+                  {found.length>0&&!skuBlob&&(
+                    <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnPrimary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
+                      {skuGenerating?<><Spinner size={13} color="#fff"/> Generando...</>:"✔ Generar PDF con SKUs"}
+                    </AsyncButton>
+                  )}
+                  {skuBlob&&!skuGenerating&&(
+                    <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnSecondary(T),justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
+                      Regenerar PDF
                     </AsyncButton>
                   )}
                   {Object.keys(skuTotals).length>0&&(
@@ -5533,12 +5622,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       </div>
                     ):null)
                   )}
-                  {[["Modalidad",o.medioEnvio],["Tracking",o.tracking]].map(([l,v])=>v?(
+                  {[["Modalidad",o.medioEnvio]].map(([l,v])=>v?(
                     <div key={l} style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
                       <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{l}</span>
                       <span style={{fontWeight:500,color:T.text}}>{v}</span>
                     </div>
                   ):null)}
+                  {o.tracking&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:2,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                      <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>Tracking Andreani</span>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontWeight:500,color:T.text,fontFamily:"monospace"}}>{o.tracking}</span>
+                        <a href={`https://www.andreani.com/#!/informacionEnvio/${o.tracking}`} target="_blank" rel="noopener" style={{fontSize:11,color:T.blue,textDecoration:"none",fontWeight:600,border:`1px solid ${T.blue}44`,borderRadius:5,padding:"2px 7px"}}>Ver estado →</a>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginBottom:18}}>
@@ -17150,6 +17248,16 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [movFilterEvento, setMovFilterEvento] = useState("all");
   // Sync sales (descontar stock por órdenes recientes)
   const [syncingSales, setSyncingSales] = useState(false);
+  // Historial sorting
+  const [movSort, setMovSort] = useState({col:"date",dir:"desc"});
+  // Warehouse transfer modal
+  const [transferModal, setTransferModal] = useState(null); // {item, values:{whId:qty}}
+  const [transferFrom, setTransferFrom] = useState(""); const [transferTo, setTransferTo] = useState(""); const [transferQty, setTransferQty] = useState(1); const [transferSaving, setTransferSaving] = useState(false);
+  // Alert notifications config
+  const [alertNotif, setAlertNotif] = useState(()=>{try{return JSON.parse(localStorage.getItem(`growith_alertNotif_${user?.uid}`)||"null")||{email:"",whatsapp:"",enabled:false};}catch(_){return{email:"",whatsapp:"",enabled:false};}});
+  function saveAlertNotif(v){setAlertNotif(v);try{localStorage.setItem(`growith_alertNotif_${uid}`,JSON.stringify(v));}catch(_){}}
+  // Item delete confirm state
+  const [deleteItemConfirm, setDeleteItemConfirm] = useState(null);
 
   const iS = InputStyle(T);
 
@@ -17367,6 +17475,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         stock_total: total,
         stock_by_warehouse: sbw,
         product_links: editingItem.product_links || [],
+        costo_unitario: editingItem.costo_unitario||0,
       };
       if (editingItem.id) body.id = editingItem.id;
       const r = await fetch(`/api/inventory?action=save_item&uid=${uid}`,{
@@ -17913,7 +18022,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         ):data?(
           <>
             {/* KPIs siempre visibles */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:20}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
               {(()=>{
                 const prevU=dataPrev?.total_units||0;
                 const deltaU=prevU>0?((totalUnits-prevU)/prevU*100):null;
@@ -17939,6 +18048,28 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             </div>
 
             {/* Tabs internos REMOVIDOS — navegación va por el sidebar izquierdo */}
+
+            {/* ── FORECAST DE DEMANDA (solo en tab análisis) ── */}
+            {tab==="analisis"&&data&&avgRate>0&&(
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:6}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>📈 Proyección de demanda</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                  {[{d:7,l:"Próximos 7 días"},{d:14,l:"Próximos 14 días"},{d:30,l:"Próximos 30 días"}].map(p=>{
+                    const proj=Math.round(avgRate*p.d);
+                    const projRev=proj*(totalRev/Math.max(1,totalUnits));
+                    const willRun=allProducts.filter(pr=>{const r2=pr.units_sold/Math.max(1,days);return r2>0&&Math.round(pr.stock_total/r2)<p.d;});
+                    return(
+                      <div key={p.d} style={{background:T.surface,borderRadius:10,padding:"12px 14px"}}>
+                        <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{p.l}</div>
+                        <div style={{fontSize:22,fontWeight:800,color:T.accentSolid,letterSpacing:-1,lineHeight:1}}>{fmt(proj)}</div>
+                        <div style={{fontSize:10,color:T.textSm,marginTop:2}}>unidades · {fmtARS(projRev)}</div>
+                        {willRun.length>0&&<div style={{fontSize:10,color:T.red,marginTop:6,fontWeight:600}}>⚠ {willRun.length} prod. se agotan antes</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* ── BLOQUE COMÚN: Gráfico + Resumen + Donuts ── */}
             {(()=>{
@@ -18039,8 +18170,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                   </div>
 
+                  {/* Separador */}
+                  <div style={{height:1,background:T.borderL,margin:"4px 0"}}/>
                   {/* Donuts — siempre los mismos 3, el título/enfoque cambia por tab */}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>
                         {isFact?"Revenue por variante":showingVentas?"Variantes más vendidas":"Unidades por variante"}
@@ -18182,14 +18315,16 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         return s + (sbw[w.id] || 0);
                       },0);
                       return (
-                        <div key={w.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+                        <div key={w.id} style={{background:T.card,border:`1px solid ${w.id==="main"?T.accent+"55":T.border}`,borderRadius:12,padding:"14px 16px"}}>
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                             <span style={{fontSize:14,fontWeight:700,color:T.text}}>{w.name}</span>
+                            {w.id==="main"&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,background:T.accentSolid+"22",color:T.accentSolid,letterSpacing:0.5}}>PRINCIPAL</span>}
                           </div>
                           {w.address && <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>{w.address}</div>}
                           <div style={{fontSize:12,color:T.textMd,marginBottom:10}}>Stock total: <strong style={{color:T.text}}>{totalItems}</strong> unidades</div>
                           <div style={{display:"flex",gap:6}}>
-                            <button onClick={()=>openEditWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                            {w.id!=="main"&&<button onClick={()=>{setTransferFrom(w.id);setTransferTo("");setTransferQty(1);setTransferModal({wh:w});}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⇄ Transferir</button>}
+                            <button onClick={()=>openEditWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{w.id==="main"?"Ver":"Editar"}</button>
                             {w.id !== "main" && <button onClick={()=>deleteWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar</button>}
                           </div>
                         </div>
@@ -18230,10 +18365,16 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           <input type="number" min="0" value={stockEditValues[w.id]||0} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
                         </div>
                       ))}
+                      {(()=>{const newTotal=Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0);const origTotal=editingStockItem?.stock_total||0;const diff=newTotal-origTotal;return(<>
                       <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:8,marginTop:6,fontSize:12,color:T.text,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                         <span style={{fontWeight:600}}>Total</span>
-                        <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,color:T.accent}}>{Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0)}</span>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          {diff!==0&&<span style={{fontSize:11,fontWeight:600,color:diff>0?T.green:T.red}}>{diff>0?"+":""}{diff} vs actual</span>}
+                          <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,color:T.accent}}>{newTotal}</span>
+                        </div>
                       </div>
+                      {diff!==0&&<div style={{fontSize:10,color:diff>0?T.green:T.yellow,background:(diff>0?T.green:T.yellow)+"18",border:`1px solid ${(diff>0?T.green:T.yellow)}33`,borderRadius:6,padding:"5px 10px",marginTop:4}}>⚠ El nuevo total ({newTotal}) difiere del stock actual ({origTotal}). Asegurate de que sea correcto.</div>}
+                      </>);})()}
                       <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:18}}>
                         <button onClick={()=>setEditingStockItem(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
                         <button onClick={saveStockByWarehouse} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:"#16a34a",color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Guardar stock</button>
@@ -18243,6 +18384,49 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   document.body
                 )}
               </div>
+            )}
+
+            {/* Modal transferencia entre depósitos */}
+            {transferModal&&ReactDOM.createPortal(
+              <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setTransferModal(null)}>
+                <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:460,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <h3 style={{margin:"0 0 4px",fontSize:17,fontWeight:800,color:T.text}}>⇄ Transferir stock</h3>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:18}}>Mover unidades de un depósito a otro. Queda registrado en el historial.</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:10,alignItems:"center",marginBottom:14}}>
+                    <div>
+                      <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Desde</label>
+                      <select value={transferFrom} onChange={e=>setTransferFrom(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <option value="">Seleccionar...</option>
+                        {warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}
+                      </select>
+                    </div>
+                    <div style={{fontSize:20,color:T.textSm,paddingTop:16}}>→</div>
+                    <div>
+                      <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Hacia</label>
+                      <select value={transferTo} onChange={e=>setTransferTo(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <option value="">Seleccionar...</option>
+                        {warehouses.filter(w=>w.id!==transferFrom).map(w=><option key={w.id} value={w.id}>{w.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Cantidad a transferir</label>
+                  <input type="number" min="1" value={transferQty} onChange={e=>setTransferQty(Math.max(1,parseInt(e.target.value)||1))} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:14,fontWeight:700,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:18}}/>
+                  <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                    <button onClick={()=>setTransferModal(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                    <button disabled={!transferFrom||!transferTo||transferSaving} onClick={async()=>{
+                      if(!transferFrom||!transferTo) return toast("Seleccioná origen y destino","warning");
+                      setTransferSaving(true);
+                      const r=await fetch(`/api/inventory?action=transfer_stock&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({from_warehouse:transferFrom,to_warehouse:transferTo,quantity:transferQty})});
+                      const j=await r.json();
+                      if(j.error){toast(j.error,"error");}else{toast(`${transferQty} unidades transferidas ✓`,"success");setTransferModal(null);loadMovements();}
+                      setTransferSaving(false);
+                    }} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(!transferFrom||!transferTo||transferSaving)?0.5:1}}>
+                      {transferSaving?<Spinner size={13} color="#fff"/>:"Transferir"}
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body
             )}
 
             {/* ── TAB ITEMS (entidades centrales con mapeo multi-canal) ── */}
@@ -18313,11 +18497,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                             <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Stock total</th>
                             <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Ventas 30d</th>
                             <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Días stock</th>
+                            <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}} title="Stock × Costo unitario">Valorización</th>
                             <th style={{padding:"10px 12px",borderBottom:`1px solid ${T.border}`}}></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredItems.map(it => {
+                          {(()=>{
+                            const q=invSearch.trim().toLowerCase();
+                            const hl=(txt)=>{if(!q||!txt)return txt;const idx=txt.toLowerCase().indexOf(q);if(idx<0)return txt;return<>{txt.slice(0,idx)}<mark style={{background:T.accentSolid+"33",color:T.text,borderRadius:2,padding:"0 1px"}}>{txt.slice(idx,idx+q.length)}</mark>{txt.slice(idx+q.length)}</>;};
+                            return filteredItems.map(it => {
                             const links = it.product_links || [];
                             const chs = [...new Set(links.map(l => l.platform))];
                             const chLabel = (p) => p==="shopify"?"Shopify":p==="tiendanube"?"Tienda Nube":p==="mercadolibre"?"Mercado Libre":p;
@@ -18330,8 +18518,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   <div style={{display:"flex",alignItems:"center",gap:10}}>
                                     {it.image && <img src={it.image} alt="" style={{width:40,height:40,borderRadius:6,objectFit:"cover",background:T.bg,flexShrink:0}}/>}
                                     <div style={{minWidth:0,maxWidth:340}}>
-                                      <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.nombre}</div>
-                                      {it.sku && <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace"}}>SKU: {it.sku}</div>}
+                                      <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hl(it.nombre)}</div>
+                                      {it.sku && <div style={{fontSize:10,color:T.textSm,fontFamily:"monospace"}}>SKU: {hl(it.sku)}</div>}
                                     </div>
                                   </div>
                                 </td>
@@ -18343,18 +18531,33 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   </div>
                                 </td>
                                 <td style={{padding:"10px 12px",textAlign:"right"}}>
-                                  <span style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:statusColor,padding:"3px 9px",borderRadius:5,background:statusColor+"15"}}>{it.stock_total||0}</span>
+                                  <span style={{fontFamily:"monospace",fontSize:12,fontWeight:700,padding:"3px 9px",borderRadius:5,
+                                    color:it.status==="empty"?"#fff":statusColor,
+                                    background:it.status==="empty"?T.red:statusColor+"18",
+                                    border:`1px solid ${it.status==="empty"?T.red:it.status==="low"?statusColor+"55":"transparent"}`
+                                  }}>{it.stock_total||0}</span>
                                 </td>
                                 <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{it.sales_30d||0}</td>
                                 <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",color:it.days_left!=null&&it.days_left<7?T.red:it.days_left!=null&&it.days_left<14?T.yellow:T.textMd}}>{daysLabel}</td>
+                                <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:it.costo_unitario?T.textMd:T.textSm}}>{it.costo_unitario?(()=>{const v=(it.stock_total||0)*it.costo_unitario;return "$"+Math.round(v).toLocaleString("es-AR");})():"—"}</td>
                                 <td style={{padding:"10px 12px",textAlign:"right",whiteSpace:"nowrap"}}>
                                   <button onClick={()=>openEditItem(it)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.accent,cursor:"pointer",marginRight:6,fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
                                   <button onClick={()=>deleteInvItem(it)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🗑</button>
                                 </td>
                               </tr>
                             );
-                          })}
+                          });})()}
                         </tbody>
+                        <tfoot>
+                          <tr style={{background:T.surface,borderTop:`2px solid ${T.border}`}}>
+                            <td colSpan={2} style={{padding:"9px 12px",fontSize:11,fontWeight:700,color:T.textSm}}>TOTAL ({filteredItems.length} items)</td>
+                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontSize:12,fontWeight:800,color:T.text}}>{filteredItems.reduce((s,it)=>s+(it.stock_total||0),0)}</td>
+                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontSize:12,fontWeight:800,color:T.text}}>{filteredItems.reduce((s,it)=>s+(it.sales_30d||0),0)}</td>
+                            <td style={{padding:"9px 12px"}}></td>
+                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontSize:11,fontWeight:800,color:T.text}}>{(()=>{const v=filteredItems.reduce((s,it)=>s+((it.costo_unitario||0)*(it.stock_total||0)),0);return v>0?"$"+Math.round(v).toLocaleString("es-AR"):"—";})()}</td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
                   </div>
@@ -18365,6 +18568,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
             {/* ── TAB HISTORIAL ── */}
             {tab==="historial"&&(()=>{
+              // Traducción de eventos
+              const evtLabel=(ev,src)=>{if(!ev)return"—";const e=ev.toLowerCase();if(/sale|venta|orden|order/i.test(e))return"Venta";if(/manual|ajuste/i.test(e)||src==="manual")return"Ajuste manual";if(/creat|creac/i.test(e))return"Creación";if(/transfer/i.test(e))return"Transferencia";if(/import/i.test(e))return"Importación";if(/sync/i.test(e))return"Sincronización";return ev;};
               // Filtros locales sobre los movements ya cargados
               const filteredMov = movements.filter(m => {
                 if (movFilterSearch && !(m.item_name||"").toLowerCase().includes(movFilterSearch.toLowerCase()) && !(m.event||"").toLowerCase().includes(movFilterSearch.toLowerCase()) && !(m.order_id||"").toLowerCase().includes(movFilterSearch.toLowerCase())) return false;
@@ -18383,7 +18588,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>📜 Historial de movimientos</div>
-                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Últimos 200 movimientos de stock. Las ventas descuentan, los ajustes manuales se ven con el origen "manual".</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Mostrando los últimos <strong>200 movimientos</strong>. Las ventas descuentan, los ajustes manuales se ven con el origen "manual".</div>
                   </div>
                   <div style={{display:"flex",gap:6}}>
                     <button onClick={loadMovements} disabled={movementsLoading} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{movementsLoading?<Spinner size={11} color={T.textMd}/>:"↻"} Refrescar</button>
@@ -18435,19 +18640,21 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{overflowX:"auto"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
                         <thead style={{background:T.bg}}>
+                          {(()=>{const thS=(col,label,align="left")=>{const active=movSort.col===col;return <th onClick={()=>setMovSort(s=>s.col===col?{col,dir:s.dir==="desc"?"asc":"desc"}:{col,dir:"desc"})} style={{padding:"10px 12px",textAlign:align,fontSize:10,color:active?T.accent:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,cursor:"pointer",userSelect:"none",whiteSpace:"nowrap"}}>{label} {active?(movSort.dir==="desc"?"↓":"↑"):"↕"}</th>;};return(
                           <tr>
-                            <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Fecha</th>
-                            <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Origen</th>
+                            {thS("date","Fecha")}
+                            {thS("source","Origen")}
                             <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Evento</th>
                             <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Item</th>
-                            <th style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Cambio</th>
+                            {thS("change","Cambio","right")}
                             <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Depósito</th>
-                          </tr>
+                          </tr>);})()}
                         </thead>
                         <tbody>
-                          {filteredMov.map((m,i) => {
+                          {(()=>{const sorted=[...filteredMov].sort((a,b)=>{const dir=movSort.dir==="desc"?-1:1;if(movSort.col==="date")return dir*(new Date(a.ts)-new Date(b.ts));if(movSort.col==="source")return dir*(a.source||"").localeCompare(b.source||"");if(movSort.col==="change")return dir*((a.change||0)-(b.change||0));return 0;});return sorted.map((m,i) => {
                             const dt = new Date(m.ts);
                             const src = m.source || "—";
+                            const srcLabel = src==="shopify"?"Shopify":src==="tiendanube"?"TN":src==="mercadolibre"?"ML":src==="manual"?"Manual":src;
                             const srcColor = src==="shopify"?T.green:src==="mercadolibre"?T.yellow:src==="tiendanube"?T.blue:src==="manual"?T.accent:T.textSm;
                             const wh = warehouses.find(w => w.id === m.warehouse_id);
                             return (
@@ -18457,15 +18664,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   <div style={{fontSize:10,color:T.textSm}}>{dt.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</div>
                                 </td>
                                 <td style={{padding:"10px 12px"}}>
-                                  <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:srcColor+"22",color:srcColor,textTransform:"uppercase"}}>{src}</span>
+                                  <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,letterSpacing:0.3,background:srcColor+"22",color:srcColor}}>{srcLabel}</span>
                                 </td>
-                                <td style={{padding:"10px 12px",color:T.textMd,fontSize:11}}>{m.event || m.order_id || "—"}</td>
+                                <td style={{padding:"10px 12px",color:T.textMd,fontSize:11}}>{evtLabel(m.event,m.source)}</td>
                                 <td style={{padding:"10px 12px",color:T.text,fontSize:11,maxWidth:300,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.item_name || m.item_id}</td>
                                 <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:m.change<0?T.red:T.green}}>{m.change>0?"+":""}{m.change}</td>
                                 <td style={{padding:"10px 12px",color:T.textMd,fontSize:11}}>{wh?.name || m.warehouse_id || "—"}</td>
                               </tr>
                             );
-                          })}
+                          });})()}
                         </tbody>
                       </table>
                     </div>
@@ -18485,6 +18692,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <input value={editingItem.nombre} onChange={e=>setEditingItem({...editingItem,nombre:e.target.value})} placeholder="Nombre del item" style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"8px 11px",fontSize:14,fontWeight:700,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif"}}/>
                       <div style={{display:"flex",gap:8,marginTop:6}}>
                         <input value={editingItem.sku} onChange={e=>setEditingItem({...editingItem,sku:e.target.value})} placeholder="SKU (opcional)" style={{flex:1,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"5px 9px",fontSize:11,color:T.text,fontFamily:"monospace"}}/>
+                        <input type="number" min="0" step="0.01" value={editingItem.costo_unitario||""} onChange={e=>setEditingItem({...editingItem,costo_unitario:parseFloat(e.target.value)||0})} placeholder="$ Costo unit." title="Costo unitario para calcular valorización del stock" style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"5px 9px",fontSize:11,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                       </div>
                     </div>
                     <button onClick={()=>setEditingItem(null)} style={{background:"transparent",border:"none",color:T.textMd,fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
@@ -18616,17 +18824,73 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {tab==="alertas"&&(
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
                 {/* Config global */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                  <span style={{fontSize:12,fontWeight:600,color:T.text}}>⚙ Configuración global de alertas:</span>
-                  <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.text}}>
-                    Avisar cuando queden menos de
-                    <select value={globalThreshold} onChange={e=>saveGlobalThreshold(parseInt(e.target.value))}
-                      style={{...iS,width:"auto",padding:"5px 8px",fontSize:12}}>
-                      {[3,5,7,10,14,21,30,45,60].map(d=><option key={d} value={d}>{d} días</option>)}
-                    </select>
-                    de stock (aplica a todos salvo que configures por producto)
-                  </label>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:8}}>
+                    <span style={{fontSize:12,fontWeight:600,color:T.text}}>⚙ Configuración global de alertas:</span>
+                    <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.text}}>
+                      Avisar cuando queden menos de
+                      <select value={globalThreshold} onChange={e=>saveGlobalThreshold(parseInt(e.target.value))}
+                        style={{...iS,width:"auto",padding:"5px 8px",fontSize:12}}>
+                        {[3,5,7,10,14,21,30,45,60].map(d=><option key={d} value={d}>{d} días</option>)}
+                      </select>
+                      de stock
+                    </label>
+                  </div>
+                  <div style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:6,padding:"6px 10px",lineHeight:1.6}}>
+                    💡 <strong>3d</strong> = emergencia · <strong>7d</strong> = urgente · <strong>14d</strong> = reponer pronto (recomendado) · <strong>30d</strong> = prevención anticipada · <strong>60d</strong> = stock de alta rotación
+                    {(()=>{const customCount=Object.keys(alertConfig||{}).length;return customCount>0?<> · <span style={{color:T.accent,fontWeight:600}}>{customCount} producto{customCount!==1?"s":""} con config personalizada</span></>:null;})()}
+                  </div>
                 </div>
+                {/* Config notificaciones */}
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>🔔 Notificaciones de stock crítico</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                    <div>
+                      <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Email</label>
+                      <input value={alertNotif.email} onChange={e=>saveAlertNotif({...alertNotif,email:e.target.value})} placeholder="tu@email.com" type="email" style={{...iS,fontSize:12}}/>
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>WhatsApp</label>
+                      <input value={alertNotif.whatsapp} onChange={e=>saveAlertNotif({...alertNotif,whatsapp:e.target.value})} placeholder="+54911..." type="tel" style={{...iS,fontSize:12}}/>
+                    </div>
+                  </div>
+                  {alertas.length>0&&(
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {alertNotif.whatsapp&&<a href={`https://wa.me/${alertNotif.whatsapp.replace(/\D/g,"")}?text=${encodeURIComponent(`⚠️ Alerta de stock crítico — Growith\n${alertas.slice(0,5).map(a=>`• ${a.producto} ${a.variante}: ${a.stock} uds (${a.daysLeft??0}d)`).join("\n")}`)}`} target="_blank" rel="noopener" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.green,borderColor:T.green+"55"}}>📲 Enviar alerta por WhatsApp</a>}
+                      <button onClick={()=>{if("Notification"in window){Notification.requestPermission().then(p=>{if(p==="granted"){new Notification("⚠️ Stock crítico — Growith",{body:alertas.slice(0,3).map(a=>`${a.producto}: ${a.stock} uds`).join("\n"),icon:"/favicon.ico"});}});}}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>🔔 Notificación browser</button>
+                    </div>
+                  )}
+                </div>
+                {/* Calculadora punto de reorden */}
+                {alertas.length>0&&(
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>📦 ¿Cuándo pedir? — Calculadora de punto de reorden</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Basado en tu tasa de venta y el lead time configurado por producto</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      {alertas.filter(a=>a.rate>0).slice(0,8).map((a,i)=>{
+                        const lt=leadTime[a.productId]||0;
+                        const orderPoint=lt>0?Math.round(a.rate*lt*1.2):null; // +20% safety stock
+                        const daysToOrder=a.daysLeft!=null&&lt>0?Math.max(0,a.daysLeft-lt):null;
+                        const orderNow=daysToOrder!==null&&daysToOrder<=3;
+                        const suggested30=Math.round(a.rate*30);
+                        return(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:orderNow?T.red+"12":T.surface,border:`1px solid ${orderNow?T.red+"44":T.borderL}`,borderRadius:10}}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.producto} · {a.variante}</div>
+                              <div style={{fontSize:10,color:T.textSm,marginTop:2}}>Stock: {a.stock} · Tasa: {a.rate.toFixed(1)}/día{lt>0?` · Lead time: ${lt}d`:""}</div>
+                            </div>
+                            <div style={{textAlign:"right",flexShrink:0}}>
+                              {orderNow&&<div style={{fontSize:11,fontWeight:700,color:T.red,marginBottom:2}}>🔴 PEDIR YA</div>}
+                              {daysToOrder!==null&&daysToOrder>3&&<div style={{fontSize:11,color:T.yellow,marginBottom:2}}>Pedir en {daysToOrder}d</div>}
+                              <div style={{fontSize:10,color:T.textSm}}>Sugerir: <strong style={{color:T.text}}>{suggested30} uds</strong> (30d)</div>
+                              {orderPoint&&<div style={{fontSize:9,color:T.textSm}}>Punto de reorden: {orderPoint} uds</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {alertas.length===0?(
                   <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
