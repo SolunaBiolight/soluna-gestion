@@ -485,7 +485,10 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, onToggleDark, darkM
           position:"relative",width:"100%",letterSpacing:active?0:-0.1}}
         onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.card;}}
         onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?"2.2":"1.8"} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.65}}><path d={item.icon}/></svg>
+        {item.id==="ml"
+          ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{flexShrink:0}}><circle cx="12" cy="12" r="11" fill="#FFE600"/><circle cx="8" cy="9.5" r="1.5" fill="#222"/><circle cx="16" cy="9.5" r="1.5" fill="#222"/><path d="M6 14c1.2 2.8 3.5 4.2 6 4.2s4.8-1.4 6-4.2H6z" fill="#222"/></svg>
+          : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?"2.2":"1.8"} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.65}}><path d={item.icon}/></svg>
+        }
         {!collapsed&&<span style={{flex:1}}>{item.label}</span>}
         {!collapsed&&item.count>0&&<span style={{fontSize:10,fontWeight:DS.w.bold,padding:"1px 6px",borderRadius:DS.r.full,background:badgeColor+(active?"33":"22"),color:badgeColor,lineHeight:1.5,minWidth:18,textAlign:"center"}}>{item.count>99?"99+":item.count}</span>}
         {!collapsed&&isConnected!==undefined&&<span style={{width:7,height:7,borderRadius:"50%",background:isConnected?T.green:T.textSm,flexShrink:0,opacity:0.8}} title={isConnected?"Conectado":"Sin conectar"}/>}
@@ -681,7 +684,10 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
               style={{display:"flex", alignItems:"center", gap:DS.sp.md, padding:"10px 12px", width:"100%", border:"none", background:"transparent", borderRadius:DS.r.md, cursor:"pointer", textAlign:"left", color:T.text, fontSize:DS.font.base, transition:`background 0.1s`}}
               onMouseEnter={e=>e.currentTarget.style.background=T.surface}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.85}}><path d={item.icon}/></svg>
+              {item.page==="ml"
+                ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{flexShrink:0}}><circle cx="12" cy="12" r="11" fill="#FFE600"/><circle cx="8" cy="9.5" r="1.5" fill="#222"/><circle cx="16" cy="9.5" r="1.5" fill="#222"/><path d="M6 14c1.2 2.8 3.5 4.2 6 4.2s4.8-1.4 6-4.2H6z" fill="#222"/></svg>
+                : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.85}}><path d={item.icon}/></svg>
+              }
               <span style={{flex:1, fontWeight:DS.w.medium}}>{item.label}</span>
               <span style={{fontSize:DS.font.xs, color:T.textSm}}>↵</span>
             </button>
@@ -4948,53 +4954,74 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Set());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
                 ))}
               </div>}
-              {/* Seleccionar página actual */}
-              <button onClick={toggleCurrentPage} style={{...BtnSecondary(T),fontSize:12,color:allPageSelected?T.accent:T.textMd,borderColor:allPageSelected?T.accent:T.border}}>
-                {allPageSelected?"✕ Des-sel. página":"☑ Página"}
-              </button>
-              {/* Seleccionar por páginas */}
-              {totalPages>1&&(
-                <div style={{position:"relative"}}>
-                  <button onClick={e=>{e.stopPropagation();setShowPagePicker(v=>!v);}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:showPagePicker?T.accent:T.textMd}}>
-                    Páginas ▾
-                  </button>
-                  {showPagePicker&&(
-                    <>
-                      <div onClick={()=>setShowPagePicker(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
-                      <div style={{position:"absolute",top:"110%",left:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"6px",zIndex:200,minWidth:220,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
-                        <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,padding:"4px 10px 8px"}}>Seleccionar por página</div>
-                        {Array.from({length:totalPages},(_,pi)=>{
-                          const start=pi*PAGE_SIZE+1;
-                          const end=Math.min((pi+1)*PAGE_SIZE,exportables.length);
-                          const full=isPageFullSel(pi);
-                          const ns=getPageNums(pi);
-                          const cnt=ns.filter(n=>selected.has(n)).length;
-                          return (
-                            <div key={pi} onClick={()=>togglePageSel(pi)}
-                              style={{display:"flex",alignItems:"center",gap:9,padding:"7px 10px",cursor:"pointer",fontSize:12,color:T.text,borderRadius:7,background:full?T.accentSolid+"12":"transparent",userSelect:"none",transition:"background 0.1s"}}
-                              onMouseEnter={e=>{if(!full)e.currentTarget.style.background=T.surface;}}
-                              onMouseLeave={e=>{if(!full)e.currentTarget.style.background="transparent";}}>
-                              <div style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${full?T.accentSolid:cnt>0?T.accent:T.border}`,background:full?T.accentSolid:cnt>0?T.accent+"25":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                                {full&&<span style={{color:"#fff",fontSize:9,lineHeight:1}}>✓</span>}
-                                {!full&&cnt>0&&<span style={{color:T.accent,fontSize:10,lineHeight:1}}>–</span>}
-                              </div>
-                              <span style={{flex:1,fontWeight:full?600:400}}>Página {pi+1}</span>
-                              <span style={{fontSize:11,color:T.textSm}}>{start}–{end}</span>
-                              {cnt>0&&<span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accent+"15",borderRadius:4,padding:"1px 5px"}}>{cnt}</span>}
-                            </div>
-                          );
-                        })}
-                        <div style={{borderTop:`1px solid ${T.borderL}`,margin:"4px 0",paddingTop:4,display:"flex",gap:4,padding:"6px 6px 2px"}}>
-                          <button onClick={()=>{toggleAll();}} style={{flex:1,fontSize:11,padding:"5px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                            {selected.size===exportables.length&&exportables.length>0?"✕ Limpiar todo":"☑ Seleccionar todo"}
-                          </button>
-                          {selected.size>0&&<button onClick={()=>{setSelected(new Set());}} style={{fontSize:11,padding:"5px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
+              {/* Selector unificado de pedidos */}
+              <div style={{position:"relative"}}>
+                <button onClick={e=>{e.stopPropagation();setShowPagePicker(v=>!v);}}
+                  style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",gap:6,
+                    color:selected.size>0?T.accent:T.textMd,
+                    borderColor:selected.size>0?T.accent:T.border,
+                    background:selected.size>0?T.accent+"12":"transparent"}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    {selected.size>0
+                      ? <><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l3 3 5-6"/></>
+                      : <rect x="3" y="3" width="18" height="18" rx="3"/>}
+                  </svg>
+                  {selected.size>0?`${selected.size} seleccionados`:"Seleccionar"}<span style={{fontSize:10,opacity:0.7,marginLeft:2}}>▾</span>
+                </button>
+                {showPagePicker&&(
+                  <>
+                    <div onClick={()=>setShowPagePicker(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
+                    <div style={{position:"absolute",top:"110%",left:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"6px",zIndex:200,minWidth:250,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
+                      {/* Esta página */}
+                      <div onClick={toggleCurrentPage}
+                        style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",cursor:"pointer",fontSize:12,color:T.text,borderRadius:7,
+                          background:allPageSelected?T.accent+"12":"transparent",userSelect:"none",transition:"background 0.1s"}}
+                        onMouseEnter={e=>{if(!allPageSelected)e.currentTarget.style.background=T.surface;}}
+                        onMouseLeave={e=>{if(!allPageSelected)e.currentTarget.style.background="transparent";}}>
+                        <div style={{width:15,height:15,borderRadius:3,border:`1.5px solid ${allPageSelected?T.accentSolid:T.border}`,background:allPageSelected?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                          {allPageSelected&&<span style={{color:"#fff",fontSize:9,lineHeight:1}}>✓</span>}
                         </div>
+                        <span style={{flex:1,fontWeight:allPageSelected?600:400}}>Esta página</span>
+                        <span style={{fontSize:11,color:T.textSm}}>{pageOrders.length} pedidos</span>
                       </div>
-                    </>
-                  )}
-                </div>
-              )}
+                      {/* Por páginas si hay más de 1 */}
+                      {totalPages>1&&(
+                        <>
+                          <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,padding:"8px 10px 4px"}}>Por página</div>
+                          {Array.from({length:totalPages},(_,pi)=>{
+                            const start=pi*PAGE_SIZE+1;
+                            const end=Math.min((pi+1)*PAGE_SIZE,exportables.length);
+                            const full=isPageFullSel(pi);
+                            const ns=getPageNums(pi);
+                            const cnt=ns.filter(n=>selected.has(n)).length;
+                            return (
+                              <div key={pi} onClick={()=>togglePageSel(pi)}
+                                style={{display:"flex",alignItems:"center",gap:9,padding:"7px 10px",cursor:"pointer",fontSize:12,color:T.text,borderRadius:7,background:full?T.accentSolid+"12":"transparent",userSelect:"none",transition:"background 0.1s"}}
+                                onMouseEnter={e=>{if(!full)e.currentTarget.style.background=T.surface;}}
+                                onMouseLeave={e=>{if(!full)e.currentTarget.style.background="transparent";}}>
+                                <div style={{width:15,height:15,borderRadius:3,border:`1.5px solid ${full?T.accentSolid:cnt>0?T.accent:T.border}`,background:full?T.accentSolid:cnt>0?T.accent+"25":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                                  {full&&<span style={{color:"#fff",fontSize:9,lineHeight:1}}>✓</span>}
+                                  {!full&&cnt>0&&<span style={{color:T.accent,fontSize:10,lineHeight:1}}>–</span>}
+                                </div>
+                                <span style={{flex:1,fontWeight:full?600:400}}>Página {pi+1}</span>
+                                <span style={{fontSize:11,color:T.textSm}}>{start}–{end}</span>
+                                {cnt>0&&<span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accent+"15",borderRadius:4,padding:"1px 5px"}}>{cnt}</span>}
+                              </div>
+                            );
+                          })}
+                        </>
+                      )}
+                      {/* Seleccionar todo / Limpiar */}
+                      <div style={{borderTop:`1px solid ${T.borderL}`,margin:"4px 0 0",padding:"6px 6px 2px",display:"flex",gap:4}}>
+                        <button onClick={()=>toggleAll()} style={{flex:1,fontSize:11,padding:"6px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
+                          {selected.size===exportables.length&&exportables.length>0?`Limpiar todo`:`Seleccionar todo (${exportables.length})`}
+                        </button>
+                        {selected.size>0&&<button onClick={()=>setSelected(new Set())} style={{fontSize:11,padding:"6px 10px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
               <button onClick={()=>setCompactMode(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:compactMode?T.accent:T.textMd,borderColor:compactMode?T.accent:T.border}} title={compactMode?"Vista normal":"Vista compacta"}>
                 {compactMode?"⊟":"⊞"} Compacto
               </button>
