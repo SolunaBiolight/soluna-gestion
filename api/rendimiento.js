@@ -1,6 +1,5 @@
-// api/rendimiento.js — Growith Rendimiento / Financial Dashboard
-// Combina: stock diario (TN/Shopify/ML) + Meta Ads diario
-// Devuelve métricas por día: Revenue, Órdenes, Ad Spend, ROAS, CPA, Net Revenue
+// api/rendimiento.js — Growith Dashboard Financiero
+// Revenue (TN/ML) + Meta Ads por día — con período anterior y análisis
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
@@ -28,31 +27,31 @@ async function metaGet(path, params, token) {
   return j;
 }
 
-// Fetch Meta ad spend per day for the given date range
 async function fetchMetaDailySpend(cfg, since, until) {
   if (!cfg?.access_token || !cfg.ad_account_id) return {};
   try {
     const res = await metaGet(`${cfg.ad_account_id}/insights`, {
       level: "account",
-      fields: "spend,actions,action_values,purchase_roas,impressions,clicks",
+      fields: "spend,actions,action_values,purchase_roas,impressions,clicks,reach",
       "time_range[since]": since,
       "time_range[until]": until,
-      time_increment: "1",         // 1 = daily breakdown
+      time_increment: "1",
       action_attribution_windows: JSON.stringify(["1d_click","1d_view"]),
       limit: "90",
     }, cfg.access_token);
-
     const byDate = {};
     for (const row of (res.data || [])) {
-      const date = row.date_start; // YYYY-MM-DD
+      const date = row.date_start;
       if (!date) continue;
-      const spend = parseFloat(row.spend) || 0;
-      const roas = parseFloat((row.purchase_roas || [])[0]?.value) || 0;
-      const purchases = (row.actions || []).find(a => a.action_type === "purchase")?.value || 0;
-      const purchaseValue = (row.action_values || []).find(a => a.action_type === "purchase")?.value || 0;
-      const impressions = parseInt(row.impressions) || 0;
-      const clicks = parseInt(row.clicks) || 0;
-      byDate[date] = { spend, roas, purchases: parseFloat(purchases), purchaseValue: parseFloat(purchaseValue), impressions, clicks };
+      byDate[date] = {
+        spend:       parseFloat(row.spend) || 0,
+        roas:        parseFloat((row.purchase_roas || [])[0]?.value) || 0,
+        purchases:   parseFloat((row.actions || []).find(a => a.action_type==="purchase")?.value || 0),
+        purchaseVal: parseFloat((row.action_values || []).find(a => a.action_type==="purchase")?.value || 0),
+        impressions: parseInt(row.impressions) || 0,
+        clicks:      parseInt(row.clicks) || 0,
+        reach:       parseInt(row.reach) || 0,
+      };
     }
     return byDate;
   } catch (e) {
@@ -61,9 +60,87 @@ async function fetchMetaDailySpend(cfg, since, until) {
   }
 }
 
+// Build daily rows from revenue/orders/meta dictionaries
+function buildRows(since, until, dailyRevenue, dailyOrders, metaDailySpend, commission) {
+  const allDates = new Set([
+    ...Object.keys(dailyRevenue),
+    ...Object.keys(dailyOrders),
+    ...Object.keys(metaDailySpend),
+  ]);
+  const start = new Date(since + "T12:00:00");
+  const end   = new Date(until + "T12:00:00");
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1))
+    allDates.add(d.toISOString().slice(0,10));
+
+  return [...allDates].sort().map(date => {
+    const revenue    = dailyRevenue[date] || 0;
+    const orders     = dailyOrders[date]  || 0;
+    const adSpend    = metaDailySpend[date]?.spend || 0;
+    const netRevenue = revenue * (1 - commission);
+    const profit     = netRevenue - adSpend;
+    const roas       = adSpend > 0 ? revenue / adSpend : 0;
+    const trueRoas   = adSpend > 0 ? netRevenue / adSpend : 0;
+    const cpa        = orders > 0  ? adSpend / orders : 0;
+    return {
+      Fecha:           date,
+      "Ordenes > $0":  orders,
+      Revenue:         revenue,
+      "Ad Spend":      adSpend,
+      "Net Revenue":   parseFloat(netRevenue.toFixed(2)),
+      Profit:          parseFloat(profit.toFixed(2)),
+      "Profit Margin": revenue > 0 ? parseFloat((profit/revenue).toFixed(6)) : 0,
+      ROAS:            parseFloat(roas.toFixed(4)),
+      "True ROAS":     parseFloat(trueRoas.toFixed(4)),
+      CPA:             parseFloat(cpa.toFixed(2)),
+      _impressions:    metaDailySpend[date]?.impressions || 0,
+      _clicks:         metaDailySpend[date]?.clicks || 0,
+      _reach:          metaDailySpend[date]?.reach || 0,
+    };
+  });
+}
+
+function computeTotals(rows) {
+  const t = rows.reduce((acc, r) => ({
+    orders:     acc.orders     + (r["Ordenes > $0"] || 0),
+    revenue:    acc.revenue    + (r.Revenue || 0),
+    adSpend:    acc.adSpend    + (r["Ad Spend"] || 0),
+    netRevenue: acc.netRevenue + (r["Net Revenue"] || 0),
+    profit:     acc.profit     + (r.Profit || 0),
+    impressions:acc.impressions+ (r._impressions || 0),
+    clicks:     acc.clicks     + (r._clicks || 0),
+  }), {orders:0,revenue:0,adSpend:0,netRevenue:0,profit:0,impressions:0,clicks:0});
+  return {
+    ...t,
+    roas:        t.adSpend > 0 ? t.revenue / t.adSpend : 0,
+    trueRoas:    t.adSpend > 0 ? t.netRevenue / t.adSpend : 0,
+    cpa:         t.orders  > 0 ? t.adSpend / t.orders : 0,
+    profitMargin:t.revenue > 0 ? t.profit / t.revenue : 0,
+    ctr:         t.impressions > 0 ? t.clicks / t.impressions : 0,
+  };
+}
+
+function computeDow(rows) {
+  const DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const agg = Array.from({length:7}, (_,i) => ({dow:i, label:DAYS[i], revenue:0, adSpend:0, profit:0, orders:0, days:0}));
+  rows.forEach(r => {
+    const d = new Date(r.Fecha + "T12:00:00").getDay();
+    agg[d].revenue  += r.Revenue || 0;
+    agg[d].adSpend  += r["Ad Spend"] || 0;
+    agg[d].profit   += r.Profit || 0;
+    agg[d].orders   += r["Ordenes > $0"] || 0;
+    agg[d].days++;
+  });
+  return agg.map(d => ({
+    ...d,
+    avgRevenue: d.days > 0 ? d.revenue / d.days : 0,
+    avgProfit:  d.days > 0 ? d.profit  / d.days : 0,
+    avgOrders:  d.days > 0 ? d.orders  / d.days : 0,
+  }));
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const db = initAdmin();
@@ -73,131 +150,78 @@ export default async function handler(req, res) {
   // ── action=daily_metrics ────────────────────────────────────────────
   if (action === "daily_metrics") {
     try {
-      // Date range
-      const days = parseInt(daysQ) || 30;
-      const now = new Date();
-      const until = date_to || now.toISOString().slice(0,10);
-      const since = date_from || new Date(now - days * 86400000).toISOString().slice(0,10);
+      const days    = parseInt(daysQ) || 30;
+      const nowDate = new Date();
+      const until   = date_to   || nowDate.toISOString().slice(0,10);
+      const since   = date_from || new Date(nowDate - days * 86400000).toISOString().slice(0,10);
 
-      // Load user doc to get stores + Meta accounts
+      // Previous period (same length, immediately before)
+      const periodMs = new Date(until+"T23:59:59") - new Date(since+"T00:00:00");
+      const prevUntilD = new Date(new Date(since+"T00:00:00") - 86400000);
+      const prevSinceD = new Date(prevUntilD - periodMs);
+      const prevSince  = prevSinceD.toISOString().slice(0,10);
+      const prevUntil  = prevUntilD.toISOString().slice(0,10);
+
+      // User config
       const userSnap = await db.collection("users").doc(uid).get();
       const userData = userSnap.data() || {};
-      const stores = userData.stores || [];
-      const primaryStore = stores.find(s => s.type === "tiendanube") || stores.find(s => s.type === "shopify");
-      const mlStore = stores.find(s => s.type === "meli");
+      const stores   = userData.stores || [];
+      const hasML    = stores.some(s => s.type === "meli");
+      const commission = parseFloat(userData.rendimientoCommission) || (hasML ? 0.10 : 0.03);
 
-      // 1. Fetch stock daily data from existing stock endpoint (internal call)
-      const stockUrl = new URL(`https://${req.headers.host}/api/stock`);
-      stockUrl.searchParams.set("uid", uid);
-      stockUrl.searchParams.set("action", "products");
-      stockUrl.searchParams.set("date_from", since);
-      stockUrl.searchParams.set("date_to", until);
-      let dailyRevenue = {}, dailyOrders = {}, totalRevenue = 0, totalOrders = 0;
-      try {
-        const stockRes = await fetch(stockUrl.toString(), { headers: { host: req.headers.host } });
-        if (stockRes.ok) {
-          const stockJson = await stockRes.json();
-          dailyRevenue = stockJson.daily_revenue || {};
-          dailyOrders  = stockJson.daily_orders  || {};
-          totalRevenue = stockJson.total_revenue  || 0;
-          totalOrders  = stockJson.total_orders   || 0;
-        }
-      } catch (e) {
-        console.error("Stock fetch error:", e.message);
+      // Helper to fetch stock data for a range
+      async function fetchStock(from, to) {
+        try {
+          const stockUrl = new URL(`https://${req.headers.host}/api/stock`);
+          stockUrl.searchParams.set("uid", uid);
+          stockUrl.searchParams.set("action", "products");
+          stockUrl.searchParams.set("date_from", from);
+          stockUrl.searchParams.set("date_to", to);
+          const r = await fetch(stockUrl.toString(), { headers: { host: req.headers.host } });
+          if (!r.ok) return { dailyRevenue:{}, dailyOrders:{} };
+          const j = await r.json();
+          return { dailyRevenue: j.daily_revenue||{}, dailyOrders: j.daily_orders||{} };
+        } catch(_) { return { dailyRevenue:{}, dailyOrders:{} }; }
       }
 
-      // 2. Fetch Meta daily ad spend
-      let metaDailySpend = {};
+      // Fetch current + previous + Meta in parallel
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
-      if (metaAccounts.length > 0) {
-        // Use first active Meta account
-        const metaCfg = metaAccounts[0];
-        metaDailySpend = await fetchMetaDailySpend(metaCfg, since, until);
-      }
+      const metaCfg = metaAccounts[0] || null;
 
-      // 3. Build commission rate (configurable, stored in user doc, default 15% for ML, 3% for TN)
-      const commissionRate = parseFloat(userData.rendimientoCommission) || 0.03;
-      // If has ML, use a weighted average (ML ~15%, TN ~3%)
-      const hasML = !!mlStore;
-      const effectiveCommission = hasML ? 0.10 : commissionRate;
-
-      // 4. Merge by date
-      const allDates = new Set([
-        ...Object.keys(dailyRevenue),
-        ...Object.keys(dailyOrders),
-        ...Object.keys(metaDailySpend),
+      const [curr, prev, metaCurr, metaPrev] = await Promise.all([
+        fetchStock(since, until),
+        fetchStock(prevSince, prevUntil),
+        metaCfg ? fetchMetaDailySpend(metaCfg, since, until) : Promise.resolve({}),
+        metaCfg ? fetchMetaDailySpend(metaCfg, prevSince, prevUntil) : Promise.resolve({}),
       ]);
 
-      // Generate all dates in range
-      const start = new Date(since + "T12:00:00");
-      const end = new Date(until + "T12:00:00");
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        allDates.add(d.toISOString().slice(0,10));
-      }
+      // Build rows
+      const rows     = buildRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
+      const prevRows = buildRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
 
-      const sortedDates = [...allDates].sort();
-      const rows = sortedDates.map(date => {
-        const revenue    = dailyRevenue[date] || 0;
-        const orders     = dailyOrders[date]  || 0;
-        const adSpend    = metaDailySpend[date]?.spend || 0;
-        const metaRoas   = metaDailySpend[date]?.roas || 0;
-        const netRevenue = revenue * (1 - effectiveCommission);
-        const profit     = netRevenue - adSpend;
-        const profitMargin = revenue > 0 ? profit / revenue : 0;
-        const roas       = adSpend > 0 ? revenue / adSpend : 0;
-        const trueRoas   = adSpend > 0 ? netRevenue / adSpend : 0;
-        const cpa        = orders > 0 ? adSpend / orders : 0;
-        return {
-          Fecha:           date,
-          "Ordenes > $0":  orders,
-          Revenue:         revenue,
-          "Ad Spend":      adSpend,
-          "Net Revenue":   parseFloat(netRevenue.toFixed(2)),
-          Profit:          parseFloat(profit.toFixed(2)),
-          "Profit Margin": parseFloat(profitMargin.toFixed(6)),
-          ROAS:            parseFloat(roas.toFixed(4)),
-          "True ROAS":     parseFloat(trueRoas.toFixed(4)),
-          CPA:             parseFloat(cpa.toFixed(2)),
-          // Extra fields
-          _metaRoas:       metaRoas,
-          _metaImpressions: metaDailySpend[date]?.impressions || 0,
-          _metaClicks:     metaDailySpend[date]?.clicks || 0,
-        };
-      });
+      const totals     = computeTotals(rows);
+      const prevTotals = computeTotals(prevRows);
+      const byDow      = computeDow(rows);
 
-      // 5. Compute totals row
-      const totals = rows.reduce((t, r) => ({
-        orders:     t.orders + r["Ordenes > $0"],
-        revenue:    t.revenue + r.Revenue,
-        adSpend:    t.adSpend + r["Ad Spend"],
-        netRevenue: t.netRevenue + r["Net Revenue"],
-        profit:     t.profit + r.Profit,
-      }), { orders: 0, revenue: 0, adSpend: 0, netRevenue: 0, profit: 0 });
-
-      const hasMetaData = Object.keys(metaDailySpend).length > 0;
-      const hasStoreData = Object.keys(dailyRevenue).length > 0;
+      const hasMetaData  = Object.keys(metaCurr).length > 0;
+      const hasStoreData = Object.keys(curr.dailyRevenue).length > 0;
 
       return res.json({
-        rows,
-        since,
-        until,
-        totals: {
-          ...totals,
-          roas:   totals.adSpend > 0 ? totals.revenue / totals.adSpend : 0,
-          trueRoas: totals.adSpend > 0 ? totals.netRevenue / totals.adSpend : 0,
-          cpa:    totals.orders > 0   ? totals.adSpend / totals.orders : 0,
-          profitMargin: totals.revenue > 0 ? totals.profit / totals.revenue : 0,
-        },
-        meta: { hasMetaData, hasStoreData, effectiveCommission, metaAccountsCount: metaAccounts.length },
+        rows, prevRows,
+        totals, prevTotals,
+        byDow,
+        since, until,
+        prevSince, prevUntil,
+        meta: { hasMetaData, hasStoreData, commission, metaAccountsCount: metaAccounts.length },
       });
     } catch (e) {
-      console.error("Rendimiento error:", e);
+      console.error("Dashboard error:", e);
       return res.status(500).json({ error: e.message });
     }
   }
 
-  // ── action=save_config — guardar comisión ────────────────────────────
+  // ── action=save_config ───────────────────────────────────────────────
   if (action === "save_config" && req.method === "POST") {
     const body = await new Promise(resolve => {
       let d = "";

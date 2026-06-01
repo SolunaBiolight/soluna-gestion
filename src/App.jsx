@@ -464,7 +464,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
       subs:[{id:"tareas",label:"Tareas"},{id:"equipo",label:"Equipo"},{id:"creativos",label:"Creativos"}]},
     { group:"FINANZAS" },
-    {id:"rendimiento", label:"Rendimiento", icon:"M18 20V10M12 20V4M6 20v-6", adminOnly:true},
+    {id:"rendimiento", label:"Dashboard", icon:"M18 20V10M12 20V4M6 20v-6", adminOnly:true},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
       subs:[{id:"metricas",label:"Métricas"},{id:"pendientes",label:"Pendientes"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
   ];
@@ -663,7 +663,7 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
     {label:"Planes",              page:"planes",   icon:"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"},
     ...(isAdmin?[
       {label:"Admin Panel",  page:"admin",       icon:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"},
-      {label:"Rendimiento",  page:"rendimiento", icon:"M18 20V10M12 20V4M6 20v-6"},
+      {label:"Dashboard",     page:"rendimiento", icon:"M18 20V10M12 20V4M6 20v-6"},
     ]:[]),
   ];
   const filtered = items.filter(i => !q || i.label.toLowerCase().includes(q.toLowerCase()));
@@ -19070,14 +19070,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
 
 // ===========================================
-// APP RENDIMIENTO — Dashboard financiero automático
+// ===========================================
+// APP DASHBOARD (Rendimiento) — Financiero automático
 // ===========================================
 function AppRendimiento({T, user, onHome}) {
   const uid = user?.uid;
   const [rendData, setRendData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [viewTab, setViewTab] = useState("kpis");
+  const [viewTab, setViewTab] = useState("overview");
   const [sortCol, setSortCol] = useState("Fecha"); const [sortDir, setSortDir] = useState("desc");
   const [days, setDays] = useState(30);
   const [useCustom, setUseCustom] = useState(false);
@@ -19085,8 +19086,9 @@ function AppRendimiento({T, user, onHome}) {
   const [dateTo, setDateTo] = useState("");
   const [commission, setCommission] = useState(0.03);
   const [showConfig, setShowConfig] = useState(false);
+  const [chartMode, setChartMode] = useState("all");
+  const [hovDay, setHovDay] = useState(null);
 
-  // Load user commission setting on mount
   useEffect(()=>{
     if(!uid) return;
     getDoc(doc(db,"users",uid)).then(snap=>{
@@ -19100,337 +19102,434 @@ function AppRendimiento({T, user, onHome}) {
     setLoading(true); setError(null);
     try {
       const d=overrideDays||days;
-      const from=overrideFrom||(useCustom?dateFrom:"");
-      const to=overrideTo||(useCustom?dateTo:"");
+      const from=overrideFrom!=null?overrideFrom:(useCustom?dateFrom:"");
+      const to=overrideTo!=null?overrideTo:(useCustom?dateTo:"");
       let url=`/api/rendimiento?action=daily_metrics&uid=${uid}`;
       if(from&&to){url+=`&date_from=${from}&date_to=${to}`;}
       else{url+=`&days=${d}`;}
       const r=await fetch(url);
       const j=await r.json();
       if(j.error) throw new Error(j.error);
-      setRendData({rows:j.rows,totals:j.totals,meta:j.meta,since:j.since,until:j.until,loadedAt:new Date().toISOString()});
+      setRendData({...j, loadedAt:new Date().toISOString()});
     }catch(e){setError(e.message);}
     finally{setLoading(false);}
   }
 
   async function saveCommission(val) {
-    const v=parseFloat(val)||0.03;
-    setCommission(v);
+    const v=parseFloat(val)||0.03; setCommission(v);
     await fetch(`/api/rendimiento?action=save_config&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commission:v})});
     loadData();
   }
 
-  // Format helpers
-  const fmtM=(v)=>{if(v==null||v===""||isNaN(Number(v)))return"—";const n=Number(v),abs=Math.abs(n),s=n<0?"-":"";if(abs>=1e6)return s+"$"+(abs/1e6).toFixed(1)+"M";if(abs>=1e3)return s+"$"+Math.round(abs/1e3)+"K";return s+"$"+abs.toFixed(0);};
-  const fmtPct=(v)=>{const n=Number(v);return isNaN(n)?"—":(n*100).toFixed(1)+"%";};
+  const fmtM=(v)=>{if(v==null||v===""||isNaN(Number(v)))return"—";const n=Number(v),abs=Math.abs(n),s=n<0?"-":"";if(abs>=1e9)return s+"$"+(abs/1e9).toFixed(1)+"B";if(abs>=1e6)return s+"$"+(abs/1e6).toFixed(1)+"M";if(abs>=1e3)return s+"$"+Math.round(abs/1e3).toLocaleString("es-AR")+"K";return s+"$"+Math.round(abs).toLocaleString("es-AR");};
+  const fmtPct=(v,dec=1)=>{const n=Number(v);return isNaN(n)?"—":(n*100).toFixed(dec)+"%";};
   const fmtX=(v)=>{const n=Number(v);return isNaN(n)?"—":n.toFixed(2)+"x";};
   const fmtInt=(v)=>{const n=Number(v);return isNaN(n)?"—":Math.round(n).toLocaleString("es-AR");};
   const fmtDate=(s)=>{try{return new Date(s+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short"});}catch(_){return s;}};
+  const delta=(curr,prev)=>{if(!prev||prev===0)return null;return((curr-prev)/Math.abs(prev)*100);};
 
-  // Data
-  const rows=rendData?.rows||[];
-  const dailyRows=rows.filter(r=>r.Fecha&&r.Fecha!=="Total");
-  const totalRevenue=dailyRows.reduce((s,r)=>s+(Number(r.Revenue)||0),0);
-  const totalAdSpend=dailyRows.reduce((s,r)=>s+(Number(r["Ad Spend"])||0),0);
-  const totalNetRevenue=dailyRows.reduce((s,r)=>s+(Number(r["Net Revenue"])||0),0);
-  const totalProfit=dailyRows.reduce((s,r)=>s+(Number(r.Profit)||0),0);
-  const totalOrders=dailyRows.reduce((s,r)=>s+(Number(r["Ordenes > $0"])||0),0);
-  const avgRoas=totalAdSpend>0?totalRevenue/totalAdSpend:0;
-  const avgTrueRoas=totalAdSpend>0?totalNetRevenue/totalAdSpend:0;
-  const avgCPA=totalOrders>0?totalAdSpend/totalOrders:0;
-  const avgMargin=totalRevenue>0?totalProfit/totalRevenue:0;
-  const profitDays=dailyRows.filter(r=>Number(r.Profit)>0).length;
-  const lossDays=dailyRows.filter(r=>Number(r.Profit)<0).length;
-  const bestDay=dailyRows.length?dailyRows.reduce((b,r)=>Number(r.Profit)>Number(b?.Profit||"-9e15")?r:b,null):null;
-  const worstDay=dailyRows.length?dailyRows.reduce((w,r)=>Number(r.Profit)<Number(w?.Profit||"9e15")?r:w,null):null;
-
-  // Sparkline component
-  const Spk=({vals,color,h=40})=>{
-    if(!vals||vals.length<2)return null;
-    const min=Math.min(...vals),max=Math.max(...vals),rng=max-min||1,W=110,H=h;
-    const pts=vals.map((v,i)=>`${(i/(vals.length-1))*W},${H-((v-min)/rng)*(H*0.85)-H*0.05}`).join(" ");
-    return <svg width={W} height={H} style={{overflow:"visible",display:"block"}}><polyline points={pts} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round"/></svg>;
+  const DeltaBadge=({curr,prev,invert=false})=>{
+    const d=delta(curr,prev);
+    if(d===null)return null;
+    const good=invert?d<0:d>=0;
+    return <span style={{fontSize:11,fontWeight:700,color:good?T.green:T.red}}>{good?"↑":"↓"}{Math.abs(d).toFixed(1)}%</span>;
   };
 
-  // KPI definitions
-  const kpis=[
-    {label:"Órdenes",val:fmtInt(totalOrders),sparkKey:"Ordenes > $0",color:T.accentSolid,desc:"total del período",icon:"🛒"},
-    {label:"Revenue",val:fmtM(totalRevenue),sparkKey:"Revenue",color:"#3b82f6",desc:"ingreso bruto",icon:"💰"},
-    {label:"Net Revenue",val:fmtM(totalNetRevenue),sparkKey:"Net Revenue",color:"#6366f1",desc:"tras comisiones y fees",icon:"💵"},
-    {label:"Ad Spend",val:fmtM(totalAdSpend),sparkKey:"Ad Spend",color:"#f97316",desc:"gasto en publicidad",icon:"📢"},
-    {label:"Profit",val:fmtM(totalProfit),sparkKey:"Profit",color:totalProfit>=0?T.green:T.red,desc:totalProfit>=0?"ganancia neta ✓":"pérdida neta ⚠",icon:"📈"},
-    {label:"Profit Margin",val:fmtPct(avgMargin),sparkKey:"Profit Margin",color:avgMargin>=0.1?T.green:avgMargin>=0?(T.yellow||"#eab308"):T.red,desc:"margen sobre revenue",icon:"%"},
-    {label:"ROAS",val:fmtX(avgRoas),sparkKey:"ROAS",color:"#a855f7",desc:"retorno s/ ad spend bruto",icon:"📊"},
-    {label:"True ROAS",val:fmtX(avgTrueRoas),sparkKey:"True ROAS",color:"#8b5cf6",desc:"ROAS real sobre neto",icon:"🎯"},
-    {label:"CPA",val:fmtM(avgCPA),sparkKey:"CPA",color:"#ef4444",desc:"costo por adquisición",icon:"🎣"},
-  ];
+  const rows=rendData?.rows||[];
+  const prevRows=rendData?.prevRows||[];
+  const tot=rendData?.totals||{};
+  const prevTot=rendData?.prevTotals||{};
+  const byDow=rendData?.byDow||[];
+  const dailyRows=rows.filter(r=>r.Fecha);
+  const profitDays=dailyRows.filter(r=>r.Profit>0).length;
+  const lossDays=dailyRows.filter(r=>r.Profit<0).length;
+  const bestDay=dailyRows.length?dailyRows.reduce((b,r)=>r.Profit>=(b?.Profit||0)?r:b,null):null;
+  const worstDay=dailyRows.length?dailyRows.reduce((w,r)=>r.Profit<=(w?.Profit||0)?r:w,null):null;
+  const hasPrev=prevRows.length>0&&(prevTot.revenue||0)>0;
+  const daysElapsed=dailyRows.filter(r=>r.Revenue>0).length||1;
+  const projRevenue=(tot.revenue||0)/daysElapsed*30;
+  const projProfit=(tot.profit||0)/daysElapsed*30;
+  const projAdSpend=(tot.adSpend||0)/daysElapsed*30;
 
-  return (
+  const Spk=({vals,color,h=38,w=130,showZero=false})=>{
+    if(!vals||vals.length<2)return null;
+    const min=showZero?Math.min(0,...vals):Math.min(...vals);
+    const max=Math.max(...vals);
+    const rng=max-min||1;
+    const W=w,H=h;
+    const pts=vals.map((v,i)=>`${(i/(vals.length-1))*W},${H-((v-min)/rng)*(H*0.85)-H*0.05}`).join(" ");
+    const uid2=`s${Math.abs(color.charCodeAt(0))+Math.random()*999|0}`;
+    return(
+      <svg width={W} height={H} style={{overflow:"visible",display:"block"}}>
+        <defs><linearGradient id={uid2} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.2"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+        {showZero&&(()=>{const zy=H-((0-min)/rng)*(H*0.85)-H*0.05;return <line x1={0} y1={zy} x2={W} y2={zy} stroke={color} strokeWidth={0.5} strokeOpacity={0.35} strokeDasharray="2,2"/>;})()}
+        <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+      </svg>
+    );
+  };
+
+  const AreaChart=({data,height=175})=>{
+    if(!data||data.length<2)return null;
+    const series=[
+      {key:"Revenue",     color:"#3b82f6", show:chartMode==="all"||chartMode==="revenue"},
+      {key:"Net Revenue", color:"#6366f1", show:chartMode==="all"},
+      {key:"Ad Spend",    color:"#f97316", show:chartMode==="all"||chartMode==="adspend"},
+      {key:"Profit",      color:(tot.profit||0)>=0?T.green:T.red, show:chartMode==="all"||chartMode==="profit"},
+    ].filter(s=>s.show);
+    const W=800,H=height,n=data.length;
+    const allV=data.flatMap(d=>series.map(s=>Number(d[s.key])||0));
+    const minV=Math.min(0,...allV), maxV=Math.max(...allV), rng=maxV-minV||1;
+    const xOf=i=>(i/(n-1))*W;
+    const yOf=v=>H-((v-minV)/rng)*(H*0.88)-H*0.05;
+    const zY=yOf(0);
+    return(
+      <svg viewBox={`-5 -8 ${W+10} ${H+32}`} style={{width:"100%",height:H+28,overflow:"visible"}}>
+        <defs>
+          {series.map(s=><linearGradient key={s.key} id={`dag-${s.key.replace(/\s/g,"")}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={s.color} stopOpacity="0.22"/><stop offset="100%" stopColor={s.color} stopOpacity="0.01"/></linearGradient>)}
+        </defs>
+        <line x1={-5} y1={zY} x2={W+5} y2={zY} stroke={T.borderL} strokeWidth={1} strokeDasharray="3,3"/>
+        {series.filter(s=>s.key!=="Ad Spend").map(s=>{
+          const pts=data.map((d,i)=>[xOf(i),yOf(Number(d[s.key])||0)]);
+          const area=`M${pts[0][0]},${zY} `+pts.map(([x,y])=>`L${x},${y}`).join(" ")+` L${pts[pts.length-1][0]},${zY} Z`;
+          return <path key={s.key} d={area} fill={`url(#dag-${s.key.replace(/\s/g,"")})`}/>;
+        })}
+        {series.map((s,si)=>{
+          const pts=data.map((d,i)=>`${xOf(i)},${yOf(Number(d[s.key])||0)}`).join(" ");
+          return <polyline key={s.key} points={pts} fill="none" stroke={s.color} strokeWidth={si===3?2.5:1.8} strokeLinejoin="round" strokeLinecap="round"/>;
+        })}
+        {hovDay!=null&&(()=>{const x=xOf(hovDay);return<line x1={x} y1={0} x2={x} y2={H} stroke={T.border} strokeWidth={1}/>;})()}
+        {data.filter((_,i)=>i===0||i===n-1||(n<=10?true:i%Math.ceil(n/7)===0)).map((r)=>{
+          const i=data.indexOf(r);
+          return <text key={i} x={xOf(i)} y={H+20} textAnchor={i===0?"start":i===n-1?"end":"middle"} style={{fontSize:9,fill:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}>{fmtDate(r.Fecha)}</text>;
+        })}
+      </svg>
+    );
+  };
+
+  if(loading&&!rendData)return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"80vh",gap:16,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <Spinner size={28} color={T.accent}/><div style={{fontSize:13,color:T.textSm}}>Conectando con tus integraciones...</div>
+    </div>
+  );
+
+  return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Rendimiento" onHome={onHome}>
-        {/* Period selector */}
+      <AppTopbar T={T} section="Dashboard" onHome={onHome}>
         <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:0}}>
-          {[{d:7,l:"7d"},{d:30,l:"30d"},{d:60,l:"60d"}].map(p=>(
-            <button key={p.d} onClick={()=>{setUseCustom(false);setDays(p.d);loadData(p.d,"","");}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:!useCustom&&days===p.d?T.card:"transparent",color:!useCustom&&days===p.d?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:!useCustom&&days===p.d?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{p.l}</button>
+          {[{d:7,l:"7d"},{d:30,l:"30d"},{d:60,l:"60d"},{d:90,l:"90d"}].map(p=>(
+            <button key={p.d} onClick={()=>{setUseCustom(false);setDays(p.d);loadData(p.d,"","");}}
+              style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:!useCustom&&days===p.d?T.card:"transparent",color:!useCustom&&days===p.d?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:!useCustom&&days===p.d?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{p.l}</button>
           ))}
         </div>
-        <button onClick={()=>setShowConfig(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:showConfig?T.accent:T.textMd}} title="Configurar comisión">⚙</button>
-        <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>
+        <button onClick={()=>setShowConfig(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:showConfig?T.accent:T.textMd}} title="Configurar">⚙</button>
+        <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>
           {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
         </button>
       </AppTopbar>
 
-      {/* Config panel */}
       {showConfig&&(
-        <div style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"12px 24px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",fontFamily:"'Inter',system-ui,sans-serif"}}>
-          <span style={{fontSize:12,fontWeight:600,color:T.text}}>⚙ Configuración</span>
-          <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd}}>
-            <span>Comisión de plataforma:</span>
-            <input type="number" min="0" max="50" step="0.5" value={(commission*100).toFixed(1)} onChange={e=>setCommission(parseFloat(e.target.value)/100||0.03)}
+        <div style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"12px 24px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12}}>
+          <span style={{fontWeight:600,color:T.text}}>⚙ Configuración</span>
+          <div style={{display:"flex",alignItems:"center",gap:8,color:T.textMd}}>
+            Comisión de plataforma:
+            <input type="number" min="0" max="50" step="0.5" value={(commission*100).toFixed(1)} onChange={e=>setCommission(parseFloat(e.target.value)/100||0)}
               style={{width:60,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"5px 8px",fontSize:12,color:T.text,textAlign:"center",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-            <span>% (se descuenta del Revenue para calcular Net Revenue y Profit)</span>
+            % — se descuenta del Revenue para calcular Net Revenue y Profit
             <button onClick={()=>saveCommission(commission)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px"}}>Guardar</button>
           </div>
-          <span style={{fontSize:11,color:T.textSm}}>Default 3% para TN/Shopify · usa 10-17% si tenés ML como canal principal</span>
         </div>
       )}
 
-      <div style={{maxWidth:1400,margin:"0 auto",padding:"24px 24px 64px",width:"100%"}}>
+      <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px 64px",width:"100%"}}>
 
-        {/* EMPTY / ERROR STATE */}
         {!rendData&&!loading&&(
           <div style={{textAlign:"center",padding:"80px 24px"}}>
-            <div style={{fontSize:52,marginBottom:16}}>📊</div>
-            <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:10}}>Dashboard de Rendimiento</div>
-            <div style={{fontSize:14,color:T.textMd,marginBottom:24,maxWidth:480,margin:"0 auto 24px",lineHeight:1.7}}>
-              Conecta tus integraciones (Tienda Nube / Shopify + Meta Ads) desde Configuración y hacé click en Actualizar para ver tus métricas financieras automáticamente.
+            <div style={{fontSize:64,marginBottom:20}}>📊</div>
+            <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:12}}>Dashboard Financiero</div>
+            <div style={{fontSize:14,color:T.textMd,marginBottom:28,maxWidth:500,margin:"0 auto 28px",lineHeight:1.7}}>
+              Conectá Tienda Nube y/o Meta Ads desde Configuración, luego hacé click en Actualizar para ver tus métricas en tiempo real.
             </div>
-            {error&&<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 16px",color:T.red,fontSize:13,marginBottom:16,maxWidth:540,margin:"0 auto 16px"}}>{error}</div>}
-            <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:14,padding:"11px 28px"}}>
-              {loading?<><Spinner size={13} color="#fff"/> Cargando...</>:"↻ Cargar datos"}
-            </button>
-          </div>
-        )}
-        {loading&&!rendData&&(
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"80px 24px",gap:16}}>
-            <Spinner size={28} color={T.accent}/>
-            <div style={{fontSize:13,color:T.textSm}}>Conectando con tus integraciones...</div>
+            {error&&<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 16px",color:T.red,fontSize:13,marginBottom:20,maxWidth:540,margin:"0 auto 20px"}}>{error}</div>}
+            <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:14,padding:"12px 32px"}}>{loading?<><Spinner size={13} color="#fff"/> Cargando...</>:"↻ Cargar datos ahora"}</button>
           </div>
         )}
 
-        {/* DASHBOARD */}
-        {rendData&&!loading&&(
-          <>
-            {/* Fuentes de datos + resumen rápido */}
-            <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.text}}>📅 {fmtDate(rendData.since)} — {fmtDate(rendData.until)} · {dailyRows.length}d</div>
-              {rendData.meta?.hasStoreData
-                ?<div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.green,fontWeight:600}}>✅ Tienda conectada</div>
-                :<div style={{background:T.yellowBg||(T.yellow+"18"),border:`1px solid ${T.yellow||"#eab308"}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.yellow||"#eab308",fontWeight:600}}>⚠ Sin datos de tienda</div>}
-              {rendData.meta?.hasMetaData
-                ?<div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.green,fontWeight:600}}>✅ Meta Ads conectado</div>
-                :<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.textSm}}>ℹ Sin Meta Ads — Ad Spend = $0</div>}
-              <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.green,fontWeight:600}}>✅ {profitDays} días con profit</div>
-              {lossDays>0&&<div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.red,fontWeight:600}}>❌ {lossDays} en pérdida</div>}
-              {bestDay&&<div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.textMd}}>🏆 {fmtDate(bestDay.Fecha)}: <strong style={{color:T.green}}>{fmtM(bestDay.Profit)}</strong></div>}
-              <span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>Actualizado {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>
+        {rendData&&!loading&&(()=>{
+          return(<>
+
+          {/* Status row */}
+          <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:11,color:T.textSm}}>{fmtDate(rendData.since)} — {fmtDate(rendData.until)} · {dailyRows.length}d</span>
+            {rendData.meta?.hasStoreData?<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:T.greenBg,color:T.green,border:`1px solid ${T.green}33`}}>✅ Tienda</span>:<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.yellowBg||(T.yellow+"18"),color:T.yellow||"#eab308",border:`1px solid ${(T.yellow||"#eab308")}33`,fontWeight:600}}>⚠ Sin tienda</span>}
+            {rendData.meta?.hasMetaData?<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:T.greenBg,color:T.green,border:`1px solid ${T.green}33`}}>✅ Meta Ads</span>:<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.surface,color:T.textSm,border:`1px solid ${T.border}`}}>ℹ Sin Meta Ads</span>}
+            {hasPrev&&<span style={{fontSize:11,color:T.textSm}}>comparando vs {fmtDate(rendData.prevSince)}–{fmtDate(rendData.prevUntil)}</span>}
+            <span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>act. {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>
+          </div>
+
+          {/* Hero KPIs */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:12}}>
+            {[
+              {label:"Revenue",     val:tot.revenue,    prev:prevTot.revenue,    color:"#3b82f6", icon:"💰", desc:"Ingreso bruto",     spk:dailyRows.map(r=>r.Revenue)},
+              {label:"Net Revenue", val:tot.netRevenue, prev:prevTot.netRevenue, color:"#6366f1", icon:"💵", desc:"Tras comisiones",    spk:dailyRows.map(r=>r["Net Revenue"])},
+              {label:"Ad Spend",    val:tot.adSpend,    prev:prevTot.adSpend,    color:"#f97316", icon:"📢", desc:"Gasto publicitario", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
+              {label:"Profit",      val:tot.profit,     prev:prevTot.profit,     color:(tot.profit||0)>=0?T.green:T.red, icon:(tot.profit||0)>=0?"📈":"📉", desc:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
+            ].map(k=>(
+              <div key={k.label} style={{background:T.card,border:`1px solid ${k.color}28`,borderRadius:14,padding:"18px 18px 14px",position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:-20,right:-20,width:90,height:90,background:k.color,opacity:0.05,borderRadius:"50%"}}/>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.icon} {k.label}</div>
+                <div style={{fontSize:26,fontWeight:800,color:k.color,letterSpacing:-1,lineHeight:1,marginBottom:4}}>{fmtM(k.val)}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                  <span style={{fontSize:10,color:T.textSm}}>{k.desc}</span>
+                  {hasPrev&&<DeltaBadge curr={k.val} prev={k.prev} invert={k.inv}/>}
+                </div>
+                <Spk vals={k.spk} color={k.color} h={38} w={140} showZero={k.zero}/>
+              </div>
+            ))}
+          </div>
+
+          {/* Secondary KPIs */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:18}}>
+            {[
+              {label:"ROAS",       val:fmtX(tot.roas),            good:(tot.roas||0)>=2,             hint:"Revenue / Ad Spend"},
+              {label:"True ROAS",  val:fmtX(tot.trueRoas),        good:(tot.trueRoas||0)>=1.2,        hint:"Net Rev / Ad Spend"},
+              {label:"CPA",        val:fmtM(tot.cpa),             good:true,                          hint:"Ad Spend / Órdenes"},
+              {label:"Órdenes",    val:fmtInt(tot.orders),         good:(tot.orders||0)>0,             hint:"Con revenue"},
+              {label:"Margen",     val:fmtPct(tot.profitMargin),   good:(tot.profitMargin||0)>0.05,    hint:"Profit / Revenue"},
+              {label:"CTR",        val:fmtPct(tot.ctr,2),          good:(tot.ctr||0)>0.01,             hint:"Clicks / Impresiones"},
+              {label:"Días profit",val:`${profitDays}/${dailyRows.length}`, good:profitDays>=lossDays, hint:"Días positivos"},
+            ].map(k=>(
+              <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
+                <div style={{fontSize:15,fontWeight:800,color:k.good?T.text:T.red,letterSpacing:-0.5}}>{k.val}</div>
+                <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Area Chart */}
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Evolución diaria</div>
+                <div style={{fontSize:11,color:T.textSm}}>Tendencia del período — área sombreada = volumen</div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                {[{v:"all",l:"Todo"},{v:"revenue",l:"Revenue"},{v:"profit",l:"Profit"},{v:"adspend",l:"Ad Spend"}].map(o=>(
+                  <button key={o.v} onClick={()=>setChartMode(o.v)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:`1px solid ${chartMode===o.v?T.accentSolid:T.border}`,borderRadius:6,background:chartMode===o.v?T.accentSolid:"transparent",color:chartMode===o.v?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{o.l}</button>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {[{l:"Revenue",c:"#3b82f6"},{l:"Net Revenue",c:"#6366f1"},{l:"Ad Spend",c:"#f97316"},{l:"Profit",c:(tot.profit||0)>=0?T.green:T.red}].filter(lx=>chartMode==="all"||lx.l.toLowerCase().replace(" ","").includes(chartMode)).map(lx=>(
+                  <div key={lx.l} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.textSm}}>
+                    <div style={{width:16,height:2.5,background:lx.c,borderRadius:2}}/>{lx.l}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <AreaChart data={dailyRows} height={175}/>
+          </div>
+
+          {/* 3-col cards */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:18}}>
+            {/* Cascada */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px"}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>💰 Cascada de rentabilidad</div>
+              {[
+                {label:"Revenue",         val:tot.revenue,                                color:"#3b82f6", pct:1},
+                {label:"− Comisiones",    val:-(tot.revenue-tot.netRevenue),              color:T.red,     pct:(tot.revenue-tot.netRevenue)/Math.max(1,tot.revenue)},
+                {label:"Net Revenue",     val:tot.netRevenue,                             color:"#6366f1", pct:tot.netRevenue/Math.max(1,tot.revenue)},
+                {label:"− Ad Spend",      val:-tot.adSpend,                               color:"#f97316", pct:tot.adSpend/Math.max(1,tot.revenue)},
+                {label:"Profit",          val:tot.profit,                                 color:(tot.profit||0)>=0?T.green:T.red, pct:Math.abs(tot.profit||0)/Math.max(1,tot.revenue)},
+              ].map((r,i)=>(
+                <div key={i} style={{marginBottom:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                    <span style={{fontSize:11,color:T.textMd}}>{r.label}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:r.color}}>{fmtM(r.val)}</span>
+                  </div>
+                  <div style={{height:4,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${Math.min(100,(r.pct||0)*100)}%`,background:r.color,borderRadius:10}}/>
+                  </div>
+                </div>
+              ))}
+              <div style={{marginTop:10,padding:"8px 12px",background:(tot.profit||0)>=0?T.greenBg:T.redBg,border:`1px solid ${(tot.profit||0)>=0?T.green:T.red}33`,borderRadius:8,display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontSize:11,fontWeight:600,color:(tot.profit||0)>=0?T.green:T.red}}>Margen neto</span>
+                <span style={{fontSize:16,fontWeight:800,color:(tot.profit||0)>=0?T.green:T.red}}>{fmtPct(tot.profitMargin)}</span>
+              </div>
             </div>
 
-            {/* KPI Grid */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))",gap:12,marginBottom:22}}>
-              {kpis.map(k=>{
-                const vals=dailyRows.map(r=>Number(r[k.sparkKey])||0);
+            {/* Calendario */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px"}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>📅 Calendario de performance</div>
+              <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Verde = profit · Rojo = pérdida · Intensidad = magnitud</div>
+              {(()=>{
+                const maxAbs=Math.max(...dailyRows.map(r=>Math.abs(r.Profit)),1);
                 return(
-                  <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 15px"}}>
-                    <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{k.icon} {k.label}</div>
-                    <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1.1,marginBottom:2}}>{k.val}</div>
-                    <div style={{fontSize:10,color:T.textSm,marginBottom:10}}>{k.desc}</div>
-                    <Spk vals={vals} color={k.color} h={38}/>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+                    {dailyRows.map((r,i)=>{
+                      const p=r.Profit, int=Math.min(1,Math.abs(p)/maxAbs), color=p>0?"34,197,94":"239,68,68";
+                      return(
+                        <div key={i} title={`${fmtDate(r.Fecha)}: ${fmtM(p)} profit · Rev ${fmtM(r.Revenue)}`}
+                          onMouseEnter={()=>setHovDay(i)} onMouseLeave={()=>setHovDay(null)}
+                          style={{width:20,height:20,borderRadius:3,background:`rgba(${color},${0.12+int*0.75})`,border:`1px solid rgba(${color},${Math.min(1,0.15+int*0.7)})`,cursor:"default",transition:"transform 0.1s",transform:hovDay===i?"scale(1.3)":"scale(1)"}}>
+                        </div>
+                      );
+                    })}
                   </div>
                 );
-              })}
+              })()}
+              <div style={{marginTop:12,display:"flex",gap:12,flexWrap:"wrap"}}>
+                <div style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:T.textSm}}><div style={{width:12,height:12,borderRadius:2,background:"rgba(34,197,94,0.7)"}}/>{profitDays}d profit</div>
+                <div style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:T.textSm}}><div style={{width:12,height:12,borderRadius:2,background:"rgba(239,68,68,0.7)"}}/>{lossDays}d pérdida</div>
+                {bestDay&&<div style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>🏆 {fmtDate(bestDay.Fecha)}: {fmtM(bestDay.Profit)}</div>}
+              </div>
             </div>
 
-            {/* Trend chart — Revenue / Profit / Ad Spend */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:18}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
-                <div>
-                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>Evolución diaria</div>
-                  <div style={{fontSize:11,color:T.textSm}}>Revenue, Net Revenue, Profit y Ad Spend</div>
+            {/* Proyección */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px",display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>🔮 Proyección 30 días</div>
+              <div style={{fontSize:11,color:T.textSm}}>Basada en la tasa diaria del período actual</div>
+              {[
+                {l:"Revenue",   v:projRevenue, c:"#3b82f6"},
+                {l:"Ad Spend",  v:projAdSpend, c:"#f97316"},
+                {l:"Profit",    v:projProfit,  c:projProfit>=0?T.green:T.red},
+              ].map(p=>(
+                <div key={p.l} style={{background:T.surface,borderRadius:9,padding:"10px 12px"}}>
+                  <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>{p.l}</div>
+                  <div style={{fontSize:18,fontWeight:800,color:p.c,letterSpacing:-0.5}}>{fmtM(p.v)}</div>
+                  <div style={{fontSize:9,color:T.textSm}}>≈{fmtM(p.v/30)}/día</div>
                 </div>
-                <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-                  {[{l:"Revenue",c:"#3b82f6"},{l:"Net Revenue",c:"#6366f1"},{l:"Ad Spend",c:"#f97316"},{l:"Profit",c:totalProfit>=0?T.green:T.red}].map(lx=>(
-                    <div key={lx.l} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.textSm}}>
-                      <div style={{width:18,height:2.5,background:lx.c,borderRadius:2}}/>
-                      {lx.l}
-                    </div>
-                  ))}
+              ))}
+              {(tot.adSpend||0)>0&&(
+                <div style={{background:T.accentSolid+"15",border:`1px solid ${T.accentSolid}33`,borderRadius:9,padding:"10px 12px"}}>
+                  <div style={{fontSize:10,color:T.accent,fontWeight:700,marginBottom:2}}>🎯 ROAS actual vs break-even</div>
+                  <div style={{fontSize:15,fontWeight:800,color:T.accent}}>{fmtX(tot.roas)}<span style={{fontSize:11,fontWeight:400,color:T.textSm}}> vs 1.00x mínimo</span></div>
+                  <div style={{fontSize:9,color:(tot.roas||0)>=1?T.green:T.red,fontWeight:600}}>{(tot.roas||0)>=1?"✅ sobre el umbral":"⚠ bajo el umbral"}</div>
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div style={{display:"flex",gap:4,background:T.surface,borderRadius:10,padding:3,width:"fit-content",marginBottom:14}}>
+            {[["overview","💡 Insights"],["tabla","📋 Tabla diaria"],["dow","📅 Por día de semana"]].map(([id,l])=>(
+              <button key={id} onClick={()=>setViewTab(id)} style={{padding:"6px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:viewTab===id?T.card:"transparent",color:viewTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{l}</button>
+            ))}
+          </div>
+
+          {/* Insights */}
+          {viewTab==="overview"&&(()=>{
+            const ins=[];
+            if(bestDay) ins.push({icon:"🏆",color:T.green,text:`Mejor día: ${fmtDate(bestDay.Fecha)} con ${fmtM(bestDay.Profit)} de profit y ${fmtM(bestDay.Revenue)} de revenue.`});
+            if(worstDay&&worstDay.Profit<0) ins.push({icon:"⚠️",color:T.red,text:`Peor día: ${fmtDate(worstDay.Fecha)} con ${fmtM(worstDay.Profit)} de pérdida y ${fmtM(worstDay.Revenue)} de revenue.`});
+            const roas=tot.roas||0;
+            if(roas>0) ins.push({icon:roas>=2?"✅":"⚠",color:roas>=2?T.green:T.yellow||"#eab308",text:`ROAS de ${fmtX(roas)}: ${roas>=3?"excelente — cada $1 en publicidad genera $"+roas.toFixed(1)+" de revenue.":roas>=2?"bueno — superás el 2x recomendado.":roas>=1?"marginal — cubrís el ad spend pero el margen es bajo.":"crítico — estás gastando más en ads de lo que generás."}`});
+            const pm=tot.profitMargin||0;
+            if(pm<0.05&&pm>0) ins.push({icon:"💡",color:T.accent,text:`Margen del ${fmtPct(pm)} — bajo. Revisá si el ad spend es alto en relación al revenue generado.`});
+            if(pm>=0.15) ins.push({icon:"🎉",color:T.green,text:`Margen del ${fmtPct(pm)} — saludable. El negocio está generando valor real sobre cada peso invertido.`});
+            const bestDow=byDow.filter(d=>d.days>0).reduce((b,d)=>d.avgProfit>(b?.avgProfit||0)?d:b,null);
+            if(bestDow?.days>0) ins.push({icon:"📅",color:T.accent,text:`Mejor día de la semana: ${bestDow.label} con ${fmtM(bestDow.avgRevenue)} de revenue promedio y ${fmtM(bestDow.avgProfit)} de profit.`});
+            if(hasPrev){const rd=delta(tot.revenue,prevTot.revenue);if(rd!==null)ins.push({icon:rd>=0?"📈":"📉",color:rd>=0?T.green:T.red,text:`Revenue ${rd>=0?"subió":"bajó"} un ${Math.abs(rd).toFixed(1)}% vs el período anterior (${fmtM(prevTot.revenue)} → ${fmtM(tot.revenue)}).`});}
+            if(projProfit>0) ins.push({icon:"🔮",color:T.textMd,text:`A este ritmo, proyectás ${fmtM(projProfit)} de profit en los próximos 30 días — ${fmtM(projProfit/30)}/día.`});
+            if((tot.ctr||0)>0) ins.push({icon:"👁",color:T.textMd,text:`CTR de Meta Ads: ${fmtPct(tot.ctr,2)} con ${fmtInt(rendData?.totals?.impressions)} impresiones totales.`});
+            return(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {ins.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:T.textSm,fontSize:13}}>Cargá datos para ver insights automáticos.</div>}
+                {ins.map((i,idx)=>(
+                  <div key={idx} style={{background:T.card,border:`1px solid ${i.color}33`,borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"flex-start",gap:12}}>
+                    <span style={{fontSize:20,flexShrink:0,marginTop:1}}>{i.icon}</span>
+                    <span style={{fontSize:13,color:T.text,lineHeight:1.6}}>{i.text}</span>
+                  </div>
+                ))}
               </div>
+            );
+          })()}
+
+          {/* Tabla */}
+          {viewTab==="tabla"&&(
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <thead style={{background:T.bg,position:"sticky",top:0}}>
+                    <tr>{[{k:"Fecha",l:"Fecha",a:"left"},{k:"Ordenes > $0",l:"Órdenes",a:"right"},{k:"Revenue",l:"Revenue",a:"right"},{k:"Ad Spend",l:"Ad Spend",a:"right"},{k:"Net Revenue",l:"Net Rev.",a:"right"},{k:"Profit",l:"Profit",a:"right"},{k:"Profit Margin",l:"Margen",a:"right"},{k:"ROAS",l:"ROAS",a:"right"},{k:"True ROAS",l:"True ROAS",a:"right"},{k:"CPA",l:"CPA",a:"right"}].map(col=>{
+                      const active=sortCol===col.k;
+                      return <th key={col.k} onClick={()=>{if(sortCol===col.k)setSortDir(d=>d==="desc"?"asc":"desc");else{setSortCol(col.k);setSortDir("desc");}}} style={{padding:"10px 12px",textAlign:col.a,fontSize:10,color:active?T.accent:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,cursor:"pointer",whiteSpace:"nowrap",userSelect:"none"}}>{col.l} {active?(sortDir==="desc"?"↓":"↑"):"↕"}</th>;
+                    })}</tr>
+                  </thead>
+                  <tbody>
+                    {[...dailyRows].sort((a,b)=>{const av=sortCol==="Fecha"?a.Fecha:Number(a[sortCol])||0,bv=sortCol==="Fecha"?b.Fecha:Number(b[sortCol])||0;return sortCol==="Fecha"?(sortDir==="desc"?String(bv).localeCompare(String(av)):String(av).localeCompare(String(bv))):(sortDir==="desc"?bv-av:av-bv);}).map((r,i)=>{
+                      const profit=r.Profit,roas=Number(r.ROAS),margin=Number(r["Profit Margin"]);
+                      return(
+                        <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`,background:profit>0?T.green+"07":profit<0?T.red+"07":"transparent"}}>
+                          <td style={{padding:"8px 12px",fontWeight:500,color:T.text,whiteSpace:"nowrap"}}>{fmtDate(r.Fecha)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{r["Ordenes > $0"]||"—"}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#3b82f6",fontWeight:500}}>{fmtM(r.Revenue)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#f97316"}}>{fmtM(r["Ad Spend"])}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#6366f1"}}>{fmtM(r["Net Revenue"])}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:profit>0?T.green:profit<0?T.red:T.textMd}}>{fmtM(profit)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:margin>=0.1?T.green:margin>=0?(T.yellow||"#eab308"):T.red}}>{fmtPct(margin)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:roas>=3?T.green:roas>=2?(T.yellow||"#eab308"):roas>=1?T.text:T.red}}>{fmtX(roas)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:Number(r["True ROAS"])>=1?T.textMd:T.red}}>{fmtX(r["True ROAS"])}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{fmtM(r.CPA)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{background:T.surface,borderTop:`2px solid ${T.border}`}}>
+                      <td style={{padding:"9px 12px",fontWeight:700,color:T.textSm,fontSize:11}}>TOTAL</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:T.text}}>{fmtInt(tot.orders)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#3b82f6"}}>{fmtM(tot.revenue)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#f97316"}}>{fmtM(tot.adSpend)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#6366f1"}}>{fmtM(tot.netRevenue)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:(tot.profit||0)>=0?T.green:T.red}}>{fmtM(tot.profit)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:(tot.profitMargin||0)>=0.1?T.green:(T.yellow||"#eab308")}}>{fmtPct(tot.profitMargin)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:(tot.roas||0)>=2?T.green:(T.yellow||"#eab308")}}>{fmtX(tot.roas)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:(tot.trueRoas||0)>=1?T.textMd:T.red}}>{fmtX(tot.trueRoas)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:T.textMd}}>{fmtM(tot.cpa)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Por día de semana */}
+          {viewTab==="dow"&&(
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px"}}>
+              <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:4}}>📅 Performance por día de semana</div>
+              <div style={{fontSize:11,color:T.textSm,marginBottom:18}}>Promedios basados en los días con datos del período seleccionado</div>
               {(()=>{
-                const H=160,W=800,n=dailyRows.length;
-                if(n<2)return null;
-                const keys=[["Revenue","#3b82f6"],["Net Revenue","#6366f1"],["Ad Spend","#f97316"],["Profit",totalProfit>=0?T.green:T.red]];
-                const allV=dailyRows.flatMap(r=>keys.map(([k])=>Number(r[k])||0));
-                const minV=Math.min(0,...allV),maxV=Math.max(...allV),rng=maxV-minV||1;
-                const xOf=i=>(i/(n-1))*W;
-                const yOf=v=>H-((v-minV)/rng)*(H*0.88)-H*0.05;
-                const zY=yOf(0);
+                const maxRev=Math.max(...byDow.filter(d=>d.days>0).map(d=>d.avgRevenue),1);
                 return(
-                  <svg viewBox={`-15 -8 ${W+30} ${H+30}`} style={{width:"100%",height:H+20,overflow:"visible"}}>
-                    <line x1={-15} y1={zY} x2={W+15} y2={zY} stroke={T.borderL} strokeWidth={1} strokeDasharray="4,3"/>
-                    {keys.map(([key,color],ki)=>{
-                      const pts=dailyRows.map((r,i)=>`${xOf(i)},${yOf(Number(r[key])||0)}`).join(" ");
-                      return <polyline key={key} points={pts} fill="none" stroke={color} strokeWidth={ki===3?2.5:ki===0?2:1.5} strokeLinejoin="round" strokeLinecap="round"/>;
+                  <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                    {byDow.map(d=>{
+                      if(d.days===0)return null;
+                      const pctRev=d.avgRevenue/maxRev;
+                      const isGreen=d.avgProfit>=0;
+                      return(
+                        <div key={d.dow} style={{display:"grid",gridTemplateColumns:"70px 1fr 100px 100px 60px",gap:14,alignItems:"center"}}>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text}}>{d.label}</div>
+                          <div style={{position:"relative",height:28,background:T.borderL,borderRadius:7,overflow:"hidden"}}>
+                            <div style={{position:"absolute",left:0,top:0,height:"100%",width:`${pctRev*100}%`,background:"#3b82f6",borderRadius:7,opacity:0.65}}/>
+                            {isGreen&&<div style={{position:"absolute",left:0,top:0,height:"100%",width:`${Math.min(1,d.avgProfit/d.avgRevenue)*pctRev*100}%`,background:T.green,borderRadius:7,opacity:0.7}}/>}
+                          </div>
+                          <div style={{textAlign:"right",fontFamily:"monospace",color:"#3b82f6",fontWeight:600,fontSize:13}}>{fmtM(d.avgRevenue)}</div>
+                          <div style={{textAlign:"right",fontFamily:"monospace",fontWeight:700,fontSize:13,color:isGreen?T.green:T.red}}>{fmtM(d.avgProfit)}</div>
+                          <div style={{textAlign:"right",fontSize:11,color:T.textSm}}>{d.days} días</div>
+                        </div>
+                      );
                     })}
-                    {dailyRows.filter((_,i)=>i===0||i===n-1||(i+1)%5===0).map(r=>{
-                      const i=dailyRows.indexOf(r);
-                      return <text key={i} x={xOf(i)} y={H+22} textAnchor="middle" style={{fontSize:9,fill:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}>{fmtDate(r.Fecha)}</text>;
-                    })}
-                  </svg>
+                    <div style={{padding:"10px 14px",background:T.surface,borderRadius:9,fontSize:11,color:T.textSm,marginTop:4}}>
+                      Las barras azules = revenue promedio · Verde sobre el azul = porción que es profit · Negro = ad spend sin cubrir
+                    </div>
+                  </div>
                 );
               })()}
             </div>
+          )}
 
-            {/* Tab selector */}
-            <div style={{display:"flex",gap:4,background:T.surface,borderRadius:10,padding:3,width:"fit-content",marginBottom:16}}>
-              {[["kpis","📊 Resumen adicional"],["tabla","📋 Tabla diaria"]].map(([id,l])=>(
-                <button key={id} onClick={()=>setViewTab(id)} style={{padding:"6px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:viewTab===id?T.card:"transparent",color:viewTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{l}</button>
-              ))}
-            </div>
-
-            {/* RESUMEN ADICIONAL */}
-            {viewTab==="kpis"&&(
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
-                {/* Eficiencia de publicidad */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>📢 Eficiencia publicitaria</div>
-                  {[
-                    {l:"ROAS (bruto)",v:fmtX(avgRoas),c:avgRoas>=3?T.green:avgRoas>=2?(T.yellow||"#eab308"):T.red,hint:"Revenue / Ad Spend"},
-                    {l:"True ROAS",v:fmtX(avgTrueRoas),c:avgTrueRoas>=1.5?T.green:avgTrueRoas>=1?(T.yellow||"#eab308"):T.red,hint:"Net Revenue / Ad Spend"},
-                    {l:"CPA promedio",v:fmtM(avgCPA),c:T.textMd,hint:"Ad Spend / Órdenes"},
-                    {l:"Ad Spend total",v:fmtM(totalAdSpend),c:"#f97316",hint:((totalAdSpend/totalRevenue)*100).toFixed(1)+"% del revenue"},
-                  ].map(item=>(
-                    <div key={item.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                      <div><div style={{fontSize:12,color:T.textMd}}>{item.l}</div><div style={{fontSize:10,color:T.textSm}}>{item.hint}</div></div>
-                      <div style={{fontSize:16,fontWeight:700,color:item.c}}>{item.v}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Rentabilidad */}
-                <div style={{background:T.card,border:`1px solid ${totalProfit>=0?T.green+"44":T.red+"44"}`,borderRadius:12,padding:"16px 18px"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>💰 Rentabilidad</div>
-                  {[
-                    {l:"Revenue bruto",v:fmtM(totalRevenue),c:"#3b82f6"},
-                    {l:"Net Revenue",v:fmtM(totalNetRevenue),c:"#6366f1",hint:"−"+(((totalRevenue-totalNetRevenue)/totalRevenue*100).toFixed(1))+"% en comisiones"},
-                    {l:"Ad Spend",v:"-"+fmtM(totalAdSpend),c:"#f97316"},
-                    {l:"Profit neto",v:fmtM(totalProfit),c:totalProfit>=0?T.green:T.red,hint:"Margen: "+fmtPct(avgMargin)},
-                  ].map(item=>(
-                    <div key={item.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                      <div><div style={{fontSize:12,color:T.textMd}}>{item.l}</div>{item.hint&&<div style={{fontSize:10,color:T.textSm}}>{item.hint}</div>}</div>
-                      <div style={{fontSize:16,fontWeight:700,color:item.c}}>{item.v}</div>
-                    </div>
-                  ))}
-                  <div style={{marginTop:10,padding:"10px 14px",background:totalProfit>=0?T.greenBg:T.redBg,border:`1px solid ${totalProfit>=0?T.green+"44":T.red+"44"}`,borderRadius:9,textAlign:"center"}}>
-                    <div style={{fontSize:11,color:T.textSm}}>Resultado del período</div>
-                    <div style={{fontSize:24,fontWeight:800,color:totalProfit>=0?T.green:T.red,letterSpacing:-1}}>{fmtM(totalProfit)}</div>
-                    <div style={{fontSize:10,color:T.textSm}}>margen {fmtPct(avgMargin)} · {profitDays}/{dailyRows.length} días positivos</div>
-                  </div>
-                </div>
-
-                {/* Distribución de días */}
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>📅 Distribución de resultados</div>
-                  <div style={{display:"flex",gap:8,marginBottom:14}}>
-                    <div style={{flex:profitDays,background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:7,padding:"8px",textAlign:"center",minWidth:0}}>
-                      <div style={{fontSize:20,fontWeight:800,color:T.green}}>{profitDays}</div>
-                      <div style={{fontSize:10,color:T.green}}>positivos</div>
-                    </div>
-                    {lossDays>0&&<div style={{flex:lossDays,background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:7,padding:"8px",textAlign:"center",minWidth:0}}>
-                      <div style={{fontSize:20,fontWeight:800,color:T.red}}>{lossDays}</div>
-                      <div style={{fontSize:10,color:T.red}}>negativos</div>
-                    </div>}
-                  </div>
-                  <div style={{fontSize:11,color:T.textSm,marginBottom:4}}>Top 3 días por profit</div>
-                  {[...dailyRows].sort((a,b)=>Number(b.Profit)-Number(a.Profit)).slice(0,3).map((r,i)=>(
-                    <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
-                      <span style={{color:T.textMd}}>{fmtDate(r.Fecha)}</span>
-                      <span style={{fontWeight:600,color:Number(r.Profit)>=0?T.green:T.red}}>{fmtM(r.Profit)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* TABLA DIARIA */}
-            {viewTab==="tabla"&&(
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    <thead style={{background:T.bg,position:"sticky",top:0}}>
-                      <tr>
-                        {[
-                          {k:"Fecha",l:"Fecha",a:"left"},
-                          {k:"Ordenes > $0",l:"Órdenes",a:"right"},
-                          {k:"Revenue",l:"Revenue",a:"right"},
-                          {k:"Ad Spend",l:"Ad Spend",a:"right"},
-                          {k:"Net Revenue",l:"Net Rev.",a:"right"},
-                          {k:"Profit",l:"Profit",a:"right"},
-                          {k:"Profit Margin",l:"Margen",a:"right"},
-                          {k:"ROAS",l:"ROAS",a:"right"},
-                          {k:"True ROAS",l:"True ROAS",a:"right"},
-                          {k:"CPA",l:"CPA",a:"right"},
-                        ].map(col=>{
-                          const active=sortCol===col.k;
-                          return <th key={col.k} onClick={()=>{if(sortCol===col.k)setSortDir(d=>d==="desc"?"asc":"desc");else{setSortCol(col.k);setSortDir("desc");}}} style={{padding:"10px 12px",textAlign:col.a,fontSize:10,color:active?T.accent:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,cursor:"pointer",whiteSpace:"nowrap",userSelect:"none"}}>{col.l} {active?(sortDir==="desc"?"↓":"↑"):"↕"}</th>;
-                        })}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...dailyRows].sort((a,b)=>{
-                        const av=a[sortCol]==="Fecha"?a.Fecha:Number(a[sortCol])||0;
-                        const bv=b[sortCol]==="Fecha"?b.Fecha:Number(b[sortCol])||0;
-                        if(sortCol==="Fecha") return sortDir==="desc"?String(bv).localeCompare(String(av)):String(av).localeCompare(String(bv));
-                        return sortDir==="desc"?bv-av:av-bv;
-                      }).map((r,i)=>{
-                        const profit=Number(r.Profit),roas=Number(r.ROAS),margin=Number(r["Profit Margin"]);
-                        return(
-                          <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`,background:profit>0?T.green+"07":profit<0?T.red+"07":"transparent"}}>
-                            <td style={{padding:"9px 12px",fontWeight:500,color:T.text,whiteSpace:"nowrap"}}>{fmtDate(r.Fecha)}</td>
-                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{r["Ordenes > $0"]||"—"}</td>
-                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",color:"#3b82f6",fontWeight:500}}>{fmtM(r.Revenue)}</td>
-                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",color:"#f97316"}}>{fmtM(r["Ad Spend"])}</td>
-                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",color:"#6366f1"}}>{fmtM(r["Net Revenue"])}</td>
-                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:profit>0?T.green:profit<0?T.red:T.textMd}}>{fmtM(profit)}</td>
-                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",color:margin>=0.1?T.green:margin>=0?(T.yellow||"#eab308"):T.red}}>{fmtPct(margin)}</td>
-                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",color:roas>=3?T.green:roas>=2?(T.yellow||"#eab308"):T.red}}>{fmtX(roas)}</td>
-                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",color:Number(r["True ROAS"])>=1?T.textMd:T.red}}>{fmtX(r["True ROAS"])}</td>
-                            <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{fmtM(r.CPA)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr style={{background:T.surface,borderTop:`2px solid ${T.border}`}}>
-                        <td style={{padding:"9px 12px",fontWeight:700,color:T.textSm,fontSize:11}}>TOTAL</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:T.text}}>{fmtInt(totalOrders)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#3b82f6"}}>{fmtM(totalRevenue)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#f97316"}}>{fmtM(totalAdSpend)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#6366f1"}}>{fmtM(totalNetRevenue)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:totalProfit>=0?T.green:T.red}}>{fmtM(totalProfit)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:avgMargin>=0.1?T.green:(T.yellow||"#eab308")}}>{fmtPct(avgMargin)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:avgRoas>=3?T.green:avgRoas>=2?(T.yellow||"#eab308"):T.red}}>{fmtX(avgRoas)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:avgTrueRoas>=1?T.textMd:T.red}}>{fmtX(avgTrueRoas)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:T.textMd}}>{fmtM(avgCPA)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-            )}
-          </>
-        )}
+          </>);
+        })()}
       </div>
     </div>
   );
