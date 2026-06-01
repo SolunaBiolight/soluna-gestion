@@ -18974,48 +18974,54 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
 
 // ===========================================
-// APP RENDIMIENTO — Dashboard financiero
+// APP RENDIMIENTO — Dashboard financiero automático
 // ===========================================
 function AppRendimiento({T, user, onHome}) {
   const uid = user?.uid;
   const [rendData, setRendData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [viewTab, setViewTab] = useState("kpis");
   const [sortCol, setSortCol] = useState("Fecha"); const [sortDir, setSortDir] = useState("desc");
-  const fileInputRef = useRef();
+  const [days, setDays] = useState(30);
+  const [useCustom, setUseCustom] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [commission, setCommission] = useState(0.03);
+  const [showConfig, setShowConfig] = useState(false);
 
-  useEffect(() => {
-    if (!uid) return;
+  // Load user commission setting on mount
+  useEffect(()=>{
+    if(!uid) return;
     getDoc(doc(db,"users",uid)).then(snap=>{
-      const d=snap.data()?.rendimientoData;
-      if(d) setRendData(d);
-    }).finally(()=>setLoading(false));
+      const d=snap.data();
+      if(d?.rendimientoCommission) setCommission(parseFloat(d.rendimientoCommission)||0.03);
+    });
   },[uid]);
 
-  function parseCSV(text) {
-    const lines=text.trim().split(/\r?\n/);
-    const headers=lines[0].split(",").map(h=>h.trim().replace(/^"|"$/g,""));
-    return lines.slice(1).map(line=>{
-      const vals=line.split(",");
-      return Object.fromEntries(headers.map((h,i)=>[h,(vals[i]||"").trim().replace(/^"|"$/g,"")]));
-    }).filter(r=>r.Fecha);
+  async function loadData(overrideDays, overrideFrom, overrideTo) {
+    if(!uid){setError("Sin sesión");return;}
+    setLoading(true); setError(null);
+    try {
+      const d=overrideDays||days;
+      const from=overrideFrom||(useCustom?dateFrom:"");
+      const to=overrideTo||(useCustom?dateTo:"");
+      let url=`/api/rendimiento?action=daily_metrics&uid=${uid}`;
+      if(from&&to){url+=`&date_from=${from}&date_to=${to}`;}
+      else{url+=`&days=${d}`;}
+      const r=await fetch(url);
+      const j=await r.json();
+      if(j.error) throw new Error(j.error);
+      setRendData({rows:j.rows,totals:j.totals,meta:j.meta,since:j.since,until:j.until,loadedAt:new Date().toISOString()});
+    }catch(e){setError(e.message);}
+    finally{setLoading(false);}
   }
 
-  async function handleFile(file) {
-    if(!file||(!file.name.toLowerCase().endsWith(".csv")&&file.type!=="text/csv")) return toast("Necesitás un archivo .csv","warning");
-    setUploading(true);
-    try {
-      const text=await file.text();
-      const rows=parseCSV(text);
-      if(!rows.length) return toast("El CSV está vacío o no tiene el formato esperado","warning");
-      const d={rows,loadedAt:new Date().toISOString(),filename:file.name};
-      setRendData(d);
-      await setDoc(doc(db,"users",uid),{rendimientoData:d},{merge:true});
-      toast(`${rows.filter(r=>r.Fecha!=="Total").length} días cargados ✓`,"success");
-    } catch(e){toast("Error: "+e.message,"error");}
-    finally{setUploading(false);}
+  async function saveCommission(val) {
+    const v=parseFloat(val)||0.03;
+    setCommission(v);
+    await fetch(`/api/rendimiento?action=save_config&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commission:v})});
+    loadData();
   }
 
   // Format helpers
@@ -19063,51 +19069,75 @@ function AppRendimiento({T, user, onHome}) {
     {label:"CPA",val:fmtM(avgCPA),sparkKey:"CPA",color:"#ef4444",desc:"costo por adquisición",icon:"🎣"},
   ];
 
-  if(loading) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"80vh"}}><Spinner size={24} color={T.accent}/></div>;
-
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Rendimiento" onHome={onHome}>
-        {rendData&&<span style={{fontSize:11,color:T.textSm}}>{fmtDate(dailyRows[0]?.Fecha)} — {fmtDate(dailyRows[dailyRows.length-1]?.Fecha)} · {dailyRows.length}d</span>}
-        <button onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>
-          {uploading?<Spinner size={11} color={T.textMd}/>:"↑"} {rendData?"Actualizar CSV":"Cargar CSV"}
+        {/* Period selector */}
+        <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:0}}>
+          {[{d:7,l:"7d"},{d:30,l:"30d"},{d:60,l:"60d"}].map(p=>(
+            <button key={p.d} onClick={()=>{setUseCustom(false);setDays(p.d);loadData(p.d,"","");}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:!useCustom&&days===p.d?T.card:"transparent",color:!useCustom&&days===p.d?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:!useCustom&&days===p.d?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{p.l}</button>
+          ))}
+        </div>
+        <button onClick={()=>setShowConfig(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:showConfig?T.accent:T.textMd}} title="Configurar comisión">⚙</button>
+        <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>
+          {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
         </button>
-        <input ref={fileInputRef} type="file" accept=".csv" style={{display:"none"}} onChange={e=>{if(e.target.files[0])handleFile(e.target.files[0]);e.target.value="";}}/>
       </AppTopbar>
+
+      {/* Config panel */}
+      {showConfig&&(
+        <div style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"12px 24px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",fontFamily:"'Inter',system-ui,sans-serif"}}>
+          <span style={{fontSize:12,fontWeight:600,color:T.text}}>⚙ Configuración</span>
+          <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd}}>
+            <span>Comisión de plataforma:</span>
+            <input type="number" min="0" max="50" step="0.5" value={(commission*100).toFixed(1)} onChange={e=>setCommission(parseFloat(e.target.value)/100||0.03)}
+              style={{width:60,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"5px 8px",fontSize:12,color:T.text,textAlign:"center",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+            <span>% (se descuenta del Revenue para calcular Net Revenue y Profit)</span>
+            <button onClick={()=>saveCommission(commission)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px"}}>Guardar</button>
+          </div>
+          <span style={{fontSize:11,color:T.textSm}}>Default 3% para TN/Shopify · usa 10-17% si tenés ML como canal principal</span>
+        </div>
+      )}
 
       <div style={{maxWidth:1400,margin:"0 auto",padding:"24px 24px 64px",width:"100%"}}>
 
-        {/* UPLOAD ZONE */}
-        {!rendData&&(
-          <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);}} onClick={()=>fileInputRef.current?.click()}
-            style={{border:`2px dashed ${dragOver?T.accentSolid:T.border}`,borderRadius:18,padding:"80px 40px",textAlign:"center",cursor:"pointer",background:dragOver?T.accentSolid+"08":T.card,transition:"all 0.15s",maxWidth:640,margin:"60px auto"}}>
-            <div style={{fontSize:56,marginBottom:20}}>📊</div>
-            <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:10}}>Cargá tus datos de rendimiento</div>
-            <div style={{fontSize:14,color:T.textMd,marginBottom:8,lineHeight:1.7,maxWidth:480,margin:"0 auto 10px"}}>
-              Exportá el CSV desde Escalafy u otra herramienta y arrastralo acá. Se guarda en tu cuenta y podés actualizarlo cuando quieras.
+        {/* EMPTY / ERROR STATE */}
+        {!rendData&&!loading&&(
+          <div style={{textAlign:"center",padding:"80px 24px"}}>
+            <div style={{fontSize:52,marginBottom:16}}>📊</div>
+            <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:10}}>Dashboard de Rendimiento</div>
+            <div style={{fontSize:14,color:T.textMd,marginBottom:24,maxWidth:480,margin:"0 auto 24px",lineHeight:1.7}}>
+              Conecta tus integraciones (Tienda Nube / Shopify + Meta Ads) desde Configuración y hacé click en Actualizar para ver tus métricas financieras automáticamente.
             </div>
-            <div style={{fontSize:11,color:T.textSm,marginBottom:28,fontFamily:"monospace",background:T.surface,borderRadius:8,padding:"8px 14px",display:"inline-block"}}>
-              Fecha, Ordenes &gt; $0, Revenue, Ad Spend, Net Revenue, Profit, Profit Margin, ROAS, True ROAS, CPA
-            </div>
-            <div>
-              <button style={{...BtnPrimary(T),fontSize:14,padding:"11px 28px",pointerEvents:"none"}}>
-                {uploading?<><Spinner size={13} color="#fff"/> Procesando...</>:"📂 Seleccionar archivo .CSV"}
-              </button>
-            </div>
+            {error&&<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 16px",color:T.red,fontSize:13,marginBottom:16,maxWidth:540,margin:"0 auto 16px"}}>{error}</div>}
+            <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:14,padding:"11px 28px"}}>
+              {loading?<><Spinner size={13} color="#fff"/> Cargando...</>:"↻ Cargar datos"}
+            </button>
+          </div>
+        )}
+        {loading&&!rendData&&(
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"80px 24px",gap:16}}>
+            <Spinner size={28} color={T.accent}/>
+            <div style={{fontSize:13,color:T.textSm}}>Conectando con tus integraciones...</div>
           </div>
         )}
 
         {/* DASHBOARD */}
-        {rendData&&(
+        {rendData&&!loading&&(
           <>
-            {/* Resumen rápido */}
+            {/* Fuentes de datos + resumen rápido */}
             <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.text}}>📅 {dailyRows.length} días</div>
-              <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.green,fontWeight:600}}>✅ {profitDays} con profit</div>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.text}}>📅 {fmtDate(rendData.since)} — {fmtDate(rendData.until)} · {dailyRows.length}d</div>
+              {rendData.meta?.hasStoreData
+                ?<div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.green,fontWeight:600}}>✅ Tienda conectada</div>
+                :<div style={{background:T.yellowBg||(T.yellow+"18"),border:`1px solid ${T.yellow||"#eab308"}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.yellow||"#eab308",fontWeight:600}}>⚠ Sin datos de tienda</div>}
+              {rendData.meta?.hasMetaData
+                ?<div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.green,fontWeight:600}}>✅ Meta Ads conectado</div>
+                :<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.textSm}}>ℹ Sin Meta Ads — Ad Spend = $0</div>}
+              <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.green,fontWeight:600}}>✅ {profitDays} días con profit</div>
               {lossDays>0&&<div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.red,fontWeight:600}}>❌ {lossDays} en pérdida</div>}
-              {bestDay&&<div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.textMd}}>🏆 Mejor: <strong style={{color:T.green}}>{fmtDate(bestDay.Fecha)}</strong> · {fmtM(bestDay.Profit)}</div>}
-              {worstDay&&Number(worstDay.Profit)<0&&<div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.textMd}}>⚠️ Peor: <strong style={{color:T.red}}>{fmtDate(worstDay.Fecha)}</strong> · {fmtM(worstDay.Profit)}</div>}
-              <button onClick={async()=>{if(!await appConfirm("¿Borrar los datos cargados?",{danger:true,okLabel:"Borrar"}))return;setRendData(null);await setDoc(doc(db,"users",uid),{rendimientoData:null},{merge:true});}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",color:T.textSm,marginLeft:"auto"}}>🗑 Borrar datos</button>
+              {bestDay&&<div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.textMd}}>🏆 {fmtDate(bestDay.Fecha)}: <strong style={{color:T.green}}>{fmtM(bestDay.Profit)}</strong></div>}
+              <span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>Actualizado {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>
             </div>
 
             {/* KPI Grid */}
