@@ -190,19 +190,18 @@ async function shopifyDisconnect(req, res, db) {
   return res.json({ ok: true });
 }
 
-// ─── Mercado Libre: OAuth con credenciales del cliente ────────────
-// (Mismo patrón que Shopify — el cliente trae su Client ID + Secret de su app ML)
-// TODO: cuando se carguen ML_CLIENT_ID/SECRET en Vercel, podemos volver al patrón
-// app-única-de-Growith (revertir este commit).
+// ─── Mercado Libre: OAuth con app propia de Growith (1 click) ────────
+const ML_CLIENT_ID     = process.env.ML_CLIENT_ID     || "";
+const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET || "";
+const ML_REDIRECT_URI  = `${SHOPIFY_APP_URL}/api/integrations?platform=mercadolibre&action=callback`;
 
-const ML_REDIRECT_URI = `${SHOPIFY_APP_URL}/api/integrations?platform=mercadolibre&action=callback`;
-
-// POST { uid, client_id, client_secret }
+// POST { uid }  — ya no necesita client_id/secret del usuario
 async function mercadolibreOauthStart(req, res, db) {
   const body = JSON.parse((await readBody(req)).toString());
-  const { uid, client_id, client_secret } = body;
-  if (!uid || !client_id || !client_secret) {
-    return res.status(400).json({ error: "Faltan uid, client_id o client_secret" });
+  const { uid } = body;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  if (!ML_CLIENT_ID || !ML_CLIENT_SECRET) {
+    return res.status(500).json({ error: "ML_CLIENT_ID / ML_CLIENT_SECRET no configurados en el servidor." });
   }
 
   const state = genState();
@@ -210,15 +209,15 @@ async function mercadolibreOauthStart(req, res, db) {
     await db.collection("oauth_pending").doc(state).set({
       uid: String(uid),
       platform: "mercadolibre",
-      client_id: String(client_id).trim(),
-      client_secret: String(client_secret).trim(),
+      client_id:     ML_CLIENT_ID,
+      client_secret: ML_CLIENT_SECRET,
       created_at: new Date().toISOString(),
     });
   } catch (e) {
     return res.status(500).json({ error: "No se pudo guardar el estado OAuth: " + e.message });
   }
 
-  const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${encodeURIComponent(client_id.trim())}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}&state=${encodeURIComponent(state)}`;
+  const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${encodeURIComponent(ML_CLIENT_ID)}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}&state=${encodeURIComponent(state)}`;
   return res.json({ url });
 }
 
