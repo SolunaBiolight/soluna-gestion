@@ -1841,16 +1841,67 @@ export default async function handler(req, res) {
 
     if (action === "emit" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const { cuit: cuitEmit, ordenes, product_map, mes_imputacion } = body;
+      const { cuit: cuitEmit, ordenes, product_map, mes_imputacion, fecha_imputacion_custom } = body;
       if (!cuitEmit || !ordenes) return res.status(400).json({ error: "Faltan cuit u ordenes" });
 
-      // Resolver fecha de imputación. "anterior" = último día hábil del mes pasado.
+      // Resolver fecha de imputación.
+      //
+      // Reglas:
+      //   - mes_imputacion="actual"  → null (ARCA usa hoy)
+      //   - mes_imputacion="anterior" SIN fecha_imputacion_custom
+      //     → último día hábil del mes anterior (compat con flujo viejo)
+      //   - mes_imputacion="anterior" CON fecha_imputacion_custom (YYYYMMDD)
+      //     → usa ese día específico que eligió el merchant
+      //
+      // Validaciones extra cuando es mes anterior:
+      //   - Hoy (zona Argentina) debe estar dentro de los primeros 5 días
+      //     del mes siguiente (regla de negocio Growith — más estricta que
+      //     ARCA, que permite hasta 10).
+      //   - La fecha debe caer dentro del mes calendario anterior.
+      //   - La fecha debe respetar el rango de 10 días corridos de ARCA.
       let fechaImputacion = null;
       if (mes_imputacion === "anterior") {
-        fechaImputacion = ultimoDiaHabilMesAnterior();
+        // Chequeo dia actual ≤ 5 (zona Argentina) — ventana de gracia Growith
+        const argFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" });
+        const partsNow = argFmt.formatToParts(new Date());
+        const diaHoyArg = parseInt(partsNow.find(p => p.type === "day").value);
+        const mesHoyArg = parseInt(partsNow.find(p => p.type === "month").value);
+        const anioHoyArg = parseInt(partsNow.find(p => p.type === "year").value);
+        if (diaHoyArg > 5) {
+          return res.status(400).json({
+            error: `Ya pasaron los primeros 5 días del mes. Hoy es ${diaHoyArg}/${mesHoyArg}, no se puede imputar al mes anterior. ARCA exige emitir dentro de los primeros días hábiles.`
+          });
+        }
+
+        if (fecha_imputacion_custom) {
+          // Validar formato YYYYMMDD
+          if (!/^\d{8}$/.test(String(fecha_imputacion_custom))) {
+            return res.status(400).json({ error: "fecha_imputacion_custom debe ser YYYYMMDD" });
+          }
+          fechaImputacion = String(fecha_imputacion_custom);
+          // Validar que sea del mes calendario anterior
+          const fY = parseInt(fechaImputacion.slice(0, 4));
+          const fM = parseInt(fechaImputacion.slice(4, 6));
+          const fD = parseInt(fechaImputacion.slice(6, 8));
+          const mesAnterior = mesHoyArg === 1 ? 12 : mesHoyArg - 1;
+          const anioMesAnterior = mesHoyArg === 1 ? anioHoyArg - 1 : anioHoyArg;
+          if (fY !== anioMesAnterior || fM !== mesAnterior) {
+            return res.status(400).json({
+              error: `La fecha ${fD}/${fM}/${fY} no pertenece al mes anterior (${String(mesAnterior).padStart(2,"0")}/${anioMesAnterior}). Elegí una fecha de ese mes.`
+            });
+          }
+          // Validar que el día sea válido para ese mes (no 31 de un mes con 30)
+          const diasEnMes = new Date(Date.UTC(anioMesAnterior, mesAnterior, 0)).getUTCDate();
+          if (fD < 1 || fD > diasEnMes) {
+            return res.status(400).json({ error: `El día ${fD} no existe en ${String(mesAnterior).padStart(2,"0")}/${anioMesAnterior} (ese mes tiene ${diasEnMes} días).` });
+          }
+        } else {
+          fechaImputacion = ultimoDiaHabilMesAnterior();
+        }
+
         if (!dentroDe10DiasCorridos(fechaImputacion)) {
           return res.status(400).json({
-            error: `No se puede imputar al mes anterior: la fecha calculada (${fechaImputacion.slice(6,8)}/${fechaImputacion.slice(4,6)}/${fechaImputacion.slice(0,4)}) está fuera del rango de 10 días corridos que permite ARCA. Solo es posible los primeros días hábiles de cada mes.`
+            error: `La fecha ${fechaImputacion.slice(6,8)}/${fechaImputacion.slice(4,6)}/${fechaImputacion.slice(0,4)} está fuera del rango de 10 días corridos que permite ARCA. Elegí una fecha más reciente del mes anterior.`
           });
         }
       }
