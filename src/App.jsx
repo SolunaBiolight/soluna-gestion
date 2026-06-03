@@ -10958,6 +10958,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try { return new Set(JSON.parse(localStorage.getItem(descartadasKey)||"[]")); } catch(_){ return new Set(); }
   });
   const [showDescartadas, setShowDescartadas] = useState(false);
+  const [autoDescartar, setAutoDescartar] = useState(false); // al facturar, descartar automáticamente las no-seleccionadas
   function saveDescartadas(set) {
     setDescartadas(set);
     try { if(descartadasKey) localStorage.setItem(descartadasKey, JSON.stringify([...set])); } catch(_){}
@@ -11276,21 +11277,27 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   function facturarSeleccionadas() {
     if(!tnData?.ordenes) return;
     const filtered = {};
+    const noSeleccionadasIds = [];
     Object.entries(tnData.ordenes).forEach(([id,o])=>{
-      // Doble check: nunca incluir órdenes ya facturadas, aunque el estado tenga tnSelected=true
       if(tnSelected[id] && !o._billed) filtered[id] = o;
+      else if(!tnSelected[id] && !o._billed && !descartadas.has(String(id))) noSeleccionadasIds.push(id);
     });
     if(Object.keys(filtered).length === 0) return toast("Tildá al menos una venta","warning");
     setOrdenes(filtered);
-    // Limpiar resultados / pdfs de la tanda anterior — sino el boton verde no aparece
-    // en la segunda tanda porque `!resultados` queda false.
     setResultados(null);
     setPdfs([]);
     const productos = [...new Set(Object.values(filtered).flatMap(o => o.items.map(i => i.nombre_original)))];
     setProductos(productos);
     setProductMap(Object.fromEntries(productos.map(p=>[p,""])));
-    toast(`${Object.keys(filtered).length} ventas listas para emitir`,"success");
-    // Scroll suave hacia el preview
+    // Auto-descartar las no-seleccionadas si el toggle está activado
+    if(autoDescartar && noSeleccionadasIds.length > 0) {
+      const s = new Set(descartadas);
+      noSeleccionadasIds.forEach(id => s.add(String(id)));
+      saveDescartadas(s);
+      toast(`${Object.keys(filtered).length} listas para emitir · ${noSeleccionadasIds.length} descartadas automáticamente`,"success");
+    } else {
+      toast(`${Object.keys(filtered).length} ventas listas para emitir`,"success");
+    }
     setTimeout(()=>{
       document.getElementById("arca-preview-ordenes")?.scrollIntoView({behavior:"smooth",block:"start"});
     }, 100);
@@ -12124,15 +12131,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <option value="">Elegir % a facturar</option>
                               {[10,20,25,30,40,50,60,70,75,80,90].map(p=><option key={p} value={p}>{p}% ({Math.round(itemsSelectables.length*p/100)} órdenes)</option>)}
                             </select>
-                            {someSel&&!allSel&&(
-                              <button
-                                onClick={()=>descartarNoSeleccionadas(itemsSelectables)}
-                                title="Mover las NO seleccionadas a Descartadas — ya no aparecerán en el listado este mes"
-                                style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,color:T.orange||"#f97316",borderColor:(T.orange||"#f97316")+"44",whiteSpace:"nowrap",gap:5}}>
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-                                Descartar el resto
-                              </button>
-                            )}
+                            {/* Toggle auto-descartar */}
+                            <div onClick={()=>setAutoDescartar(v=>!v)} title={autoDescartar?"Al facturar, las no-seleccionadas se descartan automáticamente":"Las no-seleccionadas quedan pendientes para la próxima vez"} style={{display:"flex",alignItems:"center",gap:7,cursor:"pointer",padding:"4px 10px",borderRadius:6,border:`1px solid ${autoDescartar?(T.orange||"#f97316")+"66":T.border}`,background:autoDescartar?(T.orange||"#f97316")+"12":"transparent",transition:"all 0.15s",userSelect:"none",flexShrink:0}}>
+                              <div style={{width:28,height:16,borderRadius:99,background:autoDescartar?(T.orange||"#f97316"):T.border,transition:"background 0.2s",position:"relative",flexShrink:0}}>
+                                <div style={{position:"absolute",top:2,left:autoDescartar?14:2,width:12,height:12,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+                              </div>
+                              <span style={{fontSize:11,fontWeight:600,color:autoDescartar?(T.orange||"#f97316"):T.textSm,whiteSpace:"nowrap"}}>Auto-descartar restantes</span>
+                            </div>
                           </div>
 
                           {/* Descartadas badge */}
@@ -12227,10 +12232,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               ? <><strong style={{color:T.text,fontSize:13}}>{selectedCount}</strong> seleccionadas · <strong style={{color:T.accent}}>$ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</strong></>
                               : "Ninguna seleccionada"}
                           </div>
-                          {selectedCount>0&&!allSel&&(
-                            <button onClick={()=>descartarNoSeleccionadas(itemsSelectables)} title="Las no seleccionadas no vuelven a aparecer este mes" style={{...BtnSecondary(T),padding:"8px 14px",fontSize:12,color:T.orange||"#f97316",borderColor:(T.orange||"#f97316")+"44"}}>
-                              Descartar el resto ({itemsSelectables.length-selectedCount})
-                            </button>
+                          {autoDescartar&&selectedCount>0&&!allSel&&(
+                            <span style={{fontSize:11,color:T.orange||"#f97316",display:"flex",alignItems:"center",gap:5}}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+                              {itemsSelectables.length-selectedCount} se van a descartar al facturar
+                            </span>
                           )}
                           <button onClick={facturarSeleccionadas} disabled={selectedCount===0} style={{background:"linear-gradient(135deg,#16a34a,#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:selectedCount===0?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:selectedCount===0?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:selectedCount>0?"0 4px 14px #16a34a40":"none",transition:"all 0.15s"}}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
