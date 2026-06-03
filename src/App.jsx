@@ -4161,12 +4161,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
               <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:0.5}}>Cargar desde pedido</div>
               <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={(num, orden)=>{
-                // orden puede venir como segundo arg (búsqueda local o API)
                 const o=orden||orders.find(o=>o.numero===String(num));
-                const prodsCanje=(o?.productos||[]).map(p=>({
-                  nombre:p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,"").replace(/[()]/g,"").trim()||p.sku||p.nombre,
-                  cantidad:parseInt(p.cantidad)||1
-                })).filter(p=>p.nombre);
+                // Fuzzy match: mismo algoritmo que pendingCanje
+                const normalizar=s=>s.toLowerCase().replace(/anteojos soluna.*?blocker\s*/i,"").replace(/[()]/g,"").replace(/[---]/g," ").replace(/\s+/g," ").trim();
+                const prodsCanje=(o?.productos||[]).map(p=>{
+                  const nombre=typeof p==="string"?p:(p.nombre||"");
+                  const n=normalizar(nombre);
+                  const match=PRODUCTOS_CANJE.find(pc=>{
+                    const pcN=normalizar(pc);
+                    if(n===pcN) return true;
+                    const palabras=n.split(" ").filter(w=>w.length>3);
+                    return palabras.length>0&&palabras.every(w=>pcN.includes(w));
+                  });
+                  return {nombre:match||nombre,cantidad:parseInt(p.cantidad)||1};
+                }).filter(p=>p.nombre);
                 setForm(f=>({...f,
                   influencer:f.influencer||(o?.comprador||""),
                   email:f.email||(o?.email||""),
@@ -4175,7 +4183,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   productosCanje:prodsCanje.length>0?prodsCanje:(f.productosCanje||[]),
                   producto:prodsCanje[0]?.nombre||f.producto||"",
                 }));
-                toast(`Pedido #${num} cargado — revisá los datos abajo`,"success");
+                toast(`Pedido #${num} cargado`,"success");
               }}/>
             </div>
 
@@ -4265,6 +4273,38 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
             </div>
 
+            {/* Contenido acordado */}
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Contenido acordado</label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+                {ACTIVIDADES.map(a=>{
+                  const item=(form.contenido||[]).find(x=>x.tipo===a&&(x.acordados||0)>0);
+                  return (
+                    <button key={a} type="button" onClick={()=>{
+                      const lista=form.contenido||[];
+                      const ex=lista.findIndex(x=>x.tipo===a);
+                      const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo:a,acordados:1,entregados:0}];
+                      setForm(f=>({...f,contenido:upd}));
+                    }} style={{fontSize:11,padding:"5px 12px",borderRadius:99,border:`1.5px solid ${item?T.accentSolid:T.border}`,background:item?T.accentSolid+"18":"transparent",color:item?T.accent:T.textMd,cursor:"pointer",fontWeight:item?700:400,transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      {item?`✓ ${a} (${item.acordados})`:`+ ${a}`}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Ajustar cantidad por tipo */}
+              {(form.contenido||[]).filter(x=>(x.acordados||0)>0).map((item,i)=>{
+                const idx=(form.contenido||[]).findIndex(x=>x.tipo===item.tipo);
+                return (
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:12}}>
+                    <span style={{flex:1,color:T.text,fontWeight:600}}>{item.tipo}</span>
+                    <button type="button" onClick={()=>{const upd=(form.contenido||[]).map((x,j)=>j===idx?{...x,acordados:Math.max(0,x.acordados-1)}:x).filter(x=>x.acordados>0);setForm(f=>({...f,contenido:upd}));}} style={{width:22,height:22,borderRadius:5,border:`1px solid ${T.border}`,background:T.surface,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>−</button>
+                    <span style={{minWidth:16,textAlign:"center",fontWeight:700,color:T.text}}>{item.acordados}</span>
+                    <button type="button" onClick={()=>{const upd=(form.contenido||[]).map((x,j)=>j===idx?{...x,acordados:x.acordados+1}:x);setForm(f=>({...f,contenido:upd}));}} style={{width:22,height:22,borderRadius:5,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>+</button>
+                  </div>
+                );
+              })}
+            </div>
+
             {/* Botones */}
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:8,borderTop:"1px solid "+T.borderL}}>
               <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
@@ -4272,7 +4312,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {saving?"Creando...":"Crear canje →"}
               </button>
             </div>
-            <div style={{fontSize:11,color:T.textSm,textAlign:"center"}}>El contenido acordado, tracking y más lo configurás abriendo la tarjeta</div>
           </div>
         )}
       </Modal>
