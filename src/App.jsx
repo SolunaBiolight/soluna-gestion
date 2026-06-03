@@ -545,26 +545,28 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       transition:`width 0.22s ${DS.ease}, min-width 0.22s ${DS.ease}`,overflow:"hidden",zIndex:50,
     }} className="hide-mobile">
       {/* Logo */}
-      <div style={{padding:DS.sp.lg,display:"flex",alignItems:"center",gap:10,borderBottom:`1px solid ${T.border}`,height:60}}>
-        <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <GrowithLogo size={collapsed?26:24} variant="color"/>
+      {collapsed ? (
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,borderBottom:`1px solid ${T.border}`,height:60,padding:"0 4px"}}>
+          <GrowithLogo size={22} variant="color"/>
+          <button onClick={()=>setCollapsed(false)} title="Expandir" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,color:T.textSm,cursor:"pointer",padding:"2px 6px",display:"flex",alignItems:"center",justifyContent:"center",transition:`all 0.15s ${DS.ease}`,width:36}}
+            onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
+            onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textSm;}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
         </div>
-        {!collapsed&&<span style={{fontWeight:DS.w.bold,fontSize:DS.font.xl,color:T.text,letterSpacing:-0.3}}>Growith</span>}
-        {!collapsed&&(
+      ) : (
+        <div style={{padding:DS.sp.lg,display:"flex",alignItems:"center",gap:10,borderBottom:`1px solid ${T.border}`,height:60}}>
+          <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <GrowithLogo size={24} variant="color"/>
+          </div>
+          <span style={{fontWeight:DS.w.bold,fontSize:DS.font.xl,color:T.text,letterSpacing:-0.3}}>Growith</span>
           <button onClick={()=>setCollapsed(true)} title="Colapsar" style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,color:T.textSm,cursor:"pointer",padding:"3px 5px",display:"flex",alignItems:"center",justifyContent:"center",transition:`all 0.15s ${DS.ease}`}}
             onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
             onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textSm;}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
-        )}
-        {collapsed&&(
-          <button onClick={()=>setCollapsed(false)} title="Expandir" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.sm,color:T.textSm,cursor:"pointer",padding:"3px 5px",display:"flex",alignItems:"center",justifyContent:"center",transition:`all 0.15s ${DS.ease}`,marginLeft:-2}}
-            onMouseEnter={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.color=T.text;}}
-            onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color=T.textSm;}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-          </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Nav */}
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
