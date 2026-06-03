@@ -5155,8 +5155,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       else{fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);}
                     }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:isActive?600:400,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
                       {t.label}
-                      {t.id!=="buscar"&&counts[t.id]!==null&&<span style={{background:t.color+(counts[t.id]>0?"33":"18"),color:counts[t.id]>0?t.color:T.textSm,fontSize:10,fontWeight:700,borderRadius:DS.r.full,padding:"1px 7px",minWidth:18,textAlign:"center",lineHeight:1.5}}>
-                        {counts[t.id]}
+                      {t.id!=="buscar"&&<span style={{background:t.color+(counts[t.id]>0?"33":"15"),color:counts[t.id]>0?t.color:t.color+"99",fontSize:10,fontWeight:800,borderRadius:DS.r.full,padding:"0 7px",minWidth:20,height:18,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>
+                        {counts[t.id]===null?"·":counts[t.id]}
                       </span>}
                     </button>
                   );
