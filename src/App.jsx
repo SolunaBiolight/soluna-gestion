@@ -2966,7 +2966,7 @@ function NotasInline({value, onSave, T, iS}) {
 }
 
 
-function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp}) {
+function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp, orders=[]}) {
   const [canjes,setCanjes]=useState([]);
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
@@ -4156,6 +4156,30 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       <Modal T={T} open={!!form&&!form._docId} onClose={()=>setForm(null)} title="Nuevo canje" width={440}>
         {form&&!form._docId&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+            {/* Buscar por número de pedido */}
+            <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:0.5}}>Cargar desde pedido</div>
+              <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={num=>{
+                const o=orders.find(o=>o.numero===String(num));
+                const nombre=o?.comprador||"";
+                const email=o?.email||"";
+                const telefono=o?.telefono||"";
+                const prodsCanje=(o?.productos||[]).map(p=>({
+                  nombre:p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,"").replace(/[()]/g,"").trim()||p.sku||p.nombre,
+                  cantidad:parseInt(p.cantidad)||1
+                })).filter(p=>p.nombre);
+                setForm(f=>({...f,
+                  influencer:f.influencer||nombre,
+                  email:f.email||email,
+                  telefono:f.telefono||telefono,
+                  pedidoRef:String(num),
+                  productosCanje:prodsCanje.length>0?prodsCanje:f.productosCanje,
+                  producto:prodsCanje[0]?.nombre||f.producto||"",
+                }));
+                toast(`Pedido #${num} cargado`,"success");
+              }}/>
+            </div>
 
             {/* Autocompletar desde perfil existente */}
             {influencers.length>0&&(
@@ -5918,9 +5942,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}>
                 <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13}}>🔗 Ver en TN</a>
-                {onGenerarCanje&&(
-                  <button onClick={()=>{setOrderDetail(null);const prodsCanje=o.productos.map(p=>({nombre:p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,"").replace(/[()]/g,"").trim()||p.sku||p.nombre,cantidad:parseInt(p.cantidad)||1})).filter(p=>p.nombre);onGenerarCanje({nombre:o.comprador,email:o.email,telefono:o.telefono,productosCanje:prodsCanje,pedidoRef:o.numero});}} style={{...BtnPrimary(T),fontSize:13}}>🤝 Generar Canje</button>
-                )}
+                <button onClick={()=>{
+                  setSelected(new Set([o.numero]));
+                  setOrderDetail(null);
+                  setExportModal(true);
+                }} style={{...BtnPrimary(T),fontSize:13}}>
+                  📦 Generar etiqueta
+                </button>
               </div>
             </div>
           );
@@ -20562,8 +20590,8 @@ export default function App() {
   else if(page==="meta") pageContent = adminGate("meta") || planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
   else if(page==="tareas") pageContent = adminGate("tareas") || planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab}/></PageView>;
   else if(page==="reclamos") pageContent = adminGate("reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
-  else if(page==="canjes") pageContent = adminGate("canjes") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab}/></PageView>;
-  else if(page==="envios") pageContent = adminGate("envios") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
+  else if(page==="canjes") pageContent = adminGate("canjes") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
+  else if(page==="envios") pageContent = adminGate("envios") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
   else pageContent = <HomeScreen T={T} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     setPage(p);
