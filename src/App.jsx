@@ -10943,7 +10943,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [periodoModo, setPeriodoModo] = useState("7"); // "1"|"7"|"15"|"30"|"60"|"90"|"custom"
   const [fechaDesde, setFechaDesde] = useState(new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10));
   const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0,10));
-  const [canalSel, setCanalSel] = useState("todos"); // "todos" | "tn" | "shopify" | "ml"
+  const [canalesSel, setCanalesSel] = useState([]); // [] = todos, o array de plataformas activas
+  const canalSel = canalesSel.length===0?"todos":canalesSel[0]; // compat legado
   const [metodoPagoSel, setMetodoPagoSel] = useState("todos"); // "todos" | string literal
   const [montoMin, setMontoMin] = useState("");
   const [montoMax, setMontoMax] = useState("");
@@ -11935,14 +11936,36 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     ))}
                     <DateRangePicker T={T} since={fechaDesde} until={fechaHasta} onChange={(s,u)=>{ setPeriodoModo("custom"); setFechaDesde(s); setFechaHasta(u); }}/>
                   </div>
-                  {/* Fila 2: Canal + Pago + Monto */}
+                  {/* Fila 2: Canal (pills) + Pago + Monto */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
-                    <select value={canalSel} onChange={e=>setCanalSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
-                      <option value="todos">Todos los canales</option>
-                      <option value="tiendanube">Tienda Nube</option>
-                      <option value="shopify">Shopify</option>
-                      <option value="mercadolibre">Mercado Libre</option>
-                    </select>
+                    {/* Pills de canal — multi-selección */}
+                    {(()=>{
+                      const canales=[
+                        {id:"tiendanube", label:"TN", color:"#2D8DF2"},
+                        {id:"shopify", label:"Shopify", color:"#96BF48"},
+                        {id:"mercadolibre", label:"ML", color:"#FFE600", textColor:"#1a1a1a"},
+                      ];
+                      const allOff = canalesSel.length===0;
+                      const toggle=(id)=>{
+                        if(canalesSel.includes(id)) setCanalesSel(canalesSel.filter(c=>c!==id));
+                        else setCanalesSel([...canalesSel,id]);
+                      };
+                      return (<>
+                        <button onClick={()=>setCanalesSel([])} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:`1.5px solid ${allOff?T.accentSolid:T.border}`,background:allOff?T.accentSolid:"transparent",color:allOff?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
+                          Todos
+                        </button>
+                        {canales.map(c=>{
+                          const active=canalesSel.includes(c.id);
+                          return (
+                            <button key={c.id} onClick={()=>toggle(c.id)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:`1.5px solid ${active?c.color:T.border}`,background:active?c.color:"transparent",color:active?(c.textColor||"#fff"):T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s",display:"inline-flex",alignItems:"center",gap:5}}>
+                              <span style={{width:6,height:6,borderRadius:"50%",background:active?(c.textColor||"#fff"):c.color,flexShrink:0}}/>
+                              {c.label}
+                            </button>
+                          );
+                        })}
+                        {canalesSel.length>1&&<span style={{fontSize:10,color:T.textSm}}>({canalesSel.length} canales)</span>}
+                      </>);
+                    })()}
                     <select value={metodoPagoSel} onChange={e=>setMetodoPagoSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
                       <option value="todos">Todos los métodos de pago</option>
                       {(()=>{const set=new Set();Object.values(tnData?.ordenes||{}).forEach(o=>{const m=(o.metodo_pago||"").trim();if(m)set.add(m);});return[...set].sort().map(m=><option key={m} value={m}>{m}</option>);})()}
@@ -11953,8 +11976,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <span style={{fontSize:11,color:T.textSm}}>–</span>
                       <input type="number" placeholder="sin límite" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:90,padding:"6px 8px",fontSize:12}}/>
                     </div>
-                    {(canalSel!=="todos"||metodoPagoSel!=="todos"||montoMin||montoMax)&&(
-                      <button onClick={()=>{setCanalSel("todos");setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
+                    {(canalesSel.length>0||metodoPagoSel!=="todos"||montoMin||montoMax)&&(
+                      <button onClick={()=>{setCanalesSel([]);setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
                         ✕ Limpiar filtros
                       </button>
                     )}
@@ -12051,7 +12074,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const maxN = montoMax === "" ? null : parseFloat(montoMax);
                     const items = all.filter(([id, o]) => {
                       if (descartadas.has(String(id))) return false; // excluir descartadas
-                      if (canalSel !== "todos" && o._platform !== canalSel) return false;
+                      if (canalesSel.length>0 && !canalesSel.includes(o._platform)) return false;
                       if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
                       if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
                       if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
