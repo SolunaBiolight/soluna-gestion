@@ -1337,6 +1337,12 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
 
     /* -- Dark mode toggle smooth -- */
     * { transition: background-color 0s, color 0s; }
+
+    /* -- Theme-aware hover helpers -- */
+    .gh-hover-surface:hover { background: var(--gh-surface) !important; }
+    .gh-hover-card:hover { background: var(--gh-card) !important; }
+    .gh-hover-transparent:hover { background: transparent !important; }
+    .gh-hover-bg:hover { background: var(--gh-bg) !important; }
   `;
   document.head.appendChild(s);
 }
@@ -1774,6 +1780,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [bulkSelected,setBulkSelected]=useState(new Set());
   const [bulkEstado,setBulkEstado]=useState("");
   const [dragOverEstado,setDragOverEstado]=useState(null);
+  const [isMobile,setIsMobile]=useState(()=>typeof window!=="undefined"&&window.innerWidth<768);
+
+  useEffect(()=>{
+    const h=()=>setIsMobile(window.innerWidth<768);
+    window.addEventListener('resize',h);
+    return ()=>window.removeEventListener('resize',h);
+  },[]);
 
   // Sincronizar nota interna cuando cambia el reclamo activo
   useEffect(()=>{
@@ -2256,7 +2269,63 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 </div>
               )}
             </div>
-            {/* KANBAN */}
+            {/* Vista mobile: lista agrupada por estado */}
+            {isMobile ? (
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {ESTADOS_R.map(estado=>{
+                  const sc=getEstadoRC(T,estado);
+                  const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo));
+                  if(!items.length) return null;
+                  return (
+                    <div key={estado}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0 6px",borderBottom:`1px solid ${T.borderL}`}}>
+                        <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
+                        <span style={{fontSize:12,fontWeight:700,color:sc.text}}>{estado}</span>
+                        <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:DS.r.full,padding:"1px 7px",marginLeft:"auto"}}>{items.length}</span>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,paddingTop:6}}>
+                        {items.map(r=>{
+                          const o=orders.find(o=>o.numero===r.orderNum);
+                          const nombre=r.clienteNombre||o?.comprador;
+                          const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):null;
+                          const urgente=!["Resuelto","Rechazado"].includes(r.estado)&&dias>=slaConfig.dias;
+                          const tc=getTipoRC(T,r.tipo);
+                          return (
+                            <div key={r._docId}
+                              onClick={()=>setActiveReclamo(activeReclamo===r._docId?null:r._docId)}
+                              style={{background:activeReclamo===r._docId?T.accentSolid+"18":T.card,border:`1px solid ${urgente?T.red+"55":T.borderL}`,borderLeft:`3px solid ${urgente?T.red:sc.dot}`,borderRadius:DS.r.md,padding:"10px 12px",cursor:"pointer"}}>
+                              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                                <div style={{minWidth:0}}>
+                                  {nombre&&<div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
+                                  <div style={{fontSize:11,color:T.accent}}>#{r.orderNum}</div>
+                                </div>
+                                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3,flexShrink:0}}>
+                                  <span style={{fontSize:10,fontWeight:600,color:tc.text,background:tc.bg,borderRadius:DS.r.sm,padding:"2px 6px"}}>{r.tipo}</span>
+                                  {dias!==null&&<span style={{fontSize:10,color:urgente?T.red:T.textSm,fontWeight:urgente?700:400}}>{dias}d</span>}
+                                </div>
+                              </div>
+                              <div style={{marginTop:8,display:"flex",alignItems:"center",gap:6}}>
+                                <span style={{fontSize:10,color:T.textSm}}>Mover a:</span>
+                                <select value={r.estado} onChange={async e=>{
+                                  const nuevo=e.target.value;
+                                  if(nuevo===r.estado) return;
+                                  const entry={accion:`Estado > ${nuevo}`,fecha:new Date().toISOString()};
+                                  await updateDoc(doc(db,"reclamos",r._docId),{estado:nuevo,historial:[...(r.historial||[]),entry],updatedAt:serverTimestamp(),...(nuevo==="Resuelto"?{resolvedAt:serverTimestamp()}:{})});
+                                  toast(`Movido a ${nuevo}`,"success");
+                                }} onClick={e=>e.stopPropagation()} style={{...InputStyle(T),fontSize:11,padding:"3px 6px",flex:1}}>
+                                  {ESTADOS_R.map(s=><option key={s} value={s}>{s}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+            /* KANBAN desktop */
             <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16}}>
                 {ESTADOS_R.map(estado=>{
                   const sc=getEstadoRC(T,estado);
@@ -2319,6 +2388,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   );
                 })}
               </div>
+            )}
           </div>
         )}
 
@@ -19683,6 +19753,62 @@ function AppRendimiento({T, user, onHome}) {
 }
 
 
+// ─── Andreani Polling Service (global, fuera de App) ───
+function AndreaniPollingService({uid, onAlerts}) {
+  const [reclamos, setReclamos] = useState([]);
+  const reclamosRef = useRef([]);
+
+  useEffect(()=>{
+    if(!uid) return;
+    const q = query(collection(db,"reclamos"),where("ownerId","==",uid));
+    const unsub = onSnapshot(q, snap=>{
+      const data = snap.docs.map(d=>({...d.data(),_docId:d.id}));
+      setReclamos(data);
+      reclamosRef.current = data;
+    });
+    return ()=>unsub();
+  },[uid]);
+
+  useEffect(()=>{
+    const conTracking = reclamos.filter(r=>
+      !["Resuelto","Rechazado"].includes(r.estado) &&
+      (r.trackingDevolucion?.trim() || r.trackingCambio?.trim())
+    );
+    if(!conTracking.length) return;
+
+    async function checkAndreani() {
+      const alertas = [];
+      await Promise.all(conTracking.map(async(rOrig)=>{
+        const r = reclamosRef.current.find(x=>x._docId===rOrig._docId)||rOrig;
+        if(["Resuelto","Rechazado"].includes(r.estado)) return;
+        const trackings = [r.trackingDevolucion, r.trackingCambio].filter(Boolean);
+        for(const trk of trackings) {
+          try {
+            const res = await fetch(`/api/andreani-tracking?tracking=${encodeURIComponent(trk.trim())}`);
+            if(!res.ok) continue;
+            const d = await res.json();
+            const ea = d?.estado||d?.estadoActual||d?.ultimoEvento?.estado||"";
+            if(ea.toLowerCase().includes("sucursal")||ea.toLowerCase().includes("disponible")||ea.toLowerCase().includes("listo"))
+              alertas.push({docId:r._docId,orderNum:r.orderNum,tracking:trk.trim()});
+          } catch(_){}
+        }
+      }));
+      if(alertas.length>0) {
+        onAlerts(alertas.length);
+        toast(`📦 ${alertas.length} paquete${alertas.length>1?"s":""} listo${alertas.length>1?"s":""} para retirar en sucursal Andreani`,"info");
+        if("Notification" in window && Notification.permission==="granted")
+          new Notification("Growith - Andreani 📦",{body:`${alertas.length} paquete${alertas.length>1?"s":""} listo${alertas.length>1?"s":""} para retirar`,icon:"/favicon.ico"});
+      }
+    }
+
+    checkAndreani();
+    const interval = setInterval(checkAndreani, 30*60*1000);
+    return ()=>clearInterval(interval);
+  },[reclamos.length]);
+
+  return null;
+}
+
 // ROOT APP
 // ===========================================
 export default function App() {
@@ -19731,12 +19857,21 @@ export default function App() {
   const [enviosTab,setEnviosTab]=useState("panel");
   const [reclamosView,setReclamosView]=useState("reclamos");
   const [metaTab,setMetaTab]=useState("productos");
-  const [stockTab,setStockTab]=useState("analisis");
-  const [arcaTab,setArcaTab]=useState("metricas");
+  const [stockTab,setStockTab]=useState(()=>{
+    const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
+    if(parts[0]==="stock"&&parts[1]) return parts[1];
+    return "analisis";
+  });
+  const [arcaTab,setArcaTab]=useState(()=>{
+    const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
+    if(parts[0]==="arca"&&parts[1]) return parts[1];
+    return "metricas";
+  });
   const [tareasTab,setTareasTab]=useState("tareas");
   const [mlTab,setMlTab]=useState("gestion");
   const [canjesTab,setCanjesTab]=useState("activos");
   const [cmdOpen,setCmdOpen]=useState(false);
+  const [andreaniAlertCount,setAndreaniAlertCount]=useState(0);
   const [tareasForReview,setTareasForReview]=useState(0);
   const [connectedStores,setConnectedStores]=useState({tn:false,shopify:false,ml:false,meta:false});
   // Multi-org Fase 1 — orgs[] vive en el user doc; active_org_id es el actual.
@@ -19838,9 +19973,32 @@ export default function App() {
     document.body.style.background=T.bg;
   },[T.bg]);
 
+  // Sincronizar CSS custom properties con el tema activo
+  useEffect(()=>{
+    const root = document.documentElement;
+    root.style.setProperty('--gh-bg', T.bg);
+    root.style.setProperty('--gh-surface', T.surface);
+    root.style.setProperty('--gh-card', T.card);
+    root.style.setProperty('--gh-border', T.border);
+    root.style.setProperty('--gh-text', T.text);
+    root.style.setProperty('--gh-text-md', T.textMd);
+    root.style.setProperty('--gh-text-sm', T.textSm);
+    root.style.setProperty('--gh-accent', T.accent);
+  },[T]);
+
   useEffect(()=>{
     try { localStorage.setItem("growith_theme", darkMode?"dark":"light"); } catch(e){}
   },[darkMode]);
+
+  // Sincronizar hash con página y sub-tab activo
+  useEffect(()=>{
+    if(typeof window==="undefined") return;
+    const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:"";
+    const newHash = `#/${page}${sub}`;
+    if(window.location.hash !== newHash) {
+      window.history.replaceState(null,"",newHash);
+    }
+  },[page, stockTab, arcaTab]);
 
   // Auth state listener
   useEffect(()=>{
@@ -20201,7 +20359,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}
@@ -20230,6 +20388,7 @@ export default function App() {
       <MobileBottomNav/>
       <ToastContainer T={T}/>
       <AppPromptHost T={T}/>
+      {user && <AndreaniPollingService uid={user.uid} onAlerts={setAndreaniAlertCount}/>}
     </>
   );
 }
