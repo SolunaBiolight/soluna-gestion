@@ -150,17 +150,23 @@ function KPI({T, label, value, sub, color, icon, accent, onClick, compact, loadi
   );
 }
 
+// Sistema de botones unificado — visualmente idéntico a BtnPrimary/BtnSecondary/BtnDanger
 function Btn({T, variant="primary", size="md", icon, children, onClick, disabled, style={}, ...rest}) {
   const variants = {
-    primary:   {bg:T.isDark?"#f0f0f0":"#111113", color:T.isDark?"#111113":"#ffffff", border:"transparent"},
-    secondary: {bg:T.card, color:T.text, border:T.border},
-    ghost:     {bg:"transparent", color:T.textMd, border:"transparent"},
-    danger:    {bg:T.red, color:"#fff", border:"transparent"},
-    success:   {bg:T.green, color:"#fff", border:"transparent"},
+    // Igual a BtnPrimary(T): gradiente violeta→índigo
+    primary:   {bg:"linear-gradient(135deg, #6d28d9, #4338ca)", color:"#fff", border:"transparent", shadow:"0 2px 12px #6d28d933"},
+    // Igual a BtnSecondary(T): transparente con borde
+    secondary: {bg:"transparent", color:T.textMd, border:T.border, shadow:"none"},
+    // Ghost: sin relleno ni borde
+    ghost:     {bg:"transparent", color:T.textMd, border:"transparent", shadow:"none"},
+    // Igual a BtnDanger(T): fondo rojo suave, texto rojo
+    danger:    {bg:T.redBg, color:T.red, border:T.red+"44", shadow:"none"},
+    // Success: verde sólido
+    success:   {bg:T.green, color:"#fff", border:"transparent", shadow:`0 2px 8px ${T.green}33`},
   };
   const sizes = {
     sm: {padding:"5px 10px", fontSize:DS.font.sm, gap:5},
-    md: {padding:"7px 14px", fontSize:DS.font.base, gap:6},
+    md: {padding:"8px 14px", fontSize:DS.font.base, gap:6},
     lg: {padding:"10px 20px", fontSize:DS.font.lg, gap:8},
   };
   const v = variants[variant]||variants.primary;
@@ -175,9 +181,11 @@ function Btn({T, variant="primary", size="md", icon, children, onClick, disabled
         cursor: disabled?"not-allowed":"pointer",
         fontWeight: DS.w.semibold,
         fontFamily: "'Inter',system-ui,sans-serif",
+        letterSpacing:"0.01em",
         display:"inline-flex",alignItems:"center",justifyContent:"center",
         transition: `all 0.15s ${DS.ease}`,
         opacity: disabled?0.5:1,
+        boxShadow: disabled?"none":v.shadow,
         ...s,
         ...style,
       }}>

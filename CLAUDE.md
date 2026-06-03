@@ -86,9 +86,26 @@ El tema activo se pasa como prop `T` a todos los componentes.
 Componentes base reusables (usar siempre en código nuevo):
 - `<Card T={T} padding="lg" hoverable onClick={fn}>` — contenedor estándar
 - `<KPI T={T} label="" value="" sub="" icon="" color="" onClick={fn}>` — métrica
-- `<Btn T={T} variant="primary|secondary|ghost|danger" size="sm|md|lg">` — botón
+- `<Btn T={T} variant="primary|secondary|ghost|danger|success" size="sm|md|lg">` — botón React
 - `<DSBadge T={T} color={T.red} size="sm|md">` — badge/chip
 - `<DSEmpty T={T} icon="" title="" subtitle="" action={<Btn/>}>` — estado vacío
+- `<DSToggle T={T} active={bool} onToggle={fn}>` — switch toggle
+- `<ModalCloseBtn T={T} onClick={fn} disabled={bool}>` — botón ✕ estándar de modales
+
+### Sistema de botones — dos formas equivalentes
+Ambas producen el mismo resultado visual. Usá la que más te convenga en cada contexto:
+```js
+// Forma React (para código nuevo o cuando ya usás JSX):
+<Btn T={T} variant="primary">Acción</Btn>
+<Btn T={T} variant="secondary">Cancelar</Btn>
+<Btn T={T} variant="danger">Eliminar</Btn>
+
+// Forma style-object (legacy, sigue funcionando igual):
+<button style={{...BtnPrimary(T)}}>Acción</button>
+<button style={{...BtnSecondary(T)}}>Cancelar</button>
+<button style={{...BtnDanger(T)}}>Eliminar</button>
+```
+**No mezclar estilos de un sistema con el otro** (ej: no hacer `<Btn style={{...BtnPrimary(T)}}>`).
 
 ## Integraciones externas
 | Plataforma | Estado | Cómo se guarda |
