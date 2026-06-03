@@ -2975,10 +2975,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [filterRed,setFilterRed]=useState("");
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [saving,setSaving]=useState(false);
-  // Mapeo sidebar(id) → viewTab interno. Activos=lista, Historial=ranking, Influencers=perfiles
-  const sidebarToInternal = { activos:"lista", historial:"comisiones", influencers:"perfiles" };
+  // Mapeo sidebar(id) → viewTab interno. Activos=kanban (default), Historial=comisiones, Influencers=perfiles
+  const sidebarToInternal = { activos:"kanban", historial:"comisiones", influencers:"perfiles" };
   const internalToSidebar = { lista:"activos", kanban:"activos", comisiones:"historial", perfiles:"influencers" };
-  const [viewTabLocal,setViewTabLocal]=useState("lista");
+  const [viewTabLocal,setViewTabLocal]=useState("kanban");
+  const [dragOverEstado,setDragOverEstado]=useState(null);
   const viewTab = tabProp !== undefined ? (sidebarToInternal[tabProp] || tabProp) : viewTabLocal;
   const setViewTab = (v) => {
     setViewTabLocal(v);
@@ -3280,7 +3281,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           ].map((s,i,arr)=>{
             const isActive=filterEstado===s.estado;
             return (
-              <div key={s.label} onClick={()=>{setFilterEstado(s.estado);setViewTab("lista");}}
+              <div key={s.label} onClick={()=>{setFilterEstado(s.estado);if(viewTab!=="comisiones"&&viewTab!=="perfiles")setViewTab("kanban");}}
                 style={{flex:1,padding:"20px 16px",borderRight:i<arr.length-1?"1px solid "+T.borderL:"none",textAlign:"center",cursor:"pointer",background:isActive?s.color+"12":"transparent",transition:"background 0.15s ease",userSelect:"none"}}
                 onMouseEnter={e=>!isActive&&(e.currentTarget.style.background=T.surface)}
                 onMouseLeave={e=>!isActive&&(e.currentTarget.style.background="transparent")}>
@@ -3394,68 +3395,116 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           )}
         </div>}
 
-        {/* KANBAN */}
+        {/* KANBAN con drag-and-drop */}
         {viewTab==="kanban"&&(
-          <div key="kanban" className="gh-tab-content" style={{paddingBottom:48}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,paddingBottom:8}}>
+          <div key="kanban" style={{paddingBottom:48}}>
+            {/* Barra de búsqueda/filtro encima del kanban */}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+              <input type="text" placeholder="🔍 Buscar influencer..." value={search} onChange={e=>setSearch(e.target.value)}
+                style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",flex:"1 1 180px",maxWidth:260,outline:"none"}}/>
+              <select value={filterRed} onChange={e=>setFilterRed(e.target.value)} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <option value="">Todas las redes</option>
+                {["Instagram","TikTok","YouTube","Twitter/X","Twitch"].map(r=><option key={r}>{r}</option>)}
+              </select>
+              <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Arrastrá las tarjetas para cambiar estado</span>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,alignItems:"start"}}>
               {ESTADOS_C.map(estado=>{
                 const sc=getEstadoCC(T,estado);
-                const cols=canjes.filter(c=>c.estado===estado);
+                const isDragOver=dragOverEstado===estado;
+                const cols=(filterEstado?canjes.filter(c=>c.estado===estado):canjes.filter(c=>c.estado===estado))
+                  .filter(c=>{
+                    if(search&&!c.influencer?.toLowerCase().includes(search.toLowerCase())&&!c.usuario?.toLowerCase().includes(search.toLowerCase())) return false;
+                    if(filterRed&&c.red!==filterRed) return false;
+                    return true;
+                  });
                 return (
-                  <div key={estado} style={{background:T.card,borderRadius:12,border:"1px solid "+T.border,overflow:"hidden"}}>
-                    <div style={{padding:"12px 14px",borderBottom:`1px solid ${T.borderL}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div key={estado}
+                    onDragOver={e=>{e.preventDefault();setDragOverEstado(estado);}}
+                    onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverEstado(null);}}
+                    onDrop={async e=>{
+                      e.preventDefault();setDragOverEstado(null);
+                      const docId=e.dataTransfer.getData("canjeId");
+                      if(!docId) return;
+                      const c=canjes.find(x=>x._docId===docId);
+                      if(!c||c.estado===estado) return;
+                      await updateDoc(doc(db,"canjes",docId),{estado,updatedAt:serverTimestamp(),...(estado==="Cerrado"&&c.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});
+                      toast(`Movido a "${estado}"`, "success");
+                    }}
+                    style={{background:isDragOver?sc.dot+"10":T.card,borderRadius:12,border:`1.5px solid ${isDragOver?sc.dot:T.border}`,overflow:"hidden",transition:"border-color 0.15s,background 0.15s",boxShadow:isDragOver?`0 0 0 3px ${sc.dot}22`:"none"}}>
+                    {/* Header columna */}
+                    <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:sc.dot+"10"}}>
                       <div style={{display:"flex",alignItems:"center",gap:7}}>
-                        <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot}}/>
+                        <span style={{width:9,height:9,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
                         <span style={{fontSize:12,fontWeight:700,color:sc.text}}>{estado}</span>
                       </div>
-                      <span style={{fontSize:12,fontWeight:700,color:T.textSm,background:T.bg,borderRadius:20,padding:"2px 8px"}}>{cols.length}</span>
+                      <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:99,padding:"1px 8px",minWidth:20,textAlign:"center"}}>{cols.length}</span>
                     </div>
-                    <div style={{padding:"8px",display:"flex",flexDirection:"column",gap:8,minHeight:100}}>
-                      {cols.map(c=>(
-                        <div key={c._docId} onClick={()=>setDetail(c._docId)}
-                          style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px",cursor:"pointer",transition:"all 0.15s"}}
-                          onMouseEnter={e=>{e.currentTarget.style.borderColor=sc.dot;e.currentTarget.style.transform="translateY(-1px)";}}
-                          onMouseLeave={e=>{e.currentTarget.style.borderColor=T.borderL;e.currentTarget.style.transform="none";}}>
-                          {(()=>{
-                            if(!c.fechaEnvio||(c.estado!=="Enviado"&&c.estado!=="Contenido pendiente")) return null;
-                            const dias=Math.floor((Date.now()-new Date(c.fechaEnvio).getTime())/(1000*60*60*24));
-                            const col=dias>=15?T.red:dias>=7?T.orange:T.green;
-                            const bg=dias>=15?T.redBg:dias>=7?T.orangeBg:T.greenBg;
-                            return <div style={{background:bg,border:`1px solid ${col}44`,borderRadius:5,padding:"2px 7px",fontSize:10,fontWeight:700,color:col,marginBottom:6}}>📦 {dias}d</div>;
-                          })()}
-                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                            <Avatar src={c.foto} name={c.influencer} size={28} radius={7} T={T}/>
-                            <div>
-                              <div style={{fontSize:12,fontWeight:700,color:T.text,lineHeight:1.2}}>{c.influencer}</div>
-                              {c.usuario&&<div style={{fontSize:11,color:T.accent}}>@{c.usuario}</div>}
+
+                    {/* Tarjetas */}
+                    <div style={{padding:8,display:"flex",flexDirection:"column",gap:7,minHeight:120}}>
+                      {cols.length===0&&(
+                        <div style={{textAlign:"center",padding:"24px 8px",fontSize:11,color:T.textSm,opacity:0.5,border:`1.5px dashed ${T.border}`,borderRadius:8,margin:4}}>
+                          Soltá aquí
+                        </div>
+                      )}
+                      {cols.map(c=>{
+                        const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
+                        const totalAcordado=cont.reduce((a,x)=>a+(x.acordados||0),0);
+                        const totalEntregado=cont.reduce((a,x)=>a+(x.entregados||0),0);
+                        const pctContenido=totalAcordado>0?Math.round((totalEntregado/totalAcordado)*100):null;
+                        const diasEnvio=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio))/(86400000)):null;
+                        const urgente=diasEnvio!==null&&diasEnvio>14&&(c.estado==="Enviado"||c.estado==="Contenido pendiente");
+                        const prods=(c.productosCanje||[]);
+                        return (
+                          <div key={c._docId}
+                            draggable
+                            onDragStart={e=>{e.dataTransfer.setData("canjeId",c._docId);e.dataTransfer.effectAllowed="move";}}
+                            onDragEnd={()=>setDragOverEstado(null)}
+                            onClick={()=>setDetail(c._docId)}
+                            style={{background:T.bg,border:`1px solid ${urgente?T.red+"55":T.borderL}`,borderLeft:`3px solid ${urgente?T.red:sc.dot}`,borderRadius:10,padding:"10px 11px",cursor:"grab",transition:`all 0.12s`,userSelect:"none",position:"relative"}}
+                            onMouseEnter={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.boxShadow=`0 2px 8px rgba(0,0,0,0.12)`;}}
+                            onMouseLeave={e=>{e.currentTarget.style.background=T.bg;e.currentTarget.style.boxShadow="none";}}>
+
+                            {/* Badge días envío */}
+                            {diasEnvio!==null&&(c.estado==="Enviado"||c.estado==="Contenido pendiente")&&(
+                              <div style={{position:"absolute",top:8,right:8,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:99,background:diasEnvio>=15?T.redBg:diasEnvio>=7?T.orangeBg:T.greenBg,color:diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green,border:`1px solid ${diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green}33`}}>
+                                {diasEnvio}d
+                              </div>
+                            )}
+
+                            {/* Influencer */}
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
+                              <Avatar src={c.foto} name={c.influencer} size={30} radius={8} T={T}/>
+                              <div style={{minWidth:0,flex:1}}>
+                                <div style={{fontSize:12,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:28}}>{c.influencer||"Sin nombre"}</div>
+                                {c.usuario&&<div style={{fontSize:10,color:T.accent}}>@{c.usuario}</div>}
+                              </div>
                             </div>
-                          </div>
-                          {c.nicho&&<span style={{fontSize:10,background:T.purpleBg,color:T.purple,borderRadius:4,padding:"2px 6px",fontWeight:500}}>{c.nicho}</span>}
-                          {(()=>{
-                            const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
-                            if(!cont.length) return null;
-                            const diasEnviado=c.fechaEnvio?Math.floor((Date.now()-new Date(c.fechaEnvio))/(86400000)):null;
-                            const pendiente=cont.some(x=>(x.entregados||0)<(x.acordados||0));
-                            const vencido=pendiente&&diasEnviado!==null&&diasEnviado>14;
-                            return(
-                              <div style={{marginTop:6}}>
-                                {vencido&&<div style={{fontSize:9,color:T.red,fontWeight:700,background:T.redBg,borderRadius:4,padding:"2px 6px",marginBottom:4,display:"inline-block"}}>⚠ Contenido vencido ({diasEnviado}d)</div>}
-                                <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
-                                  {cont.map(x=>{
-                                    const done=(x.entregados||0)>=(x.acordados||0);
-                                    return(
-                                      <button key={x.tipo} onClick={async e=>{e.stopPropagation();const newEnt=Math.min((x.acordados||0),(x.entregados||0)+1);const newCont=(c.contenido||[]).map(xx=>xx.tipo===x.tipo?{...xx,entregados:newEnt}:xx);await updateDoc(doc(db,"canjes",c._docId),{contenido:newCont,updatedAt:serverTimestamp()});}} title={done?"Ya completado":"Marcar 1 entregado"}
-                                        style={{fontSize:9,padding:"2px 6px",borderRadius:20,fontWeight:700,background:done?T.greenBg:T.orangeBg,color:done?T.green:T.orange,whiteSpace:"nowrap",border:"none",cursor:done?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                        {done?"✓":"+"} {x.tipo} {x.entregados||0}/{x.acordados}
-                                      </button>
-                                    );
-                                  })}
+
+                            {/* Chips info */}
+                            <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:pctContenido!==null?7:0}}>
+                              {c.red&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:600,border:`1px solid ${T.border}`}}>{c.red}</span>}
+                              {c.nicho&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.purpleBg,color:T.purple,fontWeight:600}}>{c.nicho}</span>}
+                              {prods.length>0&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.border}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:100}} title={prods.map(p=>p.producto).join(", ")}>{prods[0]?.producto}{prods.length>1?` +${prods.length-1}`:""}</span>}
+                            </div>
+
+                            {/* Barra de progreso contenido */}
+                            {pctContenido!==null&&(
+                              <div>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                                  <span style={{fontSize:9,color:T.textSm}}>Contenido</span>
+                                  <span style={{fontSize:9,fontWeight:700,color:pctContenido===100?T.green:urgente?T.red:T.textMd}}>{totalEntregado}/{totalAcordado}</span>
+                                </div>
+                                <div style={{height:4,background:T.borderL,borderRadius:99,overflow:"hidden"}}>
+                                  <div style={{height:"100%",width:`${pctContenido}%`,background:pctContenido===100?T.green:urgente?T.red:T.orange,borderRadius:99,transition:"width 0.3s"}}/>
                                 </div>
                               </div>
-                            );
-                          })()}
-                        </div>
-                      ))}
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
