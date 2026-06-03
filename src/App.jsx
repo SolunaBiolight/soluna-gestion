@@ -1676,6 +1676,22 @@ function InputStyle(T) {
   };
 }
 
+// Ícono de estado para modales de resultado (reemplaza emojis ✅❌⚠️)
+function StatusIcon({type="success", size=64}) {
+  const cfg = {
+    success: { bg:"linear-gradient(135deg,#22c55e,#16a34a)", shadow:"#22c55e44", path:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/> },
+    error:   { bg:"linear-gradient(135deg,#ef4444,#dc2626)", shadow:"#ef444444", path:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></> },
+    warning: { bg:"linear-gradient(135deg,#f59e0b,#d97706)", shadow:"#f59e0b44", path:<><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/></> },
+  };
+  const c = cfg[type]||cfg.success;
+  const r = Math.round(size*0.27);
+  return (
+    <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size,height:size,borderRadius:r,background:c.bg,boxShadow:`0 8px 24px ${c.shadow}`,flexShrink:0}}>
+      <svg width={size*0.5} height={size*0.5} viewBox="0 0 24 24" fill="none">{c.path}</svg>
+    </div>
+  );
+}
+
 function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:"linear-gradient(135deg, #6d28d9, #4338ca)",color:"#fff",letterSpacing:"0.01em",boxShadow:"0 2px 12px #6d28d933"}; }
 function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:"transparent",color:T.textMd}; }
 function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
@@ -4985,7 +5001,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             ) : (
               <>
                 <div style={{textAlign:"center",marginBottom:24}}>
-                  <div style={{fontSize:48,marginBottom:12}}>{seguimientoProgress.fail===0?"✅":seguimientoProgress.ok===0?"❌":"⚠️"}</div>
+                  <div style={{marginBottom:16}}><StatusIcon type={seguimientoProgress.fail===0?"success":seguimientoProgress.ok===0?"error":"warning"} size={64}/></div>
                   <div style={{fontSize:18,fontWeight:800,color:seguimientoProgress.fail===0?T.green:seguimientoProgress.ok===0?T.red:(T.orange||"#f97316"),marginBottom:6}}>
                     {seguimientoProgress.fail===0?"¡Seguimientos enviados!":seguimientoProgress.ok===0?"Error al enviar":"Envío parcial"}
                   </div>
@@ -5057,7 +5073,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             ) : (
               <>
                 <div style={{textAlign:"center",marginBottom:24}}>
-                  <div style={{fontSize:48,marginBottom:12}}>✅</div>
+                  <StatusIcon type="success" size={64}/>
                   <div style={{fontSize:18,fontWeight:800,color:T.green,marginBottom:6}}>¡Etiquetas generadas!</div>
                   <div style={{fontSize:13,color:T.textSm}}>El archivo Excel fue descargado a tu computadora</div>
                 </div>
@@ -5510,7 +5526,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 {/* Botón de descarga prominente cuando está listo */}
                 {skuBlob&&!skuGenerating&&(
                   <div style={{background:"linear-gradient(135deg,#16a34a18,#16a34a08)",border:`2px solid ${T.green}66`,borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
-                    <div style={{width:44,height:44,borderRadius:12,background:T.green+"30",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>✅</div>
+                    <StatusIcon type="success" size={44}/>
                     <div style={{flex:1}}>
                       <div style={{fontSize:15,fontWeight:800,color:T.green,marginBottom:3}}>¡PDF listo para descargar!</div>
                       <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos con SKUs escritos{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
@@ -6240,7 +6256,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 
         {totalPendientes===0?(
           <div style={{textAlign:"center",padding:"28px 0"}}>
-            <div style={{fontSize:36,marginBottom:DS.sp.sm}}>✅</div>
+            <div style={{display:"flex",justifyContent:"center",marginBottom:DS.sp.sm}}><StatusIcon type="success" size={52}/></div>
             <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,marginBottom:4}}>Todo en orden</div>
             <div style={{fontSize:DS.font.sm,color:T.textSm}}>Sin alertas ni pendientes por ahora</div>
           </div>
@@ -7213,7 +7229,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
   if(step==="enviado") return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{textAlign:"center",maxWidth:420}}>
-        <div style={{fontSize:64,marginBottom:20}}>✅</div>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:20}}><StatusIcon type="success" size={72}/></div>
         <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>¡Pago enviado!</div>
         <div style={{fontSize:14,color:T.textMd,marginBottom:8,lineHeight:1.6}}>
           {metodo==="cripto"?"Verificaremos tu transacción y activaremos tu plan ":"Confirmaremos tu transferencia y activaremos tu plan "}
@@ -13103,7 +13119,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             ):(
               <>
                 <div style={{textAlign:"center",marginBottom:24}}>
-                  <div style={{fontSize:40,marginBottom:12}}>{emitProgress.fail===0?"✅":emitProgress.ok===0?"❌":"⚠️"}</div>
+                  <div style={{marginBottom:16}}><StatusIcon type={emitProgress.fail===0?"success":emitProgress.ok===0?"error":"warning"} size={64}/></div>
                   <div style={{fontSize:18,fontWeight:800,color:emitProgress.fail===0?T.green:emitProgress.ok===0?T.red:T.orange,marginBottom:6}}>
                     {emitProgress.fail===0?"¡Listo! Todas las facturas emitidas":emitProgress.ok===0?"Error al emitir":`${emitProgress.ok} emitidas, ${emitProgress.fail} con error`}
                   </div>
@@ -19207,7 +19223,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                 {alertas.length===0?(
                   <div style={{background:T.card,border:`1px solid ${T.green}44`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
-                    <div style={{fontSize:36,marginBottom:10}}>✅</div>
+                    <div style={{marginBottom:14,display:"flex",justifyContent:"center"}}><StatusIcon type="success" size={56}/></div>
                     <div style={{fontSize:15,fontWeight:700,color:T.green}}>Todo el stock está OK</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Ningún producto supera el umbral de alerta configurado</div>
                   </div>
