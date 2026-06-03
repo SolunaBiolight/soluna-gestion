@@ -32,7 +32,7 @@ const DARK = {
   textMd:   "#a1a1aa",
   textSm:   "#71717a",
   accent:   "#a78bfa",
-  accentSolid:"#5b21b6",
+  accentSolid:"#7c3aed",
   green:    "#4ade80",
   greenBg:  "#052e16",
   yellow:   "#fbbf24",
@@ -61,7 +61,7 @@ const LIGHT = {
   textMd:   "#52525b",
   textSm:   "#a1a1aa",
   accent:   "#7c3aed",
-  accentSolid:"#5b21b6",
+  accentSolid:"#7c3aed",
   green:    "#16a34a",
   greenBg:  "#f0fdf4",
   yellow:   "#ca8a04",
@@ -1656,7 +1656,7 @@ function InputStyle(T) {
   };
 }
 
-function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid,color:"#fff",letterSpacing:"0.01em",boxShadow:`0 2px 12px ${T.accentSolid}44`}; }
+function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:"linear-gradient(135deg, #6d28d9, #4338ca)",color:"#fff",letterSpacing:"0.01em",boxShadow:"0 2px 12px #6d28d933"}; }
 function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:"transparent",color:T.textMd}; }
 function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
 function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
