@@ -3887,138 +3887,153 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           </div>
         )}
       </Modal>
-      <Modal T={T} open={!!detail} onClose={()=>{setDetail(null);setDeleteConfirm(null);}} title={detailC?detailC.influencer:""} width={560}>
+      <Modal T={T} open={!!detail} onClose={()=>{setDetail(null);setDeleteConfirm(null);}} title="" width={540}>
         {detailC&&(()=>{
           const c=canjes.find(x=>x._docId===detailC._docId)||detailC;
           const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
           const totalEntregados=(c.contenido||[]).reduce((s,x)=>s+(x.entregados||0),0);
           const progreso=totalAcordados>0?Math.round((totalEntregados/totalAcordados)*100):0;
-          const hoy=new Date().toISOString().split("T")[0];
-          const recordatorioVencido=c.recordatorio&&c.recordatorio<=hoy;
-          const igHref=c.linkInstagram?(c.linkInstagram.startsWith("http")?c.linkInstagram:"https://instagram.com/"+c.linkInstagram.replace("@","")):(c.usuario?"https://instagram.com/"+c.usuario.replace("@",""):null);
-          const bS={width:22,height:22,border:"1px solid "+T.border,borderRadius:5,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0};
+          const bS={width:24,height:24,border:"1px solid "+T.border,borderRadius:6,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"};
           const save=async(fields)=>{try{await updateDoc(doc(db,"canjes",c._docId),{...fields,updatedAt:serverTimestamp()});}catch(e){}};
-          return (
-            <div>
+          const igHref=c.usuario?"https://instagram.com/"+c.usuario.replace("@",""):null;
 
-              {/* Estado: chips clickeables */}
-              <div style={{marginBottom:14}}>
-                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                  {ESTADOS_C.map(est=>{
-                    const s2=getEstadoCC(T,est);
-                    const active=c.estado===est||(est==="Por enviar"&&c.estado==="Pendiente envío");
-                    return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});}}
-                      style={{fontSize:11,fontWeight:active?700:500,padding:"5px 12px",borderRadius:20,border:"2px solid "+(active?s2.dot:T.border),background:active?s2.bg:"transparent",color:active?s2.text:T.textMd,cursor:active?"default":"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
-                      <span style={{width:7,height:7,borderRadius:"50%",background:s2.dot,flexShrink:0}}/>{est}
-                    </button>;
-                  })}
+          // Campo editable inline simple
+          const Field=({label,value,onSave,type="text",placeholder="",href,span=1})=>{
+            const [editing,setEditing]=React.useState(false);
+            const [val,setVal]=React.useState(value||"");
+            React.useEffect(()=>setVal(value||""),[value]);
+            return (
+              <div style={{gridColumn:`span ${span}`}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  {label}
+                  {href&&value&&<a href={href} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:T.accent,textDecoration:"none",fontWeight:600}}>abrir ↗</a>}
+                </div>
+                {editing
+                  ? <div style={{display:"flex",gap:4}}>
+                      <input autoFocus type={type} value={val} onChange={e=>setVal(e.target.value)}
+                        onKeyDown={e=>{if(e.key==="Enter"){onSave(val);setEditing(false);}if(e.key==="Escape")setEditing(false);}}
+                        style={{...iS,fontSize:12,padding:"6px 10px",flex:1}}/>
+                      <button onClick={()=>{onSave(val);setEditing(false);}} style={{...bS,background:T.accentSolid,border:"none",color:"#fff"}}>✓</button>
+                    </div>
+                  : <div onClick={()=>setEditing(true)} style={{fontSize:13,color:value?T.text:T.textSm,padding:"7px 10px",borderRadius:8,border:"1px solid "+T.borderL,background:T.bg,cursor:"text",minHeight:34,display:"flex",alignItems:"center",gap:6,transition:"border-color 0.15s"}}
+                      onMouseEnter={e=>e.currentTarget.style.borderColor=T.border}
+                      onMouseLeave={e=>e.currentTarget.style.borderColor=T.borderL}>
+                      <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value||<span style={{color:T.textSm,fontSize:12}}>{placeholder||"—"}</span>}</span>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.5}}><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </div>
+                }
+              </div>
+            );
+          };
+
+          return (
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+              {/* ── HEADER ── */}
+              <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+                <Avatar src={c.foto} name={c.influencer} size={52} radius={12} T={T}/>
+                <div style={{flex:1,minWidth:0}}>
+                  {/* Nombre editable */}
+                  <div style={{fontSize:18,fontWeight:800,color:T.text,marginBottom:6,lineHeight:1.2}}>
+                    <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" T={T} iS={iS} style={{fontSize:18,fontWeight:800}}/>
+                  </div>
+                  {/* Chips: red + nicho */}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                    <DropdownChips value={c.red} options={REDES} onSelect={v=>save({red:v})} placeholder="+ Red" T={T}/>
+                    <DropdownChips value={c.nicho} options={NICHOS} onSelect={v=>save({nicho:v})} placeholder="+ Nicho" T={T} colorActive={T.purple} bgActive={T.purpleBg}/>
+                  </div>
+                  {/* Botones de acción rápida */}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {c.telefono&&<a href={"https://wa.me/"+c.telefono.replace(/\D/g,"")} target="_blank" rel="noopener noreferrer"
+                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:T.green,textDecoration:"none",background:T.greenBg,border:"1px solid "+T.green+"44",borderRadius:7,padding:"5px 12px"}}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill={T.green}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                      WhatsApp
+                    </a>}
+                    {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer"
+                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:"#E1306C",textDecoration:"none",background:"#E1306C15",border:"1px solid #E1306C33",borderRadius:7,padding:"5px 12px"}}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+                      {c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}
+                    </a>}
+                    {c.email&&<a href={"mailto:"+c.email}
+                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:T.accent,textDecoration:"none",background:T.accentSolid+"15",border:"1px solid "+T.accentSolid+"33",borderRadius:7,padding:"5px 12px"}}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      Mail
+                    </a>}
+                    {c.telefono&&<button onClick={()=>{
+                      const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
+                      const brief=`Hola ${c.influencer||c.usuario||""}! 👋\n\nTe mandamos el canje de Soluna Biolight:\n📦 Producto: ${(c.productosCanje||[]).map(p=>`${p.nombre}${p.cantidad>1?` x${p.cantidad}`:""}`).join(", ")||c.producto||"Anteojos"}\n${c.codigoDescuento?`🎁 Código: ${c.codigoDescuento}\n`:""}${c.comisionPct?`💰 Tu comisión: ${c.comisionPct}%\n`:""}\n${cont.length>0?`📸 Contenido acordado:\n${cont.map(x=>`• ${x.tipo}: ${x.acordados}`).join("\n")}\n\n`:""}✨ ¡Gracias por ser parte del equipo Soluna! 💬`;
+                      navigator.clipboard.writeText(brief);
+                      window.open(`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(brief)}`,"_blank");
+                    }} style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px",color:T.green,borderColor:T.green+"44",gap:5}}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                      Brief
+                    </button>}
+                  </div>
                 </div>
               </div>
 
-              {/* Info influencer */}
-              <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
-                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                  <Avatar src={c.foto} name={c.influencer} size={52} radius={12} T={T}/>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:6}}>
-                      <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" T={T} iS={iS} style={{fontSize:17,fontWeight:800}}/>
-                    </div>
-                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                      <DropdownChips value={c.nicho} options={NICHOS} onSelect={v=>save({nicho:v})} placeholder="+ Nicho" T={T} colorActive={T.purple} bgActive={T.purpleBg}/>
-                      <span style={{fontSize:11,color:T.textSm,display:"flex",alignItems:"center",gap:3}}>
-                        👥​<InlineField value={c.seguidores?""+Number(c.seguidores).toLocaleString():""} onSave={v=>save({seguidores:v.replace(/\./g,"")})} placeholder="seguidores" T={T} iS={iS} style={{fontSize:11}}/>
-                      </span>
-                      <DropdownChips value={c.red} options={REDES} onSelect={v=>save({red:v})} placeholder="Red" T={T}/>
-                    </div>
+              {/* ── ESTADO ── */}
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {ESTADOS_C.map(est=>{
+                  const s2=getEstadoCC(T,est);
+                  const active=c.estado===est||(est==="Por enviar"&&c.estado==="Pendiente envío");
+                  return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});}}
+                    style={{fontSize:12,fontWeight:active?700:500,padding:"6px 14px",borderRadius:99,border:`2px solid ${active?s2.dot:T.border}`,background:active?s2.bg:"transparent",color:active?s2.text:T.textMd,cursor:active?"default":"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:s2.dot,flexShrink:0}}/>{est}
+                  </button>;
+                })}
+              </div>
+
+              {/* ── DATOS CLAVE en grilla 2 columnas ── */}
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:12}}>Datos del canje</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <Field label="WhatsApp" value={c.telefono} onSave={v=>save({telefono:v})} placeholder="5491155..."
+                    href={c.telefono?"https://wa.me/"+c.telefono.replace(/\D/g,""):null}/>
+                  <Field label="Email" value={c.email} onSave={v=>save({email:v})} type="email" placeholder="sofi@mail.com"
+                    href={c.email?"mailto:"+c.email:null}/>
+                  <Field label="@Instagram" value={c.usuario?("@"+c.usuario.replace("@","")):""} onSave={v=>{const u=v.replace("@","").trim();save({usuario:u,linkInstagram:u?"https://instagram.com/"+u:""});}} placeholder="@usuario"
+                    href={igHref}/>
+                  <Field label="Nº de pedido" value={c.pedidoRef} onSave={v=>save({pedidoRef:v})} placeholder="12345"/>
+                  <Field label="Tracking Andreani" value={c.tracking} onSave={v=>save({tracking:v})} placeholder="3600029..."
+                    href={c.tracking?"https://www.andreani.com/#!/informacionEnvio/"+c.tracking:null}/>
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Fecha de envío</div>
+                    <input type="date" value={c.fechaEnvio||""} style={{...iS,fontSize:12,padding:"6px 10px"}} onChange={e=>save({fechaEnvio:e.target.value})}/>
                   </div>
                 </div>
+              </div>
 
-                {/* Links de contacto */}
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
-                  {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer"
-                    style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,color:"#E1306C",textDecoration:"none",background:"#E1306C18",border:"1px solid #E1306C33",borderRadius:8,padding:"6px 14px"}}>
-                    📸 {c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}
-                  </a>}
-                  {c.telefono&&<a href={"https://wa.me/"+c.telefono.replace(/\D/g,"")} target="_blank" rel="noopener noreferrer"
-                    style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,color:T.green,textDecoration:"none",background:T.greenBg,border:"1px solid "+T.green+"33",borderRadius:8,padding:"6px 14px"}}>
-                    💬 WhatsApp
-                  </a>}
-                  {c.email&&<a href={"mailto:"+c.email}
-                    style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,color:T.accent,textDecoration:"none",background:T.accentSolid+"18",border:"1px solid "+T.accentSolid+"33",borderRadius:8,padding:"6px 14px"}}>
-                    ✉️ {c.email}
-                  </a>}
-                </div>
-
-                {/* Campos de contacto y envío */}
-                <div style={{marginTop:4}}>
-                  <CopyEditField label="Instagram" icon="📸" value={c.linkInstagram||c.usuario&&("@"+c.usuario)||""}
-                    onSave={v=>{const m=(v||"").match(/instagram\.com\/([^/?#\s]+)/);save({linkInstagram:v,...(m?{usuario:m[1].replace("@","")}:{})});}}
-                    href={igHref} hrefLabel={c.usuario?"@"+c.usuario.replace("@",""):(c.linkInstagram||null)}
-                    T={T} iS={iS} placeholder="https://instagram.com/..."/>
-                  <CopyEditField label="Teléfono WA" icon="💬" value={c.telefono}
-                    onSave={v=>save({telefono:v})}
-                    href={c.telefono?"https://wa.me/"+c.telefono.replace(/\D/g,""):null} hrefLabel={c.telefono}
-                    T={T} iS={iS} placeholder="5491155..."/>
-                  <CopyEditField label="Email" icon="✉️" value={c.email}
-                    onSave={v=>save({email:v})}
-                    href={c.email?"mailto:"+c.email:null} hrefLabel={c.email}
-                    T={T} iS={iS} placeholder="email@..."/>
-                  <CopyEditField label="Pedido ref." icon="🔗" value={c.pedidoRef}
-                    onSave={v=>save({pedidoRef:v})} T={T} iS={iS} placeholder="#1234"/>
-                  <CopyEditField label="Codigo descuento" icon="%" value={c.codigoDescuento}
-                    onSave={async v=>{await save({codigoDescuento:(v||"").toUpperCase().trim()});}} T={T} iS={iS} placeholder="SOFIA10"/>
-                  <CopyEditField label="Comision %" icon="$" value={c.comisionPct?(c.comisionPct+"%"):""}
-                    onSave={v=>save({comisionPct:parseFloat((v||"").replace("%",""))||""})} T={T} iS={iS} placeholder="10"/>
-                  <CopyEditField label="Tracking Andreani" icon="🔍" value={c.tracking}
-                    onSave={v=>save({tracking:v})}
-                    href={c.tracking?"https://www.andreani.com/#!/informacionEnvio/"+c.tracking:null} hrefLabel={c.tracking}
-                    T={T} iS={iS} placeholder="3600029..."/>
-                  <CopyEditField label="Fecha de envío" icon="📦" value={c.fechaEnvio}
-                    T={T} iS={iS} readOnly={true}/>
-                  <CopyEditField label={recordatorioVencido?"⏰ Recordatorio (vencido)":"Recordatorio"} icon={recordatorioVencido?"":"📅"} value={c.recordatorio}
-                    T={T} iS={iS} readOnly={true}/>
-                </div>
-                {/* Fecha envío y recordatorio: date pickers independientes */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
-                  {[["📦 Fecha envío","fechaEnvio",c.fechaEnvio],["📅 Recordatorio","recordatorio",c.recordatorio]].map(([label,field,val])=>(
-                    <div key={field}>
-                      <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{label}</div>
-                      <input type="date" value={val||""} style={{...iS,fontSize:12,padding:"6px 8px"}}
-                        onChange={async e=>save({[field]:e.target.value})}/>
+              {/* ── PRODUCTOS ── */}
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Productos enviados</div>
+                {(c.productosCanje||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin productos aún</div>}
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+                  {(c.productosCanje||[]).map((p,pi)=>(
+                    <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,background:T.bg,border:"1px solid "+T.borderL}}>
+                      <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
+                      <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await save({productosCanje:upd});}} style={bS}>−</button>
+                      <span style={{fontSize:13,fontWeight:700,color:T.text,minWidth:20,textAlign:"center"}}>{p.cantidad||1}</span>
+                      <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await save({productosCanje:upd});}} style={bS}>+</button>
+                      <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await save({productosCanje:upd,producto:(upd[0]?.nombre||"")});}} style={{...bS,border:"1px solid "+T.red+"44",color:T.red}}>✕</button>
                     </div>
                   ))}
                 </div>
+                {/* Selector rápido de productos */}
+                <select onChange={async e=>{
+                  const pr=e.target.value; if(!pr) return;
+                  const lista=c.productosCanje||[];
+                  const ex=lista.findIndex(x=>x.nombre===pr);
+                  const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:pr,cantidad:1}];
+                  await save({productosCanje:upd,producto:upd[0]?.nombre||""});
+                  e.target.value="";
+                }} defaultValue="" style={{...iS,fontSize:12,padding:"7px 10px",color:T.textSm}}>
+                  <option value="">+ Agregar producto...</option>
+                  {PRODUCTOS_CANJE.map(pr=><option key={pr} value={pr}>{pr}</option>)}
+                </select>
               </div>
 
-              {/* Productos */}
-              <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>📦 Productos enviados</div>
-                {(c.productosCanje||[]).map((p,pi)=>(
-                  <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:"1px solid "+T.borderL}}>
-                    <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{p.nombre}</span>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await save({productosCanje:upd});}} style={bS}>−</button>
-                    <span style={{fontSize:13,fontWeight:700,color:T.text,minWidth:20,textAlign:"center"}}>{p.cantidad}</span>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await save({productosCanje:upd});}} style={bS}>+</button>
-                    <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await save({productosCanje:upd});}} style={{...bS,border:"1px solid "+T.red+"44",color:T.red}}>✕</button>
-                  </div>
-                ))}
-                {(c.productosCanje||[]).length===0&&<div style={{fontSize:12,color:T.textSm,padding:"4px 0"}}>Tap un producto para agregar</div>}
-                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
-                  {PRODUCTOS_CANJE.map(pr=>{
-                    const tiene=(c.productosCanje||[]).some(x=>x.nombre===pr);
-                    return <button key={pr} onClick={async()=>{
-                      const lista=c.productosCanje||[];
-                      const ex=lista.findIndex(x=>x.nombre===pr);
-                      const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:pr,cantidad:1}];
-                      await save({productosCanje:upd,producto:upd[0]?.nombre||""});
-                    }} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(tiene?T.purple:T.border),background:tiene?T.purpleBg:"transparent",color:tiene?T.purple:T.textMd,cursor:"pointer",fontWeight:tiene?600:400}}>
-                      {tiene?"✓ ":"+ "}{pr}
-                    </button>;
-                  })}
-                </div>
-              </div>
-
-              {/* Contenido comprometido */}
+              {/* ── CONTENIDO COMPROMETIDO ── */}
               <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:12,padding:"12px 16px",marginBottom:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                   <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6}}>🎬 Contenido</div>
@@ -4075,26 +4090,18 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <NotasRapidas T={T} canje={c} onAdd={addNota}/>
 
               {/* Footer */}
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4,paddingTop:10,borderTop:"1px solid "+T.borderL}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:10,borderTop:"1px solid "+T.borderL}}>
                 <div style={{fontSize:11,color:T.textSm}}>
                   Creado {fmtTs(c.createdAt)}{c.finalizadoAt?.seconds?" · Cerrado "+fmtTs(c.finalizadoAt):""}
                 </div>
-                <div style={{display:"flex",gap:8}}>
-                  {deleteConfirm===c._docId
-                    ?<><span style={{fontSize:13,color:T.red,fontWeight:500,alignSelf:"center"}}>¿Eliminar?</span>
-                       <button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</button>
-                       <button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button>
-                     </>
-                    :<button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>Eliminar</button>
-                  }
-                  {!deleteConfirm&&<button onClick={()=>{setForm({...c,contenido:c.contenido||[],historial:c.historial||[],recordatorio:c.recordatorio||""});setDetail(null);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>✏️ Editar datos</button>}
-                  {!deleteConfirm&&c.telefono&&<button onClick={()=>{
-                    const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
-                    const brief=`Hola ${c.influencer||c.usuario||""}! 👋\n\nTe mandamos el canje de Soluna Biolight:\n📦 Producto: ${c.producto||"Anteojos blue light"}\n🎁 Código descuento: ${c.codigoDescuento||"(ver tu código)"}\n💰 Tu comisión: ${c.comisionPct||0}% de ventas con tu código\n\n${cont.length>0?`📸 Contenido acordado:\n${cont.map(x=>`• ${x.tipo}: ${x.acordados} publicación${x.acordados!==1?"es":""}`).join("\n")}\n\n`:""}✨ ¡Muchas gracias por ser parte del equipo Soluna! Cualquier duda respondé por acá 💬`;
-                    navigator.clipboard.writeText(brief);
-                    window.open(`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(brief)}`,"_blank");
-                  }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.green,borderColor:T.green+"55"}}>💬 Brief WA</button>}
-                </div>
+                {deleteConfirm===c._docId
+                  ?<div style={{display:"flex",gap:6,alignItems:"center"}}>
+                     <span style={{fontSize:13,color:T.red,fontWeight:500}}>¿Eliminar?</span>
+                     <button onClick={()=>deleteCanje(c._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</button>
+                     <button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button>
+                   </div>
+                  :<button onClick={()=>setDeleteConfirm(c._docId)} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px"}}>Eliminar</button>
+                }
               </div>
 
             </div>
