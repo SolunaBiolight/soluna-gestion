@@ -1753,7 +1753,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
         <div style={{marginTop:6,background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,maxHeight:300,overflow:"auto"}}>
           {localResults.length===0&&apiResults.length>0&&<div style={{padding:"6px 14px",fontSize:10,color:T.textSm,borderBottom:`1px solid ${T.borderL}`,textTransform:"uppercase",letterSpacing:0.5}}>Resultados de TN</div>}
           {results.map((o,i)=>(
-            <div key={o.numero} onClick={()=>onSelect(o.numero)} style={{padding:"12px 16px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <div key={o.numero} onClick={()=>onSelect(o.numero, o)} style={{padding:"12px 16px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
                 <div style={{display:"flex",gap:10,alignItems:"center"}}>
                   <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
@@ -4160,24 +4160,22 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             {/* Buscar por número de pedido */}
             <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
               <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:0.5}}>Cargar desde pedido</div>
-              <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={num=>{
-                const o=orders.find(o=>o.numero===String(num));
-                const nombre=o?.comprador||"";
-                const email=o?.email||"";
-                const telefono=o?.telefono||"";
+              <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={(num, orden)=>{
+                // orden puede venir como segundo arg (búsqueda local o API)
+                const o=orden||orders.find(o=>o.numero===String(num));
                 const prodsCanje=(o?.productos||[]).map(p=>({
                   nombre:p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /i,"").replace(/[()]/g,"").trim()||p.sku||p.nombre,
                   cantidad:parseInt(p.cantidad)||1
                 })).filter(p=>p.nombre);
                 setForm(f=>({...f,
-                  influencer:f.influencer||nombre,
-                  email:f.email||email,
-                  telefono:f.telefono||telefono,
+                  influencer:f.influencer||(o?.comprador||""),
+                  email:f.email||(o?.email||""),
+                  telefono:f.telefono||(o?.telefono||""),
                   pedidoRef:String(num),
-                  productosCanje:prodsCanje.length>0?prodsCanje:f.productosCanje,
+                  productosCanje:prodsCanje.length>0?prodsCanje:(f.productosCanje||[]),
                   producto:prodsCanje[0]?.nombre||f.producto||"",
                 }));
-                toast(`Pedido #${num} cargado`,"success");
+                toast(`Pedido #${num} cargado — revisá los datos abajo`,"success");
               }}/>
             </div>
 
