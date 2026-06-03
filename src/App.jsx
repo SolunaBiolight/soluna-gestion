@@ -12335,26 +12335,37 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {(() => {
                       const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
                       const pad = n => String(n).padStart(2,"0");
-                      // Min = hace 10 días corridos (límite ARCA). Max = hoy.
+                      // Min = hace 30 días (Growith acepta hasta 30; ARCA acepta hasta 10 corridos
+                      // — si la fecha es muy retroactiva ARCA lo rechaza con su propio mensaje).
                       const hoyIso = `${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
-                      const min = new Date(nowArg.getTime() - 10 * 86400000);
+                      const min = new Date(nowArg.getTime() - 30 * 86400000);
                       const minIso = `${min.getFullYear()}-${pad(min.getMonth()+1)}-${pad(min.getDate())}`;
                       const fechaLabel = fechaFactura
                         ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})
                         : "";
+                      const diasAtras = fechaFactura
+                        ? Math.round((new Date(hoyIso)-new Date(fechaFactura))/86400000)
+                        : 0;
+                      const esFueraDeRancoArca = diasAtras > 10;
                       return (
-                        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"12px 16px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,flexWrap:"wrap"}}>
-                          <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Fecha de las facturas</span>
-                          <input
-                            type="date"
-                            value={fechaFactura}
-                            min={minIso}
-                            max={hoyIso}
-                            onChange={e=>setFechaFactura(e.target.value)}
-                            style={{background:T.card,border:"1px solid "+T.borderL,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}
-                          />
-                          <div style={{flexBasis:"100%",fontSize:11,color:T.textSm,lineHeight:1.5,marginTop:4}}>
-                            Todas las facturas van a quedar registradas en ARCA con la fecha <strong style={{color:T.text,textTransform:"capitalize"}}>{fechaLabel || "(elegí día)"}</strong>. Podés elegir cualquier día desde los últimos 10 corridos (límite ARCA).
+                        <div style={{marginBottom:14,padding:"14px 16px",background:T.bg,border:`1px solid ${esFueraDeRancoArca?(T.yellow||"#eab308")+"55":T.borderL}`,borderRadius:10}}>
+                          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                            <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>📅 Fecha de las facturas</span>
+                            <input
+                              type="date"
+                              value={fechaFactura}
+                              min={minIso}
+                              max={hoyIso}
+                              onChange={e=>setFechaFactura(e.target.value)}
+                              style={{background:T.card,border:`1px solid ${esFueraDeRancoArca?(T.yellow||"#eab308")+"88":T.borderL}`,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}
+                            />
+                            {fechaLabel&&<span style={{fontSize:12,color:T.text,fontWeight:500,textTransform:"capitalize"}}>{fechaLabel}</span>}
+                          </div>
+                          <div style={{fontSize:11,color:esFueraDeRancoArca?(T.yellow||"#eab308"):T.textSm,marginTop:8,lineHeight:1.6}}>
+                            {esFueraDeRancoArca
+                              ? `⚠ Esta fecha tiene ${diasAtras} días de antigüedad. ARCA acepta hasta 10 días corridos retroactivos — si la emitís así ARCA puede rechazarla. Consultá con tu contador si necesitás imputar períodos anteriores.`
+                              : `Todas las facturas van a quedar registradas en ARCA con esta fecha. Para el período ${diasAtras>0?`de hace ${diasAtras} día${diasAtras>1?"s":""}`:""} que elegiste.`
+                            }
                           </div>
                         </div>
                       );

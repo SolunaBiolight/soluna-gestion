@@ -415,19 +415,25 @@ function ultimoDiaHabilMesAnterior() {
   return `${yyyy}${mm}${dd}`;
 }
 
-// Chequea si una fecha YYYYMMDD está dentro de los 10 días corridos hacia atrás desde hoy
-// (límite de ARCA WSFE para emitir comprobantes con fecha retroactiva).
-function dentroDe10DiasCorridos(yyyymmdd) {
+// Chequea si una fecha YYYYMMDD es válida para emitir en ARCA.
+// Growith permite hasta 30 días hacia atrás en el selector — si ARCA rechaza
+// por ser demasiado retroactiva, devuelve el error real de ARCA (más útil).
+// No se permiten fechas futuras.
+function fechaValida(yyyymmdd) {
   const y = parseInt(yyyymmdd.slice(0, 4));
   const m = parseInt(yyyymmdd.slice(4, 6));
   const d = parseInt(yyyymmdd.slice(6, 8));
+  if (!y || !m || !d || m > 12 || d > 31) return { ok: false, msg: "Fecha inválida" };
   const target = new Date(Date.UTC(y, m - 1, d));
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
-  const diffMs = today.getTime() - target.getTime();
-  const diffDays = diffMs / (24 * 60 * 60 * 1000);
-  return diffDays >= 0 && diffDays <= 10;
+  const diffDays = (today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000);
+  if (diffDays < 0) return { ok: false, msg: "No podés emitir facturas con fecha futura." };
+  if (diffDays > 30) return { ok: false, msg: `La fecha ${d.toString().padStart(2,"0")}/${m.toString().padStart(2,"0")}/${y} tiene más de 30 días de antigüedad. ARCA solo acepta hasta 10 días corridos retroactivos — para períodos más antiguos necesitás hablar con tu contador.` };
+  return { ok: true };
 }
+// Compat alias
+function dentroDe10DiasCorridos(yyyymmdd) { return fechaValida(yyyymmdd).ok; }
 
 // Condición frente al IVA del RECEPTOR (RG ARCA 5616 — obligatorio desde 01/06/2026)
 // Tabla: https://www.afip.gob.ar/ws/documentacion/ws-factura-electronica.asp
@@ -1857,10 +1863,9 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: "fecha_factura debe ser YYYYMMDD" });
         }
         fechaImputacion = String(fecha_factura);
-        if (!dentroDe10DiasCorridos(fechaImputacion)) {
-          return res.status(400).json({
-            error: `La fecha ${fechaImputacion.slice(6,8)}/${fechaImputacion.slice(4,6)}/${fechaImputacion.slice(0,4)} está fuera del rango ARCA (máximo 10 días corridos hacia atrás).`
-          });
+        const fv = fechaValida(fechaImputacion);
+        if (!fv.ok) {
+          return res.status(400).json({ error: fv.msg });
         }
       }
 
@@ -1914,11 +1919,16 @@ export default async function handler(req, res) {
         }
 
         if (result.cae) {
-          // Generar PDF
-          const fechaIso = new Date().toISOString().slice(0, 10);
+          // Generar PDF — usar la fecha que eligió el usuario (fechaImputacion),
+          // NO new Date() que siempre pone hoy aunque ARCA tenga la fecha correcta.
+          const fechaIso = fechaImputacion
+            ? `${fechaImputacion.slice(0,4)}-${fechaImputacion.slice(4,6)}-${fechaImputacion.slice(6,8)}`
+            : new Date().toISOString().slice(0, 10);
+          const fechaDisplay = new Date(fechaIso + "T12:00:00-03:00")
+            .toLocaleDateString("es-AR", { day:"2-digit", month:"2-digit", year:"numeric" });
           const factData = {
             comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto,
-            fecha: new Date().toLocaleDateString("es-AR"),
+            fecha: fechaDisplay,
             fecha_iso: fechaIso,
             cliente: orden.nombre || "Consumidor Final",
             doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || orden.dni || "",
