@@ -4103,105 +4103,95 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       </Modal>
 
       {/* Modal NUEVO canje - form mínimo */}
-      <Modal T={T} open={!!form&&!form._docId} onClose={()=>setForm(null)} title="Nuevo canje 🤝" width={460}>
+      <Modal T={T} open={!!form&&!form._docId} onClose={()=>setForm(null)} title="Nuevo canje" width={440}>
         {form&&!form._docId&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            {/* Seleccionar desde perfil existente */}
+
+            {/* Autocompletar desde perfil existente */}
             {influencers.length>0&&(
-              <div style={{background:T.accentSolid+"0f",border:`1px solid ${T.accentSolid}25`,borderRadius:10,padding:"10px 14px"}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:0.5}}>📋 Autocompletar desde perfil</div>
+              <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:0.5}}>Autocompletar desde perfil guardado</div>
                 <select onChange={e=>{
                   const inf=influencers.find(i=>i._docId===e.target.value);
                   if(!inf) return;
-                  setForm(f=>({...f,influencer:inf.nombre||f.influencer,usuario:inf.usuario||f.usuario,red:inf.red||f.red,email:inf.email||f.email,telefono:inf.telefono||f.telefono,codigoDescuento:inf.codigoDescuento||f.codigoDescuento,comisionPct:inf.comisionPct||f.comisionPct,...(inf.usuario?{linkInstagram:"https://instagram.com/"+inf.usuario}:{})}));
+                  setForm(f=>({...f,
+                    influencer:inf.nombre||f.influencer,
+                    usuario:inf.usuario||f.usuario,
+                    email:inf.email||f.email,
+                    telefono:inf.telefono||f.telefono,
+                    codigoDescuento:inf.codigoDescuento||f.codigoDescuento,
+                    comisionPct:inf.comisionPct||f.comisionPct,
+                  }));
                   e.target.value="";
                 }} defaultValue="" style={{...iS,fontSize:13}}>
                   <option value="">Elegir un perfil...</option>
-                  {influencers.map(inf=><option key={inf._docId} value={inf._docId}>{inf.nombre}{inf.codigoDescuento?` (${inf.codigoDescuento})`:""}</option>)}
+                  {influencers.map(inf=><option key={inf._docId} value={inf._docId}>{inf.nombre}{inf.usuario?` @${inf.usuario}`:""}</option>)}
                 </select>
               </div>
             )}
-            {/* Link Instagram - campo principal, auto-extrae @usuario */}
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Link de Instagram <span style={{color:T.red}}>*</span></label>
-              <input autoFocus style={{...iS,fontSize:15,borderColor:form.linkInstagram?T.green:T.inputBorder}}
-                value={form.linkInstagram||""}
-                onChange={e=>{
-                  const v=e.target.value;
-                  const m=v.match(/instagram\.com\/([^/?#\s]+)/);
-                  const u=m?m[1].replace("@",""):"";
-                  setForm(f=>({...f,linkInstagram:v,...(u?{usuario:u,influencer:f.influencer||u}:{})}));
-                }}
-                placeholder="https://instagram.com/usuario o @usuario"
-                onBlur={e=>{
-                  // si escribió solo @usuario o usuario, construir el link
-                  const v=e.target.value.trim();
-                  if(v&&!v.includes("instagram.com")){
-                    const u=v.replace("@","");
-                    setForm(f=>({...f,linkInstagram:"https://instagram.com/"+u,usuario:f.usuario||u,influencer:f.influencer||u}));
-                  }
-                }}
-              />
-              {form.usuario&&<div style={{fontSize:12,color:T.green,marginTop:4,display:"flex",alignItems:"center",gap:5}}>✓ @{form.usuario}</div>}
+
+            {/* Nombre + @usuario en una fila */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nombre <span style={{color:T.red}}>*</span></label>
+                <input autoFocus style={iS} value={form.influencer||""} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Ej: Sofi García"/>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>@ Usuario</label>
+                <input style={iS} value={form.usuario||""} onChange={e=>setForm(f=>({...f,usuario:e.target.value.replace(/^@/,"")}))} placeholder="sofigarcia"/>
+              </div>
             </div>
-            {/* Nombre (se autocompleta desde IG, editable) */}
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Nombre del influencer <span style={{color:T.red}}>*</span></label>
-              <input style={iS} value={form.influencer||""} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Ej: Ciro González"/>
+
+            {/* Teléfono + Email en una fila */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>WhatsApp</label>
+                <input style={iS} value={form.telefono||""} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="5491155555555"/>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Email</label>
+                <input style={iS} type="email" value={form.email||""} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="sofi@mail.com"/>
+              </div>
             </div>
-            {/* Teléfono WhatsApp */}
+
+            {/* Nº de pedido */}
             <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Teléfono WhatsApp</label>
-              <input style={iS} value={form.telefono||""} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="5491155555555 (con código de país)"/>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nº de pedido</label>
+              <input style={iS} value={form.pedidoRef||""} onChange={e=>setForm(f=>({...f,pedidoRef:e.target.value}))} placeholder="Ej: 12345"/>
             </div>
-            {/* Producto - select rápido */}
+
+            {/* Productos */}
             <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Producto a enviar</label>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Productos a enviar</label>
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {PRODUCTOS_CANJE.map(p=>{
                   const sel=(form.productosCanje||[]).some(x=>x.nombre===p);
-                  return <button key={p} type="button" onClick={()=>{
-                    const lista=form.productosCanje||[];
-                    const upd=sel?lista.filter(x=>x.nombre!==p):[...lista,{nombre:p,cantidad:1}];
-                    setForm(f=>({...f,productosCanje:upd,producto:upd[0]?.nombre||""}));
-                  }} style={{fontSize:12,padding:"6px 12px",borderRadius:20,border:"1.5px solid "+(sel?T.purple:T.border),background:sel?T.purpleBg:"transparent",color:sel?T.purple:T.textMd,cursor:"pointer",fontWeight:sel?600:400,transition:"all 0.12s"}}>
-                    {p}
-                  </button>;
+                  return (
+                    <button key={p} type="button" onClick={()=>{
+                      const lista=form.productosCanje||[];
+                      const upd=sel?lista.filter(x=>x.nombre!==p):[...lista,{nombre:p,cantidad:1}];
+                      setForm(f=>({...f,productosCanje:upd,producto:upd[0]?.nombre||""}));
+                    }} style={{fontSize:12,padding:"6px 13px",borderRadius:99,border:`1.5px solid ${sel?T.purple:T.border}`,background:sel?T.purpleBg:"transparent",color:sel?T.purple:T.textMd,cursor:"pointer",fontWeight:sel?700:400,transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      {sel&&"✓ "}{p}
+                    </button>
+                  );
                 })}
               </div>
+              {(form.productosCanje||[]).length>0&&(
+                <div style={{fontSize:11,color:T.textSm,marginTop:6}}>
+                  {(form.productosCanje||[]).map(p=>p.nombre).join(", ")}
+                </div>
+              )}
             </div>
-            {/* Nicho rápido */}
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Nicho</label>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {NICHOS.map(n=>{
-                  const sel=form.nicho===n;
-                  return <button key={n} type="button" onClick={()=>setForm(f=>({...f,nicho:sel?"":n}))}
-                    style={{fontSize:12,padding:"5px 11px",borderRadius:20,border:"1.5px solid "+(sel?T.accent:T.border),background:sel?T.accentSolid+"18":"transparent",color:sel?T.accent:T.textMd,cursor:"pointer",fontWeight:sel?600:400,transition:"all 0.12s"}}>
-                    {n}
-                  </button>;
-                })}
-              </div>
-            </div>
-            {/* Código y comisión */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div>
-                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Código descuento</label>
-                <input style={iS} value={form.codigoDescuento||""} onChange={e=>setForm(f=>({...f,codigoDescuento:e.target.value.toUpperCase()}))} placeholder="SOFIA10"/>
-              </div>
-              <div>
-                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Comisión %</label>
-                <input style={iS} type="number" min="0" max="100" value={form.comisionPct||""} onChange={e=>setForm(f=>({...f,comisionPct:e.target.value}))} placeholder="10"/>
-              </div>
-            </div>
+
             {/* Botones */}
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:6,borderTop:"1px solid "+T.borderL}}>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:8,borderTop:"1px solid "+T.borderL}}>
               <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
-              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:14,padding:"10px 22px",opacity:saving||!form.influencer?0.5:1}}>
+              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,padding:"10px 22px",opacity:saving||!form.influencer?0.45:1}}>
                 {saving?"Creando...":"Crear canje →"}
               </button>
             </div>
-            <div style={{fontSize:11,color:T.textSm,textAlign:"center"}}>El resto de los datos (tracking, fecha, notas, etc.) los completás desde la carta</div>
+            <div style={{fontSize:11,color:T.textSm,textAlign:"center"}}>El contenido acordado, tracking y más lo configurás abriendo la tarjeta</div>
           </div>
         )}
       </Modal>
