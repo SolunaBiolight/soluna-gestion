@@ -10981,10 +10981,18 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [emitting, setEmitting] = useState(false);
   const [showArcaConfirm, setShowArcaConfirm] = useState(false);
   const [emitProgress, setEmitProgress] = useState({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
-  const [mesImputacion, setMesImputacion] = useState("actual"); // "actual" | "anterior"
+  // Default = "anterior" si estamos en los primeros 5 días del mes (ARG),
+  // que es el caso más común: el merchant facturando ventas del mes pasado
+  // entre el día 1 y el 5. Si NO toca el radio, no se le mete por error en
+  // el mes corriente. Se puede cambiar a "actual" desde el modal.
+  const [mesImputacion, setMesImputacion] = useState(() => {
+    try {
+      const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
+      return nowArg.getDate() <= 5 ? "anterior" : "actual";
+    } catch { return "actual"; }
+  });
   // YYYY-MM-DD del día del mes anterior que el merchant elige cuando imputa
-  // al mes pasado. Se manda al backend convertido a YYYYMMDD. Default lo
-  // calcula el efecto cuando entra al modo "anterior".
+  // al mes pasado. Se manda al backend convertido a YYYYMMDD.
   const [fechaImputacionCustom, setFechaImputacionCustom] = useState("");
   const [resultados, setResultados] = useState(null);
   const [pdfs, setPdfs] = useState([]);
@@ -12210,6 +12218,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         ? new Date(fechaImputacionCustom+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"})
                         : "";
                       return (
+                        <>
+                        {puedeMesAnterior && (
+                          <div style={{marginBottom:10,padding:"10px 14px",background:T.yellow+"22",border:"1px solid "+T.yellow,borderRadius:10,fontSize:12,color:T.text,lineHeight:1.5}}>
+                            ⚠️ <strong>Estás dentro de los primeros 5 días de {mesActualLabel}.</strong> Por defecto facturamos al mes <strong style={{textTransform:"capitalize",color:T.yellow}}>anterior ({mesAnteriorLabel} {yearAnterior})</strong> — que es lo más común si todavía estás cerrando ventas del mes pasado. Si querés imputar a {mesActualLabel}, tocá el radio abajo.
+                          </div>
+                        )}
                         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,flexWrap:"wrap"}}>
                           <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Imputar al mes</span>
                           <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:12,color:T.text}}>
@@ -12239,6 +12253,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </>
                           )}
                         </div>
+                        </>
                       );
                     })()}
 
