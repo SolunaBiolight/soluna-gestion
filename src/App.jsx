@@ -2975,6 +2975,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [filterRed,setFilterRed]=useState("");
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [saving,setSaving]=useState(false);
+  const [customContenido,setCustomContenido]=useState(""); // input de tipo de contenido personalizado
   // Mapeo sidebar(id) → viewTab interno. Activos=kanban (default), Historial=comisiones, Influencers=perfiles
   const sidebarToInternal = { activos:"kanban", historial:"comisiones", influencers:"perfiles" };
   const internalToSidebar = { lista:"activos", kanban:"activos", comisiones:"historial", perfiles:"influencers" };
@@ -4042,7 +4043,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 {totalAcordados>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:progreso+"%",background:progreso===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s"}}/>
                 </div>}
-                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8}}>
+                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8,alignItems:"center"}}>
                   {ACTIVIDADES.map(a=>{
                     const item=(c.contenido||[]).find(x=>x.tipo===a&&(x.acordados||0)>0);
                     return <button key={a} onClick={async()=>{
@@ -4050,10 +4051,38 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       const ex=lista.findIndex(x=>x.tipo===a);
                       const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo:a,acordados:1,entregados:0}];
                       await save({contenido:upd});
-                    }} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(item?T.accentSolid:T.border),background:item?T.accentSolid+"18":"transparent",color:item?T.accent:T.textMd,cursor:"pointer",fontWeight:item?600:400}}>
+                    }} style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(item?T.accentSolid:T.border),background:item?T.accentSolid+"18":"transparent",color:item?T.accent:T.textMd,cursor:"pointer",fontWeight:item?600:400,fontFamily:"'Inter',system-ui,sans-serif"}}>
                       {item?"✓ ":"+ "}{a}{item?` (${item.acordados})`:""}
                     </button>;
                   })}
+                  {/* Input contenido personalizado */}
+                  <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                    <input
+                      value={customContenido}
+                      onChange={e=>setCustomContenido(e.target.value)}
+                      onKeyDown={async e=>{
+                        if(e.key==="Enter"&&customContenido.trim()){
+                          const tipo=customContenido.trim();
+                          const lista=c.contenido||[];
+                          const ex=lista.findIndex(x=>x.tipo===tipo);
+                          const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo,acordados:1,entregados:0}];
+                          await save({contenido:upd});
+                          setCustomContenido("");
+                        }
+                      }}
+                      placeholder="Personalizado..."
+                      style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:`1px solid ${T.border}`,background:"transparent",color:T.text,outline:"none",width:120,fontFamily:"'Inter',system-ui,sans-serif"}}
+                    />
+                    <button onClick={async()=>{
+                      if(!customContenido.trim()) return;
+                      const tipo=customContenido.trim();
+                      const lista=c.contenido||[];
+                      const ex=lista.findIndex(x=>x.tipo===tipo);
+                      const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo,acordados:1,entregados:0}];
+                      await save({contenido:upd});
+                      setCustomContenido("");
+                    }} style={{width:24,height:24,borderRadius:99,border:"none",background:T.accentSolid,color:"#fff",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>+</button>
+                  </div>
                 </div>
                 {(c.contenido||[]).filter(item=>(item.acordados||0)>0).map((item,ci)=>{
                   const ac=item.acordados||1;
