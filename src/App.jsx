@@ -4064,7 +4064,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <div key={ci} style={{padding:"8px 0",borderTop:"1px solid "+T.borderL}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                         <span style={{flex:1,fontSize:14,color:T.text,fontWeight:700}}>{item.tipo}</span>
-                        <span style={{fontSize:12,color:p===100?T.green:T.textSm,fontWeight:600,background:p===100?T.greenBg:T.surface,borderRadius:6,padding:"2px 8px"}}>{p===100?"✅ ":""}{en}/{ac}</span>
+                        <span style={{fontSize:12,color:p===100?T.green:T.textSm,fontWeight:700,background:p===100?T.greenBg:T.surface,borderRadius:6,padding:"3px 10px",display:"inline-flex",alignItems:"center",gap:5}}>
+                          {p===100&&<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                          {en}/{ac}
+                        </span>
                       </div>
                       <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
                         <span style={{fontSize:11,color:T.textSm,minWidth:52}}>Acordados</span>
