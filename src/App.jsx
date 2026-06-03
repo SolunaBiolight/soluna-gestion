@@ -4116,7 +4116,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   if(!inf) return;
                   setForm(f=>({...f,
                     influencer:inf.nombre||f.influencer,
-                    usuario:inf.usuario||f.usuario,
                     email:inf.email||f.email,
                     telefono:inf.telefono||f.telefono,
                     codigoDescuento:inf.codigoDescuento||f.codigoDescuento,
