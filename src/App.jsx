@@ -4159,28 +4159,38 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <input style={iS} value={form.pedidoRef||""} onChange={e=>setForm(f=>({...f,pedidoRef:e.target.value}))} placeholder="Ej: 12345"/>
             </div>
 
-            {/* Productos */}
+            {/* Productos — líneas con selector + cantidad */}
             <div>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Productos a enviar</label>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {PRODUCTOS_CANJE.map(p=>{
-                  const sel=(form.productosCanje||[]).some(x=>x.nombre===p);
-                  return (
-                    <button key={p} type="button" onClick={()=>{
-                      const lista=form.productosCanje||[];
-                      const upd=sel?lista.filter(x=>x.nombre!==p):[...lista,{nombre:p,cantidad:1}];
-                      setForm(f=>({...f,productosCanje:upd,producto:upd[0]?.nombre||""}));
-                    }} style={{fontSize:12,padding:"6px 13px",borderRadius:99,border:`1.5px solid ${sel?T.purple:T.border}`,background:sel?T.purpleBg:"transparent",color:sel?T.purple:T.textMd,cursor:"pointer",fontWeight:sel?700:400,transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      {sel&&"✓ "}{p}
-                    </button>
-                  );
-                })}
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {(form.productosCanje||[]).map((prod,i)=>(
+                  <div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <select
+                      value={prod.nombre}
+                      onChange={e=>{
+                        const upd=(form.productosCanje||[]).map((p,j)=>j===i?{...p,nombre:e.target.value}:p);
+                        setForm(f=>({...f,productosCanje:upd,producto:upd[0]?.nombre||""}));
+                      }}
+                      style={{...iS,flex:1,padding:"8px 10px",fontSize:13}}>
+                      <option value="">Elegir producto...</option>
+                      {PRODUCTOS_CANJE.map(p=><option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
+                      <button type="button" onClick={()=>{const upd=(form.productosCanje||[]).map((p,j)=>j===i?{...p,cantidad:Math.max(1,(parseInt(p.cantidad)||1)-1)}:p);setForm(f=>({...f,productosCanje:upd}));}} style={{width:28,height:28,borderRadius:6,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>−</button>
+                      <span style={{fontSize:13,fontWeight:700,color:T.text,minWidth:18,textAlign:"center"}}>{prod.cantidad||1}</span>
+                      <button type="button" onClick={()=>{const upd=(form.productosCanje||[]).map((p,j)=>j===i?{...p,cantidad:(parseInt(p.cantidad)||1)+1}:p);setForm(f=>({...f,productosCanje:upd}));}} style={{width:28,height:28,borderRadius:6,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>+</button>
+                    </div>
+                    <button type="button" onClick={()=>{const upd=(form.productosCanje||[]).filter((_,j)=>j!==i);setForm(f=>({...f,productosCanje:upd,producto:upd[0]?.nombre||""}));}} style={{width:28,height:28,borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.textSm,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+                  </div>
+                ))}
+                <button type="button"
+                  onClick={()=>setForm(f=>({...f,productosCanje:[...(f.productosCanje||[]),{nombre:"",cantidad:1}]}))}
+                  style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,border:`1.5px dashed ${T.border}`,background:"transparent",color:T.textSm,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s",width:"100%",justifyContent:"center"}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=T.purple;e.currentTarget.style.color=T.purple;}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.textSm;}}>
+                  + Agregar producto
+                </button>
               </div>
-              {(form.productosCanje||[]).length>0&&(
-                <div style={{fontSize:11,color:T.textSm,marginTop:6}}>
-                  {(form.productosCanje||[]).map(p=>p.nombre).join(", ")}
-                </div>
-              )}
             </div>
 
             {/* Botones */}
