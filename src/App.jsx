@@ -10949,6 +10949,32 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [montoMax, setMontoMax] = useState("");
   const [showManualUpload, setShowManualUpload] = useState(false);
 
+  // Descartadas: órdenes que el usuario decidió NO facturar en este ciclo.
+  // Se guardan en localStorage con clave mensual — se resetean solos el 1 de cada mes.
+  const descartadasKey = user?.uid ? `growith_arca_desc_${user.uid}_${new Date().toISOString().slice(0,7)}` : null;
+  const [descartadas, setDescartadas] = useState(()=>{
+    if(!descartadasKey) return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem(descartadasKey)||"[]")); } catch(_){ return new Set(); }
+  });
+  const [showDescartadas, setShowDescartadas] = useState(false);
+  function saveDescartadas(set) {
+    setDescartadas(set);
+    try { if(descartadasKey) localStorage.setItem(descartadasKey, JSON.stringify([...set])); } catch(_){}
+  }
+  function descartarOrden(id) {
+    const s = new Set(descartadas); s.add(String(id)); saveDescartadas(s);
+    setTnSelected(prev=>{ const n={...prev}; delete n[id]; return n; });
+  }
+  function restaurarOrden(id) {
+    const s = new Set(descartadas); s.delete(String(id)); saveDescartadas(s);
+  }
+  function restaurarTodas() { saveDescartadas(new Set()); }
+  function descartarNoSeleccionadas(selectables) {
+    const s = new Set(descartadas);
+    selectables.forEach(([id])=>{ if(!tnSelected[id]) s.add(String(id)); });
+    saveDescartadas(s);
+  }
+
   // Historial de batches (facturaciones recientes)
   const [batches, setBatches] = useState([]);
   const [expandedBatch, setExpandedBatch] = useState(null);
@@ -12023,13 +12049,16 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const all = Object.entries(tnData.ordenes);
                     const minN = montoMin === "" ? null : parseFloat(montoMin);
                     const maxN = montoMax === "" ? null : parseFloat(montoMax);
-                    const items = all.filter(([, o]) => {
+                    const items = all.filter(([id, o]) => {
+                      if (descartadas.has(String(id))) return false; // excluir descartadas
                       if (canalSel !== "todos" && o._platform !== canalSel) return false;
                       if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
                       if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
                       if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
                       return true;
                     });
+                    // Órdenes descartadas (para mostrar en panel separado)
+                    const itemsDescartados = all.filter(([id, o]) => descartadas.has(String(id)) && !o._billed);
                     if (items.length === 0) {
                       return (
                         <div style={{padding:"30px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
@@ -12056,36 +12085,68 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       const mm = String(d.getMinutes()).padStart(2,"0");
                       return `${dia}/${mes} ${hh}:${mm}`;
                     };
-                    const seleccionarPorcentaje = (pct) => {
-                      const shuffled = [...itemsSelectables].sort(() => Math.random() - 0.5);
+                    const seleccionarPorcentaje = (pct, yDescartar=false) => {
+                      const shuffled = [...itemsSelectables].sort(()=>Math.random()-0.5);
                       const n = Math.round(itemsSelectables.length * pct / 100);
-                      const selIds = new Set(shuffled.slice(0, n).map(([id]) => id));
+                      const selIds = new Set(shuffled.slice(0,n).map(([id])=>id));
                       const ns = {...tnSelected};
-                      itemsSelectables.forEach(([id]) => ns[id] = selIds.has(id));
+                      itemsSelectables.forEach(([id])=>ns[id]=selIds.has(id));
                       setTnSelected(ns);
+                      if(yDescartar) {
+                        const s = new Set(descartadas);
+                        itemsSelectables.forEach(([id])=>{ if(!selIds.has(id)) s.add(String(id)); });
+                        saveDescartadas(s);
+                        toast(`${n} seleccionadas · ${itemsSelectables.length-n} descartadas este mes`,"success");
+                      }
                     };
                     return (
                       <>
-                        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap"}}>
+                        {/* Barra de herramientas */}
+                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap"}}>
+                          {/* Checkbox "seleccionar todas" */}
                           <div onClick={()=>{
-                            const ns = {...tnSelected}; itemsSelectables.forEach(([id])=>ns[id]=!allSel); setTnSelected(ns);
-                          }} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
-                            <input type="checkbox" checked={allSel} ref={el=>{ if(el) el.indeterminate = someSel && !allSel; }} readOnly style={{cursor:"pointer"}}/>
-                            <span style={{fontSize:12,fontWeight:600,color:T.text}}>{allSel?"Deseleccionar":"Seleccionar"} todas ({itemsSelectables.length})</span>
+                            const ns={...tnSelected};itemsSelectables.forEach(([id])=>ns[id]=!allSel);setTnSelected(ns);
+                          }} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",flexShrink:0}}>
+                            <input type="checkbox" checked={allSel} ref={el=>{if(el)el.indeterminate=someSel&&!allSel;}} readOnly style={{cursor:"pointer"}}/>
+                            <span style={{fontSize:12,fontWeight:600,color:T.text}}>Todas ({itemsSelectables.length})</span>
                           </div>
-                          <select onChange={e=>{const v=parseInt(e.target.value); if(v) seleccionarPorcentaje(v); e.target.value="";}} value="" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"5px 8px",fontSize:11,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
-                            <option value="">Selección parcial…</option>
-                            <option value="10">10% (aleatorio)</option>
-                            <option value="20">20% (aleatorio)</option>
-                            <option value="30">30% (aleatorio)</option>
-                            <option value="40">40% (aleatorio)</option>
-                            <option value="50">50% (aleatorio)</option>
-                            <option value="60">60% (aleatorio)</option>
-                            <option value="70">70% (aleatorio)</option>
-                            <option value="80">80% (aleatorio)</option>
-                            <option value="90">90% (aleatorio)</option>
-                          </select>
-                          <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>Total disponible: $ {itemsSelectables.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
+
+                          <div style={{width:1,height:18,background:T.border,flexShrink:0}}/>
+
+                          {/* Selector de % con opción de descartar */}
+                          <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
+                            <select onChange={e=>{const v=parseInt(e.target.value);if(v){seleccionarPorcentaje(v,false);}e.target.value="";}} value="" style={{...iS,width:"auto",padding:"4px 8px",fontSize:11,cursor:"pointer"}}>
+                              <option value="">Elegir % a facturar</option>
+                              {[10,20,25,30,40,50,60,70,75,80,90].map(p=><option key={p} value={p}>{p}% ({Math.round(itemsSelectables.length*p/100)} órdenes)</option>)}
+                            </select>
+                            {someSel&&!allSel&&(
+                              <button
+                                onClick={()=>descartarNoSeleccionadas(itemsSelectables)}
+                                title="Mover las NO seleccionadas a Descartadas — ya no aparecerán en el listado este mes"
+                                style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,color:T.orange||"#f97316",borderColor:(T.orange||"#f97316")+"44",whiteSpace:"nowrap",gap:5}}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+                                Descartar el resto
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Descartadas badge */}
+                          {itemsDescartados.length>0&&(
+                            <button onClick={()=>setShowDescartadas(s=>!s)} style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,gap:5,color:T.textSm,marginLeft:0}}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                              {itemsDescartados.length} descartadas
+                            </button>
+                          )}
+
+                          {/* Totales */}
+                          <div style={{marginLeft:"auto",display:"flex",gap:16,alignItems:"center",flexShrink:0}}>
+                            {selectedCount>0&&(
+                              <span style={{fontSize:12,fontWeight:700,color:T.accent}}>
+                                {selectedCount} sel. · $ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}
+                              </span>
+                            )}
+                            <span style={{fontSize:11,color:T.textSm}}>$ {itemsSelectables.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} disponible</span>
+                          </div>
                         </div>
                         <div style={{maxHeight:420,overflowY:"auto"}}>
                           {items.map(([id,o])=>{
@@ -12099,37 +12160,76 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             const bg = billed ? T.green+"18" : wasAnulada ? T.textSm+"15" : sel ? T.accentSolid+"10" : "transparent";
                             const bord = billed ? "1px solid "+T.green+"33" : wasAnulada ? "1px solid "+T.textSm+"33" : "1px solid "+T.borderL;
                             return (
-                              <div key={id} onClick={()=>{ if(!billed) setTnSelected(prev=>({...prev,[id]:!prev[id]})); }} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,cursor:billed?"default":"pointer",background:bg,borderBottom:bord,opacity:billed?0.85:1}}>
+                              <div key={id} onClick={()=>{ if(!billed) setTnSelected(prev=>({...prev,[id]:!prev[id]})); }} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,cursor:billed?"default":"pointer",background:bg,borderBottom:bord,opacity:billed?0.85:1}}>
                                 {billed
                                   ? <span title="Ya facturada" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
                                   : <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
                                 }
-                                <span style={{fontSize:10,color:T.textSm,minWidth:74}}>{fechaHora}</span>
+                                <span style={{fontSize:10,color:T.textSm,minWidth:68}}>{fechaHora}</span>
                                 <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:badgeColor(plat),color:badgeTextColor(plat),fontWeight:700,minWidth:24,textAlign:"center"}}>{label}</span>
-                                {wasAnulada && (
-                                  <span title={`Anulada con NC el ${o._anulada_info?.anulada_at?new Date(o._anulada_info.anulada_at).toLocaleDateString("es-AR"):"—"}`} style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"22",color:T.textSm,fontWeight:700,whiteSpace:"nowrap",flexShrink:0,letterSpacing:0.3}}>🔄 ANULADA</span>
-                                )}
+                                {wasAnulada&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"22",color:T.textSm,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>ANULADA</span>}
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
                                   <div style={{fontSize:12,fontWeight:600,color:billed?T.green:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
-                                  <div style={{fontSize:10,color:billed?T.green:wasAnulada?T.textSm:T.textSm}}>
+                                  <div style={{fontSize:10,color:T.textSm}}>
                                     {billed
-                                      ? `✓ Ya facturada · F${o._billed_info?.letra||""} N° ${String(o._billed_info?.nro||"").padStart(8,"0")}`
-                                      : wasAnulada
-                                        ? `Fue facturada y anulada con NC · podés re-facturar`
-                                        : `F${tipoFact} · ${o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}`}
+                                      ? `✓ Facturada F${o._billed_info?.letra||""} N°${String(o._billed_info?.nro||"").padStart(8,"0")}`
+                                      : wasAnulada ? "Fue facturada y anulada — podés re-facturar"
+                                      : `F${tipoFact} · ${o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}`}
                                   </div>
                                 </div>
-                                <div style={{fontSize:13,fontWeight:700,color:billed?T.green:T.text,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                                <div style={{fontSize:13,fontWeight:700,color:billed?T.green:T.text,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+                                {!billed&&(
+                                  <button onClick={e=>{e.stopPropagation();descartarOrden(id);}} title="No facturar esta orden este mes" style={{background:"transparent",border:"none",cursor:"pointer",padding:"4px",color:T.textSm,display:"flex",alignItems:"center",borderRadius:5,flexShrink:0,opacity:0.5}}
+                                    onMouseEnter={e=>{e.currentTarget.style.opacity="1";e.currentTarget.style.color=T.red;}}
+                                    onMouseLeave={e=>{e.currentTarget.style.opacity="0.5";e.currentTarget.style.color=T.textSm;}}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+                                  </button>
+                                )}
                               </div>
                             );
                           })}
                         </div>
+                        {/* Panel descartadas */}
+                        {itemsDescartados.length>0&&showDescartadas&&(
+                          <div style={{marginTop:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderBottom:`1px solid ${T.borderL}`}}>
+                              <span style={{fontSize:12,fontWeight:700,color:T.textSm}}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:5,verticalAlign:"middle"}}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                                {itemsDescartados.length} descartadas este mes
+                              </span>
+                              <div style={{display:"flex",gap:8}}>
+                                <span style={{fontSize:10,color:T.textSm}}>Se limpian el 1° del mes siguiente</span>
+                                <button onClick={restaurarTodas} style={{...BtnSecondary(T),padding:"3px 10px",fontSize:11,color:T.accent}}>Restaurar todas</button>
+                              </div>
+                            </div>
+                            {itemsDescartados.map(([id,o])=>(
+                              <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderBottom:`1px solid ${T.borderL}`,opacity:0.7}}>
+                                <span style={{fontSize:10,color:T.textSm,minWidth:68}}>{fmtFechaHora(o.fecha)}</span>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{id} · {o.nombre||"sin nombre"}</div>
+                                </div>
+                                <span style={{fontSize:12,fontWeight:700,color:T.textMd}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span>
+                                <button onClick={()=>restaurarOrden(id)} title="Volver al listado" style={{...BtnSecondary(T),padding:"3px 10px",fontSize:10,flexShrink:0}}>Restaurar</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Footer con total y botón Facturar */}
                         <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14,paddingTop:14,borderTop:"1px solid "+T.borderL}}>
                           <div style={{flex:1,fontSize:12,color:T.textSm}}>
-                            {selectedCount} seleccionada{selectedCount===1?"":"s"} · <strong style={{color:T.text}}>$ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>
+                            {selectedCount>0
+                              ? <><strong style={{color:T.text,fontSize:13}}>{selectedCount}</strong> seleccionadas · <strong style={{color:T.accent}}>$ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</strong></>
+                              : "Ninguna seleccionada"}
                           </div>
-                          <button onClick={facturarSeleccionadas} disabled={selectedCount===0} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:selectedCount===0?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:selectedCount===0?0.5:1,display:"flex",alignItems:"center",gap:6}}>
-                            Facturar {selectedCount} →
+                          {selectedCount>0&&!allSel&&(
+                            <button onClick={()=>descartarNoSeleccionadas(itemsSelectables)} title="Las no seleccionadas no vuelven a aparecer este mes" style={{...BtnSecondary(T),padding:"8px 14px",fontSize:12,color:T.orange||"#f97316",borderColor:(T.orange||"#f97316")+"44"}}>
+                              Descartar el resto ({itemsSelectables.length-selectedCount})
+                            </button>
+                          )}
+                          <button onClick={facturarSeleccionadas} disabled={selectedCount===0} style={{background:"linear-gradient(135deg,#16a34a,#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:selectedCount===0?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:selectedCount===0?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:selectedCount>0?"0 4px 14px #16a34a40":"none",transition:"all 0.15s"}}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+                            Facturar {selectedCount>0?selectedCount:""} {selectedCount>0?"→":""}
                           </button>
                         </div>
                       </>
