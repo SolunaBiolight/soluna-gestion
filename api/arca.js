@@ -1841,91 +1841,25 @@ export default async function handler(req, res) {
 
     if (action === "emit" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const { cuit: cuitEmit, ordenes, product_map, mes_imputacion, fecha_imputacion_custom } = body;
+      const { cuit: cuitEmit, ordenes, product_map, fecha_factura } = body;
       if (!cuitEmit || !ordenes) return res.status(400).json({ error: "Faltan cuit u ordenes" });
 
-      // LOG diagnóstico — visible en Vercel logs. Si el merchant reporta
-      // "me facturó con fecha de junio cuando quería mayo", chequear esto
-      // para ver qué llegó del frontend. Si mes_imputacion=undefined o
-      // "actual" → frontend NO mandó "anterior" (cache stale / radio mal).
-      console.log(`[arca/emit] uid=${uid} cuit=${cuitEmit} n=${Object.keys(ordenes||{}).length} mes_imputacion=${JSON.stringify(mes_imputacion)} fecha_custom=${JSON.stringify(fecha_imputacion_custom)}`);
-
-      // ── DEFENSA ANTI-CACHE ──
-      // Si estamos en los primeros 5 días del mes (ARG) y el frontend NO
-      // está mandando mes_imputacion explícito, BLOQUEAMOS la emisión.
-      // El frontend nuevo SIEMPRE manda "anterior" o "actual" en esa ventana;
-      // si llega sin nada, es 100% un frontend con cache stale o un cliente
-      // raro — y dejar pasar implica que facture al mes corriente sin querer.
-      //
-      // El merchant ve un error claro con instrucciones y NO se factura nada
-      // mal. Mejor un error visible que una factura mal fechada.
-      const argFmtDefensa = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" });
-      const partsDefensa = argFmtDefensa.formatToParts(new Date());
-      const diaDefensa = parseInt(partsDefensa.find(p => p.type === "day").value);
-      if (diaDefensa <= 5 && (mes_imputacion === undefined || mes_imputacion === null || mes_imputacion === "")) {
-        return res.status(400).json({
-          error: `BLOQUEADO: estamos en los primeros 5 días del mes y tu navegador no especificó a qué mes imputar las facturas. Esto suele pasar por cache vieja del navegador. SOLUCIÓN: cerrá la pestaña, abrí en MODO INCÓGNITO (Ctrl+Shift+N o Cmd+Shift+N), entrá a la app de nuevo, y emití. Vas a ver un selector grande de mes con default 'mes anterior'. (Diagnóstico técnico: el backend no recibió mes_imputacion en el body.)`
-        });
-      }
+      console.log(`[arca/emit] uid=${uid} cuit=${cuitEmit} n=${Object.keys(ordenes||{}).length} fecha_factura=${JSON.stringify(fecha_factura)}`);
 
       // Resolver fecha de imputación.
-      //
-      // Reglas:
-      //   - mes_imputacion="actual"  → null (ARCA usa hoy)
-      //   - mes_imputacion="anterior" SIN fecha_imputacion_custom
-      //     → último día hábil del mes anterior (compat con flujo viejo)
-      //   - mes_imputacion="anterior" CON fecha_imputacion_custom (YYYYMMDD)
-      //     → usa ese día específico que eligió el merchant
-      //
-      // Validaciones extra cuando es mes anterior:
-      //   - Hoy (zona Argentina) debe estar dentro de los primeros 5 días
-      //     del mes siguiente (regla de negocio Growith — más estricta que
-      //     ARCA, que permite hasta 10).
-      //   - La fecha debe caer dentro del mes calendario anterior.
-      //   - La fecha debe respetar el rango de 10 días corridos de ARCA.
+      //   - Si el frontend manda fecha_factura (YYYYMMDD), usamos ESA fecha
+      //     directamente. La que el merchant eligió es la que va a ARCA.
+      //   - Validamos formato y rango ARCA (max 10 días corridos hacia atrás).
+      //   - Si NO viene (cliente antiguo), default = hoy.
       let fechaImputacion = null;
-      if (mes_imputacion === "anterior") {
-        // Chequeo dia actual ≤ 5 (zona Argentina) — ventana de gracia Growith
-        const argFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" });
-        const partsNow = argFmt.formatToParts(new Date());
-        const diaHoyArg = parseInt(partsNow.find(p => p.type === "day").value);
-        const mesHoyArg = parseInt(partsNow.find(p => p.type === "month").value);
-        const anioHoyArg = parseInt(partsNow.find(p => p.type === "year").value);
-        if (diaHoyArg > 5) {
-          return res.status(400).json({
-            error: `Ya pasaron los primeros 5 días del mes. Hoy es ${diaHoyArg}/${mesHoyArg}, no se puede imputar al mes anterior. ARCA exige emitir dentro de los primeros días hábiles.`
-          });
+      if (fecha_factura) {
+        if (!/^\d{8}$/.test(String(fecha_factura))) {
+          return res.status(400).json({ error: "fecha_factura debe ser YYYYMMDD" });
         }
-
-        if (fecha_imputacion_custom) {
-          // Validar formato YYYYMMDD
-          if (!/^\d{8}$/.test(String(fecha_imputacion_custom))) {
-            return res.status(400).json({ error: "fecha_imputacion_custom debe ser YYYYMMDD" });
-          }
-          fechaImputacion = String(fecha_imputacion_custom);
-          // Validar que sea del mes calendario anterior
-          const fY = parseInt(fechaImputacion.slice(0, 4));
-          const fM = parseInt(fechaImputacion.slice(4, 6));
-          const fD = parseInt(fechaImputacion.slice(6, 8));
-          const mesAnterior = mesHoyArg === 1 ? 12 : mesHoyArg - 1;
-          const anioMesAnterior = mesHoyArg === 1 ? anioHoyArg - 1 : anioHoyArg;
-          if (fY !== anioMesAnterior || fM !== mesAnterior) {
-            return res.status(400).json({
-              error: `La fecha ${fD}/${fM}/${fY} no pertenece al mes anterior (${String(mesAnterior).padStart(2,"0")}/${anioMesAnterior}). Elegí una fecha de ese mes.`
-            });
-          }
-          // Validar que el día sea válido para ese mes (no 31 de un mes con 30)
-          const diasEnMes = new Date(Date.UTC(anioMesAnterior, mesAnterior, 0)).getUTCDate();
-          if (fD < 1 || fD > diasEnMes) {
-            return res.status(400).json({ error: `El día ${fD} no existe en ${String(mesAnterior).padStart(2,"0")}/${anioMesAnterior} (ese mes tiene ${diasEnMes} días).` });
-          }
-        } else {
-          fechaImputacion = ultimoDiaHabilMesAnterior();
-        }
-
+        fechaImputacion = String(fecha_factura);
         if (!dentroDe10DiasCorridos(fechaImputacion)) {
           return res.status(400).json({
-            error: `La fecha ${fechaImputacion.slice(6,8)}/${fechaImputacion.slice(4,6)}/${fechaImputacion.slice(0,4)} está fuera del rango de 10 días corridos que permite ARCA. Elegí una fecha más reciente del mes anterior.`
+            error: `La fecha ${fechaImputacion.slice(6,8)}/${fechaImputacion.slice(4,6)}/${fechaImputacion.slice(0,4)} está fuera del rango ARCA (máximo 10 días corridos hacia atrás).`
           });
         }
       }

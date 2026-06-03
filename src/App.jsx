@@ -10981,19 +10981,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [emitting, setEmitting] = useState(false);
   const [showArcaConfirm, setShowArcaConfirm] = useState(false);
   const [emitProgress, setEmitProgress] = useState({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
-  // Default = "anterior" si estamos en los primeros 5 días del mes (ARG),
-  // que es el caso más común: el merchant facturando ventas del mes pasado
-  // entre el día 1 y el 5. Si NO toca el radio, no se le mete por error en
-  // el mes corriente. Se puede cambiar a "actual" desde el modal.
-  const [mesImputacion, setMesImputacion] = useState(() => {
+  // Fecha YYYY-MM-DD con la que ARCA va a registrar la factura. Default = hoy.
+  // El merchant la puede cambiar libremente; el único límite es ARCA (10 días
+  // corridos hacia atrás). Si elige un día de mayo → factura en mayo. Si elige
+  // un día de junio → factura en junio. Punto. Sin toggles ni branches raros.
+  const [fechaFactura, setFechaFactura] = useState(() => {
     try {
       const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
-      return nowArg.getDate() <= 5 ? "anterior" : "actual";
-    } catch { return "actual"; }
+      const pad = n => String(n).padStart(2,"0");
+      return `${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
+    } catch { return new Date().toISOString().slice(0,10); }
   });
-  // YYYY-MM-DD del día del mes anterior que el merchant elige cuando imputa
-  // al mes pasado. Se manda al backend convertido a YYYYMMDD.
-  const [fechaImputacionCustom, setFechaImputacionCustom] = useState("");
   const [resultados, setResultados] = useState(null);
   const [pdfs, setPdfs] = useState([]);
 
@@ -11537,25 +11535,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const emisorInfo = cuitActivoData
       ? `\n\n📋 CUIT EMISOR: ${formatCuit(cuitActivoData.cuit)}\n   ${cuitActivoData.razon_social || cuitActivoData.nombre_fantasia || ""}\n   PV ${String(cuitActivoData.punto_venta || 1).padStart(5,"0")} · ${cuitActivoData.arca_prod ? "Producción" : "Homologación"}`
       : `\n\n⚠ CUIT ${cuitSel} (datos incompletos)`;
-    // Calcular la fecha REAL con la que ARCA va a registrar las facturas para
-    // mostrarla en el confirm. Si el merchant ve "fecha de junio" cuando esperaba
-    // mayo, cancela y arregla. Esto es el cinturón de seguridad final que evita
-    // que el cache del JS o un radio mal-clickeado termine en facturas mal fechadas.
-    const fechaImputadaLabel = (() => {
-      const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
-      if (mesImputacion === "actual") {
-        return nowArg.toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"}) + " (HOY)";
-      }
-      // mes anterior
-      if (fechaImputacionCustom) {
-        return new Date(fechaImputacionCustom+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"});
-      }
-      // último día hábil del mes anterior (lo calcula el backend; acá aproximamos)
-      const ult = new Date(nowArg.getFullYear(), nowArg.getMonth(), 0);
-      while (ult.getDay() === 0 || ult.getDay() === 6) ult.setDate(ult.getDate()-1);
-      return ult.toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"}) + " (último día hábil del mes anterior)";
-    })();
-    const fechaInfo = `\n\n📅📅📅 FECHA DE LAS FACTURAS: ${fechaImputadaLabel} 📅📅📅\n   ${mesImputacion==="anterior" ? "✓ Se imputan al MES ANTERIOR — perfecto si querés facturar ventas del mes pasado." : "⚠️⚠️⚠️ SE IMPUTAN AL MES CORRIENTE (HOY). Si quisiste facturar al mes pasado, CANCELÁ y tocá el radio 'Mes anterior' arriba."}`;
+    // Mostrar la fecha exacta con la que va ARCA a registrar las facturas.
+    // Es lo que el merchant eligió en el date picker. Sin transformaciones.
+    const fechaImputadaLabel = fechaFactura
+      ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})
+      : "(sin fecha — error)";
+    const fechaInfo = `\n\n📅 FECHA DE LAS FACTURAS: ${fechaImputadaLabel}`;
     let msg = `¿Emitir ${orderIds.length} factura${orderIds.length>1?"s":""} en ARCA?${fechaInfo}${emisorInfo}\n\n⚠ Verificá la fecha arriba. Una vez emitidas, sólo se pueden revertir con Nota de Crédito.`;
     if(duplicates.length > 0) {
       const ids = duplicates.slice(0, 5).map(d => `· ${d.orden_id} (F${d.letra} ${String(d.nro).padStart(8,"0")})`).join("\n");
@@ -11573,15 +11558,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       setEmitProgress(p=>({...p,current:simCurrent}));
     }, Math.max(800, (total*1800)/total));
     // Convertir YYYY-MM-DD del date picker a YYYYMMDD que espera el backend.
-    const fechaCustomYYYYMMDD = (mesImputacion === "anterior" && fechaImputacionCustom)
-      ? fechaImputacionCustom.replace(/-/g, "")
-      : null;
+    // SIEMPRE mandamos fecha_factura — el merchant la eligió explícitamente.
+    const fechaYYYYMMDD = (fechaFactura || "").replace(/-/g, "");
     const d = await api("emit","POST",{
       cuit: cuitSel,
       ordenes,
       product_map: productMap,
-      mes_imputacion: mesImputacion,
-      ...(fechaCustomYYYYMMDD ? { fecha_imputacion_custom: fechaCustomYYYYMMDD } : {}),
+      fecha_factura: fechaYYYYMMDD,
     });
     clearInterval(simInterval);
     if(d.error){
@@ -12197,82 +12180,34 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       )}
                     </div>
 
-                    {/* Selector mes de imputación */}
+                    {/* Selector de fecha de la factura — un solo date picker.
+                        La fecha que el merchant elija es la que va a ARCA.
+                        Sin toggles ni "mes actual vs anterior". */}
                     {(() => {
                       const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
-                      const diaHoy = nowArg.getDate();
-                      // Solo los primeros 5 días del mes corriente se puede
-                      // imputar al mes anterior. El backend revalida.
-                      const puedeMesAnterior = diaHoy <= 5;
-                      const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
-                      const mesActualLabel = meses[nowArg.getMonth()];
-                      const mesAnteriorLabel = meses[(nowArg.getMonth()+11)%12];
-                      const mesAnteriorIdx = (nowArg.getMonth()+11)%12;
-                      const yearAnterior = nowArg.getMonth() === 0 ? nowArg.getFullYear()-1 : nowArg.getFullYear();
-                      // Día máximo permitido en el picker = el menor entre
-                      // el último día del mes anterior y (hoy − 10 días),
-                      // todo dentro de ese mes. Día mínimo = (hoy − 10 días)
-                      // si cae en el mes anterior, sino día 1 del mes anterior.
-                      const ultimoDiaMesAnt = new Date(yearAnterior, mesAnteriorIdx+1, 0).getDate();
-                      const hoyMs = nowArg.getTime();
-                      const diezDiasMs = 10 * 86400000;
-                      const minDateMs = hoyMs - diezDiasMs;
-                      const minDate = new Date(minDateMs);
-                      const minIsoMonth = minDate.getMonth();
-                      // Si hace 10 días no estábamos todavía en el mes anterior,
-                      // el límite es el día 1 del mes anterior.
-                      const minDiaPicker = (minIsoMonth === mesAnteriorIdx && minDate.getFullYear() === yearAnterior)
-                        ? minDate.getDate()
-                        : 1;
                       const pad = n => String(n).padStart(2,"0");
-                      const minIso = `${yearAnterior}-${pad(mesAnteriorIdx+1)}-${pad(minDiaPicker)}`;
-                      const maxIso = `${yearAnterior}-${pad(mesAnteriorIdx+1)}-${pad(ultimoDiaMesAnt)}`;
-                      // Default cuando el merchant entra al modo anterior:
-                      // último día del mes anterior. Se hace acá inline para
-                      // evitar useEffect que dispare warnings de deps.
-                      if (mesImputacion === "anterior" && !fechaImputacionCustom) {
-                        setTimeout(() => setFechaImputacionCustom(maxIso), 0);
-                      }
-                      const fechaPickerLabel = fechaImputacionCustom
-                        ? new Date(fechaImputacionCustom+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"})
+                      // Min = hace 10 días corridos (límite ARCA). Max = hoy.
+                      const hoyIso = `${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
+                      const min = new Date(nowArg.getTime() - 10 * 86400000);
+                      const minIso = `${min.getFullYear()}-${pad(min.getMonth()+1)}-${pad(min.getDate())}`;
+                      const fechaLabel = fechaFactura
+                        ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})
                         : "";
                       return (
-                        <>
-                        {puedeMesAnterior && (
-                          <div style={{marginBottom:10,padding:"10px 14px",background:T.yellow+"22",border:"1px solid "+T.yellow,borderRadius:10,fontSize:12,color:T.text,lineHeight:1.5}}>
-                            ⚠️ <strong>Estás dentro de los primeros 5 días de {mesActualLabel}.</strong> Por defecto facturamos al mes <strong style={{textTransform:"capitalize",color:T.yellow}}>anterior ({mesAnteriorLabel} {yearAnterior})</strong> — que es lo más común si todavía estás cerrando ventas del mes pasado. Si querés imputar a {mesActualLabel}, tocá el radio abajo.
+                        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"12px 16px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,flexWrap:"wrap"}}>
+                          <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5}}>Fecha de las facturas</span>
+                          <input
+                            type="date"
+                            value={fechaFactura}
+                            min={minIso}
+                            max={hoyIso}
+                            onChange={e=>setFechaFactura(e.target.value)}
+                            style={{background:T.card,border:"1px solid "+T.borderL,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}
+                          />
+                          <div style={{flexBasis:"100%",fontSize:11,color:T.textSm,lineHeight:1.5,marginTop:4}}>
+                            Todas las facturas van a quedar registradas en ARCA con la fecha <strong style={{color:T.text,textTransform:"capitalize"}}>{fechaLabel || "(elegí día)"}</strong>. Podés elegir cualquier día desde los últimos 10 corridos (límite ARCA).
                           </div>
-                        )}
-                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10,flexWrap:"wrap"}}>
-                          <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Imputar al mes</span>
-                          <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:12,color:T.text}}>
-                            <input type="radio" name="mes-imp" checked={mesImputacion==="actual"} onChange={()=>{setMesImputacion("actual"); setFechaImputacionCustom("");}}/>
-                            <span style={{fontWeight:600,textTransform:"capitalize"}}>{mesActualLabel} {nowArg.getFullYear()}</span>
-                          </label>
-                          <label style={{display:"flex",alignItems:"center",gap:6,cursor:puedeMesAnterior?"pointer":"not-allowed",fontSize:12,color:puedeMesAnterior?T.text:T.textSm,opacity:puedeMesAnterior?1:0.5}}>
-                            <input type="radio" name="mes-imp" checked={mesImputacion==="anterior"} disabled={!puedeMesAnterior} onChange={()=>setMesImputacion("anterior")}/>
-                            <span style={{fontWeight:600,textTransform:"capitalize"}}>{mesAnteriorLabel} {yearAnterior}</span>
-                            {!puedeMesAnterior && <span style={{fontSize:10,color:T.textSm}}>(solo días 1-5 del mes)</span>}
-                          </label>
-                          {mesImputacion==="anterior" && (
-                            <>
-                              <div style={{flexBasis:"100%",height:8}}/>
-                              <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Día de {mesAnteriorLabel}</span>
-                              <input
-                                type="date"
-                                value={fechaImputacionCustom}
-                                min={minIso}
-                                max={maxIso}
-                                onChange={e=>setFechaImputacionCustom(e.target.value)}
-                                style={{background:T.card,border:"1px solid "+T.borderL,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}
-                              />
-                              <div style={{flexBasis:"100%",fontSize:10,color:T.textSm,marginTop:2,lineHeight:1.5}}>
-                                ⓘ ARCA va a registrar todas las facturas con fecha <strong style={{color:T.text}}>{fechaPickerLabel || `(elegí día)`}</strong>, así caen contablemente en {mesAnteriorLabel}. Solo podés elegir días dentro de los últimos 10 corridos (limite ARCA).
-                              </div>
-                            </>
-                          )}
                         </div>
-                        </>
                       );
                     })()}
 
