@@ -1753,7 +1753,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
         <div style={{marginTop:6,background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,maxHeight:300,overflow:"auto"}}>
           {localResults.length===0&&apiResults.length>0&&<div style={{padding:"6px 14px",fontSize:10,color:T.textSm,borderBottom:`1px solid ${T.borderL}`,textTransform:"uppercase",letterSpacing:0.5}}>Resultados de TN</div>}
           {results.map((o,i)=>(
-            <div key={o.numero} onClick={()=>onSelect(o.numero, o)} style={{padding:"12px 16px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <div key={o.numero} onClick={()=>{onSelect(o.numero, o);setQ("");}} style={{padding:"12px 16px",cursor:"pointer",borderTop:i>0?`1px solid ${T.borderL}`:"none",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
                 <div style={{display:"flex",gap:10,alignItems:"center"}}>
                   <span style={{fontWeight:700,color:T.accent,fontSize:14}}>#{o.numero}</span>
@@ -4158,8 +4158,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
 
             {/* Buscar por número de pedido */}
-            <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
-              <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:0.5}}>Cargar desde pedido</div>
+            <div style={{background:T.surface,border:`1px solid ${form._pedidoCargado?T.green:T.borderL}`,borderRadius:10,padding:"10px 14px",transition:"border-color 0.2s"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>Cargar desde pedido</div>
+                {form._pedidoCargado&&(
+                  <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,fontWeight:700,color:T.green}}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Pedido #{form._pedidoCargado} cargado
+                    <button type="button" onClick={()=>setForm(f=>({...f,_pedidoCargado:null}))} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:12,padding:0,lineHeight:1}}>✕</button>
+                  </div>
+                )}
+              </div>
               <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={(num, orden)=>{
                 const o=orden||orders.find(o=>o.numero===String(num));
                 // Fuzzy match: mismo algoritmo que pendingCanje
@@ -4182,8 +4191,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   pedidoRef:String(num),
                   productosCanje:prodsCanje.length>0?prodsCanje:(f.productosCanje||[]),
                   producto:prodsCanje[0]?.nombre||f.producto||"",
+                  _pedidoCargado:String(num),
                 }));
-                toast(`Pedido #${num} cargado`,"success");
               }}/>
             </div>
 
