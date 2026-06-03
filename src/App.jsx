@@ -672,17 +672,24 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
 // ─── Command Palette (Ctrl+K) ───
 function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   const [q, setQ] = React.useState("");
+  const [selIdx, setSelIdx] = React.useState(0);
   const inputRef = React.useRef(null);
   React.useEffect(()=>{
-    if(open) setTimeout(()=>inputRef.current?.focus(), 50);
+    if(open){ inputRef.current?.focus(); setSelIdx(0); }
     else setQ("");
   },[open]);
+  React.useEffect(()=>{ setSelIdx(0); },[q]);
   React.useEffect(()=>{
     if(!open) return;
-    const onKey = (e)=>{ if(e.key==="Escape") onClose(); };
+    const onKey = (e)=>{
+      if(e.key==="Escape"){ onClose(); return; }
+      if(e.key==="ArrowDown"){ e.preventDefault(); setSelIdx(i=>Math.min(i+1, filtered.length-1)); }
+      if(e.key==="ArrowUp"){ e.preventDefault(); setSelIdx(i=>Math.max(i-1,0)); }
+      if(e.key==="Enter"&&filtered[selIdx]){ setPage(filtered[selIdx].page); onClose(); }
+    };
     window.addEventListener("keydown", onKey);
     return ()=>window.removeEventListener("keydown", onKey);
-  },[open, onClose]);
+  },[open, onClose, selIdx, q]);
 
   const items = [
     {label:"Inicio",              page:"home",     icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
@@ -719,9 +726,8 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
             <div style={{padding:"32px 16px", textAlign:"center", color:T.textSm, fontSize:DS.font.md}}>Sin resultados</div>
           ) : filtered.map((item,i)=>(
             <button key={i} onClick={()=>{setPage(item.page);onClose();}}
-              style={{display:"flex", alignItems:"center", gap:DS.sp.md, padding:"10px 12px", width:"100%", border:"none", background:"transparent", borderRadius:DS.r.md, cursor:"pointer", textAlign:"left", color:T.text, fontSize:DS.font.base, transition:`background 0.1s`}}
-              onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              onMouseEnter={()=>setSelIdx(i)}
+              style={{display:"flex", alignItems:"center", gap:DS.sp.md, padding:"10px 12px", width:"100%", border:"none", background:selIdx===i?T.surface:"transparent", borderRadius:DS.r.md, cursor:"pointer", textAlign:"left", color:T.text, fontSize:DS.font.base, transition:`background 0.1s`}}>
               {item.page==="ml"
                 ? <svg width="20" height="20" viewBox="0 0 48 48" fill="none" stroke={T.accent} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" style={{flexShrink:0,opacity:0.85}}><ellipse cx="24" cy="24" rx="19.5" ry="12.978"/><path d="M9.7044,15.5305A20.8345,20.8345,0,0,0,16.09,17.3957a22.8207,22.8207,0,0,0,4.546-.7731"/><path d="M38.8824,15.6143a8.6157,8.6157,0,0,1-5.1653,1.4849c-3.3351,0-6.2255-2.1987-9.2148-2.1987-2.6681,0-7.189,4.3727-7.189,5.1633s1.3094,1.26,2.3717.7411c.6215-.3036,3.31-2.9151,5.4843-2.9151s9.2186,7.1361,9.8571,7.8066c.9882,1.0376-.9264,3.2733-2.1493,2.05s-3.4092-3.1621-3.4092-3.1621"/><path d="M43.4,22.6826a23.9981,23.9981,0,0,0-8.5467,2.6926"/><path d="M32.5807,27.4555c.9881,1.0376-.9265,3.2733-2.1493,2.05S27.85,26.9933,27.85,26.9933"/><path d="M30.1349,29.2147c.9882,1.0376-.9264,3.2733-2.1493,2.05S25.96,29.3032,25.96,29.3032"/><path d="M24.2015,31.3156A2.309,2.309,0,0,0,27.85,31.13"/><path d="M24.2015,31.3156c.5306-.6964.49-3.1817-2.2437-2.6876.6423-1.2188.0658-3.1457-2.3881-2.0093A1.69,1.69,0,0,0,16.424,25.96a1.4545,1.4545,0,0,0-2.8-.28c-.5435,1.1035.2964,3.0963,2.0916,1.9763-.1812,1.9435.84,2.5364,2.6845,1.7788.0989,1.91,1.367,1.7457,2.2728,1.3011A1.9376,1.9376,0,0,0,24.2015,31.3156Z"/><path d="M4.6706,22.2785a18.3081,18.3081,0,0,1,9.0635,3.2144"/></svg>
                 : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.85}}><path d={item.icon}/></svg>
@@ -1660,6 +1666,14 @@ function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px"
 function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:"transparent",color:T.textMd}; }
 function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
 function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
+// Botón ✕ estándar para cerrar modales y drawers
+function ModalCloseBtn({T, onClick, disabled}) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{background:"transparent",border:"none",color:T.textMd,cursor:disabled?"not-allowed":"pointer",fontSize:18,padding:"4px 6px",lineHeight:1,borderRadius:6,flexShrink:0,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"color 0.15s"}}
+      onMouseEnter={e=>e.currentTarget.style.color=T.text}
+      onMouseLeave={e=>e.currentTarget.style.color=T.textMd}>✕</button>
+  );
+}
 function OrderSearchField({T, orders, onSelect, uid}) {
   const [q,setQ]=useState("");
   const [apiResults,setApiResults]=useState([]);
@@ -1739,6 +1753,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [kanbanTipo,setKanbanTipo]=useState("Todos");
   const [search,setSearch]=useState("");
   const [activeReclamo,setActiveReclamo]=useState(null);
+  const [notaInterna,setNotaInterna]=useState("");
+  const [notaGuardada,setNotaGuardada]=useState(false);
   const [reclamoForm,setReclamoForm]=useState(null);
   const [deleteConfirm,setDeleteConfirm]=useState(null);
   const [saving,setSaving]=useState(false);
@@ -1750,6 +1766,13 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const [bulkSelected,setBulkSelected]=useState(new Set());
   const [bulkEstado,setBulkEstado]=useState("");
   const [dragOverEstado,setDragOverEstado]=useState(null);
+
+  // Sincronizar nota interna cuando cambia el reclamo activo
+  useEffect(()=>{
+    const r=reclamos.find(r=>r._docId===activeReclamo);
+    setNotaInterna(r?.notasInternas||"");
+    setNotaGuardada(false);
+  },[activeReclamo]);
 
   // Atajos de teclado en reclamos
   useEffect(()=>{
@@ -2251,6 +2274,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                       </div>
                       <div style={{padding:8,display:"flex",flexDirection:"column",gap:6,maxHeight:440,overflowY:"auto"}}>
                         {items.length===0&&<div style={{textAlign:"center",padding:"20px 8px",fontSize:12,color:T.textSm,opacity:0.5}}>Soltá aquí</div>}
+                        {items.length>4&&<div style={{textAlign:"center",fontSize:10,color:T.textSm,padding:"2px 0 4px",letterSpacing:0.3}}>↕ {items.length} items · scrolleá para ver todos</div>}
                         {items.map(r=>{
                           const o=orders.find(o=>o.numero===r.orderNum);
                           const nombre=r.clienteNombre||o?.comprador;
@@ -2436,11 +2460,21 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             )}
             {/* Notas internas */}
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8}}>🔒 Notas internas</div>
-              <textarea rows={3} placeholder="Notas privadas..." defaultValue={activeR.notasInternas||""}
-                onBlur={async e=>{const val=e.target.value;if(val!==(activeR.notasInternas||""))await updateDoc(doc(db,"reclamos",activeR._docId),{notasInternas:val,updatedAt:serverTimestamp()});}}
-                style={{...InputStyle(T),width:"100%",resize:"vertical",fontSize:12,padding:"8px 10px",lineHeight:1.5,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",minHeight:70,background:T.yellowBg||T.surface,borderColor:T.yellow+"44"}}
-                onFocus={e=>e.target.style.borderColor=T.yellow}/>
+              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span>🔒 Notas internas</span>
+                {notaGuardada&&<span style={{fontSize:10,color:T.green,fontWeight:500}}>✓ Guardado</span>}
+              </div>
+              <textarea rows={3} placeholder="Notas privadas..." value={notaInterna}
+                onChange={e=>{setNotaInterna(e.target.value);setNotaGuardada(false);}}
+                style={{...InputStyle(T),width:"100%",resize:"vertical",fontSize:12,padding:"8px 10px",lineHeight:1.5,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",minHeight:70,background:T.yellowBg||T.surface,borderColor:notaGuardada?T.green+"66":T.yellow+"44"}}/>
+              {notaInterna!==(activeR.notasInternas||"")&&(
+                <AsyncButton onClick={async()=>{
+                  await updateDoc(doc(db,"reclamos",activeR._docId),{notasInternas:notaInterna,updatedAt:serverTimestamp()});
+                  setNotaGuardada(true);
+                }} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px",marginTop:6,color:T.yellow,borderColor:T.yellow+"44"}}>
+                  💾 Guardar nota
+                </AsyncButton>
+              )}
             </div>
             {/* Historial */}
             <div style={{marginBottom:14}}>
@@ -6312,6 +6346,15 @@ function AuthScreen({T, darkMode, onToggleDark}) {
   );
 }
 
+// Toggle switch reutilizable (usado en ConfigScreen, MetaAds, etc.)
+function DSToggle({T, active, onToggle}) {
+  return (
+    <div onClick={onToggle} style={{width:44,height:24,borderRadius:20,background:active?T.accentSolid:T.border,cursor:"pointer",position:"relative",transition:"background 0.2s",flexShrink:0}}>
+      <div style={{position:"absolute",top:3,left:active?22:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.3)"}}/>
+    </div>
+  );
+}
+
 // ===========================================
 // CONFIG SCREEN
 // ===========================================
@@ -6595,11 +6638,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const metaConnected=!!userDoc?.meta_active_account;
   const alertasCfg=userDoc?.alertas||{recordatorio:true,sinrespuesta:true,contenido:true};
 
-  const Toggle=({active,onToggle})=>(
-    <div onClick={onToggle} style={{width:44,height:24,borderRadius:20,background:active?T.accentSolid:T.border,cursor:"pointer",position:"relative",transition:"background 0.2s",flexShrink:0}}>
-      <div style={{position:"absolute",top:3,left:active?22:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.3)"}}/>
-    </div>
-  );
+  const Toggle=({active,onToggle})=><DSToggle T={T} active={active} onToggle={onToggle}/>;
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
@@ -6793,7 +6832,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Shopify</div>
                   <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Pegá las credenciales de TU app de Shopify (creada en Dev Dashboard)</div>
                 </div>
-                <button onClick={()=>!connectingShopify && setShowShopifyModal(false)} disabled={connectingShopify} style={{background:"transparent",border:"none",color:T.textMd,cursor:connectingShopify?"wait":"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
+                <ModalCloseBtn T={T} onClick={()=>!connectingShopify && setShowShopifyModal(false)} disabled={connectingShopify}/>
               </div>
 
               <div style={{padding:12,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:16,fontSize:11,color:T.textMd,lineHeight:1.65}}>
@@ -6862,7 +6901,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Se abre ML para que autorices el acceso a tu cuenta</div>
                   </div>
                 </div>
-                <button onClick={()=>!connectingML && setShowMLModal(false)} disabled={connectingML} style={{background:"transparent",border:"none",color:T.textMd,cursor:connectingML?"wait":"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
+                <ModalCloseBtn T={T} onClick={()=>!connectingML && setShowMLModal(false)} disabled={connectingML}/>
               </div>
 
               <div style={{padding:"12px 14px",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:20,fontSize:11,color:T.textMd,lineHeight:1.7}}>
@@ -6896,7 +6935,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Meta Ads</div>
                   <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Pegá tu System User Token de Meta Business</div>
                 </div>
-                <button onClick={()=>!connectingMeta && setShowMetaModal(false)} disabled={connectingMeta} style={{background:"transparent",border:"none",color:T.textMd,cursor:connectingMeta?"wait":"pointer",fontSize:18,padding:4}}>✕</button>
+                <ModalCloseBtn T={T} onClick={()=>!connectingMeta && setShowMetaModal(false)} disabled={connectingMeta}/>
               </div>
 
               <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:11,color:T.textMd,lineHeight:1.65,marginBottom:14}}>
@@ -10844,6 +10883,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [productos, setProductos] = useState([]);
   const [productMap, setProductMap] = useState({});
   const [emitting, setEmitting] = useState(false);
+  const [showArcaConfirm, setShowArcaConfirm] = useState(false);
   const [emitProgress, setEmitProgress] = useState({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
   const [mesImputacion, setMesImputacion] = useState("actual"); // "actual" | "anterior"
   // YYYY-MM-DD del día del mes anterior que el merchant elige cuando imputa
@@ -11981,9 +12021,31 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                       </div>
                       {!resultados && (
-                        <button onClick={handleEmit} disabled={emitting||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:14,fontWeight:700,cursor:emitting?"wait":(!cuitSel?"not-allowed":"pointer"),fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",boxShadow:"0 4px 14px #16a34a40"}}>
+                        <button onClick={()=>setShowArcaConfirm(true)} disabled={emitting||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:14,fontWeight:700,cursor:emitting?"wait":(!cuitSel?"not-allowed":"pointer"),fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",boxShadow:"0 4px 14px #16a34a40"}}>
                           {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir facturas en ARCA"}
                         </button>
+                      )}
+                      {showArcaConfirm&&ReactDOM.createPortal(
+                        <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+                          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:460,padding:"28px 28px 24px"}} onClick={e=>e.stopPropagation()}>
+                            <div style={{fontSize:20,marginBottom:8}}>🧾</div>
+                            <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:6}}>¿Emitir facturas en ARCA?</div>
+                            <div style={{fontSize:13,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
+                              Vas a emitir <strong style={{color:T.text}}>{Object.keys(ordenes||{}).length} comprobante{Object.keys(ordenes||{}).length!==1?"s":""}</strong> por un total de <strong style={{color:T.accent}}>$ {Object.values(ordenes||{}).reduce((s,o)=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>.<br/>
+                              Esta acción es <strong style={{color:T.red}}>irreversible</strong> — ARCA emite los comprobantes con CAE y no pueden anularse desde Growith.
+                            </div>
+                            <div style={{padding:"10px 14px",background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:8,fontSize:12,color:T.red,marginBottom:20}}>
+                              ⚠ Verificá que los montos y destinatarios sean correctos antes de continuar.
+                            </div>
+                            <div style={{display:"flex",gap:10}}>
+                              <button onClick={()=>setShowArcaConfirm(false)} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 0"}}>Cancelar</button>
+                              <button onClick={()=>{setShowArcaConfirm(false);handleEmit();}} style={{flex:1,background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 0",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                Confirmar y emitir
+                              </button>
+                            </div>
+                          </div>
+                        </div>,
+                        document.body
                       )}
                     </div>
 
