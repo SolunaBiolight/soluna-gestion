@@ -3993,7 +3993,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     href={c.telefono?"https://wa.me/"+c.telefono.replace(/\D/g,""):null}/>
                   <Field label="Email" value={c.email} onSave={v=>save({email:v})} type="email" placeholder="sofi@mail.com"
                     href={c.email?"mailto:"+c.email:null}/>
-                  <Field label="@Instagram" value={c.usuario?("@"+c.usuario.replace("@","")):""} onSave={v=>{const u=v.replace("@","").trim();save({usuario:u,linkInstagram:u?"https://instagram.com/"+u:""});}} placeholder="@usuario"
+                  <Field label="@Instagram" value={c.usuario?("@"+c.usuario.replace("@","")):""} onSave={v=>{
+                    const raw=(v||"").trim();
+                    // Extraer @usuario si pegaron un link de Instagram
+                    const match=raw.match(/(?:instagram\.com\/|^@?)([A-Za-z0-9_.]+)/);
+                    const u=match?match[1].replace(/^@/,""):raw.replace(/^@/,"");
+                    save({usuario:u,linkInstagram:u?"https://instagram.com/"+u:""});
+                  }} placeholder="@usuario o link de Instagram"
                     href={igHref}/>
                   <Field label="Nº de pedido" value={c.pedidoRef} onSave={v=>save({pedidoRef:v})} placeholder="12345"/>
                   <Field label="Tracking Andreani" value={c.tracking} onSave={v=>save({tracking:v})} placeholder="3600029..."
