@@ -1844,6 +1844,12 @@ export default async function handler(req, res) {
       const { cuit: cuitEmit, ordenes, product_map, mes_imputacion, fecha_imputacion_custom } = body;
       if (!cuitEmit || !ordenes) return res.status(400).json({ error: "Faltan cuit u ordenes" });
 
+      // LOG diagnóstico — visible en Vercel logs. Si el merchant reporta
+      // "me facturó con fecha de junio cuando quería mayo", chequear esto
+      // para ver qué llegó del frontend. Si mes_imputacion=undefined o
+      // "actual" → frontend NO mandó "anterior" (cache stale / radio mal).
+      console.log(`[arca/emit] uid=${uid} cuit=${cuitEmit} n=${Object.keys(ordenes||{}).length} mes_imputacion=${JSON.stringify(mes_imputacion)} fecha_custom=${JSON.stringify(fecha_imputacion_custom)}`);
+
       // Resolver fecha de imputación.
       //
       // Reglas:

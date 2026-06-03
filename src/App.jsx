@@ -11537,13 +11537,32 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const emisorInfo = cuitActivoData
       ? `\n\n📋 CUIT EMISOR: ${formatCuit(cuitActivoData.cuit)}\n   ${cuitActivoData.razon_social || cuitActivoData.nombre_fantasia || ""}\n   PV ${String(cuitActivoData.punto_venta || 1).padStart(5,"0")} · ${cuitActivoData.arca_prod ? "Producción" : "Homologación"}`
       : `\n\n⚠ CUIT ${cuitSel} (datos incompletos)`;
-    let msg = `¿Emitir ${orderIds.length} factura${orderIds.length>1?"s":""} en ARCA?${emisorInfo}\n\n⚠ Verificá que este sea el CUIT correcto. Una vez emitidas, sólo se pueden revertir con Nota de Crédito.`;
+    // Calcular la fecha REAL con la que ARCA va a registrar las facturas para
+    // mostrarla en el confirm. Si el merchant ve "fecha de junio" cuando esperaba
+    // mayo, cancela y arregla. Esto es el cinturón de seguridad final que evita
+    // que el cache del JS o un radio mal-clickeado termine en facturas mal fechadas.
+    const fechaImputadaLabel = (() => {
+      const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
+      if (mesImputacion === "actual") {
+        return nowArg.toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"}) + " (HOY)";
+      }
+      // mes anterior
+      if (fechaImputacionCustom) {
+        return new Date(fechaImputacionCustom+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"});
+      }
+      // último día hábil del mes anterior (lo calcula el backend; acá aproximamos)
+      const ult = new Date(nowArg.getFullYear(), nowArg.getMonth(), 0);
+      while (ult.getDay() === 0 || ult.getDay() === 6) ult.setDate(ult.getDate()-1);
+      return ult.toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"}) + " (último día hábil del mes anterior)";
+    })();
+    const fechaInfo = `\n\n📅 FECHA DE LAS FACTURAS: ${fechaImputadaLabel}\n   ${mesImputacion==="anterior" ? "✓ Se van a imputar al MES ANTERIOR" : "⚠ Se van a imputar al MES CORRIENTE (HOY)"}`;
+    let msg = `¿Emitir ${orderIds.length} factura${orderIds.length>1?"s":""} en ARCA?${fechaInfo}${emisorInfo}\n\n⚠ Verificá la fecha y el CUIT. Una vez emitidas, sólo se pueden revertir con Nota de Crédito.`;
     if(duplicates.length > 0) {
       const ids = duplicates.slice(0, 5).map(d => `· ${d.orden_id} (F${d.letra} ${String(d.nro).padStart(8,"0")})`).join("\n");
       const masMsg = duplicates.length > 5 ? `\n…y ${duplicates.length - 5} más` : "";
-      msg = `⚠ Hay ${duplicates.length} órden${duplicates.length>1?"es":""} ya facturada${duplicates.length>1?"s":""} este mes:\n${ids}${masMsg}\n\n¿Querés refacturarla${duplicates.length>1?"s":""} igual? Se van a emitir nuevos comprobantes (los anteriores no se anulan).${emisorInfo}`;
+      msg = `⚠ Hay ${duplicates.length} órden${duplicates.length>1?"es":""} ya facturada${duplicates.length>1?"s":""} este mes:\n${ids}${masMsg}\n\n¿Querés refacturarla${duplicates.length>1?"s":""} igual? Se van a emitir nuevos comprobantes (los anteriores no se anulan).${fechaInfo}${emisorInfo}`;
     }
-    if(!await appConfirm(msg,{okLabel:"Sí, emitir con ese CUIT"})) return;
+    if(!await appConfirm(msg,{okLabel:"Sí, emitir con esa fecha y CUIT"})) return;
     const total = orderIds.length;
     setEmitting(true);
     setEmitProgress({active:true,current:0,total,ok:0,fail:0,done:false,errors:[]});
