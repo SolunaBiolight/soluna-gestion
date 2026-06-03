@@ -484,7 +484,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
-      subs:[{id:"analisis",label:"Análisis"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
+      subs:[{id:"analisis",label:"Análisis"},{id:"productos",label:"Productos"},{id:"facturacion",label:"Facturación"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
       subs:[{id:"gestion",label:"Gestión"},{id:"analytics",label:"Analytics"}]},
     { group:"OPERACIONES" },
@@ -18155,6 +18155,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   const TABS=[
     {id:"analisis",label:"📊 Análisis"},
+    {id:"productos",label:"📦 Productos"},
+    {id:"facturacion",label:"💰 Facturación"},
     {id:"items",label:"📋 Items"},
     {id:"depositos",label:"🏬 Depósitos"},
     {id:"historial",label:"📜 Historial"},
@@ -18245,25 +18247,29 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         ):data?(
           <>
             {/* KPIs siempre visibles */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
               {(()=>{
                 const prevU=dataPrev?.total_units||0;
                 const deltaU=prevU>0?((totalUnits-prevU)/prevU*100):null;
                 const prevR=dataPrev?.total_revenue||0;
-                const currR=totalRev;
-                const deltaR=prevR>0?((currR-prevR)/prevR*100):null;
+                const deltaR=prevR>0?((totalRev-prevR)/prevR*100):null;
+                const prevO=dataPrev?.total_orders||0;
+                const deltaO=prevO>0?((totalOrders-prevO)/prevO*100):null;
+                const unidadesPorVenta = totalOrders>0 ? (totalUnits/totalOrders).toFixed(1) : "—";
                 return [
-                  {label:`Unidades vendidas`,val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"📦",delta:deltaU},
+                  {label:"Unidades vendidas",val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"📦",delta:deltaU},
+                  {label:"Órdenes",val:fmt(totalOrders),sub:`${days}d`,color:T.blue||"#3b82f6",icon:"🛒",delta:deltaO},
+                  {label:"Productos por venta",val:unidadesPorVenta,sub:"unidades/orden",color:T.purple||"#c084fc",icon:"🧮",delta:null},
+                  {label:"Facturación",val:fmtARS(totalRev),sub:`${fmtARS(totalOrders>0?totalRev/totalOrders:0)}/orden`,color:T.green,icon:"💰",delta:deltaR},
                   {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||"#3b82f6",icon:"🔢",delta:null},
                   {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||"#eab308"):T.green,icon:"⏳",delta:null},
                   {label:"Sin stock",val:kpiEmpty,sub:"agotados",color:T.red,icon:"⛔",delta:null},
-                  {label:"Stock crítico",val:kpiCritical,sub:"menos de 7 días",color:T.red+"cc",icon:"🔴",delta:null},
-                  {label:"Sin ventas",val:kpiDead,sub:"prod. inactivos",color:T.textSm,icon:"💤",delta:null},
+                  {label:"Stock crítico",val:kpiCritical,sub:"<7 días",color:T.red+"cc",icon:"🔴",delta:null},
                 ];
               })().map(k=>(
                 <div key={k.label} style={{background:T.card,border:`1px solid ${((k.label==="Sin stock"||k.label==="Stock crítico")&&k.val>0)?T.red+"55":T.border}`,borderRadius:12,padding:"13px 14px"}}>
                   <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:5}}>{k.icon} {k.label}</div>
-                  <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
+                  <div style={{fontSize:k.label==="Facturación"?14:20,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
                   <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.sub}</div>
                   {k.delta!==null&&<div style={{fontSize:9,fontWeight:700,color:k.delta>=0?T.green:T.red,marginTop:4}}>{k.delta>=0?"+":""}{k.delta.toFixed(1)}% vs anterior</div>}
                 </div>
@@ -18300,17 +18306,18 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               const isAnalisis  = tab==="analisis";
               const isProductos  = tab==="productos";
               const isFact       = tab==="facturacion";
-              // En tab Análisis hay subtoggle ventas/productos
+              // En tab Análisis hay subtoggle ventas/productos/revenue
               const showingVentas = isAnalisis && analysisMode==="ventas";
               const showingProd   = isAnalisis && analysisMode==="productos";
+              const showingRev    = isAnalisis && analysisMode==="revenue";
 
-              const tabDaily     = showingVentas ? (data.daily_orders||{}) : data.daily_series||{};
-              const tabTotal     = showingVentas ? totalOrders : isProductos ? totalUnits : totalRev;
+              const tabDaily     = showingVentas ? (data.daily_orders||{}) : showingRev||isFact ? (data.daily_revenue||{}) : data.daily_series||{};
+              const tabTotal     = showingVentas ? totalOrders : (isProductos||showingProd) ? totalUnits : totalRev;
               const tabAvg       = Object.keys(tabDaily).length>0 ? (Object.values(tabDaily).reduce((a,b)=>a+b,0)/Math.max(1,Object.keys(tabDaily).length)) : 0;
-              const tabTitle     = showingVentas?"Ventas por día":isProductos||showingProd?"Productos vendidos por día":"Facturación por día";
-              const tabSubtitle  = showingVentas?"Cantidad de órdenes pagadas":isProductos||showingProd?"Unidades despachadas":"Revenue generado";
-              const tabMainVal   = showingVentas?fmt(totalOrders):isProductos?fmt(totalUnits):isFact?fmtARS(totalRev):fmt(totalUnits);
-              const tabMainLabel = showingVentas?"órdenes totales":isProductos?"unidades vendidas":isFact?"facturado total":"unidades vendidas";
+              const tabTitle     = showingVentas?"Ventas por día":(isProductos||showingProd)?"Productos vendidos por día":"Facturación por día";
+              const tabSubtitle  = showingVentas?"Cantidad de órdenes pagadas":(isProductos||showingProd)?"Unidades despachadas":"Revenue generado (ARS)";
+              const tabMainVal   = showingVentas?fmt(totalOrders):(isProductos||showingProd)?fmt(totalUnits):fmtARS(totalRev);
+              const tabMainLabel = showingVentas?"órdenes totales":(isProductos||showingProd)?"unidades vendidas":"facturado total";
               const tabDonutVariante = isFact
                 ? (()=>{const m={};allProducts.forEach(p=>p.variants.forEach(v=>{m[v.nombre]=(m[v.nombre]||0)+v.revenue;}));return m;})()
                 : (data.by_variant||{});
@@ -18331,7 +18338,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         </div>
                         {isAnalisis&&(
                           <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
-                            {[{v:"ventas",l:"Ventas"},{v:"productos",l:"Productos"}].map(o=>(
+                            {[{v:"ventas",l:"Ventas"},{v:"productos",l:"Productos"},{v:"revenue",l:"Facturación"}].map(o=>(
                               <button key={o.v} onClick={()=>setAnalysisMode(o.v)}
                                 style={{padding:"4px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:analysisMode===o.v?T.card:"transparent",color:analysisMode===o.v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:analysisMode===o.v?"0 1px 3px rgba(0,0,0,0.2)":"none"}}>
                                 {o.l}
@@ -18350,13 +18357,18 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           {(showingVentas?[
                             {val:fmt(totalOrders),label:"órdenes pagadas",color:T.accentSolid},
                             {val:tabAvg.toFixed(1),label:"órdenes por día",color:T.accentSolid},
-                            {val:fmt(allProducts.filter(p=>p.units_sold>0).length),label:"productos vendidos",color:T.accentSolid},
-                            {val:fmtARS(totalRev/Math.max(1,totalOrders)),label:"ticket por orden",color:T.accentSolid},
+                            {val:totalOrders>0?(totalUnits/totalOrders).toFixed(1):"—",label:"productos por venta",color:T.purple||"#c084fc"},
+                            {val:fmtARS(totalRev/Math.max(1,totalOrders)),label:"ticket promedio",color:T.accentSolid},
                           ]:(isProductos||showingProd)?[
                             {val:fmt(totalUnits),label:"unidades vendidas",color:T.accentSolid},
                             {val:avgRate.toFixed(1),label:"unidades por día",color:T.accentSolid},
                             {val:fmt(allProducts.length),label:"productos en catálogo",color:T.accentSolid},
                             {val:fmt(kpiDead),label:"sin ventas en el período",color:T.accentSolid},
+                          ]:(showingRev)?[
+                            {val:fmtARS(totalRev),label:"total facturado",color:T.green},
+                            {val:fmtARS(totalRev/Math.max(1,days)),label:"facturación por día",color:T.green},
+                            {val:fmtARS(totalRev/Math.max(1,totalOrders)),label:"ticket por orden",color:T.green},
+                            {val:fmtARS((totalRev/Math.max(1,days))*30),label:"proyección mensual",color:T.green},
                           ]:[
                             {val:fmtARS(totalRev),label:"total facturado",color:T.green},
                             {val:fmtARS(totalRev/Math.max(1,days)),label:"facturación por día",color:T.green},
@@ -18404,7 +18416,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>
                         {isFact?"Distribución del revenue":showingVentas?"Órdenes por tipo de producto":"Unidades vendidas por variante"}
                       </div>
-                      <DonutChart data={tabDonutVariante} centerLabel={isFact?{val:fmtARS(totalRev),label:"revenue"}:showingVentas?{val:fmt(totalOrders),label:"órdenes"}:{val:fmt(totalUnits),label:"uds"}}/>
+                      <DonutChart data={tabDonutVariante} centerLabel={(isFact||showingRev)?{val:fmtARS(totalRev),label:"revenue"}:showingVentas?{val:fmt(totalOrders),label:"órdenes"}:{val:fmt(totalUnits),label:"uds"}}/>
                     </div>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
