@@ -506,7 +506,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       subs:[{id:"tareas",label:"Tareas"},{id:"equipo",label:"Equipo"},{id:"creativos",label:"Creativos"}]},
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
-      subs:[{id:"metricas",label:"Métricas"},{id:"pendientes",label:"Pendientes"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
+      subs:[{id:"pendientes",label:"Pendientes"},{id:"metricas",label:"Métricas"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
   ];
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
   const W = collapsed ? 64 : 224;
@@ -11813,46 +11813,74 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               )}
             </div>
 
-            {/* Navegador de meses del dashboard — vive en la subsección Métricas */}
-            <div style={{display:sidebarTab==="metricas"?"flex":"none",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
-              <button onClick={()=>navMes(-1)} style={{background:"transparent",border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"6px 12px",fontSize:14,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>←</button>
-              <div style={{flex:1,textAlign:"center"}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5}}>Mes en vista</div>
-                <div style={{fontSize:15,fontWeight:700,color:T.text,textTransform:"capitalize",marginTop:2}}>{mesActual}{esMesActualReal && <span style={{fontSize:10,color:T.green,marginLeft:6,fontWeight:500,textTransform:"none"}}>· actual</span>}</div>
+            {/* Navegador de meses del dashboard */}
+            {sidebarTab==="metricas"&&(
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                <button onClick={()=>navMes(-1)} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:13}}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <div style={{flex:1,textAlign:"center",padding:"8px 16px",background:T.card,border:"1px solid "+T.border,borderRadius:10}}>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text,textTransform:"capitalize"}}>{mesActual}</div>
+                  {esMesActualReal&&<div style={{fontSize:10,color:T.green,fontWeight:600,marginTop:1}}>mes actual</div>}
+                </div>
+                <button onClick={()=>navMes(1)} disabled={esMesActualReal} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:13,opacity:esMesActualReal?0.35:1,cursor:esMesActualReal?"not-allowed":"pointer"}}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                </button>
               </div>
-              <button onClick={()=>navMes(1)} disabled={esMesActualReal} style={{background:"transparent",border:"1px solid "+T.border,color:esMesActualReal?T.textSm:T.text,borderRadius:8,padding:"6px 12px",fontSize:14,cursor:esMesActualReal?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:esMesActualReal?0.4:1}}>→</button>
-            </div>
+            )}
 
-            {/* Dashboard del mes — vive en la subsección Métricas (primera del sidenav) */}
-            <div style={{display:sidebarTab==="metricas"?"grid":"none",gridTemplateColumns: esRI ? "1fr 1fr 1fr" : "1fr 1fr",gap:14,marginBottom:24}}>
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
-                <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Monto facturado · {mesActual}</div>
-                <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>
-                  {dashboardStats ? "$ "+dashboardStats.total_facturado.toLocaleString("es-AR",{minimumFractionDigits:2}) : "$ 0,00"}
-                </div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>Total facturado en el mes (IVA incluido).</div>
-              </div>
-              {esRI && (
-                <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
-                  <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>IVA Débito fiscal · {mesActual}</div>
-                  <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>
-                    {dashboardStats ? "$ "+dashboardStats.iva_debito.toLocaleString("es-AR",{minimumFractionDigits:2}) : "$ 0,00"}
+            {/* Dashboard del mes */}
+            {sidebarTab==="metricas"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:24}}>
+                {/* KPIs fila 1 */}
+                <div style={{display:"grid",gridTemplateColumns:esRI?"repeat(4,1fr)":"repeat(3,1fr)",gap:12}}>
+                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>💰 Facturado · {mesActual}</div>
+                    <div style={{fontSize:22,fontWeight:800,color:T.green,letterSpacing:-0.5,lineHeight:1}}>
+                      {dashboardStats ? "$ "+dashboardStats.total_facturado.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}) : "$ 0"}
+                    </div>
+                    <div style={{fontSize:10,color:T.textSm,marginTop:5}}>IVA incluido</div>
                   </div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>IVA que cobraste a tus clientes en facturas A y B.</div>
-                </div>
-              )}
-              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 20px"}}>
-                <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>Facturas emitidas · {mesActual}</div>
-                <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-1}}>
-                  {dashboardStats ? dashboardStats.facturas_emitidas : 0}
-                </div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>
-                  {dashboardStats && (dashboardStats.por_letra.A + dashboardStats.por_letra.B + dashboardStats.por_letra.C) > 0
-                    ? `A: ${dashboardStats.por_letra.A} · B: ${dashboardStats.por_letra.B} · C: ${dashboardStats.por_letra.C}`
-                    : "Historial de comprobantes emitidos desde Growith."}
+                  {esRI&&(
+                    <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
+                      <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>📊 IVA débito · {mesActual}</div>
+                      <div style={{fontSize:22,fontWeight:800,color:T.blue||"#3b82f6",letterSpacing:-0.5,lineHeight:1}}>
+                        {dashboardStats ? "$ "+dashboardStats.iva_debito.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}) : "$ 0"}
+                      </div>
+                      <div style={{fontSize:10,color:T.textSm,marginTop:5}}>Facturas A y B</div>
+                    </div>
+                  )}
+                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>🧾 Emitidas · {mesActual}</div>
+                    <div style={{fontSize:22,fontWeight:800,color:T.text,letterSpacing:-0.5,lineHeight:1}}>
+                      {dashboardStats ? dashboardStats.facturas_emitidas : 0}
+                    </div>
+                    <div style={{fontSize:10,color:T.textSm,marginTop:5}}>
+                      {dashboardStats&&(dashboardStats.por_letra.A+dashboardStats.por_letra.B+dashboardStats.por_letra.C)>0
+                        ?<span>A: <strong style={{color:T.text}}>{dashboardStats.por_letra.A}</strong> · B: <strong style={{color:T.text}}>{dashboardStats.por_letra.B}</strong> · C: <strong style={{color:T.text}}>{dashboardStats.por_letra.C}</strong></span>
+                        :"Sin facturas este mes"}
+                    </div>
+                  </div>
+                  {/* KPI pendientes — acceso directo */}
+                  {(()=>{
+                    const pendCount = tnData ? Object.values(tnData.ordenes||{}).filter(o=>!o.facturada).length : null;
+                    const pendTotal = tnData ? Object.values(tnData.ordenes||{}).filter(o=>!o.facturada).reduce((a,o)=>a+(o.total||0),0) : null;
+                    return (
+                      <div onClick={()=>setSidebarTab&&setSidebarTab("pendientes")} style={{background:pendCount>0?T.yellowBg:T.card,border:`1px solid ${pendCount>0?(T.yellow||"#eab308")+"55":T.border}`,borderRadius:12,padding:"16px 18px",cursor:pendCount>0?"pointer":"default",transition:"all 0.15s"}}>
+                        <div style={{fontSize:9,textTransform:"uppercase",color:pendCount>0?(T.yellow||"#eab308"):T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>⏳ Sin facturar ahora</div>
+                        <div style={{fontSize:22,fontWeight:800,color:pendCount>0?(T.yellow||"#eab308"):T.textSm,letterSpacing:-0.5,lineHeight:1}}>
+                          {tnData?pendCount:"—"}
+                        </div>
+                        <div style={{fontSize:10,color:T.textSm,marginTop:5}}>
+                          {pendTotal!=null&&pendTotal>0?`$ ${pendTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} pendientes`:"Cargá Pendientes para ver"}
+                        </div>
+                        {pendCount>0&&<div style={{fontSize:9,color:T.yellow||"#eab308",marginTop:4,fontWeight:600}}>Tocá para facturar →</div>}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Zona de facturación — wrapper contiene Pendientes y Manual */}
             <div style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -11860,67 +11888,65 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {/* Upload */}
                 {/* ══ VENTAS PENDIENTES (desde integraciones conectadas) ══ */}
                 <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"22px 24px",marginBottom:16}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+                  {/* Header */}
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:16}}>
                     <div>
-                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>Ventas pendientes de facturar</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Importadas en vivo de tus integraciones · Tildá las que querés facturar en esta pasada</div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Ventas pendientes de facturar</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Seleccioná las que querés facturar y tocá "Facturar"</div>
                     </div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,color:T.textSm}}>Período</span>
-                      <DateRangePicker
-                        T={T}
-                        since={fechaDesde}
-                        until={fechaHasta}
-                        onChange={(s,u)=>{ setPeriodoModo("custom"); setFechaDesde(s); setFechaHasta(u); }}
-                      />
-                      <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>Canal</span>
-                      <select value={canalSel} onChange={e=>setCanalSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
-                        <option value="todos">Todos</option>
-                        <option value="tiendanube">Tienda Nube</option>
-                        <option value="shopify">Shopify</option>
-                        <option value="mercadolibre">Mercado Libre</option>
-                      </select>
-                      <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>Pago</span>
-                      <select value={metodoPagoSel} onChange={e=>setMetodoPagoSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
-                        <option value="todos">Todos</option>
-                        {(()=>{
-                          // Detectar métodos de pago únicos en los pedidos cargados
-                          const set = new Set();
-                          Object.values(tnData?.ordenes || {}).forEach(o => {
-                            const m = (o.metodo_pago || "").trim();
-                            if (m) set.add(m);
-                          });
-                          return [...set].sort().map(m => <option key={m} value={m}>{m}</option>);
-                        })()}
-                      </select>
-                      <span style={{fontSize:11,color:T.textSm,marginLeft:6}}>Monto $</span>
-                      <input type="number" placeholder="min" value={montoMin} onChange={e=>setMontoMin(e.target.value)} style={{...iS,width:78,padding:"6px 8px",fontSize:12}}/>
-                      <span style={{fontSize:11,color:T.textSm}}>–</span>
-                      <input type="number" placeholder="max" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:78,padding:"6px 8px",fontSize:12}}/>
-                      <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar" style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:tnLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        {tnLoading ? <Spinner size={12} color={T.textMd}/> : "🔄"}
+                    <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar ventas" style={{...BtnSecondary(T),padding:"7px 12px",fontSize:12,gap:6,flexShrink:0}}>
+                      {tnLoading ? <Spinner size={11} color={T.textMd}/> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}
+                      Actualizar
+                    </button>
+                  </div>
+                  {/* Fila 1: Período con pills rápidos */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,fontWeight:600,color:T.textSm,flexShrink:0}}>Período:</span>
+                    {[{v:"7",l:"7 días"},{v:"15",l:"15 días"},{v:"30",l:"30 días"},{v:"90",l:"3 meses"}].map(p=>(
+                      <button key={p.v} onClick={()=>{ setPeriodoModo(p.v); const d=parseInt(p.v); const now=new Date(); setFechaHasta(now.toISOString().slice(0,10)); setFechaDesde(new Date(now-d*86400000).toISOString().slice(0,10)); }} style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:`1px solid ${periodoModo===p.v?T.accentSolid:T.border}`,borderRadius:6,background:periodoModo===p.v?T.accentSolid:"transparent",color:periodoModo===p.v?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
+                        {p.l}
                       </button>
+                    ))}
+                    <DateRangePicker T={T} since={fechaDesde} until={fechaHasta} onChange={(s,u)=>{ setPeriodoModo("custom"); setFechaDesde(s); setFechaHasta(u); }}/>
+                  </div>
+                  {/* Fila 2: Canal + Pago + Monto */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
+                    <select value={canalSel} onChange={e=>setCanalSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
+                      <option value="todos">Todos los canales</option>
+                      <option value="tiendanube">Tienda Nube</option>
+                      <option value="shopify">Shopify</option>
+                      <option value="mercadolibre">Mercado Libre</option>
+                    </select>
+                    <select value={metodoPagoSel} onChange={e=>setMetodoPagoSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
+                      <option value="todos">Todos los métodos de pago</option>
+                      {(()=>{const set=new Set();Object.values(tnData?.ordenes||{}).forEach(o=>{const m=(o.metodo_pago||"").trim();if(m)set.add(m);});return[...set].sort().map(m=><option key={m} value={m}>{m}</option>);})()}
+                    </select>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>$ mín</span>
+                      <input type="number" placeholder="0" value={montoMin} onChange={e=>setMontoMin(e.target.value)} style={{...iS,width:80,padding:"6px 8px",fontSize:12}}/>
+                      <span style={{fontSize:11,color:T.textSm}}>–</span>
+                      <input type="number" placeholder="sin límite" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:90,padding:"6px 8px",fontSize:12}}/>
                     </div>
+                    {(canalSel!=="todos"||metodoPagoSel!=="todos"||montoMin||montoMax)&&(
+                      <button onClick={()=>{setCanalSel("todos");setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
+                        ✕ Limpiar filtros
+                      </button>
+                    )}
                   </div>
 
-                  {/* Tags de conexiones */}
-                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+                  {/* Estado de conexiones — compacto */}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+                    <span style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,flexShrink:0}}>Fuentes:</span>
                     {(()=>{
-                      const meta = {
-                        tiendanube: { icon:"🔵", label:"Tienda Nube" },
-                        shopify:    { icon:"🛍️", label:"Shopify" },
-                        mercadolibre:{ icon:"🛒", label:"Mercado Libre" },
-                      };
-                      const conns = tnData?.connections || [
-                        { platform:"tiendanube", connected:false },
-                        { platform:"shopify", connected:false },
-                        { platform:"mercadolibre", connected:false },
-                      ];
+                      const meta = { tiendanube:{label:"TN",color:"#2D8DF2"}, shopify:{label:"Shopify",color:"#96BF48"}, mercadolibre:{label:"ML",color:"#FFE600"} };
+                      const conns = tnData?.connections || [{platform:"tiendanube",connected:false},{platform:"shopify",connected:false},{platform:"mercadolibre",connected:false}];
                       return conns.map(c => {
-                        const m = meta[c.platform] || { icon:"⚪", label:c.platform };
+                        const m = meta[c.platform]||{label:c.platform,color:T.textSm};
+                        const col = c.connected ? m.color : T.textSm;
                         return (
-                          <span key={c.platform} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+(c.connected?T.green+"44":T.border),color:c.connected?T.green:T.textSm,background:c.connected?T.greenBg:T.bg,fontWeight:c.connected?600:500}}>
-                            {m.icon} {m.label} · {c.connected ? "conectada" : "no conectada"}
+                          <span key={c.platform} style={{fontSize:10,padding:"3px 8px",borderRadius:5,border:`1px solid ${col}44`,color:c.connected?col:T.textSm,background:c.connected?col+"18":T.bg,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>
+                            <span style={{width:5,height:5,borderRadius:"50%",background:c.connected?col:T.border,display:"inline-block",flexShrink:0}}/>
+                            {m.label}
                           </span>
                         );
                       });
@@ -19852,7 +19878,7 @@ export default function App() {
   const [arcaTab,setArcaTab]=useState(()=>{
     const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
     if(parts[0]==="arca"&&parts[1]) return parts[1];
-    return "metricas";
+    return "pendientes";
   });
   const [tareasTab,setTareasTab]=useState("tareas");
   const [mlTab,setMlTab]=useState("gestion");
