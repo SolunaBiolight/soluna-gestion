@@ -3484,12 +3484,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                               </div>
                             </div>
 
-                            {/* Chips info */}
-                            <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:pctContenido!==null?7:0}}>
-                              {c.red&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:600,border:`1px solid ${T.border}`}}>{c.red}</span>}
-                              {c.nicho&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.purpleBg,color:T.purple,fontWeight:600}}>{c.nicho}</span>}
-                              {prods.length>0&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.border}`,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:100}} title={prods.map(p=>p.producto).join(", ")}>{prods[0]?.producto}{prods.length>1?` +${prods.length-1}`:""}</span>}
-                            </div>
+                            {/* Chips info — solo lo útil */}
+                            {(c.nicho||prods.length>0)&&(
+                              <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:pctContenido!==null?7:4}}>
+                                {c.nicho&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.purpleBg,color:T.purple,fontWeight:600}}>{c.nicho}</span>}
+                                {prods.map((p,i)=>(
+                                  <span key={i} style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>
+                                    {p.nombre}{(p.cantidad||1)>1?` ×${p.cantidad}`:""}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
 
                             {/* Barra de progreso contenido */}
                             {pctContenido!==null&&(
