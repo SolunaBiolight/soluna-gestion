@@ -415,24 +415,21 @@ function ultimoDiaHabilMesAnterior() {
   return `${yyyy}${mm}${dd}`;
 }
 
-// Chequea si una fecha YYYYMMDD es válida para emitir en ARCA.
-// Growith permite hasta 30 días hacia atrás en el selector — si ARCA rechaza
-// por ser demasiado retroactiva, devuelve el error real de ARCA (más útil).
-// No se permiten fechas futuras.
+// Chequea si una fecha YYYYMMDD está dentro del rango válido para ARCA:
+// máximo 10 días corridos hacia atrás, no futuras.
 function fechaValida(yyyymmdd) {
   const y = parseInt(yyyymmdd.slice(0, 4));
   const m = parseInt(yyyymmdd.slice(4, 6));
   const d = parseInt(yyyymmdd.slice(6, 8));
-  if (!y || !m || !d || m > 12 || d > 31) return { ok: false, msg: "Fecha inválida" };
+  if (!y || !m || !d || m > 12 || d > 31) return { ok: false, msg: "Fecha inválida." };
   const target = new Date(Date.UTC(y, m - 1, d));
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   const diffDays = (today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000);
   if (diffDays < 0) return { ok: false, msg: "No podés emitir facturas con fecha futura." };
-  if (diffDays > 30) return { ok: false, msg: `La fecha ${d.toString().padStart(2,"0")}/${m.toString().padStart(2,"0")}/${y} tiene más de 30 días de antigüedad. ARCA solo acepta hasta 10 días corridos retroactivos — para períodos más antiguos necesitás hablar con tu contador.` };
+  if (diffDays > 10) return { ok: false, msg: `La fecha ${String(d).padStart(2,"0")}/${String(m).padStart(2,"0")}/${y} está fuera del rango ARCA (máximo 10 días corridos hacia atrás). Podés acumular facturas y emitirlas hasta 10 días después de la venta.` };
   return { ok: true };
 }
-// Compat alias
 function dentroDe10DiasCorridos(yyyymmdd) { return fechaValida(yyyymmdd).ok; }
 
 // Condición frente al IVA del RECEPTOR (RG ARCA 5616 — obligatorio desde 01/06/2026)
