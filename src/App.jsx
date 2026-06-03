@@ -11555,8 +11555,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       while (ult.getDay() === 0 || ult.getDay() === 6) ult.setDate(ult.getDate()-1);
       return ult.toLocaleDateString("es-AR",{day:"numeric",month:"long",year:"numeric"}) + " (último día hábil del mes anterior)";
     })();
-    const fechaInfo = `\n\n📅 FECHA DE LAS FACTURAS: ${fechaImputadaLabel}\n   ${mesImputacion==="anterior" ? "✓ Se van a imputar al MES ANTERIOR" : "⚠ Se van a imputar al MES CORRIENTE (HOY)"}`;
-    let msg = `¿Emitir ${orderIds.length} factura${orderIds.length>1?"s":""} en ARCA?${fechaInfo}${emisorInfo}\n\n⚠ Verificá la fecha y el CUIT. Una vez emitidas, sólo se pueden revertir con Nota de Crédito.`;
+    const fechaInfo = `\n\n📅📅📅 FECHA DE LAS FACTURAS: ${fechaImputadaLabel} 📅📅📅\n   ${mesImputacion==="anterior" ? "✓ Se imputan al MES ANTERIOR — perfecto si querés facturar ventas del mes pasado." : "⚠️⚠️⚠️ SE IMPUTAN AL MES CORRIENTE (HOY). Si quisiste facturar al mes pasado, CANCELÁ y tocá el radio 'Mes anterior' arriba."}`;
+    let msg = `¿Emitir ${orderIds.length} factura${orderIds.length>1?"s":""} en ARCA?${fechaInfo}${emisorInfo}\n\n⚠ Verificá la fecha arriba. Una vez emitidas, sólo se pueden revertir con Nota de Crédito.`;
     if(duplicates.length > 0) {
       const ids = duplicates.slice(0, 5).map(d => `· ${d.orden_id} (F${d.letra} ${String(d.nro).padStart(8,"0")})`).join("\n");
       const masMsg = duplicates.length > 5 ? `\n…y ${duplicates.length - 5} más` : "";

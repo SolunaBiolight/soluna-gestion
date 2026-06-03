@@ -1850,6 +1850,24 @@ export default async function handler(req, res) {
       // "actual" → frontend NO mandó "anterior" (cache stale / radio mal).
       console.log(`[arca/emit] uid=${uid} cuit=${cuitEmit} n=${Object.keys(ordenes||{}).length} mes_imputacion=${JSON.stringify(mes_imputacion)} fecha_custom=${JSON.stringify(fecha_imputacion_custom)}`);
 
+      // ── DEFENSA ANTI-CACHE ──
+      // Si estamos en los primeros 5 días del mes (ARG) y el frontend NO
+      // está mandando mes_imputacion explícito, BLOQUEAMOS la emisión.
+      // El frontend nuevo SIEMPRE manda "anterior" o "actual" en esa ventana;
+      // si llega sin nada, es 100% un frontend con cache stale o un cliente
+      // raro — y dejar pasar implica que facture al mes corriente sin querer.
+      //
+      // El merchant ve un error claro con instrucciones y NO se factura nada
+      // mal. Mejor un error visible que una factura mal fechada.
+      const argFmtDefensa = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" });
+      const partsDefensa = argFmtDefensa.formatToParts(new Date());
+      const diaDefensa = parseInt(partsDefensa.find(p => p.type === "day").value);
+      if (diaDefensa <= 5 && (mes_imputacion === undefined || mes_imputacion === null || mes_imputacion === "")) {
+        return res.status(400).json({
+          error: `BLOQUEADO: estamos en los primeros 5 días del mes y tu navegador no especificó a qué mes imputar las facturas. Esto suele pasar por cache vieja del navegador. SOLUCIÓN: cerrá la pestaña, abrí en MODO INCÓGNITO (Ctrl+Shift+N o Cmd+Shift+N), entrá a la app de nuevo, y emití. Vas a ver un selector grande de mes con default 'mes anterior'. (Diagnóstico técnico: el backend no recibió mes_imputacion en el body.)`
+        });
+      }
+
       // Resolver fecha de imputación.
       //
       // Reglas:
