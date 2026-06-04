@@ -11168,6 +11168,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [montoMax, setMontoMax] = useState("");
   const [showManualUpload, setShowManualUpload] = useState(false);
 
+  // Totales del mes corriente (fetch independiente del filtro del calendario)
+  const [mesStats, setMesStats] = useState(null); // {totalOrdenes, totalMonto, mesLabel}
+
   // Descartadas: órdenes que el usuario decidió NO facturar en este ciclo.
   // Se guardan en localStorage con clave mensual — se resetean solos el 1 de cada mes.
   const descartadasKey = user?.uid ? `growith_arca_desc_${user.uid}_${new Date().toISOString().slice(0,7)}` : null;
@@ -11284,6 +11287,26 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if(!d.error) setBatches(d.batches||[]);
     });
   },[uid, cuitSel, dashMonth, dashYear]);
+
+  // Fetch independiente: total de órdenes del mes corriente (para calcular % descartadas)
+  useEffect(()=>{
+    if(!uid || !cuitSel) { setMesStats(null); return; }
+    const hoy = new Date();
+    const y = hoy.getFullYear();
+    const m = String(hoy.getMonth()+1).padStart(2,"0");
+    const since = `${y}-${m}-01`;
+    const until = hoy.toISOString().slice(0,10);
+    const mesLabel = hoy.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+    api("pending_orders","GET",null,{cuit:cuitSel, since, until}).then(d=>{
+      if(d.error) return;
+      const ords = Object.values(d.ordenes||{});
+      setMesStats({
+        totalOrdenes: ords.length,
+        totalMonto: ords.reduce((s,o)=>s+(o.total||0),0),
+        mesLabel,
+      });
+    });
+  },[uid, cuitSel]);
 
   useEffect(()=>{
     if(!uid || !cuitSel) return;
@@ -12312,10 +12335,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const someSel = itemsSelectables.some(([id])=>tnSelected[id]);
                     const selectedCount = itemsSelectables.filter(([id])=>tnSelected[id]).length;
                     const selectedTotal = itemsSelectables.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
-                    // Universo = todas las órdenes del período (billed + pendientes + descartadas)
-                    const totalOrdenes = all.length;
-                    const pctDescartadas = totalOrdenes > 0 ? Math.round(itemsDescartados.length / totalOrdenes * 100) : 0;
-                    const pctFacturando  = totalOrdenes > 0 ? Math.round(selectedCount / totalOrdenes * 100) : 0;
+                    // % sobre el mes corriente (independiente del filtro de calendario)
+                    const mesTotal  = mesStats?.totalOrdenes || 0;
+                    const mesMonto  = mesStats?.totalMonto   || 0;
+                    const montoDescartado = itemsDescartados.reduce((s,[,o])=>s+(o.total||0),0);
+                    const pctDescartadasN = mesTotal > 0 ? Math.round(itemsDescartados.length / mesTotal * 100) : 0;
+                    const pctDescartadasM = mesMonto > 0 ? Math.round(montoDescartado / mesMonto * 100) : 0;
                     const badgeColor = (plat) => plat === "shopify" ? "#96BF48" : plat === "mercadolibre" ? "#FFE600" : T.blue;
                     const badgeTextColor = (plat) => plat === "mercadolibre" ? "#333" : "#fff";
                     const fmtFechaHora = (iso) => {
@@ -12371,24 +12396,23 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </div>
                           </div>
 
-                          {/* Descartadas badge con % */}
+                          {/* Descartadas badge con % del mes */}
                           {itemsDescartados.length>0&&(
                             <button onClick={()=>setShowDescartadas(s=>!s)} style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,gap:5,color:T.textSm,marginLeft:0}}>
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
                               {itemsDescartados.length} descartadas
-                              <span style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontWeight:700,color:T.textMd}}>{pctDescartadas}%</span>
+                              {mesStats&&<span style={{background:"rgba(249,115,22,0.13)",border:"1px solid rgba(249,115,22,0.4)",borderRadius:4,padding:"1px 6px",fontWeight:700,color:"#fb923c"}}>{pctDescartadasN}% órd · {pctDescartadasM}% $</span>}
                             </button>
                           )}
 
-                          {/* Totales */}
+                          {/* Totales del período seleccionado */}
                           <div style={{marginLeft:"auto",display:"flex",gap:12,alignItems:"center",flexShrink:0}}>
                             {selectedCount>0&&(
-                              <span style={{fontSize:12,fontWeight:700,color:T.accent,display:"flex",alignItems:"center",gap:5}}>
+                              <span style={{fontSize:12,fontWeight:700,color:T.accent}}>
                                 {selectedCount} sel. · $ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}
-                                <span style={{fontSize:11,fontWeight:700,color:"#a78bfa",background:"rgba(124,58,237,0.13)",border:"1px solid rgba(124,58,237,0.4)",borderRadius:5,padding:"1px 6px"}}>{pctFacturando}%</span>
                               </span>
                             )}
-                            <span style={{fontSize:11,color:T.textSm}}>de {totalOrdenes} órdenes</span>
+                            {mesStats&&<span style={{fontSize:11,color:T.textSm}}>{mesStats.totalOrdenes} órd. en {mesStats.mesLabel}</span>}
                           </div>
                         </div>
                         <div style={{maxHeight:420,overflowY:"auto"}}>
@@ -12465,9 +12489,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <>
                                 <strong style={{color:T.text,fontSize:13}}>{selectedCount}</strong>
                                 <span>seleccionadas · <strong style={{color:T.accent}}>$ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</strong></span>
-                                <span style={{fontSize:11,fontWeight:700,color:"#a78bfa",background:"rgba(124,58,237,0.13)",border:"1px solid rgba(124,58,237,0.4)",borderRadius:5,padding:"1px 7px"}}>{pctFacturando}% del total</span>
-                                {itemsDescartados.length>0&&(
-                                  <span style={{fontSize:11,color:T.textSm}}>· {itemsDescartados.length} descartadas (<span style={{fontWeight:600,color:T.orange||"#f97316"}}>{pctDescartadas}%</span>)</span>
+                                {itemsDescartados.length>0&&mesStats&&(
+                                  <span style={{fontSize:11,color:T.textSm}}>· {itemsDescartados.length} descartadas = <span style={{fontWeight:700,color:"#fb923c"}}>{pctDescartadasN}% de órdenes</span> · <span style={{fontWeight:700,color:"#fb923c"}}>{pctDescartadasM}% de monto</span> del mes</span>
                                 )}
                               </>
                             ) : "Ninguna seleccionada"}
