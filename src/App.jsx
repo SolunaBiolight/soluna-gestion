@@ -11226,6 +11226,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [metodoPagoSel, setMetodoPagoSel] = useState("todos"); // "todos" | string literal
   const [montoMin, setMontoMin] = useState("");
   const [montoMax, setMontoMax] = useState("");
+  // Búsqueda libre en pendientes — matchea nombre del cliente, ID de orden
+  // Shopify/TN, número de operación ML, o cualquier substring del email.
+  const [busquedaPend, setBusquedaPend] = useState("");
   const [showManualUpload, setShowManualUpload] = useState(false);
 
   // Totales del mes corriente (fetch independiente del filtro del calendario)
@@ -11558,6 +11561,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     } else {
       params.days = parseInt(periodoModo);
     }
+    // Cache-buster: cada call tiene timestamp único para forzar request fresca
+    // contra TN/Shopify/ML — si el merchant corrigió un CUIL en su tienda,
+    // necesita que el reload vea el dato nuevo, no uno cacheado de CDN.
+    params._t = Date.now();
     setTnLoading(true);
     const d = await api("pending_orders","GET",null,params);
     setTnLoading(false);
@@ -12293,10 +12300,25 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <span style={{fontSize:11,color:T.textSm}}>–</span>
                       <input type="number" placeholder="sin límite" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:90,padding:"6px 8px",fontSize:12}}/>
                     </div>
-                    {(canalesSel.length>0||metodoPagoSel!=="todos"||montoMin||montoMax)&&(
-                      <button onClick={()=>{setCanalesSel([]);setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
+                    {(canalesSel.length>0||metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
+                      <button onClick={()=>{setCanalesSel([]);setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
                         ✕ Limpiar filtros
                       </button>
+                    )}
+                  </div>
+
+                  {/* Buscador libre — matchea nombre del cliente, ID de orden
+                      Shopify/TN/ML, email, o cualquier substring relevante. */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                    <input
+                      type="text"
+                      placeholder="🔍 Buscar por nombre o número de orden (Shopify/TN/ML)…"
+                      value={busquedaPend}
+                      onChange={e=>setBusquedaPend(e.target.value)}
+                      style={{...iS,flex:1,padding:"7px 12px",fontSize:12}}
+                    />
+                    {busquedaPend && (
+                      <button onClick={()=>setBusquedaPend("")} style={{background:"transparent",border:"1px solid "+T.borderL,color:T.textMd,borderRadius:6,padding:"6px 10px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
                     )}
                   </div>
 
@@ -12371,12 +12393,26 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const all = Object.entries(tnData.ordenes);
                     const minN = montoMin === "" ? null : parseFloat(montoMin);
                     const maxN = montoMax === "" ? null : parseFloat(montoMax);
+                    // Tokens del buscador — normalizados a lowercase. Soporta
+                    // múltiples palabras: "juan 1234" matchea órdenes que
+                    // contengan AMBAS en algún campo.
+                    const busqTokens = busquedaPend.trim().toLowerCase().split(/\s+/).filter(Boolean);
                     const items = all.filter(([id, o]) => {
                       if (descartadas.has(String(id))) return false; // excluir descartadas
                       if (canalesSel.length>0 && !canalesSel.includes(o._platform)) return false;
                       if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
                       if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
                       if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
+                      if (busqTokens.length > 0) {
+                        // Concatenamos todos los campos donde puede aparecer
+                        // el match: ID de orden (Shopify/TN/ML), número de
+                        // pedido, nombre del cliente, email, DNI/CUIT.
+                        const hay = [
+                          id, o.numero, o.order_number, o.pack_id,
+                          o.nombre, o.email, o.dni, o.doc_nro
+                        ].filter(Boolean).map(v => String(v).toLowerCase()).join(" ");
+                        for (const t of busqTokens) if (!hay.includes(t)) return false;
+                      }
                       return true;
                     });
                     // Órdenes descartadas (para mostrar en panel separado)
@@ -18309,6 +18345,17 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   useEffect(()=>{ if (uid && tab === "items") { loadInvItems(); loadWarehouses(); } /* eslint-disable-next-line */ }, [uid, tab]);
   useEffect(()=>{ if (uid && tab === "historial") loadMovements(); /* eslint-disable-next-line */ }, [uid, tab]);
 
+  // Polling automático cada 60s mientras el usuario está en el tab Historial.
+  // Así no necesita tocar "Refrescar" para ver las ventas que entran nuevas —
+  // las ve solas como mucho 1 minuto después. Limpia el interval al cambiar
+  // de tab o desmontar para no quedar pegado en segundo plano.
+  useEffect(() => {
+    if (!uid || tab !== "historial") return;
+    const id = setInterval(() => { loadMovements(); }, 60_000);
+    return () => clearInterval(id);
+    /* eslint-disable-next-line */
+  }, [uid, tab]);
+
   // ── Auto-sincronizar ventas al entrar a Stock (descuenta stock por órdenes nuevas) ──
   // Throttle: máximo 1 vez por minuto. Si el user navega entre tabs, no spammeamos.
   useEffect(()=>{
@@ -18390,11 +18437,18 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     }));
   }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1));
 
-  // KPIs globales
-  const totalUnits  = allProducts.reduce((a,p)=>a+p.units_sold,0);
-  const totalOrders = data?.total_orders||0;
+  // KPIs globales — sumamos Shopify/TN + Mercado Libre cuando ML está conectado.
+  // `data.ml_data` viene del backend con los totales y series temporales de
+  // ML del mismo período. Si no hay ML conectado, ml_data es undefined y los
+  // sumandos quedan en 0.
+  const ml = data?.ml_data || null;
+  const mlUnits   = ml?.total_units   || 0;
+  const mlOrders  = ml?.total_orders  || 0;
+  const mlRevenue = ml?.total_revenue || 0;
+  const totalUnits  = allProducts.reduce((a,p)=>a+p.units_sold,0) + mlUnits;
+  const totalOrders = (data?.total_orders||0) + mlOrders;
   const totalStock  = allProducts.reduce((a,p)=>a+p.stock_total,0);
-  const totalRev    = allProducts.reduce((a,p)=>a+p.revenue,0);
+  const totalRev    = allProducts.reduce((a,p)=>a+p.revenue,0) + mlRevenue;
   const avgRate     = days>0?(totalUnits/days):0;
   const avgDays     = (()=>{const v=allProducts.filter(p=>rate(p)>0).map(p=>dLeft(p.stock_total,rate(p))).filter(d=>d!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;})();
   const kpiEmpty    = allProducts.filter(p=>p.stock_total===0).length;
@@ -18411,8 +18465,23 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const trendUp = trend!==null && parseFloat(trend)>=0;
 
   const platform      = data?.platform||"tiendanube";
-  const platformLabel = platform==="shopify"?"Shopify":"Tienda Nube";
+  const platformBase  = platform==="shopify"?"Shopify":"Tienda Nube";
+  const platformLabel = ml ? `${platformBase} + Mercado Libre` : platformBase;
   const platformColor = platform==="shopify"?"#95bf47":"#3483fa";
+
+  // Helper: combina dos diccionarios { "YYYY-MM-DD": number } sumando los
+  // valores por clave. Lo usamos para mezclar la serie diaria de Shopify/TN
+  // con la de Mercado Libre y mostrar TODO junto en los gráficos.
+  function mergeDaily(a, b) {
+    const out = { ...(a||{}) };
+    for (const k of Object.keys(b||{})) out[k] = (out[k]||0) + (b[k]||0);
+    return out;
+  }
+  function mergeMap(a, b) {
+    const out = { ...(a||{}) };
+    for (const k of Object.keys(b||{})) out[k] = (out[k]||0) + (b[k]||0);
+    return out;
+  }
 
   // ── Donut SVG ──────────────────────────────────────────────────────
   function DonutChart({data:raw, colors, size=150, thickness=32, centerLabel}) {
@@ -18833,16 +18902,27 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               const showingProd   = isAnalisis && analysisMode==="productos";
               const showingRev    = isAnalisis && analysisMode==="revenue";
 
-              const tabDaily     = showingVentas ? (data.daily_orders||{}) : showingRev||isFact ? (data.daily_revenue||{}) : data.daily_series||{};
+              // Series diarias combinadas Shopify/TN + Mercado Libre.
+              const dailyOrdersAll  = mergeDaily(data.daily_orders,  ml?.daily_orders);
+              const dailyRevenueAll = mergeDaily(data.daily_revenue, ml?.daily_revenue);
+              const dailySeriesAll  = mergeDaily(data.daily_series,  ml?.daily);
+              const tabDaily     = showingVentas ? dailyOrdersAll : (showingRev||isFact) ? dailyRevenueAll : dailySeriesAll;
               const tabTotal     = showingVentas ? totalOrders : (isProductos||showingProd) ? totalUnits : totalRev;
               const tabAvg       = Object.keys(tabDaily).length>0 ? (Object.values(tabDaily).reduce((a,b)=>a+b,0)/Math.max(1,Object.keys(tabDaily).length)) : 0;
               const tabTitle     = showingVentas?"Ventas por día":(isProductos||showingProd)?"Productos vendidos por día":"Facturación por día";
               const tabSubtitle  = showingVentas?"Cantidad de órdenes pagadas":(isProductos||showingProd)?"Unidades despachadas":"Revenue generado (ARS)";
               const tabMainVal   = showingVentas?fmt(totalOrders):(isProductos||showingProd)?fmt(totalUnits):fmtARS(totalRev);
               const tabMainLabel = showingVentas?"órdenes totales":(isProductos||showingProd)?"unidades vendidas":"facturado total";
+              // Donut variantes: facturación combina revenue Shopify (con
+              // descuentos reales) + revenue ML por variante. Otros modos
+              // combinan unidades por variante.
               const tabDonutVariante = isFact
-                ? (()=>{const m={};allProducts.forEach(p=>p.variants.forEach(v=>{m[v.nombre]=(m[v.nombre]||0)+v.revenue;}));return m;})()
-                : (data.by_variant||{});
+                ? (()=>{
+                    const m = {};
+                    allProducts.forEach(p=>p.variants.forEach(v=>{m[v.nombre]=(m[v.nombre]||0)+v.revenue;}));
+                    return mergeMap(m, ml?.by_variant_rev);
+                  })()
+                : mergeMap(data.by_variant||{}, ml?.by_variant);
 
               if(!["analisis","productos","facturacion"].includes(tab)) return null;
               const dailyEntries2=Object.entries(tabDaily).sort(([a],[b])=>a.localeCompare(b));
@@ -18943,15 +19023,17 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Distribución geográfica</div>
-                      <DonutChart data={data.by_province||{}} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(data.by_province||{}).length,label:"provincias"}}/>
+                      {(() => { const prov = mergeMap(data.by_province||{}, ml?.by_province); return (
+                      <DonutChart data={prov} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(prov).length,label:"provincias"}}/>
+                      ); })()}
                     </div>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Método de pago</div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Plataforma de cobro</div>
-                      <DonutChart data={data.by_payment||{}} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1","#ec4899"]} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
+                      <DonutChart data={mergeMap(data.by_payment||{}, ml?.by_payment)} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1","#ec4899"]} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
                       <div style={{marginTop:16}}>
                         <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:8}}>Hora del día</div>
-                        <HourChart byHour={data.by_hour||{}} height={50}/>
+                        <HourChart byHour={mergeMap(data.by_hour||{}, ml?.by_hour)} height={50}/>
                       </div>
                     </div>
                   </div>

@@ -2643,6 +2643,12 @@ export default async function handler(req, res) {
         )
       );
 
+      // No cachear esta respuesta — el merchant edita datos del cliente
+      // (DNI/CUIT) directamente en TN/Shopify y necesita ver el cambio
+      // reflejado apenas vuelve a Growith y aprieta "Actualizar".
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       return res.json({
         connections,
         total_pending: Object.keys(ordenadas).length,
