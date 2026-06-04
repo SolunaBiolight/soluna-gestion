@@ -9542,11 +9542,25 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 </button>
                               </td>
                               <td style={{padding:"8px 8px",whiteSpace:"nowrap"}}>
-                                <div style={{display:"flex",gap:4}}>
-                                  <button onClick={()=>setCreativoDetail(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>💬</button>
-                                  <button onClick={()=>openCreativo(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>✏️</button>
-                                  <AsyncButton onClick={()=>deleteCreativoProd(c.id)} style={{...BtnDanger(T),fontSize:10,padding:"3px 8px"}}>×</AsyncButton>
-                                </div>
+                                {(()=>{
+                                  const editorColab = colaboradores.find(col=>col.nombre===c.editor);
+                                  return (
+                                    <div style={{display:"flex",gap:4}}>
+                                      <button onClick={()=>setCreativoDetail(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>💬</button>
+                                      <button onClick={()=>openCreativo(c)} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px"}}>✏️</button>
+                                      {editorColab?.email&&(
+                                        <AsyncButton onClick={async()=>{
+                                          const r = await tareasApi({action:"sendRecordatorio",to:editorColab.email,nombre:editorColab.nombre,titulo:c.angulo||c.codigo||"Creativo",codigo:c.codigo,estado:c.estado,deadline:c.deadline||null,nota:""});
+                                          if(r?.ok) toast(`📧 Recordatorio enviado a ${editorColab.nombre}`,"success");
+                                          else toast("Error al enviar: "+(r?.error||"desconocido"),"error");
+                                        }} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px",color:"#f59e0b",border:`1px solid #f59e0b44`}} title={`Recordar a ${editorColab.nombre}`}>
+                                          ⏰
+                                        </AsyncButton>
+                                      )}
+                                      <AsyncButton onClick={()=>deleteCreativoProd(c.id)} style={{...BtnDanger(T),fontSize:10,padding:"3px 8px"}}>×</AsyncButton>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           );

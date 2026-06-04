@@ -143,6 +143,29 @@ function emailConsultaRecibida({ colab, tarea, texto, link }) {
 </div>`;
 }
 
+function emailRecordatorio({ colab, titulo, codigo, estado, deadline, link, nota }) {
+  const deadlineStr = deadline ? new Date(deadline).toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}) : null;
+  const estadoLabel = {idea:"Idea",  "brief-enviado":"Brief enviado", "en-produccion":"En producción", entregado:"Entregado", publicado:"Publicado", pendiente:"Pendiente", en_proceso:"En proceso"}[estado] || estado;
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#f59e0b,#fbbf24);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">⏰</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Recordatorio de tarea</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:6px">Growith</div>
+  </div>
+  <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
+  <p style="font-size:14px;color:#6b7280">Te mandamos un recordatorio sobre esta tarea:</p>
+  <div style="background:#fffbeb;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #f59e0b">
+    ${codigo ? `<div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">${codigo}</div>` : ""}
+    <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:6px">${titulo}</div>
+    <div style="font-size:12px;color:#92400e;font-weight:600">Estado: ${estadoLabel}</div>
+    ${deadlineStr ? `<div style="font-size:12px;color:#dc2626;font-weight:700;margin-top:4px">📅 Vence: ${deadlineStr}</div>` : ""}
+    ${nota ? `<div style="font-size:13px;color:#374151;margin-top:8px;padding-top:8px;border-top:1px solid #fde68a">${nota}</div>` : ""}
+  </div>
+  <a href="${link}" style="display:block;text-align:center;background:#f59e0b;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver mi tarea →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
 function normalizeLinks(links) {
   const arr = Array.isArray(links) ? links : String(links||"").split("\n").map(l=>l.trim()).filter(Boolean);
   return arr.map(l => typeof l === "string" ? { name: "", url: l } : l).filter(l=>l.url);
@@ -694,6 +717,23 @@ export default async function handler(req, res) {
         <p style="font-size:11px;color:#9ca3af;text-align:center;margin-top:24px">Enviado desde Growith — notificaciones@growith.app</p>
       </div>`;
       const result = await sendEmail({ to, subject:"✅ Email de prueba — Growith funciona correctamente", html });
+      if (result?.error) return res.status(500).json({ error: result.error, detail: result });
+      return res.json({ ok:true, id: result?.id });
+    }
+
+    if (action === "sendRecordatorio") {
+      // Manda un email de recordatorio a un colaborador sobre una tarea/creativo
+      const { to, nombre, titulo, codigo, estado, deadline, nota } = body;
+      if (!to || !titulo) return res.status(400).json({ error:"Faltan parámetros" });
+      // Buscar token del colaborador para armar el link al portal
+      const colSnap = await db.collection("colaboradores")
+        .where("uid","==",uid).where("email","==",to).limit(1).get();
+      const colData = colSnap.empty ? null : colSnap.docs[0].data();
+      const token = colData?.token || null;
+      const link = token ? colabPortalLink(origin, token) : (origin || "https://growithapp.com");
+      const colab = { nombre: nombre || to };
+      const html = emailRecordatorio({ colab, titulo, codigo: codigo||"", estado: estado||"", deadline: deadline||null, link, nota: nota||"" });
+      const result = await sendEmail({ to, subject:`⏰ Recordatorio: ${titulo} — Growith`, html });
       if (result?.error) return res.status(500).json({ error: result.error, detail: result });
       return res.json({ ok:true, id: result?.id });
     }
