@@ -7023,25 +7023,29 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             {
               key:"tn", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : shStore ? "Desvinculá Shopify primero" : "No conectado",
               connected:!!tnStore, disabled:!!shStore && !tnStore, brand:"#00a0e3",
-              icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 19a2 2 0 01-2-2V9a2 2 0 012-2h1.17A5 5 0 0117 9h1a2 2 0 012 2v6a2 2 0 01-2 2H6z" fill="#fff" opacity=".9"/><path d="M12 3a5 5 0 015 5H7a5 5 0 015-5z" fill="#fff"/></svg>,
+              // Logo oficial Tienda Nube — nube con base plana
+              icon:<svg width="28" height="22" viewBox="0 0 56 44" fill="white"><path d="M44.8 18.6C44 11.6 38.1 6 30.9 6c-4.2 0-8 1.8-10.7 4.7C19.4 10.3 18.7 10 18 10c-4.4 0-8 3.6-8 8 0 .4 0 .8.1 1.1C7.3 20.3 5 23 5 26.3 5 30 8 33 11.8 33h32.4C48 33 51 30 51 26.3c0-3.4-2.4-6.2-5.7-6.9-.3-.6-.5-1.2-.5-1.8z"/></svg>,
               onConnect: connectTiendaNube, onDisconnect:()=>disconnectStore("tiendanube"),
             },
             {
               key:"sh", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : tnStore ? "Desvinculá Tienda Nube primero" : "No conectado",
-              connected:!!shStore, disabled:!!tnStore && !shStore, brand:"#96BF48",
-              icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M15.5 5.5c-.3-1.5-1.4-2.5-2.8-2.5-.3 0-.7.1-1 .2C11.3 2.5 10.6 2 9.7 2c-1.5 0-3 1.2-3.7 3.1-.5.1-.8.2-1 .3C4.2 5.8 4 6.3 4 6.8l1 11.7C5.1 19.4 6 20 7 20h10c1 0 1.9-.6 2-1.5l1-11.7c0-.5-.2-1-.8-1.3-.2-.1-.7-.2-1.3-.3-.4-1.8-1.5-3-2.4-3.7zm-3.3-1.3c.8 0 1.4.4 1.7 1.1-.5.1-1 .2-1.6.3 0-.6-.1-1-.1-1.4zm-2.4 0c.4 0 .7.1 1 .3 0 .3.1.7.1 1.2-.6-.1-1.1-.2-1.5-.3.4-.7 1-1.2 1.4-1.2zM9 16.5l-1.5-8 1.5.5 1 4.5 1-4.5 1.5-.5-1.5 8H9z" fill="#fff"/></svg>,
+              connected:!!shStore, disabled:!!tnStore && !shStore, brand:"#5a8e3a",
+              // Logo oficial Shopify — bolsa con S
+              icon:<svg width="22" height="26" viewBox="0 0 24 28" fill="white"><path d="M20.9 6.2c0-.1-.1-.2-.3-.2-.1 0-2.5-.2-2.5-.2l-1.8-1.8c-.2-.2-.5-.1-.6-.1l-1 .3C14.2 3 13.2 1.5 11.6 1.5h-.2C11 1.3 10.5 1 10.1 1 7 1 5.5 4.9 5 6.9l-2.5.8c-.6.2-.6.2-.7.8L.3 21l13.2 2.3 7.1-1.5 2.7-12.9c-.2-.3-.4-.7-.4-.7zM14 5l-1.5.5v-.4c0-1-.1-1.7-.3-2.3C13.1 3.1 13.7 4 14 5zm-2.5-1.7c.3.5.4 1.3.4 2.3v.2L9.3 6.6c.5-2 1.5-2.9 2.2-3.3zM10.5 2.7c-.7.3-1.5 1.2-2 3L6.4 6.4C7 4.2 8 2.3 10.5 2.7z"/><path d="M11.3 15.8c0 1.6.9 2.7 2.1 2.7.9 0 1.8-.8 1.8-2.3 0-1.9-1.8-2.3-1.8-3.6 0-.8.4-1.4 1-1.4.7 0 1.2.7 1.2 1.8h1.2c0-1.6-.8-3-2.4-3-1.3 0-2.3 1-2.3 2.7 0 1.9 1.8 2.4 1.8 3.6 0 .7-.3 1.2-.8 1.2-.9 0-1.3-1-1.3-2.2h-1.4c.1.2.1.3.1.5h-.2z"/></svg>,
               onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
             },
             {
               key:"ml", label:"Mercado Libre", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "No conectado",
               connected:!!mlStore, disabled:false, brand:"#FFE600",
-              icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 4c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm0 12c-2.67 0-5.01-1.33-6.41-3.36C6.96 12.93 9.38 12 12 12s5.04.93 6.41 2.64C17.01 16.67 14.67 18 12 18z" fill="#333"/></svg>,
+              // Logo oficial ML — figura persona con brazos arriba (su ícono característico)
+              icon:<svg width="24" height="24" viewBox="0 0 48 48" fill="#1a1a1a"><ellipse cx="24" cy="12" rx="6" ry="6"/><path d="M10 42v-6c0-5 6.3-9 14-9s14 4 14 9v6H10z"/><path d="M4 20c2-4 6-7 10-8M44 20c-2-4-6-7-10-8" stroke="#1a1a1a" strokeWidth="2.5" strokeLinecap="round" fill="none"/><path d="M8 30c-1.5-1.5-3-4-3-7M40 30c1.5-1.5 3-4 3-7" stroke="#1a1a1a" strokeWidth="2" strokeLinecap="round" fill="none" opacity=".4"/></svg>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
             },
             {
               key:"meta", label:"Meta Ads", sub: metaConnected ? "Conectado" : "Facebook + Instagram · No conectado",
               connected:!!metaConnected, disabled:false, brand:"#1877F2",
-              icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M13.4 20h-2.8C5.6 20 2 16.4 2 11.8 2 7.4 5.3 4 9.5 4c2 0 3.9.8 5.2 2.2.4-.8 1.2-1.4 2.2-1.4 1.4 0 2.6 1.1 2.6 2.5 0 .4-.1.8-.3 1.1.5.8.8 1.8.8 2.8 0 4.8-3 8.8-6.6 8.8zm-1.9-2h1.9c2.7 0 4.6-3.3 4.6-6.8 0-.9-.2-1.7-.6-2.4l-.4-.7.6-.5c.1-.1.2-.3.2-.5 0-.3-.3-.5-.6-.5-.2 0-.4.1-.5.3l-.7 1.2-1-1.1C14.5 5.9 13 5.1 11.3 5.1 7.8 5.1 4 8 4 11.8c0 3.7 2.8 6.2 7.5 6.2z"/></svg>,
+              // Logo Meta — símbolo M infinito (su logo actual desde 2021)
+              icon:<svg width="28" height="16" viewBox="0 0 60 28" fill="white"><path d="M6 14C6 8.5 9 4 13 4c2.1 0 4 1.3 6 4 1.4 2 2.9 4.7 5 8.5 2.1-3.8 3.6-6.5 5-8.5 2-2.7 3.9-4 6-4 4 0 7 4.5 7 10s-3 10-7 10c-2.1 0-4-1.3-6-4-1.4-2-2.9-4.7-5-8.5-2.1 3.8-3.6 6.5-5 8.5-2 2.7-3.9 4-6 4C9 24 6 19.5 6 14zm7 0c0 3.5 1.8 6 3.5 6s3.5-2.5 3.5-6-1.8-6-3.5-6S13 10.5 13 14zm17 0c0 3.5 1.8 6 3.5 6s3.5-2.5 3.5-6-1.8-6-3.5-6-3.5 2.5-3.5 6z"/></svg>,
               onConnect:()=>setShowMetaModal(true), onDisconnect:disconnectMeta,
             },
           ].map(p=>{
