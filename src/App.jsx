@@ -8277,17 +8277,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
-  const [showGuia, setShowGuia] = useState(false);
   const [tab, setTab] = useState("tareas");
-  // viewMode: sidebar manda — kanban/calendario/lista
-  const [viewModeLocal, setViewModeLocal] = useState("lista");
-  const sidebarToView = { kanban: "kanban", calendario: "cal", lista: "lista" };
-  const viewToSidebar = { kanban: "kanban", cal: "calendario", lista: "lista" };
-  const viewMode = sidebarTab ? (sidebarToView[sidebarTab] || "lista") : viewModeLocal;
-  const setViewMode = (v) => {
-    setViewModeLocal(v);
-    if (setSidebarTab) setSidebarTab(viewToSidebar[v] || v);
-  };
+  const [viewMode, setViewMode] = useState("lista");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [assigneeFilter, setAssigneeFilter] = useState("todos");
   const [labelFilter, setLabelFilter] = useState([]); // multi-select
@@ -8343,7 +8334,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
   const [prodTab, setProdTab] = useState("tandas");
-  const [showEditores, setShowEditores] = useState(false);
   const [prodFilter, setProdFilter] = useState({tanda:"",editor:"",estado:"",tipo:"",etapa:""});
   // Modal Tanda
   const [showNT2, setShowNT2] = useState(false);
@@ -8392,7 +8382,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
   useEffect(()=>{ loadData(); loadProduccion(); loadGeneral(); },[]);
   useEffect(()=>{
-    if(["tareas","creativos","admin"].includes(sidebarTab)) setTab(sidebarTab);
+    if(["tareas","creativos","equipo"].includes(sidebarTab)) setTab(sidebarTab);
   },[sidebarTab]);
 
   function fmtDate(val) {
@@ -8849,18 +8839,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          {/* Toggle Tareas | Equipo — dentro del tab Tareas */}
-          {(tab==="tareas"||tab==="equipo")&&(
-            <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,border:`1px solid ${T.border}`,gap:1}}>
-              {[["tareas","📋 Tareas"],["equipo","👥 Equipo"]].map(([v,label])=>(
-                <button key={v} onClick={()=>setTab(v)}
-                  style={{padding:"4px 12px",borderRadius:6,border:"none",background:tab===v?T.card:"transparent",color:tab===v?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:tab===v?600:400,boxShadow:tab===v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s",whiteSpace:"nowrap"}}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          {/* View mode — solo en tareas (lista de tareas) */}
+          {/* Nav principal — siempre visible */}
+          <div style={{display:"flex",background:T.surface,borderRadius:9,padding:3,border:`1px solid ${T.border}`,gap:1}}>
+            {[["tareas","📋 Tareas"],["creativos","🎬 Creativos"],["equipo","👥 Equipo"]].map(([v,label])=>(
+              <button key={v} onClick={()=>setTab(v)}
+                style={{padding:"4px 12px",borderRadius:7,border:"none",background:tab===v?T.card:"transparent",color:tab===v?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:tab===v?600:400,boxShadow:tab===v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s",whiteSpace:"nowrap"}}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {/* Vista lista/kanban — solo en Tareas */}
           {tab==="tareas"&&(
             <div style={{display:"flex",background:T.bg,borderRadius:8,padding:2,border:`1px solid ${T.border}`,gap:1}}>
               {[["lista","☰"],["kanban","⠿"]].map(([v,icon])=>(
@@ -8873,36 +8861,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
           {tab==="tareas"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Nueva tarea</button>}
           {tab==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
-          {tab==="creativos"&&prodTab!=="ideas"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
+          {tab==="creativos"&&prodTab==="creativos"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
           {tab==="creativos"&&prodTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
-          {tab==="creativos"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
+          {tab==="creativos"&&prodTab==="tandas"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
         </div>
       </div>
 
       <div style={{padding:"20px 24px"}}>
-        {/* Tabs internos removidos — navegación vive en el sidebar izquierdo. Dejamos
-            solo el toggle de la guía "Cómo funciona" para que siga estando a mano. */}
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showGuia?8:20,flexWrap:"wrap"}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",fontSize:11,fontWeight:500,background:"transparent",border:`1px solid ${T.border}`,borderRadius:20,cursor:"pointer",color:showGuia?T.textMd:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
-            <span style={{width:14,height:14,borderRadius:"50%",background:T.border,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.textMd,flexShrink:0}}>?</span>
-            {showGuia?"Cerrar":"Cómo funciona"}
-          </button>
-        </div>
-        {showGuia&&(
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",flexDirection:"column",gap:5}}>
-            {[
-              {n:"1",t:"Colaborador",d:"+ Colaborador → nombre y email. Growith genera un link único. Mandáselo, no necesita cuenta."},
-              {n:"2",t:"Nueva tarea",d:"Título, brief, checklist, deadline y prioridad. Elegís a quién asignar — el colaborador recibe email."},
-              {n:"3",t:"Portal del colaborador",d:"Ve sus tareas, marca el checklist, consulta y sube el link de entrega."},
-              {n:"4",t:"Revisión",d:"La cola naranja muestra las entregas. Aprobás o pedís cambios con feedback — el colaborador recibe email."},
-            ].map(s=>(
-              <div key={s.n} style={{display:"flex",alignItems:"baseline",gap:8,fontSize:11,color:T.textMd,lineHeight:1.5}}>
-                <span style={{fontSize:10,fontWeight:700,color:T.textSm,width:14,flexShrink:0}}>{s.n}.</span>
-                <span><strong style={{color:T.text,fontWeight:600}}>{s.t}</strong> — {s.d}</span>
-              </div>
-            ))}
-          </div>
-        )}
 
         {loading&&<div style={{textAlign:"center",padding:60}}><Spinner size={32} color={T.accent}/></div>}
 
@@ -9348,275 +9313,28 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           </div>
         )}
 
-        {/* ── TAB ADMIN ── */}
-        {tab==="admin"&&(()=>{
-          const PERMISOS_DEF = [
-            {key:"verEquipo",    label:"👥 Ver equipo",     desc:"Ve las tareas de todos (solo lectura)", color:"#6366f1"},
-            {key:"verCreativos", label:"🎬 Ver creativos",  desc:"Accede al board de producción",         color:"#7c3aed"},
-            {key:"comentarTareas",label:"💬 Comentar",      desc:"Puede dejar notas en sus tareas",       color:"#3b82f6"},
-          ];
-          return (
-            <div>
-              {/* Header */}
-              <div style={{marginBottom:20}}>
-                <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:4}}>Panel de administración</div>
-                <div style={{fontSize:12,color:T.textSm}}>Gestioná permisos, roles y accesos de cada colaborador desde un solo lugar.</div>
-              </div>
-
-              {/* Matriz de permisos */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}>
-                <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  <span style={{fontSize:12,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:"0.05em"}}>Permisos por colaborador</span>
-                  <span style={{fontSize:11,color:T.textSm,marginLeft:4}}>{colaboradores.length} colaborador{colaboradores.length!==1?"es":""}</span>
-                </div>
-
-                {colaboradores.length===0?(
-                  <div style={{padding:"32px 0",textAlign:"center",color:T.textSm,fontSize:13}}>
-                    <div style={{fontSize:32,marginBottom:8}}>👥</div>
-                    No hay colaboradores aún. Creá uno desde la pestaña Equipo.
-                  </div>
-                ):(
-                  <div style={{overflowX:"auto"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:500}}>
-                      <thead>
-                        <tr style={{background:T.surface}}>
-                          <th style={{padding:"10px 18px",textAlign:"left",fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",borderBottom:`1px solid ${T.border}`,minWidth:180}}>Colaborador</th>
-                          {PERMISOS_DEF.map(p=>(
-                            <th key={p.key} style={{padding:"10px 14px",textAlign:"center",fontSize:11,fontWeight:700,color:p.color,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>
-                              {p.label}
-                            </th>
-                          ))}
-                          <th style={{padding:"10px 14px",textAlign:"center",fontSize:11,fontWeight:700,color:T.textSm,borderBottom:`1px solid ${T.border}`,textTransform:"uppercase",letterSpacing:"0.05em"}}>Portal</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {colaboradores.map((c,i)=>{
-                          const perms = c.permisos||{};
-                          const activeCount = PERMISOS_DEF.filter(p=>perms[p.key]).length;
-                          return (
-                            <tr key={c._id} style={{background:i%2===0?T.card:T.surface,borderBottom:`1px solid ${T.borderL}`}}>
-                              {/* Colaborador info */}
-                              <td style={{padding:"12px 18px"}}>
-                                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                                  <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,#6366f1,#a78bfa)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                                    <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>{(c.nombre||"?").charAt(0).toUpperCase()}</span>
-                                  </div>
-                                  <div style={{minWidth:0}}>
-                                    <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
-                                    <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.rol||c.email}</div>
-                                  </div>
-                                  {activeCount>0&&<span style={{fontSize:9,fontWeight:700,color:"#a78bfa",background:"rgba(124,58,237,0.13)",border:"1px solid rgba(124,58,237,0.3)",borderRadius:10,padding:"1px 6px",flexShrink:0}}>{activeCount}</span>}
-                                </div>
-                              </td>
-                              {/* Toggle por permiso */}
-                              {PERMISOS_DEF.map(p=>{
-                                const val=!!perms[p.key];
-                                return (
-                                  <td key={p.key} style={{padding:"12px 14px",textAlign:"center"}}>
-                                    <button onClick={()=>updateColabPermisos(c._id,p.key,!val)}
-                                      title={`${val?"Desactivar":"Activar"} "${p.label}" para ${c.nombre}`}
-                                      style={{width:40,height:22,borderRadius:11,border:"none",cursor:"pointer",background:val?p.color:"#374151",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0,display:"inline-block"}}>
-                                      <div style={{position:"absolute",top:3,left:val?20:3,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
-                                    </button>
-                                  </td>
-                                );
-                              })}
-                              {/* Portal link */}
-                              <td style={{padding:"12px 14px",textAlign:"center"}}>
-                                <button onClick={()=>{
-                                  const link=`${window.location.origin}/#/colaborador/${c.token}`;
-                                  navigator.clipboard?.writeText(link).then(()=>toast("Link copiado","success")).catch(()=>{});
-                                }} style={{...BtnSecondary(T),fontSize:10,padding:"4px 10px",gap:4}}>
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                                  Copiar
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Descripción de cada permiso */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
-                {PERMISOS_DEF.map(p=>(
-                  <div key={p.key} style={{background:T.card,border:`1.5px solid ${p.color}33`,borderRadius:10,padding:"12px 14px",boxShadow:`0 0 0 1px ${p.color}15, 0 4px 12px ${p.color}10`}}>
-                    <div style={{fontSize:13,fontWeight:700,color:p.color,marginBottom:3}}>{p.label}</div>
-                    <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{p.desc}</div>
-                    <div style={{fontSize:10,color:T.textSm,marginTop:6}}>
-                      Activo en <strong style={{color:T.text}}>{colaboradores.filter(c=>(c.permisos||{})[p.key]).length}</strong> de {colaboradores.length} colaboradores
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* ── TABLÓN ── */}
-              {(()=>{
-                const TIPOS=[{id:"aviso",label:"Aviso",color:"#f97316"},{id:"brief",label:"Brief",color:"#3b82f6"},{id:"recurso",label:"Recurso",color:"#22c55e"}];
-                return (
-                  <div style={{marginTop:24}}>
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:10}}>
-                      <div style={{padding:"13px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{fontSize:14}}>📢</span>
-                        <span style={{fontSize:12,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:"0.05em"}}>Tablón del equipo</span>
-                        <span style={{fontSize:11,color:T.textSm,marginLeft:2}}>{(generalData.posts||[]).length} publicaciones</span>
-                      </div>
-                      <div style={{padding:"14px 18px"}}>
-                        <div style={{display:"flex",gap:6,marginBottom:10}}>
-                          {TIPOS.map(t=>(
-                            <button key={t.id} onClick={()=>setNewPostTipo(t.id)} style={{padding:"4px 12px",fontSize:11,fontWeight:600,borderRadius:20,border:`1.5px solid ${newPostTipo===t.id?t.color:T.border}`,background:newPostTipo===t.id?t.color+"18":"transparent",color:newPostTipo===t.id?t.color:T.textSm,cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.label}</button>
-                          ))}
-                        </div>
-                        <textarea value={newPostTexto} onChange={e=>setNewPostTexto(e.target.value)} placeholder="Escribí un aviso, brief o recurso para todo el equipo..." rows={3}
-                          style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",fontSize:13,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",resize:"vertical",outline:"none",marginBottom:10}}/>
-                        <button disabled={!newPostTexto.trim()} onClick={async()=>{
-                          if(!newPostTexto.trim()) return;
-                          const d=await tareasApi({action:"addPost",texto:newPostTexto.trim(),tipo:newPostTipo});
-                          setGeneralData(prev=>({...prev,posts:[...(prev.posts||[]),d.post]}));
-                          setNewPostTexto("");
-                          toast("Publicado en el tablón","success");
-                        }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",opacity:!newPostTexto.trim()?0.5:1}}>
-                          Publicar
-                        </button>
-                      </div>
-                    </div>
-                    {(generalData.posts||[]).length>0&&(
-                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                        {[...(generalData.posts||[])].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||(b.createdAt||"").localeCompare(a.createdAt||"")).map(post=>{
-                          const tipo=TIPOS.find(t=>t.id===post.tipo)||TIPOS[0];
-                          return (
-                            <div key={post.id} style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${tipo.color}`,borderRadius:10,padding:"12px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
-                              {post.pinned&&<span style={{fontSize:12,flexShrink:0}}>📌</span>}
-                              <div style={{flex:1,minWidth:0}}>
-                                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:5}}>
-                                  <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:10,background:tipo.color+"20",color:tipo.color,textTransform:"uppercase",letterSpacing:"0.04em"}}>{tipo.label}</span>
-                                  <span style={{fontSize:10,color:T.textSm}}>{post.createdAt?new Date(post.createdAt).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):""}</span>
-                                </div>
-                                <div style={{fontSize:13,color:T.text,lineHeight:1.55,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{post.texto}</div>
-                              </div>
-                              <button onClick={async()=>{
-                                await tareasApi({action:"deletePost",postId:post.id});
-                                setGeneralData(prev=>({...prev,posts:(prev.posts||[]).filter(p=>p.id!==post.id)}));
-                                toast("Post eliminado","success");
-                              }} style={{...BtnDanger(T),fontSize:10,padding:"3px 8px",flexShrink:0}}>✕</button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {(generalData.posts||[]).length===0&&<div style={{textAlign:"center",padding:"20px 0",color:T.textSm,fontSize:12}}>Sin publicaciones aún.</div>}
-                  </div>
-                );
-              })()}
-
-              {/* ── REFERENCIAS / COMPETENCIAS ── */}
-              <div style={{marginTop:24}}>
-                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                  <div style={{padding:"13px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:14}}>🔗</span>
-                    <span style={{fontSize:12,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:"0.05em"}}>Referencias / Competencia</span>
-                    <span style={{fontSize:11,color:T.textSm,marginLeft:2}}>{(generalData.referencias||[]).length} marcas</span>
-                    <div style={{flex:1}}/>
-                    <button onClick={()=>setShowAddRef(v=>!v)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>{showAddRef?"Cancelar":"+ Agregar"}</button>
-                  </div>
-                  {showAddRef&&(
-                    <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,background:T.surface}}>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-                        {[["nombre","Nombre *","Ej: Oakley, Ray-Ban..."],["web","🌐 Web","https://..."],["metaAds","📢 Meta Ads","https://facebook.com/ads/library/..."],["ig","📸 Instagram","https://instagram.com/..."]].map(([field,label,ph])=>(
-                          <div key={field}>
-                            <div style={{fontSize:11,color:T.textSm,marginBottom:4,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
-                              {label}
-                              {field==="metaAds"&&refForm.nombre.trim()&&(
-                                <button onClick={()=>setRefForm(f=>({...f,metaAds:`https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=AR&q=${encodeURIComponent(f.nombre.trim())}`}))} style={{fontSize:9,padding:"1px 6px",background:"rgba(24,119,242,0.15)",border:"1px solid rgba(24,119,242,0.4)",borderRadius:6,color:"#1877f2",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Auto-fill</button>
-                              )}
-                            </div>
-                            <input value={refForm[field]} onChange={e=>setRefForm(f=>({...f,[field]:e.target.value}))} placeholder={ph}
-                              style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",fontSize:13,background:T.card,border:`1px solid ${T.border}`,borderRadius:7,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
-                          </div>
-                        ))}
-                      </div>
-                      <button disabled={!refForm.nombre.trim()} onClick={async()=>{
-                        if(!refForm.nombre.trim()) return;
-                        const d=await tareasApi({action:"addReferencia",nombre:refForm.nombre.trim(),web:refForm.web.trim(),metaAds:refForm.metaAds.trim(),ig:refForm.ig.trim()});
-                        setGeneralData(prev=>({...prev,referencias:[...(prev.referencias||[]),d.referencia]}));
-                        setRefForm({nombre:"",web:"",metaAds:"",ig:""});
-                        setShowAddRef(false);
-                        toast("Referencia agregada","success");
-                      }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",opacity:!refForm.nombre.trim()?0.5:1}}>Guardar</button>
-                    </div>
-                  )}
-                  {(generalData.referencias||[]).length===0&&!showAddRef?(
-                    <div style={{padding:"28px 0",textAlign:"center",color:T.textSm,fontSize:12}}><div style={{fontSize:28,marginBottom:8}}>🔗</div>Sin referencias cargadas aún.</div>
-                  ):(
-                    <div style={{overflowX:"auto"}}>
-                      <table style={{width:"100%",borderCollapse:"collapse",minWidth:480}}>
-                        <thead>
-                          <tr style={{background:T.surface}}>
-                            {["Marca","🌐 Web","📢 Meta Ads","📸 IG",""].map((h,i)=>(
-                              <th key={i} style={{padding:"9px 14px",textAlign:i===0?"left":"center",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",borderBottom:`1px solid ${T.border}`}}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(generalData.referencias||[]).map((r,i)=>(
-                            <tr key={r.id||i} style={{background:i%2===0?T.card:T.surface,borderBottom:`1px solid ${T.borderL}`}}>
-                              <td style={{padding:"11px 14px"}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.nombre}</div></td>
-                              {[r.web,r.metaAds,r.ig].map((url,j)=>(
-                                <td key={j} style={{padding:"11px 14px",textAlign:"center"}}>
-                                  {url?<a href={url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.accent,textDecoration:"none",padding:"3px 8px",borderRadius:6,border:`1px solid ${T.accent}44`,background:T.accent+"11"}}>Ver →</a>:<span style={{fontSize:11,color:T.textSm}}>—</span>}
-                                </td>
-                              ))}
-                              <td style={{padding:"11px 14px",textAlign:"center"}}>
-                                <button onClick={async()=>{
-                                  await tareasApi({action:"deleteReferencia",referenciaId:r.id});
-                                  setGeneralData(prev=>({...prev,referencias:(prev.referencias||[]).filter(x=>x.id!==r.id)}));
-                                  toast("Referencia eliminada","success");
-                                }} style={{...BtnDanger(T),fontSize:10,padding:"3px 8px"}}>✕</button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
         {/* ── TAB CREATIVOS ── */}
         {!loading&&tab==="creativos"&&(
         <div style={{background:T.bg}}>
-          {/* Sub-nav simplificado */}
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
-            <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:1}}>
-              {[
-                ["tandas","Tandas","M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"],
-                ["creativos","Lista","M15 10l4.553-2.069A1 1 0 0121 8.855v6.29a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"],
-                ["ideas","Ideas","M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26A7 7 0 0112 2z"],
-              ].map(([id,label,icon])=>(
-                <button key={id} onClick={()=>{setProdTab(id);setShowEditores(false);}} style={{padding:"5px 14px",fontSize:12,fontWeight:prodTab===id&&!showEditores?600:500,border:"none",borderRadius:8,background:prodTab===id&&!showEditores?T.card:"transparent",color:prodTab===id&&!showEditores?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodTab===id&&!showEditores?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:prodTab===id&&!showEditores?1:0.6}}><path d={icon}/></svg>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {/* Editores como botón secundario */}
-            <button onClick={()=>setShowEditores(v=>!v)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px",gap:5,color:showEditores?T.accent:T.textSm,border:showEditores?`1px solid ${T.accent}44`:undefined}}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-              Editores
-            </button>
+          {/* Sub-nav Creativos */}
+          <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:1,marginBottom:20,width:"fit-content"}}>
+            {[
+              ["tandas","Tandas","M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"],
+              ["creativos","Lista","M15 10l4.553-2.069A1 1 0 0121 8.855v6.29a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"],
+              ["ideas","Ideas","M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26A7 7 0 0112 2z"],
+              ["editores","Editores","M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"],
+            ].map(([id,label,icon])=>(
+              <button key={id} onClick={()=>setProdTab(id)} style={{padding:"5px 14px",fontSize:12,fontWeight:prodTab===id?600:500,border:"none",borderRadius:8,background:prodTab===id?T.card:"transparent",color:prodTab===id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:prodTab===id?1:0.6}}><path d={icon}/></svg>
+                {label}
+              </button>
+            ))}
           </div>
 
           {prodLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
 
           {/* ── Stats compactos — siempre visibles arriba de todo ── */}
-          {!prodLoading&&!showEditores&&(()=>{
+          {!prodLoading&&prodTab!=="editores"&&(()=>{
             const cl=produccion?.creativos||[];
             const total=cl.length;
             const pub=cl.filter(c=>c.estado==="publicado").length;
@@ -9646,8 +9364,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             );
           })()}
 
-          {/* ── Editores (panel desplegable) ── */}
-          {showEditores&&!prodLoading&&(
+          {/* ── Editores ── */}
+          {prodTab==="editores"&&!prodLoading&&(
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",marginBottom:16}}>
               <div style={{fontSize:12,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Gestionar editores</div>
               <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
@@ -9963,7 +9681,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
           )}
 
-          {/* Editores ahora accesible via showEditores — no renderiza como sub-tab */}
         </div>
       )}
       </div>{/* cierre: div padding 20px 24px */}
