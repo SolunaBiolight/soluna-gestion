@@ -8426,20 +8426,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const paraRevisar = tareas.filter(t=>t.estado==="entregado");
   const enRevision  = tareas.filter(t=>t.estado==="revision");
 
-  const tareasFiltradas = tareas
-    .filter(t => statusFilter==="todos"||t.estado===statusFilter)
-    .filter(t => assigneeFilter==="todos"||t.asignadoEmail===assigneeFilter)
-    .filter(t => {
-      if(!searchTareas.trim()) return true;
-      const q=searchTareas.toLowerCase();
-      return t.titulo?.toLowerCase().includes(q)||t.descripcion?.toLowerCase().includes(q)||t.brief?.toLowerCase().includes(q);
-    })
-    .sort((a,b)=>{
-      const pa = a.prioridad==="urgente"?0:a.prioridad==="normal"?1:2;
-      const pb = b.prioridad==="urgente"?0:b.prioridad==="normal"?1:2;
-      if(pa!==pb) return pa-pb;
-      return (b.createdAt?._seconds||0)-(a.createdAt?._seconds||0);
-    });
 
   const tabStyle = id => ({
     padding:"7px 16px",borderRadius:8,fontSize:13,border:"none",
