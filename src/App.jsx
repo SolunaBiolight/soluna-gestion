@@ -8294,7 +8294,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   };
   const [statusFilter, setStatusFilter] = useState("todos");
   const [assigneeFilter, setAssigneeFilter] = useState("todos");
-  const [labelFilter, setLabelFilter] = useState("");
+  const [labelFilter, setLabelFilter] = useState([]); // multi-select
+  const [searchTareas, setSearchTareas] = useState("");
+  const [estadoDropdown, setEstadoDropdown] = useState(null);
+  // General: tablón + referencias
+  const [generalData, setGeneralData] = useState({posts:[],referencias:[]});
+  const [newPostTexto, setNewPostTexto] = useState("");
+  const [newPostTipo, setNewPostTipo] = useState("aviso");
+  const [showAddRef, setShowAddRef] = useState(false);
+  const [refForm, setRefForm] = useState({nombre:"",web:"",metaAds:"",ig:""});
   const [expandedTarea, setExpandedTarea] = useState(null);
   const [kanbanSelected, setKanbanSelected] = useState(null);
   const [commentText, setCommentText] = useState({});
@@ -8381,7 +8389,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     catch(e){ /* silently use defaults */ }
     setProdLoading(false);
   }
-  useEffect(()=>{ loadData(); loadProduccion(); },[]);
+  async function loadGeneral() {
+    try { const d = await tareasApi({action:"getGeneral"}); setGeneralData(d); }
+    catch(e){ /* silently use defaults */ }
+  }
+  useEffect(()=>{ loadData(); loadProduccion(); loadGeneral(); },[]);
   useEffect(()=>{
     if(["tareas","equipo","creativos","admin"].includes(sidebarTab)) setTab(sidebarTab);
   },[sidebarTab]);
@@ -8465,7 +8477,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const tareasFiltradas = tareas
     .filter(t => statusFilter==="todos"||t.estado===statusFilter)
     .filter(t => assigneeFilter==="todos"||t.asignadoEmail===assigneeFilter)
-    .filter(t => !labelFilter||(t.labels||[]).includes(labelFilter))
+    .filter(t => labelFilter.length===0||labelFilter.some(lb=>(t.labels||[]).includes(lb)))
+    .filter(t => {
+      if(!searchTareas.trim()) return true;
+      const q=searchTareas.toLowerCase();
+      return t.titulo?.toLowerCase().includes(q)||t.descripcion?.toLowerCase().includes(q)||t.brief?.toLowerCase().includes(q);
+    })
     .sort((a,b)=>{
       const pa = a.prioridad==="urgente"?0:a.prioridad==="normal"?1:2;
       const pb = b.prioridad==="urgente"?0:b.prioridad==="normal"?1:2;
@@ -8973,13 +8990,22 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </select>
                   )}
                 </div>
-                {/* Label filter */}
+                {/* Búsqueda de tareas */}
+                <div style={{position:"relative",marginBottom:8}}>
+                  <input value={searchTareas} onChange={e=>setSearchTareas(e.target.value)} placeholder="Buscar por título, descripción o brief..."
+                    style={{...iS,paddingLeft:30,paddingRight:searchTareas?30:10,fontSize:12,width:"100%",boxSizing:"border-box"}}/>
+                  <span style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",fontSize:12,color:T.textSm,pointerEvents:"none"}}>🔍</span>
+                  {searchTareas&&<button onClick={()=>setSearchTareas("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:T.textMd,fontSize:14,lineHeight:1,padding:2,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
+                </div>
+                {/* Label filter — multi-selección */}
                 {TASK_LABELS.some(lb=>tareas.some(t=>(t.labels||[]).includes(lb.id)))&&(
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
-                    <button onClick={()=>setLabelFilter("")} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${!labelFilter?T.accent:T.border}`,background:!labelFilter?T.accent+"20":"transparent",color:!labelFilter?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Todos</button>
-                    {TASK_LABELS.filter(lb=>tareas.some(t=>(t.labels||[]).includes(lb.id))).map(lb=>(
-                      <button key={lb.id} onClick={()=>setLabelFilter(labelFilter===lb.id?"":lb.id)} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${labelFilter===lb.id?lb.color:T.border}`,background:labelFilter===lb.id?lb.color+"25":"transparent",color:labelFilter===lb.id?lb.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{lb.label}</button>
-                    ))}
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+                    <button onClick={()=>setLabelFilter([])} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${labelFilter.length===0?T.accent:T.border}`,background:labelFilter.length===0?T.accent+"20":"transparent",color:labelFilter.length===0?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Todos</button>
+                    {TASK_LABELS.filter(lb=>tareas.some(t=>(t.labels||[]).includes(lb.id))).map(lb=>{
+                      const active=labelFilter.includes(lb.id);
+                      return <button key={lb.id} onClick={()=>setLabelFilter(prev=>active?prev.filter(id=>id!==lb.id):[...prev,lb.id])} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${active?lb.color:T.border}`,background:active?lb.color+"25":"transparent",color:active?lb.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{lb.label}</button>;
+                    })}
+                    {labelFilter.length>1&&<span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:20,background:T.accent+"18",color:T.accent,border:`1px solid ${T.accent}33`}}>{labelFilter.length} activos</span>}
                   </div>
                 )}
                 {tareasFiltradas.length===0&&(
@@ -9024,7 +9050,19 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </div>
                             {/* Row 2: status + progreso + deadline + meta */}
                             <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                              <span style={{fontSize:10,padding:"2px 7px",borderRadius:5,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
+                              <div style={{position:"relative",display:"inline-block"}}>
+                                <span onClick={e=>{e.stopPropagation();setEstadoDropdown(estadoDropdown===t._id?null:t._id);}} style={{fontSize:10,padding:"2px 7px",borderRadius:5,fontWeight:600,background:est.bg,color:est.color,cursor:"pointer",userSelect:"none"}}>{est.label} ▾</span>
+                                {estadoDropdown===t._id&&(
+                                  <div onClick={e=>e.stopPropagation()} style={{position:"absolute",top:"calc(100% + 4px)",left:0,zIndex:300,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,0.22)",padding:4,minWidth:150}}>
+                                    {Object.entries(ESTADOS).map(([key,val])=>(
+                                      <button key={key} onClick={async e=>{e.stopPropagation();setEstadoDropdown(null);await updateEstado(t._id,key);}} style={{display:"block",width:"100%",textAlign:"left",padding:"6px 10px",borderRadius:6,border:"none",background:t.estado===key?val.bg:"transparent",color:val.color,fontSize:11,fontWeight:t.estado===key?700:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}
+                                        onMouseEnter={e=>{if(t.estado!==key)e.currentTarget.style.background=T.surface;}} onMouseLeave={e=>{if(t.estado!==key)e.currentTarget.style.background="transparent";}}>
+                                        {val.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                               {t.progresoLabel==="Listo para entregar"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#22c55e15",color:"#22c55e",fontWeight:700}}>✋ Listo</span>}
                               {t.progresoLabel==="En proceso"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#3b82f615",color:"#3b82f6",fontWeight:600}}>🔄 En proceso</span>}
                               {t.estado==="bloqueada"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#ef444415",color:"#ef4444",fontWeight:700}}>⚠️ Bloqueado</span>}
@@ -9406,6 +9444,138 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* ── TABLÓN ── */}
+              {(()=>{
+                const TIPOS=[{id:"aviso",label:"Aviso",color:"#f97316"},{id:"brief",label:"Brief",color:"#3b82f6"},{id:"recurso",label:"Recurso",color:"#22c55e"}];
+                return (
+                  <div style={{marginTop:24}}>
+                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:10}}>
+                      <div style={{padding:"13px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:14}}>📢</span>
+                        <span style={{fontSize:12,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:"0.05em"}}>Tablón del equipo</span>
+                        <span style={{fontSize:11,color:T.textSm,marginLeft:2}}>{(generalData.posts||[]).length} publicaciones</span>
+                      </div>
+                      <div style={{padding:"14px 18px"}}>
+                        <div style={{display:"flex",gap:6,marginBottom:10}}>
+                          {TIPOS.map(t=>(
+                            <button key={t.id} onClick={()=>setNewPostTipo(t.id)} style={{padding:"4px 12px",fontSize:11,fontWeight:600,borderRadius:20,border:`1.5px solid ${newPostTipo===t.id?t.color:T.border}`,background:newPostTipo===t.id?t.color+"18":"transparent",color:newPostTipo===t.id?t.color:T.textSm,cursor:"pointer",transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.label}</button>
+                          ))}
+                        </div>
+                        <textarea value={newPostTexto} onChange={e=>setNewPostTexto(e.target.value)} placeholder="Escribí un aviso, brief o recurso para todo el equipo..." rows={3}
+                          style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",fontSize:13,background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",resize:"vertical",outline:"none",marginBottom:10}}/>
+                        <button disabled={!newPostTexto.trim()} onClick={async()=>{
+                          if(!newPostTexto.trim()) return;
+                          const d=await tareasApi({action:"addPost",texto:newPostTexto.trim(),tipo:newPostTipo});
+                          setGeneralData(prev=>({...prev,posts:[...(prev.posts||[]),d.post]}));
+                          setNewPostTexto("");
+                          toast("Publicado en el tablón","success");
+                        }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",opacity:!newPostTexto.trim()?0.5:1}}>
+                          Publicar
+                        </button>
+                      </div>
+                    </div>
+                    {(generalData.posts||[]).length>0&&(
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {[...(generalData.posts||[])].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||(b.createdAt||"").localeCompare(a.createdAt||"")).map(post=>{
+                          const tipo=TIPOS.find(t=>t.id===post.tipo)||TIPOS[0];
+                          return (
+                            <div key={post.id} style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${tipo.color}`,borderRadius:10,padding:"12px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
+                              {post.pinned&&<span style={{fontSize:12,flexShrink:0}}>📌</span>}
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:5}}>
+                                  <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:10,background:tipo.color+"20",color:tipo.color,textTransform:"uppercase",letterSpacing:"0.04em"}}>{tipo.label}</span>
+                                  <span style={{fontSize:10,color:T.textSm}}>{post.createdAt?new Date(post.createdAt).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):""}</span>
+                                </div>
+                                <div style={{fontSize:13,color:T.text,lineHeight:1.55,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{post.texto}</div>
+                              </div>
+                              <button onClick={async()=>{
+                                await tareasApi({action:"deletePost",postId:post.id});
+                                setGeneralData(prev=>({...prev,posts:(prev.posts||[]).filter(p=>p.id!==post.id)}));
+                                toast("Post eliminado","success");
+                              }} style={{...BtnDanger(T),fontSize:10,padding:"3px 8px",flexShrink:0}}>✕</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {(generalData.posts||[]).length===0&&<div style={{textAlign:"center",padding:"20px 0",color:T.textSm,fontSize:12}}>Sin publicaciones aún.</div>}
+                  </div>
+                );
+              })()}
+
+              {/* ── REFERENCIAS / COMPETENCIAS ── */}
+              <div style={{marginTop:24}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                  <div style={{padding:"13px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:14}}>🔗</span>
+                    <span style={{fontSize:12,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:"0.05em"}}>Referencias / Competencia</span>
+                    <span style={{fontSize:11,color:T.textSm,marginLeft:2}}>{(generalData.referencias||[]).length} marcas</span>
+                    <div style={{flex:1}}/>
+                    <button onClick={()=>setShowAddRef(v=>!v)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>{showAddRef?"Cancelar":"+ Agregar"}</button>
+                  </div>
+                  {showAddRef&&(
+                    <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,background:T.surface}}>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                        {[["nombre","Nombre *","Ej: Oakley, Ray-Ban..."],["web","🌐 Web","https://..."],["metaAds","📢 Meta Ads","https://facebook.com/ads/library/..."],["ig","📸 Instagram","https://instagram.com/..."]].map(([field,label,ph])=>(
+                          <div key={field}>
+                            <div style={{fontSize:11,color:T.textSm,marginBottom:4,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                              {label}
+                              {field==="metaAds"&&refForm.nombre.trim()&&(
+                                <button onClick={()=>setRefForm(f=>({...f,metaAds:`https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=AR&q=${encodeURIComponent(f.nombre.trim())}`}))} style={{fontSize:9,padding:"1px 6px",background:"rgba(24,119,242,0.15)",border:"1px solid rgba(24,119,242,0.4)",borderRadius:6,color:"#1877f2",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Auto-fill</button>
+                              )}
+                            </div>
+                            <input value={refForm[field]} onChange={e=>setRefForm(f=>({...f,[field]:e.target.value}))} placeholder={ph}
+                              style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",fontSize:13,background:T.card,border:`1px solid ${T.border}`,borderRadius:7,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
+                          </div>
+                        ))}
+                      </div>
+                      <button disabled={!refForm.nombre.trim()} onClick={async()=>{
+                        if(!refForm.nombre.trim()) return;
+                        const d=await tareasApi({action:"addReferencia",nombre:refForm.nombre.trim(),web:refForm.web.trim(),metaAds:refForm.metaAds.trim(),ig:refForm.ig.trim()});
+                        setGeneralData(prev=>({...prev,referencias:[...(prev.referencias||[]),d.referencia]}));
+                        setRefForm({nombre:"",web:"",metaAds:"",ig:""});
+                        setShowAddRef(false);
+                        toast("Referencia agregada","success");
+                      }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",opacity:!refForm.nombre.trim()?0.5:1}}>Guardar</button>
+                    </div>
+                  )}
+                  {(generalData.referencias||[]).length===0&&!showAddRef?(
+                    <div style={{padding:"28px 0",textAlign:"center",color:T.textSm,fontSize:12}}><div style={{fontSize:28,marginBottom:8}}>🔗</div>Sin referencias cargadas aún.</div>
+                  ):(
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",minWidth:480}}>
+                        <thead>
+                          <tr style={{background:T.surface}}>
+                            {["Marca","🌐 Web","📢 Meta Ads","📸 IG",""].map((h,i)=>(
+                              <th key={i} style={{padding:"9px 14px",textAlign:i===0?"left":"center",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",borderBottom:`1px solid ${T.border}`}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(generalData.referencias||[]).map((r,i)=>(
+                            <tr key={r.id||i} style={{background:i%2===0?T.card:T.surface,borderBottom:`1px solid ${T.borderL}`}}>
+                              <td style={{padding:"11px 14px"}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.nombre}</div></td>
+                              {[r.web,r.metaAds,r.ig].map((url,j)=>(
+                                <td key={j} style={{padding:"11px 14px",textAlign:"center"}}>
+                                  {url?<a href={url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.accent,textDecoration:"none",padding:"3px 8px",borderRadius:6,border:`1px solid ${T.accent}44`,background:T.accent+"11"}}>Ver →</a>:<span style={{fontSize:11,color:T.textSm}}>—</span>}
+                                </td>
+                              ))}
+                              <td style={{padding:"11px 14px",textAlign:"center"}}>
+                                <button onClick={async()=>{
+                                  await tareasApi({action:"deleteReferencia",referenciaId:r.id});
+                                  setGeneralData(prev=>({...prev,referencias:(prev.referencias||[]).filter(x=>x.id!==r.id)}));
+                                  toast("Referencia eliminada","success");
+                                }} style={{...BtnDanger(T),fontSize:10,padding:"3px 8px"}}>✕</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -10602,12 +10772,23 @@ function ColaboradorPublicView({T, token}) {
     setPwaBannerClosed(true);
   }
 
+  const [generalData, setGeneralData] = useState(null);
+
   useEffect(()=>{
     fetch(`/api/tareas?action=getPublicData&token=${token}`)
       .then(r=>r.json())
       .then(d=>{ if(d.error) setError(d.error); else { setData(d); if(d.tareas?.length===1) setExpandedTarea(d.tareas[0]._id); } })
       .catch(e=>setError(e.message))
       .finally(()=>setLoading(false));
+  },[token]);
+
+  // Fetch tablón + referencias (independiente del token — usa uid del colab)
+  useEffect(()=>{
+    if(!token) return;
+    fetch(`/api/tareas?action=getGeneralByToken&token=${token}`)
+      .then(r=>r.json())
+      .then(d=>{ if(!d.error) setGeneralData(d); })
+      .catch(()=>{});
   },[token]);
 
   const ESTADOS = {
@@ -10725,6 +10906,8 @@ function ColaboradorPublicView({T, token}) {
   );
 
   const { colab, tareas=[], creativos=null, tandas=[], adminWaPhone:adminWa=null, equipoTareas=null } = data;
+  const tablon = generalData?.posts||[];
+  const referencias = generalData?.referencias||[];
   const aprobadas = tareas.filter(t=>t.estado==="aprobado");
   const totalTareas = tareas.length;
   const progressPct = totalTareas>0?Math.round(aprobadas.length/totalTareas*100):0;
@@ -10790,6 +10973,40 @@ function ColaboradorPublicView({T, token}) {
             <div style={{fontSize:48,marginBottom:12}}>🎉</div>
             <div style={{fontSize:16,fontWeight:600,color:T.text,marginBottom:6}}>¡Sin tareas por ahora!</div>
             <div style={{fontSize:13}}>Cuando te asignen trabajo, lo vas a ver acá.</div>
+          </div>
+        )}
+
+        {/* ── TABLÓN DE POSTS ── */}
+        {tablon.length>0&&(
+          <div style={{marginBottom:24}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(245,158,11,0.13),rgba(245,158,11,0.06))",borderRadius:12,border:"1.5px solid rgba(245,158,11,0.3)"}}>
+              <span style={{fontSize:18}}>📌</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#d97706"}}>Tablón del equipo</div>
+                <div style={{fontSize:11,color:T.textSm}}>{tablon.length} publicación{tablon.length!==1?"es":""}</div>
+              </div>
+            </div>
+            {[...tablon].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)).map((post,i)=>{
+              const TIPO_META={
+                aviso:{label:"Aviso",color:"#f97316",bg:"#f9731618",border:"#f9731640"},
+                brief:{label:"Brief",color:"#3b82f6",bg:"#3b82f618",border:"#3b82f640"},
+                recurso:{label:"Recurso",color:"#22c55e",bg:"#22c55e18",border:"#22c55e40"},
+              };
+              const meta=TIPO_META[post.tipo]||TIPO_META.aviso;
+              return (
+                <div key={post.id||i} style={{background:T.card,border:`1px solid ${post.pinned?"#f9731440":T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:10,position:"relative"}}>
+                  {post.pinned&&(
+                    <div style={{position:"absolute",top:10,right:12,fontSize:14}} title="Fijado">📌</div>
+                  )}
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                    <span style={{fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:20,background:meta.bg,color:meta.color,border:`1px solid ${meta.border}`,textTransform:"uppercase",letterSpacing:"0.05em"}}>{meta.label}</span>
+                    {post.autor&&<span style={{fontSize:11,color:T.textSm}}>{post.autor}</span>}
+                    {post.fecha&&<span style={{fontSize:11,color:T.textSm}}>· {fmtDate(post.fecha)}</span>}
+                  </div>
+                  <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{post.texto}</div>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -11209,6 +11426,46 @@ function ColaboradorPublicView({T, token}) {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ── SECCIÓN REFERENCIAS ── */}
+        {referencias.length>0&&(
+          <div style={{marginTop:28}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(20,184,166,0.13),rgba(20,184,166,0.06))",borderRadius:12,border:"1.5px solid rgba(20,184,166,0.3)"}}>
+              <span style={{fontSize:18}}>🔍</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#0d9488"}}>Referencias</div>
+                <div style={{fontSize:11,color:T.textSm}}>{referencias.length} competidor{referencias.length!==1?"es":""}</div>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
+              {referencias.map((ref,i)=>(
+                <div key={ref.id||i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10,lineHeight:1.3}}>{ref.nombre}</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {ref.web&&(
+                      <a href={ref.web} target="_blank" rel="noreferrer"
+                        style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#6366f1",background:"#6366f115",border:"1px solid #6366f130",borderRadius:6,padding:"5px 9px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        🌐 Web
+                      </a>
+                    )}
+                    {(ref.metaAds||ref.meta)&&(
+                      <a href={ref.metaAds||ref.meta} target="_blank" rel="noreferrer"
+                        style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#1877f2",background:"#1877f215",border:"1px solid #1877f230",borderRadius:6,padding:"5px 9px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        📢 Meta Ads
+                      </a>
+                    )}
+                    {ref.ig&&(
+                      <a href={ref.ig} target="_blank" rel="noreferrer"
+                        style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#e1306c",background:"#e1306c15",border:"1px solid #e1306c30",borderRadius:6,padding:"5px 9px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        📸 IG
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

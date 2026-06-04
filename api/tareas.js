@@ -800,6 +800,78 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // ── TABLÓN + REFERENCIAS ──────────────────────────────────────────────────
+
+    if (action === "getGeneralByToken") {
+      // Para el portal del colaborador — lookup por token → uid
+      if (!token) return res.status(400).json({ error:"Token requerido" });
+      const colSnap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (colSnap.empty) return res.status(404).json({ error:"Token inválido" });
+      const colabUid = colSnap.docs[0].data().uid;
+      const gSnap = await db.collection("general").doc(colabUid).get();
+      if (!gSnap.exists) return res.json({ posts:[], referencias:[] });
+      const gd = gSnap.data();
+      return res.json({ posts:gd.posts||[], referencias:gd.referencias||[] });
+    }
+
+    if (action === "getGeneral") {
+      const snap = await db.collection("general").doc(uid).get();
+      if (!snap.exists) return res.json({ posts: [], referencias: [] });
+      const d = snap.data();
+      return res.json({ posts: d.posts||[], referencias: d.referencias||[] });
+    }
+
+    if (action === "addPost") {
+      const { texto, tipo="aviso", pinned=false } = body;
+      if (!texto?.trim()) return res.status(400).json({ error:"texto requerido" });
+      const post = { id:randomToken(12), texto:texto.trim(), tipo, pinned:!!pinned, createdAt:now.toISOString() };
+      const ref = db.collection("general").doc(uid);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set({ posts:[post], referencias:[] });
+      } else {
+        const posts = [...(snap.data().posts||[]), post];
+        await ref.update({ posts });
+      }
+      return res.json({ ok:true, post });
+    }
+
+    if (action === "deletePost") {
+      const { postId } = body;
+      if (!postId) return res.status(400).json({ error:"postId requerido" });
+      const ref = db.collection("general").doc(uid);
+      const snap = await ref.get();
+      if (!snap.exists) return res.json({ ok:true });
+      const posts = (snap.data().posts||[]).filter(p => p.id !== postId);
+      await ref.update({ posts });
+      return res.json({ ok:true });
+    }
+
+    if (action === "addReferencia") {
+      const { nombre, web="", metaAds="", ig="" } = body;
+      if (!nombre?.trim()) return res.status(400).json({ error:"nombre requerido" });
+      const ref = db.collection("general").doc(uid);
+      const snap = await ref.get();
+      const nueva = { id:randomToken(12), nombre:nombre.trim(), web, metaAds, ig, createdAt:now.toISOString() };
+      if (!snap.exists) {
+        await ref.set({ posts:[], referencias:[nueva] });
+      } else {
+        const referencias = [...(snap.data().referencias||[]), nueva];
+        await ref.update({ referencias });
+      }
+      return res.json({ ok:true, referencia:nueva });
+    }
+
+    if (action === "deleteReferencia") {
+      const { referenciaId } = body;
+      const ref = db.collection("general").doc(uid);
+      const snap = await ref.get();
+      if (!snap.exists) return res.json({ ok:true });
+      const referencias = (snap.data().referencias||[]).filter(r => r.id !== referenciaId);
+      await ref.update({ referencias });
+      return res.json({ ok:true });
+    }
+
     return res.status(400).json({ error:"Acción desconocida" });
 
   } catch(e) {
