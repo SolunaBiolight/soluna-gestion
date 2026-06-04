@@ -11130,7 +11130,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try { return new Set(JSON.parse(localStorage.getItem(descartadasKey)||"[]")); } catch(_){ return new Set(); }
   });
   const [showDescartadas, setShowDescartadas] = useState(false);
-  const [autoDescartar, setAutoDescartar] = useState(false); // al facturar, descartar automáticamente las no-seleccionadas
+  const [autoDescartar, setAutoDescartar] = useState(true); // al facturar, descartar automáticamente las no-seleccionadas
   function saveDescartadas(set) {
     setDescartadas(set);
     try { if(descartadasKey) localStorage.setItem(descartadasKey, JSON.stringify([...set])); } catch(_){}
