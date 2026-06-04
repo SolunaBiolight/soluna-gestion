@@ -151,12 +151,26 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const body = req.method === "GET" ? req.query : req.body;
-  const { action, uid, token } = body;
-  const origin = req.headers.origin || req.headers.referer || "";
-
   try {
     const db = initAdmin();
+
+    let body;
+    if (req.method === "GET") {
+      body = req.query;
+    } else if (req.body && typeof req.body === "object") {
+      body = req.body;
+    } else {
+      const raw = await new Promise((resolve, reject) => {
+        const chunks = [];
+        req.on("data", c => chunks.push(c));
+        req.on("end", () => resolve(Buffer.concat(chunks).toString()));
+        req.on("error", reject);
+      });
+      body = raw ? JSON.parse(raw) : {};
+    }
+
+    const { action, uid, token } = body;
+    const origin = req.headers.origin || req.headers.referer || "";
     const now = new Date();
 
     // ── ACCIONES PÚBLICAS (solo token, sin uid) ───────────────────────────────
