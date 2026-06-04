@@ -8374,7 +8374,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
   async function loadProduccion() {
     setProdLoading(true);
-    try { const d = await tareasApi({action:"getProduccion"}); setProduccion(d); }
+    try {
+      const d = await tareasApi({action:"getProduccion"});
+      setProduccion({
+        editores: Array.isArray(d?.editores) ? d.editores : [],
+        tandas:   Array.isArray(d?.tandas)   ? d.tandas   : [],
+        creativos:Array.isArray(d?.creativos) ? d.creativos: [],
+        ideas:    Array.isArray(d?.ideas)     ? d.ideas    : [],
+        editorTokens: d?.editorTokens || {},
+      });
+    }
     catch(e){ /* silently use defaults */ }
     setProdLoading(false);
   }
