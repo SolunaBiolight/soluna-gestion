@@ -11461,15 +11461,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const productos = [...new Set(Object.values(filtered).flatMap(o => o.items.map(i => i.nombre_original)))];
     setProductos(productos);
     setProductMap(Object.fromEntries(productos.map(p=>[p,""])));
-    // Auto-descartar las no-seleccionadas si el toggle está activado
-    if(autoDescartar && noSeleccionadasIds.length > 0) {
-      const s = new Set(descartadas);
-      noSeleccionadasIds.forEach(id => s.add(String(id)));
-      saveDescartadas(s);
-      toast(`${Object.keys(filtered).length} listas para emitir · ${noSeleccionadasIds.length} descartadas automáticamente`,"success");
-    } else {
-      toast(`${Object.keys(filtered).length} ventas listas para emitir`,"success");
-    }
+    toast(`${Object.keys(filtered).length} ventas listas para emitir`,"success");
     setTimeout(()=>{
       document.getElementById("arca-preview-ordenes")?.scrollIntoView({behavior:"smooth",block:"start"});
     }, 100);
@@ -11810,6 +11802,23 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         for(const id of billedOk.keys()) next[id] = false;
         return next;
       });
+    }
+
+    // Auto-descartar las no-seleccionadas DESPUÉS de emitir exitosamente
+    // (solo si al menos 1 factura salió OK y el toggle está activo)
+    if(autoDescartar && ok > 0 && tnData?.ordenes) {
+      const idsEmitidos = new Set(res.filter(r=>r.ok).map(r=>r.orden_id));
+      const s = new Set(descartadas);
+      Object.keys(tnData.ordenes).forEach(id => {
+        if(!idsEmitidos.has(id) && !tnData.ordenes[id]?._billed) {
+          s.add(String(id));
+        }
+      });
+      saveDescartadas(s);
+      if(s.size > descartadas.size) {
+        const nuevasDescartadas = s.size - descartadas.size;
+        toast(`${ok} facturadas · ${nuevasDescartadas} descartadas automáticamente`, "success");
+      }
     }
 
     refreshDashboard();
@@ -12407,7 +12416,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           {autoDescartar&&selectedCount>0&&!allSel&&(
                             <span style={{fontSize:11,color:T.orange||"#f97316",display:"flex",alignItems:"center",gap:5}}>
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-                              {itemsSelectables.length-selectedCount} se van a descartar al facturar
+                              {itemsSelectables.length-selectedCount} se van a descartar cuando se emitan las facturas
                             </span>
                           )}
                           <button onClick={facturarSeleccionadas} disabled={selectedCount===0} style={{background:"linear-gradient(135deg,#16a34a,#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:selectedCount===0?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:selectedCount===0?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:selectedCount>0?"0 4px 14px #16a34a40":"none",transition:"all 0.15s"}}>
