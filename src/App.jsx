@@ -112,11 +112,15 @@ function Card({T, children, hoverable, onClick, style={}, padding="lg"}) {
       onMouseLeave={()=>setHover(false)}
       style={{
         background: T.card,
-        border: `1px solid ${hover&&hoverable?T.accentSolid+"55":T.border}`,
+        border: `1px solid ${hover&&hoverable ? T.accentSolid+"66" : T.border}`,
         borderRadius: DS.r.xl,
         padding: padMap[padding]||padMap.lg,
-        transition: `all 0.15s ${DS.ease}`,
+        transition: `all 0.2s ${DS.ease}`,
         cursor: onClick?"pointer":"default",
+        boxShadow: hover&&hoverable
+          ? `0 8px 32px rgba(0,0,0,0.18), 0 0 0 1px ${T.accentSolid}18`
+          : "0 1px 3px rgba(0,0,0,0.07)",
+        transform: hover&&hoverable ? "translateY(-2px)" : "translateY(0)",
         ...style,
       }}>
       {children}
@@ -131,7 +135,11 @@ function Skeleton({T, width="72%", height=22, radius=6, style={}}) {
 function KPI({T, label, value, sub, color, icon, accent, onClick, compact, loading}) {
   const c = color||T.accentSolid;
   return (
-    <Card T={T} hoverable={!!onClick} onClick={onClick} padding={compact?"md":"lg"} style={{borderColor:accent?c+"55":T.border}}>
+    <Card T={T} hoverable={!!onClick} onClick={onClick} padding={compact?"md":"lg"}
+      style={{
+        borderColor: accent ? c+"66" : T.border,
+        boxShadow: accent ? `0 4px 24px ${c}20, 0 1px 3px rgba(0,0,0,0.07)` : "0 1px 3px rgba(0,0,0,0.07)",
+      }}>
       <div style={{display:"flex",alignItems:"flex-start",gap:DS.sp.md}}>
         {icon&&<div style={{fontSize:compact?16:18,flexShrink:0,opacity:loading?0.3:0.9}}>{icon}</div>}
         <div style={{flex:1,minWidth:0}}>
@@ -152,17 +160,13 @@ function KPI({T, label, value, sub, color, icon, accent, onClick, compact, loadi
 
 // Sistema de botones unificado — visualmente idéntico a BtnPrimary/BtnSecondary/BtnDanger
 function Btn({T, variant="primary", size="md", icon, children, onClick, disabled, style={}, ...rest}) {
+  const [hov, setHov] = React.useState(false);
   const variants = {
-    // Igual a BtnPrimary(T): gradiente violeta→índigo
-    primary:   {bg:"linear-gradient(135deg, #6d28d9, #4338ca)", color:"#fff", border:"transparent", shadow:"0 2px 12px #6d28d933"},
-    // Igual a BtnSecondary(T): transparente con borde
-    secondary: {bg:"transparent", color:T.textMd, border:T.border, shadow:"none"},
-    // Ghost: sin relleno ni borde
-    ghost:     {bg:"transparent", color:T.textMd, border:"transparent", shadow:"none"},
-    // Igual a BtnDanger(T): fondo rojo suave, texto rojo
-    danger:    {bg:T.redBg, color:T.red, border:T.red+"44", shadow:"none"},
-    // Success: verde sólido
-    success:   {bg:T.green, color:"#fff", border:"transparent", shadow:`0 2px 8px ${T.green}33`},
+    primary:   {bg:"linear-gradient(135deg, #6d28d9, #4338ca)", color:"#fff", border:"transparent", shadow:"0 2px 16px #6d28d955", shadowHov:"0 6px 28px #6d28d977"},
+    secondary: {bg:"transparent", color:T.textMd, border:T.border, shadow:"none", shadowHov:`0 2px 12px rgba(0,0,0,0.12)`},
+    ghost:     {bg:"transparent", color:T.textMd, border:"transparent", shadow:"none", shadowHov:"none"},
+    danger:    {bg:T.redBg, color:T.red, border:T.red+"44", shadow:`0 2px 12px ${T.red}22`, shadowHov:`0 4px 20px ${T.red}44`},
+    success:   {bg:"linear-gradient(135deg,#16a34a,#15803d)", color:"#fff", border:"transparent", shadow:`0 2px 16px #16a34a55`, shadowHov:`0 6px 28px #16a34a77`},
   };
   const sizes = {
     sm: {padding:"5px 10px", fontSize:DS.font.sm, gap:5},
@@ -172,7 +176,10 @@ function Btn({T, variant="primary", size="md", icon, children, onClick, disabled
   const v = variants[variant]||variants.primary;
   const s = sizes[size]||sizes.md;
   return (
-    <button onClick={onClick} disabled={disabled} {...rest}
+    <button onClick={onClick} disabled={disabled}
+      onMouseEnter={()=>!disabled&&setHov(true)}
+      onMouseLeave={()=>setHov(false)}
+      {...rest}
       style={{
         background: disabled?T.surface:v.bg,
         color: disabled?T.textSm:v.color,
@@ -183,9 +190,9 @@ function Btn({T, variant="primary", size="md", icon, children, onClick, disabled
         fontFamily: "'Inter',system-ui,sans-serif",
         letterSpacing:"0.01em",
         display:"inline-flex",alignItems:"center",justifyContent:"center",
-        transition: `all 0.15s ${DS.ease}`,
+        transition: `all 0.18s ${DS.ease}`,
         opacity: disabled?0.5:1,
-        boxShadow: disabled?"none":v.shadow,
+        boxShadow: disabled?"none": hov?(v.shadowHov||v.shadow):v.shadow,
         ...s,
         ...style,
       }}>
@@ -1273,12 +1280,12 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
 
     /* -- Buttons -- */
     button, a[role="button"] {
-      transition: opacity 0.15s ease, transform 0.12s ease,
+      transition: filter 0.15s ease, transform 0.13s cubic-bezier(0.34,1.56,0.64,1),
                   background 0.15s ease, border-color 0.15s ease,
-                  box-shadow 0.15s ease !important;
+                  box-shadow 0.18s ease !important;
     }
-    button:not(:disabled):hover  { opacity: 0.88; }
-    button:not(:disabled):active { transform: scale(0.95) !important; opacity: 0.75 !important; }
+    button:not(:disabled):hover  { filter: brightness(1.1); transform: translateY(-1px); }
+    button:not(:disabled):active { transform: scale(0.95) translateY(0) !important; filter: brightness(0.95) !important; }
     button:disabled { cursor: not-allowed !important; opacity: 0.4 !important; }
 
     /* -- Links -- */
@@ -1380,15 +1387,36 @@ function toast(msg,type="success",duration=3000){
 function ToastContainer({T}){
   const toasts=useToast();
   if(!toasts.length) return null;
-  const colorMap={success:T.green,error:T.red,info:T.blue,warning:T.orange};
+  const cfgMap={
+    success:{color:T.green,   bg:"#22c55e", icon:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>},
+    error:  {color:T.red,     bg:"#ef4444", icon:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
+    warning:{color:T.orange||"#f97316", bg:"#f97316", icon:<><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
+    info:   {color:T.blue||"#3b82f6", bg:"#3b82f6", icon:<><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
+  };
   return(
-    <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,display:"flex",flexDirection:"column",gap:8,alignItems:"center",pointerEvents:"none"}}>
-      {toasts.map(t=>(
-        <div key={t.id} style={{background:T.card,border:`1px solid ${colorMap[t.type]||T.green}55`,borderLeft:`3px solid ${colorMap[t.type]||T.green}`,borderRadius:10,padding:"10px 18px",fontSize:13,fontWeight:500,color:T.text,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:8}}>
-          <span style={{color:colorMap[t.type]||T.green,fontSize:15}}>{t.type==="success"?"✓":t.type==="error"?"✕":t.type==="warning"?"!":"i"}</span>
-          {t.msg}
-        </div>
-      ))}
+    <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:9999,display:"flex",flexDirection:"column",gap:10,alignItems:"center",pointerEvents:"none"}}>
+      {toasts.map(t=>{
+        const cfg=cfgMap[t.type]||cfgMap.success;
+        return(
+          <div key={t.id} style={{
+            background:`linear-gradient(135deg,${cfg.bg}14,${cfg.bg}08)`,
+            border:`1.5px solid ${cfg.color}55`,
+            borderLeft:`3px solid ${cfg.color}`,
+            borderRadius:14,
+            padding:"12px 20px 12px 14px",
+            fontSize:13,fontWeight:600,color:T.text,
+            boxShadow:`0 8px 32px rgba(0,0,0,0.28), 0 0 0 1px ${cfg.color}18`,
+            whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:12,
+            animation:"growith-toast-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both",
+            backdropFilter:"blur(16px)",
+          }}>
+            <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${cfg.bg},${cfg.bg}cc)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:`0 4px 12px ${cfg.color}55`}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">{cfg.icon}</svg>
+            </div>
+            {t.msg}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1710,10 +1738,10 @@ function StatusIcon({type="success", size=64}) {
   );
 }
 
-function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:"linear-gradient(135deg, #6d28d9, #4338ca)",color:"#fff",letterSpacing:"0.01em",boxShadow:"0 2px 12px #6d28d933"}; }
-function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:"transparent",color:T.textMd}; }
-function BtnDanger(T) { return {border:`0.5px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red}; }
-function BtnPurple(T) { return {border:`0.5px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple}; }
+function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:"linear-gradient(135deg, #6d28d9, #4338ca)",color:"#fff",letterSpacing:"0.01em",boxShadow:"0 2px 16px #6d28d955"}; }
+function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:"transparent",color:T.textMd}; }
+function BtnDanger(T) { return {border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red,boxShadow:`0 2px 12px ${T.red}22`}; }
+function BtnPurple(T) { return {border:`1px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple,boxShadow:`0 2px 12px ${T.purple}22`}; }
 // Botón ✕ estándar para cerrar modales y drawers
 function ModalCloseBtn({T, onClick, disabled}) {
   return (
