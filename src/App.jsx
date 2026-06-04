@@ -9583,7 +9583,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
         {/* ── TAB CREATIVOS ── */}
         {!loading&&tab==="creativos"&&(
-        <div>
+        <div style={{background:T.bg}}>
           {/* Sub-nav */}
           <div style={{display:"flex",marginBottom:20}}>
             <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:1}}>
@@ -9603,10 +9603,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
           {/* ── Dashboard ── */}
           {!prodLoading&&prodTab==="dashboard"&&(()=>{
-            const total=produccion.creativos.length;
-            const pub=produccion.creativos.filter(c=>c.estado==="publicado").length;
-            const enProd=produccion.creativos.filter(c=>c.estado==="en-produccion").length;
-            const sinCobrar=produccion.creativos.filter(c=>c.estado==="entregado"&&!c.pagado).length;
+            const creativosList=produccion?.creativos||[];
+            const editoresList=produccion?.editores||[];
+            const ideasList=produccion?.ideas||[];
+            const total=creativosList.length;
+            const pub=creativosList.filter(c=>c.estado==="publicado").length;
+            const enProd=creativosList.filter(c=>c.estado==="en-produccion").length;
+            const sinCobrar=creativosList.filter(c=>c.estado==="entregado"&&!c.pagado).length;
             const PEST=[["idea","💡 Idea"],["brief-enviado","📋 Brief enviado"],["en-produccion","🔄 En producción"],["entregado","📦 Entregado"],["publicado","✅ Publicado"],["archivado","🗄 Archivado"]];
             return (
               <div>
@@ -9623,7 +9626,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:16}}>Por estado</div>
                     <div style={{display:"flex",flexDirection:"column",gap:7}}>
                       {PEST.map(([est,label])=>{
-                        const cnt=produccion.creativos.filter(c=>c.estado===est).length;
+                        const cnt=creativosList.filter(c=>c.estado===est).length;
                         const pct=total>0?Math.round(cnt/total*100):0;
                         return <div key={est} onClick={()=>{setProdTab("creativos");setProdFilter(f=>({...f,estado:est}));}} style={{cursor:"pointer",padding:"3px 0",borderRadius:4}} title={`Ver creativos: ${label}`}>
                           <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
@@ -9639,9 +9642,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </div>
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 24px"}}>
                     <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:16}}>Ranking editores</div>
-                    {produccion.editores.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin editores configurados.</div>}
-                    {produccion.editores.map(ed=>{
-                      const edC=produccion.creativos.filter(c=>c.editor===ed);
+                    {editoresList.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin editores configurados.</div>}
+                    {editoresList.map(ed=>{
+                      const edC=creativosList.filter(c=>c.editor===ed);
                       const edPub=edC.filter(c=>c.estado==="publicado").length;
                       const edTotal=edC.length;
                       const pct=edTotal>0?Math.round(edPub/edTotal*100):0;
@@ -9655,9 +9658,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                       </div>;
                     })}
-                    {produccion.ideas.length>0&&(
+                    {ideasList.length>0&&(
                       <div style={{marginTop:14,padding:"10px 12px",background:T.yellowBg||T.surface,border:`1px solid ${(T.yellow||"#d97706")+"55"}`,borderRadius:8}}>
-                        <div style={{fontSize:12,color:T.text}}>💡 <strong>{produccion.ideas.length}</strong> idea{produccion.ideas.length!==1?"s":""} en backlog</div>
+                        <div style={{fontSize:12,color:T.text}}>💡 <strong>{ideasList.length}</strong> idea{ideasList.length!==1?"s":""} en backlog</div>
                       </div>
                     )}
                   </div>
@@ -21185,7 +21188,7 @@ export default function App() {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
         <div style={{animation:"growith-bounceIn 0.6s cubic-bezier(0.34,1.56,0.64,1) both"}}>
-          <GrowithLogo size={96} variant={darkMode?"blanco":"color"}/>
+          <GrowithLogo size={96} variant="color"/>
         </div>
         <div style={{display:"flex",gap:6}}>
           {[0,1,2].map(i=>(
