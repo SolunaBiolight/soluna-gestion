@@ -922,28 +922,42 @@ function AppPromptHost({ T }) {
   const isPromptInput = s.kind === "prompt";
   const danger = s.danger;
   const closeWith = (val) => _appPromptClose(val);
+  const accentColor = danger ? "#ef4444" : isConfirm ? "#6366f1" : "#3b82f6";
+  const accentBg = danger ? "linear-gradient(135deg,#ef4444,#dc2626)" : isConfirm ? "linear-gradient(135deg,#6366f1,#4f46e5)" : "linear-gradient(135deg,#3b82f6,#2563eb)";
+  const iconPath = danger
+    ? <><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>
+    : isConfirm
+    ? <><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>
+    : isPromptInput
+    ? <><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>
+    : <><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>;
   return ReactDOM.createPortal(
-    <div style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
+    <div style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
       onClick={() => isConfirm ? closeWith(false) : (isPromptInput ? closeWith(null) : closeWith(true))}>
       <div onClick={e => e.stopPropagation()}
-        style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:440,boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
-        <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
-          {danger ? <span style={{color:T.red}}>⚠</span> : (isConfirm || isPromptInput) ? <span style={{color:T.accent}}>?</span> : <span style={{color:T.blue||T.accent}}>ℹ</span>}
-          {s.title}
-        </div>
-        <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:isPromptInput?12:18,whiteSpace:"pre-wrap"}}>{s.message}</div>
-        {isPromptInput && (
-          <input autoFocus type="text" value={inputVal} onChange={e=>setInputVal(e.target.value)}
-            placeholder={s.placeholder||""}
-            onKeyDown={e=>{ if(e.key==="Enter") closeWith(inputVal); if(e.key==="Escape") closeWith(null); }}
-            style={{width:"100%",padding:"10px 12px",fontSize:14,borderRadius:9,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:18,outline:"none"}} />
-        )}
-        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-          {(isConfirm || isPromptInput) && (
-            <button onClick={() => closeWith(isPromptInput ? null : false)} style={{padding:"9px 16px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:9,background:T.surface,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.cancelLabel}</button>
+        style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:20,width:"100%",maxWidth:420,boxShadow:`0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px ${accentColor}18`,animation:"growith-modalIn 0.28s cubic-bezier(0.34,1.4,0.64,1) both",overflow:"hidden"}}>
+        <div style={{height:4,background:accentBg}}/>
+        <div style={{padding:"28px 28px 24px"}}>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",marginBottom:20}}>
+            <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:52,height:52,borderRadius:14,background:accentBg,boxShadow:`0 8px 24px ${accentColor}44`,marginBottom:14,animation:"growith-bounceIn 0.45s cubic-bezier(0.34,1.56,0.64,1) both",animationDelay:"0.08s"}}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">{iconPath}</svg>
+            </div>
+            <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:6,letterSpacing:"-0.01em"}}>{s.title}</div>
+            <div style={{fontSize:13,color:T.textMd,lineHeight:1.65,whiteSpace:"pre-wrap"}}>{s.message}</div>
+          </div>
+          {isPromptInput && (
+            <input autoFocus type="text" value={inputVal} onChange={e=>setInputVal(e.target.value)}
+              placeholder={s.placeholder||""}
+              onKeyDown={e=>{ if(e.key==="Enter") closeWith(inputVal); if(e.key==="Escape") closeWith(null); }}
+              style={{width:"100%",padding:"11px 14px",fontSize:14,borderRadius:10,border:`1.5px solid ${T.border}`,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:16,outline:"none",boxSizing:"border-box"}} />
           )}
-          <button autoFocus={!isPromptInput} onClick={() => closeWith(isPromptInput ? inputVal : true)}
-            style={{padding:"9px 18px",fontSize:13,fontWeight:700,border:"none",borderRadius:9,background:danger ? T.red : (T.accentSolid || T.accent),color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.okLabel}</button>
+          <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+            {(isConfirm || isPromptInput) && (
+              <button onClick={() => closeWith(isPromptInput ? null : false)} style={{flex:1,padding:"11px 16px",fontSize:13,fontWeight:600,border:`1.5px solid ${T.border}`,borderRadius:11,background:T.surface,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>{s.cancelLabel}</button>
+            )}
+            <button autoFocus={!isPromptInput} onClick={() => closeWith(isPromptInput ? inputVal : true)}
+              style={{flex:1,padding:"11px 16px",fontSize:13,fontWeight:700,border:"none",borderRadius:11,background:accentBg,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:`0 4px 14px ${accentColor}44`,transition:"all 0.15s"}}>{s.okLabel}</button>
+          </div>
         </div>
       </div>
     </div>,
@@ -1218,6 +1232,8 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     @keyframes growith-slideIn { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
     @keyframes growith-scaleIn { from{opacity:0;transform:scale(0.97)} to{opacity:1;transform:scale(1)} }
     @keyframes growith-popIn   { from{opacity:0;transform:scale(0.94) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    @keyframes growith-bounceIn{ 0%{opacity:0;transform:scale(0.4)} 55%{opacity:1;transform:scale(1.12)} 75%{transform:scale(0.93)} 100%{transform:scale(1)} }
+    @keyframes growith-modalIn { from{opacity:0;transform:scale(0.96) translateY(12px)} to{opacity:1;transform:scale(1) translateY(0)} }
     @keyframes slideInRight    { from{opacity:0;transform:translateX(100%)} to{opacity:1;transform:translateX(0)} }
 
     /* -- Page / section transitions -- */
@@ -1681,14 +1697,14 @@ function InputStyle(T) {
 // Ícono de estado para modales de resultado (reemplaza emojis ✅❌⚠️)
 function StatusIcon({type="success", size=64}) {
   const cfg = {
-    success: { bg:"linear-gradient(135deg,#22c55e,#16a34a)", shadow:"#22c55e44", path:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/> },
-    error:   { bg:"linear-gradient(135deg,#ef4444,#dc2626)", shadow:"#ef444444", path:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></> },
-    warning: { bg:"linear-gradient(135deg,#f59e0b,#d97706)", shadow:"#f59e0b44", path:<><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/></> },
+    success: { bg:"linear-gradient(135deg,#22c55e,#16a34a)", glow:"#22c55e", ring:"#22c55e28", path:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/> },
+    error:   { bg:"linear-gradient(135deg,#ef4444,#dc2626)", glow:"#ef4444", ring:"#ef444428", path:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></> },
+    warning: { bg:"linear-gradient(135deg,#f59e0b,#d97706)", glow:"#f59e0b", ring:"#f59e0b28", path:<><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/></> },
   };
   const c = cfg[type]||cfg.success;
   const r = Math.round(size*0.27);
   return (
-    <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size,height:size,borderRadius:r,background:c.bg,boxShadow:`0 8px 24px ${c.shadow}`,flexShrink:0}}>
+    <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size,height:size,borderRadius:r,background:c.bg,boxShadow:`0 0 0 ${Math.round(size*0.1)}px ${c.ring}, 0 12px 32px ${c.glow}55`,flexShrink:0,animation:"growith-bounceIn 0.5s cubic-bezier(0.34,1.56,0.64,1) both"}}>
       <svg width={size*0.5} height={size*0.5} viewBox="0 0 24 24" fill="none">{c.path}</svg>
     </div>
   );
