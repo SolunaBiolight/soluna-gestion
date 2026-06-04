@@ -8333,7 +8333,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // ── PRODUCCIÓN CREATIVA ──
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
+  const VALID_PROD_TABS = ["tandas","creativos","ideas","editores"];
   const [prodTab, setProdTab] = useState("tandas");
+  const safeProdTab = VALID_PROD_TABS.includes(prodTab) ? prodTab : "tandas";
   const [prodFilter, setProdFilter] = useState({tanda:"",editor:"",estado:"",tipo:"",etapa:""});
   // Modal Tanda
   const [showNT2, setShowNT2] = useState(false);
@@ -8863,9 +8865,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
           {tab==="tareas"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Nueva tarea</button>}
           {tab==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
-          {tab==="creativos"&&prodTab==="creativos"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
-          {tab==="creativos"&&prodTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
-          {tab==="creativos"&&prodTab==="tandas"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
+          {tab==="creativos"&&safeProdTab==="creativos"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
+          {tab==="creativos"&&safeProdTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
+          {tab==="creativos"&&safeProdTab==="tandas"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
         </div>
       </div>
 
@@ -9326,8 +9328,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               ["ideas","Ideas","M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26A7 7 0 0112 2z"],
               ["editores","Editores","M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"],
             ].map(([id,label,icon])=>(
-              <button key={id} onClick={()=>setProdTab(id)} style={{padding:"5px 14px",fontSize:12,fontWeight:prodTab===id?600:500,border:"none",borderRadius:8,background:prodTab===id?T.card:"transparent",color:prodTab===id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:prodTab===id?1:0.6}}><path d={icon}/></svg>
+              <button key={id} onClick={()=>setProdTab(id)} style={{padding:"5px 14px",fontSize:12,fontWeight:safeProdTab===id?600:500,border:"none",borderRadius:8,background:safeProdTab===id?T.card:"transparent",color:safeProdTab===id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:safeProdTab===id?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:safeProdTab===id?1:0.6}}><path d={icon}/></svg>
                 {label}
               </button>
             ))}
@@ -9336,7 +9338,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           {prodLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
 
           {/* ── Stats compactos — siempre visibles arriba de todo ── */}
-          {!prodLoading&&prodTab!=="editores"&&(()=>{
+          {!prodLoading&&safeProdTab!=="editores"&&(()=>{
             const cl=produccion?.creativos||[];
             const total=cl.length;
             const pub=cl.filter(c=>c.estado==="publicado").length;
@@ -9367,7 +9369,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           })()}
 
           {/* ── Editores ── */}
-          {prodTab==="editores"&&!prodLoading&&(
+          {safeProdTab==="editores"&&!prodLoading&&(
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",marginBottom:16}}>
               <div style={{fontSize:12,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Gestionar editores</div>
               <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
@@ -9404,7 +9406,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
 
           {/* ── Tandas ── */}
-          {!prodLoading&&prodTab==="tandas"&&(
+          {!prodLoading&&safeProdTab==="tandas"&&(
             <div>
               {produccion.tandas.length===0&&(
                 <div style={{textAlign:"center",padding:"60px 0",color:T.textSm}}>
@@ -9466,7 +9468,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
 
           {/* ── Creativos ── */}
-          {!prodLoading&&prodTab==="creativos"&&(()=>{
+          {!prodLoading&&safeProdTab==="creativos"&&(()=>{
             const {tanda:fT,editor:fE,estado:fSt,tipo:fTi,etapa:fEt}=prodFilter;
             const CEST={idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},"brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blueBg},"en-produccion":{l:"En producción",c:T.orange||"#f97316",bg:(T.orangeBg||"#f9731615")},entregado:{l:"Entregado",c:T.yellow||"#d97706",bg:(T.yellowBg||"#d9770615")},publicado:{l:"Publicado",c:T.green,bg:T.greenBg},archivado:{l:"Archivado",c:T.textSm,bg:T.surface}};
             const filtered=produccion.creativos.filter(c=>(!fT||c.tanda_id===fT)&&(!fE||c.editor===fE)&&(!fSt||c.estado===fSt)&&(!fTi||c.tipo===fTi)&&(!fEt||c.etapa===fEt));
@@ -9642,7 +9644,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           })()}
 
           {/* ── Ideas ── */}
-          {!prodLoading&&prodTab==="ideas"&&(
+          {!prodLoading&&safeProdTab==="ideas"&&(
             <div>
               {produccion.ideas.length===0&&(
                 <div style={{textAlign:"center",padding:"60px 0",color:T.textSm}}>
