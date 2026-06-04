@@ -48,22 +48,16 @@ function extractTNDoc(o) {
 // El truco es: Shopify no tiene campo nativo de DNI, así que reutilizamos el campo "Company"
 // (Empresa) del checkout, que el vendedor renombra a "DNI o CUIT" en las traducciones.
 function extractShopifyDoc(o) {
-  // Buscamos en TODOS los lugares donde Shopify puede tener guardado el doc.
-  // Si el merchant edita el "Customer" desde Shopify Admin (no la orden), el
-  // cambio impacta en customer.default_address y customer.addresses[], NO en
-  // billing/shipping_address del snapshot de la orden vieja. Por eso miramos
-  // ambos lados — preferimos primero el snapshot de la orden, pero cuando no
-  // está, caemos al customer actual.
+  // PASO 1 — Match exacto en campos donde el doc viene SOLO (sin texto extra).
+  // Cubre la config más común: campo "Company" del checkout renombrado a
+  // "DNI o CUIT", o note_attributes nominados.
   const candidates = [
-    // 1) Snapshot de la orden (lo que se cargó al momento del pago)
     o.billing_address?.company,
     o.shipping_address?.company,
     o.customer?.note,
     o.note_attributes?.find(a => /(dni|cuit|cuil|tax)/i.test(a?.name||""))?.value,
-    // 2) Customer actual — refleja ediciones del merchant POST-orden
     o.customer?.default_address?.company,
     ...((o.customer?.addresses || []).map(a => a?.company)),
-    // 3) Customer tags estilo "CUIT:20..." / "DNI:12..." que algunas tiendas usan
     ...((String(o.customer?.tags || "").split(",")).map(t => {
       const m = t.match(/(?:CUIT|DNI|CUIL|TAX)[:\s]*([\d.\-]+)/i);
       return m ? m[1] : null;
@@ -74,16 +68,40 @@ function extractShopifyDoc(o) {
     const clean = String(c).replace(/[.\-\s]/g, "");
     if (/^\d{7,11}$/.test(clean)) return clean;
   }
-  // 4) Fallback: regex sobre la nota completa del pedido
-  const noteText = String(o.note || "");
-  if (noteText) {
-    const m = noteText.match(/\b(\d{7,11})\b/);
+
+  // PASO 2 — Fallback agresivo: el merchant edita la orden o el customer en
+  // Shopify Admin y pega el CUIT en CUALQUIER línea (address1, address2,
+  // nombre del cliente, etc) — no necesariamente en "Company". Buscamos por
+  // regex un número de 11 dígitos (CUIT/CUIL) en cualquier campo de texto,
+  // priorizando CUIT (11) sobre DNI (7-8) porque el merchant edita
+  // justamente para emitir Factura A.
+  const fields = [
+    o.billing_address?.address1,
+    o.billing_address?.address2,
+    o.billing_address?.name,
+    o.shipping_address?.address1,
+    o.shipping_address?.address2,
+    o.shipping_address?.name,
+    o.customer?.default_address?.address1,
+    o.customer?.default_address?.address2,
+    o.customer?.default_address?.name,
+    o.customer?.first_name,
+    o.customer?.last_name,
+    o.customer?.note,
+    o.note,
+    ...((o.note_attributes || []).map(a => a?.value)),
+    ...((o.customer?.addresses || []).flatMap(a => [a?.address1, a?.address2, a?.name])),
+  ].filter(Boolean).map(String);
+
+  // CUIT en alguno de los campos individuales (ignorando puntos/guiones)
+  for (const f of fields) {
+    const clean = f.replace(/[.\-\s]/g, "");
+    const m = clean.match(/(?:^|[^\d])(2[0-7]\d{9}|3[03]\d{9})(?=$|[^\d])/);
     if (m) return m[1];
   }
-  // 5) Fallback final: regex sobre customer.note
-  const custNote = String(o.customer?.note || "");
-  if (custNote) {
-    const m = custNote.match(/\b(\d{7,11})\b/);
+  // DNI en alguno de los campos individuales (7-8 dígitos aislados)
+  for (const f of fields) {
+    const m = f.match(/(?:^|[^\d+])(\d{7,8})(?=$|[^\d])/);
     if (m) return m[1];
   }
   return "";
