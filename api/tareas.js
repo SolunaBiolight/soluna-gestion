@@ -22,7 +22,7 @@ function randomToken(len = 24) {
 }
 
 function colabPortalLink(origin, token) {
-  const base = (origin || "https://soluna-gestion.vercel.app").replace(/\/$/, "");
+  const base = (origin || "https://growithapp.com").replace(/\/$/, "");
   return `${base}/#/colaborador/${token}`;
 }
 
@@ -30,14 +30,17 @@ async function sendEmail({ to, subject, html }) {
   const key = process.env.RESEND_API_KEY;
   if (!key) { console.error("[email] RESEND_API_KEY no configurada"); return { error: "RESEND_API_KEY no configurada" }; }
   if (!to)  { console.error("[email] destinatario vacío"); return { error: "Sin destinatario" }; }
+  // RESEND_FROM puede ser "Growith <notificaciones@growith.app>" (dominio verificado)
+  // o se usa onboarding@resend.dev como fallback mientras se verifica el dominio.
+  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
   try {
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: "Growith <notificaciones@growith.app>", to: [to], subject, html }),
+      body: JSON.stringify({ from, to: [to], subject, html }),
     });
     const data = await r.json();
-    if (!r.ok) { console.error("[email] Resend error:", JSON.stringify(data)); return { error: data?.message || "Error Resend", status: r.status }; }
+    if (!r.ok) { console.error("[email] Resend error:", JSON.stringify(data)); return { error: data?.message || "Error Resend", detail: data }; }
     return { ok: true, id: data.id };
   } catch(e) {
     console.error("[email] fetch error:", e.message);
