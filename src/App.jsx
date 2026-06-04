@@ -18361,6 +18361,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [editingAlert, setEditingAlert] = useState(null);
   const [viewMode, setViewMode] = useState("tabla"); // tabla | kanban
   const [analysisMode, setAnalysisMode] = useState("ventas"); // ventas | productos (para tab análisis)
+  const [variantView, setVariantView] = useState("pct"); // pct | units
   const [leadTime, setLeadTime] = useState({}); // {productId: days} tiempo de entrega por producto
   // Depósitos
   const [warehouses, setWarehouses] = useState([]);
@@ -18856,7 +18857,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
 
   // ── Donut SVG ──────────────────────────────────────────────────────
-  function DonutChart({data:raw, colors, size=150, thickness=32, centerLabel}) {
+  function DonutChart({data:raw, colors, size=150, thickness=32, centerLabel, showUnits=false, unitLabel="uds"}) {
     const entries=Object.entries(raw||{}).sort(([,a],[,b])=>b-a).slice(0,7);
     if(!entries.length) return <div style={{color:T.textSm,fontSize:12,textAlign:"center",padding:16}}>Sin datos</div>;
     const total=entries.reduce((a,[,v])=>a+v,0)||1;
@@ -18877,7 +18878,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{display:"block",margin:"0 auto"}}>
           {slices.map((s,i)=>(
             <path key={i} d={s.path} fill={s.color} stroke={T.card} strokeWidth={1.5}
-              onMouseEnter={e=>{const rc=e.currentTarget.getBoundingClientRect();setTooltip({x:rc.left+rc.width/2,y:rc.top-8,label:`${s.label}: ${fmt(s.val)} uds (${(s.pct*100).toFixed(1)}%)`});}}
+              onMouseEnter={e=>{const rc=e.currentTarget.getBoundingClientRect();setTooltip({x:rc.left+rc.width/2,y:rc.top-8,label:`${s.label}: ${fmt(s.val)} ${unitLabel} (${(s.pct*100).toFixed(1)}%)`});}}
               onMouseLeave={()=>setTooltip(null)}/>
           ))}
           {centerLabel&&<>
@@ -18890,7 +18891,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
               <div style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
               <div style={{fontSize:11,color:T.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.label}</div>
-              <div style={{fontSize:11,fontWeight:600,color:T.textMd,flexShrink:0}}>{(s.pct*100).toFixed(1)}%</div>
+              {showUnits
+                ? <div style={{fontSize:11,fontWeight:700,color:T.text,flexShrink:0}}>{fmt(Math.round(s.val))} <span style={{fontWeight:400,color:T.textSm,fontSize:10}}>{unitLabel}</span></div>
+                : <div style={{fontSize:11,fontWeight:600,color:T.textMd,flexShrink:0}}>{(s.pct*100).toFixed(1)}%</div>
+              }
             </div>
           ))}
         </div>
@@ -19384,13 +19388,25 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   {/* Donuts — siempre los mismos 3, el título/enfoque cambia por tab */}
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>
-                        {isFact?"Revenue por variante":showingVentas?"Variantes más vendidas":"Unidades por variante"}
+                      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:2}}>
+                        <div style={{fontSize:12,fontWeight:700,color:T.text}}>
+                          {isFact?"Revenue por variante":showingVentas?"Variantes más vendidas":"Unidades por variante"}
+                        </div>
+                        {!isFact&&(
+                          <div style={{display:"flex",background:T.surface,borderRadius:7,padding:2,gap:1,flexShrink:0}}>
+                            {[{v:"pct",l:"%"},{v:"units",l:"Uds"}].map(o=>(
+                              <button key={o.v} onClick={()=>setVariantView(o.v)}
+                                style={{padding:"3px 9px",fontSize:10,fontWeight:600,border:"none",borderRadius:5,background:variantView===o.v?T.card:"transparent",color:variantView===o.v?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:variantView===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s"}}>
+                                {o.l}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>
                         {isFact?"Distribución del revenue":showingVentas?"Órdenes por tipo de producto":"Unidades vendidas por variante"}
                       </div>
-                      <DonutChart data={tabDonutVariante} centerLabel={(isFact||showingRev)?{val:fmtARS(totalRev),label:"revenue"}:showingVentas?{val:fmt(totalOrders),label:"órdenes"}:{val:fmt(totalUnits),label:"uds"}}/>
+                      <DonutChart data={tabDonutVariante} showUnits={!isFact&&variantView==="units"} unitLabel={showingVentas?"órdenes":"uds"} centerLabel={(isFact||showingRev)?{val:fmtARS(totalRev),label:"revenue"}:showingVentas?{val:fmt(totalOrders),label:"órdenes"}:{val:fmt(totalUnits),label:"uds"}}/>
                     </div>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
