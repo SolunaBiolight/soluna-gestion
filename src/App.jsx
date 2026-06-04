@@ -508,7 +508,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange",
       subs:[{id:"activos",label:"Activos"},{id:"historial",label:"Historial"},{id:"influencers",label:"Influencers"}]},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
-      subs:[{id:"tareas",label:"Tareas"},{id:"equipo",label:"Equipo"},{id:"creativos",label:"Creativos"}]},
+      subs:[{id:"tareas",label:"Tareas"},{id:"equipo",label:"Equipo"},{id:"creativos",label:"Creativos"},{id:"admin",label:"⚙ Admin"}]},
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
       subs:[{id:"pendientes",label:"Pendientes"},{id:"metricas",label:"Métricas"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
@@ -8383,7 +8383,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
   useEffect(()=>{ loadData(); loadProduccion(); },[]);
   useEffect(()=>{
-    if(["tareas","equipo","creativos"].includes(sidebarTab)) setTab(sidebarTab);
+    if(["tareas","equipo","creativos","admin"].includes(sidebarTab)) setTab(sidebarTab);
   },[sidebarTab]);
 
   function fmtDate(val) {
@@ -8846,8 +8846,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               ))}
             </div>
           )}
-          {tab!=="creativos"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
-          {tab!=="creativos"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Nueva tarea</button>}
+          {tab!=="creativos"&&tab!=="admin"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
+          {tab!=="creativos"&&tab!=="admin"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Nueva tarea</button>}
           {tab==="creativos"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
           {tab==="creativos"&&prodTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
           {tab==="creativos"&&prodTab!=="ideas"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
@@ -9301,6 +9301,115 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
           </div>
         )}
+
+        {/* ── TAB ADMIN ── */}
+        {tab==="admin"&&(()=>{
+          const PERMISOS_DEF = [
+            {key:"verEquipo",    label:"👥 Ver equipo",     desc:"Ve las tareas de todos (solo lectura)", color:"#6366f1"},
+            {key:"verCreativos", label:"🎬 Ver creativos",  desc:"Accede al board de producción",         color:"#7c3aed"},
+            {key:"comentarTareas",label:"💬 Comentar",      desc:"Puede dejar notas en sus tareas",       color:"#3b82f6"},
+          ];
+          return (
+            <div>
+              {/* Header */}
+              <div style={{marginBottom:20}}>
+                <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:4}}>Panel de administración</div>
+                <div style={{fontSize:12,color:T.textSm}}>Gestioná permisos, roles y accesos de cada colaborador desde un solo lugar.</div>
+              </div>
+
+              {/* Matriz de permisos */}
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}>
+                <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  <span style={{fontSize:12,fontWeight:700,color:T.text,textTransform:"uppercase",letterSpacing:"0.05em"}}>Permisos por colaborador</span>
+                  <span style={{fontSize:11,color:T.textSm,marginLeft:4}}>{colaboradores.length} colaborador{colaboradores.length!==1?"es":""}</span>
+                </div>
+
+                {colaboradores.length===0?(
+                  <div style={{padding:"32px 0",textAlign:"center",color:T.textSm,fontSize:13}}>
+                    <div style={{fontSize:32,marginBottom:8}}>👥</div>
+                    No hay colaboradores aún. Creá uno desde la pestaña Equipo.
+                  </div>
+                ):(
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:500}}>
+                      <thead>
+                        <tr style={{background:T.surface}}>
+                          <th style={{padding:"10px 18px",textAlign:"left",fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",borderBottom:`1px solid ${T.border}`,minWidth:180}}>Colaborador</th>
+                          {PERMISOS_DEF.map(p=>(
+                            <th key={p.key} style={{padding:"10px 14px",textAlign:"center",fontSize:11,fontWeight:700,color:p.color,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>
+                              {p.label}
+                            </th>
+                          ))}
+                          <th style={{padding:"10px 14px",textAlign:"center",fontSize:11,fontWeight:700,color:T.textSm,borderBottom:`1px solid ${T.border}`,textTransform:"uppercase",letterSpacing:"0.05em"}}>Portal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {colaboradores.map((c,i)=>{
+                          const perms = c.permisos||{};
+                          const activeCount = PERMISOS_DEF.filter(p=>perms[p.key]).length;
+                          return (
+                            <tr key={c._id} style={{background:i%2===0?T.card:T.surface,borderBottom:`1px solid ${T.borderL}`}}>
+                              {/* Colaborador info */}
+                              <td style={{padding:"12px 18px"}}>
+                                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                                  <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,#6366f1,#a78bfa)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                                    <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>{(c.nombre||"?").charAt(0).toUpperCase()}</span>
+                                  </div>
+                                  <div style={{minWidth:0}}>
+                                    <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
+                                    <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.rol||c.email}</div>
+                                  </div>
+                                  {activeCount>0&&<span style={{fontSize:9,fontWeight:700,color:"#a78bfa",background:"rgba(124,58,237,0.13)",border:"1px solid rgba(124,58,237,0.3)",borderRadius:10,padding:"1px 6px",flexShrink:0}}>{activeCount}</span>}
+                                </div>
+                              </td>
+                              {/* Toggle por permiso */}
+                              {PERMISOS_DEF.map(p=>{
+                                const val=!!perms[p.key];
+                                return (
+                                  <td key={p.key} style={{padding:"12px 14px",textAlign:"center"}}>
+                                    <button onClick={()=>updateColabPermisos(c._id,p.key,!val)}
+                                      title={`${val?"Desactivar":"Activar"} "${p.label}" para ${c.nombre}`}
+                                      style={{width:40,height:22,borderRadius:11,border:"none",cursor:"pointer",background:val?p.color:"#374151",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0,display:"inline-block"}}>
+                                      <div style={{position:"absolute",top:3,left:val?20:3,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+                                    </button>
+                                  </td>
+                                );
+                              })}
+                              {/* Portal link */}
+                              <td style={{padding:"12px 14px",textAlign:"center"}}>
+                                <button onClick={()=>{
+                                  const link=`${window.location.origin}/#/colaborador/${c.token}`;
+                                  navigator.clipboard?.writeText(link).then(()=>toast("Link copiado","success")).catch(()=>{});
+                                }} style={{...BtnSecondary(T),fontSize:10,padding:"4px 10px",gap:4}}>
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                  Copiar
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Descripción de cada permiso */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
+                {PERMISOS_DEF.map(p=>(
+                  <div key={p.key} style={{background:T.card,border:`1.5px solid ${p.color}33`,borderRadius:10,padding:"12px 14px",boxShadow:`0 0 0 1px ${p.color}15, 0 4px 12px ${p.color}10`}}>
+                    <div style={{fontSize:13,fontWeight:700,color:p.color,marginBottom:3}}>{p.label}</div>
+                    <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{p.desc}</div>
+                    <div style={{fontSize:10,color:T.textSm,marginTop:6}}>
+                      Activo en <strong style={{color:T.text}}>{colaboradores.filter(c=>(c.permisos||{})[p.key]).length}</strong> de {colaboradores.length} colaboradores
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── TAB CREATIVOS ── */}
         {!loading&&tab==="creativos"&&(
