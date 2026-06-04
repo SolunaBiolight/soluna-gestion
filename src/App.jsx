@@ -358,18 +358,17 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
   }
 
   return ReactDOM.createPortal(
-    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onClose()}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",padding:16}} onClick={()=>!saving&&onClose()}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px",boxShadow:DS.shadow.xl,animation:"growith-modalIn 0.22s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div>
             <div style={{fontSize:17,fontWeight:700,color:T.text}}>Nueva organización</div>
             <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Vas a empezar de cero — vas a conectar TN/Shopify/ML/Meta y ARCA después.</div>
           </div>
-          <button onClick={onClose} disabled={saving} style={{background:"transparent",border:"none",color:T.textMd,cursor:saving?"wait":"pointer",fontSize:18,padding:4}}>✕</button>
-        </div>
+          <ModalCloseBtn T={T} onClick={onClose} disabled={saving} /></div>
 
         {overLimit ? (
-          <div style={{padding:"18px 16px",background:T.yellowBg||T.bg,border:`1px solid ${T.yellow||T.border}55`,borderRadius:12,marginBottom:14}}>
+          <div style={{padding:"18px 16px",background:`linear-gradient(135deg,${T.yellowBg||"#eab30814"},${T.yellowBg||"#eab30808"})`,border:`1.5px solid ${T.yellow||"#eab308"}44`,borderRadius:12,marginBottom:14,boxShadow:`0 0 0 1px ${T.yellow||"#eab308"}18, 0 4px 16px ${T.yellow||"#eab308"}18`}}>
             <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>🔒 Llegaste al límite de tu plan</div>
             <div style={{fontSize:12,color:T.textMd,lineHeight:1.5}}>Tu plan permite hasta 2 organizaciones. Para tener más, pasate al plan <strong>Total</strong>.</div>
           </div>
@@ -391,10 +390,10 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
         )}
 
         <div style={{display:"flex",gap:8,marginTop:18}}>
-          <button onClick={onClose} disabled={saving} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:10,background:"transparent",color:T.textMd,cursor:saving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+          <button onClick={onClose} disabled={saving} style={{...BtnSecondary(T),flex:1,padding:"10px 14px",fontSize:13,borderRadius:10,justifyContent:"center"}}>Cancelar</button>
           {overLimit
-            ? <button onClick={()=>{ window.location.hash="#/planes"; onClose(); }} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver planes</button>
-            : <button onClick={handleSave} disabled={saving||!name.trim()} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:saving||!name.trim()?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:saving||!name.trim()?0.6:1}}>{saving?"Creando...":"Crear y entrar"}</button>
+            ? <button onClick={()=>{ window.location.hash="#/planes"; onClose(); }} style={{...BtnPrimary(T),flex:1,padding:"10px 14px",fontSize:13,borderRadius:10,justifyContent:"center"}}>Ver planes</button>
+            : <button onClick={handleSave} disabled={saving||!name.trim()} style={{...BtnPrimary(T),flex:1,padding:"10px 14px",fontSize:13,borderRadius:10,justifyContent:"center",opacity:saving||!name.trim()?0.6:1}}>{saving?"Creando...":"Crear y entrar"}</button>
           }
         </div>
       </div>
@@ -427,12 +426,11 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   }
 
   return ReactDOM.createPortal(
-    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onClose()}>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",padding:16}} onClick={()=>!saving&&onClose()}>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px",boxShadow:DS.shadow.xl,animation:"growith-modalIn 0.22s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div style={{fontSize:17,fontWeight:700,color:T.text}}>Gestionar organización</div>
-          <button onClick={onClose} disabled={saving} style={{background:"transparent",border:"none",color:T.textMd,cursor:saving?"wait":"pointer",fontSize:18,padding:4}}>✕</button>
-        </div>
+          <ModalCloseBtn T={T} onClick={onClose} disabled={saving} /></div>
 
         <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5}}>Nombre</label>
         <input value={name} onChange={e=>setName(e.target.value)} maxLength={40}
@@ -449,13 +447,13 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
         {canDelete && (
           <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:8}}>
             {!confirmDel ? (
-              <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{background:"transparent",border:`1px solid ${T.red}44`,color:T.red,borderRadius:10,padding:"8px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🗑 Borrar esta organización</button>
+              <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px",borderRadius:10}}>🗑 Borrar esta organización</button>
             ) : (
-              <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px"}}>
+              <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 12px ${T.red}14`}}>
                 <div style={{fontSize:12,color:T.text,fontWeight:600,marginBottom:8}}>¿Borrar "{org.name}"? Se pierden las integraciones de esa org. Esta acción no se puede deshacer.</div>
                 <div style={{display:"flex",gap:6}}>
-                  <button onClick={()=>setConfirmDel(false)} disabled={saving} style={{flex:1,padding:"7px",fontSize:11,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
-                  <button onClick={handleDelete} disabled={saving} style={{flex:1,padding:"7px",fontSize:11,fontWeight:700,border:"none",borderRadius:8,background:T.red,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{saving?"Borrando...":"Sí, borrar"}</button>
+                  <button onClick={()=>setConfirmDel(false)} disabled={saving} style={{...BtnSecondary(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center"}}>Cancelar</button>
+                  <button onClick={handleDelete} disabled={saving} style={{...BtnDanger(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center",background:T.red,color:"#fff",boxShadow:`0 2px 12px ${T.red}55`}}>{saving?"Borrando...":"Sí, borrar"}</button>
                 </div>
               </div>
             )}
@@ -463,8 +461,8 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
         )}
 
         <div style={{display:"flex",gap:8,marginTop:18}}>
-          <button onClick={onClose} disabled={saving} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:10,background:"transparent",color:T.textMd,cursor:saving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
-          <button onClick={handleSave} disabled={saving||!name.trim()} style={{flex:1,padding:"10px 14px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:saving||!name.trim()?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:saving||!name.trim()?0.6:1}}>{saving?"Guardando...":"Guardar"}</button>
+          <button onClick={onClose} disabled={saving} style={{...BtnSecondary(T),flex:1,padding:"10px 14px",fontSize:13,borderRadius:10,justifyContent:"center"}}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving||!name.trim()} style={{...BtnPrimary(T),flex:1,padding:"10px 14px",fontSize:13,borderRadius:10,justifyContent:"center",opacity:saving||!name.trim()?0.6:1}}>{saving?"Guardando...":"Guardar"}</button>
         </div>
       </div>
     </div>,
@@ -2305,8 +2303,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 <span style={{fontSize:12,color:T.orange,opacity:0.7}}>devoluciones</span>
               </div>
               {stats.urgentes>0&&(
-                <div style={{display:"flex",alignItems:"center",gap:6,background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:DS.r.lg,padding:"10px 14px"}}>
-                  <span style={{width:7,height:7,borderRadius:"50%",background:T.red,flexShrink:0}}/>
+                <div style={{display:"flex",alignItems:"center",gap:6,background:T.redBg,border:`1.5px solid ${T.red}55`,borderRadius:DS.r.lg,padding:"10px 14px",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 14px ${T.red}18`}}>
+                  <span style={{width:7,height:7,borderRadius:"50%",background:T.red,flexShrink:0,boxShadow:`0 0 8px ${T.red}88`}}/>
                   <span style={{fontSize:12,fontWeight:700,color:T.red}}>{stats.urgentes} urgente{stats.urgentes!==1?"s":""}</span>
                 </div>
               )}
@@ -3614,7 +3612,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
             )}
 
-            {comError&&<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"14px 16px",color:T.red,fontSize:13}}>{comError}</div>}
+            {comError&&<div style={{background:T.redBg,border:`1.5px solid ${T.red}44`,borderRadius:10,padding:"14px 16px",color:T.red,fontSize:13,boxShadow:`0 0 0 1px ${T.red}18, 0 4px 16px ${T.red}14`}}>{comError}</div>}
 
             {comData&&(()=>{
               try {
@@ -5232,7 +5230,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 </div>
                 {seguimientoProgress.errors?.length>0&&(
-                  <div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",marginBottom:20,maxHeight:130,overflowY:"auto"}}>
+                  <div style={{background:T.redBg,border:`1.5px solid ${T.red}44`,borderRadius:10,padding:"12px 14px",marginBottom:20,maxHeight:130,overflowY:"auto",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 16px ${T.red}14`}}>
                     <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Detalle de errores</div>
                     {seguimientoProgress.errors.map((e,i)=>(
                       <div key={i} style={{fontSize:12,color:T.red,marginBottom:3}}>· <span style={{fontWeight:600}}>#{e.pedido}:</span> {e.msg}</div>
@@ -5292,18 +5290,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   <div style={{fontSize:13,color:T.textSm}}>El archivo Excel fue descargado a tu computadora</div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:exportDone.esquinas>0?"1fr 1fr":"1fr",gap:12,marginBottom:24}}>
-                  <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                  <div style={{background:T.greenBg,border:`1.5px solid ${T.green}44`,borderRadius:12,padding:"14px 16px",textAlign:"center",boxShadow:`0 0 0 1px ${T.green}18, 0 6px 20px ${T.green}18`}}>
                     <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-1}}>{exportDone.count}</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Etiquetas incluidas</div>
                   </div>
                   {exportDone.esquinas>0&&(
-                    <div style={{background:T.yellowBg||(T.yellow+"18"),border:`1px solid ${T.yellow||"#eab308"}33`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+                    <div style={{background:T.yellowBg||(T.yellow+"18"),border:`1.5px solid ${T.yellow||"#eab308"}44`,borderRadius:12,padding:"14px 16px",textAlign:"center",boxShadow:`0 0 0 1px ${T.yellow||"#eab308"}18, 0 6px 20px ${T.yellow||"#eab308"}14`}}>
                       <div style={{fontSize:28,fontWeight:800,color:T.yellow||"#eab308",letterSpacing:-1}}>{exportDone.esquinas}</div>
                       <div style={{fontSize:12,color:T.textSm,marginTop:2}}>En esquina (excluidas)</div>
                     </div>
                   )}
                 </div>
-                <button onClick={()=>{const d=exportDone;setExportDone(null);setExportProgress({step:"",pct:0,current:0,total:0});if(d.esquinas>0&&d.esquinaOrders?.length>0)setEsquinaModal({orders:d.esquinaOrders});}} style={{width:"100%",background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <button onClick={()=>{const d=exportDone;setExportDone(null);setExportProgress({step:"",pct:0,current:0,total:0});if(d.esquinas>0&&d.esquinaOrders?.length>0)setEsquinaModal({orders:d.esquinaOrders});}} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",padding:"12px",fontSize:14}}>
                   Cerrar
                 </button>
               </>
@@ -5902,7 +5900,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </AsyncButton>
                 )}
                 {pending.length===0&&sentCount>0&&(
-                  <div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{background:T.greenBg,border:`1.5px solid ${T.green}55`,borderRadius:10,padding:"12px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:10,boxShadow:`0 0 0 1px ${T.green}18, 0 4px 16px ${T.green}18`}}>
                     <span style={{fontSize:16,color:T.green}}>✓</span>
                     <span style={{fontSize:13,fontWeight:600,color:T.green}}>Todos los seguimientos enviados</span>
                   </div>
@@ -6642,7 +6640,7 @@ function AuthScreen({T, darkMode, onToggleDark}) {
             <input style={iS} type="password" placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder} onKeyDown={e=>e.key==="Enter"&&handleEmail()}/>
           </div>
 
-          {error&&<div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"10px 14px",fontSize:13,color:T.red,marginBottom:16}}>{error}</div>}
+          {error&&<div style={{background:T.redBg,border:`1.5px solid ${T.red}55`,borderRadius:8,padding:"10px 14px",fontSize:13,color:T.red,marginBottom:16,boxShadow:`0 0 0 1px ${T.red}18, 0 4px 16px ${T.red}18`}}>{error}</div>}
 
           <button onClick={handleEmail} disabled={loading} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",padding:"13px",fontSize:15,opacity:loading?0.6:1}}>
             {loading?"Cargando...":(mode==="login"?"Iniciar sesión":"Crear cuenta")}
@@ -7253,7 +7251,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:11,color:T.textMd,lineHeight:1.65,marginBottom:14}}>
                 <div style={{fontWeight:700,color:T.text,marginBottom:8}}>📋 Cómo generar tu System User Token (5-8 min)</div>
 
-                <div style={{marginBottom:10,padding:"8px 11px",background:T.yellowBg,border:`1px solid ${T.yellow}33`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5}}>
+                <div style={{marginBottom:10,padding:"8px 11px",background:T.yellowBg,border:`1.5px solid ${T.yellow||"#eab308"}44`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5,boxShadow:`0 0 0 1px ${T.yellow||"#eab308"}18, 0 4px 12px ${T.yellow||"#eab308"}14`}}>
                   ⚡ <strong style={{color:T.text}}>Antes de empezar:</strong> necesitás <strong style={{color:T.text}}>una app en Meta for Developers</strong> (no importa cuál, sirve cualquiera). Si no tenés, mirá el desplegable de abajo — se crea en 1 minuto.
                 </div>
 
@@ -7313,7 +7311,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             que casi nadie miraba. Si en algún momento queremos avisos reales,
             replanteamos con un canal de notificación (email/wpp) sí o sí. */}
 
-        {msg&&<div style={{background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.green,marginBottom:16}}>{msg}</div>}
+        {msg&&<div style={{background:T.greenBg,border:`1.5px solid ${T.green}55`,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.green,marginBottom:16,boxShadow:`0 0 0 1px ${T.green}18, 0 4px 16px ${T.green}18`}}>{msg}</div>}
 
         {/* Plan / Suscripción */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
@@ -8945,7 +8943,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 )}
                 {/* En corrección */}
                 {enRevision.length>0&&(
-                  <div style={{background:T.redBg||T.card,border:`1px solid ${T.red}44`,borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <div style={{background:T.redBg||T.card,border:`1.5px solid ${T.red}55`,borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 16px ${T.red}14`}}>
                     <span style={{fontSize:11,fontWeight:700,color:T.red}}>🔁 En corrección:</span>
                     {enRevision.map(t=>(
                       <button key={t._id} onClick={()=>setExpandedTarea(t._id)} style={{fontSize:11,background:T.red+"15",color:T.red,padding:"2px 9px",borderRadius:20,border:`1px solid ${T.red}33`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
@@ -10738,7 +10736,7 @@ function ColaboradorPublicView({T, token}) {
                 <div style={{borderTop:`1px solid ${T.border}`,padding:"16px",background:T.bg}}>
                   {/* Banner revisión con feedback */}
                   {isRevision&&(
-                    <div style={{marginBottom:16,padding:"14px",background:"#ef444412",borderRadius:10,border:"1px solid #ef444430"}}>
+                    <div style={{marginBottom:16,padding:"14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444418"}}>
                       <div style={{fontSize:13,fontWeight:700,color:"#ef4444",marginBottom:t.feedbackActual?8:0}}>🔁 Te pidieron cambios</div>
                       {t.feedbackActual
                         ?<div style={{fontSize:13,color:T.text,lineHeight:1.5,background:"rgba(239,68,68,0.08)",borderRadius:7,padding:"10px 12px",borderLeft:"3px solid #ef4444"}}>{t.feedbackActual}</div>
@@ -10747,12 +10745,12 @@ function ColaboradorPublicView({T, token}) {
                     </div>
                   )}
                   {isAprobado&&(
-                    <div style={{marginBottom:16,padding:"12px 14px",background:"#22c55e12",borderRadius:10,border:"1px solid #22c55e30"}}>
+                    <div style={{marginBottom:16,padding:"12px 14px",background:"linear-gradient(135deg,#22c55e14,#22c55e08)",borderRadius:10,border:"1.5px solid #22c55e40",boxShadow:"0 0 0 1px #22c55e15, 0 4px 16px #22c55e18"}}>
                       <div style={{fontSize:13,fontWeight:600,color:"#22c55e"}}>✅ ¡Trabajo aprobado! Excelente trabajo.</div>
                     </div>
                   )}
                   {t.estado==="entregado"&&(
-                    <div style={{marginBottom:14,padding:"10px 14px",background:"#f9731612",borderRadius:10,border:"1px solid #f9731630"}}>
+                    <div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,#f9731614,#f9731608)",borderRadius:10,border:"1.5px solid #f9731640",boxShadow:"0 0 0 1px #f9731615, 0 4px 16px #f9731618"}}>
                       <div style={{fontSize:12,color:"#f97316"}}>📦 Entrega recibida — esperando revisión del equipo.</div>
                     </div>
                   )}
@@ -10881,7 +10879,7 @@ function ColaboradorPublicView({T, token}) {
                         </div>
                         {/* Bloqueado — texto obligatorio */}
                         {showBloqueo[t._id]&&currentStep!=="bloqueada"&&(
-                          <div style={{marginTop:8,background:"#ef444410",borderRadius:10,padding:"12px",border:"1px solid #ef444430"}}>
+                          <div style={{marginTop:8,background:"linear-gradient(135deg,#ef444412,#ef444408)",borderRadius:10,padding:"12px",border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444414"}}>
                             <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:0.7}}>(el equipo va a ver esto)</span></div>
                             <textarea value={bloqueoMotivo[t._id]||""} onChange={e=>setBloqueoMotivo(p=>({...p,[t._id]:e.target.value}))}
                               placeholder="Ej: No tengo acceso al Drive, falta el logo en alta resolución..."
@@ -10901,7 +10899,7 @@ function ColaboradorPublicView({T, token}) {
                         )}
                         {/* Estado bloqueado activo */}
                         {currentStep==="bloqueada"&&(
-                          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#ef444412",borderRadius:10,border:"1px solid #ef444430"}}>
+                          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444414"}}>
                             <span style={{fontSize:18}}>🚫</span>
                             <div style={{flex:1,fontSize:12,color:"#ef4444",fontWeight:600}}>Bloqueado — el equipo ya fue notificado</div>
                           </div>
@@ -12505,12 +12503,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               Vas a emitir <strong style={{color:T.text}}>{Object.keys(ordenes||{}).length} comprobante{Object.keys(ordenes||{}).length!==1?"s":""}</strong> por un total de <strong style={{color:T.accent}}>$ {Object.values(ordenes||{}).reduce((s,o)=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>.<br/>
                               Esta acción es <strong style={{color:T.red}}>irreversible</strong> — ARCA emite los comprobantes con CAE y no pueden anularse desde Growith.
                             </div>
-                            <div style={{padding:"10px 14px",background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:8,fontSize:12,color:T.red,marginBottom:20}}>
+                            <div style={{padding:"10px 14px",background:T.redBg,border:`1.5px solid ${T.red}44`,borderRadius:8,fontSize:12,color:T.red,marginBottom:20,boxShadow:`0 0 0 1px ${T.red}18, 0 4px 16px ${T.red}14`}}>
                               ⚠ Verificá que los montos y destinatarios sean correctos antes de continuar.
                             </div>
                             <div style={{display:"flex",gap:10}}>
                               <button onClick={()=>setShowArcaConfirm(false)} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 0"}}>Cancelar</button>
-                              <button onClick={()=>{setShowArcaConfirm(false);handleEmit();}} style={{flex:1,background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 0",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                              <button onClick={()=>{setShowArcaConfirm(false);handleEmit();}} style={{...BtnPrimary(T),flex:1,justifyContent:"center",background:"linear-gradient(135deg,#16a34a,#15803d)",boxShadow:"0 2px 16px #16a34a55",fontSize:13,padding:"10px 0"}}>
                                 Confirmar y emitir
                               </button>
                             </div>
