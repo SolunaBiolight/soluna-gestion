@@ -7022,44 +7022,32 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           {[
             {
               key:"tn", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : shStore ? "Desvinculá Shopify primero" : "No conectado",
-              connected:!!tnStore, disabled:!!shStore && !tnStore, brand:"#2d3a8c",
-              icon:<svg width="52" height="34" viewBox="0 0 52 34" fill="none"><circle cx="17" cy="17" r="14" stroke="#1a2467" strokeWidth="4"/><circle cx="35" cy="17" r="14" stroke="#1a2467" strokeWidth="4"/></svg>,
+              connected:!!tnStore, disabled:!!shStore && !tnStore, brand:"#00a0e3", iconBg:"#00a0e3",
+              icon:<span style={{fontSize:22,lineHeight:1}}>☁️</span>,
               onConnect: connectTiendaNube, onDisconnect:()=>disconnectStore("tiendanube"),
             },
             {
               key:"sh", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : tnStore ? "Desvinculá Tienda Nube primero" : "No conectado",
-              connected:!!shStore, disabled:!!tnStore && !shStore, brand:"#95BF47",
-              icon:<svg width="32" height="36" viewBox="0 0 32 36" fill="none">
-                <path d="M26.8 8c-.1-.7-.7-1.1-1.2-1.2l-3.2-.4-2.2-2.2c-.3-.3-.7-.2-.9-.1l-1.3.4C17.4 3 15.9 1 13.8 1c-.1 0-.3 0-.4.1C13 .7 12.3.4 11.7.4 7.9.4 6 5 5.4 7.8L2 8.8C1.3 9 1.3 9.1 1.1 9.9L-1 27l16.5 3 9.3-2.1 3.3-17.5c-.3-.7-.3-5-.3-5.4zM22.5 7.8l-1.9.5v-.5c0-1.2-.1-2.2-.4-3 1.2.3 2 1.6 2.3 3zm-7.3-5.2c.4.6.7 1.5.7 2.9v.2l-3.6 1c.7-2.7 2-3.9 2.9-4.1zM13.4 3c-.8.4-2 1.6-2.6 4l-3.1 1c.8-3.2 2.5-5.7 5.7-5z" fill="#95BF47"/>
-                <path d="M13.4 3c-.8.4-2 1.6-2.6 4l-3.1 1c.8-3.2 2.5-5.7 5.7-5z" fill="#5e8e3e"/>
-                <path d="M11 22c0 2 1.1 3.3 2.7 3.3 1.3 0 2.4-1.1 2.4-2.9 0-2.6-2.4-3.1-2.4-4.7 0-1.1.6-1.9 1.4-1.9 1 0 1.5 1 1.5 2.3h1.8c0-2.1-1.1-3.8-3.2-3.8-1.7 0-3 1.4-3 3.6 0 2.6 2.4 3.1 2.4 4.7 0 .9-.5 1.6-1.1 1.6-1.1 0-1.6-1.3-1.6-2.9H11v.7z" fill="white"/>
-              </svg>,
+              connected:!!shStore, disabled:!!tnStore && !shStore, brand:"#95BF47", iconBg:"#95BF47",
+              icon:<span style={{fontSize:22,fontWeight:900,color:"#fff",fontFamily:"Georgia,serif",letterSpacing:"-1px"}}>S</span>,
               onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
             },
             {
               key:"ml", label:"Mercado Libre", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "No conectado",
-              connected:!!mlStore, disabled:false, brand:"#FFE600",
-              icon:<svg width="60" height="40" viewBox="0 0 60 40" fill="none">
-                <ellipse cx="30" cy="20" rx="28" ry="18" fill="#FFE600" stroke="#1a2fa0" strokeWidth="2.5"/>
-                <path d="M8 19C13 11 19 11 24 17c2 2.5 3 4 6 4s4-1.5 6-4c5-6 11-6 16 2" stroke="white" strokeWidth="3.5" strokeLinecap="round" fill="none"/>
-                <path d="M8 21C13 29 19 29 24 23c2-2.5 3-4 6-4s4 1.5 6 4c5 6 11 6 16-2" stroke="#1a2fa0" strokeWidth="3" strokeLinecap="round" fill="none"/>
-              </svg>,
+              connected:!!mlStore, disabled:false, brand:"#FFE600", iconBg:"#FFE600",
+              icon:<span style={{fontSize:20,lineHeight:1}}>🛒</span>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
             },
             {
               key:"meta", label:"Meta Ads", sub: metaConnected ? "Conectado" : "Facebook + Instagram · No conectado",
-              connected:!!metaConnected, disabled:false, brand:"#0082FB",
-              icon:<svg width="56" height="28" viewBox="0 0 56 28" fill="none">
-                <defs><linearGradient id="mg2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#0082FB"/><stop offset="100%" stopColor="#00B2FF"/></linearGradient></defs>
-                <path d="M2 14C2 8.5 5.2 3.5 9.8 3.5c2.6 0 5 1.6 7.2 5 1.6 2.4 3.2 5.8 5 10 1.8-4.2 3.4-7.6 5-10 2.2-3.4 4.6-5 7.2-5C38.8 3.5 42 8.5 42 14s-3.2 10.5-7.8 10.5c-2.6 0-5-1.6-7.2-5-1.6-2.4-3.2-5.8-5-10-1.8 4.2-3.4 7.6-5 10-2.2 3.4-4.6 5-7.2 5C5.2 24.5 2 19.5 2 14zm7.8 0c0 4.5 2.2 7.5 4.8 7.5s4.8-3 4.8-7.5-2.2-7.5-4.8-7.5-4.8 3-4.8 7.5zm19.6 0c0 4.5 2.2 7.5 4.8 7.5s4.8-3 4.8-7.5-2.2-7.5-4.8-7.5-4.8 3-4.8 7.5z" fill="url(#mg2)"/>
-                <path d="M45 9c0-3 1.8-5.5 4-5.5s4 2.5 4 6-1.8 6-4 6c-1.2 0-2.2-.8-3-2" stroke="url(#mg2)" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
-              </svg>,
+              connected:!!metaConnected, disabled:false, brand:"#1877F2", iconBg:"#1877F2",
+              icon:<span style={{fontSize:24,fontWeight:900,color:"#fff",fontFamily:"Georgia,serif"}}>f</span>,
               onConnect:()=>setShowMetaModal(true), onDisconnect:disconnectMeta,
             },
           ].map(p=>{
             return (
               <div key={p.key} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderRadius:10,marginBottom:8,background:p.connected?`${p.brand}0d`:T.bg,border:`1.5px solid ${p.connected?p.brand+"55":T.borderL}`,boxShadow:p.connected?`0 0 0 1px ${p.brand}18, 0 4px 16px ${p.brand}14`:"none",opacity:p.disabled?0.4:1,transition:"all 0.18s ease"}}>
-                <div style={{width:72,height:48,borderRadius:10,background:"#fff",border:"1px solid rgba(0,0,0,0.08)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,overflow:"hidden"}}>
+                <div style={{width:48,height:48,borderRadius:12,background:p.iconBg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:p.connected?`0 4px 12px ${p.brand}55`:`0 2px 6px ${p.brand}33`}}>
                   {p.icon}
                 </div>
                 <div style={{flex:1,minWidth:0}}>
