@@ -18547,9 +18547,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1));
 
   // KPIs globales — sumamos Shopify/TN + Mercado Libre cuando ML está conectado.
-  // `data.ml_data` viene del backend con los totales y series temporales de
-  // ML del mismo período. Si no hay ML conectado, ml_data es undefined y los
-  // sumandos quedan en 0.
+  // `data.ml_data` viene del backend con totales y series temporales de ML del
+  // mismo período. Si no hay ML conectado, ml_data es undefined y los sumandos
+  // quedan en 0.
+  //
+  // CRÍTICO: para revenue usamos `data.total_revenue` (NETO calculado en el
+  // backend: subtotal - tax - refunds) en vez de `allProducts.reduce(p.revenue)`
+  // (que es BRUTO a precio de catálogo, sin descuentos). El bruto puede inflar
+  // 2-3x cuando hay descuentos activos. ml.total_revenue también es NETO
+  // (usa o.total_amount). Suma comparable con Escalafy / dashboards estándar.
   const ml = data?.ml_data || null;
   const mlUnits   = ml?.total_units   || 0;
   const mlOrders  = ml?.total_orders  || 0;
@@ -18557,7 +18563,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const totalUnits  = allProducts.reduce((a,p)=>a+p.units_sold,0) + mlUnits;
   const totalOrders = (data?.total_orders||0) + mlOrders;
   const totalStock  = allProducts.reduce((a,p)=>a+p.stock_total,0);
-  const totalRev    = allProducts.reduce((a,p)=>a+p.revenue,0) + mlRevenue;
+  const totalRev    = (data?.total_revenue || 0) + mlRevenue;
   const avgRate     = days>0?(totalUnits/days):0;
   const avgDays     = (()=>{const v=allProducts.filter(p=>rate(p)>0).map(p=>dLeft(p.stock_total,rate(p))).filter(d=>d!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;})();
   const kpiEmpty    = allProducts.filter(p=>p.stock_total===0).length;
