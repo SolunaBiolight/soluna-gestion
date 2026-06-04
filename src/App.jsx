@@ -8277,10 +8277,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("trabajo");
-  const [viewMode, setViewMode] = useState("lista");
-  const [statusFilter, setStatusFilter] = useState("todos");
-  const [assigneeFilter, setAssigneeFilter] = useState("todos");
+  const ALL_VIEWS = ["todo","tandas","lista","ideas","editores","equipo"];
+  const [activeView, setActiveView] = useState("todo");
+  const view = ALL_VIEWS.includes(activeView) ? activeView : "todo";
+  // compat aliases para lógica existente
+  const tab = view === "equipo" ? "equipo" : "trabajo";
+  const safeProdTab = view === "equipo" ? "todo" : view;
+  const setTab = (v) => setActiveView(v === "equipo" ? "equipo" : "todo");
+  const setProdTab = (v) => setActiveView(v);
+  const viewMode = "lista";
   const [searchTareas, setSearchTareas] = useState("");
   const [estadoDropdown, setEstadoDropdown] = useState(null);
   const [expandedTarea, setExpandedTarea] = useState(null);
@@ -8319,9 +8324,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // ── PRODUCCIÓN CREATIVA ──
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
-  const VALID_PROD_TABS = ["todo","tandas","lista","ideas","editores"];
-  const [prodTab, setProdTab] = useState("todo");
-  const safeProdTab = VALID_PROD_TABS.includes(prodTab) ? prodTab : "todo";
   const [prodFilter, setProdFilter] = useState({tanda:"",editor:"",estado:"",tipo:"",etapa:""});
   // Modal Tanda
   const [showNT2, setShowNT2] = useState(false);
@@ -8375,9 +8377,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
   useEffect(()=>{ loadData(); loadProduccion(); },[]);
   useEffect(()=>{
-    const validTabs = ["trabajo","equipo"];
-    if(validTabs.includes(sidebarTab)) setTab(sidebarTab);
-    else if(sidebarTab) setTab("trabajo");
+    if(sidebarTab==="equipo") setActiveView("equipo");
+    else if(sidebarTab==="trabajo"||sidebarTab) setActiveView("todo");
   },[sidebarTab]);
 
   function fmtDate(val) {
@@ -8785,62 +8786,35 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
-      {/* Header */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 20px 0 24px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,position:"sticky",top:48,zIndex:90}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontWeight:700,fontSize:15,color:T.text,letterSpacing:"-0.01em"}}>Trabajo</span>
-          {paraRevisar.length>0&&(
-            <span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f97316",color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 9px"}}>
-              <span style={{width:6,height:6,borderRadius:"50%",background:"rgba(255,255,255,0.7)",display:"inline-block",animation:"pulse 1.5s infinite"}}/>
-              {paraRevisar.length} para revisar
-            </span>
-          )}
-          {enRevision.length>0&&(
-            <span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 9px"}}>
-              🔁 {enRevision.length} en corrección
-            </span>
-          )}
-        </div>
-        <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          <div style={{display:"flex",background:T.surface,borderRadius:9,padding:3,border:`1px solid ${T.border}`,gap:1}}>
-            {[["trabajo","📋 Trabajo"],["equipo","👥 Equipo"]].map(([v,label])=>(
-              <button key={v} onClick={()=>setTab(v)}
-                style={{padding:"4px 12px",borderRadius:7,border:"none",background:tab===v?T.card:"transparent",color:tab===v?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:tab===v?600:400,boxShadow:tab===v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s",whiteSpace:"nowrap"}}>
-                {label}
-              </button>
-            ))}
-          </div>
-          {tab==="trabajo"&&safeProdTab==="todo"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Tarea</button>}
-          {tab==="trabajo"&&safeProdTab==="todo"&&<button onClick={()=>openCreativo()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
-          {tab==="trabajo"&&safeProdTab==="lista"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
-          {tab==="trabajo"&&safeProdTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
-          {tab==="trabajo"&&safeProdTab==="tandas"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
-          {tab==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
-        </div>
-      </div>
-      <div style={{padding:"20px 24px"}}>
+      {/* Topbar */}
+      <AppTopbar T={T} section="Trabajo" onHome={onHome}>
+        {paraRevisar.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f97316",color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>
+          <span style={{width:5,height:5,borderRadius:"50%",background:"rgba(255,255,255,0.75)",display:"inline-block",animation:"pulse 1.5s infinite"}}/>{paraRevisar.length} para revisar
+        </span>}
+        {enRevision.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>🔁 {enRevision.length} en corrección</span>}
+        {view==="todo"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
+        {view==="todo"&&<button onClick={()=>openCreativo()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
+        {view==="lista"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
+        {view==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
+        {view==="tandas"&&<button onClick={()=>openTanda()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
+        {view==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
+      </AppTopbar>
 
+      {/* Barra de tabs — underline estilo */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:100,zIndex:29,display:"flex",overflowX:"auto",paddingLeft:24}}>
+        {[["todo","Todo"],["tandas","Tandas"],["lista","Creativos"],["ideas","Ideas"],["editores","Editores"],["equipo","Equipo"]].map(([id,label])=>(
+          <button key={id} onClick={()=>setActiveView(id)} style={{padding:"0 18px",height:42,border:"none",borderBottom:`2px solid ${view===id?T.accent:"transparent"}`,background:"transparent",color:view===id?T.accent:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:view===id?600:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,transition:"color 0.15s, border-color 0.15s"}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{padding:"20px 24px"}}>
         {loading&&<div style={{textAlign:"center",padding:60}}><Spinner size={32} color={T.accent}/></div>}
 
         {/* ── TAB TRABAJO ── */}
         {!loading&&tab==="trabajo"&&(
         <div>
-          {/* Sub-nav */}
-          <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:1,marginBottom:20,width:"fit-content"}}>
-            {[
-              ["todo","📋 Todo","M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"],
-              ["tandas","Tandas","M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"],
-              ["lista","Creativos","M15 10l4.553-2.069A1 1 0 0121 8.855v6.29a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"],
-              ["ideas","Ideas","M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26A7 7 0 0112 2z"],
-              ["editores","Editores","M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"],
-            ].map(([id,label,icon])=>(
-              <button key={id} onClick={()=>setProdTab(id)} style={{padding:"5px 14px",fontSize:12,fontWeight:safeProdTab===id?600:500,border:"none",borderRadius:8,background:safeProdTab===id?T.card:"transparent",color:safeProdTab===id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:safeProdTab===id?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:safeProdTab===id?1:0.6}}><path d={icon}/></svg>
-                {label}
-              </button>
-            ))}
-          </div>
-
           {prodLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
 
           {/* ── TODO: Vista unificada ── */}
@@ -9398,10 +9372,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           )}
                         </div>
                       </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
-                        <button onClick={()=>{setNtAsignado(c.email);setTab("trabajo");setShowNT(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Tarea</button>
-                        <AsyncButton onClick={()=>regenerateToken(c._id)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔄 Nuevo link</AsyncButton>
-                        <AsyncButton onClick={()=>deleteColab(c._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Eliminar</AsyncButton>
+                      <div style={{display:"flex",gap:6,flexShrink:0,alignSelf:"flex-start"}}>
+                        <button onClick={()=>{setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Tarea</button>
+                        <AsyncButton onClick={()=>regenerateToken(c._id)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔄 Link</AsyncButton>
+                        <AsyncButton onClick={()=>deleteColab(c._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>✕</AsyncButton>
                       </div>
                     </div>
                     {userTareas.length>0&&(
@@ -9417,7 +9391,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:est.bg,color:est.color,fontWeight:600,flexShrink:0}}>{est.label}</span>
                                 {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,flexShrink:0}}>📅 {days!==null?(days<0?"Vencida":days===0?"Hoy":`${days}d`):fmtDate(t.deadline)}</span>}
                                 {(t.correcciones||0)>0&&<span style={{fontSize:10,color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corr.</span>}
-                                <button onClick={()=>{setTab("trabajo");setExpandedTarea(t._id);}} style={{...BtnSecondary(T),fontSize:10,padding:"2px 8px",flexShrink:0}}>Ver</button>
+                                <button onClick={()=>{setActiveView("todo");setExpandedTarea(t._id);}} style={{...BtnSecondary(T),fontSize:10,padding:"2px 8px",flexShrink:0}}>Ver</button>
                               </div>
                             );
                           })}
