@@ -2493,14 +2493,44 @@ export default async function handler(req, res) {
           const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
           pageInfoUrl = nextMatch ? nextMatch[1] : null;
         }
+        // Cache de customer fetches para no pegar 200 veces al mismo customer
+        // dentro del mismo refresh. clave = customer.id, valor = customer JSON
+        // (o null si fail).
+        const customerCache = new Map();
+        async function fetchCustomerFresh(customerId) {
+          if (!customerId) return null;
+          if (customerCache.has(customerId)) return customerCache.get(customerId);
+          try {
+            const r = await fetch(`https://${shStore.shop}/admin/api/2024-10/customers/${customerId}.json`, {
+              headers: { "X-Shopify-Access-Token": shStore.accessToken },
+            });
+            if (!r.ok) { customerCache.set(customerId, null); return null; }
+            const d = await r.json();
+            customerCache.set(customerId, d?.customer || null);
+            return d?.customer || null;
+          } catch (_) { customerCache.set(customerId, null); return null; }
+        }
+
         for (const o of allSH) {
           const orderId = "SH-" + (o.name || String(o.order_number || o.id));
           if (o.cancelled_at) continue;
           // Filtros estrictos: solo pagadas (no pending, refunded, voided)
           if ((o.financial_status || "").toLowerCase() !== "paid") continue;
-          // Shopify: extrae DNI/CUIT del campo "Empresa" (renombrado a "DNI o CUIT") o nota.
-          // Si es CUIT válido de 11 dígitos → Factura A. Si es DNI (7-8 dígitos) → Factura B.
-          const docRaw = extractShopifyDoc(o);
+          // Extract con snapshot de la orden (rápido, sin requests extra).
+          let docRaw = extractShopifyDoc(o);
+
+          // FALLBACK: si el snapshot de la orden no trae doc, pero la orden
+          // tiene customer_id, traemos el customer ACTUAL desde Shopify. Eso
+          // refleja el CUIT que el merchant editó después de la venta —
+          // billing/shipping_address de la orden son snapshots inmutables.
+          if (!docRaw && o.customer?.id) {
+            const fresh = await fetchCustomerFresh(o.customer.id);
+            if (fresh) {
+              // Re-armamos un "o fake" con customer enriquecido para reusar el extractor
+              docRaw = extractShopifyDoc({ ...o, customer: { ...o.customer, ...fresh } });
+            }
+          }
+
           const clas = clasificarDoc(docRaw);
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
             || o.billing_address?.name || o.shipping_address?.name || "";
