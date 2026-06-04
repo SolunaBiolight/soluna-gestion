@@ -9246,6 +9246,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>¿Qué puede ver en su portal?</div>
                               {[
                                 {key:"verCreativos",label:"🎬 Ver board de Creativos",desc:"Accede al tablero de producción completo"},
+                                {key:"verEquipo",label:"👥 Ver estado del equipo",desc:"Ve las tareas de todos los colaboradores — ideal para coordinación (solo lectura)"},
                                 {key:"comentarTareas",label:"💬 Comentar en tareas",desc:"Puede dejar notas en sus tareas asignadas"},
                               ].map(({key,label,desc})=>{
                                 const val=!!(c.permisos||{})[key];
@@ -10614,7 +10615,7 @@ function ColaboradorPublicView({T, token}) {
     </div>
   );
 
-  const { colab, tareas=[], creativos=null, tandas=[], adminWaPhone:adminWa=null } = data;
+  const { colab, tareas=[], creativos=null, tandas=[], adminWaPhone:adminWa=null, equipoTareas=null } = data;
   const aprobadas = tareas.filter(t=>t.estado==="aprobado");
   const totalTareas = tareas.length;
   const progressPct = totalTareas>0?Math.round(aprobadas.length/totalTareas*100):0;
@@ -11037,6 +11038,70 @@ function ColaboradorPublicView({T, token}) {
             </div>
           );
         })}
+
+        {/* ── SECCIÓN EQUIPO (si tiene permiso verEquipo) ── */}
+        {equipoTareas&&(
+          <div style={{marginTop:28}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(99,102,241,0.13),rgba(99,102,241,0.06))",borderRadius:12,border:"1.5px solid rgba(99,102,241,0.3)"}}>
+              <span style={{fontSize:18}}>👥</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#818cf8"}}>Estado del equipo</div>
+                <div style={{fontSize:11,color:T.textSm}}>{equipoTareas.length} colaborador{equipoTareas.length!==1?"es":""} · solo lectura</div>
+              </div>
+            </div>
+            {equipoTareas.map(({nombre,email,tareas:trs})=>{
+              const ECOLOR={pendiente:"#6b7280",en_proceso:"#f97316",bloqueada:"#ef4444",entregado:"#eab308",aprobado:"#22c55e",revision:"#ef4444"};
+              const ELABEL={pendiente:"Pendiente",en_proceso:"En proceso",bloqueada:"Bloqueado",entregado:"Entregado",aprobado:"Aprobado",revision:"En revisión"};
+              const total=trs.length;
+              const aprob=trs.filter(t=>t.estado==="aprobado").length;
+              const sorted=[...trs].sort((a,b)=>{
+                const o={revision:0,bloqueada:1,pendiente:2,en_proceso:3,entregado:4,aprobado:5};
+                return (o[a.estado]??6)-(o[b.estado]??6);
+              });
+              return (
+                <div key={email} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
+                  {/* Header colaborador */}
+                  <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#6366f1,#a78bfa)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>{nombre.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>
+                      <div style={{fontSize:10,color:T.textSm}}>{total} tarea{total!==1?"s":""} · {aprob} aprobada{aprob!==1?"s":""}</div>
+                    </div>
+                    {total>0&&(
+                      <div style={{width:48,height:4,borderRadius:4,background:T.surface,overflow:"hidden",flexShrink:0}}>
+                        <div style={{height:"100%",width:`${Math.round(aprob/total*100)}%`,background:"#22c55e",borderRadius:4,transition:"width 0.4s"}}/>
+                      </div>
+                    )}
+                  </div>
+                  {/* Lista de tareas */}
+                  <div style={{padding:"8px 14px 10px"}}>
+                    {sorted.length===0&&<div style={{fontSize:11,color:T.textSm,padding:"6px 0"}}>Sin tareas asignadas</div>}
+                    {sorted.map(t=>{
+                      const col=ECOLOR[t.estado]||"#6b7280";
+                      const lbl=ELABEL[t.estado]||t.estado;
+                      const daysLeft=t.deadline?Math.round((new Date(t.deadline)-new Date())/(1000*60*60*24)):null;
+                      return (
+                        <div key={t._id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:12,fontWeight:500,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
+                            {t.deadline&&<div style={{fontSize:10,color:daysLeft!==null&&daysLeft<0?"#ef4444":daysLeft!==null&&daysLeft<=2?"#f97316":T.textSm,marginTop:1}}>
+                              📅 {daysLeft===null?"":daysLeft<0?`Vencida hace ${Math.abs(daysLeft)}d`:daysLeft===0?"Hoy":`${daysLeft}d`}
+                            </div>}
+                          </div>
+                          <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${col}18`,color:col,border:`1px solid ${col}44`,flexShrink:0,whiteSpace:"nowrap"}}>{lbl}</span>
+                          {t.prioridad==="urgente"&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",flexShrink:0}}>🔴</span>}
+                          {(t.correcciones||0)>0&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444418",borderRadius:4,padding:"1px 4px",flexShrink:0}}>{t.correcciones}ª corr.</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* ── SECCIÓN CREATIVOS (si tiene permiso) ── */}
         {creativos&&creativos.length>=0&&(

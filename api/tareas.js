@@ -229,7 +229,40 @@ export default async function handler(req, res) {
         const userSnap = await db.collection("users").doc(colab.uid).get();
         if (userSnap.exists) adminWaPhone = userSnap.data()?.adminWaPhone || null;
       } catch(e) { /* non-critical */ }
-      return res.json({ colab, tareas, creativos, tandas, adminWaPhone });
+
+      // Vista de equipo — solo si tiene permiso verEquipo
+      let equipoTareas = null;
+      if (colab.permisos?.verEquipo) {
+        try {
+          const [todasSnap, colabsSnap] = await Promise.all([
+            db.collection("tareas").where("uid","==",colab.uid).get(),
+            db.collection("colaboradores").where("uid","==",colab.uid).get(),
+          ]);
+          const colabsMap = {};
+          colabsSnap.docs.forEach(d => { colabsMap[d.data().email] = d.data().nombre || d.data().email; });
+          const todasTareas = todasSnap.docs.map(d=>({_id:d.id,...d.data()}));
+          // Agrupar por colaborador, excluir datos sensibles (brief, links privados)
+          const byColab = {};
+          todasTareas.forEach(t => {
+            const email = t.asignadoEmail || "sin-asignar";
+            const nombre = colabsMap[email] || t.asignadoNombre || email;
+            if (!byColab[email]) byColab[email] = { nombre, email, tareas:[] };
+            byColab[email].tareas.push({
+              _id: t._id,
+              titulo: t.titulo,
+              estado: t.estado,
+              prioridad: t.prioridad,
+              deadline: t.deadline || null,
+              progresoLabel: t.progresoLabel || "",
+              correcciones: t.correcciones || 0,
+              labels: t.labels || [],
+            });
+          });
+          equipoTareas = Object.values(byColab).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+        } catch(e) { console.error("[getPublicData equipo]", e.message); }
+      }
+
+      return res.json({ colab, tareas, creativos, tandas, adminWaPhone, equipoTareas });
     }
 
     if (action === "publicUpdateEstado") {
