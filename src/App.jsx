@@ -21167,10 +21167,22 @@ export default function App() {
   // Loading
   if(user===undefined) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{textAlign:"center"}}>
-        <div style={{width:32,height:32,borderRadius:8,background:T.accentSolid,margin:"0 auto 16px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🌙</div>
-        <div style={{fontSize:14,color:T.textSm}}>Cargando...</div>
+      <div style={{textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
+        <div style={{animation:"growith-bounceIn 0.6s cubic-bezier(0.34,1.56,0.64,1) both"}}>
+          <GrowithLogo size={96} variant={darkMode?"blanco":"color"}/>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {[0,1,2].map(i=>(
+            <div key={i} style={{width:6,height:6,borderRadius:"50%",background:T.accentSolid,opacity:0.8,animation:`growith-dot-pulse 1.2s ease-in-out ${i*0.2}s infinite`}}/>
+          ))}
+        </div>
       </div>
+      <style>{`
+        @keyframes growith-dot-pulse {
+          0%,80%,100%{transform:scale(0.6);opacity:0.3}
+          40%{transform:scale(1);opacity:1}
+        }
+      `}</style>
     </div>
   );
 
