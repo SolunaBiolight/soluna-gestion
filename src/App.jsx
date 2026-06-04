@@ -12483,19 +12483,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   const ivaTotal = esMono ? 0 : Math.round((totalGeneral - netoTotal) * 100) / 100;
                   return (
                   <div id="arca-preview-ordenes" style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 22px",marginBottom:16}}>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.green}}>2</span>
-                        <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>
-                          {Object.keys(ordenes).length} órdenes a facturar
-                        </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                      <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.green}}>2</span>
+                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>
+                        {Object.keys(ordenes).length} órdenes a facturar
                       </div>
-                      {!resultados && (
-                        <button onClick={()=>setShowArcaConfirm(true)} disabled={emitting||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:14,fontWeight:700,cursor:emitting?"wait":(!cuitSel?"not-allowed":"pointer"),fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",boxShadow:"0 4px 14px #16a34a40"}}>
-                          {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir facturas en ARCA"}
-                        </button>
-                      )}
-                      {showArcaConfirm&&ReactDOM.createPortal(
+                    </div>
+                    {showArcaConfirm&&ReactDOM.createPortal(
                         <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
                           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:460,padding:"28px 28px 24px"}} onClick={e=>e.stopPropagation()}>
                             <div style={{fontSize:20,marginBottom:8}}>🧾</div>
@@ -12509,7 +12503,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </div>
                             <div style={{display:"flex",gap:10}}>
                               <button onClick={()=>setShowArcaConfirm(false)} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 0"}}>Cancelar</button>
-                              <button onClick={()=>{setShowArcaConfirm(false);handleEmit();}} style={{...BtnPrimary(T),flex:1,justifyContent:"center",background:"linear-gradient(135deg,#16a34a,#15803d)",boxShadow:"0 2px 16px #16a34a55",fontSize:13,padding:"10px 0"}}>
+                              <button onClick={()=>{setShowArcaConfirm(false);handleEmit();}} style={{...BtnPrimary(T),flex:1,justifyContent:"center",background:"rgba(22,163,74,0.13)",border:"1.5px solid rgba(22,163,74,0.55)",color:"#4ade80",boxShadow:"0 0 0 1px #16a34a15, 0 4px 20px #16a34a22",fontSize:13,padding:"10px 0"}}>
                                 Confirmar y emitir
                               </button>
                             </div>
@@ -12517,7 +12511,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>,
                         document.body
                       )}
-                    </div>
 
                     {/* Resumen totales */}
                     <div style={{display:"grid",gridTemplateColumns: esRI ? "1fr 1fr 1fr" : "1fr",gap:10,marginBottom:14,padding:"12px 14px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10}}>
@@ -12573,7 +12566,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       );
                     })()}
 
-                    <div style={{maxHeight:350,overflowY:"auto",borderRadius:8}}>
+                    <div style={{maxHeight:350,overflowY:"auto",borderRadius:8,marginBottom:16}}>
                       {Object.entries(ordenes).map(([id,o])=>(
                         <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid "+T.borderL}}>
                           <div style={{flex:1,minWidth:0}}>
@@ -12584,6 +12577,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                       ))}
                     </div>
+                    {!resultados && (
+                      <button onClick={()=>setShowArcaConfirm(true)} disabled={emitting||!cuitSel}
+                        style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"13px 22px",background:"rgba(22,163,74,0.13)",border:"1.5px solid rgba(22,163,74,0.55)",color:"#4ade80",boxShadow:"0 0 0 1px #16a34a15, 0 4px 20px #16a34a22",opacity:(emitting||!cuitSel)?0.45:1}}>
+                        {emitting?<><Spinner size={14} color="#4ade80"/> Emitiendo en ARCA...</>:<>🧾 Emitir facturas en ARCA</>}
+                      </button>
+                    )}
                   </div>
                   );
                 })()}
