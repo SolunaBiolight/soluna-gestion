@@ -508,7 +508,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange",
       subs:[{id:"activos",label:"Activos"},{id:"historial",label:"Historial"},{id:"influencers",label:"Influencers"}]},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
-      subs:[{id:"tareas",label:"Tareas"},{id:"creativos",label:"Creativos"}]},
+      subs:[{id:"trabajo",label:"Trabajo"},{id:"equipo",label:"Equipo"}]},
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
       subs:[{id:"pendientes",label:"Pendientes"},{id:"metricas",label:"Métricas"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
@@ -8277,19 +8277,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("tareas");
+  const [tab, setTab] = useState("trabajo");
   const [viewMode, setViewMode] = useState("lista");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [assigneeFilter, setAssigneeFilter] = useState("todos");
-  const [labelFilter, setLabelFilter] = useState([]); // multi-select
   const [searchTareas, setSearchTareas] = useState("");
   const [estadoDropdown, setEstadoDropdown] = useState(null);
-  // General: tablón + referencias
-  const [generalData, setGeneralData] = useState({posts:[],referencias:[]});
-  const [newPostTexto, setNewPostTexto] = useState("");
-  const [newPostTipo, setNewPostTipo] = useState("aviso");
-  const [showAddRef, setShowAddRef] = useState(false);
-  const [refForm, setRefForm] = useState({nombre:"",web:"",metaAds:"",ig:""});
   const [expandedTarea, setExpandedTarea] = useState(null);
   const [kanbanSelected, setKanbanSelected] = useState(null);
   const [commentText, setCommentText] = useState({});
@@ -8310,15 +8303,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [etTitulo, setEtTitulo] = useState("");
   const [etDesc, setEtDesc] = useState("");
   const [etBrief, setEtBrief] = useState("");
-  const [etLinks, setEtLinks] = useState([]);       // [{name,url}]
-  const [etChecklist, setEtChecklist] = useState([]); // [{id,text,done}]
+  const [etLinks, setEtLinks] = useState([]);
+  const [etChecklist, setEtChecklist] = useState([]);
   const [etDeadline, setEtDeadline] = useState("");
   const [etPrioridad, setEtPrioridad] = useState("normal");
   const [etAsignado, setEtAsignado] = useState("");
-  // Calendar
-  const _calNow = new Date();
-  const [calYear, setCalYear] = useState(_calNow.getFullYear());
-  const [calMonth, setCalMonth] = useState(_calNow.getMonth()); // 0-indexed
   // Modal nuevo colaborador
   const [showNC, setShowNC] = useState(false);
   const [ncNombre, setNcNombre] = useState("");
@@ -8327,15 +8316,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ncTelefono, setNcTelefono] = useState("");
   // Notificación post-creación
   const [notifPanel, setNotifPanel] = useState(null); // {tarea, colab}
-  // Labels
-  const [ntLabels, setNtLabels] = useState([]);
-  const [etLabels, setEtLabels] = useState([]);
   // ── PRODUCCIÓN CREATIVA ──
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
-  const VALID_PROD_TABS = ["tandas","creativos","ideas","editores"];
-  const [prodTab, setProdTab] = useState("tandas");
-  const safeProdTab = VALID_PROD_TABS.includes(prodTab) ? prodTab : "tandas";
+  const VALID_PROD_TABS = ["todo","tandas","lista","ideas","editores"];
+  const [prodTab, setProdTab] = useState("todo");
+  const safeProdTab = VALID_PROD_TABS.includes(prodTab) ? prodTab : "todo";
   const [prodFilter, setProdFilter] = useState({tanda:"",editor:"",estado:"",tipo:"",etapa:""});
   // Modal Tanda
   const [showNT2, setShowNT2] = useState(false);
@@ -8387,15 +8373,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     catch(e){ /* silently use defaults */ }
     setProdLoading(false);
   }
-  async function loadGeneral() {
-    try { const d = await tareasApi({action:"getGeneral"}); setGeneralData(d); }
-    catch(e){ /* silently use defaults */ }
-  }
-  useEffect(()=>{ loadData(); loadProduccion(); loadGeneral(); },[]);
+  useEffect(()=>{ loadData(); loadProduccion(); },[]);
   useEffect(()=>{
-    const validTabs = ["tareas","creativos","equipo"];
+    const validTabs = ["trabajo","equipo"];
     if(validTabs.includes(sidebarTab)) setTab(sidebarTab);
-    else if(sidebarTab && !validTabs.includes(sidebarTab)) setTab("tareas");
+    else if(sidebarTab) setTab("trabajo");
   },[sidebarTab]);
 
   function fmtDate(val) {
@@ -8431,37 +8413,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   };
   const KANBAN_COLS = ["pendiente","en_proceso","bloqueada","revision","entregado","aprobado"];
 
-  // ── LABELS ──
-  const TASK_LABELS = [
-    {id:"diseño",label:"Diseño",color:"#6366f1"},
-    {id:"copy",label:"Copy",color:"#8b5cf6"},
-    {id:"video",label:"Video",color:"#ec4899"},
-    {id:"ads",label:"Ads",color:"#f97316"},
-    {id:"admin",label:"Admin",color:"#6b7280"},
-    {id:"cliente",label:"Cliente",color:"#22c55e"},
-    {id:"urgente",label:"Urgente",color:"#ef4444"},
-    {id:"revision",label:"Revisión",color:"#d97706"},
-    {id:"contenido",label:"Contenido",color:"#0ea5e9"},
-    {id:"social",label:"Social",color:"#a855f7"},
-  ];
-  function toggleLabel(id, arr, setArr) {
-    setArr(prev=>prev.includes(id)?prev.filter(l=>l!==id):[...prev,id]);
-  }
-  function LabelChips({labels=[]}) {
-    if(!labels?.length) return null;
-    return <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{labels.map(id=>{const lb=TASK_LABELS.find(l=>l.id===id);return lb?<span key={id} style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:20,background:lb.color+"22",color:lb.color,border:`1px solid ${lb.color}44`,letterSpacing:"0.03em"}}>{lb.label}</span>:null;})}</div>;
-  }
-  function LabelPicker({selected=[], onChange}) {
-    return (
-      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-        {TASK_LABELS.map(lb=>{
-          const active=selected.includes(lb.id);
-          return <button key={lb.id} onClick={()=>onChange(lb.id)} style={{fontSize:10,fontWeight:600,padding:"3px 9px",borderRadius:20,border:`1px solid ${active?lb.color:T.border}`,background:active?lb.color+"25":"transparent",color:active?lb.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>{lb.label}</button>;
-        })}
-      </div>
-    );
-  }
-
   // Helpers para links y checklist
   function mkId() { return Date.now().toString(36)+Math.random().toString(36).slice(2); }
   function normalizeLinksArr(links) {
@@ -8477,7 +8428,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const tareasFiltradas = tareas
     .filter(t => statusFilter==="todos"||t.estado===statusFilter)
     .filter(t => assigneeFilter==="todos"||t.asignadoEmail===assigneeFilter)
-    .filter(t => labelFilter.length===0||labelFilter.some(lb=>(t.labels||[]).includes(lb)))
     .filter(t => {
       if(!searchTareas.trim()) return true;
       const q=searchTareas.toLowerCase();
@@ -8513,9 +8463,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const colab = colaboradores.find(c=>c.email===ntAsignado);
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,labels:ntLabels,managerEmail:user?.email||""});
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||""});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal"); setNtLabels([]);
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal");
     // Panel de notificación
     if(colab) setNotifPanel({tarea:d,colab});
   }
@@ -8536,8 +8486,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const colab = colaboradores.find(c=>c.email===etAsignado);
     const linksArr = etLinks.filter(l=>l.url.trim());
     const checkArr = etChecklist.filter(i=>i.text.trim());
-    await tareasApi({action:"updateTarea",tareaId:editTarea._id,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,labels:etLabels,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===editTarea._id?{...t,titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,labels:etLabels,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""}:t)}));
+    await tareasApi({action:"updateTarea",tareaId:editTarea._id,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===editTarea._id?{...t,titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""}:t)}));
     setEditTarea(null);
     toast("Tarea actualizada ✓","success");
   }
@@ -8838,9 +8788,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       {/* Header */}
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"0 20px 0 24px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,position:"sticky",top:48,zIndex:90}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontWeight:700,fontSize:15,color:T.text,letterSpacing:"-0.01em"}}>Tareas</span>
+          <span style={{fontWeight:700,fontSize:15,color:T.text,letterSpacing:"-0.01em"}}>Trabajo</span>
           {paraRevisar.length>0&&(
-            <span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f97316",color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 9px",letterSpacing:"0.01em"}}>
+            <span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f97316",color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 9px"}}>
               <span style={{width:6,height:6,borderRadius:"50%",background:"rgba(255,255,255,0.7)",display:"inline-block",animation:"pulse 1.5s infinite"}}/>
               {paraRevisar.length} para revisar
             </span>
@@ -8852,488 +8802,35 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          {/* Nav principal — siempre visible */}
           <div style={{display:"flex",background:T.surface,borderRadius:9,padding:3,border:`1px solid ${T.border}`,gap:1}}>
-            {[["tareas","📋 Tareas"],["creativos","🎬 Creativos"],["equipo","👥 Equipo"]].map(([v,label])=>(
+            {[["trabajo","📋 Trabajo"],["equipo","👥 Equipo"]].map(([v,label])=>(
               <button key={v} onClick={()=>setTab(v)}
                 style={{padding:"4px 12px",borderRadius:7,border:"none",background:tab===v?T.card:"transparent",color:tab===v?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:tab===v?600:400,boxShadow:tab===v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s",whiteSpace:"nowrap"}}>
                 {label}
               </button>
             ))}
           </div>
-          {/* Vista lista/kanban — solo en Tareas */}
-          {tab==="tareas"&&(
-            <div style={{display:"flex",background:T.bg,borderRadius:8,padding:2,border:`1px solid ${T.border}`,gap:1}}>
-              {[["lista","☰"],["kanban","⠿"]].map(([v,icon])=>(
-                <button key={v} onClick={()=>setViewMode(v)} title={v==="lista"?"Lista":"Kanban"}
-                  style={{padding:"3px 8px",borderRadius:6,border:"none",background:viewMode===v?T.card:"transparent",color:viewMode===v?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:600,boxShadow:viewMode===v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s"}}>
-                  {icon}
-                </button>
-              ))}
-            </div>
-          )}
-          {tab==="tareas"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Nueva tarea</button>}
+          {tab==="trabajo"&&safeProdTab==="todo"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Tarea</button>}
+          {tab==="trabajo"&&safeProdTab==="todo"&&<button onClick={()=>openCreativo()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
+          {tab==="trabajo"&&safeProdTab==="lista"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
+          {tab==="trabajo"&&safeProdTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
+          {tab==="trabajo"&&safeProdTab==="tandas"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
           {tab==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
-          {tab==="creativos"&&safeProdTab==="creativos"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
-          {tab==="creativos"&&safeProdTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
-          {tab==="creativos"&&safeProdTab==="tandas"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
         </div>
       </div>
-
       <div style={{padding:"20px 24px"}}>
 
         {loading&&<div style={{textAlign:"center",padding:60}}><Spinner size={32} color={T.accent}/></div>}
 
-        {/* ── TAB TAREAS ── */}
-        {!loading&&tab==="tareas"&&(
-          <>
-            {/* Cola de revisión — sección destacada */}
-            {(paraRevisar.length>0||enRevision.length>0)&&statusFilter==="todos"&&(
-              <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:8}}>
-                {/* Para revisar */}
-                {paraRevisar.length>0&&(
-                  <div style={{background:T.card,border:`1.5px solid #f97316`,borderRadius:12,overflow:"hidden"}}>
-                    <div style={{background:"#f97316",padding:"8px 16px",display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{fontSize:12,fontWeight:700,color:"#fff",flex:1}}>📦 {paraRevisar.length} entrega{paraRevisar.length!==1?"s":""} esperando tu revisión</span>
-                      <span style={{fontSize:11,color:"rgba(255,255,255,0.8)"}}>Acción requerida</span>
-                    </div>
-                    <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:6}}>
-                      {paraRevisar.map(t=>{
-                        const versionCount = (t.deliverables||[]).length;
-                        const lastDelivery = versionCount>0?t.deliverables[versionCount-1]:null;
-                        const deliveredAgo = lastDelivery?.fecha?Math.floor((Date.now()-(lastDelivery.fecha._seconds||0)*1000)/60000):null;
-                        const agoStr = deliveredAgo===null?"":(deliveredAgo<60?`hace ${deliveredAgo}m`:deliveredAgo<1440?`hace ${Math.floor(deliveredAgo/60)}h`:`hace ${Math.floor(deliveredAgo/1440)}d`);
-                        const initials = (t.asignadoNombre||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
-                        return (
-                          <div key={t._id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 4px",borderBottom:`1px solid ${T.border}`,lastChild:{borderBottom:"none"}}}>
-                            <div style={{width:32,height:32,borderRadius:"50%",background:"#f9731625",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#f97316",flexShrink:0}}>{initials}</div>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
-                              <div style={{display:"flex",gap:6,alignItems:"center",marginTop:2}}>
-                                <span style={{fontSize:11,color:T.textMd}}>{t.asignadoNombre}</span>
-                                {versionCount>0&&<span style={{fontSize:10,color:"#f97316",fontWeight:600,background:"#f9731615",borderRadius:20,padding:"1px 6px"}}>v{versionCount}</span>}
-                                {agoStr&&<span style={{fontSize:10,color:T.textSm}}>{agoStr}</span>}
-                                {(t.correcciones||0)>0&&<span style={{fontSize:10,color:T.red,fontWeight:700}}>{t.correcciones}ª corr.</span>}
-                              </div>
-                            </div>
-                            <div style={{display:"flex",gap:5,flexShrink:0}}>
-                              <button onClick={()=>{setExpandedTarea(t._id);setTimeout(()=>{document.getElementById(`tarea-${t._id}`)?.scrollIntoView({behavior:"smooth",block:"nearest"})},100);}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Ver</button>
-                              <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:11,padding:"5px 12px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {/* En corrección */}
-                {enRevision.length>0&&(
-                  <div style={{background:T.redBg||T.card,border:`1.5px solid ${T.red}55`,borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 16px ${T.red}14`}}>
-                    <span style={{fontSize:11,fontWeight:700,color:T.red}}>🔁 En corrección:</span>
-                    {enRevision.map(t=>(
-                      <button key={t._id} onClick={()=>setExpandedTarea(t._id)} style={{fontSize:11,background:T.red+"15",color:T.red,padding:"2px 9px",borderRadius:20,border:`1px solid ${T.red}33`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
-                        {t.titulo}{(t.correcciones||0)>1?` · ${t.correcciones}ª corr.`:""}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Stats KPI bar */}
-            {tareas.length>0&&(
-              <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-                {[
-                  {label:"Total",val:tareas.length,color:T.textMd,bg:T.surface},
-                  {label:"En proceso",val:(countByStatus.en_proceso||0)+(countByStatus.bloqueada||0),color:"#3b82f6",bg:"#3b82f610"},
-                  {label:"Para revisar",val:paraRevisar.length,color:"#f97316",bg:"#f9731610"},
-                  {label:"Aprobadas",val:countByStatus.aprobado||0,color:T.green||"#22c55e",bg:"#22c55e10"},
-                ].map(kpi=>(
-                  <div key={kpi.label} style={{display:"flex",alignItems:"baseline",gap:7,padding:"7px 14px",background:kpi.bg,border:`1px solid ${kpi.color}22`,borderRadius:10,flex:"1 1 auto",minWidth:100}}>
-                    <span style={{fontSize:18,fontWeight:800,color:kpi.color,lineHeight:1}}>{kpi.val}</span>
-                    <span style={{fontSize:11,color:kpi.color,opacity:0.85,fontWeight:500}}>{kpi.label}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* VISTA LISTA */}
-            {viewMode==="lista"&&(
-              <>
-                {/* Toolbar: filtros */}
-                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",marginBottom:12,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                  <div style={{display:"flex",gap:4,flexWrap:"wrap",flex:1}}>
-                    {[["todos","Todos",tareas.length],["pendiente","⏳ Sin empezar",countByStatus.pendiente||0],["en_proceso","🔄 En proceso",countByStatus.en_proceso||0],["bloqueada","🚫 Bloqueada",countByStatus.bloqueada||0],["entregado","📦 Entregado",countByStatus.entregado||0],["revision","🔁 En corrección",countByStatus.revision||0],["aprobado","✅ Aprobado",countByStatus.aprobado||0]].map(([id,label,count])=>(
-                      <button key={id} onClick={()=>setStatusFilter(id)} style={{...pillStyle(statusFilter===id),fontSize:11,padding:"4px 10px"}}>
-                        {label}{count>0&&statusFilter!==id&&<span style={{opacity:0.6,fontSize:10,marginLeft:3}}>{count}</span>}
-                      </button>
-                    ))}
-                  </div>
-                  {colaboradores.length>0&&(
-                    <select value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)} style={{...iS,fontSize:11,padding:"4px 8px",width:"auto",height:"auto"}}>
-                      <option value="todos">Todos</option>
-                      {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre}</option>)}
-                    </select>
-                  )}
-                </div>
-                {/* Búsqueda de tareas */}
-                <div style={{position:"relative",marginBottom:8}}>
-                  <input value={searchTareas} onChange={e=>setSearchTareas(e.target.value)} placeholder="Buscar por título, descripción o brief..."
-                    style={{...iS,paddingLeft:30,paddingRight:searchTareas?30:10,fontSize:12,width:"100%",boxSizing:"border-box"}}/>
-                  <span style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",fontSize:12,color:T.textSm,pointerEvents:"none"}}>🔍</span>
-                  {searchTareas&&<button onClick={()=>setSearchTareas("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:T.textMd,fontSize:14,lineHeight:1,padding:2,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
-                </div>
-                {/* Label filter — multi-selección */}
-                {TASK_LABELS.some(lb=>tareas.some(t=>(t.labels||[]).includes(lb.id)))&&(
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
-                    <button onClick={()=>setLabelFilter([])} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${labelFilter.length===0?T.accent:T.border}`,background:labelFilter.length===0?T.accent+"20":"transparent",color:labelFilter.length===0?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Todos</button>
-                    {TASK_LABELS.filter(lb=>tareas.some(t=>(t.labels||[]).includes(lb.id))).map(lb=>{
-                      const active=labelFilter.includes(lb.id);
-                      return <button key={lb.id} onClick={()=>setLabelFilter(prev=>active?prev.filter(id=>id!==lb.id):[...prev,lb.id])} style={{fontSize:10,fontWeight:600,padding:"2px 9px",borderRadius:20,border:`1px solid ${active?lb.color:T.border}`,background:active?lb.color+"25":"transparent",color:active?lb.color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{lb.label}</button>;
-                    })}
-                    {labelFilter.length>1&&<span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:20,background:T.accent+"18",color:T.accent,border:`1px solid ${T.accent}33`}}>{labelFilter.length} activos</span>}
-                  </div>
-                )}
-                {tareasFiltradas.length===0&&(
-                  <div style={{textAlign:"center",padding:"60px 24px",color:T.textSm,background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`,margin:"8px 0"}}>
-                    <div style={{fontSize:44,marginBottom:12}}>{tareas.length===0?"🚀":"🔍"}</div>
-                    <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>{tareas.length===0?"¡Todo listo para delegar!":"Sin resultados"}</div>
-                    <div style={{fontSize:13,color:T.textMd,marginBottom:tareas.length===0?20:0,maxWidth:320,margin:"0 auto 20px"}}>{tareas.length===0?"Creá tu primera tarea y asignala a un colaborador externo. Ellos reciben un link personal y pueden entregar su trabajo sin necesidad de cuenta.":"No hay tareas con este filtro. Probá cambiando los filtros."}</div>
-                    {tareas.length===0&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),margin:"0 auto"}}>+ Crear primera tarea</button>}
-                  </div>
-                )}
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {tareasFiltradas.map(t=>{
-                    const expanded = expandedTarea===t._id;
-                    const est = ESTADOS[t.estado]||ESTADOS.pendiente;
-                    const days = daysUntil(t.deadline);
-                    const hasDels = (t.deliverables||[]).length>0;
-                    const isUrgente = t.prioridad==="urgente";
-                    const leftBorderColor = t.estado==="entregado"?"#f97316":t.estado==="revision"?T.red:t.estado==="aprobado"?(T.green||"#22c55e"):t.estado==="bloqueada"?T.red:t.estado==="en_proceso"?"#3b82f6":T.border;
-                    const initials = (t.asignadoNombre||"").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()||"?";
-                    const avatarColor = t.asignadoNombre?`hsl(${t.asignadoNombre.charCodeAt(0)*17%360},55%,55%)`:"#94a3b8";
-                    const commCount = (t.comments||[]).length;
-                    const checkDone = (t.checklist||[]).filter(i=>i.done).length;
-                    const checkTotal = (t.checklist||[]).length;
-                    return (
-                      <div key={t._id} id={`tarea-${t._id}`} style={{background:T.card,border:`1px solid ${expanded?est.color+"55":T.border}`,borderRadius:10,overflow:"hidden",borderLeft:`4px solid ${leftBorderColor}`,transition:"border-color 0.15s"}}>
-                        <div onClick={()=>setExpandedTarea(expanded?null:t._id)} style={{padding:"11px 14px 11px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                          {/* Avatar */}
-                          {t.asignadoNombre?(
-                            <div style={{width:30,height:30,borderRadius:"50%",background:avatarColor,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#fff",flexShrink:0,letterSpacing:"0.02em"}}>{initials}</div>
-                          ):(
-                            <div style={{width:30,height:30,borderRadius:"50%",background:T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>?</div>
-                          )}
-                          {/* Content */}
-                          <div style={{flex:1,minWidth:0}}>
-                            {/* Row 1: urgente + num + title + badges */}
-                            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
-                              {isUrgente&&<span style={{fontSize:9,color:T.red,fontWeight:800,background:T.red+"15",borderRadius:4,padding:"1px 5px",flexShrink:0}}>URGENTE</span>}
-                              {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600,flexShrink:0}}>#{t.tareaNumStr}</span>}
-                              <span style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.3}}>{t.titulo}</span>
-                              {(t.correcciones||0)>0&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:20,background:T.red+"18",color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corr.</span>}
-                              {hasDels&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#f9731618",color:"#f97316",fontWeight:700,flexShrink:0}}>📦 {(t.deliverables||[]).length}</span>}
-                            </div>
-                            {/* Row 2: status + progreso + deadline + meta */}
-                            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                              <div style={{position:"relative",display:"inline-block"}}>
-                                <span onClick={e=>{e.stopPropagation();setEstadoDropdown(estadoDropdown===t._id?null:t._id);}} style={{fontSize:10,padding:"2px 7px",borderRadius:5,fontWeight:600,background:est.bg,color:est.color,cursor:"pointer",userSelect:"none"}}>{est.label} ▾</span>
-                                {estadoDropdown===t._id&&(
-                                  <div onClick={e=>e.stopPropagation()} style={{position:"absolute",top:"calc(100% + 4px)",left:0,zIndex:300,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,0.22)",padding:4,minWidth:150}}>
-                                    {Object.entries(ESTADOS).map(([key,val])=>(
-                                      <button key={key} onClick={async e=>{e.stopPropagation();setEstadoDropdown(null);await updateEstado(t._id,key);}} style={{display:"block",width:"100%",textAlign:"left",padding:"6px 10px",borderRadius:6,border:"none",background:t.estado===key?val.bg:"transparent",color:val.color,fontSize:11,fontWeight:t.estado===key?700:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}
-                                        onMouseEnter={e=>{if(t.estado!==key)e.currentTarget.style.background=T.surface;}} onMouseLeave={e=>{if(t.estado!==key)e.currentTarget.style.background="transparent";}}>
-                                        {val.label}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              {t.progresoLabel==="Listo para entregar"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#22c55e15",color:"#22c55e",fontWeight:700}}>✋ Listo</span>}
-                              {t.progresoLabel==="En proceso"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#3b82f615",color:"#3b82f6",fontWeight:600}}>🔄 En proceso</span>}
-                              {t.estado==="bloqueada"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:20,background:"#ef444415",color:"#ef4444",fontWeight:700}}>⚠️ Bloqueado</span>}
-                              {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=2?T.red:days!==null&&days<=5?"#f97316":T.textSm,fontWeight:days!==null&&days<=2?700:400}}>📅 {days!==null?(days<0?`−${Math.abs(days)}d`:days===0?"hoy":`${days}d`):fmtDate(t.deadline)}</span>}
-                              {checkTotal>0&&<span style={{fontSize:10,color:checkDone===checkTotal?(T.green||"#22c55e"):T.textSm}}>✓ {checkDone}/{checkTotal}</span>}
-                              {commCount>0&&<span style={{fontSize:10,color:T.textSm}}>💬 {commCount}</span>}
-                            </div>
-                            {(t.labels||[]).length>0&&<div style={{marginTop:4}}><LabelChips labels={t.labels}/></div>}
-                          </div>
-                          {/* Expand indicator */}
-                          <div style={{width:20,height:20,borderRadius:6,background:expanded?T.accent+"18":T.surface,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s"}}>
-                            <span style={{fontSize:9,color:expanded?T.accent:T.textSm,fontWeight:700,lineHeight:1}}>{expanded?"▲":"▼"}</span>
-                          </div>
-                        </div>
-                        {expanded&&renderDetalle(t)}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-
-            {/* VISTA KANBAN */}
-            {viewMode==="kanban"&&(
-              <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:24,alignItems:"flex-start"}}>
-                {KANBAN_COLS.map(colKey=>{
-                  const col=ESTADOS[colKey];
-                  const isDragOver=dragOverCol===colKey;
-                  const colTareas=tareas.filter(t=>t.estado===colKey).sort((a,b)=>{
-                    const pa=a.prioridad==="urgente"?0:1,pb=b.prioridad==="urgente"?0:1;
-                    return pa-pb||(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0);
-                  });
-                  return (
-                    <div key={colKey} style={{flex:"0 0 260px",minWidth:0}}
-                      onDragOver={e=>{e.preventDefault();setDragOverCol(colKey);}}
-                      onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverCol(null);}}
-                      onDrop={e=>{e.preventDefault();setDragOverCol(null);const id=dragRef.current.id,from=dragRef.current.fromCol;if(!id||from===colKey)return;quickUpdateTareaEstado(id,colKey);dragRef.current={id:null,fromCol:null};}}>
-                      {/* Column header */}
-                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,padding:"8px 12px",background:isDragOver?col.color+"25":col.bg||T.surface,borderRadius:10,border:isDragOver?`2px dashed ${col.color}80`:`2px solid ${col.color}30`,transition:"all 0.15s"}}>
-                        <div style={{width:8,height:8,borderRadius:"50%",background:col.color,flexShrink:0}}/>
-                        <span style={{fontSize:12,fontWeight:700,color:col.color,flex:1,letterSpacing:"0.01em"}}>{col.label}</span>
-                        <span style={{fontSize:11,color:col.color,background:col.color+"25",padding:"2px 8px",borderRadius:20,fontWeight:700}}>{colTareas.length}</span>
-                      </div>
-                      {/* Column cards */}
-                      <div style={{display:"flex",flexDirection:"column",gap:7,minHeight:48}}>
-                        {colTareas.map(t=>{
-                          const days=daysUntil(t.deadline);
-                          const isUrgente=t.prioridad==="urgente";
-                          const commCount=(t.comments||[]).length;
-                          const checkDone=(t.checklist||[]).filter(i=>i.done).length;
-                          const checkTotal=(t.checklist||[]).length;
-                          const initials=(t.asignadoNombre||"").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()||"?";
-                          const avatarColor=t.asignadoNombre?`hsl(${t.asignadoNombre.charCodeAt(0)*17%360},55%,55%)`:"#94a3b8";
-                          return (
-                            <div key={t._id}
-                              draggable="true"
-                              onDragStart={()=>{dragRef.current={id:t._id,fromCol:colKey};}}
-                              onDragEnd={()=>{dragRef.current={id:null,fromCol:null};setDragOverCol(null);}}
-                              onClick={()=>setKanbanSelected(t)}
-                              style={{background:T.card,border:`1px solid ${isUrgente?T.red+"55":T.border}`,borderLeft:`3px solid ${col.color}`,borderRadius:9,padding:"10px 12px",cursor:"grab",userSelect:"none",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",transition:"box-shadow 0.15s,border-color 0.15s"}}
-                              onMouseEnter={e=>{e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.13)";e.currentTarget.style.borderColor=isUrgente?T.red+"88":T.accent+"55";}}
-                              onMouseLeave={e=>{e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.06)";e.currentTarget.style.borderColor=isUrgente?T.red+"55":T.border;}}>
-                              {/* Title row */}
-                              <div style={{display:"flex",alignItems:"flex-start",gap:6,marginBottom:7}}>
-                                {isUrgente&&<span style={{fontSize:9,color:T.red,fontWeight:800,background:T.red+"15",borderRadius:4,padding:"1px 4px",flexShrink:0,marginTop:1}}>URG</span>}
-                                <span style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.35,flex:1}}>{t.titulo}</span>
-                              </div>
-                              {(t.labels||[]).length>0&&<div style={{marginBottom:6}}><LabelChips labels={t.labels}/></div>}
-                              {t.progresoLabel==="Listo para entregar"&&<div style={{marginBottom:6,fontSize:10,color:"#22c55e",fontWeight:700,background:"#22c55e12",borderRadius:20,padding:"2px 8px",display:"inline-block"}}>✋ Listo para entregar</div>}
-                              {/* Footer row */}
-                              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:4}}>
-                                {t.asignadoNombre&&(
-                                  <div style={{display:"flex",alignItems:"center",gap:4}}>
-                                    <div style={{width:18,height:18,borderRadius:"50%",background:avatarColor,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#fff"}}>{initials}</div>
-                                    <span style={{fontSize:10,color:T.textMd}}>{t.asignadoNombre.split(" ")[0]}</span>
-                                  </div>
-                                )}
-                                {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,fontWeight:days!==null&&days<=3?600:400}}>📅 {days!==null?(days<0?"Venc.":days===0?"Hoy":`${days}d`):"—"}</span>}
-                                {(t.correcciones||0)>0&&<span style={{fontSize:9,color:T.red,fontWeight:700,background:T.red+"12",borderRadius:4,padding:"1px 4px"}}>{t.correcciones}ª</span>}
-                                {(t.deliverables||[]).length>0&&<span style={{fontSize:10,color:"#f97316"}}>📦 {(t.deliverables||[]).length}</span>}
-                                {checkTotal>0&&<span style={{fontSize:10,color:checkDone===checkTotal?"#22c55e":T.textSm}}>✓{checkDone}/{checkTotal}</span>}
-                                {commCount>0&&<span style={{fontSize:10,color:T.textSm}}>💬 {commCount}</span>}
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {colTareas.length===0&&(
-                          <div style={{fontSize:11,color:isDragOver?col.color:T.textSm,textAlign:"center",padding:"20px 0",border:`2px dashed ${isDragOver?col.color:T.border}`,borderRadius:9,transition:"all 0.15s",background:isDragOver?col.color+"08":"transparent"}}>
-                            {isDragOver?"Soltar aquí ↓":"Sin tareas"}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* VISTA CALENDARIO */}
-            {viewMode==="cal"&&(()=>{
-              const DAYS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
-              const firstDay = new Date(calYear,calMonth,1);
-              const lastDay  = new Date(calYear,calMonth+1,0);
-              const startDow = (firstDay.getDay()+6)%7; // 0=Mon
-              const daysInMonth = lastDay.getDate();
-              const cells = [];
-              for(let i=0;i<startDow;i++) cells.push(null);
-              for(let d=1;d<=daysInMonth;d++) cells.push(d);
-              const monthNames=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-              function tareasOfDay(d) {
-                return tareas.filter(t=>{
-                  if(!t.deadline) return false;
-                  const dd = t.deadline._seconds?new Date(t.deadline._seconds*1000):t.deadline?.toDate?.()||new Date(t.deadline);
-                  return dd.getFullYear()===calYear&&dd.getMonth()===calMonth&&dd.getDate()===d;
-                });
-              }
-              const today = new Date();
-              return (
-                <div>
-                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-                    <button onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:13}}>‹</button>
-                    <span style={{fontWeight:700,fontSize:15,color:T.text,flex:1,textAlign:"center"}}>{monthNames[calMonth]} {calYear}</span>
-                    <button onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:13}}>›</button>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
-                    {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:T.textSm,padding:"4px 0"}}>{d}</div>)}
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-                    {cells.map((d,i)=>{
-                      if(!d) return <div key={`e-${i}`} style={{minHeight:72,background:"transparent"}}/>;
-                      const isToday = d===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear();
-                      const dayTareas = tareasOfDay(d);
-                      return (
-                        <div key={d} style={{minHeight:72,background:T.card,borderRadius:8,padding:"5px 6px",border:`1px solid ${isToday?T.accent:T.border}`,boxSizing:"border-box"}}>
-                          <div style={{fontSize:11,fontWeight:isToday?700:400,color:isToday?T.accent:T.textMd,marginBottom:3}}>{d}</div>
-                          {dayTareas.slice(0,3).map(t=>{
-                            const est=ESTADOS[t.estado]||ESTADOS.pendiente;
-                            return <div key={t._id} onClick={()=>{setExpandedTarea(t._id);setViewMode("lista");}} title={t.titulo} style={{fontSize:9,padding:"2px 4px",borderRadius:3,background:est.bg,color:est.color,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",fontWeight:600}}>{t.titulo}</div>;
-                          })}
-                          {dayTareas.length>3&&<div style={{fontSize:9,color:T.textSm}}>+{dayTareas.length-3} más</div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-          </>
-        )}
-
-        {/* ── TAB EQUIPO ── */}
-        {!loading&&tab==="equipo"&&(
-          <div>
-            {colaboradores.length===0&&(
-              <div style={{textAlign:"center",padding:"60px 0",color:T.textSm}}>
-                <div style={{fontSize:40,marginBottom:12}}>👥</div>
-                <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Sin colaboradores aún</div>
-                <div style={{fontSize:13,marginBottom:20}}>Agregá editores, community managers o quien necesite acceso a tareas</div>
-                <button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Agregar colaborador</button>
-              </div>
-            )}
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              {colaboradores.map(c=>{
-                const userTareas = tareas.filter(t=>t.asignadoEmail===c.email);
-                const pending = userTareas.filter(t=>t.estado==="pendiente"||t.estado==="en_proceso").length;
-                const entregado = userTareas.filter(t=>t.estado==="entregado").length;
-                const aprobado = userTareas.filter(t=>t.estado==="aprobado").length;
-                const waColabLink = c.telefono
-                  ? `https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal de tareas:\n${colabLink(c.token)}`)}`
-                  : `https://wa.me/?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal de tareas:\n${colabLink(c.token)}`)}`;
-                return (
-                  <div key={c._id} style={{background:T.card,border:`1px solid ${entregado>0?((T.orange||"#f97316")+"55"):T.border}`,borderRadius:12,padding:"16px 18px"}}>
-                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:userTareas.length>0?12:0}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-                          <div style={{width:36,height:36,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:T.accent,flexShrink:0}}>
-                            {c.nombre[0].toUpperCase()}
-                          </div>
-                          <div>
-                            <div style={{fontSize:14,fontWeight:600,color:T.text}}>{c.nombre}</div>
-                            {c.rol&&<div style={{fontSize:12,color:T.textSm}}>{c.rol}</div>}
-                          </div>
-                        </div>
-                        <div style={{fontSize:12,color:T.textSm,marginBottom:c.telefono?4:8}}>{c.email}</div>
-                        {c.telefono?(
-                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
-                            <span style={{fontSize:11,color:T.textSm}}>📱 {c.telefono}</span>
-                            <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#22c55e",textDecoration:"none",fontWeight:600,border:"1px solid #22c55e44",borderRadius:20,padding:"1px 7px",fontFamily:"'Inter',system-ui,sans-serif"}}>WA</a>
-                            <button onClick={()=>{const t2=prompt("Nuevo WhatsApp:",c.telefono||"");if(t2!==null)updateColabTelefono(c._id,t2.trim());}} style={{fontSize:10,color:T.textSm,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
-                          </div>
-                        ):(
-                          <button onClick={()=>{const t2=prompt("WhatsApp (con código de país, ej: 5491112345678):");if(t2)updateColabTelefono(c._id,t2.trim());}} style={{fontSize:10,color:T.textSm,background:"transparent",border:"none",cursor:"pointer",padding:"0 0 8px 0",textDecoration:"underline",fontFamily:"'Inter',system-ui,sans-serif",display:"block"}}>+ Agregar WhatsApp</button>
-                        )}
-                        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10,fontSize:12}}>
-                          <span style={{color:T.textMd}}>{userTareas.length} tarea{userTareas.length!==1?"s":""}</span>
-                          {pending>0&&<span style={{color:T.blue}}>· {pending} en curso</span>}
-                          {entregado>0&&<span style={{color:T.orange||"#f97316",fontWeight:600}}>· {entregado} para revisar 📦</span>}
-                          {aprobado>0&&<span style={{color:T.green}}>· {aprobado} aprobada{aprobado!==1?"s":""} ✓</span>}
-                        </div>
-                        {/* Link copiable */}
-                        <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"7px 10px",display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                          <span style={{fontSize:11,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🔗 {colabLink(c.token)}</span>
-                          <button onClick={()=>copyLink(c.token)} style={{...BtnPrimary(T),fontSize:11,padding:"3px 10px",flexShrink:0}}>Copiar</button>
-                        </div>
-                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                          <a href={waColabLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,color:"#22c55e",border:`1px solid #22c55e44`}}>
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                            Enviar por WA
-                          </a>
-                        </div>
-                        {/* Permisos */}
-                        <div style={{marginTop:10}}>
-                          <button onClick={()=>setShowColabPermisos(p=>({...p,[c._id]:!p[c._id]}))}
-                            style={{fontSize:11,color:T.textMd,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}>
-                            🔐 Permisos de acceso {showColabPermisos[c._id]?"▲":"▼"}
-                          </button>
-                          {showColabPermisos[c._id]&&(
-                            <div style={{marginTop:8,background:T.surface,borderRadius:8,padding:"10px 12px",border:`1px solid ${T.borderL}`}}>
-                              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>¿Qué puede ver en su portal?</div>
-                              {[
-                                {key:"verCreativos",label:"🎬 Ver board de Creativos",desc:"Accede al tablero de producción completo"},
-                                {key:"verEquipo",label:"👥 Ver estado del equipo",desc:"Ve las tareas de todos los colaboradores — ideal para coordinación (solo lectura)"},
-                                {key:"comentarTareas",label:"💬 Comentar en tareas",desc:"Puede dejar notas en sus tareas asignadas"},
-                              ].map(({key,label,desc})=>{
-                                const val=!!(c.permisos||{})[key];
-                                return (
-                                  <div key={key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-                                    <div style={{flex:1}}>
-                                      <div style={{fontSize:12,fontWeight:500,color:T.text}}>{label}</div>
-                                      <div style={{fontSize:10,color:T.textSm}}>{desc}</div>
-                                    </div>
-                                    <button onClick={()=>updateColabPermisos(c._id,key,!val)}
-                                      title={val?"Desactivar":"Activar"}
-                                      style={{width:36,height:20,borderRadius:10,border:"none",cursor:"pointer",background:val?T.green:"#d1d5db",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
-                                      <div style={{position:"absolute",top:3,left:val?18:3,width:14,height:14,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
-                        <button onClick={()=>{setNtAsignado(c.email);setTab("tareas");setShowNT(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Tarea</button>
-                        <AsyncButton onClick={()=>regenerateToken(c._id)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔄 Nuevo link</AsyncButton>
-                        <AsyncButton onClick={()=>deleteColab(c._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Eliminar</AsyncButton>
-                      </div>
-                    </div>
-                    {/* Tareas del colaborador */}
-                    {userTareas.length>0&&(
-                      <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12}}>
-                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Tareas asignadas</div>
-                        <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                          {userTareas.map(t=>{
-                            const est=ESTADOS[t.estado]||ESTADOS.pendiente;
-                            const days=daysUntil(t.deadline);
-                            return (
-                              <div key={t._id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:T.surface,borderRadius:7,flexWrap:"wrap"}}>
-                                <span style={{flex:1,fontSize:12,fontWeight:500,color:T.text,minWidth:80}}>{t.titulo}</span>
-                                <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:est.bg,color:est.color,fontWeight:600,flexShrink:0}}>{est.label}</span>
-                                {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,flexShrink:0}}>📅 {days!==null?(days<0?"Vencida":days===0?"Hoy":`${days}d`):fmtDate(t.deadline)}</span>}
-                                {(t.correcciones||0)>0&&<span style={{fontSize:10,color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corr.</span>}
-                                <button onClick={()=>{setTab("tareas");setExpandedTarea(t._id);}} style={{...BtnSecondary(T),fontSize:10,padding:"2px 8px",flexShrink:0}}>Ver</button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ── TAB CREATIVOS ── */}
-        {!loading&&tab==="creativos"&&(
-        <div style={{background:T.bg}}>
-          {/* Sub-nav Creativos */}
+        {/* ── TAB TRABAJO ── */}
+        {!loading&&tab==="trabajo"&&(
+        <div>
+          {/* Sub-nav */}
           <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:1,marginBottom:20,width:"fit-content"}}>
             {[
+              ["todo","📋 Todo","M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"],
               ["tandas","Tandas","M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"],
-              ["creativos","Lista","M15 10l4.553-2.069A1 1 0 0121 8.855v6.29a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"],
+              ["lista","Creativos","M15 10l4.553-2.069A1 1 0 0121 8.855v6.29a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"],
               ["ideas","Ideas","M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26A7 7 0 0112 2z"],
               ["editores","Editores","M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"],
             ].map(([id,label,icon])=>(
@@ -9346,38 +8843,150 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
           {prodLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
 
-          {/* ── Stats compactos — siempre visibles arriba de todo ── */}
-          {!prodLoading&&safeProdTab!=="editores"&&(()=>{
-            const cl=produccion?.creativos||[];
-            const total=cl.length;
-            const pub=cl.filter(c=>c.estado==="publicado").length;
-            const enP=cl.filter(c=>c.estado==="en-produccion").length;
-            const sinC=cl.filter(c=>c.estado==="entregado"&&!c.pagado).length;
-            const ideas=(produccion?.ideas||[]).length;
-            if(!total&&!ideas) return null;
-            return (
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+          {/* ── TODO: Vista unificada ── */}
+          {!prodLoading&&safeProdTab==="todo"&&(()=>{
+            const hoy=new Date();
+            function dLeft(val){if(!val)return null;const d=val._seconds?new Date(val._seconds*1000):new Date(val);return Math.ceil((d-hoy)/86400000);}
+            const creativosActivos=produccion.creativos.filter(c=>!["publicado","archivado"].includes(c.estado));
+            const tareasActivas=tareas.filter(t=>t.estado!=="aprobado");
+            const proximasItems=tareas.filter(t=>t.deadline&&t.estado!=="aprobado").map(t=>({nombre:t.asignadoNombre||"?",titulo:t.titulo,days:dLeft(t.deadline),id:t._id})).sort((a,b)=>(a.days??999)-(b.days??999)).slice(0,8);
+            const CEST2={idea:{l:"Idea",c:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue},"en-produccion":{l:"En prod.",c:T.orange||"#f97316"},entregado:{l:"Entregado",c:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green}};
+            return(<>
+              {proximasItems.length>0&&(
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 14px",marginBottom:14,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",flexShrink:0}}>📅 Próximas</span>
+                  {proximasItems.map((p,i)=>{const d=p.days;const hot=d!==null&&d<=1;const warm=d!==null&&d<=3;
+                    return(<span key={i} onClick={()=>setExpandedTarea(p.id)}
+                      style={{fontSize:11,padding:"3px 10px",borderRadius:20,background:hot?T.red+"18":warm?(T.yellow||"#d97706")+"18":T.card,color:hot?T.red:warm?(T.yellow||"#d97706"):T.textMd,border:`1px solid ${hot?T.red:warm?(T.yellow||"#d97706"):T.border}33`,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                      {p.nombre} → {p.titulo.length>20?p.titulo.slice(0,20)+"…":p.titulo}
+                      <span style={{fontWeight:400,opacity:0.75,marginLeft:4}}>{d===null?"sin fecha":d<0?`${Math.abs(d)}d venc.`:d===0?"hoy":`${d}d`}</span>
+                    </span>);
+                  })}
+                </div>
+              )}
+              <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
                 {[
-                  {l:"Total",v:total,c:T.textMd,f:{}},
-                  {l:"Publicados",v:pub,c:T.green,f:{estado:"publicado"}},
-                  {l:"En producción",v:enP,c:T.blue||"#3b82f6",f:{estado:"en-produccion"}},
-                  {l:"Sin cobrar",v:sinC,c:T.red,f:{estado:"entregado"}},
-                  ideas>0&&{l:`${ideas} ideas`,v:null,c:T.yellow||"#d97706",f:null},
-                ].filter(Boolean).map(k=>(
-                  <div key={k.l} onClick={()=>k.f&&(setProdTab("creativos"),setProdFilter(f=>({...f,...k.f})))}
-                    style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:20,background:T.surface,border:`1px solid ${T.borderL}`,cursor:k.f?"pointer":"default",transition:"all 0.12s"}}
-                    onMouseEnter={e=>{if(k.f)e.currentTarget.style.borderColor=k.c+"55";}}
-                    onMouseLeave={e=>{e.currentTarget.style.borderColor="";}}
-                  >
-                    <span style={{fontSize:13,fontWeight:700,color:k.c}}>{k.v!==null?k.v:""}</span>
-                    <span style={{fontSize:11,color:T.textSm}}>{k.l}</span>
+                  {l:"Tareas activas",v:tareasActivas.length,c:"#3b82f6"},
+                  {l:"Para revisar",v:paraRevisar.length,c:"#f97316"},
+                  {l:"En producción",v:produccion.creativos.filter(c=>c.estado==="en-produccion").length,c:"#6366f1",fn:()=>setProdTab("lista")},
+                  {l:"Sin cobrar",v:produccion.creativos.filter(c=>c.estado==="entregado"&&!c.pagado).length,c:T.red,fn:()=>setProdTab("lista")},
+                ].map(s=>(
+                  <div key={s.l} onClick={s.fn} style={{flex:"1 1 110px",background:T.card,border:`1px solid ${s.c}22`,borderRadius:10,padding:"10px 14px",cursor:s.fn?"pointer":"default"}}
+                    onMouseEnter={e=>{if(s.fn)e.currentTarget.style.boxShadow=`0 4px 14px ${s.c}20`;}} onMouseLeave={e=>e.currentTarget.style.boxShadow=""}>
+                    <div style={{fontSize:22,fontWeight:800,color:s.c,lineHeight:1}}>{s.v}</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:3}}>{s.l}</div>
                   </div>
                 ))}
               </div>
-            );
+              {paraRevisar.length>0&&(
+                <div style={{background:T.card,border:"1.5px solid #f97316",borderRadius:12,overflow:"hidden",marginBottom:14}}>
+                  <div style={{background:"#f97316",padding:"8px 16px",display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:12,fontWeight:700,color:"#fff",flex:1}}>📦 {paraRevisar.length} entrega{paraRevisar.length!==1?"s":""} esperando revisión</span>
+                  </div>
+                  <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:6}}>
+                    {paraRevisar.map(t=>{
+                      const initials=(t.asignadoNombre||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+                      return(
+                        <div key={t._id} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 4px",borderBottom:`1px solid ${T.borderL}`}}>
+                          <div style={{width:28,height:28,borderRadius:"50%",background:"#f9731620",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#f97316",flexShrink:0}}>{initials}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
+                            <span style={{fontSize:11,color:T.textMd}}>{t.asignadoNombre}</span>
+                          </div>
+                          <div style={{display:"flex",gap:5}}>
+                            <button onClick={()=>setExpandedTarea(t._id)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>Ver</button>
+                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:11,padding:"4px 12px",borderRadius:7,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {produccion.editores.map(ed=>{
+                  const edC=creativosActivos.filter(c=>c.editor===ed);
+                  if(!edC.length) return null;
+                  return(
+                    <div key={ed} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                      <div style={{padding:"9px 14px",background:T.surface,borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{width:28,height:28,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.accent,flexShrink:0}}>{ed[0].toUpperCase()}</div>
+                        <span style={{fontSize:13,fontWeight:700,color:T.text,flex:1}}>{ed}</span>
+                        <span style={{fontSize:11,color:T.textSm}}>{edC.length} creativo{edC.length!==1?"s":""}</span>
+                        <button onClick={()=>{setCEditor(ed);openCreativo();}} style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>+ Creativo</button>
+                      </div>
+                      <div style={{padding:"8px 10px",display:"flex",flexDirection:"column",gap:4}}>
+                        {edC.map(c=>{const ce=CEST2[c.estado]||{l:c.estado,c:T.textSm};const tanda=produccion.tandas.find(t=>t.id===c.tanda_id);
+                          return(
+                            <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",background:T.surface,borderRadius:7}}>
+                              <span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accentSolid+"15",borderRadius:4,padding:"1px 6px",flexShrink:0}}>{c.codigo}</span>
+                              <span style={{fontSize:12,fontWeight:500,color:T.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.angulo||"Sin ángulo"}</span>
+                              {tanda&&<span style={{fontSize:10,color:T.textSm,flexShrink:0,maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tanda.nombre}</span>}
+                              <span style={{fontSize:10,padding:"1px 7px",borderRadius:4,background:ce.c+"18",color:ce.c,fontWeight:600,flexShrink:0}}>{ce.l}</span>
+                              <button onClick={()=>setCreativoDetail(c)} style={{...BtnSecondary(T),fontSize:10,padding:"2px 8px",flexShrink:0}}>Ver</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {colaboradores.map(colab=>{
+                  const colabTareas=tareasActivas.filter(t=>t.asignadoEmail===colab.email);
+                  if(!colabTareas.length) return null;
+                  return(
+                    <div key={colab._id} style={{background:T.card,border:`1px solid ${colabTareas.some(t=>t.estado==="entregado")?"#f9731655":T.border}`,borderRadius:12,overflow:"hidden"}}>
+                      <div style={{padding:"9px 14px",background:T.surface,borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{width:28,height:28,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.accent,flexShrink:0}}>{colab.nombre[0].toUpperCase()}</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <span style={{fontSize:13,fontWeight:700,color:T.text}}>{colab.nombre}</span>
+                          {colab.rol&&<span style={{fontSize:11,color:T.textSm,marginLeft:8}}>{colab.rol}</span>}
+                        </div>
+                        <span style={{fontSize:11,color:T.textSm}}>{colabTareas.length} tarea{colabTareas.length!==1?"s":""}</span>
+                        <button onClick={()=>{setNtAsignado(colab.email);setShowNT(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>+ Tarea</button>
+                      </div>
+                      <div style={{padding:"8px 10px",display:"flex",flexDirection:"column",gap:4}}>
+                        {colabTareas.map(t=>{
+                          const est=ESTADOS[t.estado]||ESTADOS.pendiente;
+                          const days=dLeft(t.deadline);
+                          const expanded=expandedTarea===t._id;
+                          return(
+                            <div key={t._id} id={`tarea-${t._id}`} style={{borderRadius:7,overflow:"hidden",border:`1px solid ${expanded?est.color+"55":T.borderL}`,borderLeft:`3px solid ${est.color}`}}>
+                              <div onClick={()=>setExpandedTarea(expanded?null:t._id)} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",cursor:"pointer",background:T.surface}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
+                                  <div style={{display:"flex",gap:5,alignItems:"center",marginTop:2,flexWrap:"wrap"}}>
+                                    <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:est.bg,color:est.color,fontWeight:600}}>{est.label}</span>
+                                    {t.prioridad==="urgente"&&<span style={{fontSize:9,color:T.red,fontWeight:800,background:T.red+"15",borderRadius:3,padding:"1px 4px"}}>URGENTE</span>}
+                                    {days!==null&&<span style={{fontSize:10,color:days<=2?T.red:days<=5?"#f97316":T.textSm,fontWeight:days<=2?700:400}}>📅 {days<0?`${Math.abs(days)}d venc.`:days===0?"hoy":`${days}d`}</span>}
+                                    {(t.deliverables||[]).length>0&&<span style={{fontSize:10,color:"#f97316",fontWeight:600}}>📦 {(t.deliverables||[]).length}</span>}
+                                  </div>
+                                </div>
+                                <span style={{fontSize:9,color:T.textSm}}>{expanded?"▲":"▼"}</span>
+                              </div>
+                              {expanded&&renderDetalle(t)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {tareasActivas.length===0&&creativosActivos.length===0&&(
+                  <div style={{textAlign:"center",padding:"60px 24px",background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`}}>
+                    <div style={{fontSize:48,marginBottom:16}}>🚀</div>
+                    <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>Todo al día</div>
+                    <div style={{fontSize:13,color:T.textMd,marginBottom:24}}>No hay trabajo activo. Creá una tarea o un creativo para empezar.</div>
+                    <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+                      <button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Nueva tarea</button>
+                      <button onClick={()=>openCreativo()} style={{...BtnSecondary(T),fontSize:13}}>+ Nuevo creativo</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>);
           })()}
 
-          {/* ── Editores ── */}
           {safeProdTab==="editores"&&!prodLoading&&(
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",marginBottom:16}}>
               <div style={{fontSize:12,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Gestionar editores</div>
@@ -9413,6 +9022,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               </div>
             </div>
           )}
+
 
           {/* ── Tandas ── */}
           {!prodLoading&&safeProdTab==="tandas"&&(
@@ -9476,8 +9086,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
           )}
 
+
           {/* ── Creativos ── */}
-          {!prodLoading&&safeProdTab==="creativos"&&(()=>{
+          {!prodLoading&&safeProdTab==="lista"&&(()=>{
             const {tanda:fT,editor:fE,estado:fSt,tipo:fTi,etapa:fEt}=prodFilter;
             const CEST={idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},"brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blueBg},"en-produccion":{l:"En producción",c:T.orange||"#f97316",bg:(T.orangeBg||"#f9731615")},entregado:{l:"Entregado",c:T.yellow||"#d97706",bg:(T.yellowBg||"#d9770615")},publicado:{l:"Publicado",c:T.green,bg:T.greenBg},archivado:{l:"Archivado",c:T.textSm,bg:T.surface}};
             const filtered=produccion.creativos.filter(c=>(!fT||c.tanda_id===fT)&&(!fE||c.editor===fE)&&(!fSt||c.estado===fSt)&&(!fTi||c.tipo===fTi)&&(!fEt||c.etapa===fEt));
@@ -9652,6 +9263,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             );
           })()}
 
+
           {/* ── Ideas ── */}
           {!prodLoading&&safeProdTab==="ideas"&&(
             <div>
@@ -9695,7 +9307,130 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
 
         </div>
-      )}
+        )}
+
+        {/* ── TAB EQUIPO ── */}
+        {!loading&&tab==="equipo"&&(
+          <div>
+            {colaboradores.length===0&&(
+              <div style={{textAlign:"center",padding:"60px 0",color:T.textSm}}>
+                <div style={{fontSize:40,marginBottom:12}}>👥</div>
+                <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>Sin colaboradores aún</div>
+                <div style={{fontSize:13,marginBottom:20}}>Agregá community managers, editores o cualquier colaborador</div>
+                <button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Agregar colaborador</button>
+              </div>
+            )}
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {colaboradores.map(c=>{
+                const userTareas = tareas.filter(t=>t.asignadoEmail===c.email);
+                const pending = userTareas.filter(t=>t.estado==="pendiente"||t.estado==="en_proceso").length;
+                const entregado = userTareas.filter(t=>t.estado==="entregado").length;
+                const aprobado = userTareas.filter(t=>t.estado==="aprobado").length;
+                const waColabLink = c.telefono
+                  ? `https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`
+                  : `https://wa.me/?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`;
+                return (
+                  <div key={c._id} style={{background:T.card,border:`1px solid ${entregado>0?((T.orange||"#f97316")+"55"):T.border}`,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:userTareas.length>0?12:0}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                          <div style={{width:36,height:36,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:T.accent,flexShrink:0}}>{c.nombre[0].toUpperCase()}</div>
+                          <div>
+                            <div style={{fontSize:14,fontWeight:600,color:T.text}}>{c.nombre}</div>
+                            {c.rol&&<div style={{fontSize:12,color:T.textSm}}>{c.rol}</div>}
+                          </div>
+                        </div>
+                        <div style={{fontSize:12,color:T.textSm,marginBottom:c.telefono?4:8}}>{c.email}</div>
+                        {c.telefono?(
+                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+                            <span style={{fontSize:11,color:T.textSm}}>📱 {c.telefono}</span>
+                            <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:"#22c55e",textDecoration:"none",fontWeight:600,border:"1px solid #22c55e44",borderRadius:20,padding:"1px 7px",fontFamily:"'Inter',system-ui,sans-serif"}}>WA</a>
+                            <button onClick={()=>{const t2=prompt("Nuevo WhatsApp:",c.telefono||"");if(t2!==null)updateColabTelefono(c._id,t2.trim());}} style={{fontSize:10,color:T.textSm,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
+                          </div>
+                        ):(
+                          <button onClick={()=>{const t2=prompt("WhatsApp (con código de país):");if(t2)updateColabTelefono(c._id,t2.trim());}} style={{fontSize:10,color:T.textSm,background:"transparent",border:"none",cursor:"pointer",padding:"0 0 8px 0",textDecoration:"underline",fontFamily:"'Inter',system-ui,sans-serif",display:"block"}}>+ Agregar WhatsApp</button>
+                        )}
+                        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10,fontSize:12}}>
+                          <span style={{color:T.textMd}}>{userTareas.length} tarea{userTareas.length!==1?"s":""}</span>
+                          {pending>0&&<span style={{color:T.blue}}>· {pending} en curso</span>}
+                          {entregado>0&&<span style={{color:T.orange||"#f97316",fontWeight:600}}>· {entregado} para revisar 📦</span>}
+                          {aprobado>0&&<span style={{color:T.green}}>· {aprobado} aprobada{aprobado!==1?"s":""} ✓</span>}
+                        </div>
+                        <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"7px 10px",display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                          <span style={{fontSize:11,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🔗 {colabLink(c.token)}</span>
+                          <button onClick={()=>copyLink(c.token)} style={{...BtnPrimary(T),fontSize:11,padding:"3px 10px",flexShrink:0}}>Copiar</button>
+                        </div>
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                          <a href={waColabLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,color:"#22c55e",border:`1px solid #22c55e44`}}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                            WA
+                          </a>
+                        </div>
+                        <div style={{marginTop:10}}>
+                          <button onClick={()=>setShowColabPermisos(p=>({...p,[c._id]:!p[c._id]}))}
+                            style={{fontSize:11,color:T.textMd,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}>
+                            🔐 Permisos {showColabPermisos[c._id]?"▲":"▼"}
+                          </button>
+                          {showColabPermisos[c._id]&&(
+                            <div style={{marginTop:8,background:T.surface,borderRadius:8,padding:"10px 12px",border:`1px solid ${T.borderL}`}}>
+                              <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>¿Qué puede ver en su portal?</div>
+                              {[
+                                {key:"verTareas",label:"📋 Ver trabajo completo",desc:"Kanban con todas las tareas asignadas — ideal para CM"},
+                                {key:"verCreativos",label:"🎬 Ver board de Creativos",desc:"Tablero de producción de creativos"},
+                                {key:"verEquipo",label:"👥 Ver estado del equipo",desc:"Tareas de todos, solo lectura, sin datos sensibles"},
+                                {key:"comentarTareas",label:"💬 Comentar en tareas",desc:"Puede dejar notas en sus tareas asignadas"},
+                              ].map(({key,label,desc})=>{
+                                const val=!!(c.permisos||{})[key];
+                                return (
+                                  <div key={key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                                    <div style={{flex:1}}>
+                                      <div style={{fontSize:12,fontWeight:500,color:T.text}}>{label}</div>
+                                      <div style={{fontSize:10,color:T.textSm}}>{desc}</div>
+                                    </div>
+                                    <button onClick={()=>updateColabPermisos(c._id,key,!val)}
+                                      style={{width:36,height:20,borderRadius:10,border:"none",cursor:"pointer",background:val?T.green:"#d1d5db",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
+                                      <div style={{position:"absolute",top:3,left:val?18:3,width:14,height:14,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
+                        <button onClick={()=>{setNtAsignado(c.email);setTab("trabajo");setShowNT(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Tarea</button>
+                        <AsyncButton onClick={()=>regenerateToken(c._id)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔄 Nuevo link</AsyncButton>
+                        <AsyncButton onClick={()=>deleteColab(c._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Eliminar</AsyncButton>
+                      </div>
+                    </div>
+                    {userTareas.length>0&&(
+                      <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12}}>
+                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Tareas asignadas</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                          {userTareas.map(t=>{
+                            const est=ESTADOS[t.estado]||ESTADOS.pendiente;
+                            const days=daysUntil(t.deadline);
+                            return (
+                              <div key={t._id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:T.surface,borderRadius:7,flexWrap:"wrap"}}>
+                                <span style={{flex:1,fontSize:12,fontWeight:500,color:T.text,minWidth:80}}>{t.titulo}</span>
+                                <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,background:est.bg,color:est.color,fontWeight:600,flexShrink:0}}>{est.label}</span>
+                                {t.deadline&&<span style={{fontSize:10,color:days!==null&&days<=3?T.red:T.textSm,flexShrink:0}}>📅 {days!==null?(days<0?"Vencida":days===0?"Hoy":`${days}d`):fmtDate(t.deadline)}</span>}
+                                {(t.correcciones||0)>0&&<span style={{fontSize:10,color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corr.</span>}
+                                <button onClick={()=>{setTab("trabajo");setExpandedTarea(t._id);}} style={{...BtnSecondary(T),fontSize:10,padding:"2px 8px",flexShrink:0}}>Ver</button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>{/* cierre: div padding 20px 24px */}
 
       {/* MODAL Kanban — detalle tarea */}

@@ -241,28 +241,36 @@ export default async function handler(req, res) {
           const colabsMap = {};
           colabsSnap.docs.forEach(d => { colabsMap[d.data().email] = d.data().nombre || d.data().email; });
           const todasTareas = todasSnap.docs.map(d=>({_id:d.id,...d.data()}));
-          // Agrupar por colaborador, excluir datos sensibles (brief, links privados)
           const byColab = {};
           todasTareas.forEach(t => {
             const email = t.asignadoEmail || "sin-asignar";
             const nombre = colabsMap[email] || t.asignadoNombre || email;
             if (!byColab[email]) byColab[email] = { nombre, email, tareas:[] };
             byColab[email].tareas.push({
-              _id: t._id,
-              titulo: t.titulo,
-              estado: t.estado,
-              prioridad: t.prioridad,
-              deadline: t.deadline || null,
-              progresoLabel: t.progresoLabel || "",
-              correcciones: t.correcciones || 0,
-              labels: t.labels || [],
+              _id: t._id, titulo: t.titulo, estado: t.estado,
+              prioridad: t.prioridad, deadline: t.deadline || null,
+              progresoLabel: t.progresoLabel || "", correcciones: t.correcciones || 0,
             });
           });
           equipoTareas = Object.values(byColab).sort((a,b)=>a.nombre.localeCompare(b.nombre));
         } catch(e) { console.error("[getPublicData equipo]", e.message); }
       }
 
-      return res.json({ colab, tareas, creativos, tandas, adminWaPhone, equipoTareas });
+      // Vista trabajo completo — permiso verTareas (CM ve todo el kanban)
+      let todasLasTareas = null;
+      if (colab.permisos?.verTareas) {
+        try {
+          const snap2 = await db.collection("tareas").where("uid","==",colab.uid).get();
+          todasLasTareas = snap2.docs.map(d=>({
+            _id:d.id, titulo:d.data().titulo, estado:d.data().estado,
+            prioridad:d.data().prioridad, deadline:d.data().deadline||null,
+            asignadoNombre:d.data().asignadoNombre||"", asignadoEmail:d.data().asignadoEmail||"",
+            correcciones:d.data().correcciones||0,
+          })).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0));
+        } catch(e) { console.error("[getPublicData verTareas]", e.message); }
+      }
+
+      return res.json({ colab, tareas, creativos, tandas, adminWaPhone, equipoTareas, todasLasTareas });
     }
 
     if (action === "publicUpdateEstado") {
