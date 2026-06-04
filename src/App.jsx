@@ -12604,6 +12604,45 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <div style={{fontSize:12,fontWeight:600,color:T.text}}>{o.nombre||"Consumidor Final"}</div>
                             <div style={{fontSize:11,color:T.textSm}}>{id} · {esMono?"Factura C":(o.doc_tipo==="CUIT"?"Factura A":"Factura B")}{o.doc_nro?" · "+o.doc_tipo+" "+o.doc_nro:""}</div>
                           </div>
+                          {/* Botón ✏️ — corregir doc_tipo/doc_nro inline.
+                              Si el cliente cargó mal el CUIL en la tienda y vos
+                              lo arreglaste en TN/Shopify después de parsear el
+                              Excel, la orden en memoria sigue con el dato viejo.
+                              Este botón te deja corregirlo sin re-parsear. */}
+                          {!esMono && !resultados && (
+                            <button
+                              title="Editar documento del cliente para esta orden"
+                              onClick={async () => {
+                                const cur = (o.doc_nro && o.doc_tipo) ? `${o.doc_tipo}:${o.doc_nro}` : "";
+                                const inp = await appPrompt(
+                                  `Editar documento del cliente para esta orden\n\nFormato: CUIT:20123456789  o  DNI:12345678  (o dejá vacío para Consumidor Final)\n\nValor actual: ${cur || "(vacío)"}`,
+                                  cur
+                                );
+                                if (inp === null || inp === undefined) return;
+                                const raw = String(inp).trim();
+                                if (!raw) {
+                                  setOrdenes(prev => ({ ...prev, [id]: { ...prev[id], doc_tipo: "", doc_nro: "", dni: "" } }));
+                                  return;
+                                }
+                                // Formato esperado TIPO:NRO o solo NRO (auto-detecta CUIT vs DNI por largo)
+                                let tipo, nro;
+                                if (raw.includes(":")) {
+                                  const [t, n] = raw.split(":");
+                                  tipo = t.trim().toUpperCase();
+                                  nro  = (n||"").replace(/\D/g, "");
+                                } else {
+                                  nro  = raw.replace(/\D/g, "");
+                                  tipo = nro.length === 11 ? "CUIT" : "DNI";
+                                }
+                                if (!["CUIT","DNI"].includes(tipo)) return toast("Tipo inválido — usá CUIT o DNI","warning");
+                                if (tipo === "CUIT" && nro.length !== 11) return toast("CUIT debe tener 11 dígitos","warning");
+                                if (tipo === "DNI"  && (nro.length < 7 || nro.length > 8)) return toast("DNI debe tener 7 u 8 dígitos","warning");
+                                setOrdenes(prev => ({ ...prev, [id]: { ...prev[id], doc_tipo: tipo, doc_nro: nro, dni: nro } }));
+                                toast(`Orden ${id} ahora va a ser Factura ${tipo === "CUIT" ? "A" : "B"}`, "success");
+                              }}
+                              style={{background:"transparent",border:"1px solid "+T.borderL,color:T.textMd,borderRadius:6,padding:"4px 8px",fontSize:10,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}
+                            >✏️</button>
+                          )}
                           <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>${o.total.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
                         </div>
                       ))}
@@ -18244,6 +18283,17 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   useEffect(()=>{ if (uid && tab === "items") { loadInvItems(); loadWarehouses(); } /* eslint-disable-next-line */ }, [uid, tab]);
   useEffect(()=>{ if (uid && tab === "historial") loadMovements(); /* eslint-disable-next-line */ }, [uid, tab]);
 
+  // Polling automático cada 60s mientras el usuario está en el tab Historial.
+  // Así no necesita tocar "Refrescar" para ver las ventas que entran nuevas —
+  // las ve solas como mucho 1 minuto después. Limpia el interval al cambiar
+  // de tab o desmontar para no quedar pegado en segundo plano.
+  useEffect(() => {
+    if (!uid || tab !== "historial") return;
+    const id = setInterval(() => { loadMovements(); }, 60_000);
+    return () => clearInterval(id);
+    /* eslint-disable-next-line */
+  }, [uid, tab]);
+
   // ── Auto-sincronizar ventas al entrar a Stock (descuenta stock por órdenes nuevas) ──
   // Throttle: máximo 1 vez por minuto. Si el user navega entre tabs, no spammeamos.
   useEffect(()=>{
@@ -18325,11 +18375,18 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     }));
   }).sort((a,b)=>(a.daysLeft??-1)-(b.daysLeft??-1));
 
-  // KPIs globales
-  const totalUnits  = allProducts.reduce((a,p)=>a+p.units_sold,0);
-  const totalOrders = data?.total_orders||0;
+  // KPIs globales — sumamos Shopify/TN + Mercado Libre cuando ML está conectado.
+  // `data.ml_data` viene del backend con los totales y series temporales de
+  // ML del mismo período. Si no hay ML conectado, ml_data es undefined y los
+  // sumandos quedan en 0.
+  const ml = data?.ml_data || null;
+  const mlUnits   = ml?.total_units   || 0;
+  const mlOrders  = ml?.total_orders  || 0;
+  const mlRevenue = ml?.total_revenue || 0;
+  const totalUnits  = allProducts.reduce((a,p)=>a+p.units_sold,0) + mlUnits;
+  const totalOrders = (data?.total_orders||0) + mlOrders;
   const totalStock  = allProducts.reduce((a,p)=>a+p.stock_total,0);
-  const totalRev    = allProducts.reduce((a,p)=>a+p.revenue,0);
+  const totalRev    = allProducts.reduce((a,p)=>a+p.revenue,0) + mlRevenue;
   const avgRate     = days>0?(totalUnits/days):0;
   const avgDays     = (()=>{const v=allProducts.filter(p=>rate(p)>0).map(p=>dLeft(p.stock_total,rate(p))).filter(d=>d!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;})();
   const kpiEmpty    = allProducts.filter(p=>p.stock_total===0).length;
@@ -18346,8 +18403,23 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const trendUp = trend!==null && parseFloat(trend)>=0;
 
   const platform      = data?.platform||"tiendanube";
-  const platformLabel = platform==="shopify"?"Shopify":"Tienda Nube";
+  const platformBase  = platform==="shopify"?"Shopify":"Tienda Nube";
+  const platformLabel = ml ? `${platformBase} + Mercado Libre` : platformBase;
   const platformColor = platform==="shopify"?"#95bf47":"#3483fa";
+
+  // Helper: combina dos diccionarios { "YYYY-MM-DD": number } sumando los
+  // valores por clave. Lo usamos para mezclar la serie diaria de Shopify/TN
+  // con la de Mercado Libre y mostrar TODO junto en los gráficos.
+  function mergeDaily(a, b) {
+    const out = { ...(a||{}) };
+    for (const k of Object.keys(b||{})) out[k] = (out[k]||0) + (b[k]||0);
+    return out;
+  }
+  function mergeMap(a, b) {
+    const out = { ...(a||{}) };
+    for (const k of Object.keys(b||{})) out[k] = (out[k]||0) + (b[k]||0);
+    return out;
+  }
 
   // ── Donut SVG ──────────────────────────────────────────────────────
   function DonutChart({data:raw, colors, size=150, thickness=32, centerLabel}) {
@@ -18768,16 +18840,27 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               const showingProd   = isAnalisis && analysisMode==="productos";
               const showingRev    = isAnalisis && analysisMode==="revenue";
 
-              const tabDaily     = showingVentas ? (data.daily_orders||{}) : showingRev||isFact ? (data.daily_revenue||{}) : data.daily_series||{};
+              // Series diarias combinadas Shopify/TN + Mercado Libre.
+              const dailyOrdersAll  = mergeDaily(data.daily_orders,  ml?.daily_orders);
+              const dailyRevenueAll = mergeDaily(data.daily_revenue, ml?.daily_revenue);
+              const dailySeriesAll  = mergeDaily(data.daily_series,  ml?.daily);
+              const tabDaily     = showingVentas ? dailyOrdersAll : (showingRev||isFact) ? dailyRevenueAll : dailySeriesAll;
               const tabTotal     = showingVentas ? totalOrders : (isProductos||showingProd) ? totalUnits : totalRev;
               const tabAvg       = Object.keys(tabDaily).length>0 ? (Object.values(tabDaily).reduce((a,b)=>a+b,0)/Math.max(1,Object.keys(tabDaily).length)) : 0;
               const tabTitle     = showingVentas?"Ventas por día":(isProductos||showingProd)?"Productos vendidos por día":"Facturación por día";
               const tabSubtitle  = showingVentas?"Cantidad de órdenes pagadas":(isProductos||showingProd)?"Unidades despachadas":"Revenue generado (ARS)";
               const tabMainVal   = showingVentas?fmt(totalOrders):(isProductos||showingProd)?fmt(totalUnits):fmtARS(totalRev);
               const tabMainLabel = showingVentas?"órdenes totales":(isProductos||showingProd)?"unidades vendidas":"facturado total";
+              // Donut variantes: facturación combina revenue Shopify (con
+              // descuentos reales) + revenue ML por variante. Otros modos
+              // combinan unidades por variante.
               const tabDonutVariante = isFact
-                ? (()=>{const m={};allProducts.forEach(p=>p.variants.forEach(v=>{m[v.nombre]=(m[v.nombre]||0)+v.revenue;}));return m;})()
-                : (data.by_variant||{});
+                ? (()=>{
+                    const m = {};
+                    allProducts.forEach(p=>p.variants.forEach(v=>{m[v.nombre]=(m[v.nombre]||0)+v.revenue;}));
+                    return mergeMap(m, ml?.by_variant_rev);
+                  })()
+                : mergeMap(data.by_variant||{}, ml?.by_variant);
 
               if(!["analisis","productos","facturacion"].includes(tab)) return null;
               const dailyEntries2=Object.entries(tabDaily).sort(([a],[b])=>a.localeCompare(b));
@@ -18878,15 +18961,17 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Distribución geográfica</div>
-                      <DonutChart data={data.by_province||{}} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(data.by_province||{}).length,label:"provincias"}}/>
+                      {(() => { const prov = mergeMap(data.by_province||{}, ml?.by_province); return (
+                      <DonutChart data={prov} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(prov).length,label:"provincias"}}/>
+                      ); })()}
                     </div>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Método de pago</div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Plataforma de cobro</div>
-                      <DonutChart data={data.by_payment||{}} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1","#ec4899"]} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
+                      <DonutChart data={mergeMap(data.by_payment||{}, ml?.by_payment)} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1","#ec4899"]} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
                       <div style={{marginTop:16}}>
                         <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:8}}>Hora del día</div>
-                        <HourChart byHour={data.by_hour||{}} height={50}/>
+                        <HourChart byHour={mergeMap(data.by_hour||{}, ml?.by_hour)} height={50}/>
                       </div>
                     </div>
                   </div>

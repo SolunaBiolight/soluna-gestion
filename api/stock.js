@@ -207,14 +207,14 @@ function processSH(orders) {
 
 // ── Procesar órdenes ML ───────────────────────────────────────────────
 function processML(orders) {
-  const map={}, daily={}, byProv={}, byHour={}, byPayment={}, byVariant={};
+  const map={}, daily={}, dailyRevenue={}, dailyOrders={}, byProv={}, byHour={}, byPayment={}, byVariant={}, byVariantRev={};
   for(const o of orders){
     const dt=o.date_created||"";
     const day=dt.slice(0,10);
     const hour=dt.slice(11,13);
     const prov="Buenos Aires"; // ML no siempre da provincia en search
     const pay=o.payments?.map(p=>p.payment_type).join(",")||"Mercado Pago";
-    let orderUnits=0;
+    let orderUnits=0, orderRev=0;
 
     for(const item of o.order_items||[]){
       const vid=String(item.item?.id||"ml");
@@ -224,14 +224,21 @@ function processML(orders) {
       map[vid].units+=qty;
       map[vid].revenue+=rev;
       orderUnits+=qty;
-      byVariant[item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default"]=(byVariant[item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default"]||0)+qty;
+      orderRev+=rev;
+      const vname=item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default";
+      byVariant[vname]=(byVariant[vname]||0)+qty;
+      byVariantRev[vname]=(byVariantRev[vname]||0)+rev;
     }
-    if(day)  daily[day]  =(daily[day]  ||0)+orderUnits;
+    if(day){
+      daily[day]  =(daily[day]  ||0)+orderUnits;
+      dailyRevenue[day]=(dailyRevenue[day]||0)+orderRev;
+      dailyOrders[day]=(dailyOrders[day]||0)+1;
+    }
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
   }
-  return {map,daily,byProv,byHour,byPayment,byVariant};
+  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,byVariantRev};
 }
 
 function daysLeft(stock, units, days) {
@@ -360,7 +367,19 @@ export default async function handler(req, res) {
         const analytics = processSH(orders);
         const normalized = products.map(p => normSH(p, analytics.map, days));
         const resp = buildResponse("shopify", normalized, analytics, effectiveDays);
-        if (mlAnalytics) resp.ml_data = { daily: mlAnalytics.daily, by_variant: mlAnalytics.byVariant, total_units: Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units, 0) };
+        if (mlAnalytics) resp.ml_data = {
+          daily:         mlAnalytics.daily,         // unidades por día
+          daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día
+          daily_orders:  mlAnalytics.dailyOrders,   // órdenes por día
+          by_variant:    mlAnalytics.byVariant,     // unidades por variante
+          by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante
+          by_province:   mlAnalytics.byProv,
+          by_hour:       mlAnalytics.byHour,
+          by_payment:    mlAnalytics.byPayment,
+          total_units:   Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units, 0),
+          total_revenue: Object.values(mlAnalytics.map).reduce((a,v)=>a+(v.revenue||0), 0),
+          total_orders:  Object.keys(mlAnalytics.dailyOrders||{}).reduce((a,k)=>a+mlAnalytics.dailyOrders[k], 0),
+        };
         return res.status(200).json(resp);
       } else {
         const [products, orders, mlAnalytics] = await Promise.all([
@@ -371,7 +390,19 @@ export default async function handler(req, res) {
         const analytics = processTN(orders);
         const normalized = products.map(p => normTN(p, analytics.map, effectiveDays));
         const resp = buildResponse("tiendanube", normalized, analytics, effectiveDays);
-        if (mlAnalytics) resp.ml_data = { daily: mlAnalytics.daily, by_variant: mlAnalytics.byVariant, total_units: Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units, 0) };
+        if (mlAnalytics) resp.ml_data = {
+          daily:         mlAnalytics.daily,         // unidades por día
+          daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día
+          daily_orders:  mlAnalytics.dailyOrders,   // órdenes por día
+          by_variant:    mlAnalytics.byVariant,     // unidades por variante
+          by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante
+          by_province:   mlAnalytics.byProv,
+          by_hour:       mlAnalytics.byHour,
+          by_payment:    mlAnalytics.byPayment,
+          total_units:   Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units, 0),
+          total_revenue: Object.values(mlAnalytics.map).reduce((a,v)=>a+(v.revenue||0), 0),
+          total_orders:  Object.keys(mlAnalytics.dailyOrders||{}).reduce((a,k)=>a+mlAnalytics.dailyOrders[k], 0),
+        };
         return res.status(200).json(resp);
       }
     }
