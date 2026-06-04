@@ -11161,6 +11161,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [metodoPagoSel, setMetodoPagoSel] = useState("todos"); // "todos" | string literal
   const [montoMin, setMontoMin] = useState("");
   const [montoMax, setMontoMax] = useState("");
+  // Búsqueda libre en pendientes — matchea nombre del cliente, ID de orden
+  // Shopify/TN, número de operación ML, o cualquier substring del email.
+  const [busquedaPend, setBusquedaPend] = useState("");
   const [showManualUpload, setShowManualUpload] = useState(false);
 
   // Totales del mes corriente (fetch independiente del filtro del calendario)
@@ -11493,6 +11496,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     } else {
       params.days = parseInt(periodoModo);
     }
+    // Cache-buster: cada call tiene timestamp único para forzar request fresca
+    // contra TN/Shopify/ML — si el merchant corrigió un CUIL en su tienda,
+    // necesita que el reload vea el dato nuevo, no uno cacheado de CDN.
+    params._t = Date.now();
     setTnLoading(true);
     const d = await api("pending_orders","GET",null,params);
     setTnLoading(false);
@@ -12228,10 +12235,25 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <span style={{fontSize:11,color:T.textSm}}>–</span>
                       <input type="number" placeholder="sin límite" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:90,padding:"6px 8px",fontSize:12}}/>
                     </div>
-                    {(canalesSel.length>0||metodoPagoSel!=="todos"||montoMin||montoMax)&&(
-                      <button onClick={()=>{setCanalesSel([]);setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
+                    {(canalesSel.length>0||metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
+                      <button onClick={()=>{setCanalesSel([]);setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
                         ✕ Limpiar filtros
                       </button>
+                    )}
+                  </div>
+
+                  {/* Buscador libre — matchea nombre del cliente, ID de orden
+                      Shopify/TN/ML, email, o cualquier substring relevante. */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                    <input
+                      type="text"
+                      placeholder="🔍 Buscar por nombre o número de orden (Shopify/TN/ML)…"
+                      value={busquedaPend}
+                      onChange={e=>setBusquedaPend(e.target.value)}
+                      style={{...iS,flex:1,padding:"7px 12px",fontSize:12}}
+                    />
+                    {busquedaPend && (
+                      <button onClick={()=>setBusquedaPend("")} style={{background:"transparent",border:"1px solid "+T.borderL,color:T.textMd,borderRadius:6,padding:"6px 10px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
                     )}
                   </div>
 
@@ -12306,12 +12328,26 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const all = Object.entries(tnData.ordenes);
                     const minN = montoMin === "" ? null : parseFloat(montoMin);
                     const maxN = montoMax === "" ? null : parseFloat(montoMax);
+                    // Tokens del buscador — normalizados a lowercase. Soporta
+                    // múltiples palabras: "juan 1234" matchea órdenes que
+                    // contengan AMBAS en algún campo.
+                    const busqTokens = busquedaPend.trim().toLowerCase().split(/\s+/).filter(Boolean);
                     const items = all.filter(([id, o]) => {
                       if (descartadas.has(String(id))) return false; // excluir descartadas
                       if (canalesSel.length>0 && !canalesSel.includes(o._platform)) return false;
                       if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
                       if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
                       if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
+                      if (busqTokens.length > 0) {
+                        // Concatenamos todos los campos donde puede aparecer
+                        // el match: ID de orden (Shopify/TN/ML), número de
+                        // pedido, nombre del cliente, email, DNI/CUIT.
+                        const hay = [
+                          id, o.numero, o.order_number, o.pack_id,
+                          o.nombre, o.email, o.dni, o.doc_nro
+                        ].filter(Boolean).map(v => String(v).toLowerCase()).join(" ");
+                        for (const t of busqTokens) if (!hay.includes(t)) return false;
+                      }
                       return true;
                     });
                     // Órdenes descartadas (para mostrar en panel separado)
@@ -12604,45 +12640,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <div style={{fontSize:12,fontWeight:600,color:T.text}}>{o.nombre||"Consumidor Final"}</div>
                             <div style={{fontSize:11,color:T.textSm}}>{id} · {esMono?"Factura C":(o.doc_tipo==="CUIT"?"Factura A":"Factura B")}{o.doc_nro?" · "+o.doc_tipo+" "+o.doc_nro:""}</div>
                           </div>
-                          {/* Botón ✏️ — corregir doc_tipo/doc_nro inline.
-                              Si el cliente cargó mal el CUIL en la tienda y vos
-                              lo arreglaste en TN/Shopify después de parsear el
-                              Excel, la orden en memoria sigue con el dato viejo.
-                              Este botón te deja corregirlo sin re-parsear. */}
-                          {!esMono && !resultados && (
-                            <button
-                              title="Editar documento del cliente para esta orden"
-                              onClick={async () => {
-                                const cur = (o.doc_nro && o.doc_tipo) ? `${o.doc_tipo}:${o.doc_nro}` : "";
-                                const inp = await appPrompt(
-                                  `Editar documento del cliente para esta orden\n\nFormato: CUIT:20123456789  o  DNI:12345678  (o dejá vacío para Consumidor Final)\n\nValor actual: ${cur || "(vacío)"}`,
-                                  cur
-                                );
-                                if (inp === null || inp === undefined) return;
-                                const raw = String(inp).trim();
-                                if (!raw) {
-                                  setOrdenes(prev => ({ ...prev, [id]: { ...prev[id], doc_tipo: "", doc_nro: "", dni: "" } }));
-                                  return;
-                                }
-                                // Formato esperado TIPO:NRO o solo NRO (auto-detecta CUIT vs DNI por largo)
-                                let tipo, nro;
-                                if (raw.includes(":")) {
-                                  const [t, n] = raw.split(":");
-                                  tipo = t.trim().toUpperCase();
-                                  nro  = (n||"").replace(/\D/g, "");
-                                } else {
-                                  nro  = raw.replace(/\D/g, "");
-                                  tipo = nro.length === 11 ? "CUIT" : "DNI";
-                                }
-                                if (!["CUIT","DNI"].includes(tipo)) return toast("Tipo inválido — usá CUIT o DNI","warning");
-                                if (tipo === "CUIT" && nro.length !== 11) return toast("CUIT debe tener 11 dígitos","warning");
-                                if (tipo === "DNI"  && (nro.length < 7 || nro.length > 8)) return toast("DNI debe tener 7 u 8 dígitos","warning");
-                                setOrdenes(prev => ({ ...prev, [id]: { ...prev[id], doc_tipo: tipo, doc_nro: nro, dni: nro } }));
-                                toast(`Orden ${id} ahora va a ser Factura ${tipo === "CUIT" ? "A" : "B"}`, "success");
-                              }}
-                              style={{background:"transparent",border:"1px solid "+T.borderL,color:T.textMd,borderRadius:6,padding:"4px 8px",fontSize:10,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}
-                            >✏️</button>
-                          )}
                           <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>${o.total.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
                         </div>
                       ))}
