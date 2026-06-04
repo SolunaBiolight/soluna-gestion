@@ -48,21 +48,42 @@ function extractTNDoc(o) {
 // El truco es: Shopify no tiene campo nativo de DNI, así que reutilizamos el campo "Company"
 // (Empresa) del checkout, que el vendedor renombra a "DNI o CUIT" en las traducciones.
 function extractShopifyDoc(o) {
-  // 1) Campos donde puede venir el doc según configuración del checkout
+  // Buscamos en TODOS los lugares donde Shopify puede tener guardado el doc.
+  // Si el merchant edita el "Customer" desde Shopify Admin (no la orden), el
+  // cambio impacta en customer.default_address y customer.addresses[], NO en
+  // billing/shipping_address del snapshot de la orden vieja. Por eso miramos
+  // ambos lados — preferimos primero el snapshot de la orden, pero cuando no
+  // está, caemos al customer actual.
   const candidates = [
+    // 1) Snapshot de la orden (lo que se cargó al momento del pago)
     o.billing_address?.company,
     o.shipping_address?.company,
     o.customer?.note,
     o.note_attributes?.find(a => /(dni|cuit|cuil|tax)/i.test(a?.name||""))?.value,
+    // 2) Customer actual — refleja ediciones del merchant POST-orden
+    o.customer?.default_address?.company,
+    ...((o.customer?.addresses || []).map(a => a?.company)),
+    // 3) Customer tags estilo "CUIT:20..." / "DNI:12..." que algunas tiendas usan
+    ...((String(o.customer?.tags || "").split(",")).map(t => {
+      const m = t.match(/(?:CUIT|DNI|CUIL|TAX)[:\s]*([\d.\-]+)/i);
+      return m ? m[1] : null;
+    })),
   ];
   for (const c of candidates) {
-    const clean = String(c || "").replace(/[.\-\s]/g, "");
+    if (!c) continue;
+    const clean = String(c).replace(/[.\-\s]/g, "");
     if (/^\d{7,11}$/.test(clean)) return clean;
   }
-  // 2) Fallback: regex sobre la nota completa del pedido
+  // 4) Fallback: regex sobre la nota completa del pedido
   const noteText = String(o.note || "");
   if (noteText) {
     const m = noteText.match(/\b(\d{7,11})\b/);
+    if (m) return m[1];
+  }
+  // 5) Fallback final: regex sobre customer.note
+  const custNote = String(o.customer?.note || "");
+  if (custNote) {
+    const m = custNote.match(/\b(\d{7,11})\b/);
     if (m) return m[1];
   }
   return "";
