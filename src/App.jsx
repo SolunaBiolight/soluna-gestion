@@ -7023,35 +7023,43 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             {
               key:"tn", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : shStore ? "Desvinculá Shopify primero" : "No conectado",
               connected:!!tnStore, disabled:!!shStore && !tnStore, brand:"#2d3a8c",
-              // Logo real Tienda Nube — dos anillos entrelazados (ícono oficial)
-              icon:<svg width="40" height="26" viewBox="0 0 40 26" fill="none"><circle cx="13" cy="13" r="10" stroke="#2d3a8c" strokeWidth="3.5"/><circle cx="27" cy="13" r="10" stroke="#2d3a8c" strokeWidth="3.5"/></svg>,
+              icon:<svg width="52" height="34" viewBox="0 0 52 34" fill="none"><circle cx="17" cy="17" r="14" stroke="#1a2467" strokeWidth="4"/><circle cx="35" cy="17" r="14" stroke="#1a2467" strokeWidth="4"/></svg>,
               onConnect: connectTiendaNube, onDisconnect:()=>disconnectStore("tiendanube"),
             },
             {
               key:"sh", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : tnStore ? "Desvinculá Tienda Nube primero" : "No conectado",
               connected:!!shStore, disabled:!!tnStore && !shStore, brand:"#95BF47",
-              // Logo real Shopify — bolsa verde con S blanca
-              icon:<svg width="26" height="30" viewBox="0 0 26 30" fill="none"><path d="M22 6.8c0-.1-.1-.2-.3-.2l-2.4-.3-1.7-1.7c-.1-.1-.4-.1-.5 0l-1 .3C15.6 3.4 14.6 2 13.1 2h-.2c-.4-.2-.8-.4-1.2-.4C9.1 1.6 7.7 5 7.2 7L4.5 7.8c-.5.1-.5.2-.6.7L2.5 22l12.4 2.2 7-1.6 2.5-13c-.2-.4-.4-.8-.4-.8zM18.5 6.5l-1.4.4v-.3c0-.9-.1-1.6-.3-2.1C17.7 4.7 18.2 5.6 18.5 6.5zM13 2.7c.3.4.5 1.1.5 2.1v.1L11 5.7c.5-1.9 1.4-2.7 2-3zM11.7 2.4c-.6.3-1.4 1.1-1.8 2.8l-2.3.7C8.1 4 9 2.2 11.7 2.4z" fill="#95BF47"/><path d="M22 6.8c0-.1-.1-.2-.3-.2l-2.4-.3-1.7-1.7c-.1-.1-.4-.1-.5 0l-1 .3C15.6 3.4 14.6 2 13.1 2h-.2c-.4-.2-.8-.4-1.2-.4C9.1 1.6 7.7 5 7.2 7L4.5 7.8c-.5.1-.5.2-.6.7L2.5 22l12.4 2.2 7-1.6 2.5-13c-.2-.4-.4-.8-.4-.8zM13 18.5c0 1.5.8 2.4 2 2.4.9 0 1.7-.8 1.7-2.1 0-1.9-1.8-2.3-1.8-3.4 0-.8.4-1.3 1-1.3.7 0 1.1.7 1.1 1.7h1.3c0-1.5-.8-2.8-2.3-2.8-1.3 0-2.2 1-2.2 2.6 0 1.9 1.7 2.3 1.7 3.4 0 .7-.3 1.2-.8 1.2-.8 0-1.2-1-1.2-2.1H13v.4z" fill="#5e8e3e"/><text x="9" y="21" fontSize="11" fontWeight="900" fill="white" fontFamily="Arial">S</text></svg>,
+              icon:<svg width="32" height="36" viewBox="0 0 32 36" fill="none">
+                <path d="M26.8 8c-.1-.7-.7-1.1-1.2-1.2l-3.2-.4-2.2-2.2c-.3-.3-.7-.2-.9-.1l-1.3.4C17.4 3 15.9 1 13.8 1c-.1 0-.3 0-.4.1C13 .7 12.3.4 11.7.4 7.9.4 6 5 5.4 7.8L2 8.8C1.3 9 1.3 9.1 1.1 9.9L-1 27l16.5 3 9.3-2.1 3.3-17.5c-.3-.7-.3-5-.3-5.4zM22.5 7.8l-1.9.5v-.5c0-1.2-.1-2.2-.4-3 1.2.3 2 1.6 2.3 3zm-7.3-5.2c.4.6.7 1.5.7 2.9v.2l-3.6 1c.7-2.7 2-3.9 2.9-4.1zM13.4 3c-.8.4-2 1.6-2.6 4l-3.1 1c.8-3.2 2.5-5.7 5.7-5z" fill="#95BF47"/>
+                <path d="M13.4 3c-.8.4-2 1.6-2.6 4l-3.1 1c.8-3.2 2.5-5.7 5.7-5z" fill="#5e8e3e"/>
+                <path d="M11 22c0 2 1.1 3.3 2.7 3.3 1.3 0 2.4-1.1 2.4-2.9 0-2.6-2.4-3.1-2.4-4.7 0-1.1.6-1.9 1.4-1.9 1 0 1.5 1 1.5 2.3h1.8c0-2.1-1.1-3.8-3.2-3.8-1.7 0-3 1.4-3 3.6 0 2.6 2.4 3.1 2.4 4.7 0 .9-.5 1.6-1.1 1.6-1.1 0-1.6-1.3-1.6-2.9H11v.7z" fill="white"/>
+              </svg>,
               onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
             },
             {
               key:"ml", label:"Mercado Libre", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "No conectado",
               connected:!!mlStore, disabled:false, brand:"#FFE600",
-              // Logo real ML — óvalo amarillo con apretón de manos y borde azul marino
-              icon:<svg width="46" height="32" viewBox="0 0 46 32" fill="none"><ellipse cx="23" cy="16" rx="21" ry="14" fill="#FFE600" stroke="#1a2fa0" strokeWidth="2.5"/><path d="M6 15 C10 10 14 10 18 14 C20 16 21 17 23 17 C25 17 26 16 28 14 C32 10 36 10 40 15" stroke="white" strokeWidth="3" strokeLinecap="round" fill="none"/><path d="M6 17 C10 22 14 22 18 18 C20 16 21 15 23 15 C25 15 26 16 28 18 C32 22 36 22 40 17" stroke="#1a2fa0" strokeWidth="2.5" strokeLinecap="round" fill="none"/></svg>,
+              icon:<svg width="60" height="40" viewBox="0 0 60 40" fill="none">
+                <ellipse cx="30" cy="20" rx="28" ry="18" fill="#FFE600" stroke="#1a2fa0" strokeWidth="2.5"/>
+                <path d="M8 19C13 11 19 11 24 17c2 2.5 3 4 6 4s4-1.5 6-4c5-6 11-6 16 2" stroke="white" strokeWidth="3.5" strokeLinecap="round" fill="none"/>
+                <path d="M8 21C13 29 19 29 24 23c2-2.5 3-4 6-4s4 1.5 6 4c5 6 11 6 16-2" stroke="#1a2fa0" strokeWidth="3" strokeLinecap="round" fill="none"/>
+              </svg>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
             },
             {
               key:"meta", label:"Meta Ads", sub: metaConnected ? "Conectado" : "Facebook + Instagram · No conectado",
               connected:!!metaConnected, disabled:false, brand:"#0082FB",
-              // Logo real Meta — símbolo M infinito en gradiente azul oficial
-              icon:<svg width="46" height="26" viewBox="0 0 70 38" fill="none"><defs><linearGradient id="mg" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#0082FB"/><stop offset="100%" stopColor="#00B2FF"/></linearGradient></defs><path d="M5 19C5 12 8.8 6 14.2 6c3 0 5.6 1.8 8 5.5 1.7 2.6 3.4 6.1 5.3 10.5 1.9-4.4 3.6-7.9 5.3-10.5 2.4-3.7 5-5.5 8-5.5C46.2 6 50 12 50 19s-3.8 13-9.2 13c-3 0-5.6-1.8-8-5.5-1.7-2.6-3.4-6.1-5.3-10.5-1.9 4.4-3.6 7.9-5.3 10.5-2.4 3.7-5 5.5-8 5.5C8.8 32 5 26 5 19zm9.2 0c0 4.8 2.4 8 5.3 8s5.3-3.2 5.3-8-2.4-8-5.3-8-5.3 3.2-5.3 8zm21.3 0c0 4.8 2.4 8 5.3 8s5.3-3.2 5.3-8-2.4-8-5.3-8-5.3 3.2-5.3 8z" fill="url(#mg)"/></svg>,
+              icon:<svg width="56" height="28" viewBox="0 0 56 28" fill="none">
+                <defs><linearGradient id="mg2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#0082FB"/><stop offset="100%" stopColor="#00B2FF"/></linearGradient></defs>
+                <path d="M2 14C2 8.5 5.2 3.5 9.8 3.5c2.6 0 5 1.6 7.2 5 1.6 2.4 3.2 5.8 5 10 1.8-4.2 3.4-7.6 5-10 2.2-3.4 4.6-5 7.2-5C38.8 3.5 42 8.5 42 14s-3.2 10.5-7.8 10.5c-2.6 0-5-1.6-7.2-5-1.6-2.4-3.2-5.8-5-10-1.8 4.2-3.4 7.6-5 10-2.2 3.4-4.6 5-7.2 5C5.2 24.5 2 19.5 2 14zm7.8 0c0 4.5 2.2 7.5 4.8 7.5s4.8-3 4.8-7.5-2.2-7.5-4.8-7.5-4.8 3-4.8 7.5zm19.6 0c0 4.5 2.2 7.5 4.8 7.5s4.8-3 4.8-7.5-2.2-7.5-4.8-7.5-4.8 3-4.8 7.5z" fill="url(#mg2)"/>
+                <path d="M45 9c0-3 1.8-5.5 4-5.5s4 2.5 4 6-1.8 6-4 6c-1.2 0-2.2-.8-3-2" stroke="url(#mg2)" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+              </svg>,
               onConnect:()=>setShowMetaModal(true), onDisconnect:disconnectMeta,
             },
           ].map(p=>{
             return (
               <div key={p.key} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderRadius:10,marginBottom:8,background:p.connected?`${p.brand}0d`:T.bg,border:`1.5px solid ${p.connected?p.brand+"55":T.borderL}`,boxShadow:p.connected?`0 0 0 1px ${p.brand}18, 0 4px 16px ${p.brand}14`:"none",opacity:p.disabled?0.4:1,transition:"all 0.18s ease"}}>
-                <div style={{width:56,height:40,borderRadius:10,background:T.card,border:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,overflow:"hidden"}}>
+                <div style={{width:72,height:48,borderRadius:10,background:"#fff",border:"1px solid rgba(0,0,0,0.08)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,overflow:"hidden"}}>
                   {p.icon}
                 </div>
                 <div style={{flex:1,minWidth:0}}>
