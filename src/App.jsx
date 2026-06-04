@@ -12312,6 +12312,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const someSel = itemsSelectables.some(([id])=>tnSelected[id]);
                     const selectedCount = itemsSelectables.filter(([id])=>tnSelected[id]).length;
                     const selectedTotal = itemsSelectables.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
+                    // Universo total sin facturar (seleccionables + descartadas)
+                    const totalNoBilled = all.filter(([,o])=>!o._billed).length;
+                    const pctDescartadas = totalNoBilled > 0 ? Math.round(itemsDescartados.length / totalNoBilled * 100) : 0;
+                    const pctFacturando  = totalNoBilled > 0 ? Math.round(selectedCount / totalNoBilled * 100) : 0;
                     const badgeColor = (plat) => plat === "shopify" ? "#96BF48" : plat === "mercadolibre" ? "#FFE600" : T.blue;
                     const badgeTextColor = (plat) => plat === "mercadolibre" ? "#333" : "#fff";
                     const fmtFechaHora = (iso) => {
@@ -12367,22 +12371,24 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </div>
                           </div>
 
-                          {/* Descartadas badge */}
+                          {/* Descartadas badge con % */}
                           {itemsDescartados.length>0&&(
                             <button onClick={()=>setShowDescartadas(s=>!s)} style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,gap:5,color:T.textSm,marginLeft:0}}>
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
                               {itemsDescartados.length} descartadas
+                              <span style={{background:T.surface,borderRadius:4,padding:"1px 5px",fontWeight:700,color:T.textMd}}>{pctDescartadas}%</span>
                             </button>
                           )}
 
                           {/* Totales */}
-                          <div style={{marginLeft:"auto",display:"flex",gap:16,alignItems:"center",flexShrink:0}}>
+                          <div style={{marginLeft:"auto",display:"flex",gap:12,alignItems:"center",flexShrink:0}}>
                             {selectedCount>0&&(
-                              <span style={{fontSize:12,fontWeight:700,color:T.accent}}>
+                              <span style={{fontSize:12,fontWeight:700,color:T.accent,display:"flex",alignItems:"center",gap:5}}>
                                 {selectedCount} sel. · $ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}
+                                <span style={{fontSize:11,fontWeight:700,color:"#a78bfa",background:"rgba(124,58,237,0.13)",border:"1px solid rgba(124,58,237,0.4)",borderRadius:5,padding:"1px 6px"}}>{pctFacturando}%</span>
                               </span>
                             )}
-                            <span style={{fontSize:11,color:T.textSm}}>$ {itemsSelectables.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} disponible</span>
+                            <span style={{fontSize:11,color:T.textSm}}>de {totalNoBilled} total</span>
                           </div>
                         </div>
                         <div style={{maxHeight:420,overflowY:"auto"}}>
@@ -12454,10 +12460,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                         {/* Footer con total y botón Facturar */}
                         <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14,paddingTop:14,borderTop:"1px solid "+T.borderL}}>
-                          <div style={{flex:1,fontSize:12,color:T.textSm}}>
-                            {selectedCount>0
-                              ? <><strong style={{color:T.text,fontSize:13}}>{selectedCount}</strong> seleccionadas · <strong style={{color:T.accent}}>$ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</strong></>
-                              : "Ninguna seleccionada"}
+                          <div style={{flex:1,fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            {selectedCount>0 ? (
+                              <>
+                                <strong style={{color:T.text,fontSize:13}}>{selectedCount}</strong>
+                                <span>seleccionadas · <strong style={{color:T.accent}}>$ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</strong></span>
+                                <span style={{fontSize:11,fontWeight:700,color:"#a78bfa",background:"rgba(124,58,237,0.13)",border:"1px solid rgba(124,58,237,0.4)",borderRadius:5,padding:"1px 7px"}}>{pctFacturando}% del total</span>
+                                {itemsDescartados.length>0&&(
+                                  <span style={{fontSize:11,color:T.textSm}}>· {itemsDescartados.length} descartadas (<span style={{fontWeight:600,color:T.orange||"#f97316"}}>{pctDescartadas}%</span>)</span>
+                                )}
+                              </>
+                            ) : "Ninguna seleccionada"}
                           </div>
                           {autoDescartar&&selectedCount>0&&!allSel&&(
                             <span style={{fontSize:11,color:T.orange||"#f97316",display:"flex",alignItems:"center",gap:5}}>
