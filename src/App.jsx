@@ -8374,6 +8374,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setProdLoading(false);
   }
   useEffect(()=>{ loadData(); loadProduccion(); },[]);
+  useEffect(()=>{
+    if(["tareas","equipo","creativos"].includes(sidebarTab)) setTab(sidebarTab);
+  },[sidebarTab]);
 
   function fmtDate(val) {
     if(!val) return "—";
