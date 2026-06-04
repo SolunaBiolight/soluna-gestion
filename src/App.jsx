@@ -508,7 +508,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange",
       subs:[{id:"activos",label:"Activos"},{id:"historial",label:"Historial"},{id:"influencers",label:"Influencers"}]},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
-      subs:[{id:"tareas",label:"Tareas"},{id:"equipo",label:"Equipo"},{id:"creativos",label:"Creativos"},{id:"admin",label:"⚙ Admin"}]},
+      subs:[{id:"tareas",label:"Tareas"},{id:"creativos",label:"Creativos"},{id:"admin",label:"⚙ Admin"}]},
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
       subs:[{id:"pendientes",label:"Pendientes"},{id:"metricas",label:"Métricas"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
@@ -8342,7 +8342,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // ── PRODUCCIÓN CREATIVA ──
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
-  const [prodTab, setProdTab] = useState("dashboard");
+  const [prodTab, setProdTab] = useState("tandas");
+  const [showEditores, setShowEditores] = useState(false);
   const [prodFilter, setProdFilter] = useState({tanda:"",editor:"",estado:"",tipo:"",etapa:""});
   // Modal Tanda
   const [showNT2, setShowNT2] = useState(false);
@@ -8391,7 +8392,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
   useEffect(()=>{ loadData(); loadProduccion(); loadGeneral(); },[]);
   useEffect(()=>{
-    if(["tareas","equipo","creativos","admin"].includes(sidebarTab)) setTab(sidebarTab);
+    if(["tareas","creativos","admin"].includes(sidebarTab)) setTab(sidebarTab);
   },[sidebarTab]);
 
   function fmtDate(val) {
@@ -8848,22 +8849,33 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           )}
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          {/* View mode toggle — only on tareas tab */}
+          {/* Toggle Tareas | Equipo — dentro del tab Tareas */}
+          {(tab==="tareas"||tab==="equipo")&&(
+            <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,border:`1px solid ${T.border}`,gap:1}}>
+              {[["tareas","📋 Tareas"],["equipo","👥 Equipo"]].map(([v,label])=>(
+                <button key={v} onClick={()=>setTab(v)}
+                  style={{padding:"4px 12px",borderRadius:6,border:"none",background:tab===v?T.card:"transparent",color:tab===v?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:tab===v?600:400,boxShadow:tab===v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s",whiteSpace:"nowrap"}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* View mode — solo en tareas (lista de tareas) */}
           {tab==="tareas"&&(
             <div style={{display:"flex",background:T.bg,borderRadius:8,padding:2,border:`1px solid ${T.border}`,gap:1}}>
-              {[["lista","☰"],["kanban","⠿"],["cal","📅"]].map(([v,icon])=>(
-                <button key={v} onClick={()=>setViewMode(v)} title={v==="lista"?"Lista":v==="kanban"?"Kanban":"Calendario"}
+              {[["lista","☰"],["kanban","⠿"]].map(([v,icon])=>(
+                <button key={v} onClick={()=>setViewMode(v)} title={v==="lista"?"Lista":"Kanban"}
                   style={{padding:"3px 8px",borderRadius:6,border:"none",background:viewMode===v?T.card:"transparent",color:viewMode===v?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:600,boxShadow:viewMode===v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s"}}>
                   {icon}
                 </button>
               ))}
             </div>
           )}
-          {tab!=="creativos"&&tab!=="admin"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
-          {tab!=="creativos"&&tab!=="admin"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Nueva tarea</button>}
-          {tab==="creativos"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
-          {tab==="creativos"&&prodTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
+          {tab==="tareas"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",fontWeight:600}}>+ Nueva tarea</button>}
+          {tab==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
           {tab==="creativos"&&prodTab!=="ideas"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
+          {tab==="creativos"&&prodTab==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
+          {tab==="creativos"&&<button onClick={()=>openTanda()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
         </div>
       </div>
 
@@ -9580,90 +9592,96 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         {/* ── TAB CREATIVOS ── */}
         {!loading&&tab==="creativos"&&(
         <div style={{background:T.bg}}>
-          {/* Sub-nav */}
-          <div style={{display:"flex",marginBottom:20}}>
+          {/* Sub-nav simplificado */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
             <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:1}}>
               {[
-              ["dashboard","Dashboard","M18 20V10M12 20V4M6 20v-6"],
-              ["tandas",,"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"],
-              ["creativos",,"M15 10l4.553-2.069A1 1 0 0121 8.855v6.29a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"],
-              ["ideas",,"M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26A7 7 0 0112 2z"],
-              ["editores","Editores","M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"]
-            ].map(([id,label,icon])=>(
-                <button key={id} onClick={()=>setProdTab(id)} style={{padding:"5px 12px",fontSize:12,fontWeight:prodTab===id?600:500,border:"none",borderRadius:8,background:prodTab===id?T.card:"transparent",color:prodTab===id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:prodTab===id?1:0.6}}><path d={icon}/></svg>{label}</button>
+                ["tandas","Tandas","M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"],
+                ["creativos","Lista","M15 10l4.553-2.069A1 1 0 0121 8.855v6.29a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"],
+                ["ideas","Ideas","M9 18h6M10 22h4M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26A7 7 0 0112 2z"],
+              ].map(([id,label,icon])=>(
+                <button key={id} onClick={()=>{setProdTab(id);setShowEditores(false);}} style={{padding:"5px 14px",fontSize:12,fontWeight:prodTab===id&&!showEditores?600:500,border:"none",borderRadius:8,background:prodTab===id&&!showEditores?T.card:"transparent",color:prodTab===id&&!showEditores?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:prodTab===id&&!showEditores?"0 1px 3px rgba(0,0,0,0.12)":"none",transition:"all 0.12s",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{opacity:prodTab===id&&!showEditores?1:0.6}}><path d={icon}/></svg>
+                  {label}
+                </button>
               ))}
             </div>
+            {/* Editores como botón secundario */}
+            <button onClick={()=>setShowEditores(v=>!v)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px",gap:5,color:showEditores?T.accent:T.textSm,border:showEditores?`1px solid ${T.accent}44`:undefined}}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 11-8 0 4 4 0 018 0zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+              Editores
+            </button>
           </div>
 
           {prodLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
 
-          {/* ── Dashboard ── */}
-          {!prodLoading&&prodTab==="dashboard"&&(()=>{
-            const creativosList=produccion?.creativos||[];
-            const editoresList=produccion?.editores||[];
-            const ideasList=produccion?.ideas||[];
-            const total=creativosList.length;
-            const pub=creativosList.filter(c=>c.estado==="publicado").length;
-            const enProd=creativosList.filter(c=>c.estado==="en-produccion").length;
-            const sinCobrar=creativosList.filter(c=>c.estado==="entregado"&&!c.pagado).length;
-            const PEST=[["idea","💡 Idea"],["brief-enviado","📋 Brief enviado"],["en-produccion","🔄 En producción"],["entregado","📦 Entregado"],["publicado","✅ Publicado"],["archivado","🗄 Archivado"]];
+          {/* ── Stats compactos — siempre visibles arriba de todo ── */}
+          {!prodLoading&&!showEditores&&(()=>{
+            const cl=produccion?.creativos||[];
+            const total=cl.length;
+            const pub=cl.filter(c=>c.estado==="publicado").length;
+            const enP=cl.filter(c=>c.estado==="en-produccion").length;
+            const sinC=cl.filter(c=>c.estado==="entregado"&&!c.pagado).length;
+            const ideas=(produccion?.ideas||[]).length;
+            if(!total&&!ideas) return null;
             return (
-              <div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
-                  {[{l:"Total creativos",v:total,c:T.accent,f:{}},{l:"Publicados",v:pub,c:T.green,f:{estado:"publicado"}},{l:"En producción",v:enProd,c:T.blue,f:{estado:"en-produccion"}},{l:"Sin cobrar",v:sinCobrar,c:T.red,f:{estado:"entregado"}}].map(k=>(
-                    <div key={k.l} onClick={()=>{setProdTab("creativos");setProdFilter(f=>({...f,...k.f}));}} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",textAlign:"center",cursor:"pointer",transition:"box-shadow 0.15s"}} onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 14px rgba(0,0,0,0.12)"} onMouseLeave={e=>e.currentTarget.style.boxShadow=""}>
-                      <div style={{fontSize:30,fontWeight:800,color:k.c,lineHeight:1,marginBottom:4}}>{k.v}</div>
-                      <div style={{fontSize:11,color:T.textSm,fontWeight:500}}>{k.l}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 24px"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:16}}>Por estado</div>
-                    <div style={{display:"flex",flexDirection:"column",gap:7}}>
-                      {PEST.map(([est,label])=>{
-                        const cnt=creativosList.filter(c=>c.estado===est).length;
-                        const pct=total>0?Math.round(cnt/total*100):0;
-                        return <div key={est} onClick={()=>{setProdTab("creativos");setProdFilter(f=>({...f,estado:est}));}} style={{cursor:"pointer",padding:"3px 0",borderRadius:4}} title={`Ver creativos: ${label}`}>
-                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
-                            <span style={{color:T.textMd}}>{label}</span>
-                            <span style={{color:T.textSm,fontWeight:600}}>{cnt}</span>
-                          </div>
-                          <div style={{height:4,background:T.surface,borderRadius:2,overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${pct}%`,background:T.accentSolid,borderRadius:2,transition:"width 0.4s"}}/>
-                          </div>
-                        </div>;
-                      })}
-                    </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+                {[
+                  {l:"Total",v:total,c:T.textMd,f:{}},
+                  {l:"Publicados",v:pub,c:T.green,f:{estado:"publicado"}},
+                  {l:"En producción",v:enP,c:T.blue||"#3b82f6",f:{estado:"en-produccion"}},
+                  {l:"Sin cobrar",v:sinC,c:T.red,f:{estado:"entregado"}},
+                  ideas>0&&{l:`${ideas} ideas`,v:null,c:T.yellow||"#d97706",f:null},
+                ].filter(Boolean).map(k=>(
+                  <div key={k.l} onClick={()=>k.f&&(setProdTab("creativos"),setProdFilter(f=>({...f,...k.f})))}
+                    style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:20,background:T.surface,border:`1px solid ${T.borderL}`,cursor:k.f?"pointer":"default",transition:"all 0.12s"}}
+                    onMouseEnter={e=>{if(k.f)e.currentTarget.style.borderColor=k.c+"55";}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor="";}}
+                  >
+                    <span style={{fontSize:13,fontWeight:700,color:k.c}}>{k.v!==null?k.v:""}</span>
+                    <span style={{fontSize:11,color:T.textSm}}>{k.l}</span>
                   </div>
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 24px"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:16}}>Ranking editores</div>
-                    {editoresList.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin editores configurados.</div>}
-                    {editoresList.map(ed=>{
-                      const edC=creativosList.filter(c=>c.editor===ed);
-                      const edPub=edC.filter(c=>c.estado==="publicado").length;
-                      const edTotal=edC.length;
-                      const pct=edTotal>0?Math.round(edPub/edTotal*100):0;
-                      return <div key={ed} style={{marginBottom:12}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                          <span style={{fontSize:12,fontWeight:600,color:T.text}}>{ed}</span>
-                          <span style={{fontSize:10,color:T.textSm}}>{edPub}/{edTotal} pub.</span>
-                        </div>
-                        <div style={{height:5,background:T.surface,borderRadius:3,overflow:"hidden"}}>
-                          <div style={{height:"100%",width:`${pct}%`,background:T.green,borderRadius:3,transition:"width 0.4s"}}/>
-                        </div>
-                      </div>;
-                    })}
-                    {ideasList.length>0&&(
-                      <div style={{marginTop:14,padding:"10px 12px",background:T.yellowBg||T.surface,border:`1px solid ${(T.yellow||"#d97706")+"55"}`,borderRadius:8}}>
-                        <div style={{fontSize:12,color:T.text}}>💡 <strong>{ideasList.length}</strong> idea{ideasList.length!==1?"s":""} en backlog</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                ))}
               </div>
             );
           })()}
+
+          {/* ── Editores (panel desplegable) ── */}
+          {showEditores&&!prodLoading&&(
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Gestionar editores</div>
+              <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+                <input value={nuevoEditor} onChange={e=>setNuevoEditor(e.target.value)} onKeyDown={e=>e.key==="Enter"&&agregarEditor()} placeholder="Nombre del editor…" style={{...iS,fontSize:13,flex:1}}/>
+                <AsyncButton onClick={agregarEditor} style={{...BtnPrimary(T),flexShrink:0}}>+ Agregar</AsyncButton>
+              </div>
+              {(produccion?.editores||[]).length===0&&<div style={{fontSize:12,color:T.textSm,textAlign:"center",padding:"16px 0"}}>Sin editores. Agregá el primero arriba.</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {(produccion?.editores||[]).map(ed=>{
+                  const edC=(produccion?.creativos||[]).filter(c=>c.editor===ed);
+                  const edPub=edC.filter(c=>c.estado==="publicado").length;
+                  const edLink=editorPortalLink(ed);
+                  const waLink=edLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${ed.split(" ")[0]} 👋, acá podés ver tus creativos:\n${edLink}`)}`:null;
+                  return (
+                    <div key={ed} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 14px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:edLink?8:0}}>
+                        <div style={{width:32,height:32,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:T.accent,flexShrink:0}}>{ed[0].toUpperCase()}</div>
+                        <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{ed}</div><div style={{fontSize:11,color:T.textSm}}>{edC.length} creativos · {edPub} publicados</div></div>
+                        <div style={{display:"flex",gap:5}}>
+                          {!edLink?<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"4px 9px"}}>🔗 Link</AsyncButton>:<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 9px"}}>🔄</AsyncButton>}
+                          <AsyncButton onClick={()=>eliminarEditor(ed)} style={{...BtnDanger(T),fontSize:11,padding:"4px 9px"}}>✕</AsyncButton>
+                        </div>
+                      </div>
+                      {edLink&&<div style={{background:T.card,border:`1px solid ${T.borderL}`,borderRadius:7,padding:"6px 10px",display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{fontSize:10,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{edLink}</span>
+                        <button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Link copiado","success"))} style={{...BtnSecondary(T),fontSize:10,padding:"2px 7px"}}>Copiar</button>
+                        {waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:10,padding:"2px 7px",textDecoration:"none",color:"#22c55e",border:"1px solid #22c55e33"}}>WA</a>}
+                      </div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* ── Tandas ── */}
           {!prodLoading&&prodTab==="tandas"&&(
@@ -9945,54 +9963,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
           )}
 
-          {/* ── Editores ── */}
-          {!prodLoading&&prodTab==="editores"&&(
-            <div>
-              <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center"}}>
-                <input value={nuevoEditor} onChange={e=>setNuevoEditor(e.target.value)} onKeyDown={e=>e.key==="Enter"&&agregarEditor()} placeholder="Nombre del editor (ej: Val, Editor IA…)" style={{...iS,fontSize:13,flex:1}}/>
-                <AsyncButton onClick={agregarEditor} style={{...BtnPrimary(T),flexShrink:0}}>+ Agregar</AsyncButton>
-              </div>
-              {produccion.editores.length===0&&<div style={{textAlign:"center",padding:"40px 0",color:T.textSm,fontSize:13}}>Sin editores. Agregá el primero arriba.</div>}
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {produccion.editores.map(ed=>{
-                  const edC=produccion.creativos.filter(c=>c.editor===ed);
-                  const edPub=edC.filter(c=>c.estado==="publicado").length;
-                  const edLink=editorPortalLink(ed);
-                  const waLink=edLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${ed.split(" ")[0]} 👋, acá podés ver tus creativos asignados en Growith:\n${edLink}`)}`:null;
-                  return (
-                    <div key={ed} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:edLink?10:0}}>
-                        <div style={{width:36,height:36,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.accent,flexShrink:0}}>
-                          {ed[0].toUpperCase()}
-                        </div>
-                        <div style={{flex:1}}>
-                          <div style={{fontSize:14,fontWeight:600,color:T.text}}>{ed}</div>
-                          <div style={{fontSize:11,color:T.textSm}}>{edC.length} creativo{edC.length!==1?"s":""} · {edPub} publicado{edPub!==1?"s":""}</div>
-                        </div>
-                        <div style={{display:"flex",gap:6,flexShrink:0}}>
-                          {!edLink
-                            ? <AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>🔗 Generar link</AsyncButton>
-                            : <AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔄 Regenerar</AsyncButton>
-                          }
-                          <AsyncButton onClick={()=>eliminarEditor(ed)} style={{...BtnDanger(T),fontSize:11,padding:"5px 10px"}}>Eliminar</AsyncButton>
-                        </div>
-                      </div>
-                      {edLink&&(
-                        <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}}>
-                          <span style={{fontSize:11,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🔗 {edLink}</span>
-                          <button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Link copiado 📋","success"))} style={{...BtnSecondary(T),fontSize:11,padding:"3px 9px",flexShrink:0}}>Copiar</button>
-                          {waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"3px 9px",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:3,color:"#22c55e",border:"1px solid #22c55e44",flexShrink:0}}>
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                            WA
-                          </a>}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* Editores ahora accesible via showEditores — no renderiza como sub-tab */}
         </div>
       )}
       </div>{/* cierre: div padding 20px 24px */}
