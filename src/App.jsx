@@ -12312,10 +12312,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const someSel = itemsSelectables.some(([id])=>tnSelected[id]);
                     const selectedCount = itemsSelectables.filter(([id])=>tnSelected[id]).length;
                     const selectedTotal = itemsSelectables.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
-                    // Universo total sin facturar (seleccionables + descartadas)
-                    const totalNoBilled = all.filter(([,o])=>!o._billed).length;
-                    const pctDescartadas = totalNoBilled > 0 ? Math.round(itemsDescartados.length / totalNoBilled * 100) : 0;
-                    const pctFacturando  = totalNoBilled > 0 ? Math.round(selectedCount / totalNoBilled * 100) : 0;
+                    // Universo = todas las órdenes del período (billed + pendientes + descartadas)
+                    const totalOrdenes = all.length;
+                    const pctDescartadas = totalOrdenes > 0 ? Math.round(itemsDescartados.length / totalOrdenes * 100) : 0;
+                    const pctFacturando  = totalOrdenes > 0 ? Math.round(selectedCount / totalOrdenes * 100) : 0;
                     const badgeColor = (plat) => plat === "shopify" ? "#96BF48" : plat === "mercadolibre" ? "#FFE600" : T.blue;
                     const badgeTextColor = (plat) => plat === "mercadolibre" ? "#333" : "#fff";
                     const fmtFechaHora = (iso) => {
@@ -12388,7 +12388,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <span style={{fontSize:11,fontWeight:700,color:"#a78bfa",background:"rgba(124,58,237,0.13)",border:"1px solid rgba(124,58,237,0.4)",borderRadius:5,padding:"1px 6px"}}>{pctFacturando}%</span>
                               </span>
                             )}
-                            <span style={{fontSize:11,color:T.textSm}}>de {totalNoBilled} total</span>
+                            <span style={{fontSize:11,color:T.textSm}}>de {totalOrdenes} órdenes</span>
                           </div>
                         </div>
                         <div style={{maxHeight:420,overflowY:"auto"}}>
