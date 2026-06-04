@@ -7014,78 +7014,56 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
         {/* Tiendas */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Tiendas conectadas</div>
-          <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>
-            Conectá <strong style={{color:T.text}}>una</strong> plataforma de e-commerce (TN <em>o</em> Shopify), <strong style={{color:T.text}}>Mercado Libre</strong> y <strong style={{color:T.text}}>Meta Ads</strong> (Facebook + Instagram) para el módulo de análisis y optimización de campañas.
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Integraciones</div>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:16,lineHeight:1.5}}>
+            Conectá <strong style={{color:T.text}}>una</strong> plataforma de e-commerce (TN <em>o</em> Shopify), <strong style={{color:T.text}}>Mercado Libre</strong> y <strong style={{color:T.text}}>Meta Ads</strong> para análisis y optimización de campañas.
           </div>
-          {/* Tienda Nube */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderBottom:`1px solid ${T.borderL}`,gap:10,opacity:shStore && !tnStore ? 0.5 : 1}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-              <div style={{width:36,height:36,borderRadius:8,background:"#00a0e3",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>☁️</div>
-              <div style={{minWidth:0}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Tienda Nube</div>
-                {tnStore
-                  ? <div style={{fontSize:11,color:T.green,marginTop:1}}>✓ {tnStore.storeName||tnStore.storeId}</div>
-                  : shStore
-                    ? <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Desvinculá Shopify primero</div>
-                    : <div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
+          {/* helper para cada fila */}
+          {[
+            {
+              key:"tn", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : shStore ? "Desvinculá Shopify primero" : "No conectado",
+              connected:!!tnStore, disabled:!!shStore && !tnStore, brand:"#00a0e3",
+              icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 19a2 2 0 01-2-2V9a2 2 0 012-2h1.17A5 5 0 0117 9h1a2 2 0 012 2v6a2 2 0 01-2 2H6z" fill="#fff" opacity=".9"/><path d="M12 3a5 5 0 015 5H7a5 5 0 015-5z" fill="#fff"/></svg>,
+              onConnect: connectTiendaNube, onDisconnect:()=>disconnectStore("tiendanube"),
+            },
+            {
+              key:"sh", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : tnStore ? "Desvinculá Tienda Nube primero" : "No conectado",
+              connected:!!shStore, disabled:!!tnStore && !shStore, brand:"#96BF48",
+              icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M15.5 5.5c-.3-1.5-1.4-2.5-2.8-2.5-.3 0-.7.1-1 .2C11.3 2.5 10.6 2 9.7 2c-1.5 0-3 1.2-3.7 3.1-.5.1-.8.2-1 .3C4.2 5.8 4 6.3 4 6.8l1 11.7C5.1 19.4 6 20 7 20h10c1 0 1.9-.6 2-1.5l1-11.7c0-.5-.2-1-.8-1.3-.2-.1-.7-.2-1.3-.3-.4-1.8-1.5-3-2.4-3.7zm-3.3-1.3c.8 0 1.4.4 1.7 1.1-.5.1-1 .2-1.6.3 0-.6-.1-1-.1-1.4zm-2.4 0c.4 0 .7.1 1 .3 0 .3.1.7.1 1.2-.6-.1-1.1-.2-1.5-.3.4-.7 1-1.2 1.4-1.2zM9 16.5l-1.5-8 1.5.5 1 4.5 1-4.5 1.5-.5-1.5 8H9z" fill="#fff"/></svg>,
+              onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
+            },
+            {
+              key:"ml", label:"Mercado Libre", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "No conectado",
+              connected:!!mlStore, disabled:false, brand:"#FFE600",
+              icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 4c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm0 12c-2.67 0-5.01-1.33-6.41-3.36C6.96 12.93 9.38 12 12 12s5.04.93 6.41 2.64C17.01 16.67 14.67 18 12 18z" fill="#333"/></svg>,
+              onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
+            },
+            {
+              key:"meta", label:"Meta Ads", sub: metaConnected ? "Conectado" : "Facebook + Instagram · No conectado",
+              connected:!!metaConnected, disabled:false, brand:"#1877F2",
+              icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M13.4 20h-2.8C5.6 20 2 16.4 2 11.8 2 7.4 5.3 4 9.5 4c2 0 3.9.8 5.2 2.2.4-.8 1.2-1.4 2.2-1.4 1.4 0 2.6 1.1 2.6 2.5 0 .4-.1.8-.3 1.1.5.8.8 1.8.8 2.8 0 4.8-3 8.8-6.6 8.8zm-1.9-2h1.9c2.7 0 4.6-3.3 4.6-6.8 0-.9-.2-1.7-.6-2.4l-.4-.7.6-.5c.1-.1.2-.3.2-.5 0-.3-.3-.5-.6-.5-.2 0-.4.1-.5.3l-.7 1.2-1-1.1C14.5 5.9 13 5.1 11.3 5.1 7.8 5.1 4 8 4 11.8c0 3.7 2.8 6.2 7.5 6.2z"/></svg>,
+              onConnect:()=>setShowMetaModal(true), onDisconnect:disconnectMeta,
+            },
+          ].map(p=>{
+            const brandFg = p.brand === "#FFE600" ? "#1a1a1a" : "#fff";
+            return (
+              <div key={p.key} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 14px",borderRadius:10,marginBottom:8,background:p.connected?`${p.brand}10`:T.surface,border:`1.5px solid ${p.connected?p.brand+"44":T.borderL}`,boxShadow:p.connected?`0 0 0 1px ${p.brand}18, 0 4px 16px ${p.brand}14`:"none",opacity:p.disabled?0.45:1,transition:"all 0.18s ease"}}>
+                <div style={{width:44,height:44,borderRadius:12,background:p.brand,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:p.connected?`0 4px 14px ${p.brand}55`:`0 2px 6px ${p.brand}33`}}>
+                  {p.icon}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>{p.label}</div>
+                  {p.connected
+                    ? <div style={{fontSize:11,fontWeight:600,color:"#4ade80",marginTop:2,display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 6px #22c55e",display:"inline-block"}}/>✓ {p.sub}</div>
+                    : <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{p.sub}</div>}
+                </div>
+                {p.connected
+                  ? <button onClick={p.onDisconnect} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Desvincular</button>
+                  : <button onClick={p.onConnect} disabled={p.disabled} style={{fontSize:12,padding:"7px 14px",borderRadius:8,border:`1.5px solid ${p.brand}88`,background:`${p.brand}18`,color:p.brand==="FFE600"?"#1a1a1a":p.brand,fontWeight:600,cursor:p.disabled?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s ease",boxShadow:`0 0 0 1px ${p.brand}18, 0 4px 14px ${p.brand}22`,flexShrink:0}}>Conectar</button>
+                }
               </div>
-            </div>
-            {tnStore
-              ?<button onClick={()=>disconnectStore("tiendanube")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
-              :<button onClick={connectTiendaNube} disabled={!!shStore} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0,opacity:shStore?0.4:1,cursor:shStore?"not-allowed":"pointer"}}>Conectar</button>
-            }
-          </div>
-          {/* Shopify */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",gap:10,opacity:tnStore && !shStore ? 0.5 : 1}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-              <div style={{width:36,height:36,borderRadius:8,background:"#96BF48",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🛍️</div>
-              <div style={{minWidth:0}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Shopify</div>
-                {shStore
-                  ? <div style={{fontSize:11,color:T.green,marginTop:1}}>✓ {shStore.storeName||shStore.shop}</div>
-                  : tnStore
-                    ? <div style={{fontSize:11,color:T.textSm,marginTop:1}}>Desvinculá Tienda Nube primero</div>
-                    : <div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
-              </div>
-            </div>
-            {shStore
-              ?<button onClick={()=>disconnectStore("shopify")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
-              :<button onClick={()=>setShowShopifyModal(true)} disabled={!!tnStore} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0,opacity:tnStore?0.4:1,cursor:tnStore?"not-allowed":"pointer"}}>Conectar</button>
-            }
-          </div>
-          {/* Mercado Libre */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderTop:`1px solid ${T.borderL}`,gap:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-              <div style={{width:36,height:36,borderRadius:8,background:"#FFE600",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🛒</div>
-              <div style={{minWidth:0}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Mercado Libre</div>
-                {mlStore
-                  ? <div style={{fontSize:11,color:T.green,marginTop:1}}>✓ {mlStore.nickname||mlStore.userId}</div>
-                  : <div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
-              </div>
-            </div>
-            {mlStore
-              ?<button onClick={()=>disconnectStore("mercadolibre")} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
-              :<button onClick={()=>setShowMLModal(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Conectar</button>
-            }
-          </div>
-          {/* Meta Ads */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderTop:`1px solid ${T.borderL}`,gap:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-              <div style={{width:36,height:36,borderRadius:8,background:"#1877F2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0,color:"#fff",fontWeight:800}}>f</div>
-              <div style={{minWidth:0}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.text}}>Meta Ads <span style={{fontSize:10,color:T.textSm,fontWeight:400}}>· Facebook + Instagram</span></div>
-                {metaConnected
-                  ? <div style={{fontSize:11,color:T.green,marginTop:1}}>✓ Conectada</div>
-                  : <div style={{fontSize:11,color:T.textSm,marginTop:1}}>No conectado</div>}
-              </div>
-            </div>
-            {metaConnected
-              ?<button onClick={disconnectMeta} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Desvincular</button>
-              :<button onClick={()=>setShowMetaModal(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px",flexShrink:0}}>Conectar</button>
-            }
-          </div>
+            );
+          })}
         </div>
 
         {/* Troubleshooting: ya conectado pero sin publicaciones en Stock */}
