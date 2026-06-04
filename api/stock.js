@@ -214,17 +214,25 @@ function processML(orders) {
     const hour=dt.slice(11,13);
     const prov="Buenos Aires"; // ML no siempre da provincia en search
     const pay=o.payments?.map(p=>p.payment_type).join(",")||"Mercado Pago";
-    let orderUnits=0, orderRev=0;
+    let orderUnits=0;
+
+    // Revenue de la orden = total_amount (el monto que el vendedor cobra,
+    // después de descuentos pero antes de comisiones MP). Equivale al
+    // "subtotal_price - tax" de Shopify procesado en processSH. Si no viene
+    // total_amount (raro), fallback al sum de unit_price.
+    let orderRev = parseFloat(o.total_amount);
+    if (!isFinite(orderRev) || orderRev <= 0) {
+      orderRev = (o.order_items||[]).reduce((s, it) => s + parseFloat(it.unit_price||0) * (parseInt(it.quantity)||0), 0);
+    }
 
     for(const item of o.order_items||[]){
       const vid=String(item.item?.id||"ml");
       const qty=parseInt(item.quantity)||0;
-      const rev=parseFloat(item.unit_price)*qty;
+      const rev=parseFloat(item.unit_price)*qty; // per-variant a precio de lista
       if(!map[vid]) map[vid]={units:0,revenue:0,nombre:item.item?.title};
       map[vid].units+=qty;
       map[vid].revenue+=rev;
       orderUnits+=qty;
-      orderRev+=rev;
       const vname=item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
       byVariantRev[vname]=(byVariantRev[vname]||0)+rev;
@@ -369,15 +377,17 @@ export default async function handler(req, res) {
         const resp = buildResponse("shopify", normalized, analytics, effectiveDays);
         if (mlAnalytics) resp.ml_data = {
           daily:         mlAnalytics.daily,         // unidades por día
-          daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día
+          daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día (NETO de la orden)
           daily_orders:  mlAnalytics.dailyOrders,   // órdenes por día
           by_variant:    mlAnalytics.byVariant,     // unidades por variante
-          by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante
+          by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante (bruto)
           by_province:   mlAnalytics.byProv,
           by_hour:       mlAnalytics.byHour,
           by_payment:    mlAnalytics.byPayment,
           total_units:   Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units, 0),
-          total_revenue: Object.values(mlAnalytics.map).reduce((a,v)=>a+(v.revenue||0), 0),
+          // total_revenue NETO — suma de dailyRevenue (que usa o.total_amount).
+          // Coincide con lo que ML paga al vendedor antes de su comisión.
+          total_revenue: Object.values(mlAnalytics.dailyRevenue||{}).reduce((a,b)=>a+b,0),
           total_orders:  Object.keys(mlAnalytics.dailyOrders||{}).reduce((a,k)=>a+mlAnalytics.dailyOrders[k], 0),
         };
         return res.status(200).json(resp);
@@ -392,15 +402,17 @@ export default async function handler(req, res) {
         const resp = buildResponse("tiendanube", normalized, analytics, effectiveDays);
         if (mlAnalytics) resp.ml_data = {
           daily:         mlAnalytics.daily,         // unidades por día
-          daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día
+          daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día (NETO de la orden)
           daily_orders:  mlAnalytics.dailyOrders,   // órdenes por día
           by_variant:    mlAnalytics.byVariant,     // unidades por variante
-          by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante
+          by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante (bruto)
           by_province:   mlAnalytics.byProv,
           by_hour:       mlAnalytics.byHour,
           by_payment:    mlAnalytics.byPayment,
           total_units:   Object.values(mlAnalytics.map).reduce((a,v)=>a+v.units, 0),
-          total_revenue: Object.values(mlAnalytics.map).reduce((a,v)=>a+(v.revenue||0), 0),
+          // total_revenue NETO — suma de dailyRevenue (que usa o.total_amount).
+          // Coincide con lo que ML paga al vendedor antes de su comisión.
+          total_revenue: Object.values(mlAnalytics.dailyRevenue||{}).reduce((a,b)=>a+b,0),
           total_orders:  Object.keys(mlAnalytics.dailyOrders||{}).reduce((a,k)=>a+mlAnalytics.dailyOrders[k], 0),
         };
         return res.status(200).json(resp);
