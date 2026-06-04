@@ -162,11 +162,11 @@ function KPI({T, label, value, sub, color, icon, accent, onClick, compact, loadi
 function Btn({T, variant="primary", size="md", icon, children, onClick, disabled, style={}, ...rest}) {
   const [hov, setHov] = React.useState(false);
   const variants = {
-    primary:   {bg:"linear-gradient(135deg, #6d28d9, #4338ca)", color:"#fff", border:"transparent", shadow:"0 2px 16px #6d28d955", shadowHov:"0 6px 28px #6d28d977"},
+    primary:   {bg:"rgba(124,58,237,0.13)", color:"#a78bfa", border:"rgba(124,58,237,0.55)", shadow:"0 0 0 1px #7c3aed15, 0 4px 20px #7c3aed20", shadowHov:"0 0 0 1px #7c3aed28, 0 6px 28px #7c3aed40"},
     secondary: {bg:"transparent", color:T.textMd, border:T.border, shadow:"none", shadowHov:`0 2px 12px rgba(0,0,0,0.12)`},
     ghost:     {bg:"transparent", color:T.textMd, border:"transparent", shadow:"none", shadowHov:"none"},
-    danger:    {bg:T.redBg, color:T.red, border:T.red+"44", shadow:`0 2px 12px ${T.red}22`, shadowHov:`0 4px 20px ${T.red}44`},
-    success:   {bg:"linear-gradient(135deg,#16a34a,#15803d)", color:"#fff", border:"transparent", shadow:`0 2px 16px #16a34a55`, shadowHov:`0 6px 28px #16a34a77`},
+    danger:    {bg:T.redBg, color:T.red, border:T.red+"55", shadow:`0 0 0 1px ${T.red}15, 0 4px 16px ${T.red}22`, shadowHov:`0 0 0 1px ${T.red}28, 0 6px 24px ${T.red}40`},
+    success:   {bg:"rgba(22,163,74,0.13)", color:"#4ade80", border:"rgba(22,163,74,0.55)", shadow:"0 0 0 1px #16a34a15, 0 4px 20px #16a34a20", shadowHov:"0 0 0 1px #16a34a28, 0 6px 28px #16a34a40"},
   };
   const sizes = {
     sm: {padding:"5px 10px", fontSize:DS.font.sm, gap:5},
@@ -929,6 +929,9 @@ function AppPromptHost({ T }) {
   const closeWith = (val) => _appPromptClose(val);
   const accentColor = danger ? "#ef4444" : isConfirm ? "#6366f1" : "#3b82f6";
   const accentBg = danger ? "linear-gradient(135deg,#ef4444,#dc2626)" : isConfirm ? "linear-gradient(135deg,#6366f1,#4f46e5)" : "linear-gradient(135deg,#3b82f6,#2563eb)";
+  const accentTint = danger ? "rgba(239,68,68,0.13)" : isConfirm ? "rgba(99,102,241,0.13)" : "rgba(59,130,246,0.13)";
+  const accentBorder = danger ? "rgba(239,68,68,0.55)" : isConfirm ? "rgba(99,102,241,0.55)" : "rgba(59,130,246,0.55)";
+  const accentText = danger ? "#fca5a5" : isConfirm ? "#a5b4fc" : "#93c5fd";
   const iconPath = danger
     ? <><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>
     : isConfirm
@@ -961,7 +964,7 @@ function AppPromptHost({ T }) {
               <button onClick={() => closeWith(isPromptInput ? null : false)} style={{flex:1,padding:"11px 16px",fontSize:13,fontWeight:600,border:`1.5px solid ${T.border}`,borderRadius:11,background:T.surface,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>{s.cancelLabel}</button>
             )}
             <button autoFocus={!isPromptInput} onClick={() => closeWith(isPromptInput ? inputVal : true)}
-              style={{flex:1,padding:"11px 16px",fontSize:13,fontWeight:700,border:"none",borderRadius:11,background:accentBg,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:`0 4px 14px ${accentColor}44`,transition:"all 0.15s"}}>{s.okLabel}</button>
+              style={{flex:1,padding:"11px 16px",fontSize:13,fontWeight:700,border:`1.5px solid ${accentBorder}`,borderRadius:11,background:accentTint,color:accentText,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:`0 0 0 1px ${accentColor}15, 0 4px 20px ${accentColor}28`,transition:"all 0.15s"}}>{s.okLabel}</button>
           </div>
         </div>
       </div>
@@ -1736,10 +1739,10 @@ function StatusIcon({type="success", size=64}) {
   );
 }
 
-function BtnPrimary(T) { return {border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:"linear-gradient(135deg, #6d28d9, #4338ca)",color:"#fff",letterSpacing:"0.01em",boxShadow:"0 2px 16px #6d28d955"}; }
+function BtnPrimary(T) { return {border:"1.5px solid rgba(124,58,237,0.55)",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:"rgba(124,58,237,0.13)",color:"#a78bfa",letterSpacing:"0.01em",boxShadow:"0 0 0 1px #7c3aed15, 0 4px 20px #7c3aed20"}; }
 function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:"transparent",color:T.textMd}; }
-function BtnDanger(T) { return {border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red,boxShadow:`0 2px 12px ${T.red}22`}; }
-function BtnPurple(T) { return {border:`1px solid ${T.purple}44`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple,boxShadow:`0 2px 12px ${T.purple}22`}; }
+function BtnDanger(T) { return {border:`1.5px solid ${T.red}55`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red,boxShadow:`0 0 0 1px ${T.red}15, 0 4px 16px ${T.red}22`}; }
+function BtnPurple(T) { return {border:`1.5px solid ${T.purple}55`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple,boxShadow:`0 0 0 1px ${T.purple}15, 0 4px 16px ${T.purple}22`}; }
 // Botón ✕ estándar para cerrar modales y drawers
 function ModalCloseBtn({T, onClick, disabled}) {
   return (
@@ -6952,9 +6955,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <AppTopbar T={T} section="Configuración" onHome={onBack}>
-        <button onClick={onToggleDark} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.textSm}}>{darkMode?"☀︎ Modo claro":"◑ Modo oscuro"}</button>
-      </AppTopbar>
+      <AppTopbar T={T} section="Configuración" onHome={onBack}/>
 
       <div style={{maxWidth:960,margin:"0 auto",padding:"20px 24px 80px"}}>
 
