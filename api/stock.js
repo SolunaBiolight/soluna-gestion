@@ -109,45 +109,12 @@ async function shOrders(shop, tok, days, since, until) {
 }
 
 // ── ML Fetch ──────────────────────────────────────────────────────────
-async function mlOrders(sellerId, tok, days, sinceDateISO, untilDateISO) {
-  // Rango exacto: si tenemos sinceDate/untilDate (que vienen del request)
-  // los usamos directo. Si no, fallback a "hace N días desde 00:00 ARG hasta
-  // 23:59 ARG de hoy".
-  //
-  // Bug previo: si days=1 y no había sinceDate, calculábamos
-  // `Date.now() - 1*86400000` que da "hace exactamente 24 horas" en UTC →
-  // capturaba parte del día anterior + parte del actual → ÓRDENES DUPLICADAS
-  // entre dos días. Cuando el merchant pedía "Hoy" (19 ventas), el fetch
-  // traía 19 + ~40 del día anterior = 59 órdenes que después dailyOrders
-  // sumaba todas como "total_orders".
-  let fromISO, toISO;
-  if (sinceDateISO) {
-    fromISO = sinceDateISO;
-    toISO   = untilDateISO || new Date().toISOString();
-  } else {
-    // Default: rango [hoy - N días, ahora] en zona AR.
-    const nowArg = new Date();
-    const dToday = new Date(nowArg.toISOString().slice(0,10) + "T23:59:59-03:00");
-    const dFrom  = new Date(dToday.getTime() - (days - 1) * 86400000);
-    fromISO = dFrom.toISOString().slice(0,10) + "T00:00:00-03:00";
-    toISO   = dToday.toISOString();
-  }
-  // ML pagina de a 50; iteramos con offset hasta 2000 (40 páginas).
-  const all=[];
-  for (let offset = 0; offset < 2000; offset += 50) {
-    try {
-      const r = await fetch(
-        `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${encodeURIComponent(fromISO)}&order.date_created.to=${encodeURIComponent(toISO)}&limit=50&offset=${offset}&sort=date_desc`,
-        { headers: ML_H(tok) }
-      );
-      if (!r.ok) break;
-      const d = await r.json();
-      const batch = d.results || [];
-      all.push(...batch);
-      if (batch.length < 50) break;
-    } catch (_) { break; }
-  }
-  return all;
+async function mlOrders(sellerId, tok, days) {
+  const since=new Date(Date.now()-days*86400000).toISOString().slice(0,10)+"T00:00:00.000-03:00";
+  const r=await fetch(`https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${since}&limit=50`,{headers:ML_H(tok)});
+  if(!r.ok) return [];
+  const d=await r.json();
+  return d.results||[];
 }
 
 // ── Procesar órdenes TN ───────────────────────────────────────────────
@@ -206,16 +173,18 @@ function processSH(orders) {
 
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
 
-    // Revenue por orden = total_price (lo que pagó el cliente, incluye IVA y
-    // envío, descuenta refunds parciales). Mismo criterio que /api/orders
-    // ?tab=stats que se usa en Home — así el Home y el Stock muestran la
-    // misma facturación. Antes acá restábamos tax y devolvía un "neto" que
-    // no coincidía con ningún otro dashboard.
+    // Revenue NETO por orden (matchea con Escalafy y dashboards de AR típicos):
+    // subtotal_price - total_tax - refunds.
+    // En Argentina, las tiendas suelen tener "precios con IVA incluido": subtotal_price
+    // viene con IVA dentro. total_tax es la porción de IVA. Restando obtenemos el neto real.
+    // Si la tienda factura sin IVA (precios netos), total_tax = 0 y queda igual.
     const refundedAmount = (o.refunds || []).reduce((s, r) => {
       const ti = (r.transactions || []).reduce((t, x) => t + (parseFloat(x.amount) || 0), 0);
       return s + ti;
     }, 0);
-    const orderRevenue = Math.max(0, (parseFloat(o.total_price) || 0) - refundedAmount);
+    const subtotal = parseFloat(o.subtotal_price) || 0;
+    const tax = parseFloat(o.total_tax) || 0;
+    const orderRevenue = Math.max(0, subtotal - tax - refundedAmount);
 
     for(const item of o.line_items||[]){
       const vid=String(item.variant_id||item.product_id);
@@ -336,44 +305,28 @@ function buildResponse(platform, products, analytics, days) {
   };
 }
 
-// ─── Rendimiento / Dashboard Financiero (consolidado desde rendimiento.js) ───
-const META_V = "v21.0";
-const META_BASE = `https://graph.facebook.com/${META_V}`;
-async function metaGet(path, params, token) {
-  const url = new URL(`${META_BASE}/${path}`);
-  url.searchParams.set("access_token", token);
-  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
-  const r = await fetch(url.toString());
-  const j = await r.json();
-  if (j.error) throw new Error(`Meta API: ${j.error.message}`);
-  return j;
-}
-async function fetchMetaDailySpend(cfg, since, until) {
+// ─── Helpers consolidados desde rendimiento.js (Vercel Hobby 12 functions) ───
+async function rendFetchMetaDailySpend(cfg, since, until) {
   if (!cfg?.access_token || !cfg.ad_account_id) return {};
   try {
-    const res = await metaGet(`${cfg.ad_account_id}/insights`, {
-      level: "account",
-      fields: "spend,actions,action_values,purchase_roas,impressions,clicks,reach",
-      "time_range[since]": since,
-      "time_range[until]": until,
-      time_increment: "1",
-      action_attribution_windows: JSON.stringify(["1d_click","1d_view"]),
-      limit: "90",
-    }, cfg.access_token);
+    const url = new URL(`https://graph.facebook.com/v21.0/${cfg.ad_account_id}/insights`);
+    url.searchParams.set("access_token", cfg.access_token);
+    url.searchParams.set("level", "account");
+    url.searchParams.set("fields", "spend,impressions,clicks");
+    url.searchParams.set("time_range[since]", since);
+    url.searchParams.set("time_range[until]", until);
+    url.searchParams.set("time_increment", "1");
+    url.searchParams.set("limit", "90");
+    const r = await fetch(url.toString());
+    const j = await r.json();
+    if (j.error) return {};
     const byDate = {};
-    for (const row of (res.data || [])) {
-      const date = row.date_start;
-      if (!date) continue;
-      byDate[date] = {
-        spend:       parseFloat(row.spend) || 0,
-        roas:        parseFloat((row.purchase_roas || [])[0]?.value) || 0,
-        impressions: parseInt(row.impressions) || 0,
-        clicks:      parseInt(row.clicks) || 0,
-        reach:       parseInt(row.reach) || 0,
-      };
+    for (const row of (j.data || [])) {
+      const date = row.date_start; if (!date) continue;
+      byDate[date] = { spend: parseFloat(row.spend)||0, impressions: parseInt(row.impressions)||0, clicks: parseInt(row.clicks)||0 };
     }
     return byDate;
-  } catch (e) { return {}; }
+  } catch (_) { return {}; }
 }
 function rendBuildRows(since, until, dailyRevenue, dailyOrders, metaDailySpend, commission) {
   const allDates = new Set([...Object.keys(dailyRevenue), ...Object.keys(dailyOrders), ...Object.keys(metaDailySpend)]);
@@ -392,21 +345,15 @@ function rendBuildRows(since, until, dailyRevenue, dailyOrders, metaDailySpend, 
       ROAS: adSpend > 0 ? parseFloat((revenue/adSpend).toFixed(4)) : 0,
       "True ROAS": adSpend > 0 ? parseFloat((netRevenue/adSpend).toFixed(4)) : 0,
       CPA: orders > 0 ? parseFloat((adSpend/orders).toFixed(2)) : 0,
-      _impressions: metaDailySpend[date]?.impressions || 0,
-      _clicks: metaDailySpend[date]?.clicks || 0,
     };
   });
 }
 function rendComputeTotals(rows) {
   const t = rows.reduce((acc, r) => ({
-    orders: acc.orders + (r["Ordenes > $0"] || 0),
-    revenue: acc.revenue + (r.Revenue || 0),
-    adSpend: acc.adSpend + (r["Ad Spend"] || 0),
-    netRevenue: acc.netRevenue + (r["Net Revenue"] || 0),
+    orders: acc.orders + (r["Ordenes > $0"] || 0), revenue: acc.revenue + (r.Revenue || 0),
+    adSpend: acc.adSpend + (r["Ad Spend"] || 0), netRevenue: acc.netRevenue + (r["Net Revenue"] || 0),
     profit: acc.profit + (r.Profit || 0),
-    impressions: acc.impressions + (r._impressions || 0),
-    clicks: acc.clicks + (r._clicks || 0),
-  }), {orders:0,revenue:0,adSpend:0,netRevenue:0,profit:0,impressions:0,clicks:0});
+  }), {orders:0,revenue:0,adSpend:0,netRevenue:0,profit:0});
   return {
     ...t,
     roas: t.adSpend > 0 ? t.revenue / t.adSpend : 0,
@@ -421,6 +368,78 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods","GET, POST, OPTIONS");
   if(req.method==="OPTIONS") return res.status(200).end();
 
+  // action=daily_metrics (consolidado desde rendimiento.js)
+  if (req.query.action === "daily_metrics") {
+    try {
+      const { uid: u2, days: daysQ, date_from: df2, date_to: dt2 } = req.query;
+      if (!u2) return res.status(400).json({ error: "Falta uid" });
+      const daysN = parseInt(daysQ) || 30;
+      const nowDate = new Date();
+      const until = dt2 || nowDate.toISOString().slice(0,10);
+      const since = df2 || new Date(nowDate - daysN * 86400000).toISOString().slice(0,10);
+      const periodMs = new Date(until+"T23:59:59") - new Date(since+"T00:00:00");
+      const prevUntilD = new Date(new Date(since+"T00:00:00") - 86400000);
+      const prevSinceD = new Date(prevUntilD - periodMs);
+      const prevSince = prevSinceD.toISOString().slice(0,10);
+      const prevUntil = prevUntilD.toISOString().slice(0,10);
+
+      const dbR = initAdmin();
+      const userSnap = await dbR.collection("users").doc(u2).get();
+      const userData = userSnap.data() || {};
+      const stores2 = userData.stores || [];
+      const hasML2 = stores2.some(s => s.type === "meli");
+      const commission = parseFloat(userData.rendimientoCommission) || (hasML2 ? 0.10 : 0.03);
+
+      async function fetchStockRange(from, to) {
+        try {
+          const u = new URL(`https://${req.headers.host}/api/stock`);
+          u.searchParams.set("uid", u2); u.searchParams.set("action", "products");
+          u.searchParams.set("date_from", from); u.searchParams.set("date_to", to);
+          const r = await fetch(u.toString(), { headers: { host: req.headers.host } });
+          if (!r.ok) return { dailyRevenue:{}, dailyOrders:{} };
+          const j = await r.json();
+          return { dailyRevenue: j.daily_revenue || {}, dailyOrders: j.daily_orders || {} };
+        } catch(_) { return { dailyRevenue:{}, dailyOrders:{} }; }
+      }
+
+      const metaAccountsSnap = await dbR.collection("users").doc(u2).collection("meta_accounts").get();
+      const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
+      const metaCfg = metaAccounts[0] || null;
+
+      const [curr, prev, metaCurr, metaPrev] = await Promise.all([
+        fetchStockRange(since, until),
+        fetchStockRange(prevSince, prevUntil),
+        metaCfg ? rendFetchMetaDailySpend(metaCfg, since, until) : Promise.resolve({}),
+        metaCfg ? rendFetchMetaDailySpend(metaCfg, prevSince, prevUntil) : Promise.resolve({}),
+      ]);
+
+      const rows = rendBuildRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
+      const prevRows = rendBuildRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
+      const totals = rendComputeTotals(rows);
+      const prevTotals = rendComputeTotals(prevRows);
+
+      return res.json({
+        rows, prevRows, totals, prevTotals, since, until, prevSince, prevUntil,
+        meta: { hasMetaData: Object.keys(metaCurr).length > 0, hasStoreData: Object.keys(curr.dailyRevenue).length > 0, commission, metaAccountsCount: metaAccounts.length },
+      });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  if (req.query.action === "save_config" && req.method === "POST") {
+    try {
+      const { uid: u3 } = req.query;
+      if (!u3) return res.status(400).json({ error: "Falta uid" });
+      const body = await new Promise(resolve => {
+        let d = ""; req.on("data", c => d += c); req.on("end", () => resolve(JSON.parse(d || "{}")));
+      });
+      const dbS = initAdmin();
+      await dbS.collection("users").doc(u3).update({ rendimientoCommission: parseFloat(body.commission) || 0.03 });
+      return res.json({ ok: true });
+    } catch(e) { return res.status(500).json({ error: e.message }); }
+  }
+
   const {uid, action, days:dRaw, date_from, date_to}=req.query;
   const days=parseInt(dRaw)||30;
   // Si hay fechas personalizadas, calcular días equivalentes
@@ -428,37 +447,14 @@ export default async function handler(req, res) {
   const effectiveDays = hasCustomDate
     ? Math.max(1, Math.round((new Date(date_to)-new Date(date_from))/86400000)+1)
     : days;
-  // Rango en zona horaria Argentina (UTC-3). Para "Hoy" (days=1) queremos
-  // SOLO el día corriente — antes el endpoint hacia "Date.now() - 1*86400000"
-  // que es "hace 24 horas" en UTC, y terminaba capturando parte del día
-  // anterior (ej: a las 10am, traia desde ayer 10am hasta ahora →
-  // duplicaba órdenes entre dos días).
-  //
-  // Calculamos el día ARG actual y le restamos (effectiveDays - 1) días para
-  // armar el inicio del rango. Until siempre es 23:59 del día actual ARG.
-  function argTodayParts() {
-    const argFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" });
-    const parts = argFmt.formatToParts(new Date());
-    const y = parts.find(p=>p.type==="year").value;
-    const m = parts.find(p=>p.type==="month").value;
-    const d = parts.find(p=>p.type==="day").value;
-    return `${y}-${m}-${d}`;
-  }
-  const argToday = argTodayParts(); // "YYYY-MM-DD" en ARG
-  let sinceDate, untilDate;
-  if (hasCustomDate) {
-    sinceDate = `${String(date_from).slice(0,10)}T00:00:00-03:00`;
-    untilDate = `${String(date_to).slice(0,10)}T23:59:59-03:00`;
-  } else {
-    // Restar (effectiveDays - 1) días al día ARG actual
-    const [yy, mm, dd] = argToday.split("-").map(Number);
-    const startUtc = new Date(Date.UTC(yy, mm - 1, dd) - (effectiveDays - 1) * 86400000);
-    const startY = startUtc.getUTCFullYear();
-    const startM = String(startUtc.getUTCMonth() + 1).padStart(2, "0");
-    const startD = String(startUtc.getUTCDate()).padStart(2, "0");
-    sinceDate = `${startY}-${startM}-${startD}T00:00:00-03:00`;
-    untilDate = `${argToday}T23:59:59-03:00`;
-  }
+  // Formato EXACTO que usa Facturador y sí funciona con Shopify/TN:
+  // "2026-05-22T00:00:00-03:00" (offset AR, no UTC Z).
+  const sinceDate = hasCustomDate
+    ? `${String(date_from).slice(0,10)}T00:00:00-03:00`
+    : new Date(Date.now() - effectiveDays * 86400000).toISOString();
+  const untilDate = hasCustomDate
+    ? `${String(date_to).slice(0,10)}T23:59:59-03:00`
+    : null;
 
   if(!uid) return res.status(401).json({ error: "uid requerido" });
 
@@ -489,76 +485,6 @@ export default async function handler(req, res) {
   }
   if(!accessToken) return res.status(403).json({ error: "Tienda no conectada" });
 
-  // ── action=daily_metrics (consolidado desde rendimiento.js para Vercel
-  //    Hobby 12 functions limit). Devuelve KPIs (Revenue + Meta Ads + Profit).
-  if (action === "daily_metrics") {
-    try {
-      const daysQ = parseInt(dRaw) || 30;
-      const nowDate = new Date();
-      const until = date_to || nowDate.toISOString().slice(0,10);
-      const since = date_from || new Date(nowDate - daysQ * 86400000).toISOString().slice(0,10);
-      const periodMs = new Date(until+"T23:59:59") - new Date(since+"T00:00:00");
-      const prevUntilD = new Date(new Date(since+"T00:00:00") - 86400000);
-      const prevSinceD = new Date(prevUntilD - periodMs);
-      const prevSince = prevSinceD.toISOString().slice(0,10);
-      const prevUntil = prevUntilD.toISOString().slice(0,10);
-
-      const userSnap = await dbRef.collection("users").doc(uid).get();
-      const userData = userSnap.data() || {};
-      const stores2 = userData.stores || [];
-      const hasML2 = stores2.some(s => s.type === "meli");
-      const commission = parseFloat(userData.rendimientoCommission) || (hasML2 ? 0.10 : 0.03);
-
-      async function fetchStockRange(from, to) {
-        try {
-          const u = new URL(`https://${req.headers.host}/api/stock`);
-          u.searchParams.set("uid", uid);
-          u.searchParams.set("action", "products");
-          u.searchParams.set("date_from", from);
-          u.searchParams.set("date_to", to);
-          const r = await fetch(u.toString(), { headers: { host: req.headers.host } });
-          if (!r.ok) return { dailyRevenue:{}, dailyOrders:{} };
-          const j = await r.json();
-          return { dailyRevenue: j.daily_revenue || {}, dailyOrders: j.daily_orders || {} };
-        } catch(_) { return { dailyRevenue:{}, dailyOrders:{} }; }
-      }
-
-      const metaAccountsSnap = await dbRef.collection("users").doc(uid).collection("meta_accounts").get();
-      const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
-      const metaCfg = metaAccounts[0] || null;
-
-      const [curr, prev, metaCurr, metaPrev] = await Promise.all([
-        fetchStockRange(since, until),
-        fetchStockRange(prevSince, prevUntil),
-        metaCfg ? fetchMetaDailySpend(metaCfg, since, until) : Promise.resolve({}),
-        metaCfg ? fetchMetaDailySpend(metaCfg, prevSince, prevUntil) : Promise.resolve({}),
-      ]);
-
-      const rows = rendBuildRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
-      const prevRows = rendBuildRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
-      const totals = rendComputeTotals(rows);
-      const prevTotals = rendComputeTotals(prevRows);
-
-      return res.json({
-        rows, prevRows, totals, prevTotals,
-        since, until, prevSince, prevUntil,
-        meta: { hasMetaData: Object.keys(metaCurr).length > 0, hasStoreData: Object.keys(curr.dailyRevenue).length > 0, commission, metaAccountsCount: metaAccounts.length },
-      });
-    } catch (e) {
-      return res.status(500).json({ error: e.message });
-    }
-  }
-
-  if (action === "save_config" && req.method === "POST") {
-    try {
-      const body = await new Promise(resolve => {
-        let d = ""; req.on("data", c => d += c); req.on("end", () => resolve(JSON.parse(d || "{}")));
-      });
-      await dbRef.collection("users").doc(uid).update({ rendimientoCommission: parseFloat(body.commission) || 0.03 });
-      return res.json({ ok: true });
-    } catch(e) { return res.status(500).json({ error: e.message }); }
-  }
-
   try{
     if(action==="products"){
       // Helper: fetch ML data en paralelo (si está conectado).
@@ -566,9 +492,7 @@ export default async function handler(req, res) {
       const fetchML = async () => {
         if (!mlSellerId || !mlToken) return null;
         try {
-          // Pasar el MISMO rango exacto que usamos para Shopify/TN, así
-          // las series diarias y los totales matchean perfecto entre canales.
-          const mlOrd = await mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate);
+          const mlOrd = await mlOrders(mlSellerId, mlToken, days);
           return processML(mlOrd);
         } catch (e) { return null; }
       };
