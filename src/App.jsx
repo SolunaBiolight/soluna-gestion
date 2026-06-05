@@ -202,6 +202,92 @@ function Btn({T, variant="primary", size="md", icon, children, onClick, disabled
   );
 }
 
+// ─── Google Drive Picker ─────────────────────────────────────────────────────
+const GDRIVE_API_KEY    = import.meta.env.VITE_GOOGLE_API_KEY    || "";
+const GDRIVE_CLIENT_ID  = import.meta.env.VITE_GOOGLE_CLIENT_ID  || "";
+let _gapiReady = false, _gisReady = false, _tokenClient = null;
+
+function _loadDriveScripts() {
+  return new Promise(resolve => {
+    let gapiDone = _gapiReady, gisDone = _gisReady;
+    const tryResolve = () => { if (gapiDone && gisDone) resolve(); };
+    if (!_gapiReady) {
+      const s = document.createElement("script");
+      s.src = "https://apis.google.com/js/api.js";
+      s.onload = () => { window.gapi.load("picker", () => { _gapiReady = true; gapiDone = true; tryResolve(); }); };
+      document.head.appendChild(s);
+    }
+    if (!_gisReady) {
+      const s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client";
+      s.onload = () => { _gisReady = true; gisDone = true; tryResolve(); };
+      document.head.appendChild(s);
+    }
+    if (_gapiReady && _gisReady) resolve();
+  });
+}
+
+async function openDrivePicker(onSelect) {
+  if (!GDRIVE_API_KEY || !GDRIVE_CLIENT_ID) {
+    alert("Drive no configurado. Verificá las variables VITE_GOOGLE_API_KEY y VITE_GOOGLE_CLIENT_ID.");
+    return;
+  }
+  await _loadDriveScripts();
+  const showPicker = (token) => {
+    const view = new window.google.picker.DocsView()
+      .setIncludeFolders(false)
+      .setSelectFolderEnabled(false);
+    const sharedView = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
+      .setEnableDrives(true)
+      .setIncludeFolders(false);
+    new window.google.picker.PickerBuilder()
+      .setTitle("Seleccionar archivo de Drive")
+      .addView(view)
+      .addView(sharedView)
+      .setOAuthToken(token)
+      .setDeveloperKey(GDRIVE_API_KEY)
+      .setCallback(data => {
+        if (data.action === window.google.picker.Action.PICKED && data.docs?.[0]) {
+          const d = data.docs[0];
+          onSelect({ name: d.name, url: d.url, id: d.id, mimeType: d.mimeType });
+        }
+      })
+      .build()
+      .setVisible(true);
+  };
+  if (!_tokenClient) {
+    _tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: GDRIVE_CLIENT_ID,
+      scope: "https://www.googleapis.com/auth/drive.readonly",
+      callback: r => { if (r.access_token) showPicker(r.access_token); },
+    });
+  }
+  _tokenClient.requestAccessToken({ prompt: "" });
+}
+
+function DriveBtn({ T, onPick, size = "sm" }) {
+  const [loading, setLoading] = React.useState(false);
+  const pad = size === "sm" ? "4px 8px" : "6px 12px";
+  const fs  = size === "sm" ? 11 : 12;
+  return (
+    <button
+      title="Elegir desde Google Drive"
+      onClick={async () => {
+        setLoading(true);
+        await openDrivePicker(f => { onPick(f); setLoading(false); });
+        // fallback: si el usuario cierra el picker sin elegir
+        setTimeout(() => setLoading(false), 8000);
+      }}
+      style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif" }}>
+      {loading
+        ? <Spinner size={10} color={T.accent} />
+        : <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg> Drive</>
+      }
+    </button>
+  );
+}
+// ─── fin Google Drive Picker ──────────────────────────────────────────────────
+
 function DSEmpty({T, icon="📭", title, subtitle, action}) {
   return (
     <Card T={T} padding="xl" style={{textAlign:"center"}}>
@@ -9564,9 +9650,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {ntLinks.map((l,i)=>(
                   <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={l.name} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
-                      placeholder="Nombre (ej: Brief PDF)" style={{...iS,fontSize:12,width:130,flexShrink:0}}/>
+                      placeholder="Nombre (ej: Brief PDF)" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
                       placeholder="https://..." style={{...iS,fontSize:12,flex:1}}/>
+                    <DriveBtn T={T} onPick={f=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:f.url,name:x.name||f.name}:x))}/>
                     <button onClick={()=>setNtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
@@ -9643,9 +9730,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {etLinks.map((l,i)=>(
                   <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={l.name} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
-                      placeholder="Nombre" style={{...iS,fontSize:12,width:120,flexShrink:0}}/>
+                      placeholder="Nombre" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
                       placeholder="https://..." style={{...iS,fontSize:12,flex:1}}/>
+                    <DriveBtn T={T} onPick={f=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:f.url,name:x.name||f.name}:x))}/>
                     <button onClick={()=>setEtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
@@ -9717,8 +9805,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {tRecursos.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin recursos. Podés agregar links a Drive, PDFs, WeTransfer, etc.</div>}
                 {tRecursos.map((r,i)=>(
                   <div key={r.id||i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
-                    <input value={r.nombre} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))} placeholder="Nombre" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
+                    <input value={r.nombre} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))} placeholder="Nombre" style={{...iS,fontSize:12,width:100,flexShrink:0}}/>
                     <input value={r.url} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))} placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
+                    <DriveBtn T={T} onPick={f=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,url:f.url,nombre:x.nombre||f.name}:x))}/>
                     <button onClick={()=>setTRecursos(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
