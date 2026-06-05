@@ -64,49 +64,6 @@ export default async function handler(req, res) {
   const { action, uid } = req.query;
   if (!uid) return res.status(401).json({ error: "Falta uid" });
 
-  // action=coupons — consolidado desde coupons.js (Vercel Hobby 12 functions limit)
-  if (action === "coupons") {
-    try {
-      const { desde, hasta } = req.query;
-      const db2 = initAdmin();
-      const snap = await db2.collection("users").doc(uid).get();
-      const tnStore = (snap.data()?.stores || []).find(s => s.type === "tiendanube");
-      if (!tnStore?.accessToken || !tnStore?.storeId) return res.status(403).json({ error: "Tienda no conectada" });
-      const headers = { 'Authentication': `bearer ${tnStore.accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
-      const tz = "-0300";
-      const desdeISO = desde ? `${desde}T00:00:00${tz}` : null;
-      const hastaISO = hasta ? `${hasta}T23:59:59${tz}` : null;
-      let allOrders = [];
-      for (let page = 1; page <= 25; page++) {
-        let url = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?payment_status=paid&per_page=200&page=${page}`;
-        if (desdeISO) url += `&created_at_min=${encodeURIComponent(desdeISO)}`;
-        if (hastaISO) url += `&created_at_max=${encodeURIComponent(hastaISO)}`;
-        const r = await fetch(url, { headers });
-        if (!r.ok) break;
-        const data = await r.json();
-        if (!Array.isArray(data) || data.length === 0) break;
-        allOrders = allOrders.concat(data);
-        if (data.length < 200) break;
-      }
-      const couponMap = {};
-      for (const o of allOrders) {
-        const coupons = Array.isArray(o.coupon) ? o.coupon : [];
-        for (const c of coupons) {
-          const code = (c.code || "").toUpperCase().trim();
-          if (!code) continue;
-          if (!couponMap[code]) couponMap[code] = { code, type: c.type || "percentage", value: c.value || "0", usosPeriodo: 0, ventasPeriodo: 0, descuentoPeriodo: 0 };
-          couponMap[code].usosPeriodo++;
-          couponMap[code].ventasPeriodo += parseFloat(o.total || 0);
-          couponMap[code].descuentoPeriodo += parseFloat(o.discount_coupon || 0);
-        }
-      }
-      const result = Object.values(couponMap).sort((a, b) => b.usosPeriodo - a.usosPeriodo);
-      return res.status(200).json({ coupons: result, totalPedidosAnalizados: allOrders.length, periodo: { desde: desdeISO, hasta: hastaISO } });
-    } catch(e) {
-      return res.status(500).json({ error: e.message });
-    }
-  }
-
   const db = initAdmin();
 
   try {
