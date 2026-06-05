@@ -536,6 +536,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
           : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?"2.2":"1.8"} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.65}}><path d={item.icon}/></svg>
         }
         {!collapsed&&<span style={{flex:1}}>{item.label}</span>}
+        {!collapsed&&item.subs?.length>0&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.4,transition:`transform 0.18s ${DS.ease}`,transform:active?"rotate(90deg)":"rotate(0deg)"}}><path d="M9 18l6-6-6-6"/></svg>}
         {!collapsed&&item.count>0&&<span style={{fontSize:10,fontWeight:DS.w.bold,padding:"1px 6px",borderRadius:DS.r.full,background:badgeColor+(active?"33":"22"),color:badgeColor,lineHeight:1.5,minWidth:18,textAlign:"center"}}>{item.count>99?"99+":item.count}</span>}
         {!collapsed&&isConnected!==undefined&&<span style={{width:7,height:7,borderRadius:"50%",background:isConnected?T.green:T.textSm,flexShrink:0,opacity:0.8}} title={isConnected?"Conectado":"Sin conectar"}/>}
         {collapsed&&item.count>0&&<span style={{position:"absolute",top:6,right:8,width:6,height:6,borderRadius:DS.r.full,background:badgeColor}}/>}
