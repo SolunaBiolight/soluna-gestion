@@ -109,16 +109,35 @@ async function shOrders(shop, tok, days, since, until) {
 }
 
 // ── ML Fetch ──────────────────────────────────────────────────────────
-async function mlOrders(sellerId, tok, days) {
-  // ML pagina de a 50 órdenes por request; antes traíamos solo 50 totales,
-  // perdiendo ventas cuando había más. Ahora iteramos con offset hasta 2000
-  // (40 páginas), igual que /api/orders?tab=stats que sí pagina bien.
-  const since=new Date(Date.now()-days*86400000).toISOString().slice(0,10)+"T00:00:00.000-03:00";
+async function mlOrders(sellerId, tok, days, sinceDateISO, untilDateISO) {
+  // Rango exacto: si tenemos sinceDate/untilDate (que vienen del request)
+  // los usamos directo. Si no, fallback a "hace N días desde 00:00 ARG hasta
+  // 23:59 ARG de hoy".
+  //
+  // Bug previo: si days=1 y no había sinceDate, calculábamos
+  // `Date.now() - 1*86400000` que da "hace exactamente 24 horas" en UTC →
+  // capturaba parte del día anterior + parte del actual → ÓRDENES DUPLICADAS
+  // entre dos días. Cuando el merchant pedía "Hoy" (19 ventas), el fetch
+  // traía 19 + ~40 del día anterior = 59 órdenes que después dailyOrders
+  // sumaba todas como "total_orders".
+  let fromISO, toISO;
+  if (sinceDateISO) {
+    fromISO = sinceDateISO;
+    toISO   = untilDateISO || new Date().toISOString();
+  } else {
+    // Default: rango [hoy - N días, ahora] en zona AR.
+    const nowArg = new Date();
+    const dToday = new Date(nowArg.toISOString().slice(0,10) + "T23:59:59-03:00");
+    const dFrom  = new Date(dToday.getTime() - (days - 1) * 86400000);
+    fromISO = dFrom.toISOString().slice(0,10) + "T00:00:00-03:00";
+    toISO   = dToday.toISOString();
+  }
+  // ML pagina de a 50; iteramos con offset hasta 2000 (40 páginas).
   const all=[];
   for (let offset = 0; offset < 2000; offset += 50) {
     try {
       const r = await fetch(
-        `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${encodeURIComponent(since)}&limit=50&offset=${offset}&sort=date_desc`,
+        `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${encodeURIComponent(fromISO)}&order.date_created.to=${encodeURIComponent(toISO)}&limit=50&offset=${offset}&sort=date_desc`,
         { headers: ML_H(tok) }
       );
       if (!r.ok) break;
@@ -329,14 +348,37 @@ export default async function handler(req, res) {
   const effectiveDays = hasCustomDate
     ? Math.max(1, Math.round((new Date(date_to)-new Date(date_from))/86400000)+1)
     : days;
-  // Formato EXACTO que usa Facturador y sí funciona con Shopify/TN:
-  // "2026-05-22T00:00:00-03:00" (offset AR, no UTC Z).
-  const sinceDate = hasCustomDate
-    ? `${String(date_from).slice(0,10)}T00:00:00-03:00`
-    : new Date(Date.now() - effectiveDays * 86400000).toISOString();
-  const untilDate = hasCustomDate
-    ? `${String(date_to).slice(0,10)}T23:59:59-03:00`
-    : null;
+  // Rango en zona horaria Argentina (UTC-3). Para "Hoy" (days=1) queremos
+  // SOLO el día corriente — antes el endpoint hacia "Date.now() - 1*86400000"
+  // que es "hace 24 horas" en UTC, y terminaba capturando parte del día
+  // anterior (ej: a las 10am, traia desde ayer 10am hasta ahora →
+  // duplicaba órdenes entre dos días).
+  //
+  // Calculamos el día ARG actual y le restamos (effectiveDays - 1) días para
+  // armar el inicio del rango. Until siempre es 23:59 del día actual ARG.
+  function argTodayParts() {
+    const argFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" });
+    const parts = argFmt.formatToParts(new Date());
+    const y = parts.find(p=>p.type==="year").value;
+    const m = parts.find(p=>p.type==="month").value;
+    const d = parts.find(p=>p.type==="day").value;
+    return `${y}-${m}-${d}`;
+  }
+  const argToday = argTodayParts(); // "YYYY-MM-DD" en ARG
+  let sinceDate, untilDate;
+  if (hasCustomDate) {
+    sinceDate = `${String(date_from).slice(0,10)}T00:00:00-03:00`;
+    untilDate = `${String(date_to).slice(0,10)}T23:59:59-03:00`;
+  } else {
+    // Restar (effectiveDays - 1) días al día ARG actual
+    const [yy, mm, dd] = argToday.split("-").map(Number);
+    const startUtc = new Date(Date.UTC(yy, mm - 1, dd) - (effectiveDays - 1) * 86400000);
+    const startY = startUtc.getUTCFullYear();
+    const startM = String(startUtc.getUTCMonth() + 1).padStart(2, "0");
+    const startD = String(startUtc.getUTCDate()).padStart(2, "0");
+    sinceDate = `${startY}-${startM}-${startD}T00:00:00-03:00`;
+    untilDate = `${argToday}T23:59:59-03:00`;
+  }
 
   if(!uid) return res.status(401).json({ error: "uid requerido" });
 
@@ -374,7 +416,9 @@ export default async function handler(req, res) {
       const fetchML = async () => {
         if (!mlSellerId || !mlToken) return null;
         try {
-          const mlOrd = await mlOrders(mlSellerId, mlToken, days);
+          // Pasar el MISMO rango exacto que usamos para Shopify/TN, así
+          // las series diarias y los totales matchean perfecto entre canales.
+          const mlOrd = await mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate);
           return processML(mlOrd);
         } catch (e) { return null; }
       };
