@@ -17845,13 +17845,50 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         params += `&days=${d}`;
         prevParams += `&days=${d}`;
       }
-      const [r, rPrev] = await Promise.all([
+
+      // /api/orders?tab=stats es la fuente de verdad para "total órdenes" y
+      // "total facturación" — el Home lo usa y matchea con Escalafy/dashboards
+      // externos. Lo llamamos en paralelo y usamos sus números para override
+      // los del Stock. Así Stock y Home muestran exactamente lo mismo.
+      const homeStatsP = (async () => {
+        try {
+          // Calcular from/to en ISO (timezone AR) según el mismo criterio que HomeScreen.
+          const argMidnight = (yyyymmdd) => new Date(`${yyyymmdd}T00:00:00-03:00`).toISOString();
+          const argEndOfDay = (yyyymmdd) => new Date(`${yyyymmdd}T23:59:59-03:00`).toISOString();
+          let fromISO, toISO;
+          if (from && to) {
+            fromISO = argMidnight(from);
+            toISO   = argEndOfDay(to);
+          } else {
+            // Día ARG actual menos (d-1) días
+            const argTodayStr = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+            const [yy,mm,dd] = argTodayStr.split("-").map(Number);
+            const startUtc = new Date(Date.UTC(yy, mm-1, dd) - (d-1)*86400000);
+            const startStr = startUtc.toISOString().slice(0,10);
+            fromISO = argMidnight(startStr);
+            toISO   = argEndOfDay(argTodayStr);
+          }
+          const r = await fetch(`/api/orders?uid=${uid}&tab=stats&from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`);
+          return await r.json();
+        } catch (_) { return null; }
+      })();
+
+      const [r, rPrev, homeStats] = await Promise.all([
         fetch(`/api/stock?${params}`),
         fetch(`/api/stock?${prevParams}`),
+        homeStatsP,
       ]);
       const [json, jsonPrev] = await Promise.all([r.json(), rPrev.json()]);
       if(json.error){toast(json.error,"error");setLoading(false);return;}
-      if(json.products) setData(json);
+      if(json.products) {
+        // Override total_orders y total_revenue con los del Home (fuente
+        // confiable). Mantenemos products, daily_*, by_* del stock endpoint.
+        if (homeStats?.current) {
+          json.total_orders  = homeStats.current.count   || json.total_orders;
+          json.total_revenue = homeStats.current.revenue || json.total_revenue;
+        }
+        setData(json);
+      }
       if(jsonPrev?.products) setDataPrev(jsonPrev);
     } catch(e){toast(e.message,"error");}
     setLoading(false);
