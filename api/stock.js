@@ -336,9 +336,89 @@ function buildResponse(platform, products, analytics, days) {
   };
 }
 
+// ─── Rendimiento / Dashboard Financiero (consolidado desde rendimiento.js) ───
+const META_V = "v21.0";
+const META_BASE = `https://graph.facebook.com/${META_V}`;
+async function metaGet(path, params, token) {
+  const url = new URL(`${META_BASE}/${path}`);
+  url.searchParams.set("access_token", token);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+  const r = await fetch(url.toString());
+  const j = await r.json();
+  if (j.error) throw new Error(`Meta API: ${j.error.message}`);
+  return j;
+}
+async function fetchMetaDailySpend(cfg, since, until) {
+  if (!cfg?.access_token || !cfg.ad_account_id) return {};
+  try {
+    const res = await metaGet(`${cfg.ad_account_id}/insights`, {
+      level: "account",
+      fields: "spend,actions,action_values,purchase_roas,impressions,clicks,reach",
+      "time_range[since]": since,
+      "time_range[until]": until,
+      time_increment: "1",
+      action_attribution_windows: JSON.stringify(["1d_click","1d_view"]),
+      limit: "90",
+    }, cfg.access_token);
+    const byDate = {};
+    for (const row of (res.data || [])) {
+      const date = row.date_start;
+      if (!date) continue;
+      byDate[date] = {
+        spend:       parseFloat(row.spend) || 0,
+        roas:        parseFloat((row.purchase_roas || [])[0]?.value) || 0,
+        impressions: parseInt(row.impressions) || 0,
+        clicks:      parseInt(row.clicks) || 0,
+        reach:       parseInt(row.reach) || 0,
+      };
+    }
+    return byDate;
+  } catch (e) { return {}; }
+}
+function rendBuildRows(since, until, dailyRevenue, dailyOrders, metaDailySpend, commission) {
+  const allDates = new Set([...Object.keys(dailyRevenue), ...Object.keys(dailyOrders), ...Object.keys(metaDailySpend)]);
+  const start = new Date(since + "T12:00:00"); const end = new Date(until + "T12:00:00");
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) allDates.add(d.toISOString().slice(0,10));
+  return [...allDates].sort().map(date => {
+    const revenue = dailyRevenue[date] || 0;
+    const orders = dailyOrders[date] || 0;
+    const adSpend = metaDailySpend[date]?.spend || 0;
+    const netRevenue = revenue * (1 - commission);
+    const profit = netRevenue - adSpend;
+    return {
+      Fecha: date, "Ordenes > $0": orders, Revenue: revenue, "Ad Spend": adSpend,
+      "Net Revenue": parseFloat(netRevenue.toFixed(2)), Profit: parseFloat(profit.toFixed(2)),
+      "Profit Margin": revenue > 0 ? parseFloat((profit/revenue).toFixed(6)) : 0,
+      ROAS: adSpend > 0 ? parseFloat((revenue/adSpend).toFixed(4)) : 0,
+      "True ROAS": adSpend > 0 ? parseFloat((netRevenue/adSpend).toFixed(4)) : 0,
+      CPA: orders > 0 ? parseFloat((adSpend/orders).toFixed(2)) : 0,
+      _impressions: metaDailySpend[date]?.impressions || 0,
+      _clicks: metaDailySpend[date]?.clicks || 0,
+    };
+  });
+}
+function rendComputeTotals(rows) {
+  const t = rows.reduce((acc, r) => ({
+    orders: acc.orders + (r["Ordenes > $0"] || 0),
+    revenue: acc.revenue + (r.Revenue || 0),
+    adSpend: acc.adSpend + (r["Ad Spend"] || 0),
+    netRevenue: acc.netRevenue + (r["Net Revenue"] || 0),
+    profit: acc.profit + (r.Profit || 0),
+    impressions: acc.impressions + (r._impressions || 0),
+    clicks: acc.clicks + (r._clicks || 0),
+  }), {orders:0,revenue:0,adSpend:0,netRevenue:0,profit:0,impressions:0,clicks:0});
+  return {
+    ...t,
+    roas: t.adSpend > 0 ? t.revenue / t.adSpend : 0,
+    trueRoas: t.adSpend > 0 ? t.netRevenue / t.adSpend : 0,
+    cpa: t.orders > 0 ? t.adSpend / t.orders : 0,
+    profitMargin: t.revenue > 0 ? t.profit / t.revenue : 0,
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin","*");
-  res.setHeader("Access-Control-Allow-Methods","GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods","GET, POST, OPTIONS");
   if(req.method==="OPTIONS") return res.status(200).end();
 
   const {uid, action, days:dRaw, date_from, date_to}=req.query;
@@ -408,6 +488,76 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Error al obtener credenciales" });
   }
   if(!accessToken) return res.status(403).json({ error: "Tienda no conectada" });
+
+  // ── action=daily_metrics (consolidado desde rendimiento.js para Vercel
+  //    Hobby 12 functions limit). Devuelve KPIs (Revenue + Meta Ads + Profit).
+  if (action === "daily_metrics") {
+    try {
+      const daysQ = parseInt(dRaw) || 30;
+      const nowDate = new Date();
+      const until = date_to || nowDate.toISOString().slice(0,10);
+      const since = date_from || new Date(nowDate - daysQ * 86400000).toISOString().slice(0,10);
+      const periodMs = new Date(until+"T23:59:59") - new Date(since+"T00:00:00");
+      const prevUntilD = new Date(new Date(since+"T00:00:00") - 86400000);
+      const prevSinceD = new Date(prevUntilD - periodMs);
+      const prevSince = prevSinceD.toISOString().slice(0,10);
+      const prevUntil = prevUntilD.toISOString().slice(0,10);
+
+      const userSnap = await dbRef.collection("users").doc(uid).get();
+      const userData = userSnap.data() || {};
+      const stores2 = userData.stores || [];
+      const hasML2 = stores2.some(s => s.type === "meli");
+      const commission = parseFloat(userData.rendimientoCommission) || (hasML2 ? 0.10 : 0.03);
+
+      async function fetchStockRange(from, to) {
+        try {
+          const u = new URL(`https://${req.headers.host}/api/stock`);
+          u.searchParams.set("uid", uid);
+          u.searchParams.set("action", "products");
+          u.searchParams.set("date_from", from);
+          u.searchParams.set("date_to", to);
+          const r = await fetch(u.toString(), { headers: { host: req.headers.host } });
+          if (!r.ok) return { dailyRevenue:{}, dailyOrders:{} };
+          const j = await r.json();
+          return { dailyRevenue: j.daily_revenue || {}, dailyOrders: j.daily_orders || {} };
+        } catch(_) { return { dailyRevenue:{}, dailyOrders:{} }; }
+      }
+
+      const metaAccountsSnap = await dbRef.collection("users").doc(uid).collection("meta_accounts").get();
+      const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
+      const metaCfg = metaAccounts[0] || null;
+
+      const [curr, prev, metaCurr, metaPrev] = await Promise.all([
+        fetchStockRange(since, until),
+        fetchStockRange(prevSince, prevUntil),
+        metaCfg ? fetchMetaDailySpend(metaCfg, since, until) : Promise.resolve({}),
+        metaCfg ? fetchMetaDailySpend(metaCfg, prevSince, prevUntil) : Promise.resolve({}),
+      ]);
+
+      const rows = rendBuildRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
+      const prevRows = rendBuildRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
+      const totals = rendComputeTotals(rows);
+      const prevTotals = rendComputeTotals(prevRows);
+
+      return res.json({
+        rows, prevRows, totals, prevTotals,
+        since, until, prevSince, prevUntil,
+        meta: { hasMetaData: Object.keys(metaCurr).length > 0, hasStoreData: Object.keys(curr.dailyRevenue).length > 0, commission, metaAccountsCount: metaAccounts.length },
+      });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  if (action === "save_config" && req.method === "POST") {
+    try {
+      const body = await new Promise(resolve => {
+        let d = ""; req.on("data", c => d += c); req.on("end", () => resolve(JSON.parse(d || "{}")));
+      });
+      await dbRef.collection("users").doc(uid).update({ rendimientoCommission: parseFloat(body.commission) || 0.03 });
+      return res.json({ ok: true });
+    } catch(e) { return res.status(500).json({ error: e.message }); }
+  }
 
   try{
     if(action==="products"){
