@@ -497,7 +497,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
-      subs:[{id:"analisis",label:"Análisis"},{id:"productos",label:"Productos"},{id:"facturacion",label:"Facturación"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
+      subs:[{id:"margenes",label:"Márgenes"},{id:"analisis",label:"Análisis"},{id:"productos",label:"Productos"},{id:"facturacion",label:"Facturación"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
       subs:[{id:"gestion",label:"Gestión"},{id:"analytics",label:"Analytics"}]},
     { group:"OPERACIONES" },
@@ -17724,6 +17724,127 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
 // ===========================================
 // APP STOCK / INVENTARIO
 // ===========================================
+// ─── Tab Márgenes — métricas estilo Escalafy (Ad Spend, ROAS, Profit, etc) ───
+// Consume /api/orders?action=daily_metrics que combina Revenue
+// (TN/Shopify/ML) con Meta Ads spend. Muestra KPIs principales en grid.
+function MargenesTab({ T, uid, days, useCustomDate, dateFrom, dateTo }) {
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    if (!uid) return;
+    setLoading(true); setError("");
+    const params = new URLSearchParams({ uid, action: "daily_metrics" });
+    if (useCustomDate && dateFrom && dateTo) {
+      params.set("date_from", dateFrom);
+      params.set("date_to", dateTo);
+    } else {
+      params.set("days", String(days || 30));
+    }
+    fetch(`/api/orders?${params.toString()}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) setError(d.error);
+        else setData(d);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [uid, days, useCustomDate, dateFrom, dateTo]);
+
+  if (loading) return <div style={{padding:60,textAlign:"center",color:T.textSm}}>Cargando métricas…</div>;
+  if (error)   return <div style={{padding:30,background:T.card,border:`1px solid ${T.red}55`,borderRadius:12,color:T.red,fontSize:13}}>Error: {error}</div>;
+  if (!data)   return null;
+
+  const t = data.totals || {};
+  const p = data.prevTotals || {};
+  const meta = data.meta || {};
+
+  // Delta helpers — % de cambio entre periodo actual y anterior
+  const pct = (cur, prev) => {
+    if (!prev || prev === 0) return null;
+    return ((cur - prev) / Math.abs(prev)) * 100;
+  };
+  const fmtARS = n => "$ " + Math.round(n||0).toLocaleString("es-AR");
+  const fmtN   = n => (n||0).toLocaleString("es-AR", { maximumFractionDigits: 2 });
+  const fmtPct = n => (n||0).toFixed(2) + "%";
+
+  // Break-even ROAS = 1 / (1 - costos%). Aproximación con la comisión configurada.
+  const commission = meta.commission || 0.03;
+  const breakEvenRoas = commission < 1 ? 1 / (1 - commission) : 0;
+  const merPct = t.revenue > 0 ? (t.adSpend / t.revenue) * 100 : 0;
+
+  const kpis = [
+    { label: "Facturación",        value: fmtARS(t.revenue),        delta: pct(t.revenue, p.revenue),       big: true },
+    { label: "Ganancia",           value: fmtARS(t.profit),         delta: pct(t.profit, p.profit),         tag: "Ver detalle" },
+    { label: "Margen de Ganancia", value: fmtPct((t.profitMargin||0)*100), delta: pct(t.profitMargin, p.profitMargin) },
+    { label: "ROAS",               value: fmtN(t.roas),             delta: pct(t.roas, p.roas) },
+    { label: "Órdenes > $0",       value: fmtN(t.orders),           delta: pct(t.orders, p.orders) },
+    { label: "Inversión Publicitaria", value: fmtARS(t.adSpend),    delta: pct(t.adSpend, p.adSpend) },
+    { label: "True ROAS",          value: fmtN(t.trueRoas),         delta: pct(t.trueRoas, p.trueRoas) },
+    { label: "Break Even ROAS",    value: fmtN(breakEvenRoas) },
+    { label: "Facturación Neta",   value: fmtARS(t.netRevenue),     delta: pct(t.netRevenue, p.netRevenue) },
+    { label: "Comisiones",         value: fmtARS((t.revenue||0) * commission), sub: `${(commission*100).toFixed(0)}% sobre facturación` },
+    { label: "CPA",                value: fmtARS(t.cpa),            delta: pct(t.cpa, p.cpa), invertDelta: true },
+    { label: "MER%",               value: fmtPct(merPct) },
+  ];
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>💎 Métricas Principales</div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>
+            Período: {data.since} → {data.until} · vs período anterior {data.prevSince} → {data.prevUntil}
+          </div>
+        </div>
+        {!meta.hasMetaData && (
+          <div style={{padding:"8px 14px",background:T.yellowBg||T.yellow+"22",border:`1px solid ${T.yellow}55`,borderRadius:8,fontSize:11,color:T.text,maxWidth:420}}>
+            ⚠ Meta Ads no está conectado o sin datos en el rango. ROAS/True ROAS/CPA quedan en 0. Andá a Configuración → Integraciones para conectar.
+          </div>
+        )}
+      </div>
+
+      {/* Grid de KPIs */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:12}}>
+        {kpis.map((k, i) => {
+          const dn = k.delta;
+          const positive = dn !== null && (k.invertDelta ? dn < 0 : dn > 0);
+          const negative = dn !== null && (k.invertDelta ? dn > 0 : dn < 0);
+          return (
+            <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",position:"relative"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,gap:8}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,letterSpacing:0.3}}>{k.label}</div>
+                {k.tag && <span style={{fontSize:9,padding:"2px 8px",borderRadius:10,background:T.accentSolid+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>{k.tag}</span>}
+              </div>
+              <div style={{fontSize:k.big?24:20,fontWeight:800,color:T.text,letterSpacing:-0.5,lineHeight:1.1}}>
+                {k.value}
+                {dn !== null && (
+                  <span style={{fontSize:11,fontWeight:700,marginLeft:8,color:positive?T.green:negative?T.red:T.textSm}}>
+                    {dn >= 0 ? "↑" : "↓"} {Math.abs(dn).toFixed(2)}%
+                  </span>
+                )}
+              </div>
+              {k.sub && <div style={{fontSize:10,color:T.textSm,marginTop:6}}>{k.sub}</div>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Disclaimer items que faltan vs Escalafy */}
+      <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 16px",fontSize:11,color:T.textSm,lineHeight:1.6}}>
+        <strong style={{color:T.text}}>ℹ Métricas incluidas:</strong> Facturación, Órdenes, Ad Spend (Meta), ROAS / True ROAS, CPA, Profit, Margen.
+        <br/>
+        <strong style={{color:T.text}}>Próximas iteraciones:</strong> Costos de Productos (necesita precio de costo por item),
+        Costos de Envío reales (necesita config), Impuestos por jurisdicción, Costos Adicionales fijos, breakdown
+        de comisiones por plataforma de pago. Por ahora "Comisiones" usa la tasa global configurada en
+        Dashboard → Configuración.
+      </div>
+    </div>
+  );
+}
+
 function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const uid = user?.uid;
   const [days, setDays] = useState(7);
@@ -17845,13 +17966,50 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         params += `&days=${d}`;
         prevParams += `&days=${d}`;
       }
-      const [r, rPrev] = await Promise.all([
+
+      // /api/orders?tab=stats es la fuente de verdad para "total órdenes" y
+      // "total facturación" — el Home lo usa y matchea con Escalafy/dashboards
+      // externos. Lo llamamos en paralelo y usamos sus números para override
+      // los del Stock. Así Stock y Home muestran exactamente lo mismo.
+      const homeStatsP = (async () => {
+        try {
+          // Calcular from/to en ISO (timezone AR) según el mismo criterio que HomeScreen.
+          const argMidnight = (yyyymmdd) => new Date(`${yyyymmdd}T00:00:00-03:00`).toISOString();
+          const argEndOfDay = (yyyymmdd) => new Date(`${yyyymmdd}T23:59:59-03:00`).toISOString();
+          let fromISO, toISO;
+          if (from && to) {
+            fromISO = argMidnight(from);
+            toISO   = argEndOfDay(to);
+          } else {
+            // Día ARG actual menos (d-1) días
+            const argTodayStr = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+            const [yy,mm,dd] = argTodayStr.split("-").map(Number);
+            const startUtc = new Date(Date.UTC(yy, mm-1, dd) - (d-1)*86400000);
+            const startStr = startUtc.toISOString().slice(0,10);
+            fromISO = argMidnight(startStr);
+            toISO   = argEndOfDay(argTodayStr);
+          }
+          const r = await fetch(`/api/orders?uid=${uid}&tab=stats&from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`);
+          return await r.json();
+        } catch (_) { return null; }
+      })();
+
+      const [r, rPrev, homeStats] = await Promise.all([
         fetch(`/api/stock?${params}`),
         fetch(`/api/stock?${prevParams}`),
+        homeStatsP,
       ]);
       const [json, jsonPrev] = await Promise.all([r.json(), rPrev.json()]);
       if(json.error){toast(json.error,"error");setLoading(false);return;}
-      if(json.products) setData(json);
+      if(json.products) {
+        // Override total_orders y total_revenue con los del Home (fuente
+        // confiable). Mantenemos products, daily_*, by_* del stock endpoint.
+        if (homeStats?.current) {
+          json.total_orders  = homeStats.current.count   || json.total_orders;
+          json.total_revenue = homeStats.current.revenue || json.total_revenue;
+        }
+        setData(json);
+      }
       if(jsonPrev?.products) setDataPrev(jsonPrev);
     } catch(e){toast(e.message,"error");}
     setLoading(false);
@@ -18508,6 +18666,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
 
   const TABS=[
+    {id:"margenes",label:"💎 Márgenes"},
     {id:"analisis",label:"📊 Análisis"},
     {id:"productos",label:"📦 Productos"},
     {id:"facturacion",label:"💰 Facturación"},
@@ -18654,8 +18813,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               </div>
             )}
 
+            {/* ── TAB MÁRGENES — métricas estilo Escalafy (ROAS, profit, etc) ── */}
+            {tab==="margenes" && (
+              <MargenesTab T={T} uid={uid} days={days} useCustomDate={useCustomDate} dateFrom={dateFrom} dateTo={dateTo}/>
+            )}
+
             {/* ── BLOQUE COMÚN: Gráfico + Resumen + Donuts ── */}
-            {(()=>{
+            {tab!=="margenes" && (()=>{
               // Config por tab — cada uno con sus propios datos
               const isAnalisis  = tab==="analisis";
               const isProductos  = tab==="productos";
