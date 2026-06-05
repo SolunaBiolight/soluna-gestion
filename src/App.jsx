@@ -4469,7 +4469,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Seguidores</label><input style={iS} type="number" value={form.seguidores||""} onChange={e=>setForm(f=>({...f,seguidores:e.target.value}))} placeholder="50000"/></div>
               <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Red social</label><select style={iS} value={form.red||"Instagram"} onChange={e=>setForm(f=>({...f,red:e.target.value}))}>{REDES.map(r=><option key={r}>{r}</option>)}</select></div>
             </div>
-            <div><label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Foto (URL)</label><input style={iS} value={form.foto||""} onChange={e=>setForm(f=>({...f,foto:e.target.value}))} placeholder="https://..."/></div>
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Foto (URL)</label>
+              <div style={{display:"flex",gap:6}}>
+                <input style={{...iS,flex:1}} value={form.foto||""} onChange={e=>setForm(f=>({...f,foto:e.target.value}))} placeholder="https://..."/>
+                <DriveBtn T={T} onPick={f=>setForm(fm=>({...fm,foto:f.url}))}/>
+              </div>
+            </div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:6,borderTop:"1px solid "+T.borderL}}>
               <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
               <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,opacity:saving||!form.influencer?0.5:1}}>{saving?"Guardando...":"Guardar cambios"}</button>
@@ -9644,9 +9650,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
-                  <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                  <div style={{display:"flex",gap:5}}>
+                    <DriveBtn T={T} onPick={f=>setNtLinks(prev=>[...prev,{name:f.name,url:f.url}])}/>
+                    <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Manual</button>
+                  </div>
                 </div>
-                {ntLinks.length===0&&<div style={{fontSize:12,color:T.textSm,padding:"6px 0"}}>Sin links. Podés agregar Drive, Figma, Notion, etc.</div>}
+                {ntLinks.length===0&&<div style={{fontSize:12,color:T.textSm,padding:"6px 0"}}>Sin links. Usá Drive para buscar archivos o agregá manualmente.</div>}
                 {ntLinks.map((l,i)=>(
                   <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={l.name} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
@@ -9725,7 +9734,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
-                  <button onClick={()=>setEtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                  <div style={{display:"flex",gap:5}}>
+                    <DriveBtn T={T} onPick={f=>setEtLinks(prev=>[...prev,{name:f.name,url:f.url}])}/>
+                    <button onClick={()=>setEtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Manual</button>
+                  </div>
                 </div>
                 {etLinks.map((l,i)=>(
                   <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
@@ -9799,10 +9811,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               </div>
               <div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Recursos (links a briefs, Drive, fotos de ref…)</div>
-                  <button onClick={()=>setTRecursos(prev=>[...prev,{id:mkProdId(),nombre:"",tipo:"otro",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Recursos (briefs, Drive, fotos de ref…)</div>
+                  <div style={{display:"flex",gap:5}}>
+                    <DriveBtn T={T} onPick={f=>setTRecursos(prev=>[...prev,{id:mkProdId(),nombre:f.name,tipo:"otro",url:f.url}])}/>
+                    <button onClick={()=>setTRecursos(prev=>[...prev,{id:mkProdId(),nombre:"",tipo:"otro",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Manual</button>
+                  </div>
                 </div>
-                {tRecursos.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin recursos. Podés agregar links a Drive, PDFs, WeTransfer, etc.</div>}
+                {tRecursos.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin recursos. Usá Drive para buscar archivos o agregá manualmente.</div>}
                 {tRecursos.map((r,i)=>(
                   <div key={r.id||i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={r.nombre} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))} placeholder="Nombre" style={{...iS,fontSize:12,width:100,flexShrink:0}}/>
@@ -17193,8 +17208,11 @@ LONGITUD Y FORMATO
               </div>
               {addingUrl&&(
                 <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
-                  <div style={{fontSize:11,color:T.textSm,marginBottom:8,lineHeight:1.5}}>Agregar un creativo desde una URL pública (sin subirlo a Meta todavía). Útil si ya tenés el archivo en otro lado.</div>
-                  <input value={newCUrl} onChange={e=>setNewCUrl(e.target.value)} placeholder="URL pública del archivo" style={{...iS,marginBottom:10}}/>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:8,lineHeight:1.5}}>Agregar un creativo desde una URL pública (sin subirlo a Meta todavía). Útil si ya tenés el archivo en Drive u otro lado.</div>
+                  <div style={{display:"flex",gap:6,marginBottom:10}}>
+                    <input value={newCUrl} onChange={e=>setNewCUrl(e.target.value)} placeholder="URL pública del archivo" style={{...iS,flex:1,marginBottom:0}}/>
+                    <DriveBtn T={T} onPick={f=>{setNewCUrl(f.url);setNewCName(prev=>prev||f.name);}}/>
+                  </div>
                   <input value={newCName} onChange={e=>setNewCName(e.target.value)} placeholder="Nombre (ej: reel_dolor.mp4)" style={{...iS,marginBottom:10}}/>
                   <select value={newCKind} onChange={e=>setNewCKind(e.target.value)} style={{...iS,marginBottom:12}}>
                     <option value="image">Imagen</option>
