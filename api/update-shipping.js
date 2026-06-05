@@ -15,7 +15,24 @@ function initAdmin() {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // ── action=tracking: proxy Andreani para evitar CORS ─────────────────
+  if (req.query.action === 'tracking') {
+    const { tracking } = req.query;
+    if (!tracking) return res.status(400).json({ error: 'tracking requerido' });
+    const h = { 'Accept': 'application/json', 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
+    try {
+      const r1 = await fetch(`https://api.andreani.com/v2/ordenes/${encodeURIComponent(tracking)}`, { headers: h });
+      if (r1.ok) { const d = await r1.json(); return res.status(200).json(d); }
+    } catch(_) {}
+    try {
+      const r2 = await fetch(`https://tracking.andreani.com/api/v1/seguimiento?tracking=${encodeURIComponent(tracking)}`, { headers: h });
+      if (r2.ok) { const d = await r2.json(); return res.status(200).json(d); }
+    } catch(_) {}
+    return res.status(404).json({ error: 'No se pudo obtener el estado del tracking' });
+  }
 
   const { uid, orderId, tracking } = req.query;
   if (!uid) return res.status(401).json({ error: "uid requerido" });

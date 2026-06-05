@@ -2001,7 +2001,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         // 1. Tracking de devolución (cliente → nosotros)
         if(r.trackingDevolucion?.trim()) {
           try {
-            const res = await fetch(`/api/andreani-tracking?tracking=${encodeURIComponent(r.trackingDevolucion.trim())}`);
+            const res = await fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(r.trackingDevolucion.trim())}`);
             if(res.ok) {
               const d = await res.json();
               const ea = d?.estado || d?.estadoActual || d?.ultimoEvento?.estado || "";
@@ -2020,7 +2020,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         // 2. Tracking de cambio (nosotros → cliente)
         if(r.trackingCambio?.trim()) {
           try {
-            const res = await fetch(`/api/andreani-tracking?tracking=${encodeURIComponent(r.trackingCambio.trim())}`);
+            const res = await fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(r.trackingCambio.trim())}`);
             if(res.ok) {
               const d = await res.json();
               const ea = d?.estado || d?.estadoActual || d?.ultimoEvento?.estado || "";
@@ -3207,7 +3207,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   async function fetchComisiones() {
     setComLoading(true); setComError(""); setComData(null);
     try {
-      const url=`/api/coupons?uid=${user?.uid||""}&desde=${comFechaDesde}&hasta=${comFechaHasta}`;
+      const url=`/api/orders?action=coupons&uid=${user?.uid||""}&desde=${comFechaDesde}&hasta=${comFechaHasta}`;
       const r = await fetch(url);
       if(!r.ok) throw new Error("Error al conectar con TN: "+r.status);
       const data = await r.json();
@@ -7646,7 +7646,7 @@ function AppAdmin({T, user, onBack}) {
   const [uDias,     setUDias]     = useState({});
 
   async function adminApi(body) {
-    const r = await fetch("/api/admin", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
+    const r = await fetch("/api/tareas", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || "Error del servidor");
     return d;
@@ -7663,7 +7663,7 @@ function AppAdmin({T, user, onBack}) {
 
   async function loadSectionsConfig() {
     try {
-      const r=await fetch(`/api/admin?action=getSectionsConfig&uid=${user.uid}`);
+      const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${user.uid}`);
       const j=await r.json();
       if(Array.isArray(j.adminOnlySections)) setSectionsConfig(j.adminOnlySections);
     }catch(_){}
@@ -19622,7 +19622,7 @@ function AppRendimiento({T, user, onHome}) {
       const d=overrideDays||days;
       const from=overrideFrom!=null?overrideFrom:(useCustom?dateFrom:"");
       const to=overrideTo!=null?overrideTo:(useCustom?dateTo:"");
-      let url=`/api/rendimiento?action=daily_metrics&uid=${uid}`;
+      let url=`/api/orders?action=daily_metrics&uid=${uid}`;
       if(from&&to){url+=`&date_from=${from}&date_to=${to}`;}
       else{url+=`&days=${d}`;}
       const r=await fetch(url);
@@ -19635,7 +19635,7 @@ function AppRendimiento({T, user, onHome}) {
 
   async function saveCommission(val) {
     const v=parseFloat(val)||0.03; setCommission(v);
-    await fetch(`/api/rendimiento?action=save_config&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commission:v})});
+    await fetch(`/api/orders?action=save_config&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commission:v})});
     loadData();
   }
 
@@ -20085,7 +20085,7 @@ function AndreaniPollingService({uid, onAlerts}) {
         const trackings = [r.trackingDevolucion, r.trackingCambio].filter(Boolean);
         for(const trk of trackings) {
           try {
-            const res = await fetch(`/api/andreani-tracking?tracking=${encodeURIComponent(trk.trim())}`);
+            const res = await fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(trk.trim())}`);
             if(!res.ok) continue;
             const d = await res.json();
             const ea = d?.estado||d?.estadoActual||d?.ultimoEvento?.estado||"";
@@ -20331,7 +20331,7 @@ export default function App() {
         } catch(e){}
         // Load sections config (available for all users)
         try {
-          const r=await fetch(`/api/admin?action=getSectionsConfig&uid=${u.uid}`);
+          const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${u.uid}`);
           if(r.ok){const j=await r.json();if(Array.isArray(j.adminOnlySections))setAdminOnlySections(j.adminOnlySections);}
         }catch(_){}
       } else {

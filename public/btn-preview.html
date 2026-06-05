@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Opciones de botón — Growith</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #0d1117;
+    color: #fafafa;
+    padding: 36px 32px 60px;
+    min-height: 100vh;
+  }
+  h1 { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+  .sub { font-size: 12px; color: #71717a; margin-bottom: 40px; }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #3f3f46;
+    margin-bottom: 16px;
+    margin-top: 40px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1f1f22;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  .card {
+    background: #161b22;
+    border: 1px solid #27272a;
+    border-radius: 14px;
+    padding: 22px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .card-top { display: flex; align-items: flex-start; justify-content: space-between; }
+  .opt-num {
+    font-size: 11px;
+    font-weight: 800;
+    color: #3f3f46;
+    letter-spacing: 0.5px;
+  }
+  .card-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #e4e4e7;
+    margin-bottom: 2px;
+  }
+  .card-sub {
+    font-size: 10px;
+    color: #52525b;
+    line-height: 1.5;
+  }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  /* ────────────────────────────────
+     ORIGINALES (01–06)
+  ──────────────────────────────── */
+
+  /* 01 — Actual */
+  .p1 { background:#5b21b6; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:0 2px 10px #5b21b644; }
+  .s1 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d1 { background:#1f0707; color:#f87171; border:1px solid #f8717133; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 02 — Gradiente logo */
+  .p2 { background:linear-gradient(135deg,#7c3aed,#4f46e5); color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:0 2px 14px #7c3aed33; }
+  .s2 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d2 { background:#1f0707; color:#f87171; border:1px solid #f8717133; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 03 — Ghost */
+  .p3 { background:transparent; color:#a78bfa; border:1.5px solid #7c3aed; border-radius:8px; padding:7px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .s3 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d3 { background:transparent; color:#f87171; border:1.5px solid #f87171; border-radius:8px; padding:7px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 04 — Blanco */
+  .p4 { background:#fafafa; color:#09090b; border:none; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .s4 { background:#1f2330; color:#a1a1aa; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d4 { background:#1f0707; color:#f87171; border:1px solid #f8717133; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 05 — Pill gradiente */
+  .p5 { background:linear-gradient(135deg,#7c3aed,#4f46e5); color:#fff; border:none; border-radius:9999px; padding:8px 20px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:0 2px 14px #7c3aed33; }
+  .s5 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:9999px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d5 { background:#1f0707; color:#f87171; border:1px solid #f8717133; border-radius:9999px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 06 — Glass */
+  .p6 { background:rgba(124,58,237,0.22); color:#c4b5fd; border:1px solid rgba(124,58,237,0.45); border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; backdrop-filter:blur(8px); }
+  .s6 { background:rgba(255,255,255,0.04); color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d6 { background:rgba(248,113,113,0.12); color:#f87171; border:1px solid rgba(248,113,113,0.3); border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* ────────────────────────────────
+     NUEVAS (07–16)
+  ──────────────────────────────── */
+
+  /* 07 — Neon glow */
+  .p7 { background:#0d1117; color:#a78bfa; border:1.5px solid #7c3aed; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:0 0 16px #7c3aed66, inset 0 0 12px #7c3aed11; text-shadow:0 0 8px #a78bfa; }
+  .s7 { background:transparent; color:#52525b; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d7 { background:#0d1117; color:#f87171; border:1.5px solid #f87171; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:0 0 12px #f8717144; }
+
+  /* 08 — Índigo puro */
+  .p8 { background:#4338ca; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:0 2px 12px #4338ca44; }
+  .s8 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d8 { background:#1f0707; color:#f87171; border:1px solid #f8717133; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 09 — Borde gradiente (gradient border) */
+  .p9-wrap { border-radius:9px; padding:1.5px; background:linear-gradient(135deg,#7c3aed,#06b6d4); display:inline-flex; }
+  .p9 { background:#0d1117; color:#e0e7ff; border:none; border-radius:7.5px; padding:7px 15px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .s9 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d9-wrap { border-radius:9px; padding:1.5px; background:linear-gradient(135deg,#f87171,#f59e0b); display:inline-flex; }
+  .d9 { background:#0d1117; color:#fca5a5; border:none; border-radius:7.5px; padding:7px 13px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 10 — Teal / cyan moderno */
+  .p10 { background:#0e7490; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:0 2px 12px #0e749044; }
+  .s10 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d10 { background:#1f0707; color:#f87171; border:1px solid #f8717133; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 11 — Monocromático oscuro */
+  .p11 { background:#27272a; color:#e4e4e7; border:1px solid #3f3f46; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .s11 { background:transparent; color:#52525b; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d11 { background:#1f0707; color:#f87171; border:1px solid #f8717133; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 12 — Verde esmeralda */
+  .p12 { background:#065f46; color:#6ee7b7; border:1px solid #059669; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:0 2px 12px #05966933; }
+  .s12 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d12 { background:#1f0707; color:#f87171; border:1px solid #f8717133; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 13 — Blanco pill */
+  .p13 { background:#fff; color:#09090b; border:none; border-radius:9999px; padding:8px 20px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; box-shadow:0 2px 8px rgba(0,0,0,0.3); }
+  .s13 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:9999px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d13 { background:#f87171; color:#fff; border:none; border-radius:9999px; padding:8px 14px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+
+  /* 14 — Violeta claro / lavanda */
+  .p14 { background:#ede9fe; color:#4c1d95; border:none; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .s14 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d14 { background:#fee2e2; color:#991b1b; border:none; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+
+  /* 15 — Amber / dorado */
+  .p15 { background:#92400e; color:#fde68a; border:1px solid #f59e0b55; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:0 2px 12px #f59e0b22; }
+  .s15 { background:transparent; color:#71717a; border:1px solid #27272a; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d15 { background:#1f0707; color:#f87171; border:1px solid #f8717133; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+
+  /* 16 — Surface elevado + borde luminoso */
+  .p16 { background:#1e1b2e; color:#c4b5fd; border:1px solid #4c1d9566; border-radius:10px; padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:inset 0 1px 0 rgba(196,181,253,0.15); }
+  .s16 { background:#13181f; color:#52525b; border:1px solid #27272a; border-radius:10px; padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .d16 { background:#1f0a0a; color:#fca5a5; border:1px solid #7f1d1d55; border-radius:10px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; box-shadow:inset 0 1px 0 rgba(248,113,113,0.1); }
+</style>
+</head>
+<body>
+
+<h1>Opciones de botón — Growith</h1>
+<p class="sub">Cada card: <strong style="color:#a1a1aa">Primario</strong> · <strong style="color:#a1a1aa">Cancelar</strong> · <strong style="color:#a1a1aa">Desvincular</strong></p>
+
+<div class="section-title">Opciones originales — 01 a 06</div>
+<div class="grid">
+  <div class="card">
+    <div class="card-top"><span class="opt-num">01</span></div>
+    <div><div class="card-label">Actual violeta</div><div class="card-sub">Sólido oscuro #5b21b6</div></div>
+    <div class="btn-row"><button class="p1">Conectar</button><button class="s1">Cancelar</button><button class="d1">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">02</span></div>
+    <div><div class="card-label">Gradiente logo</div><div class="card-sub">Violeta → índigo, igual al logo</div></div>
+    <div class="btn-row"><button class="p2">Conectar</button><button class="s2">Cancelar</button><button class="d2">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">03</span></div>
+    <div><div class="card-label">Ghost outline</div><div class="card-sub">Transparente + borde violeta</div></div>
+    <div class="btn-row"><button class="p3">Conectar</button><button class="s3">Cancelar</button><button class="d3">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">04</span></div>
+    <div><div class="card-label">Blanco neutral</div><div class="card-sub">Blanco + texto negro</div></div>
+    <div class="btn-row"><button class="p4">Conectar</button><button class="s4">Cancelar</button><button class="d4">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">05</span></div>
+    <div><div class="card-label">Pill + gradiente</div><div class="card-sub">Forma redondeada, gradiente</div></div>
+    <div class="btn-row"><button class="p5">Conectar</button><button class="s5">Cancelar</button><button class="d5">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">06</span></div>
+    <div><div class="card-label">Glass frosted</div><div class="card-sub">Efecto cristal semitransparente</div></div>
+    <div class="btn-row"><button class="p6">Conectar</button><button class="s6">Cancelar</button><button class="d6">Desvincular</button></div>
+  </div>
+</div>
+
+<div class="section-title">Opciones nuevas — 07 a 16</div>
+<div class="grid">
+  <div class="card">
+    <div class="card-top"><span class="opt-num">07</span></div>
+    <div><div class="card-label">Neon glow</div><div class="card-sub">Borde violeta con halo de luz</div></div>
+    <div class="btn-row"><button class="p7">Conectar</button><button class="s7">Cancelar</button><button class="d7">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">08</span></div>
+    <div><div class="card-label">Índigo puro</div><div class="card-sub">Más azul que violeta, #4338ca</div></div>
+    <div class="btn-row"><button class="p8">Conectar</button><button class="s8">Cancelar</button><button class="d8">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">09</span></div>
+    <div><div class="card-label">Borde gradiente</div><div class="card-sub">Gradiente en el borde, fondo oscuro</div></div>
+    <div class="btn-row">
+      <span class="p9-wrap"><button class="p9">Conectar</button></span>
+      <button class="s9">Cancelar</button>
+      <span class="d9-wrap"><button class="d9">Desvincular</button></span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">10</span></div>
+    <div><div class="card-label">Teal / cyan</div><div class="card-sub">Color fresco, muy diferente</div></div>
+    <div class="btn-row"><button class="p10">Conectar</button><button class="s10">Cancelar</button><button class="d10">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">11</span></div>
+    <div><div class="card-label">Monocromático</div><div class="card-sub">Sin color, gris oscuro neutro</div></div>
+    <div class="btn-row"><button class="p11">Conectar</button><button class="s11">Cancelar</button><button class="d11">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">12</span></div>
+    <div><div class="card-label">Verde esmeralda</div><div class="card-sub">Dark green, fresco y distinto</div></div>
+    <div class="btn-row"><button class="p12">Conectar</button><button class="s12">Cancelar</button><button class="d12">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">13</span></div>
+    <div><div class="card-label">Blanco pill</div><div class="card-sub">Blanco redondeado, limpio</div></div>
+    <div class="btn-row"><button class="p13">Conectar</button><button class="s13">Cancelar</button><button class="d13">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">14</span></div>
+    <div><div class="card-label">Lavanda claro</div><div class="card-sub">Violeta pastel, texto oscuro</div></div>
+    <div class="btn-row"><button class="p14">Conectar</button><button class="s14">Cancelar</button><button class="d14">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">15</span></div>
+    <div><div class="card-label">Amber / dorado</div><div class="card-sub">Tono cálido, diferente al logo</div></div>
+    <div class="btn-row"><button class="p15">Conectar</button><button class="s15">Cancelar</button><button class="d15">Desvincular</button></div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="opt-num">16</span></div>
+    <div><div class="card-label">Surface elevado</div><div class="card-sub">Fondo profundo + borde sutil violeta</div></div>
+    <div class="btn-row"><button class="p16">Conectar</button><button class="s16">Cancelar</button><button class="d16">Desvincular</button></div>
+  </div>
+</div>
+
+</body>
+</html>

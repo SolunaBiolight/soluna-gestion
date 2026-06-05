@@ -14,6 +14,14 @@ function initAdmin() {
   return getFirestore();
 }
 
+// ─── Admin constants (antiguo admin.js) ──────────────────────────────────
+const ADMIN_UIDS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
+const PLAN_PRICE_USDT = { plus: 29, full: 79 };
+const PLAN_PRICE_ARS  = { plus: 35000, full: 95000 };
+const CONFIG_DOC = "growith_app_config";
+function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth() + Number(n)); return d; }
+// ─── fin Admin constants ──────────────────────────────────────────────────
+
 function randomToken(len = 24) {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let t = "";
@@ -879,6 +887,193 @@ export default async function handler(req, res) {
       await ref.update({ referencias });
       return res.json({ ok:true });
     }
+
+    // ── ADMIN ACTIONS (antiguo /api/admin) ───────────────────────────────────
+
+    // getSectionsConfig: público (no requiere ser admin)
+    if (action === "getSectionsConfig") {
+      try {
+        const snap = await db.collection("config").doc(CONFIG_DOC).get();
+        const d = snap.exists ? snap.data() : {};
+        return res.json({ adminOnlySections: d.adminOnlySections || ["rendimiento"] });
+      } catch(e) {
+        return res.json({ adminOnlySections: ["rendimiento"] });
+      }
+    }
+
+    // Acciones solo-admin
+    const adminActions = ["setSectionsConfig","getData","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin"];
+    if (adminActions.includes(action)) {
+      if (!ADMIN_UIDS.includes(uid)) {
+        try {
+          const adminSnap = await db.collection("users").doc(uid).get();
+          if (!adminSnap.exists || !adminSnap.data()?.isAdmin) return res.status(403).json({ error: "No autorizado" });
+        } catch(_) { return res.status(403).json({ error: "No autorizado" }); }
+      }
+      const adminNow = new Date();
+
+      if (action === "setSectionsConfig") {
+        const { adminOnlySections } = body;
+        if (!Array.isArray(adminOnlySections)) return res.status(400).json({ error: "adminOnlySections debe ser un array" });
+        await db.collection("config").doc(CONFIG_DOC).set({ adminOnlySections, updatedAt: adminNow, updatedBy: uid }, { merge: true });
+        return res.json({ ok: true, adminOnlySections });
+      }
+
+      if (action === "getData") {
+        const [pagSnap, usSnap] = await Promise.all([
+          db.collection("pagos").orderBy("createdAt", "desc").get(),
+          db.collection("users").get(),
+        ]);
+        const pagos = pagSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
+        const usuarios = usSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
+        const activos = usuarios.filter(u => u.plan && u.plan !== "free");
+        const activosPagos = activos.filter(u => !u.isTrial);
+        const mrrUsdt = activosPagos.reduce((s, u) => s + (PLAN_PRICE_USDT[u.plan] || 0), 0);
+        const mrrArs  = activosPagos.reduce((s, u) => s + (PLAN_PRICE_ARS[u.plan]  || 0), 0);
+        const en7dias = new Date(adminNow); en7dias.setDate(en7dias.getDate() + 7);
+        const vencenPronto = activos.filter(u => {
+          const exp = u.planExpiry?._seconds ? new Date(u.planExpiry._seconds * 1000) : u.planExpiry?.toDate?.();
+          return exp && exp >= adminNow && exp <= en7dias;
+        });
+        const pagosReales = pagos.filter(p => p.estado === "confirmado" && !p.isTrial && Number(p.amount) > 0);
+        const totalUSDT = pagosReales.filter(p => p.currency === "USDT").reduce((s,p) => s + (Number(p.amount)||0), 0);
+        const totalARS  = pagosReales.filter(p => p.currency === "ARS").reduce((s,p)  => s + (Number(p.amount)||0), 0);
+        const stats = {
+          totalUsuarios: usuarios.length,
+          usuariosPlus: usuarios.filter(u => u.plan==="plus" && !u.isTrial).length,
+          usuariosFull: usuarios.filter(u => u.plan==="full" && !u.isTrial).length,
+          usuariosPlus_trial: usuarios.filter(u => u.plan==="plus" && u.isTrial).length,
+          usuariosFull_trial: usuarios.filter(u => u.plan==="full" && u.isTrial).length,
+          usuariosPrueba: usuarios.filter(u => u.isTrial).length,
+          pagosPendientes: pagos.filter(p => p.estado === "pendiente").length,
+          pagosRealesCount: pagosReales.length,
+          countPruebas: pagos.filter(p => p.isTrial).length,
+          mrrUsdt, mrrArs, totalUSDT, totalARS, vencenPronto: vencenPronto.length,
+        };
+        return res.json({ pagos, usuarios, stats });
+      }
+
+      if (action === "activarPlan") {
+        const { targetUid, plan, meses = 1 } = body;
+        const userDoc = await db.collection("users").doc(targetUid).get();
+        const userData = userDoc.data() || {};
+        let base = adminNow;
+        if (userData.planExpiry) {
+          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
+          if (cur > adminNow) base = cur;
+        }
+        const expiry = addMonths(base, meses);
+        await db.collection("users").doc(targetUid).update({ plan, planExpiry: expiry, planActivadoBy: uid, planActivadoAt: adminNow });
+        return res.json({ ok: true, expiry });
+      }
+
+      if (action === "desactivarPlan") {
+        const { targetUid } = body;
+        await db.collection("users").doc(targetUid).update({ plan: "free", planExpiry: null, planDesactivadoBy: uid, planDesactivadoAt: adminNow });
+        return res.json({ ok: true });
+      }
+
+      if (action === "confirmarPago") {
+        const { pagoId, targetUid, plan, meses = 1 } = body;
+        const userDoc = await db.collection("users").doc(targetUid).get();
+        const userData = userDoc.data() || {};
+        let base = adminNow;
+        if (userData.planExpiry) {
+          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
+          if (cur > adminNow) base = cur;
+        }
+        const expiry = addMonths(base, meses);
+        await Promise.all([
+          db.collection("users").doc(targetUid).update({ plan, planExpiry: expiry, planActivadoBy: uid, planActivadoAt: adminNow }),
+          db.collection("pagos").doc(pagoId).update({ estado: "confirmado", mesesConfirmados: Number(meses), confirmadoBy: uid, confirmadoAt: adminNow }),
+        ]);
+        return res.json({ ok: true, expiry });
+      }
+
+      if (action === "rechazarPago") {
+        const { pagoId, motivo = "" } = body;
+        await db.collection("pagos").doc(pagoId).update({ estado: "rechazado", rechazadoBy: uid, rechazadoAt: adminNow, motivoRechazo: motivo });
+        return res.json({ ok: true });
+      }
+
+      if (action === "addNote") {
+        const { targetUid, note } = body;
+        await db.collection("users").doc(targetUid).update({ adminNote: note, adminNoteAt: adminNow, adminNoteBy: uid });
+        return res.json({ ok: true });
+      }
+
+      if (action === "extenderPlan") {
+        const { targetUid, meses = 1 } = body;
+        const userDoc = await db.collection("users").doc(targetUid).get();
+        const userData = userDoc.data() || {};
+        let base = adminNow;
+        if (userData.planExpiry) {
+          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
+          if (cur > adminNow) base = cur;
+        }
+        const expiry = addMonths(base, meses);
+        await db.collection("users").doc(targetUid).update({ planExpiry: expiry, planExtendidoBy: uid, planExtendidoAt: adminNow });
+        return res.json({ ok: true, expiry });
+      }
+
+      if (action === "gestionarPlan") {
+        const { targetUid, plan, cantidad, unidad = "meses", isTrial = false } = body;
+        const userDoc = await db.collection("users").doc(targetUid).get();
+        const userData = userDoc.data() || {};
+        let base = adminNow;
+        if (userData.planExpiry) {
+          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
+          if (cur > adminNow) base = cur;
+        }
+        let expiry;
+        if (unidad === "dias") { expiry = new Date(base); expiry.setDate(expiry.getDate() + Number(cantidad)); }
+        else { expiry = addMonths(base, Number(cantidad)); }
+        await db.collection("users").doc(targetUid).update({ plan, planExpiry: expiry, isTrial: !!isTrial, planActivadoBy: uid, planActivadoAt: adminNow });
+        if (isTrial) {
+          await db.collection("pagos").add({ uid: targetUid, plan, method: "prueba", currency: "—", amount: 0, isTrial: true, cantidad: Number(cantidad), unidad, estado: "confirmado", confirmadoBy: uid, confirmadoAt: adminNow, createdAt: adminNow, nota: `Prueba: ${cantidad} ${unidad} de ${plan}` });
+        }
+        return res.json({ ok: true, expiry });
+      }
+
+      if (action === "activarPrueba") {
+        const { targetUid, plan, meses = 1 } = body;
+        const userDoc = await db.collection("users").doc(targetUid).get();
+        const userData = userDoc.data() || {};
+        let base = adminNow;
+        if (userData.planExpiry) {
+          const cur = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
+          if (cur > adminNow) base = cur;
+        }
+        const expiry = addMonths(base, meses);
+        await Promise.all([
+          db.collection("users").doc(targetUid).update({ plan, planExpiry: expiry, isTrial: true, planActivadoBy: uid, planActivadoAt: adminNow }),
+          db.collection("pagos").add({ uid: targetUid, plan, method: "prueba", currency: "—", amount: 0, isTrial: true, mesesConfirmados: Number(meses), estado: "confirmado", confirmadoBy: uid, confirmadoAt: adminNow, createdAt: adminNow, nota: `Plan de prueba (${meses}m) activado por admin` }),
+        ]);
+        return res.json({ ok: true, expiry });
+      }
+
+      if (action === "ajustarDias") {
+        const { targetUid, dias } = body;
+        if (!targetUid || dias === undefined) return res.status(400).json({ error: "Faltan parámetros" });
+        const userDoc = await db.collection("users").doc(targetUid).get();
+        const userData = userDoc.data() || {};
+        let base = userData.planExpiry?._seconds ? new Date(userData.planExpiry._seconds*1000) : userData.planExpiry?.toDate?.() || adminNow;
+        const expiry = new Date(base); expiry.setDate(expiry.getDate() + Number(dias));
+        await db.collection("users").doc(targetUid).update({ planExpiry: expiry, planAjustadoBy: uid, planAjustadoAt: adminNow, planAjusteDias: Number(dias) });
+        return res.json({ ok: true, expiry });
+      }
+
+      if (action === "toggleAdmin") {
+        const { targetUid } = body;
+        if (!targetUid) return res.status(400).json({ error: "Falta targetUid" });
+        if (targetUid === uid) return res.status(400).json({ error: "No podés quitarte el admin a vos mismo" });
+        const userDoc = await db.collection("users").doc(targetUid).get();
+        const current = userDoc.data()?.isAdmin || false;
+        await db.collection("users").doc(targetUid).set({ isAdmin: !current }, { merge: true });
+        return res.json({ ok: true, isAdmin: !current });
+      }
+    }
+    // ── fin Admin actions ────────────────────────────────────────────────────
 
     return res.status(400).json({ error:"Acción desconocida" });
 
