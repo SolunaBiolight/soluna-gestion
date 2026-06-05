@@ -110,11 +110,25 @@ async function shOrders(shop, tok, days, since, until) {
 
 // ── ML Fetch ──────────────────────────────────────────────────────────
 async function mlOrders(sellerId, tok, days) {
+  // ML pagina de a 50 órdenes por request; antes traíamos solo 50 totales,
+  // perdiendo ventas cuando había más. Ahora iteramos con offset hasta 2000
+  // (40 páginas), igual que /api/orders?tab=stats que sí pagina bien.
   const since=new Date(Date.now()-days*86400000).toISOString().slice(0,10)+"T00:00:00.000-03:00";
-  const r=await fetch(`https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${since}&limit=50`,{headers:ML_H(tok)});
-  if(!r.ok) return [];
-  const d=await r.json();
-  return d.results||[];
+  const all=[];
+  for (let offset = 0; offset < 2000; offset += 50) {
+    try {
+      const r = await fetch(
+        `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${encodeURIComponent(since)}&limit=50&offset=${offset}&sort=date_desc`,
+        { headers: ML_H(tok) }
+      );
+      if (!r.ok) break;
+      const d = await r.json();
+      const batch = d.results || [];
+      all.push(...batch);
+      if (batch.length < 50) break;
+    } catch (_) { break; }
+  }
+  return all;
 }
 
 // ── Procesar órdenes TN ───────────────────────────────────────────────
@@ -173,18 +187,16 @@ function processSH(orders) {
 
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
 
-    // Revenue NETO por orden (matchea con Escalafy y dashboards de AR típicos):
-    // subtotal_price - total_tax - refunds.
-    // En Argentina, las tiendas suelen tener "precios con IVA incluido": subtotal_price
-    // viene con IVA dentro. total_tax es la porción de IVA. Restando obtenemos el neto real.
-    // Si la tienda factura sin IVA (precios netos), total_tax = 0 y queda igual.
+    // Revenue por orden = total_price (lo que pagó el cliente, incluye IVA y
+    // envío, descuenta refunds parciales). Mismo criterio que /api/orders
+    // ?tab=stats que se usa en Home — así el Home y el Stock muestran la
+    // misma facturación. Antes acá restábamos tax y devolvía un "neto" que
+    // no coincidía con ningún otro dashboard.
     const refundedAmount = (o.refunds || []).reduce((s, r) => {
       const ti = (r.transactions || []).reduce((t, x) => t + (parseFloat(x.amount) || 0), 0);
       return s + ti;
     }, 0);
-    const subtotal = parseFloat(o.subtotal_price) || 0;
-    const tax = parseFloat(o.total_tax) || 0;
-    const orderRevenue = Math.max(0, subtotal - tax - refundedAmount);
+    const orderRevenue = Math.max(0, (parseFloat(o.total_price) || 0) - refundedAmount);
 
     for(const item of o.line_items||[]){
       const vid=String(item.variant_id||item.product_id);
