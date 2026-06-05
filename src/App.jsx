@@ -16,6 +16,7 @@ const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
 const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
 
 // Owner email for existing data migration
 const OWNER_EMAIL = "soluna.biolight@gmail.com";
@@ -206,6 +207,7 @@ function Btn({T, variant="primary", size="md", icon, children, onClick, disabled
 const GDRIVE_API_KEY    = import.meta.env.VITE_GOOGLE_API_KEY    || "";
 const GDRIVE_CLIENT_ID  = import.meta.env.VITE_GOOGLE_CLIENT_ID  || "";
 let _gapiReady = false, _gisReady = false, _tokenClient = null;
+let _driveAccessToken = null; // token de la sesión Google actual
 
 function _loadDriveScripts() {
   return new Promise(resolve => {
@@ -233,13 +235,12 @@ async function openDrivePicker(onSelect) {
     return;
   }
   await _loadDriveScripts();
+
   const showPicker = (token) => {
     const view = new window.google.picker.DocsView()
-      .setIncludeFolders(false)
-      .setSelectFolderEnabled(false);
+      .setIncludeFolders(false).setSelectFolderEnabled(false);
     const sharedView = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
-      .setEnableDrives(true)
-      .setIncludeFolders(false);
+      .setEnableDrives(true).setIncludeFolders(false);
     new window.google.picker.PickerBuilder()
       .setTitle("Seleccionar archivo de Drive")
       .addView(view)
@@ -252,16 +253,23 @@ async function openDrivePicker(onSelect) {
           onSelect({ name: d.name, url: d.url, id: d.id, mimeType: d.mimeType });
         }
       })
-      .build()
-      .setVisible(true);
+      .build().setVisible(true);
   };
+
+  // Si ya tenemos el token de la sesión Google, usarlo directo (sin popup)
+  if (_driveAccessToken) { showPicker(_driveAccessToken); return; }
+
+  // Si no, pedir token silenciosamente (ya autorizó Drive al iniciar sesión)
   if (!_tokenClient) {
     _tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: GDRIVE_CLIENT_ID,
       scope: "https://www.googleapis.com/auth/drive.readonly",
-      callback: r => { if (r.access_token) showPicker(r.access_token); },
+      callback: r => {
+        if (r.access_token) { _driveAccessToken = r.access_token; showPicker(r.access_token); }
+      },
     });
   }
+  // prompt:"" = silencioso si ya autorizó, muestra UI solo si es necesario
   _tokenClient.requestAccessToken({ prompt: "" });
 }
 
@@ -6658,6 +6666,13 @@ function AuthScreen({T, darkMode, onToggleDark}) {
     setLoading(true); setError("");
     try {
       const result = await signInWithPopup(auth, googleProvider);
+      // Guardar el accessToken de Google para Drive Picker (ya tiene scope drive.readonly)
+      const cred = result._tokenResponse || result.credential;
+      if (cred?.oauthAccessToken) _driveAccessToken = cred.oauthAccessToken;
+      else if (result.credential) {
+        const gc = window.firebase?.auth?.GoogleAuthProvider?.credentialFromResult?.(result);
+        if (gc?.accessToken) _driveAccessToken = gc.accessToken;
+      }
       await ensureUserDoc(result.user);
     } catch(e){ setError(errMsg(e.code)); }
     setLoading(false);
