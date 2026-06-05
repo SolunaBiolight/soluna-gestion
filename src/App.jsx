@@ -9585,10 +9585,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 ))}
               </div>
               <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:6}}>Etiquetas (opcional)</div>
-                <LabelPicker selected={ntLabels} onChange={id=>toggleLabel(id,ntLabels,setNtLabels)}/>
-              </div>
-              <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite (opcional)</div>
                 <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
               </div>
@@ -9666,10 +9662,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <button onClick={()=>setEtChecklist(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
-              </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:6}}>Etiquetas</div>
-                <LabelPicker selected={etLabels} onChange={id=>toggleLabel(id,etLabels,setEtLabels)}/>
               </div>
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
