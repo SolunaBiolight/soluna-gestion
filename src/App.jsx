@@ -8537,6 +8537,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [etAsignado, setEtAsignado] = useState("");
   // Modal nuevo colaborador
   const [showNC, setShowNC] = useState(false);
+  const [neType, setNeType] = useState("colab");
   const [expandedEquipo, setExpandedEquipo] = useState(null);
   const [ncNombre, setNcNombre] = useState("");
   const [ncEmail, setNcEmail] = useState("");
@@ -8712,6 +8713,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       toast("Colaborador agregado ✓","success");
       copyLink(d.token);
     } catch(e) {
+      console.error("crearColaborador error:", e);
       appAlert("Error al agregar colaborador: " + e.message);
     }
   }
@@ -9011,7 +9013,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         {view==="lista"&&<button onClick={()=>openCreativo()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
         {view==="ideas"&&<button onClick={()=>openIdea()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Idea</button>}
         {view==="tandas"&&<button onClick={()=>openTanda()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
-        {view==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Colaborador</button>}
+        {view==="equipo"&&<button onClick={()=>{setNeType("colab");setShowNC(true);}} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
       </AppTopbar>
 
       {/* Barra de tabs — underline estilo */}
@@ -9482,15 +9484,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           );
           return (
             <div>
-              {/* Agregar editor inline */}
-              <div style={{display:"flex",gap:8,marginBottom:20,alignItems:"center"}}>
-                <input id="add-editor-input" value={nuevoEditor} onChange={e=>setNuevoEditor(e.target.value)}
-                  onKeyDown={e=>e.key==="Enter"&&agregarEditor()}
-                  placeholder="Nombre del editor de producción…"
-                  style={{...iS,fontSize:13,flex:1}}/>
-                <AsyncButton onClick={agregarEditor} style={{...BtnSecondary(T),flexShrink:0,fontSize:13}}>+ Editor</AsyncButton>
-              </div>
-
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {todosEnEquipo.map(({_type,_key,data})=>{
                   if(_type==="colab") {
@@ -9532,7 +9525,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <button onClick={()=>{setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}}
                               style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Tarea</button>
                             <button onClick={()=>copyLink(c.token)}
-                              style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔗 Portal</button>
+                              style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>📋 Copiar link</button>
                             <button onClick={()=>setEquipoSettings({type:"colab",data:c})}
                               style={{...BtnSecondary(T),fontSize:13,padding:"5px 8px",color:T.textSm}}>···</button>
                           </div>
@@ -9579,8 +9572,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {/* Acciones */}
                         <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
                           {edLink
-                            ?<button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Portal copiado","success"))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔗 Portal</button>
-                            :<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>🔗 Generar portal</AsyncButton>
+                            ?<button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Link copiado","success"))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>📋 Copiar link</button>
+                            :<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>🔗 Generar link</AsyncButton>
                           }
                           <button onClick={()=>setEquipoSettings({type:"editor",name:ed})}
                             style={{...BtnSecondary(T),fontSize:13,padding:"5px 8px",color:T.textSm}}>···</button>
@@ -10245,36 +10238,63 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       {showNC&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:440}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:16,color:T.text}}>Agregar colaborador</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>+ Equipo</div>
               <button onClick={()=>setShowNC(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
             </div>
-            <div style={{fontSize:13,color:T.textMd,marginBottom:16,lineHeight:1.5,padding:"10px 12px",background:T.surface,borderRadius:8}}>
-              💡 Cada colaborador recibe un <strong style={{color:T.text}}>link único</strong> donde ve sus tareas y sube entregas. <strong style={{color:T.text}}>Sin crear cuenta.</strong>
+            {/* Toggle tipo */}
+            <div style={{display:"flex",gap:4,background:T.surface,borderRadius:10,padding:4,marginBottom:20}}>
+              {[{k:"colab",l:"Colaborador"},{k:"editor",l:"Editor de producción"}].map(({k,l})=>(
+                <button key={k} onClick={()=>setNeType(k)}
+                  style={{flex:1,padding:"7px 0",borderRadius:7,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",
+                    background:neType===k?T.accentSolid:"transparent",color:neType===k?"#fff":T.textSm,transition:"all 0.15s"}}>
+                  {l}
+                </button>
+              ))}
             </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {neType==="colab"&&<>
+              <div style={{fontSize:13,color:T.textMd,marginBottom:16,lineHeight:1.5,padding:"10px 12px",background:T.surface,borderRadius:8}}>
+                💡 Recibe un <strong style={{color:T.text}}>link único</strong> donde ve sus tareas y sube entregas. <strong style={{color:T.text}}>Sin crear cuenta.</strong>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Nombre *</div>
+                  <input value={ncNombre} onChange={e=>setNcNombre(e.target.value)} placeholder="Ej: María García" style={{...iS,fontSize:13,width:"100%"}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Email *</div>
+                  <input value={ncEmail} onChange={e=>setNcEmail(e.target.value)} placeholder="colaborador@email.com" style={{...iS,fontSize:13,width:"100%"}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Rol (opcional)</div>
+                  <input value={ncRol} onChange={e=>setNcRol(e.target.value)} placeholder="Ej: Editora de video, Community Manager…" style={{...iS,fontSize:13,width:"100%"}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>WhatsApp (opcional)</div>
+                  <input type="tel" value={ncTelefono} onChange={e=>setNcTelefono(e.target.value)} placeholder="Ej: 5491112345678" style={{...iS,fontSize:13,width:"100%"}}/>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Con código de país, sin + ni espacios.</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+                <button onClick={()=>setShowNC(false)} style={BtnSecondary(T)}>Cancelar</button>
+                <AsyncButton onClick={crearColaborador} style={BtnPrimary(T)}>Crear y copiar link</AsyncButton>
+              </div>
+            </>}
+            {neType==="editor"&&<>
+              <div style={{fontSize:13,color:T.textMd,marginBottom:16,lineHeight:1.5,padding:"10px 12px",background:T.surface,borderRadius:8}}>
+                💡 El editor de producción recibe un <strong style={{color:T.text}}>link</strong> donde ve sus creativos asignados. <strong style={{color:T.text}}>Sin crear cuenta.</strong>
+              </div>
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Nombre *</div>
-                <input value={ncNombre} onChange={e=>setNcNombre(e.target.value)} placeholder="Ej: María García" style={{...iS,fontSize:13,width:"100%"}}/>
+                <input value={nuevoEditor} onChange={e=>setNuevoEditor(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&agregarEditor().then(()=>setShowNC(false))}
+                  placeholder="Ej: Diego Sánchez" style={{...iS,fontSize:13,width:"100%"}}/>
               </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Email *</div>
-                <input type="email" value={ncEmail} onChange={e=>setNcEmail(e.target.value)} placeholder="colaborador@email.com" style={{...iS,fontSize:13,width:"100%"}}/>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+                <button onClick={()=>setShowNC(false)} style={BtnSecondary(T)}>Cancelar</button>
+                <AsyncButton onClick={async()=>{await agregarEditor();setShowNC(false);}} style={BtnPrimary(T)}>Agregar editor</AsyncButton>
               </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Rol (opcional)</div>
-                <input value={ncRol} onChange={e=>setNcRol(e.target.value)} placeholder="Ej: Editora de video, Community Manager…" style={{...iS,fontSize:13,width:"100%"}}/>
-              </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>WhatsApp (opcional)</div>
-                <input type="tel" value={ncTelefono} onChange={e=>setNcTelefono(e.target.value)} placeholder="Ej: 5491112345678" style={{...iS,fontSize:13,width:"100%"}}/>
-                <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Con código de país, sin + ni espacios. Para notificar por WA.</div>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
-              <button onClick={()=>setShowNC(false)} style={BtnSecondary(T)}>Cancelar</button>
-              <AsyncButton onClick={crearColaborador} style={BtnPrimary(T)}>Crear y copiar link</AsyncButton>
-            </div>
+            </>}
           </div>
         </div>
       )}
