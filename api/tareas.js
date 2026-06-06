@@ -509,7 +509,11 @@ export default async function handler(req, res) {
       const { nombre, email, rol="", telefono="" } = body;
       if (!nombre||!email) return res.status(400).json({ error:"Nombre y email requeridos" });
       const ex = await db.collection("colaboradores").where("uid","==",uid).where("email","==",email.toLowerCase()).limit(1).get();
-      if (!ex.empty) return res.json({ _id:ex.docs[0].id, ...ex.docs[0].data() });
+      if (!ex.empty) {
+        // Actualizar nombre/rol/tel por si el doc viejo tiene datos incompletos
+        await db.collection("colaboradores").doc(ex.docs[0].id).update({ nombre, rol, telefono: telefono.trim(), updatedAt: now });
+        return res.json({ _id:ex.docs[0].id, ...ex.docs[0].data(), nombre, rol, telefono: telefono.trim() });
+      }
       const tok = randomToken(24);
       const data = { uid, nombre, email:email.toLowerCase(), rol, telefono:telefono.trim(), token:tok, createdAt:now };
       const ref = await db.collection("colaboradores").add(data);

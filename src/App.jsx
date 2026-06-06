@@ -9794,7 +9794,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:14,cursor:"pointer"}}>
                       <div style={{position:"relative",flexShrink:0}}>
                         <div style={{width:40,height:40,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accent}}>
-                          {nombre[0].toUpperCase()}
+                          {(nombre||"?")[0].toUpperCase()}
                         </div>
                         {hasActivity&&<div style={{position:"absolute",bottom:1,right:1,width:10,height:10,borderRadius:"50%",background:dotColor,border:`2px solid ${T.card}`}}/>}
                       </div>
