@@ -8537,6 +8537,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [etAsignado, setEtAsignado] = useState("");
   // Modal nuevo colaborador
   const [showNC, setShowNC] = useState(false);
+  const [expandedEquipo, setExpandedEquipo] = useState(null);
   const [ncNombre, setNcNombre] = useState("");
   const [ncEmail, setNcEmail] = useState("");
   const [ncRol, setNcRol] = useState("");
@@ -9488,7 +9489,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   placeholder="Nombre del editor de producción…"
                   style={{...iS,fontSize:13,flex:1}}/>
                 <AsyncButton onClick={agregarEditor} style={{...BtnSecondary(T),flexShrink:0,fontSize:13}}>+ Editor</AsyncButton>
-                <button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),flexShrink:0,fontSize:13}}>+ Colaborador</button>
               </div>
 
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -9498,44 +9498,53 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const userTareas=tareas.filter(t=>t.asignadoEmail===c.email);
                     const pending=userTareas.filter(t=>t.estado==="pendiente"||t.estado==="en_proceso").length;
                     const entregado=userTareas.filter(t=>t.estado==="entregado").length;
-                    const hasWa=!!c.telefono;
-                    const waHref=hasWa
+                    const expanded=expandedEquipo===_key;
+                    const waHref=c.telefono
                       ?`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`
                       :`https://wa.me/?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`;
                     return (
-                      <div key={_key} style={{background:T.card,border:`1px solid ${entregado>0?(T.orange+"44"):T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",gap:14}}>
-                        {/* Avatar */}
-                        <div style={{position:"relative",flexShrink:0}}>
-                          <div style={{width:40,height:40,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accent}}>
-                            {c.nombre[0].toUpperCase()}
+                      <div key={_key} onClick={()=>setExpandedEquipo(expanded?null:_key)}
+                        style={{background:T.card,border:`1px solid ${entregado>0?(T.orange+"44"):T.border}`,borderRadius:12,padding:"14px 16px",cursor:"pointer"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:14}}>
+                          {/* Avatar */}
+                          <div style={{position:"relative",flexShrink:0}}>
+                            <div style={{width:40,height:40,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accent}}>
+                              {c.nombre[0].toUpperCase()}
+                            </div>
+                            {(pending>0||entregado>0)&&<div style={{position:"absolute",bottom:1,right:1,width:10,height:10,borderRadius:"50%",background:entregado>0?T.orange:T.green,border:`2px solid ${T.card}`}}/>}
                           </div>
-                          {(pending>0||entregado>0)&&<div style={{position:"absolute",bottom:1,right:1,width:10,height:10,borderRadius:"50%",background:entregado>0?T.orange:T.green,border:`2px solid ${T.card}`}}/>}
-                        </div>
-                        {/* Info */}
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
-                            <span style={{fontSize:14,fontWeight:600,color:T.text}}>{c.nombre}</span>
-                            {c.rol&&<span style={{fontSize:10,fontWeight:600,color:T.accent,background:T.accentSolid+"18",borderRadius:20,padding:"1px 8px"}}>{c.rol}</span>}
-                            {entregado>0&&<span style={{fontSize:10,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 8px"}}>📦 {entregado} para revisar</span>}
+                          {/* Info */}
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
+                              <span style={{fontSize:14,fontWeight:600,color:T.text}}>{c.nombre}</span>
+                              {c.rol&&<span style={{fontSize:10,fontWeight:600,color:T.accent,background:T.accentSolid+"18",borderRadius:20,padding:"1px 8px"}}>{c.rol}</span>}
+                              {entregado>0&&<span style={{fontSize:10,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 8px"}}>📦 {entregado} para revisar</span>}
+                            </div>
+                            <div style={{fontSize:12,color:T.textSm}}>
+                              {pending>0&&<span style={{color:T.textMd}}>{pending} activa{pending!==1?"s":""}</span>}
+                              {pending>0&&userTareas.length>pending&&<span style={{color:T.textSm}}> · {userTareas.length} total</span>}
+                              {pending===0&&userTareas.length===0&&<span style={{color:T.textSm}}>Sin tareas asignadas</span>}
+                              {pending===0&&userTareas.length>0&&<span style={{color:T.green}}>{userTareas.length} tarea{userTareas.length!==1?"s":""} ✓</span>}
+                            </div>
                           </div>
-                          <div style={{fontSize:12,color:T.textSm}}>
-                            {pending>0&&<span style={{color:T.textMd}}>{pending} activa{pending!==1?"s":""}</span>}
-                            {pending>0&&userTareas.length>pending&&<span style={{color:T.textSm}}> · {userTareas.length} total</span>}
-                            {pending===0&&userTareas.length===0&&<span style={{color:T.textSm}}>Sin tareas asignadas</span>}
-                            {pending===0&&userTareas.length>0&&<span style={{color:T.green}}>{userTareas.length} tarea{userTareas.length!==1?"s":""} ✓</span>}
+                          {/* Acciones */}
+                          <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+                            <button onClick={()=>{setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}}
+                              style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Tarea</button>
+                            <button onClick={()=>copyLink(c.token)}
+                              style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔗 Portal</button>
+                            <button onClick={()=>setEquipoSettings({type:"colab",data:c})}
+                              style={{...BtnSecondary(T),fontSize:13,padding:"5px 8px",color:T.textSm}}>···</button>
                           </div>
                         </div>
-                        {/* Acciones */}
-                        <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-                          <button onClick={()=>{setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}}
-                            style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Tarea</button>
-                          <button onClick={()=>copyLink(c.token)}
-                            style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>📋 Link</button>
-                          <a href={waHref} target="_blank" rel="noreferrer"
-                            style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>WA</a>
-                          <button onClick={()=>setEquipoSettings({type:"colab",data:c})}
-                            style={{...BtnSecondary(T),fontSize:13,padding:"5px 8px",color:T.textSm}}>···</button>
-                        </div>
+                        {expanded&&(
+                          <div onClick={e=>e.stopPropagation()} style={{borderTop:`1px solid ${T.border}`,marginTop:12,paddingTop:12,display:"flex",gap:8,flexWrap:"wrap"}}>
+                            <a href={waHref} target="_blank" rel="noreferrer"
+                              style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e44`}}>
+                              💬 WhatsApp
+                            </a>
+                          </div>
+                        )}
                       </div>
                     );
                   }
@@ -9543,37 +9552,51 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   const ed=data;
                   const edC=(produccion?.creativos||[]).filter(c=>c.editor===ed);
                   const edLink=editorPortalLink(ed);
+                  const expanded=expandedEquipo===_key;
                   const waEd=edLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${ed.split(" ")[0]} 👋, tus creativos:\n${edLink}`)}`:null;
                   return (
-                    <div key={_key} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",gap:14}}>
-                      {/* Avatar */}
-                      <div style={{position:"relative",flexShrink:0}}>
-                        <div style={{width:40,height:40,borderRadius:"50%",background:"#6366f122",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:"#818cf8"}}>
-                          {ed[0].toUpperCase()}
+                    <div key={_key} onClick={()=>setExpandedEquipo(expanded?null:_key)}
+                      style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",cursor:"pointer"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:14}}>
+                        {/* Avatar */}
+                        <div style={{position:"relative",flexShrink:0}}>
+                          <div style={{width:40,height:40,borderRadius:"50%",background:"#6366f122",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:"#818cf8"}}>
+                            {ed[0].toUpperCase()}
+                          </div>
+                          {edC.filter(c=>c.estado!=="publicado").length>0&&<div style={{position:"absolute",bottom:1,right:1,width:10,height:10,borderRadius:"50%",background:T.green,border:`2px solid ${T.card}`}}/>}
                         </div>
-                        {edC.filter(c=>c.estado!=="publicado").length>0&&<div style={{position:"absolute",bottom:1,right:1,width:10,height:10,borderRadius:"50%",background:T.green,border:`2px solid ${T.card}`}}/>}
-                      </div>
-                      {/* Info */}
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
-                          <span style={{fontSize:14,fontWeight:600,color:T.text}}>{ed}</span>
-                          <span style={{fontSize:10,fontWeight:600,color:"#818cf8",background:"#6366f118",borderRadius:20,padding:"1px 8px"}}>Editor</span>
+                        {/* Info */}
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
+                            <span style={{fontSize:14,fontWeight:600,color:T.text}}>{ed}</span>
+                            <span style={{fontSize:10,fontWeight:600,color:"#818cf8",background:"#6366f118",borderRadius:20,padding:"1px 8px"}}>Editor</span>
+                          </div>
+                          <div style={{fontSize:12,color:T.textSm}}>
+                            {edC.length} creativo{edC.length!==1?"s":""} asignado{edC.length!==1?"s":""}
+                            {edC.filter(c=>c.estado==="publicado").length>0&&<span style={{color:T.green}}> · {edC.filter(c=>c.estado==="publicado").length} publicado{edC.filter(c=>c.estado==="publicado").length!==1?"s":""}</span>}
+                          </div>
                         </div>
-                        <div style={{fontSize:12,color:T.textSm}}>
-                          {edC.length} creativo{edC.length!==1?"s":""} asignado{edC.length!==1?"s":""}
-                          {edC.filter(c=>c.estado==="publicado").length>0&&<span style={{color:T.green}}> · {edC.filter(c=>c.estado==="publicado").length} publicado{edC.filter(c=>c.estado==="publicado").length!==1?"s":""}</span>}
+                        {/* Acciones */}
+                        <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+                          {edLink
+                            ?<button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Portal copiado","success"))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>🔗 Portal</button>
+                            :<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>🔗 Generar portal</AsyncButton>
+                          }
+                          <button onClick={()=>setEquipoSettings({type:"editor",name:ed})}
+                            style={{...BtnSecondary(T),fontSize:13,padding:"5px 8px",color:T.textSm}}>···</button>
                         </div>
                       </div>
-                      {/* Acciones */}
-                      <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-                        {edLink
-                          ?<button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Link copiado","success"))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>📋 Link</button>
-                          :<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>🔗 Generar link</AsyncButton>
-                        }
-                        {waEd&&<a href={waEd} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>WA</a>}
-                        <button onClick={()=>setEquipoSettings({type:"editor",name:ed})}
-                          style={{...BtnSecondary(T),fontSize:13,padding:"5px 8px",color:T.textSm}}>···</button>
-                      </div>
+                      {expanded&&(
+                        <div onClick={e=>e.stopPropagation()} style={{borderTop:`1px solid ${T.border}`,marginTop:12,paddingTop:12,display:"flex",gap:8,flexWrap:"wrap"}}>
+                          {waEd
+                            ?<a href={waEd} target="_blank" rel="noreferrer"
+                                style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e44`}}>
+                                💬 WhatsApp
+                              </a>
+                            :<span style={{fontSize:12,color:T.textSm}}>Generá el portal para poder enviar por WhatsApp</span>
+                          }
+                        </div>
+                      )}
                     </div>
                   );
                 })}
