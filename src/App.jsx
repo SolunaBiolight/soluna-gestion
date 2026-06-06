@@ -11405,43 +11405,35 @@ function ColaboradorPublicView({T, token}) {
                     const curBg    = stepBgs[currentStep]||"#6b728015";
                     return (
                       <div style={{marginBottom:14}}>
-                        {/* Stepper visual */}
-                        <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:12,background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`,overflow:"hidden"}}>
+                        {/* Stepper visual — clickeable para cambiar estado */}
+                        <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:8,background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`,overflow:"hidden"}}>
                           {STEPS.map((step,i)=>{
                             const active=currentStep===step.id;
                             const passed=STEPS.findIndex(s=>s.id===currentStep)>i;
+                            const stepColor=step.id==="listo"?"#22c55e":step.id==="en_proceso"?"#3b82f6":"#d97706";
                             return (
-                              <div key={step.id} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"10px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="listo"?"#22c55e18":step.id==="en_proceso"?"#3b82f615":"#d9770615":"transparent",transition:"background 0.2s"}}>
-                                <span style={{fontSize:18,marginBottom:3,opacity:passed||active?1:0.35}}>{step.icon}</span>
-                                <span style={{fontSize:10,fontWeight:active?700:500,color:active?(step.id==="listo"?"#22c55e":step.id==="en_proceso"?"#3b82f6":"#d97706"):T.textSm,textAlign:"center",lineHeight:1.3}}>{step.label}</span>
-                                {active&&<div style={{width:18,height:3,borderRadius:2,background:step.id==="listo"?"#22c55e":step.id==="en_proceso"?"#3b82f6":"#d97706",marginTop:4}}/>}
-                              </div>
+                              <AsyncButton key={step.id}
+                                onClick={()=>!active&&publicSetEstado(t._id, step.estado, step.progresoLabel)}
+                                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"12px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="listo"?"#22c55e18":step.id==="en_proceso"?"#3b82f615":"#d9770615":"transparent",transition:"background 0.18s, opacity 0.18s",cursor:active?"default":"pointer",border:"none",borderRadius:0,outline:"none",opacity:active?1:0.55,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                <span style={{fontSize:20,marginBottom:3}}>{step.icon}</span>
+                                <span style={{fontSize:10,fontWeight:active?700:500,color:active?stepColor:T.textSm,textAlign:"center",lineHeight:1.3}}>{step.label}</span>
+                                {active&&<div style={{width:20,height:2.5,borderRadius:2,background:stepColor,marginTop:5}}/>}
+                              </AsyncButton>
                             );
                           })}
                         </div>
-                        {/* Botones de acción según estado actual */}
-                        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                          {currentStep!=="bloqueada"&&STEPS.filter(s=>s.id!==currentStep).map(step=>(
-                            <AsyncButton key={step.id}
-                              onClick={()=>publicSetEstado(t._id, step.estado, step.progresoLabel)}
-                              style={{fontSize:12,padding:"8px 14px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,display:"flex",alignItems:"center",gap:6}}>
-                              {step.icon} {step.label}
-                            </AsyncButton>
-                          ))}
-                          {currentStep==="bloqueada"&&(
-                            <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso","En proceso")}
-                              style={{fontSize:12,padding:"8px 14px",borderRadius:8,background:"#3b82f615",color:"#3b82f6",border:"1px solid #3b82f640",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
-                              🔄 Retomé el trabajo
-                            </AsyncButton>
-                          )}
-                          {/* Botón Bloqueado */}
-                          {currentStep!=="bloqueada"&&(
-                            <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:!p[t._id]}))}
-                              style={{fontSize:12,padding:"8px 14px",borderRadius:8,border:"1px solid #ef444440",background:"#ef444410",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
-                              🚫 Estoy bloqueado
-                            </button>
-                          )}
-                        </div>
+                        {/* Botón Bloqueado / Retomar — ancho completo, fino */}
+                        {currentStep==="bloqueada"?(
+                          <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso","En proceso")}
+                            style={{width:"100%",fontSize:12,padding:"7px 0",borderRadius:8,background:"#3b82f612",color:"#3b82f6",border:"1px solid #3b82f630",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,textAlign:"center",display:"block",boxSizing:"border-box"}}>
+                            🔄 Retomé el trabajo
+                          </AsyncButton>
+                        ):(
+                          <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:!p[t._id]}))}
+                            style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:8,border:"1px solid #ef444430",background:"#ef44440a",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box",letterSpacing:"0.01em"}}>
+                            🚫 Estoy bloqueado
+                          </button>
+                        )}
                         {/* Bloqueado — texto obligatorio */}
                         {showBloqueo[t._id]&&currentStep!=="bloqueada"&&(
                           <div style={{marginTop:8,background:"linear-gradient(135deg,#ef444412,#ef444408)",borderRadius:10,padding:"12px",border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444414"}}>
