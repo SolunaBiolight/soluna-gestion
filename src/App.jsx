@@ -11252,54 +11252,90 @@ function ColaboradorPublicView({T, token}) {
           </div>
         )}
 
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,alignItems:"start"}}>
-        {sortedTareas.map(t=>{
-          const est = ESTADOS[t.estado]||ESTADOS.pendiente;
-          const days = daysUntil(t.deadline);
-          const expanded = expandedTarea===t._id;
-          const isAprobado = t.estado==="aprobado";
-          const isRevision = t.estado==="revision";
-          const isUrgente = t.prioridad==="urgente";
-          const hasDels = (t.deliverables||[]).length>0;
-          const checklist = t.checklist||[];
-          const briefPreview = t.brief?t.brief.slice(0,130)+(t.brief.length>130?"…":""):null;
-          const linksNorm = normalizeLinks(t.links);
-          const lastEntregaJustSent = entregaEnviada[t._id];
-          return (
-            <div key={t._id} style={{background:T.card,border:`1px solid ${isRevision?"#ef444455":isUrgente?"#ef444433":isAprobado?"#22c55e44":T.border}`,borderRadius:12,overflow:"hidden",opacity:isAprobado?0.85:1,gridColumn:expanded?"1 / -1":"auto"}}>
-              {/* Banner deadline urgente */}
-              {t.deadline&&days!==null&&days<=2&&!isAprobado&&(
-                <div style={{background:"#ef4444",padding:"6px 16px",fontSize:12,color:"#fff",fontWeight:600}}>
-                  ⚠️ {days<0?`Vencido hace ${Math.abs(days)} día${Math.abs(days)!==1?"s":""}`:days===0?"¡Vence hoy!":days===1?"¡Vence mañana!":"Vence en 2 días"}
-                </div>
-              )}
-              {/* Card header */}
-              <div onClick={()=>setExpandedTarea(expanded?null:t._id)} style={{padding:"14px 16px",cursor:"pointer"}}>
-                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,flexWrap:"wrap"}}>
-                      {isUrgente&&<span style={{fontSize:10,color:"#ef4444",fontWeight:800}}>🔴</span>}
-                      {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600}}>#{t.tareaNumStr}</span>}
-                      <span style={{fontSize:15,fontWeight:600,color:T.text}}>{t.titulo}</span>
-                      {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:20,background:"#ef444420",color:"#ef4444",fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
-                      {t.leidoAt&&<span style={{fontSize:10,color:"#22c55e",flexShrink:0}}>👁</span>}
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:briefPreview&&!expanded?7:0}}>
-                      <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
-                      {t.deadline&&<span style={{fontSize:11,color:days!==null&&days<=2?"#ef4444":T.textSm,fontWeight:days!==null&&days<=2?600:400}}>
-                        📅 {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Hoy":`${days}d restantes`):fmtDate(t.deadline)}
-                      </span>}
-                      {hasDels&&<span style={{fontSize:11,color:"#22c55e"}}>✓ {(t.deliverables||[]).length} enviada{(t.deliverables||[]).length!==1?"s":""}</span>}
-                      {t.estimacion&&<span style={{fontSize:11,color:"#3b82f6"}}>⏱ {t.estimacion}</span>}
-                    </div>
-                    {briefPreview&&!expanded&&<div style={{fontSize:12,color:T.textSm,lineHeight:1.4,fontStyle:"italic"}}>{briefPreview}</div>}
+        {(()=>{
+          // Agrupar en filas de 2
+          const rows = [];
+          for(let i=0;i<sortedTareas.length;i+=2) rows.push(sortedTareas.slice(i,i+2));
+          const expandedTask = expandedTarea ? sortedTareas.find(x=>x._id===expandedTarea) : null;
+
+          // Card compacta
+          function TareaCard({t}) {
+            const est2 = ESTADOS[t.estado]||ESTADOS.pendiente;
+            const days2 = daysUntil(t.deadline);
+            const isAprobado2 = t.estado==="aprobado";
+            const isRevision2 = t.estado==="revision";
+            const isUrgente2 = t.prioridad==="urgente";
+            const hasDels2 = (t.deliverables||[]).length>0;
+            const brief2 = (t.brief||t.descripcion||"").trim();
+            const isSelected = expandedTarea===t._id;
+            return (
+              <div onClick={()=>setExpandedTarea(isSelected?null:t._id)}
+                style={{background:T.card,border:`1.5px solid ${isSelected?"#6366f1":isRevision2?"#ef444450":isUrgente2&&!isAprobado2?"#ef444435":isAprobado2?"#22c55e44":T.border}`,borderRadius:12,cursor:"pointer",overflow:"hidden",opacity:isAprobado2?0.88:1,display:"flex",flexDirection:"column",transition:"border-color 0.15s"}}>
+                {/* Banner */}
+                {isRevision2&&<div style={{background:"#ef444416",borderBottom:"1px solid #ef444330",padding:"5px 14px",fontSize:11,color:"#ef4444",fontWeight:700}}>🔁 Te pidieron cambios</div>}
+                {!isRevision2&&t.deadline&&days2!==null&&days2<=2&&!isAprobado2&&(
+                  <div style={{background:"#ef4444",padding:"5px 14px",fontSize:11,color:"#fff",fontWeight:600}}>
+                    ⚠️ {days2<0?`Vencida hace ${Math.abs(days2)}d`:days2===0?"¡Vence hoy!":days2===1?"¡Mañana!":"2 días"}
                   </div>
-                  <span style={{fontSize:12,color:T.textSm,flexShrink:0,marginTop:2}}>{expanded?"▲":"▼"}</span>
+                )}
+                <div style={{padding:"14px 16px 12px",flex:1,display:"flex",flexDirection:"column",gap:8}}>
+                  {/* Número + estado */}
+                  <div style={{display:"flex",alignItems:"center",gap:7}}>
+                    {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600}}>#{t.tareaNumStr}</span>}
+                    {isUrgente2&&<span style={{fontSize:10,color:"#ef4444",fontWeight:800}}>🔴</span>}
+                    <span style={{marginLeft:"auto",fontSize:10,padding:"3px 9px",borderRadius:20,fontWeight:700,background:est2.bg,color:est2.color,whiteSpace:"nowrap"}}>{est2.label}</span>
+                  </div>
+                  {/* Título */}
+                  <div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.3,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{t.titulo}</div>
+                  {/* Brief preview */}
+                  {brief2&&<div style={{fontSize:12,color:T.textSm,lineHeight:1.4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden",flex:1}}>{brief2}</div>}
+                  {/* Footer */}
+                  <div style={{display:"flex",alignItems:"center",gap:7,paddingTop:8,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
+                    {t.deadline&&<span style={{fontSize:11,color:days2!==null&&days2<=2?"#ef4444":T.textSm,fontWeight:days2!==null&&days2<=2?600:400}}>📅 {days2!==null?(days2<0?`Vencida ${Math.abs(days2)}d`:days2===0?"Hoy":`${days2}d`):fmtDate(t.deadline)}</span>}
+                    {hasDels2&&<span style={{fontSize:11,color:"#22c55e",fontWeight:600}}>✓{(t.deliverables||[]).length}v</span>}
+                    {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:4,background:"#ef444418",color:"#ef4444",fontWeight:700}}>{t.correcciones}ª corr.</span>}
+                    {t.progresoLabel==="Listo para entregar"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"#22c55e15",color:"#22c55e",fontWeight:600}}>✋ Listo</span>}
+                    {(t.comments||[]).length>0&&<span style={{fontSize:11,color:T.textSm}}>💬{t.comments.length}</span>}
+                    <span style={{marginLeft:"auto",fontSize:11,color:isSelected?"#6366f1":T.textSm,fontWeight:isSelected?600:400}}>{isSelected?"▲ Cerrar":"▼ Ver"}</span>
+                  </div>
                 </div>
               </div>
+            );
+          }
 
-              {expanded&&(
-                <div style={{borderTop:`1px solid ${T.border}`,padding:"16px",background:T.bg}}>
+          return rows.map((row, rowIdx)=>{
+            const expandedInRow = row.find(t=>t._id===expandedTarea);
+            const t = expandedInRow; // alias para el detalle
+            const est = t ? ESTADOS[t.estado]||ESTADOS.pendiente : null;
+            const days = t ? daysUntil(t.deadline) : null;
+            const isAprobado = t ? t.estado==="aprobado" : false;
+            const isRevision = t ? t.estado==="revision" : false;
+            const isUrgente = t ? t.prioridad==="urgente" : false;
+            const hasDels = t ? (t.deliverables||[]).length>0 : false;
+            const checklist = t ? t.checklist||[] : [];
+            const linksNorm = t ? normalizeLinks(t.links) : [];
+            const lastEntregaJustSent = t ? entregaEnviada[t._id] : null;
+            return (
+              <div key={rowIdx} style={{marginBottom:12}}>
+                {/* Fila de cards */}
+                <div style={{display:"grid",gridTemplateColumns:row.length===1?"minmax(0,540px)":"repeat(2,1fr)",gap:12,justifyContent:"center"}}>
+                  {row.map(t2=><TareaCard key={t2._id} t={t2}/>)}
+                </div>
+                {/* Detalle expandido bajo la fila */}
+                {expandedInRow&&(
+                <div style={{marginTop:8,background:T.card,border:`1.5px solid #6366f140`,borderRadius:12,overflow:"hidden"}}>
+                  {/* Header del detalle */}
+                  <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,background:T.surface}}>
+                    <div style={{flex:1}}>
+                      <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:700,background:est.bg,color:est.color,marginRight:8}}>{est.label}</span>
+                      <span style={{fontSize:14,fontWeight:700,color:T.text}}>{t.titulo}</span>
+                    </div>
+                    <button onClick={()=>setExpandedTarea(null)} style={{background:"transparent",border:"none",fontSize:20,color:T.textSm,cursor:"pointer",lineHeight:1,padding:"0 4px",fontFamily:"'Inter',system-ui,sans-serif"}}>×</button>
+                  </div>
+                  <div style={{padding:"18px 18px 24px"}}>
+              {/* content del detalle */}
+              {true&&(
+                <div>
                   {/* Banner revisión con feedback */}
                   {isRevision&&(
                     <div style={{marginBottom:16,padding:"14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444418"}}>
@@ -11578,11 +11614,12 @@ function ColaboradorPublicView({T, token}) {
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
-        </div>
+                {/* fin detalle */}
+                )}
+              </div>
+            );
+          });
+        })()}
 
         {/* ── SECCIÓN EQUIPO (si tiene permiso verEquipo) ── */}
         {equipoTareas&&(
