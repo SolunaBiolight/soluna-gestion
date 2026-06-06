@@ -9558,16 +9558,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                       </div>
                       {/* Acciones rápidas siempre visibles + chevron */}
-                      <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                      <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                         {c&&<button onClick={()=>copyLink(c.token)}
-                          style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>📋 Link</button>}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>📋 Copiar link</button>}
                         {!c&&portalLink&&<button onClick={()=>navigator.clipboard.writeText(portalLink).then(()=>toast("Link copiado","success"))}
-                          style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>📋 Link</button>}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>📋 Copiar link</button>}
                         {waHref&&<a href={waHref} target="_blank" rel="noreferrer"
-                          style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>💬 WA</a>}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>💬 WhatsApp</a>}
                         {c&&<button onClick={()=>setPermisosModal({colabId:c._id,nombre:c.nombre})}
-                          style={{...BtnSecondary(T),fontSize:13,padding:"4px 8px",color:T.textSm}}
-                          title="Configurar permisos">⚙</button>}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>Permisos</button>}
                         <span onClick={e=>{e.stopPropagation();setExpandedEquipo(expanded?null:_key);setEditingMember(null);}}
                           style={{fontSize:11,color:T.textSm,marginLeft:2,cursor:"pointer",padding:"4px 6px"}}>{expanded?"▲":"▼"}</span>
                       </div>
@@ -9595,7 +9594,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
                                 <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tareas</div>
                                 <button onClick={e=>{e.stopPropagation();setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}}
-                                  style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>+ Tarea</button>
+                                  style={{...BtnSecondary(T),fontSize:13,padding:"6px 14px"}}>+ Tarea</button>
                               </div>
                               {activas.length===0
                                 ?<span style={{fontSize:12,color:T.textSm}}>Sin tareas activas</span>
