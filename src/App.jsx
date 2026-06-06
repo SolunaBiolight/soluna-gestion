@@ -8535,6 +8535,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [etDeadline, setEtDeadline] = useState("");
   const [etPrioridad, setEtPrioridad] = useState("normal");
   const [etAsignado, setEtAsignado] = useState("");
+  const [calendarView, setCalendarView] = useState(false);
+  const [calMonth, setCalMonth] = useState({y:new Date().getFullYear(),m:new Date().getMonth()});
+  const [showNEvento, setShowNEvento] = useState(false);
+  const [nEventoData, setNEventoData] = useState({nombre:"",fecha:"",tipo:"lanzamiento",notas:""});
+  const [ntRecurrente, setNtRecurrente] = useState(false);
+  const [ntFrecuencia, setNtFrecuencia] = useState("semanal");
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState("");
   // Modal nuevo colaborador
   const [showNC, setShowNC] = useState(false);
   const [expandedEquipo, setExpandedEquipo] = useState(null);
@@ -8675,10 +8683,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const colab = colaboradores.find(c=>c.email===ntAsignado);
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||""});
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal");
-    // Panel de notificación
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal");
     if(colab) setNotifPanel({tarea:d,colab});
   }
 
@@ -8741,11 +8748,46 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   async function updateEstado(tareaId, estado, feedback="") {
-    await tareasApi({action:"updateEstado",tareaId,estado,feedback});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado,feedbackActual:estado==="revision"?feedback||null:null,correcciones:estado==="revision"?(t.correcciones||0)+1:t.correcciones}:t)}));
+    const tarea=tareas.find(t=>t._id===tareaId);
+    let tiempoEntregaDias=null;
+    if(estado==="aprobado"&&tarea?.createdAt){
+      const created=tarea.createdAt._seconds?new Date(tarea.createdAt._seconds*1000):new Date(tarea.createdAt);
+      tiempoEntregaDias=Math.max(1,Math.ceil((new Date()-created)/86400000));
+    }
+    await tareasApi({action:"updateEstado",tareaId,estado,feedback,tiempoEntregaDias});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado,feedbackActual:estado==="revision"?feedback||null:null,correcciones:estado==="revision"?(t.correcciones||0)+1:t.correcciones,tiempoEntregaDias:tiempoEntregaDias||t.tiempoEntregaDias}:t)}));
+    if(estado==="aprobado"&&tarea?.recurrente&&tarea?.deadline){
+      try{
+        const dl=tarea.deadline._seconds?new Date(tarea.deadline._seconds*1000):new Date(tarea.deadline);
+        const dias=tarea.frecuenciaRecurrente==="quincenal"?14:tarea.frecuenciaRecurrente==="mensual"?30:7;
+        dl.setDate(dl.getDate()+dias);
+        await tareasApi({action:"createTarea",titulo:tarea.titulo,descripcion:tarea.descripcion||"",brief:tarea.brief||"",links:tarea.links||[],checklist:[],asignadoEmail:tarea.asignadoEmail,asignadoNombre:tarea.asignadoNombre||"",deadline:dl.toISOString().slice(0,10),prioridad:tarea.prioridad||"normal",managerEmail:user?.email||"",recurrente:true,frecuenciaRecurrente:tarea.frecuenciaRecurrente});
+        await loadData();
+        toast(`Tarea recurrente creada automáticamente (${tarea.frecuenciaRecurrente}) ✓`,"success");
+      }catch(e){console.error("Error creando recurrente:",e);}
+    }
     setShowFeedback(prev=>({...prev,[tareaId]:false}));
     setFeedbackText(prev=>({...prev,[tareaId]:""}));
     toast("Estado actualizado","success");
+  }
+  async function crearEvento() {
+    if(!nEventoData.nombre.trim()||!nEventoData.fecha) return appAlert("Completá nombre y fecha");
+    const ev={id:mkProdId(),nombre:nEventoData.nombre.trim(),fecha:nEventoData.fecha,tipo:nEventoData.tipo,notas:nEventoData.notas.trim()};
+    await saveProd({...produccion,eventos:[...(produccion.eventos||[]),ev]});
+    setShowNEvento(false); setNEventoData({nombre:"",fecha:"",tipo:"lanzamiento",notas:""});
+    toast("Evento creado ✓","success");
+  }
+  async function eliminarEvento(id) {
+    await saveProd({...produccion,eventos:(produccion.eventos||[]).filter(e=>e.id!==id)});
+  }
+  async function guardarTemplate() {
+    if(!saveTemplateName.trim()) return;
+    const tmpl={id:mkProdId(),nombre:saveTemplateName.trim(),titulo:ntTitulo,brief:ntBrief,prioridad:ntPrioridad};
+    await saveProd({...produccion,taskTemplates:[...(produccion.taskTemplates||[]),tmpl]});
+    setShowSaveTemplate(false); setSaveTemplateName(""); toast("Plantilla guardada ✓","success");
+  }
+  async function eliminarTemplate(id) {
+    await saveProd({...produccion,taskTemplates:(produccion.taskTemplates||[]).filter(t=>t.id!==id)});
   }
   async function pedirCambios(tareaId) {
     await updateEstado(tareaId,"revision",feedbackText[tareaId]||"");
@@ -8858,7 +8900,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
           {t.tareaNumStr&&<span style={{fontSize:11,fontWeight:700,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px"}}>#{t.tareaNumStr}</span>}
           {t.leidoAt&&<span style={{fontSize:11,color:T.green}}>👁 Brief leído</span>}
-          {t.estimacion&&<span style={{fontSize:11,color:T.blue}}>⏱ {t.estimacion}</span>}
+          {(t.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:6,padding:"2px 8px"}}>🔁 {t.correcciones} corrección{(t.correcciones||0)!==1?"es":""}</span>}
+          {t.recurrente&&<span style={{fontSize:11,fontWeight:600,color:T.green,background:T.green+"15",borderRadius:6,padding:"2px 8px"}}>🔁 Recurrente · {t.frecuenciaRecurrente||"semanal"}</span>}
+          {t.tiempoEntregaDias&&t.estado==="aprobado"&&<span style={{fontSize:11,color:T.blue,background:T.blue+"15",borderRadius:6,padding:"2px 8px"}}>⏱ {t.tiempoEntregaDias}d</span>}
         </div>
         {/* Estados */}
         <div style={{marginBottom:14}}>
@@ -8897,12 +8941,18 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           </div>
         </div>
         {t.descripcion&&<div style={{marginBottom:12}}><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Descripción</div><div style={{fontSize:13,color:T.text,lineHeight:1.5}}>{t.descripcion}</div></div>}
-        {t.brief&&(
-          <div style={{marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Brief / Instrucciones</div>
-            <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap",background:T.surface,borderRadius:8,padding:"12px 14px",border:`1px solid ${T.borderL}`}}>{t.brief}</div>
-          </div>
-        )}
+        {t.brief&&(()=>{
+          const driveLinks=[...(t.brief.matchAll(/https?:\/\/(?:drive\.google\.com|docs\.google\.com)[^\s)]+/g))].map(m=>m[0]);
+          return(
+            <div style={{marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief / Instrucciones</div>
+                {driveLinks.length>0&&<a href={driveLinks[0]} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px",textDecoration:"none"}}>📂 Abrir Drive</a>}
+              </div>
+              <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap",background:T.surface,borderRadius:8,padding:"12px 14px",border:`1px solid ${T.borderL}`}}>{t.brief}</div>
+            </div>
+          );
+        })()}
         {linksNorm.length>0&&(
           <div style={{marginBottom:12}}>
             <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Archivos / Links</div>
@@ -9031,7 +9081,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           <span style={{width:5,height:5,borderRadius:"50%",background:"rgba(255,255,255,0.75)",display:"inline-block",animation:"pulse 1.5s infinite"}}/>{paraRevisar.length} para revisar
         </span>}
         {enRevision.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>🔁 {enRevision.length} en corrección</span>}
-        {view==="todo"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
+        {view==="todo"&&<button onClick={()=>setCalendarView(p=>!p)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>📅 {calendarView?"Tareas":"Calendario"}</button>}
+        {view==="todo"&&!calendarView&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
         {view==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
       </AppTopbar>
 
@@ -9079,7 +9130,89 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   })}
                 </div>
               )}
-              <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+              {/* ── CALENDARIO ── */}
+              {calendarView&&(()=>{
+                const MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+                const TIPO_COLOR={lanzamiento:"#6366f1",festividad:T.green,promo:T.orange,otro:T.textSm};
+                const daysInMonth=new Date(calMonth.y,calMonth.m+1,0).getDate();
+                const firstDay=new Date(calMonth.y,calMonth.m,1).getDay();
+                const todayStr=new Date().toISOString().slice(0,10);
+                const dayData={};
+                tareas.filter(t=>t.deadline).forEach(t=>{
+                  const d=t.deadline._seconds?new Date(t.deadline._seconds*1000):new Date(t.deadline);
+                  const key=d.toISOString().slice(0,10);
+                  if(!dayData[key]) dayData[key]={tareas:[],eventos:[]};
+                  dayData[key].tareas.push(t);
+                });
+                (produccion.eventos||[]).forEach(ev=>{
+                  if(!dayData[ev.fecha]) dayData[ev.fecha]={tareas:[],eventos:[]};
+                  dayData[ev.fecha].eventos.push(ev);
+                });
+                const cells=[];
+                for(let i=0;i<firstDay;i++) cells.push(null);
+                for(let d=1;d<=daysInMonth;d++) cells.push(d);
+                return (
+                  <div style={{marginBottom:24}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                      <button onClick={()=>setCalMonth(p=>p.m===0?{y:p.y-1,m:11}:{y:p.y,m:p.m-1})} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:14}}>‹</button>
+                      <span style={{flex:1,textAlign:"center",fontSize:15,fontWeight:700,color:T.text}}>{MESES[calMonth.m]} {calMonth.y}</span>
+                      <button onClick={()=>setCalMonth(p=>p.m===11?{y:p.y+1,m:0}:{y:p.y,m:p.m+1})} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:14}}>›</button>
+                      <button onClick={()=>setShowNEvento(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Evento</button>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+                      {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map(d=>(
+                        <div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:T.textSm,padding:"4px 0"}}>{d}</div>
+                      ))}
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+                      {cells.map((day,i)=>{
+                        if(!day) return <div key={"e"+i} style={{minHeight:70}}/>;
+                        const dateStr=`${calMonth.y}-${String(calMonth.m+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+                        const data=dayData[dateStr];
+                        const isToday=dateStr===todayStr;
+                        const hasContent=data&&(data.tareas.length>0||data.eventos.length>0);
+                        return (
+                          <div key={day} style={{minHeight:70,background:isToday?T.accentSolid+"18":hasContent?T.surface+"aa":T.surface,borderRadius:6,padding:"5px 6px",border:`1px solid ${isToday?T.accent:hasContent?T.border+"aa":T.border+"44"}`}}>
+                            <div style={{fontSize:11,fontWeight:isToday?700:400,color:isToday?T.accent:T.textSm,marginBottom:3}}>{day}</div>
+                            {data?.tareas.slice(0,2).map(t=>(
+                              <div key={t._id} onClick={()=>setKanbanSelected(t)}
+                                style={{fontSize:9,color:T.accent,background:T.accentSolid+"18",borderRadius:3,padding:"1px 4px",marginBottom:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer"}}>
+                                {t.asignadoNombre?.split(" ")[0]}: {t.titulo}
+                              </div>
+                            ))}
+                            {data?.eventos.map(ev=>(
+                              <div key={ev.id} style={{fontSize:9,fontWeight:600,color:TIPO_COLOR[ev.tipo]||T.textSm,background:(TIPO_COLOR[ev.tipo]||T.textSm)+"18",borderRadius:3,padding:"1px 4px",marginBottom:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                📌 {ev.nombre}
+                              </div>
+                            ))}
+                            {data?.tareas.length>2&&<div style={{fontSize:8,color:T.textSm}}>+{data.tareas.length-2}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {(produccion.eventos||[]).length>0&&(
+                      <div style={{marginTop:20}}>
+                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Eventos</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                          {[...(produccion.eventos||[])].sort((a,b)=>a.fecha>b.fecha?1:-1).map(ev=>(
+                            <div key={ev.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`}}>
+                              <div style={{width:8,height:8,borderRadius:"50%",background:TIPO_COLOR[ev.tipo]||T.textSm,flexShrink:0}}/>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:13,fontWeight:600,color:T.text}}>{ev.nombre}</div>
+                                <div style={{fontSize:11,color:T.textSm}}>{ev.fecha} · <span style={{color:TIPO_COLOR[ev.tipo]||T.textSm,fontWeight:600}}>{ev.tipo}</span>{ev.notas&&` · ${ev.notas}`}</div>
+                              </div>
+                              <AsyncButton onClick={()=>eliminarEvento(ev.id)} style={{background:"transparent",border:"none",color:T.red,fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:"4px 8px"}}>✕</AsyncButton>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Métricas */}
+              {!calendarView&&<div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
                 {[
                   {l:"Activas",       v:tareasActivas.length,                              c:T.blue},
                   {l:"Para revisar",  v:paraRevisar.length,                                c:T.orange},
@@ -9091,7 +9224,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <div style={{fontSize:12,color:T.textSm,marginTop:5}}>{s.l}</div>
                   </div>
                 ))}
-              </div>
+              </div>}
               {paraRevisar.length>0&&(
                 <div style={{background:T.card,border:`1.5px solid ${T.orange}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
                   <div style={{background:T.orange,padding:"10px 16px"}}>
@@ -9887,10 +10020,50 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 ))}
               </div>
             </div>
-            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
-              <button onClick={()=>setShowNT(false)} style={BtnSecondary(T)}>Cancelar</button>
-              <AsyncButton onClick={crearTarea} style={BtnPrimary(T)}>Crear tarea</AsyncButton>
+            {/* Templates */}
+            {(produccion.taskTemplates||[]).length>0&&(
+              <div style={{marginBottom:4}}>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Cargar plantilla</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {(produccion.taskTemplates||[]).map(tmpl=>(
+                    <button key={tmpl.id} onClick={()=>{setNtTitulo(tmpl.titulo||"");setNtBrief(tmpl.brief||"");setNtPrioridad(tmpl.prioridad||"normal");}}
+                      style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>{tmpl.nombre}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Recurrente */}
+            <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`}}>
+              <button onClick={()=>setNtRecurrente(p=>!p)}
+                style={{width:36,height:20,borderRadius:10,border:"none",cursor:"pointer",background:ntRecurrente?T.green:"#6b7280",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
+                <div style={{position:"absolute",top:2,left:ntRecurrente?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
+              </button>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:500,color:T.text}}>Tarea recurrente</div>
+                <div style={{fontSize:11,color:T.textSm}}>Se recrea automáticamente al aprobarla</div>
+              </div>
+              {ntRecurrente&&(
+                <select value={ntFrecuencia} onChange={e=>setNtFrecuencia(e.target.value)} style={{...iS,fontSize:12,padding:"4px 8px",width:"auto"}}>
+                  <option value="semanal">Semanal</option>
+                  <option value="quincenal">Quincenal</option>
+                  <option value="mensual">Mensual</option>
+                </select>
+              )}
             </div>
+            <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,alignItems:"center"}}>
+              <button onClick={()=>setShowSaveTemplate(true)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>💾 Guardar plantilla</button>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setShowNT(false)} style={BtnSecondary(T)}>Cancelar</button>
+                <AsyncButton onClick={crearTarea} style={BtnPrimary(T)}>Crear tarea</AsyncButton>
+              </div>
+            </div>
+            {showSaveTemplate&&(
+              <div style={{marginTop:8,padding:"10px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`,display:"flex",gap:8}}>
+                <input value={saveTemplateName} onChange={e=>setSaveTemplateName(e.target.value)} placeholder="Nombre de la plantilla" style={{...iS,fontSize:12,flex:1}}/>
+                <AsyncButton onClick={guardarTemplate} style={{...BtnPrimary(T),fontSize:12,padding:"5px 12px"}}>Guardar</AsyncButton>
+                <button onClick={()=>setShowSaveTemplate(false)} style={{...BtnSecondary(T),fontSize:12,padding:"5px 8px"}}>✕</button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -10017,6 +10190,46 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           </div>
         );
       })()}
+
+      {/* MODAL Nuevo Evento */}
+      {showNEvento&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+          onClick={e=>{if(e.target===e.currentTarget)setShowNEvento(false);}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:400}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>📌 Nuevo evento</div>
+              <button onClick={()=>setShowNEvento(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:15}}>✕</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Nombre *</div>
+                <input value={nEventoData.nombre} onChange={e=>setNEventoData(p=>({...p,nombre:e.target.value}))} placeholder="Ej: Hot Sale, Día de la Madre, Lanzamiento…" style={{...iS,fontSize:13,width:"100%"}} autoFocus/>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha *</div>
+                <input type="date" value={nEventoData.fecha} onChange={e=>setNEventoData(p=>({...p,fecha:e.target.value}))} style={{...iS,fontSize:13,width:"100%"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo</div>
+                <select value={nEventoData.tipo} onChange={e=>setNEventoData(p=>({...p,tipo:e.target.value}))} style={{...iS,fontSize:13,width:"100%"}}>
+                  <option value="lanzamiento">🚀 Lanzamiento</option>
+                  <option value="festividad">🎉 Festividad</option>
+                  <option value="promo">💥 Promo / Sale</option>
+                  <option value="otro">📌 Otro</option>
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Notas (opcional)</div>
+                <input value={nEventoData.notas} onChange={e=>setNEventoData(p=>({...p,notas:e.target.value}))} placeholder="Ej: preparar contenido con 2 semanas de anticipación" style={{...iS,fontSize:13,width:"100%"}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+              <button onClick={()=>setShowNEvento(false)} style={BtnSecondary(T)}>Cancelar</button>
+              <AsyncButton onClick={crearEvento} style={BtnPrimary(T)}>Crear evento</AsyncButton>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL Nuevo Colaborador */}
       {/* MODAL Nueva/Editar Tanda */}
