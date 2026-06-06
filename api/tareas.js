@@ -521,11 +521,12 @@ export default async function handler(req, res) {
     }
 
     if (action === "updateColaborador") {
-      const { colabId, nombre, rol, telefono } = body;
+      const { colabId, nombre, rol, telefono, email } = body;
       const upd = { updatedAt:now };
       if (nombre!==undefined) upd.nombre = nombre;
       if (rol!==undefined) upd.rol = rol;
       if (telefono!==undefined) upd.telefono = telefono;
+      if (email!==undefined) upd.email = email.toLowerCase().trim();
       await db.collection("colaboradores").doc(colabId).update(upd);
       return res.json({ ok:true });
     }

@@ -8619,7 +8619,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [showNC, setShowNC] = useState(false);
   const [expandedEquipo, setExpandedEquipo] = useState(null);
   const [editingMember, setEditingMember] = useState(null);
-  const [editData, setEditData] = useState({nombre:"",rol:"",wa:""});
+  const [editData, setEditData] = useState({nombre:"",rol:"",wa:"",email:""});
   const [permisosModal, setPermisosModal] = useState(null); // {colabId, nombre}
   const [ncNombre, setNcNombre] = useState("");
   const [ncEmail, setNcEmail] = useState("");
@@ -8790,13 +8790,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       if(email) {
         const d = await tareasApi({action:"createColaborador",nombre,email,rol:ncRol.trim(),telefono:ncTelefono.trim()});
-        console.log("[agregarMiembro] API response:", JSON.stringify(d));
         if(!d||!d._id) throw new Error("Respuesta inválida del servidor");
-        setDatos(prev=>{
-          const next = {...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]};
-          console.log("[agregarMiembro] colaboradores después:", next.colaboradores.map(c=>c.email));
-          return next;
-        });
+        setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
         setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
         toast("Miembro agregado ✓","success");
         try { await navigator.clipboard.writeText(colabLink(d.token)); toast("Link copiado 📋","success"); } catch(_){}
@@ -8821,8 +8816,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   async function updateColabData(colabId) {
     try {
-      await tareasApi({action:"updateColaborador",colabId,nombre:editData.nombre.trim(),rol:editData.rol.trim(),telefono:editData.wa.trim()});
-      setDatos(prev=>({...prev,colaboradores:prev.colaboradores.map(c=>c._id===colabId?{...c,nombre:editData.nombre.trim(),rol:editData.rol.trim(),telefono:editData.wa.trim()}:c)}));
+      await tareasApi({action:"updateColaborador",colabId,nombre:editData.nombre.trim(),rol:editData.rol.trim(),telefono:editData.wa.trim(),email:editData.email.trim()});
+      setDatos(prev=>({...prev,colaboradores:prev.colaboradores.map(c=>c._id===colabId?{...c,nombre:editData.nombre.trim(),rol:editData.rol.trim(),telefono:editData.wa.trim(),email:editData.email.trim().toLowerCase()}:c)}));
       setEditingMember(null);
       toast("Datos guardados ✓","success");
     } catch(e){ appAlert("Error: "+e.message); }
@@ -9898,6 +9893,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               </div>
                               {c&&<>
                                 <div>
+                                  <div style={{fontSize:11,color:T.textSm,marginBottom:4}}>Email</div>
+                                  <input value={editData.email} onChange={e=>setEditData(p=>({...p,email:e.target.value}))}
+                                    placeholder="colaborador@email.com" style={{...InputStyle(T),fontSize:13,width:"100%"}} type="email"/>
+                                </div>
+                                <div>
                                   <div style={{fontSize:11,color:T.textSm,marginBottom:4}}>Rol</div>
                                   <input value={editData.rol} onChange={e=>setEditData(p=>({...p,rol:e.target.value}))}
                                     placeholder="Ej: Editora de video" style={{...InputStyle(T),fontSize:13,width:"100%"}}/>
@@ -9935,7 +9935,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {/* Footer: Editar + Eliminar */}
                         {!editing&&(
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:`1px solid ${T.border}`}}>
-                            <button onClick={e=>{e.stopPropagation();setEditingMember(_key);setEditData({nombre:c?.nombre||nombre,rol:c?.rol||"",wa:c?.telefono||""});}}
+                            <button onClick={e=>{e.stopPropagation();setEditingMember(_key);setEditData({nombre:c?.nombre||nombre,rol:c?.rol||"",wa:c?.telefono||"",email:c?.email||""});}}
                               style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px"}}>✏️ Editar datos</button>
                             <AsyncButton onClick={async()=>{
                               if(c){
