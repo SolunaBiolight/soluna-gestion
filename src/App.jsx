@@ -8766,11 +8766,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
     const failed = emailResults.filter(r=>!r.ok);
-    const sandboxError = failed.some(r=>r.error?.includes("SANDBOX_SENDER"));
-    if(sandboxError) toast("⚠️ Email no configurado: necesitás agregar RESEND_FROM con tu dominio en Vercel","warning");
-    else if(failed.length>0) toast(`⚠️ ${failed.length} email(s) fallaron: ${failed.map(r=>r.error).join(" / ")}`,"warning");
+    if(failed.length>0) toast(`⚠️ ${failed.length} email(s) no enviados: ${failed.map(r=>r.error||"error").join(" / ")}`,"warning");
     else if(sent.length>0) toast("📧 Notificaciones enviadas ✓","success");
-    else if(ntAsignados.length>0) toast("⚠️ No se encontraron los colaboradores en la BD para enviar emails","warning");
     if(colab) setNotifPanel({tarea:d,colab});
   }
 

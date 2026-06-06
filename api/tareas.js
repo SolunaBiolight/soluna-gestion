@@ -41,8 +41,7 @@ async function sendEmail({ to, subject, html }) {
   const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
   const usingSandbox = from.includes("onboarding@resend.dev");
   if (usingSandbox) {
-    console.warn(`[email] SANDBOX SENDER — onboarding@resend.dev solo entrega al dueño de la cuenta Resend. Para enviar a ${to} necesitás configurar RESEND_FROM con un dominio verificado.`);
-    return { error: "SANDBOX_SENDER — configura RESEND_FROM con dominio propio en Vercel" };
+    console.warn(`[email] SANDBOX: onboarding@resend.dev — solo entrega al dueño de la cuenta. Intentando enviar a ${to} de todas formas...`);
   }
   try {
     console.log(`[email] enviando desde "${from}" a "${to}" subject="${subject}"`);
