@@ -34,7 +34,8 @@ function colabPortalLink(origin, token) {
   return `${base}/#/colaborador/${token}`;
 }
 
-async function sendEmail({ to, subject, html }) {
+// delayMs opcional → usa Resend scheduled_at (permite cancelar antes de enviar)
+async function sendEmail({ to, subject, html, delayMs }) {
   const key = process.env.RESEND_API_KEY;
   if (!key) { console.error("[email] RESEND_API_KEY no configurada"); return { error: "RESEND_API_KEY_FALTANTE" }; }
   if (!to)  { console.error("[email] destinatario vacío"); return { error: "Sin destinatario" }; }
@@ -44,19 +45,40 @@ async function sendEmail({ to, subject, html }) {
     console.warn(`[email] SANDBOX: onboarding@resend.dev — solo entrega al dueño de la cuenta. Intentando enviar a ${to} de todas formas...`);
   }
   try {
-    console.log(`[email] enviando desde "${from}" a "${to}" subject="${subject}"`);
+    const body = { from, to: [to], subject, html };
+    if (delayMs) {
+      body.scheduled_at = new Date(Date.now() + delayMs).toISOString();
+      console.log(`[email] programado en ${delayMs/1000}s → "${subject}"`);
+    } else {
+      console.log(`[email] enviando desde "${from}" a "${to}" subject="${subject}"`);
+    }
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [to], subject, html }),
+      body: JSON.stringify(body),
     });
     const data = await r.json();
     if (!r.ok) { console.error("[email] Resend error:", JSON.stringify(data)); return { error: data?.message || "Error Resend", detail: data }; }
-    console.log(`[email] OK id=${data.id}`);
+    console.log(`[email] OK id=${data.id}${delayMs?" (programado)":""}`);
     return { ok: true, id: data.id };
   } catch(e) {
     console.error("[email] fetch error:", e.message);
     return { error: e.message };
+  }
+}
+
+// Cancela un email programado en Resend (solo funciona si todavía no se envió)
+async function cancelEmail(emailId) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key || !emailId) return;
+  try {
+    await fetch(`https://api.resend.com/emails/${emailId}/cancel`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}` },
+    });
+    console.log(`[email] cancelado id=${emailId}`);
+  } catch(e) {
+    console.warn(`[email] no se pudo cancelar ${emailId}:`, e.message);
   }
 }
 
@@ -372,17 +394,28 @@ export default async function handler(req, res) {
         }
       }
 
-      // Listo para entregar → notificar al manager
+      // Si había un email de "Listo para entregar" pendiente y el estado cambió → cancelarlo
+      if (prevProgresoLabel==="Listo para entregar" && progresoLabel!=="Listo para entregar") {
+        const pendingId = t.data().pendingListoEmailId;
+        if (pendingId) {
+          cancelEmail(pendingId);
+          upd.pendingListoEmailId = null;
+        }
+      }
+
+      // Listo para entregar → notificar al manager con delay de 3 min
       if (estado==="en_proceso" && progresoLabel==="Listo para entregar"
           && prevProgresoLabel!=="Listo para entregar" && managerEmailPub) {
-        sendEmail({
+        const emailRes = await sendEmail({
           to: managerEmailPub,
           subject: `✋ ${colab.nombre} está listo para entregar — ${t.data().titulo}`,
           html: emailListoParaEntregar({ colab, tarea:t.data(), link:tareaLink }),
+          delayMs: 3 * 60 * 1000,
         });
+        if (emailRes.id) upd.pendingListoEmailId = emailRes.id;
       }
 
-      // Retoma el trabajo tras bloqueo → notificar al manager
+      // Retoma el trabajo tras bloqueo → notificar al manager (inmediato, es urgente resolverlo)
       if (estado==="en_proceso" && prevEstado==="bloqueada" && managerEmailPub) {
         sendEmail({
           to: managerEmailPub,
@@ -719,17 +752,24 @@ export default async function handler(req, res) {
         }
       }
       if (cambios.length > 0) {
+        // Cancelar email de actualización anterior si todavía no se envió
+        const prevUpdateEmailId = prevData.pendingUpdateEmailId;
+        if (prevUpdateEmailId) cancelEmail(prevUpdateEmailId);
         const recipientEmails = (clean.asignadosEmails || prevData.asignadosEmails || [clean.asignadoEmail || prevData.asignadoEmail]).filter(Boolean);
-        for (const email of recipientEmails) {
+        // Solo notificamos al primero para no duplicar (todos ven la misma tarea)
+        const emailDest = recipientEmails[0];
+        if (emailDest) {
           const colabSnap3 = await db.collection("colaboradores")
-            .where("uid","==",uid).where("email","==",email).limit(1).get();
+            .where("uid","==",uid).where("email","==",emailDest).limit(1).get();
           if (!colabSnap3.empty) {
             const c3 = colabSnap3.docs[0].data();
-            sendEmail({
-              to: email,
+            const emailRes3 = await sendEmail({
+              to: emailDest,
               subject: `✏️ Actualizaron tu tarea — ${clean.titulo || prevData.titulo}`,
               html: emailTareaActualizada({ colab:c3, tarea:{...prevData,...clean}, cambios, link:colabPortalLink(origin, c3.token) }),
+              delayMs: 3 * 60 * 1000,
             });
+            if (emailRes3.id) clean.pendingUpdateEmailId = emailRes3.id;
           }
         }
       }
