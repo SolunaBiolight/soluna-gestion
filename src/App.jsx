@@ -9411,7 +9411,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   const tieneEntregado=colabTareas.some(t=>t.estado==="entregado");
                   const ESTILO_T={pendiente:{l:"Pendiente",c:"#9ca3af",bg:T.surface,dot:"#9ca3af"},en_proceso:{l:"En proceso",c:T.blue,bg:T.blue+"18",dot:T.blue},entregado:{l:"Entregado",c:T.orange,bg:T.orange+"18",dot:T.orange},revision:{l:"Corrección",c:T.red,bg:T.red+"18",dot:T.red}};
                   return(
-                    <div key={colab._id} style={{background:T.card,border:`1px solid ${tieneEntregado?T.orange+"44":T.border}`,borderRadius:12,overflow:"hidden"}}>
+                    {(()=>{
+                      const isDragOverTodo=dragOverColab===colab._id&&draggedTarea?.fromColabKey!==colab._id;
+                      return(
+                    <div key={colab._id}
+                      onDragOver={e=>{e.preventDefault();if(draggedTarea&&draggedTarea.fromColabKey!==colab._id)setDragOverColab(colab._id);}}
+                      onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverColab(null);}}
+                      onDrop={e=>{e.preventDefault();if(draggedTarea&&draggedTarea.fromColabKey!==colab._id){reassignTarea(draggedTarea.id,colab.email);}setDragOverColab(null);}}
+                      style={{background:T.card,border:`2px solid ${isDragOverTodo?T.accent:tieneEntregado?T.orange+"44":T.border}`,borderRadius:12,overflow:"hidden",transition:"border-color 0.15s",boxShadow:isDragOverTodo?`0 0 0 3px ${T.accent}22`:"none"}}>
                       <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
                         <div style={{position:"relative",flexShrink:0}}>
                           <div style={{width:40,height:40,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accent}}>{colab.nombre[0].toUpperCase()}</div>
@@ -9425,14 +9432,29 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <button onClick={()=>{setNtAsignado(colab.email);setShowNT(true);}} style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>+ Tarea</button>
                       </div>
                       <div style={{borderTop:`1px solid ${T.border}`,padding:"8px 12px",display:"flex",flexDirection:"column",gap:4}}>
+                        {isDragOverTodo&&(
+                          <div style={{padding:"12px",borderRadius:8,border:`2px dashed ${T.accent}`,background:T.accent+"0f",textAlign:"center",fontSize:12,color:T.accent,fontWeight:600}}>
+                            Soltar acá para reasignar a {colab.nombre}
+                          </div>
+                        )}
                         {colabTareas.map(t=>{
                           const est=ESTILO_T[t.estado]||ESTILO_T.pendiente;
                           const days=dLeft(t.deadline);
+                          const isDraggingThis=draggedTarea?.id===t._id;
                           return(
-                            <div key={t._id} onClick={()=>setKanbanSelected(t)}
-                              style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,cursor:"pointer",transition:"border-color 0.15s"}}
-                              onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+                            <div key={t._id}
+                              draggable={true}
+                              onDragStart={e=>{e.stopPropagation();setDraggedTarea({id:t._id,fromColabKey:colab._id});e.dataTransfer.effectAllowed="move";}}
+                              onDragEnd={()=>{setDraggedTarea(null);setDragOverColab(null);}}
+                              onClick={()=>setKanbanSelected(t)}
+                              style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,cursor:"grab",transition:"opacity 0.15s, border-color 0.15s",opacity:isDraggingThis?0.35:1,userSelect:"none"}}
+                              onMouseEnter={e=>{if(!isDraggingThis)e.currentTarget.style.borderColor=T.accent}}
                               onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                              <svg width="10" height="14" viewBox="0 0 10 14" fill={T.textSm} style={{flexShrink:0,opacity:0.4}}>
+                                <circle cx="3" cy="2" r="1.5"/><circle cx="7" cy="2" r="1.5"/>
+                                <circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/>
+                                <circle cx="3" cy="12" r="1.5"/><circle cx="7" cy="12" r="1.5"/>
+                              </svg>
                               <div style={{width:8,height:8,borderRadius:"50%",background:est.dot,flexShrink:0}}/>
                               <span style={{flex:1,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
                               {t.prioridad==="urgente"&&<span style={{fontSize:10,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"1px 6px",flexShrink:0}}>URGENTE</span>}
@@ -9443,6 +9465,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         })}
                       </div>
                     </div>
+                      );
+                    })()}
                   );
                 })}
                 {tareasActivas.length===0&&creativosActivos.length===0&&(
