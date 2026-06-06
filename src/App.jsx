@@ -9393,7 +9393,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </div>
                 </div>
               )}
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(420px,1fr))",gap:10}}>
                 {produccion.editores.map(ed=>{
                   const edC=creativosActivos.filter(c=>c.editor===ed);
                   if(!edC.length) return null;
