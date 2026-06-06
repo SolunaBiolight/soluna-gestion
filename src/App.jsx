@@ -208,11 +208,10 @@ const GDRIVE_API_KEY   = import.meta.env.VITE_GOOGLE_API_KEY   || "";
 const GDRIVE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 let _gapiReady = false, _gisReady = false;
 
-// Token persistido en sessionStorage — sobrevive navegación SPA, no página refresh
-function _saveToken(t, exp) {
+function _saveDriveToken(t, exp) {
   try { sessionStorage.setItem("_gdt", JSON.stringify({ t, exp })); } catch(_) {}
 }
-function _loadToken() {
+function _getSavedDriveToken() {
   try {
     const s = sessionStorage.getItem("_gdt");
     if (!s) return null;
@@ -222,35 +221,36 @@ function _loadToken() {
 }
 
 function _loadDriveScripts() {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     let g = _gapiReady, s = _gisReady;
     const done = () => { if (g && s) resolve(); };
+    const timer = setTimeout(() => reject(new Error("Timeout cargando scripts de Drive")), 10000);
     if (!_gapiReady) {
       const el = document.createElement("script");
       el.src = "https://apis.google.com/js/api.js";
-      el.onload = () => { window.gapi.load("picker", () => { _gapiReady = g = true; done(); }); };
+      el.onerror = () => { clearTimeout(timer); reject(new Error("Error cargando GAPI")); };
+      el.onload = () => { window.gapi.load("picker", () => { _gapiReady = g = true; clearTimeout(timer); done(); }); };
       document.head.appendChild(el);
     } else { g = true; }
     if (!_gisReady) {
       const el = document.createElement("script");
       el.src = "https://accounts.google.com/gsi/client";
+      el.onerror = () => { clearTimeout(timer); reject(new Error("Error cargando GIS")); };
       el.onload = () => { _gisReady = s = true; done(); };
       document.head.appendChild(el);
     } else { s = true; }
-    if (g && s) resolve();
+    if (g && s) { clearTimeout(timer); resolve(); }
   });
 }
 
-// Abre el picker — DEBE llamarse desde un gesto directo del usuario
-function _openPickerWithToken(token, onSelect) {
-  const myDrive = new window.google.picker.DocsView()
-    .setIncludeFolders(true).setSelectFolderEnabled(false);
-  const shared = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
-    .setEnableDrives(true).setIncludeFolders(true);
+// Abre el picker con un token ya disponible.
+// IMPORTANTE: debe llamarse desde un click directo del usuario (no desde callback async)
+function _showDrivePicker(token, onSelect, onCancel) {
+  const myDrive = new window.google.picker.DocsView().setIncludeFolders(true).setSelectFolderEnabled(false);
+  const shared  = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS).setEnableDrives(true).setIncludeFolders(true);
   new window.google.picker.PickerBuilder()
     .setTitle("Elegir archivo de Google Drive")
-    .addView(myDrive)
-    .addView(shared)
+    .addView(myDrive).addView(shared)
     .setOAuthToken(token)
     .setDeveloperKey(GDRIVE_API_KEY)
     .enableFeature(window.google.picker.Feature.SUPPORT_DRIVES)
@@ -258,104 +258,118 @@ function _openPickerWithToken(token, onSelect) {
       if (data.action === window.google.picker.Action.PICKED && data.docs?.[0]) {
         const d = data.docs[0];
         onSelect({ name: d.name, url: d.url, id: d.id, mimeType: d.mimeType });
+      } else if (data.action === window.google.picker.Action.CANCEL) {
+        if (onCancel) onCancel();
       }
     })
     .build().setVisible(true);
 }
 
-// Solicita token OAuth — NO abre picker (popup chain bloqueado por browsers)
-async function _requestDriveToken(onReady) {
-  await _loadDriveScripts();
-  const client = window.google.accounts.oauth2.initTokenClient({
-    client_id: GDRIVE_CLIENT_ID,
-    scope: "https://www.googleapis.com/auth/drive.readonly",
-    callback: r => {
-      if (r.access_token) {
-        const exp = Date.now() + ((r.expires_in || 3599) * 1000) - 60000;
-        _saveToken(r.access_token, exp);
-        onReady(r.access_token); // avisa al componente que ya tiene token
-      }
-    },
-  });
-  client.requestAccessToken({ prompt: "select_account" });
+// Solicita token OAuth (abre popup de Google).
+// onDone(token) cuando éxito, onFail(err) cuando falla o se cierra sin completar.
+async function _requestDriveToken(onDone, onFail) {
+  try {
+    await _loadDriveScripts();
+    const client = window.google.accounts.oauth2.initTokenClient({
+      client_id: GDRIVE_CLIENT_ID,
+      scope: "https://www.googleapis.com/auth/drive.readonly",
+      callback: r => {
+        if (r.access_token) {
+          const exp = Date.now() + ((r.expires_in || 3599) * 1000) - 60000;
+          _saveDriveToken(r.access_token, exp);
+          onDone(r.access_token);
+        } else {
+          onFail(r.error || "sin_token");
+        }
+      },
+      error_callback: e => { onFail(e?.type || "error"); },
+    });
+    client.requestAccessToken({ prompt: "" });
+  } catch(e) { onFail(e.message); }
 }
 
-// DriveBtn — maneja el flujo de 2 pasos:
-// 1er click sin token → OAuth → botón cambia a "✓ Elegir archivo"
-// 2do click con token  → abre picker directamente (gesto del usuario)
+// DriveBtn — botón que abre Google Drive Picker.
+// Si ya tiene token guardado: 1 click → picker.
+// Si no tiene token: 1 click → OAuth popup → botón muestra "✓ Elegir archivo" → 2do click → picker.
+// Siempre muestra error si algo falla.
 function DriveBtn({ T, onPick, size = "sm" }) {
-  const [step, setStep] = React.useState("idle"); // idle | authing | ready | picking
-  const [tok, setTok]   = React.useState(() => _loadToken()); // token precargado si existe
+  const [step, setStep] = React.useState("idle"); // idle | authing | authed | picking
+  const tokenRef = React.useRef(_getSavedDriveToken());
 
   const pad = size === "sm" ? "4px 8px" : "6px 12px";
   const fs  = size === "sm" ? 11 : 12;
+  const base = { ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif" };
 
-  const driveSvg = (
-    <svg width="12" height="9" viewBox="0 0 87.3 78" style={{flexShrink:0}}>
-      <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-      <path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/>
-      <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/>
-      <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/>
-      <path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/>
-      <path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
-    </svg>
+  const driveIcon = <svg width="12" height="9" viewBox="0 0 87.3 78" style={{flexShrink:0}}>
+    <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+    <path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/>
+    <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/>
+    <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/>
+    <path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/>
+    <path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+  </svg>;
+
+  const openPicker = () => {
+    const tok = tokenRef.current || _getSavedDriveToken();
+    if (!tok) { setStep("idle"); return; }
+    setStep("picking");
+    _loadDriveScripts().then(() => {
+      _showDrivePicker(tok, f => { onPick(f); setStep("idle"); }, () => setStep("idle"));
+    }).catch(() => setStep("idle"));
+  };
+
+  if (step === "authing") return (
+    <button disabled style={{...base, opacity:0.65, cursor:"wait"}}>
+      <Spinner size={10} color={T.accent}/> Conectando…
+    </button>
   );
 
-  // Ya tiene token → un solo click abre el picker
-  if (tok) {
-    return (
-      <button title="Elegir desde Google Drive"
-        onClick={() => {
-          setStep("picking");
-          _loadDriveScripts().then(() => {
-            _openPickerWithToken(tok, f => { onPick(f); setStep("idle"); });
-          });
-        }}
-        style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif",
-          ...(step==="picking"?{opacity:0.6}:{}) }}>
-        {step === "picking" ? <Spinner size={10} color={T.accent}/> : <>{driveSvg} Drive</>}
-      </button>
-    );
-  }
-
-  // Sin token y autenticando → spinner
-  if (step === "authing") {
-    return (
-      <button disabled style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif", opacity:0.6 }}>
-        <Spinner size={10} color={T.accent}/> Conectando…
-      </button>
-    );
-  }
-
-  // Sin token y auth lista → segundo click abre picker
-  if (step === "ready") {
-    return (
-      <button title="Ahora elegí el archivo"
-        onClick={() => {
-          const t = _loadToken();
-          if (!t) { setStep("idle"); return; }
-          setTok(t); setStep("picking");
-          _loadDriveScripts().then(() => {
-            _openPickerWithToken(t, f => { onPick(f); setStep("idle"); });
-          });
-        }}
-        style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif", background: T.green+"22", borderColor: T.green }}>
-        <span style={{color:T.green}}>✓ Elegir archivo →</span>
-      </button>
-    );
-  }
-
-  // Estado inicial → primer click pide OAuth
-  return (
-    <button title="Conectar Google Drive"
-      onClick={() => {
-        if (!GDRIVE_API_KEY || !GDRIVE_CLIENT_ID) { alert("Drive no configurado."); return; }
-        setStep("authing");
-        _requestDriveToken(t => { setTok(t); setStep("idle"); });
-      }}
-      style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif" }}>
-      {driveSvg} Drive
+  if (step === "authed") return (
+    <button title="Hacé click para elegir el archivo" onClick={openPicker}
+      style={{...base, background:T.green+"22", borderColor:T.green+"66", color:T.green, fontWeight:600}}>
+      ✓ Elegir archivo
     </button>
+  );
+
+  if (step === "picking") return (
+    <button disabled style={{...base, opacity:0.65}}>
+      <Spinner size={10} color={T.accent}/> Abriendo…
+    </button>
+  );
+
+  // idle — verificar si hay token guardado
+  const tok = tokenRef.current || _getSavedDriveToken();
+  if (tok) return (
+    <button title="Elegir desde Google Drive" onClick={openPicker} style={base}>
+      {driveIcon} Drive
+    </button>
+  );
+
+  return (
+    <button title="Conectar Google Drive" onClick={() => {
+      if (!GDRIVE_API_KEY || !GDRIVE_CLIENT_ID) { alert("Drive no configurado en Vercel."); return; }
+      setStep("authing");
+      _requestDriveToken(
+        tok => { tokenRef.current = tok; setStep("authed"); },
+        err => { console.warn("[Drive]", err); setStep("idle"); }
+      );
+    }} style={base}>
+      {driveIcon} Drive
+    </button>
+  );
+}
+
+// Botón simple que abre drive.google.com — para campos donde solo necesitás copiar un link
+function DriveOpenBtn({ T, size = "sm" }) {
+  const pad = size === "sm" ? "4px 8px" : "6px 12px";
+  const fs  = size === "sm" ? 11 : 12;
+  return (
+    <a href="https://drive.google.com" target="_blank" rel="noreferrer"
+      title="Abrir Google Drive en nueva pestaña"
+      style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"inline-flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif", textDecoration:"none" }}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      Drive
+    </a>
   );
 }
 // ─── fin Google Drive Picker ──────────────────────────────────────────────────
@@ -9730,7 +9744,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
                   <div style={{display:"flex",gap:5}}>
-                    <DriveBtn T={T} onPick={f=>setNtLinks(prev=>[...prev,{name:f.name,url:f.url}])}/>
+                    <DriveOpenBtn T={T}/>
                     <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Manual</button>
                   </div>
                 </div>
@@ -9741,7 +9755,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       placeholder="Nombre (ej: Brief PDF)" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
                       placeholder="https://..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveBtn T={T} onPick={f=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:f.url,name:x.name||f.name}:x))}/>
+                    <DriveOpenBtn T={T}/>
                     <button onClick={()=>setNtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
@@ -9814,7 +9828,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
                   <div style={{display:"flex",gap:5}}>
-                    <DriveBtn T={T} onPick={f=>setEtLinks(prev=>[...prev,{name:f.name,url:f.url}])}/>
+                    <DriveOpenBtn T={T}/>
                     <button onClick={()=>setEtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Manual</button>
                   </div>
                 </div>
@@ -9824,7 +9838,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       placeholder="Nombre" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
                       placeholder="https://..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveBtn T={T} onPick={f=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:f.url,name:x.name||f.name}:x))}/>
+                    <DriveOpenBtn T={T}/>
                     <button onClick={()=>setEtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
@@ -9892,7 +9906,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Recursos (briefs, Drive, fotos de ref…)</div>
                   <div style={{display:"flex",gap:5}}>
-                    <DriveBtn T={T} onPick={f=>setTRecursos(prev=>[...prev,{id:mkProdId(),nombre:f.name,tipo:"otro",url:f.url}])}/>
+                    <DriveOpenBtn T={T}/>
                     <button onClick={()=>setTRecursos(prev=>[...prev,{id:mkProdId(),nombre:"",tipo:"otro",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Manual</button>
                   </div>
                 </div>
@@ -9901,7 +9915,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div key={r.id||i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={r.nombre} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))} placeholder="Nombre" style={{...iS,fontSize:12,width:100,flexShrink:0}}/>
                     <input value={r.url} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))} placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveBtn T={T} onPick={f=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,url:f.url,nombre:x.nombre||f.name}:x))}/>
+                    <DriveOpenBtn T={T}/>
                     <button onClick={()=>setTRecursos(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
