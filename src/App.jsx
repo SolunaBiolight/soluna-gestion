@@ -8764,9 +8764,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal");
     // Mostrar resultado de emails
     const emailResults = d._emailResults||[];
-    const failedEmails = emailResults.filter(r=>!r.ok);
-    if(failedEmails.length>0) toast(`⚠️ Tarea creada, pero ${failedEmails.length} email(s) fallaron: ${failedEmails.map(r=>r.error||"error").join(", ")}`,"warning");
-    else if(emailResults.length>0) toast("📧 Notificaciones enviadas ✓","success");
+    const sent = emailResults.filter(r=>r.ok);
+    const failed = emailResults.filter(r=>!r.ok);
+    const sandboxError = failed.some(r=>r.error?.includes("SANDBOX_SENDER"));
+    if(sandboxError) toast("⚠️ Email no configurado: necesitás agregar RESEND_FROM con tu dominio en Vercel","warning");
+    else if(failed.length>0) toast(`⚠️ ${failed.length} email(s) fallaron: ${failed.map(r=>r.error).join(" / ")}`,"warning");
+    else if(sent.length>0) toast("📧 Notificaciones enviadas ✓","success");
+    else if(ntAsignados.length>0) toast("⚠️ No se encontraron los colaboradores en la BD para enviar emails","warning");
     if(colab) setNotifPanel({tarea:d,colab});
   }
 
@@ -9450,7 +9454,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   bloqueada: {l:"Bloqueada", c:"#6b7280", bg:"#6b728018",    dot:"#6b7280"},
                 };
                 return(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10,marginBottom:16}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
                     {tareasActivas.map(t=>{
                       const est=EST_CARD[t.estado]||EST_CARD.pendiente;
                       const days=dLeft(t.deadline);

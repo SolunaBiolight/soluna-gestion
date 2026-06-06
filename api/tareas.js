@@ -36,12 +36,16 @@ function colabPortalLink(origin, token) {
 
 async function sendEmail({ to, subject, html }) {
   const key = process.env.RESEND_API_KEY;
-  if (!key) { console.error("[email] RESEND_API_KEY no configurada"); return { error: "RESEND_API_KEY no configurada" }; }
+  if (!key) { console.error("[email] RESEND_API_KEY no configurada"); return { error: "RESEND_API_KEY_FALTANTE" }; }
   if (!to)  { console.error("[email] destinatario vacío"); return { error: "Sin destinatario" }; }
-  // RESEND_FROM puede ser "Growith <notificaciones@growith.app>" (dominio verificado)
-  // o se usa onboarding@resend.dev como fallback mientras se verifica el dominio.
   const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
+  const usingSandbox = from.includes("onboarding@resend.dev");
+  if (usingSandbox) {
+    console.warn(`[email] SANDBOX SENDER — onboarding@resend.dev solo entrega al dueño de la cuenta Resend. Para enviar a ${to} necesitás configurar RESEND_FROM con un dominio verificado.`);
+    return { error: "SANDBOX_SENDER — configura RESEND_FROM con dominio propio en Vercel" };
+  }
   try {
+    console.log(`[email] enviando desde "${from}" a "${to}" subject="${subject}"`);
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
@@ -49,6 +53,7 @@ async function sendEmail({ to, subject, html }) {
     });
     const data = await r.json();
     if (!r.ok) { console.error("[email] Resend error:", JSON.stringify(data)); return { error: data?.message || "Error Resend", detail: data }; }
+    console.log(`[email] OK id=${data.id}`);
     return { ok: true, id: data.id };
   } catch(e) {
     console.error("[email] fetch error:", e.message);
