@@ -178,6 +178,58 @@ function emailRecordatorio({ colab, titulo, codigo, estado, deadline, link, nota
 </div>`;
 }
 
+// ── NUEVO: Colab listo para entregar → manager
+function emailListoParaEntregar({ colab, tarea, link }) {
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#8b5cf6,#a78bfa);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">✋</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Listo para entregar</div>
+  </div>
+  <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> dice que terminó y está listo para entregar:</p>
+  <div style="background:#f5f3ff;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #8b5cf6">
+    <div style="font-size:15px;font-weight:700;color:#111827">${tarea.titulo}</div>
+    <div style="font-size:12px;color:#7c3aed;margin-top:4px">Esperando tu revisión</div>
+  </div>
+  <a href="${link}" style="display:block;text-align:center;background:#8b5cf6;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver en Growith →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
+// ── NUEVO: Colab retoma trabajo tras bloqueo → manager
+function emailRetomaTrabajo({ colab, tarea, link }) {
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#22c55e,#4ade80);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">🔄</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Bloqueo resuelto</div>
+  </div>
+  <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> retomó el trabajo en:</p>
+  <div style="background:#f0fdf4;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #22c55e">
+    <div style="font-size:15px;font-weight:700;color:#111827">${tarea.titulo}</div>
+    <div style="font-size:12px;color:#16a34a;margin-top:4px">Ya no está bloqueado</div>
+  </div>
+  <a href="${link}" style="display:block;text-align:center;background:#22c55e;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver tarea →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
+// ── NUEVO: Admin editó brief o deadline → colaborador
+function emailTareaActualizada({ colab, tarea, cambios, link }) {
+  const cambiosHtml = cambios.map(c => `<li style="margin-bottom:4px">${c}</li>`).join("");
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#f59e0b,#fbbf24);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">✏️</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Tarea actualizada</div>
+  </div>
+  <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
+  <p style="font-size:14px;color:#6b7280">Actualizaron tu tarea <strong>${tarea.titulo}</strong>:</p>
+  <div style="background:#fffbeb;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #f59e0b">
+    <ul style="margin:0;padding-left:18px;font-size:14px;color:#374151;line-height:1.8">${cambiosHtml}</ul>
+  </div>
+  <a href="${link}" style="display:block;text-align:center;background:#f59e0b;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver mi tarea →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
 function normalizeLinks(links) {
   const arr = Array.isArray(links) ? links : String(links||"").split("\n").map(l=>l.trim()).filter(Boolean);
   return arr.map(l => typeof l === "string" ? { name: "", url: l } : l).filter(l=>l.url);
@@ -301,20 +353,44 @@ export default async function handler(req, res) {
       const detalle = estado==="bloqueada" && motivo ? `🚫 Bloqueado: ${motivo}` : `Progreso: ${label}`;
       const act = { tipo:"progreso", autor:colab.nombre, fecha:now, detalle };
       const upd = { estado, progresoLabel: progresoLabel||"", updatedAt: now, activity: [...(t.data().activity||[]), act] };
+      const prevEstado = t.data().estado;
+      const prevProgresoLabel = t.data().progresoLabel || "";
+      const managerEmailPub = t.data().managerEmail;
+      const tareaLink = `${origin||"https://soluna-gestion.vercel.app"}/#/tareas`;
+
       if (estado==="bloqueada" && motivo) {
         // Add motivo as a comment so admin sees it
         const comment = { texto: `🚫 Bloqueado: ${motivo}`, autor:colab.nombre, fecha:now, tipo:"bloqueo" };
         upd.comments = [...(t.data().comments||[]), comment];
         // Notify manager
-        const managerEmail2 = t.data().managerEmail;
-        if (managerEmail2) {
+        if (managerEmailPub) {
           sendEmail({
-            to: managerEmail2,
+            to: managerEmailPub,
             subject: `🚫 ${colab.nombre} está bloqueado — ${t.data().titulo}`,
-            html: emailConsultaRecibida({ colab, tarea:t.data(), texto:`🚫 Bloqueado: ${motivo}`, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }),
+            html: emailConsultaRecibida({ colab, tarea:t.data(), texto:`🚫 Bloqueado: ${motivo}`, link:tareaLink }),
           });
         }
       }
+
+      // Listo para entregar → notificar al manager
+      if (estado==="en_proceso" && progresoLabel==="Listo para entregar"
+          && prevProgresoLabel!=="Listo para entregar" && managerEmailPub) {
+        sendEmail({
+          to: managerEmailPub,
+          subject: `✋ ${colab.nombre} está listo para entregar — ${t.data().titulo}`,
+          html: emailListoParaEntregar({ colab, tarea:t.data(), link:tareaLink }),
+        });
+      }
+
+      // Retoma el trabajo tras bloqueo → notificar al manager
+      if (estado==="en_proceso" && prevEstado==="bloqueada" && managerEmailPub) {
+        sendEmail({
+          to: managerEmailPub,
+          subject: `🔄 ${colab.nombre} retomó el trabajo — ${t.data().titulo}`,
+          html: emailRetomaTrabajo({ colab, tarea:t.data(), link:tareaLink }),
+        });
+      }
+
       await ref.update(upd);
       return res.json({ ok: true });
     }
@@ -616,6 +692,9 @@ export default async function handler(req, res) {
 
     if (action === "updateTarea") {
       const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre, prioridad, checklist, asignadosEmails } = body;
+      const ref = db.collection("tareas").doc(tareaId);
+      const prevSnap = await ref.get();
+      const prevData = prevSnap.data() || {};
       const clean = { updatedAt:now };
       if (titulo!==undefined) clean.titulo = titulo;
       if (descripcion!==undefined) clean.descripcion = descripcion;
@@ -628,7 +707,32 @@ export default async function handler(req, res) {
       if (asignadosEmails!==undefined) clean.asignadosEmails = asignadosEmails;
       if (prioridad!==undefined) clean.prioridad = prioridad;
       if (checklist!==undefined) clean.checklist = checklist;
-      await db.collection("tareas").doc(tareaId).update(clean);
+      await ref.update(clean);
+      // Notificar al colab si cambió brief o deadline
+      const cambios = [];
+      if (brief!==undefined && brief !== prevData.brief) cambios.push("Se actualizó el brief de la tarea");
+      if (deadline!==undefined) {
+        const prevDL = prevData.deadline ? new Date(prevData.deadline).toLocaleDateString("es-AR") : null;
+        const newDL = deadline ? new Date(deadline).toLocaleDateString("es-AR") : null;
+        if (prevDL !== newDL) {
+          cambios.push(newDL ? `Nueva fecha límite: <strong>${newDL}</strong>` : "Se eliminó la fecha límite");
+        }
+      }
+      if (cambios.length > 0) {
+        const recipientEmails = (clean.asignadosEmails || prevData.asignadosEmails || [clean.asignadoEmail || prevData.asignadoEmail]).filter(Boolean);
+        for (const email of recipientEmails) {
+          const colabSnap3 = await db.collection("colaboradores")
+            .where("uid","==",uid).where("email","==",email).limit(1).get();
+          if (!colabSnap3.empty) {
+            const c3 = colabSnap3.docs[0].data();
+            sendEmail({
+              to: email,
+              subject: `✏️ Actualizaron tu tarea — ${clean.titulo || prevData.titulo}`,
+              html: emailTareaActualizada({ colab:c3, tarea:{...prevData,...clean}, cambios, link:colabPortalLink(origin, c3.token) }),
+            });
+          }
+        }
+      }
       return res.json({ ok:true });
     }
 
