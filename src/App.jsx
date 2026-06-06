@@ -8825,12 +8825,44 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     } catch(e){ appAlert("Error: "+e.message); }
   }
 
+  // Normaliza asignados: usa asignadosEmails si existe, sino [asignadoEmail]
+  function getAsignados(t) {
+    const emails = (t.asignadosEmails&&t.asignadosEmails.length>0) ? t.asignadosEmails : [t.asignadoEmail].filter(Boolean);
+    return emails.map(email=>{
+      const c=colaboradores.find(x=>x.email===email);
+      return {email, nombre:c?.nombre||t.asignadoNombre||email, rol:c?.rol||""};
+    });
+  }
   async function reassignTarea(tareaId, newEmail) {
-    const colab = colaboradores.find(c=>c.email===newEmail);
-    await tareasApi({action:"updateTarea",tareaId,asignadoEmail:newEmail,asignadoNombre:colab?.nombre||""});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,asignadoEmail:newEmail,asignadoNombre:colab?.nombre||""}:t)}));
-    setReassigningTarea(null);
+    const colab=colaboradores.find(c=>c.email===newEmail);
+    const upd={asignadoEmail:newEmail,asignadoNombre:colab?.nombre||"",asignadosEmails:[newEmail]};
+    await tareasApi({action:"updateTarea",tareaId,...upd});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
+    if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
     toast("Tarea reasignada ✓","success");
+  }
+  async function addAssignee(tareaId, email) {
+    const tarea=tareas.find(t=>t._id===tareaId); if(!tarea) return;
+    const cur=(tarea.asignadosEmails&&tarea.asignadosEmails.length>0)?tarea.asignadosEmails:[tarea.asignadoEmail].filter(Boolean);
+    if(cur.includes(email)) return;
+    const newEmails=[...cur,email];
+    await tareasApi({action:"updateTarea",tareaId,asignadosEmails:newEmails});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,asignadosEmails:newEmails}:t)}));
+    if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,asignadosEmails:newEmails}));
+    toast("Colaborador agregado ✓","success");
+  }
+  async function removeAssignee(tareaId, email) {
+    const tarea=tareas.find(t=>t._id===tareaId); if(!tarea) return;
+    const cur=(tarea.asignadosEmails&&tarea.asignadosEmails.length>0)?tarea.asignadosEmails:[tarea.asignadoEmail].filter(Boolean);
+    if(cur.length<=1) return;
+    const newEmails=cur.filter(e=>e!==email);
+    const newPrimary=newEmails[0];
+    const colab=colaboradores.find(c=>c.email===newPrimary);
+    const upd={asignadosEmails:newEmails,asignadoEmail:newPrimary,asignadoNombre:colab?.nombre||""};
+    await tareasApi({action:"updateTarea",tareaId,...upd});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
+    if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
+    toast("Colaborador removido","success");
   }
 
   async function updateEstado(tareaId, estado, feedback="") {
@@ -9140,18 +9172,49 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
           </div>
         )}
-        {/* Reasignar */}
-        {colaboradores.length>1&&(
-          <div style={{marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:11,fontWeight:600,color:T.textSm,flexShrink:0}}>Asignado a:</span>
-            <select value={t.asignadoEmail||""} onChange={e=>reassignTarea(t._id,e.target.value)}
-              style={{fontSize:12,padding:"5px 10px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",flex:1}}>
-              {colaboradores.map(col=>(
-                <option key={col._id} value={col.email}>{col.nombre}{col.rol?` · ${col.rol}`:""}</option>
-              ))}
-            </select>
-          </div>
-        )}
+        {/* Asignados — chips + agregar */}
+        {colaboradores.length>0&&(()=>{
+          const asignados=getAsignados(t);
+          const disponibles=colaboradores.filter(c=>!asignados.some(a=>a.email===c.email));
+          return(
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Asignado a</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                {asignados.map(({email,nombre,rol})=>(
+                  <div key={email} style={{display:"flex",alignItems:"center",gap:7,background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 10px 5px 5px",maxWidth:220}}>
+                    <div style={{width:26,height:26,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:T.accent,flexShrink:0}}>
+                      {(nombre||"?")[0].toUpperCase()}
+                    </div>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>
+                      {rol&&<div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rol}</div>}
+                    </div>
+                    {asignados.length>1&&(
+                      <button onClick={()=>removeAssignee(t._id,email)}
+                        style={{background:"transparent",border:"none",color:T.textSm,fontSize:13,cursor:"pointer",padding:"0 0 0 2px",lineHeight:1,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}
+                        title="Quitar">✕</button>
+                    )}
+                  </div>
+                ))}
+                {disponibles.length>0&&(
+                  <div style={{position:"relative"}}>
+                    <select onChange={e=>{if(e.target.value){addAssignee(t._id,e.target.value);e.target.value="";}}}
+                      defaultValue=""
+                      style={{appearance:"none",WebkitAppearance:"none",fontSize:12,padding:"6px 28px 6px 12px",borderRadius:20,border:`1.5px dashed ${T.border}`,background:"transparent",color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",outline:"none"}}>
+                      <option value="" disabled>+ Agregar persona</option>
+                      {disponibles.map(c=>(
+                        <option key={c._id} value={c.email}>{c.nombre}{c.rol?` · ${c.rol}`:""}</option>
+                      ))}
+                    </select>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}} fill={T.textSm}>
+                      <path d="M2 3l3 4 3-4" stroke={T.textSm} strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
         {/* Acciones */}
         <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:12,display:"flex",gap:8,justifyContent:"space-between",flexWrap:"wrap"}}>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -9406,7 +9469,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   );
                 })}
                 {colaboradores.map(colab=>{
-                  const colabTareas=tareasActivas.filter(t=>t.asignadoEmail===colab.email);
+                  const colabTareas=tareasActivas.filter(t=>(t.asignadosEmails?.length?t.asignadosEmails:([t.asignadoEmail])).includes(colab.email));
                   if(!colabTareas.length) return null;
                   const tieneEntregado=colabTareas.some(t=>t.estado==="entregado");
                   const ESTILO_T={pendiente:{l:"Pendiente",c:"#9ca3af",bg:T.surface,dot:"#9ca3af"},en_proceso:{l:"En proceso",c:T.blue,bg:T.blue+"18",dot:T.blue},entregado:{l:"Entregado",c:T.orange,bg:T.orange+"18",dot:T.orange},revision:{l:"Corrección",c:T.red,bg:T.red+"18",dot:T.red}};
@@ -9819,7 +9882,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 const c=_type==="colab"?data:null;
                 const expanded=expandedEquipo===_key;
                 const editing=editingMember===_key;
-                const userTareas=c?tareas.filter(t=>t.asignadoEmail===c.email):[];
+                const userTareas=c?tareas.filter(t=>(t.asignadosEmails?.length?t.asignadosEmails:([t.asignadoEmail])).includes(c.email)):[];
                 const pending=userTareas.filter(t=>t.estado==="pendiente"||t.estado==="en_proceso").length;
                 const entregado=userTareas.filter(t=>t.estado==="entregado").length;
                 const creativos=(produccion?.creativos||[]).filter(cr=>cr.editor===nombre);

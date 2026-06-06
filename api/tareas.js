@@ -573,6 +573,7 @@ export default async function handler(req, res) {
       const activity = [{ tipo:"creado", autor:"manager", fecha:now, detalle:"Tarea creada" }];
       const data = {
         uid, titulo, descripcion, asignadoEmail, asignadoNombre,
+        asignadosEmails: [asignadoEmail],
         brief, links: linksArr, prioridad, checklist: checklistArr,
         tareaNum, tareaNumStr,
         deadline: deadline ? new Date(deadline) : null,
@@ -596,7 +597,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "updateTarea") {
-      const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre, prioridad, checklist } = body;
+      const { tareaId, titulo, descripcion, brief, links, deadline, estado, asignadoEmail, asignadoNombre, prioridad, checklist, asignadosEmails } = body;
       const clean = { updatedAt:now };
       if (titulo!==undefined) clean.titulo = titulo;
       if (descripcion!==undefined) clean.descripcion = descripcion;
@@ -606,6 +607,7 @@ export default async function handler(req, res) {
       if (estado!==undefined) clean.estado = estado;
       if (asignadoEmail!==undefined) clean.asignadoEmail = asignadoEmail;
       if (asignadoNombre!==undefined) clean.asignadoNombre = asignadoNombre;
+      if (asignadosEmails!==undefined) clean.asignadosEmails = asignadosEmails;
       if (prioridad!==undefined) clean.prioridad = prioridad;
       if (checklist!==undefined) clean.checklist = checklist;
       await db.collection("tareas").doc(tareaId).update(clean);
