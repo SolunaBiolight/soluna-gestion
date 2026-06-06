@@ -9473,9 +9473,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   if(!colabTareas.length) return null;
                   const tieneEntregado=colabTareas.some(t=>t.estado==="entregado");
                   const ESTILO_T={pendiente:{l:"Pendiente",c:"#9ca3af",bg:T.surface,dot:"#9ca3af"},en_proceso:{l:"En proceso",c:T.blue,bg:T.blue+"18",dot:T.blue},entregado:{l:"Entregado",c:T.orange,bg:T.orange+"18",dot:T.orange},revision:{l:"Corrección",c:T.red,bg:T.red+"18",dot:T.red}};
-                  {(() => {
-                    const isDragOverTodo=dragOverColab===colab._id&&draggedTarea?.fromColabKey!==colab._id;
-                    return(
+                  const isDragOverTodo=dragOverColab===colab._id&&draggedTarea?.fromColabKey!==colab._id;
+                  return(
                     <div key={colab._id}
                       onDragOver={e=>{e.preventDefault();if(draggedTarea&&draggedTarea.fromColabKey!==colab._id)setDragOverColab(colab._id);}}
                       onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverColab(null);}}
@@ -9527,8 +9526,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         })}
                       </div>
                     </div>
-                    );
-                  })()}
+                  );
                 })}
                 {tareasActivas.length===0&&creativosActivos.length===0&&(
                   <div style={{textAlign:"center",padding:"70px 24px",background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`}}>
