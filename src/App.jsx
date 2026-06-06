@@ -208,19 +208,20 @@ const GDRIVE_API_KEY   = import.meta.env.VITE_GOOGLE_API_KEY   || "";
 const GDRIVE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 let _gapiReady = false, _gisReady = false;
 
-// Pre-cargar scripts al arrancar la app (no en el click) para que el
-// popup OAuth quede en la cadena de gesto del usuario → no bloqueado por browser
+// Pre-cargar scripts después de que el DOM esté listo — evita errores en api.js
 if (GDRIVE_API_KEY && GDRIVE_CLIENT_ID) {
+  window.addEventListener("load", () => {
   const s1 = document.createElement("script");
   s1.src = "https://apis.google.com/js/api.js";
   s1.async = true;
-  s1.onload = () => window.gapi.load("picker", () => { _gapiReady = true; });
+  s1.onload = () => { try { window.gapi.load("picker", () => { _gapiReady = true; }); } catch(_) {} };
   document.head.appendChild(s1);
   const s2 = document.createElement("script");
   s2.src = "https://accounts.google.com/gsi/client";
   s2.async = true;
   s2.onload = () => { _gisReady = true; };
   document.head.appendChild(s2);
+  }); // fin window.addEventListener load
 }
 
 function _saveDriveToken(t, exp) {
