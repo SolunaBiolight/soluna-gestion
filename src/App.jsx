@@ -8789,19 +8789,22 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if(ncEmail.trim()) {
         const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim(),telefono:ncTelefono.trim()});
         if(!d||!d._id) throw new Error("Respuesta inválida del servidor");
-        setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
+        setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
+        // Recarga completa para garantizar que aparece en lista
+        await loadData();
         toast("Miembro agregado ✓","success");
-        copyLink(d.token);
+        // Copiar link al clipboard sin interrumpir el flujo
+        try { await navigator.clipboard.writeText(colabLink(d.token)); toast("Link copiado 📋","success"); } catch(_){}
       } else {
         const nombre=ncNombre.trim();
         if((produccion?.editores||[]).includes(nombre)) return appAlert("Ya existe un miembro con ese nombre");
         await saveProd({...produccion,editores:[...(produccion?.editores||[]),nombre]});
+        setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
         toast("Miembro agregado ✓","success");
       }
-      setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
     } catch(e) {
       console.error("agregarMiembro error:",e);
-      appAlert("Error: "+e.message);
+      appAlert("Error al agregar: "+e.message);
     }
   }
 
