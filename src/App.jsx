@@ -9454,48 +9454,56 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   bloqueada: {l:"Bloqueada", c:"#6b7280", bg:"#6b728018",    dot:"#6b7280"},
                 };
                 return(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
                     {tareasActivas.map(t=>{
                       const est=EST_CARD[t.estado]||EST_CARD.pendiente;
                       const days=dLeft(t.deadline);
                       const asignados=getAsignados(t);
                       const isEntregado=t.estado==="entregado";
                       const isUrgente=t.prioridad==="urgente";
-                      const borderColor=isEntregado?T.orange:isUrgente?T.red+"66":T.border;
+                      const borderColor=isEntregado?T.orange:isUrgente?T.red+"55":T.border;
+                      const brief=(t.brief||t.descripcion||"").trim();
                       return(
                         <div key={t._id} onClick={()=>setKanbanSelected(t)}
-                          style={{background:T.card,border:`1.5px solid ${borderColor}`,borderRadius:12,padding:14,cursor:"pointer",display:"flex",flexDirection:"column",gap:10,transition:"border-color 0.15s, box-shadow 0.15s"}}
-                          onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.boxShadow=`0 2px 12px ${T.accent}18`;}}
+                          style={{background:T.card,border:`1.5px solid ${borderColor}`,borderRadius:14,padding:"18px 18px 14px",cursor:"pointer",display:"flex",flexDirection:"column",gap:12,minHeight:170,transition:"border-color 0.15s, box-shadow 0.15s"}}
+                          onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.boxShadow=`0 4px 16px ${T.accent}18`;}}
                           onMouseLeave={e=>{e.currentTarget.style.borderColor=borderColor;e.currentTarget.style.boxShadow="none";}}>
                           {/* Top: número + estado */}
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                            <span style={{fontSize:10,fontWeight:700,color:T.textSm,background:T.surface,borderRadius:5,padding:"2px 6px",border:`1px solid ${T.border}`}}>
+                            <span style={{fontSize:10,fontWeight:700,color:T.textSm,background:T.surface,borderRadius:6,padding:"3px 8px",border:`1px solid ${T.border}`}}>
                               {t.tareaNumStr?"#"+t.tareaNumStr:"—"}
                             </span>
-                            <span style={{fontSize:10,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"2px 8px"}}>{est.l}</span>
+                            <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                              {isUrgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:4,padding:"2px 6px"}}>URGENTE</span>}
+                              <span style={{fontSize:10,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"3px 9px"}}>{est.l}</span>
+                            </div>
                           </div>
                           {/* Título */}
-                          <div style={{fontSize:13,fontWeight:600,color:T.text,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",flex:1}}>
-                            {isUrgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:4,padding:"1px 5px",marginRight:5}}>URGENTE</span>}
+                          <div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
                             {t.titulo}
                           </div>
-                          {/* Footer: avatares + deadline */}
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                            <div style={{display:"flex"}}>
-                              {asignados.slice(0,3).map((a,i)=>(
-                                <div key={a.email} title={a.nombre}
-                                  style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid+"22",border:`2px solid ${T.card}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.accent,marginLeft:i>0?-6:0,zIndex:3-i,flexShrink:0}}>
-                                  {(a.nombre[0]||"?").toUpperCase()}
+                          {/* Brief preview */}
+                          {brief&&(
+                            <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",flex:1}}>
+                              {brief}
+                            </div>
+                          )}
+                          {!brief&&<div style={{flex:1}}/>}
+                          {/* Footer: avatares con nombre + deadline */}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:2}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+                              {asignados.slice(0,2).map((a,i)=>(
+                                <div key={a.email} style={{display:"flex",alignItems:"center",gap:5}}>
+                                  <div style={{width:24,height:24,borderRadius:"50%",background:T.accentSolid+"22",border:`2px solid ${T.card}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:T.accent,flexShrink:0}}>
+                                    {(a.nombre[0]||"?").toUpperCase()}
+                                  </div>
+                                  {asignados.length===1&&<span style={{fontSize:11,color:T.textMd,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:80}}>{a.nombre.split(" ")[0]}</span>}
                                 </div>
                               ))}
-                              {asignados.length>3&&(
-                                <div style={{width:22,height:22,borderRadius:"50%",background:T.surface,border:`2px solid ${T.card}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:T.textSm,marginLeft:-6}}>
-                                  +{asignados.length-3}
-                                </div>
-                              )}
+                              {asignados.length>2&&<span style={{fontSize:10,color:T.textSm,marginLeft:2}}>+{asignados.length-2}</span>}
                             </div>
                             {days!==null&&(
-                              <span style={{fontSize:10,fontWeight:days<=2?700:400,color:days<0?T.red:days<=2?T.red:days<=4?T.orange:T.textSm}}>
+                              <span style={{fontSize:11,fontWeight:days<=2?700:500,color:days<0?T.red:days<=2?T.red:days<=4?T.orange:T.textSm,flexShrink:0}}>
                                 📅 {days<0?`${Math.abs(days)}d venc.`:days===0?"hoy":`${days}d`}
                               </span>
                             )}
