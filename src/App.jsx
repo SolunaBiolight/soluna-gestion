@@ -8597,7 +8597,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ntAsignado, setNtAsignado] = useState("");
   const [ntDeadline, setNtDeadline] = useState("");
   const [ntPrioridad, setNtPrioridad] = useState("normal");
-  const [reassigningTarea, setReassigningTarea] = useState(null); // tareaId en modo reasignación
+  const [draggedTarea, setDraggedTarea] = useState(null);   // {id, fromColabKey}
+  const [dragOverColab, setDragOverColab] = useState(null); // _key del card destino
   // Modal editar tarea
   const [editTarea, setEditTarea] = useState(null);
   const [etTitulo, setEtTitulo] = useState("");
@@ -9137,6 +9138,18 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {/* Reasignar */}
+        {colaboradores.length>1&&(
+          <div style={{marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:11,fontWeight:600,color:T.textSm,flexShrink:0}}>Asignado a:</span>
+            <select value={t.asignadoEmail||""} onChange={e=>reassignTarea(t._id,e.target.value)}
+              style={{fontSize:12,padding:"5px 10px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",flex:1}}>
+              {colaboradores.map(col=>(
+                <option key={col._id} value={col.email}>{col.nombre}{col.rol?` · ${col.rol}`:""}</option>
+              ))}
+            </select>
           </div>
         )}
         {/* Acciones */}
@@ -9795,9 +9808,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   ?(c.telefono?`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`:
                     `https://wa.me/?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`)
                   :(portalLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]} 👋, tus creativos:\n${portalLink}`)}`:null);
+                const isDragOver=dragOverColab===_key&&draggedTarea?.fromColabKey!==_key;
                 return (
                   <div key={_key}
-                    style={{background:T.card,border:`1px solid ${entregado>0?(T.orange+"44"):T.border}`,borderRadius:12,overflow:"hidden"}}>
+                    onDragOver={e=>{e.preventDefault();if(draggedTarea&&draggedTarea.fromColabKey!==_key)setDragOverColab(_key);}}
+                    onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverColab(null);}}
+                    onDrop={e=>{e.preventDefault();if(draggedTarea&&draggedTarea.fromColabKey!==_key&&c?.email){reassignTarea(draggedTarea.id,c.email);}setDragOverColab(null);}}
+                    style={{background:T.card,border:`2px solid ${isDragOver?T.accent:entregado>0?(T.orange+"44"):T.border}`,borderRadius:12,overflow:"hidden",transition:"border-color 0.15s",boxShadow:isDragOver?`0 0 0 3px ${T.accent}22`:"none"}}>
                     {/* Fila principal — click expande */}
                     <div onClick={()=>{setExpandedEquipo(expanded?null:_key);setEditingMember(null);}}
                       style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:14,cursor:"pointer"}}>
@@ -9867,39 +9884,22 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 :<div style={{display:"flex",flexDirection:"column",gap:4}}>
                                   {activas.slice(0,8).map(t=>{
                                     const est=ESTILO[t.estado]||{l:t.estado,c:T.textSm,bg:T.surface,dot:"#9ca3af"};
-                                    const isReassigning=reassigningTarea===t._id;
+                                    const isDragging=draggedTarea?.id===t._id;
                                     return (
-                                      <div key={t._id} style={{borderRadius:8,background:T.surface,border:`1px solid ${isReassigning?T.accent:T.border}`,overflow:"hidden",transition:"border-color 0.15s"}}>
-                                        <div onClick={e=>{e.stopPropagation();if(!isReassigning)setKanbanSelected(t);}}
-                                          style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",cursor:isReassigning?"default":"pointer"}}
-                                          onMouseEnter={e=>{if(!isReassigning)e.currentTarget.parentElement.style.borderColor=T.accent}}
-                                          onMouseLeave={e=>{if(!isReassigning)e.currentTarget.parentElement.style.borderColor=T.border}}>
-                                          <div style={{width:8,height:8,borderRadius:"50%",background:est.dot,flexShrink:0}}/>
-                                          <span style={{flex:1,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
-                                          <span style={{fontSize:11,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"2px 9px",flexShrink:0,whiteSpace:"nowrap"}}>{est.l}</span>
-                                          <button onClick={e=>{e.stopPropagation();setReassigningTarea(isReassigning?null:t._id);}}
-                                            title="Reasignar"
-                                            style={{background:"transparent",border:`1px solid ${isReassigning?T.accent:T.border}`,borderRadius:6,color:isReassigning?T.accent:T.textSm,fontSize:11,padding:"2px 7px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
-                                            ⇄
-                                          </button>
-                                        </div>
-                                        {isReassigning&&(
-                                          <div onClick={e=>e.stopPropagation()} style={{padding:"0 12px 10px",display:"flex",alignItems:"center",gap:8}}>
-                                            <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>Asignar a:</span>
-                                            <select onChange={e=>{if(e.target.value)reassignTarea(t._id,e.target.value);}}
-                                              defaultValue=""
-                                              style={{flex:1,fontSize:12,padding:"5px 8px",borderRadius:6,border:`1px solid ${T.border}`,background:T.card,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
-                                              <option value="" disabled>Elegir colaborador…</option>
-                                              {colaboradores.map(col=>(
-                                                <option key={col._id} value={col.email}>
-                                                  {col.nombre}{col.email===t.asignadoEmail?" (actual)":""}{col.rol?` · ${col.rol}`:""}
-                                                </option>
-                                              ))}
-                                            </select>
-                                            <button onClick={e=>{e.stopPropagation();setReassigningTarea(null);}}
-                                              style={{background:"transparent",border:"none",color:T.textSm,fontSize:13,cursor:"pointer",padding:"4px",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>✕</button>
-                                          </div>
-                                        )}
+                                      <div key={t._id}
+                                        draggable={true}
+                                        onDragStart={e=>{e.stopPropagation();setDraggedTarea({id:t._id,fromColabKey:_key});e.dataTransfer.effectAllowed="move";}}
+                                        onDragEnd={e=>{e.stopPropagation();setDraggedTarea(null);setDragOverColab(null);}}
+                                        onClick={e=>{e.stopPropagation();setKanbanSelected(t);}}
+                                        style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,cursor:"grab",transition:"opacity 0.15s, border-color 0.15s",opacity:isDragging?0.4:1,userSelect:"none"}}>
+                                        <svg width="10" height="14" viewBox="0 0 10 14" fill={T.textSm} style={{flexShrink:0,opacity:0.5}}>
+                                          <circle cx="3" cy="2" r="1.5"/><circle cx="7" cy="2" r="1.5"/>
+                                          <circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/>
+                                          <circle cx="3" cy="12" r="1.5"/><circle cx="7" cy="12" r="1.5"/>
+                                        </svg>
+                                        <div style={{width:8,height:8,borderRadius:"50%",background:est.dot,flexShrink:0}}/>
+                                        <span style={{flex:1,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
+                                        <span style={{fontSize:11,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"2px 9px",flexShrink:0,whiteSpace:"nowrap"}}>{est.l}</span>
                                       </div>
                                     );
                                   })}
