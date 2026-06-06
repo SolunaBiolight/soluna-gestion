@@ -11209,7 +11209,7 @@ function ColaboradorPublicView({T, token}) {
         )}
       </div>
 
-      <div style={{maxWidth:680,margin:"0 auto",padding:"20px 16px"}}>
+      <div style={{maxWidth:1120,margin:"0 auto",padding:"20px 24px"}}>
         {tareas.length===0&&(
           <div style={{textAlign:"center",padding:"48px 0",color:T.textSm}}>
             <div style={{fontSize:48,marginBottom:12}}>🎉</div>
@@ -11252,56 +11252,109 @@ function ColaboradorPublicView({T, token}) {
           </div>
         )}
 
-        {sortedTareas.map(t=>{
+        {/* ── GRID DE TAREAS — 2 columnas ── */}
+        {tareas.length>0&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14,marginBottom:24}}>
+            {sortedTareas.map(t=>{
+              const est = ESTADOS[t.estado]||ESTADOS.pendiente;
+              const days = daysUntil(t.deadline);
+              const isAprobado = t.estado==="aprobado";
+              const isRevision = t.estado==="revision";
+              const isUrgente = t.prioridad==="urgente";
+              const hasDels = (t.deliverables||[]).length>0;
+              const briefPreview = (t.brief||t.descripcion||"").slice(0,140);
+              const briefFull = t.brief||t.descripcion||"";
+              return (
+                <div key={t._id} onClick={()=>setExpandedTarea(t._id)}
+                  style={{background:T.card,border:`1.5px solid ${isRevision?"#ef444450":isUrgente&&!isAprobado?"#ef444435":isAprobado?"#22c55e44":T.border}`,borderRadius:14,cursor:"pointer",overflow:"hidden",display:"flex",flexDirection:"column",transition:"box-shadow 0.15s",opacity:isAprobado?0.88:1}}>
+                  {/* Banner urgencia/revisión */}
+                  {isRevision&&(
+                    <div style={{background:"#ef444416",borderBottom:"1px solid #ef444430",padding:"6px 14px",fontSize:11,color:"#ef4444",fontWeight:700}}>
+                      🔁 Te pidieron cambios{t.feedbackActual?" — hay feedback":""}
+                    </div>
+                  )}
+                  {!isRevision&&t.deadline&&days!==null&&days<=2&&!isAprobado&&(
+                    <div style={{background:"#ef4444",padding:"5px 14px",fontSize:11,color:"#fff",fontWeight:600}}>
+                      ⚠️ {days<0?`Vencida hace ${Math.abs(days)}d`:days===0?"¡Vence hoy!":days===1?"¡Mañana!":"2 días"}
+                    </div>
+                  )}
+                  <div style={{padding:"16px 16px 14px",flex:1,display:"flex",flexDirection:"column",gap:9}}>
+                    {/* Número + badge estado */}
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>#{t.tareaNumStr}</span>}
+                      <span style={{fontSize:10,padding:"3px 9px",borderRadius:20,fontWeight:700,background:est.bg,color:est.color,marginLeft:"auto",whiteSpace:"nowrap"}}>{est.label}</span>
+                    </div>
+                    {/* Título */}
+                    <div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>
+                      {isUrgente&&<span style={{fontSize:11,marginRight:4}}>🔴</span>}{t.titulo}
+                    </div>
+                    {/* Brief preview */}
+                    {briefFull&&(
+                      <div style={{fontSize:12,color:T.textSm,lineHeight:1.45,display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden",flex:1}}>
+                        {briefPreview}{briefFull.length>140?"…":""}
+                      </div>
+                    )}
+                    {/* Footer */}
+                    <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginTop:4,paddingTop:10,borderTop:`1px solid ${T.borderL}`}}>
+                      {t.deadline&&(
+                        <span style={{fontSize:11,color:days!==null&&days<=2?"#ef4444":T.textSm,fontWeight:days!==null&&days<=2?600:400}}>
+                          📅 {days!==null?(days<0?`Vencida ${Math.abs(days)}d`:days===0?"Hoy":`${days}d`):fmtDate(t.deadline)}
+                        </span>
+                      )}
+                      {hasDels&&<span style={{fontSize:11,color:"#22c55e",fontWeight:600}}>✓ {(t.deliverables||[]).length}v</span>}
+                      {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:4,background:"#ef444418",color:"#ef4444",fontWeight:700}}>{t.correcciones}ª corr.</span>}
+                      {t.progresoLabel==="Listo para entregar"&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"#22c55e15",color:"#22c55e",fontWeight:600}}>✋ Listo</span>}
+                      {(t.comments||[]).length>0&&<span style={{fontSize:11,color:T.textSm}}>💬 {t.comments.length}</span>}
+                      <span style={{marginLeft:"auto",fontSize:12,color:T.textSm,fontWeight:500}}>Abrir →</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── MODAL / PANEL LATERAL DE DETALLE ── */}
+        {expandedTarea&&(()=>{
+          const t = sortedTareas.find(x=>x._id===expandedTarea);
+          if(!t) return null;
           const est = ESTADOS[t.estado]||ESTADOS.pendiente;
           const days = daysUntil(t.deadline);
-          const expanded = expandedTarea===t._id;
           const isAprobado = t.estado==="aprobado";
           const isRevision = t.estado==="revision";
           const isUrgente = t.prioridad==="urgente";
           const hasDels = (t.deliverables||[]).length>0;
           const checklist = t.checklist||[];
-          const briefPreview = t.brief?t.brief.slice(0,130)+(t.brief.length>130?"…":""):null;
           const linksNorm = normalizeLinks(t.links);
           const lastEntregaJustSent = entregaEnviada[t._id];
           return (
-            <div key={t._id} style={{background:T.card,border:`1px solid ${isRevision?"#ef444455":isUrgente?"#ef444433":isAprobado?"#22c55e44":T.border}`,borderRadius:12,marginBottom:12,overflow:"hidden",opacity:isAprobado?0.85:1}}>
-              {/* Banner deadline urgente */}
-              {t.deadline&&days!==null&&days<=2&&!isAprobado&&(
-                <div style={{background:"#ef4444",padding:"6px 16px",fontSize:12,color:"#fff",fontWeight:600}}>
-                  ⚠️ {days<0?`Vencido hace ${Math.abs(days)} día${Math.abs(days)!==1?"s":""}`:days===0?"¡Vence hoy!":days===1?"¡Vence mañana!":"Vence en 2 días"}
-                </div>
-              )}
-              {/* Card header */}
-              <div onClick={()=>setExpandedTarea(expanded?null:t._id)} style={{padding:"14px 16px",cursor:"pointer"}}>
-                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
+            <div style={{position:"fixed",inset:0,zIndex:2000,display:"flex",alignItems:"stretch",justifyContent:"flex-end"}}>
+              {/* Backdrop */}
+              <div onClick={()=>setExpandedTarea(null)} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.52)",backdropFilter:"blur(3px)"}}/>
+              {/* Panel */}
+              <div style={{position:"relative",width:"min(580px,100vw)",height:"100vh",background:T.bg,overflowY:"auto",boxShadow:"-12px 0 48px rgba(0,0,0,0.28)",display:"flex",flexDirection:"column"}}>
+                {/* Header sticky */}
+                <div style={{position:"sticky",top:0,zIndex:1,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 18px 12px",display:"flex",alignItems:"flex-start",gap:12}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,flexWrap:"wrap"}}>
-                      {isUrgente&&<span style={{fontSize:10,color:"#ef4444",fontWeight:800}}>🔴</span>}
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5,flexWrap:"wrap"}}>
                       {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600}}>#{t.tareaNumStr}</span>}
-                      <span style={{fontSize:15,fontWeight:600,color:T.text}}>{t.titulo}</span>
-                      {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:20,background:"#ef444420",color:"#ef4444",fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
-                      {t.leidoAt&&<span style={{fontSize:10,color:"#22c55e",flexShrink:0}}>👁</span>}
+                      <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:700,background:est.bg,color:est.color}}>{est.label}</span>
+                      {isUrgente&&<span style={{fontSize:10,color:"#ef4444",fontWeight:800}}>🔴 Urgente</span>}
+                      {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"#ef444418",color:"#ef4444",fontWeight:700}}>{t.correcciones}ª corrección</span>}
                     </div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:briefPreview&&!expanded?7:0}}>
-                      <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
-                      {t.deadline&&<span style={{fontSize:11,color:days!==null&&days<=2?"#ef4444":T.textSm,fontWeight:days!==null&&days<=2?600:400}}>
-                        📅 {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Hoy":`${days}d restantes`):fmtDate(t.deadline)}
-                      </span>}
-                      {hasDels&&<span style={{fontSize:11,color:"#22c55e"}}>✓ {(t.deliverables||[]).length} enviada{(t.deliverables||[]).length!==1?"s":""}</span>}
-                      {t.estimacion&&<span style={{fontSize:11,color:"#3b82f6"}}>⏱ {t.estimacion}</span>}
-                    </div>
-                    {briefPreview&&!expanded&&<div style={{fontSize:12,color:T.textSm,lineHeight:1.4,fontStyle:"italic"}}>{briefPreview}</div>}
+                    <div style={{fontSize:16,fontWeight:700,color:T.text,lineHeight:1.3}}>{t.titulo}</div>
+                    {t.deadline&&<div style={{fontSize:11,color:days!==null&&days<=2?"#ef4444":T.textSm,marginTop:4,fontWeight:days!==null&&days<=2?600:400}}>
+                      📅 {days!==null?(days<0?`Vencida hace ${Math.abs(days)}d`:days===0?"Hoy":`${days}d restantes`):fmtDate(t.deadline)}
+                    </div>}
                   </div>
-                  <span style={{fontSize:12,color:T.textSm,flexShrink:0,marginTop:2}}>{expanded?"▲":"▼"}</span>
+                  <button onClick={()=>setExpandedTarea(null)} style={{background:T.surface,border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:18,flexShrink:0}}>×</button>
                 </div>
-              </div>
 
-              {expanded&&(
-                <div style={{borderTop:`1px solid ${T.border}`,padding:"16px",background:T.bg}}>
-                  {/* Banner revisión con feedback */}
+                {/* Body */}
+                <div style={{padding:"18px 18px 48px",flex:1}}>
+                  {/* Banners de estado */}
                   {isRevision&&(
-                    <div style={{marginBottom:16,padding:"14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444418"}}>
+                    <div style={{marginBottom:16,padding:"14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415,0 4px 16px #ef444418"}}>
                       <div style={{fontSize:13,fontWeight:700,color:"#ef4444",marginBottom:t.feedbackActual?8:0}}>🔁 Te pidieron cambios</div>
                       {t.feedbackActual
                         ?<div style={{fontSize:13,color:T.text,lineHeight:1.5,background:"rgba(239,68,68,0.08)",borderRadius:7,padding:"10px 12px",borderLeft:"3px solid #ef4444"}}>{t.feedbackActual}</div>
@@ -11310,20 +11363,26 @@ function ColaboradorPublicView({T, token}) {
                     </div>
                   )}
                   {isAprobado&&(
-                    <div style={{marginBottom:16,padding:"12px 14px",background:"linear-gradient(135deg,#22c55e14,#22c55e08)",borderRadius:10,border:"1.5px solid #22c55e40",boxShadow:"0 0 0 1px #22c55e15, 0 4px 16px #22c55e18"}}>
+                    <div style={{marginBottom:16,padding:"12px 14px",background:"linear-gradient(135deg,#22c55e14,#22c55e08)",borderRadius:10,border:"1.5px solid #22c55e40"}}>
                       <div style={{fontSize:13,fontWeight:600,color:"#22c55e"}}>✅ ¡Trabajo aprobado! Excelente trabajo.</div>
                     </div>
                   )}
                   {t.estado==="entregado"&&(
-                    <div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,#f9731614,#f9731608)",borderRadius:10,border:"1.5px solid #f9731640",boxShadow:"0 0 0 1px #f9731615, 0 4px 16px #f9731618"}}>
+                    <div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,#f9731614,#f9731608)",borderRadius:10,border:"1.5px solid #f9731640"}}>
                       <div style={{fontSize:12,color:"#f97316"}}>📦 Entrega recibida — esperando revisión del equipo.</div>
                     </div>
                   )}
 
-                  {t.descripcion&&<div style={{marginBottom:12}}><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Descripción</div><div style={{fontSize:13,color:T.text,lineHeight:1.5}}>{t.descripcion}</div></div>}
+                  {/* Descripción */}
+                  {t.descripcion&&<div style={{marginBottom:14}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Descripción</div>
+                    <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>{t.descripcion}</div>
+                  </div>}
+
+                  {/* Brief */}
                   {t.brief&&(
-                    <div style={{marginBottom:14}}>
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                    <div style={{marginBottom:16}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                         <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief / Instrucciones</div>
                         <div style={{display:"flex",gap:6}}>
                           {!t.leidoAt&&<AsyncButton onClick={()=>marcarLeido(t._id)} style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:"#22c55e20",color:"#22c55e",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>👁 Marcar como leído</AsyncButton>}
@@ -11334,8 +11393,10 @@ function ColaboradorPublicView({T, token}) {
                       {t.leidoAt&&<div style={{fontSize:11,color:"#22c55e",marginTop:5}}>✓ Leído el {fmtDate(t.leidoAt)}</div>}
                     </div>
                   )}
+
+                  {/* Links de referencia */}
                   {linksNorm.length>0&&(
-                    <div style={{marginBottom:14}}>
+                    <div style={{marginBottom:16}}>
                       <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Archivos de referencia</div>
                       {linksNorm.map((l,i)=>(
                         <a key={i} href={l.url} target="_blank" rel="noreferrer"
@@ -11347,9 +11408,10 @@ function ColaboradorPublicView({T, token}) {
                       ))}
                     </div>
                   )}
-                  {/* Checklist interactivo */}
+
+                  {/* Checklist */}
                   {checklist.length>0&&(
-                    <div style={{marginBottom:14}}>
+                    <div style={{marginBottom:16}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                         <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>✅ Checklist</div>
                         <span style={{fontSize:11,color:T.textSm}}>{checklist.filter(i=>i.done).length}/{checklist.length}</span>
@@ -11367,9 +11429,10 @@ function ColaboradorPublicView({T, token}) {
                       </div>
                     </div>
                   )}
-                  {/* Historial de entregas con feedback */}
+
+                  {/* Historial de entregas */}
                   {hasDels&&(
-                    <div style={{marginBottom:14}}>
+                    <div style={{marginBottom:16}}>
                       <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Historial de entregas</div>
                       {(t.deliverables||[]).map((del,i)=>(
                         <div key={i} style={{background:T.surface,borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${T.borderL}`}}>
@@ -11388,33 +11451,28 @@ function ColaboradorPublicView({T, token}) {
                       ))}
                     </div>
                   )}
+
                   {/* ── SELECTOR DE PROGRESO ── */}
                   {!isAprobado&&t.estado!=="entregado"&&(()=>{
                     const STEPS=[
-                      {id:"pendiente",  label:"Sin empezar",           icon:"⏳", desc:"Todavía no arranqué",             estado:"pendiente",  progresoLabel:""},
-                      {id:"en_proceso", label:"En proceso",             icon:"🔄", desc:"Ya arranqué, estoy trabajando",   estado:"en_proceso", progresoLabel:"En proceso"},
-                      {id:"listo",      label:"Listo para entregar",    icon:"✋", desc:"Terminé, lo subo en un momento",  estado:"en_proceso", progresoLabel:"Listo para entregar"},
+                      {id:"pendiente",label:"Sin empezar",icon:"⏳",estado:"pendiente",progresoLabel:""},
+                      {id:"en_proceso",label:"En proceso",icon:"🔄",estado:"en_proceso",progresoLabel:"En proceso"},
+                      {id:"listo",label:"Listo para entregar",icon:"✋",estado:"en_proceso",progresoLabel:"Listo para entregar"},
                     ];
                     const currentStep = t.estado==="bloqueada"?"bloqueada"
                       : t.progresoLabel==="Listo para entregar"?"listo"
                       : t.estado==="en_proceso"?"en_proceso"
                       : "pendiente";
-                    const stepColors={pendiente:"#d97706",en_proceso:"#3b82f6",listo:"#22c55e",bloqueada:"#ef4444"};
-                    const stepBgs  ={pendiente:"#d9770615",en_proceso:"#3b82f615",listo:"#22c55e15",bloqueada:"#ef444412"};
-                    const curColor = stepColors[currentStep]||"#6b7280";
-                    const curBg    = stepBgs[currentStep]||"#6b728015";
                     return (
-                      <div style={{marginBottom:14}}>
-                        {/* Stepper visual — clickeable para cambiar estado */}
+                      <div style={{marginBottom:16}}>
                         <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:8,background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`,overflow:"hidden"}}>
                           {STEPS.map((step,i)=>{
                             const active=currentStep===step.id;
-                            const passed=STEPS.findIndex(s=>s.id===currentStep)>i;
                             const stepColor=step.id==="listo"?"#22c55e":step.id==="en_proceso"?"#3b82f6":"#d97706";
                             return (
                               <AsyncButton key={step.id}
-                                onClick={()=>!active&&publicSetEstado(t._id, step.estado, step.progresoLabel)}
-                                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"12px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="listo"?"#22c55e18":step.id==="en_proceso"?"#3b82f615":"#d9770615":"transparent",transition:"background 0.18s, opacity 0.18s",cursor:active?"default":"pointer",border:"none",borderRadius:0,outline:"none",opacity:active?1:0.55,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                onClick={()=>!active&&publicSetEstado(t._id,step.estado,step.progresoLabel)}
+                                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"12px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="listo"?"#22c55e18":step.id==="en_proceso"?"#3b82f615":"#d9770615":"transparent",transition:"background 0.18s,opacity 0.18s",cursor:active?"default":"pointer",border:"none",borderRadius:0,outline:"none",opacity:active?1:0.55,fontFamily:"'Inter',system-ui,sans-serif"}}>
                                 <span style={{fontSize:20,marginBottom:3}}>{step.icon}</span>
                                 <span style={{fontSize:10,fontWeight:active?700:500,color:active?stepColor:T.textSm,textAlign:"center",lineHeight:1.3}}>{step.label}</span>
                                 {active&&<div style={{width:20,height:2.5,borderRadius:2,background:stepColor,marginTop:5}}/>}
@@ -11422,7 +11480,6 @@ function ColaboradorPublicView({T, token}) {
                             );
                           })}
                         </div>
-                        {/* Botón Bloqueado / Retomar — ancho completo, fino */}
                         {currentStep==="bloqueada"?(
                           <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso","En proceso")}
                             style={{width:"100%",fontSize:12,padding:"7px 0",borderRadius:8,background:"#3b82f612",color:"#3b82f6",border:"1px solid #3b82f630",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,textAlign:"center",display:"block",boxSizing:"border-box"}}>
@@ -11430,13 +11487,12 @@ function ColaboradorPublicView({T, token}) {
                           </AsyncButton>
                         ):(
                           <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:!p[t._id]}))}
-                            style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:8,border:"1px solid #ef444430",background:"#ef44440a",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box",letterSpacing:"0.01em"}}>
+                            style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:8,border:"1px solid #ef444430",background:"#ef44440a",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box"}}>
                             🚫 Estoy bloqueado
                           </button>
                         )}
-                        {/* Bloqueado — texto obligatorio */}
                         {showBloqueo[t._id]&&currentStep!=="bloqueada"&&(
-                          <div style={{marginTop:8,background:"linear-gradient(135deg,#ef444412,#ef444408)",borderRadius:10,padding:"12px",border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444414"}}>
+                          <div style={{marginTop:8,background:"linear-gradient(135deg,#ef444412,#ef444408)",borderRadius:10,padding:"12px",border:"1.5px solid #ef444440"}}>
                             <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:0.7}}>(el equipo va a ver esto)</span></div>
                             <textarea value={bloqueoMotivo[t._id]||""} onChange={e=>setBloqueoMotivo(p=>({...p,[t._id]:e.target.value}))}
                               placeholder="Ej: No tengo acceso al Drive, falta el logo en alta resolución..."
@@ -11454,14 +11510,12 @@ function ColaboradorPublicView({T, token}) {
                             </div>
                           </div>
                         )}
-                        {/* Estado bloqueado activo */}
                         {currentStep==="bloqueada"&&(
-                          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444414"}}>
+                          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440"}}>
                             <span style={{fontSize:18}}>🚫</span>
                             <div style={{flex:1,fontSize:12,color:"#ef4444",fontWeight:600}}>Bloqueado — el equipo ya fue notificado</div>
                           </div>
                         )}
-                        {/* Mensaje al equipo */}
                         <div style={{marginTop:10}}>
                           <button onClick={()=>setShowProgress(p=>({...p,[t._id]:!p[t._id]}))}
                             style={{fontSize:12,color:T.textSm,background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline",textDecorationStyle:"dotted"}}>
@@ -11481,9 +11535,9 @@ function ColaboradorPublicView({T, token}) {
                     );
                   })()}
 
-                  {/* Entrega + WA post-submit */}
+                  {/* Entrega */}
                   {!isAprobado&&(
-                    <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?"#ef444440":T.borderL}`,marginBottom:14}}>
+                    <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?"#ef444440":T.borderL}`,marginBottom:16}}>
                       {lastEntregaJustSent?(
                         <div style={{textAlign:"center"}}>
                           <div style={{fontSize:32,marginBottom:8}}>🎉</div>
@@ -11494,7 +11548,7 @@ function ColaboradorPublicView({T, token}) {
                             <a href={`https://wa.me/${adminWa?adminWa.replace(/\D/g,""):""}?text=${encodeURIComponent(`Hola! Acabo de subir mi entrega para "${t.titulo}". Por favor revisala cuando puedas 👍`)}`} target="_blank" rel="noreferrer"
                               style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5,color:"#22c55e",border:"1px solid #22c55e44"}}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                              Avisar por WhatsApp{adminWa?"":" →"}
+                              Avisar por WhatsApp
                             </a>
                           </div>
                         </div>
@@ -11520,9 +11574,10 @@ function ColaboradorPublicView({T, token}) {
                       )}
                     </div>
                   )}
-                  {/* Estimación de tiempo */}
+
+                  {/* Estimación */}
                   {!isAprobado&&(
-                    <div style={{marginBottom:14}}>
+                    <div style={{marginBottom:16}}>
                       {t.estimacion?(
                         <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.borderL}`}}>
                           <span style={{fontSize:12,color:T.textMd,flex:1}}>⏱ Estimación: <strong style={{color:T.text}}>{t.estimacion}</strong></span>
@@ -11542,13 +11597,14 @@ function ColaboradorPublicView({T, token}) {
                       )}
                     </div>
                   )}
-                  {/* Mensajes / Comentarios */}
+
+                  {/* Mensajes */}
                   <div>
                     <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>💬 Mensajes</div>
                     {(t.comments||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin mensajes aún.</div>}
                     {(t.comments||[]).map((c,i)=>{
-                      const isMe = c.autor!=="manager";
-                      const isConsulta = c.tipo==="consulta";
+                      const isMe=c.autor!=="manager";
+                      const isConsulta=c.tipo==="consulta";
                       return (
                         <div key={i} style={{marginBottom:8,display:"flex",gap:8,alignItems:"flex-start",flexDirection:isMe?"row-reverse":"row"}}>
                           <div style={{width:28,height:28,borderRadius:"50%",background:isMe?"#6366f120":"rgba(255,255,255,0.1)",border:`1px solid ${isMe?"#6366f140":T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:isMe?"#6366f1":T.textMd,flexShrink:0}}>
@@ -11573,7 +11629,6 @@ function ColaboradorPublicView({T, token}) {
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
                       </AsyncButton>
                     </div>
-                    {/* Consulta separada */}
                     <div style={{marginTop:10}}>
                       {!showConsulta[t._id]?(
                         <button onClick={()=>setShowConsulta(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:12,width:"100%",padding:"8px",textAlign:"center",color:"#3b82f6",border:`1px solid #3b82f630`}}>
@@ -11594,10 +11649,10 @@ function ColaboradorPublicView({T, token}) {
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           );
-        })}
+        })()}
 
         {/* ── SECCIÓN EQUIPO (si tiene permiso verEquipo) ── */}
         {equipoTareas&&(
