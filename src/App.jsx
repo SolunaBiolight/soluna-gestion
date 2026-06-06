@@ -8659,11 +8659,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     return d;
   }
 
-  async function loadData() {
-    setLoading(true);
+  async function loadData(silent=false) {
+    if(!silent) setLoading(true);
     try { const d = await tareasApi({action:"getData"}); setDatos(d); }
-    catch(e){ appAlert("Error al cargar tareas: "+e.message); }
-    setLoading(false);
+    catch(e){ if(!silent) appAlert("Error al cargar tareas: "+e.message); }
+    if(!silent) setLoading(false);
   }
   async function loadProduccion() {
     setProdLoading(true);
@@ -8784,27 +8784,28 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   async function agregarMiembro() {
-    if(!ncNombre.trim()) return appAlert("El nombre es requerido");
+    const nombre = ncNombre.trim();
+    const email  = ncEmail.trim().toLowerCase();
+    if(!nombre) { toast("El nombre es requerido","error"); return; }
     try {
-      if(ncEmail.trim()) {
-        const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim(),telefono:ncTelefono.trim()});
+      if(email) {
+        const d = await tareasApi({action:"createColaborador",nombre,email,rol:ncRol.trim(),telefono:ncTelefono.trim()});
         if(!d||!d._id) throw new Error("Respuesta inválida del servidor");
         setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
-        // Recarga completa para garantizar que aparece en lista
-        await loadData();
         toast("Miembro agregado ✓","success");
-        // Copiar link al clipboard sin interrumpir el flujo
+        await loadData(true);
         try { await navigator.clipboard.writeText(colabLink(d.token)); toast("Link copiado 📋","success"); } catch(_){}
       } else {
-        const nombre=ncNombre.trim();
-        if((produccion?.editores||[]).includes(nombre)) return appAlert("Ya existe un miembro con ese nombre");
-        await saveProd({...produccion,editores:[...(produccion?.editores||[]),nombre]});
+        if((produccion?.editores||[]).includes(nombre)) { toast("Ya existe un miembro con ese nombre","error"); return; }
+        const newProd = {...produccion, editores:[...(produccion?.editores||[]), nombre]};
+        setProduccion(newProd);
         setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
         toast("Miembro agregado ✓","success");
+        try { await tareasApi({action:"saveProduccion",data:newProd}); } catch(e){ toast("Error al guardar en servidor","error"); }
       }
     } catch(e) {
       console.error("agregarMiembro error:",e);
-      appAlert("Error al agregar: "+e.message);
+      toast("Error: "+e.message,"error");
     }
   }
 
