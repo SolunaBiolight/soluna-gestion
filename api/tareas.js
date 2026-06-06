@@ -556,8 +556,12 @@ export default async function handler(req, res) {
     }
 
     if (action === "createTarea") {
-      const { titulo, descripcion="", asignadoEmail, asignadoNombre="", brief="", links=[], deadline, prioridad="normal", checklist=[], managerEmail="" } = body;
+      const { titulo, descripcion="", asignadoEmail, asignadoNombre="", brief="", links=[], deadline, prioridad="normal", checklist=[], managerEmail="", asignadosEmails: asignadosEmailsRaw } = body;
       if (!titulo||!asignadoEmail) return res.status(400).json({ error:"Título y asignado requeridos" });
+      // Normalizar lista de asignados: usar lo que manda el frontend, o al menos el primario
+      const todosEmails = Array.isArray(asignadosEmailsRaw) && asignadosEmailsRaw.length
+        ? [...new Set(asignadosEmailsRaw.map(e=>e.toLowerCase()))]
+        : [asignadoEmail.toLowerCase()];
       const linksArr = normalizeLinks(links);
       const checklistArr = Array.isArray(checklist) ? checklist : [];
       // Número secuencial de tarea via transacción
@@ -573,7 +577,7 @@ export default async function handler(req, res) {
       const activity = [{ tipo:"creado", autor:"manager", fecha:now, detalle:"Tarea creada" }];
       const data = {
         uid, titulo, descripcion, asignadoEmail, asignadoNombre,
-        asignadosEmails: [asignadoEmail],
+        asignadosEmails: todosEmails,
         brief, links: linksArr, prioridad, checklist: checklistArr,
         tareaNum, tareaNumStr,
         deadline: deadline ? new Date(deadline) : null,
@@ -582,17 +586,26 @@ export default async function handler(req, res) {
         createdAt:now, updatedAt:now,
       };
       const ref = await db.collection("tareas").add(data);
-      // Email al colaborador
-      const colabSnap = await db.collection("colaboradores")
-        .where("uid","==",uid).where("email","==",asignadoEmail.toLowerCase()).limit(1).get();
-      if (!colabSnap.empty) {
-        const colab = colabSnap.docs[0].data();
-        sendEmail({
-          to: asignadoEmail,
-          subject: `📋 Nueva tarea: ${titulo}`,
-          html: emailTareaAsignada({ colab, tarea:{...data,deadline:deadline?new Date(deadline):null}, link:colabPortalLink(origin, colab.token) }),
-        });
-      }
+      // Cargar todos los colaboradores de este uid de una sola vez
+      const colabsSnap = await db.collection("colaboradores").where("uid","==",uid).get();
+      const colabsByEmail = {};
+      colabsSnap.docs.forEach(d => { colabsByEmail[d.data().email?.toLowerCase()] = d.data(); });
+      // Enviar email a cada asignado
+      const emailPromises = todosEmails.map(async email => {
+        const colab = colabsByEmail[email.toLowerCase()];
+        if (!colab) { console.warn(`[createTarea] colaborador no encontrado para email: ${email}`); return; }
+        try {
+          await sendEmail({
+            to: email,
+            subject: `📋 Nueva tarea: ${titulo}`,
+            html: emailTareaAsignada({ colab, tarea:{...data,deadline:deadline?new Date(deadline):null}, link:colabPortalLink(origin, colab.token) }),
+          });
+          console.log(`[createTarea] email enviado a ${email}`);
+        } catch(e) {
+          console.error(`[createTarea] error enviando email a ${email}:`, e.message);
+        }
+      });
+      await Promise.all(emailPromises);
       return res.json({ _id:ref.id, ...data });
     }
 
