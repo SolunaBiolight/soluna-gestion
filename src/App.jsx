@@ -2429,7 +2429,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         {/* GUÍA ¿Cómo funciona? */}
         <div style={{marginBottom:16}}>
           <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
           </button>
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
@@ -3552,7 +3552,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         {/* GUÍA ¿Cómo funciona? */}
         <div style={{marginBottom:16}}>
           <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
           </button>
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
@@ -5618,7 +5618,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             {/* GUÍA ¿Cómo funciona? */}
             <div style={{marginBottom:16}}>
               <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
               </button>
               {showGuia&&(
                 <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
@@ -9196,7 +9196,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               {/* GUÍA ¿Cómo funciona? */}
               <div style={{marginBottom:16}}>
                 <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
                 </button>
                 {showGuia&&(
                   <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
@@ -9748,7 +9748,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               {/* GUÍA ¿Cómo funciona? — Equipo */}
               <div style={{marginBottom:16}}>
                 <button onClick={()=>setShowGuiaEquipo(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuiaEquipo?"▲":"▾"}</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuiaEquipo?"▲":"▾"}</span>
                 </button>
                 {showGuiaEquipo&&(
                   <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
@@ -15949,7 +15949,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {/* GUÍA ¿Cómo funciona? */}
         <div style={{marginBottom:16}}>
           <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
           </button>
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
@@ -19293,7 +19293,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {/* GUÍA ¿Cómo funciona? */}
         <div style={{marginBottom:16}}>
           <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
           </button>
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
