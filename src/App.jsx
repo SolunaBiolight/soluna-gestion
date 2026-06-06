@@ -8791,9 +8791,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if(email) {
         const d = await tareasApi({action:"createColaborador",nombre,email,rol:ncRol.trim(),telefono:ncTelefono.trim()});
         if(!d||!d._id) throw new Error("Respuesta inválida del servidor");
+        // Insertar inmediatamente en estado local con el dato que devolvió el API
+        setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
         setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
         toast("Miembro agregado ✓","success");
-        await loadData(true);
+        // Refresh silencioso de Firestore en background (no bloquea UI)
+        loadData(true);
         try { await navigator.clipboard.writeText(colabLink(d.token)); toast("Link copiado 📋","success"); } catch(_){}
       } else {
         if((produccion?.editores||[]).includes(nombre)) { toast("Ya existe un miembro con ese nombre","error"); return; }
