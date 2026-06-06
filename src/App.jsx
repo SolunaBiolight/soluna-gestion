@@ -359,17 +359,24 @@ function DriveBtn({ T, onPick, size = "sm" }) {
   );
 }
 
-// Botón simple que abre drive.google.com — para campos donde solo necesitás copiar un link
-function DriveOpenBtn({ T, size = "sm" }) {
+// Botón que abre el link de Drive ya cargado en el campo. Si no hay URL, queda deshabilitado.
+function DriveOpenBtn({ T, url = "", size = "sm" }) {
   const pad = size === "sm" ? "4px 8px" : "6px 12px";
   const fs  = size === "sm" ? 11 : 12;
-  return (
-    <a href="https://drive.google.com" target="_blank" rel="noreferrer"
-      title="Abrir Google Drive en nueva pestaña"
+  const hasUrl = url && url.trim().startsWith("http");
+  const icon = <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>;
+  if (hasUrl) return (
+    <a href={url.trim()} target="_blank" rel="noreferrer"
+      title="Abrir en nueva pestaña"
       style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"inline-flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif", textDecoration:"none" }}>
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-      Drive
+      {icon} Abrir
     </a>
+  );
+  return (
+    <button disabled title="Pegá primero la URL"
+      style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"inline-flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif", opacity:0.35, cursor:"default" }}>
+      {icon} Abrir
+    </button>
   );
 }
 // ─── fin Google Drive Picker ──────────────────────────────────────────────────
@@ -9743,19 +9750,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
-                  <div style={{display:"flex",gap:5}}>
-                    <DriveOpenBtn T={T}/>
-                    <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Manual</button>
-                  </div>
+                  <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
                 </div>
-                {ntLinks.length===0&&<div style={{fontSize:12,color:T.textSm,padding:"6px 0"}}>Sin links. Usá Drive para buscar archivos o agregá manualmente.</div>}
+                {ntLinks.length===0&&<div style={{fontSize:12,color:T.textSm,padding:"6px 0"}}>Sin links agregados.</div>}
                 {ntLinks.map((l,i)=>(
                   <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={l.name} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
                       placeholder="Nombre (ej: Brief PDF)" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
-                      placeholder="https://..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveOpenBtn T={T}/>
+                      placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
+                    <DriveOpenBtn T={T} url={l.url}/>
                     <button onClick={()=>setNtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
@@ -9827,18 +9831,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
-                  <div style={{display:"flex",gap:5}}>
-                    <DriveOpenBtn T={T}/>
-                    <button onClick={()=>setEtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Manual</button>
-                  </div>
+                  <button onClick={()=>setEtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
                 </div>
                 {etLinks.map((l,i)=>(
                   <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={l.name} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
                       placeholder="Nombre" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
-                      placeholder="https://..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveOpenBtn T={T}/>
+                      placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
+                    <DriveOpenBtn T={T} url={l.url}/>
                     <button onClick={()=>setEtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
@@ -9905,17 +9906,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Recursos (briefs, Drive, fotos de ref…)</div>
-                  <div style={{display:"flex",gap:5}}>
-                    <DriveOpenBtn T={T}/>
-                    <button onClick={()=>setTRecursos(prev=>[...prev,{id:mkProdId(),nombre:"",tipo:"otro",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Manual</button>
-                  </div>
+                  <button onClick={()=>setTRecursos(prev=>[...prev,{id:mkProdId(),nombre:"",tipo:"otro",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
                 </div>
-                {tRecursos.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin recursos. Usá Drive para buscar archivos o agregá manualmente.</div>}
+                {tRecursos.length===0&&<div style={{fontSize:12,color:T.textSm}}>Sin recursos agregados.</div>}
                 {tRecursos.map((r,i)=>(
                   <div key={r.id||i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={r.nombre} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))} placeholder="Nombre" style={{...iS,fontSize:12,width:100,flexShrink:0}}/>
                     <input value={r.url} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))} placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveOpenBtn T={T}/>
+                    <DriveOpenBtn T={T} url={r.url}/>
                     <button onClick={()=>setTRecursos(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
