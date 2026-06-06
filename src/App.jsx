@@ -8499,7 +8499,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
-  const ALL_VIEWS = ["todo","tandas","lista","ideas","editores","equipo"];
+  const ALL_VIEWS = ["todo","tandas","lista","ideas","equipo"];
   const [activeView, setActiveView] = useState("todo");
   const view = ALL_VIEWS.includes(activeView) ? activeView : "todo";
   // compat aliases para lógica existente
@@ -8703,11 +8703,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   async function crearColaborador() {
     if(!ncNombre.trim()||!ncEmail.trim()) return appAlert("Nombre y email son requeridos");
-    const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim(),telefono:ncTelefono.trim()});
-    setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
-    setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
-    toast("Colaborador agregado ✓","success");
-    copyLink(d.token);
+    try {
+      const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim(),telefono:ncTelefono.trim()});
+      if(!d || !d._id) throw new Error("Respuesta inválida del servidor");
+      setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
+      setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
+      toast("Colaborador agregado ✓","success");
+      copyLink(d.token);
+    } catch(e) {
+      appAlert("Error al agregar colaborador: " + e.message);
+    }
   }
 
   async function updateColabTelefono(colabId, telefono) {
@@ -9010,7 +9015,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* Barra de tabs — underline estilo */}
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:100,zIndex:29,display:"flex",overflowX:"auto",paddingLeft:24}}>
-        {[["todo","Todo"],["tandas","Tandas"],["lista","Creativos"],["ideas","Ideas"],["editores","Editores"],["equipo","Equipo"]].map(([id,label])=>(
+        {[["todo","Todo"],["tandas","Tandas"],["lista","Creativos"],["ideas","Ideas"],["equipo","Equipo"]].map(([id,label])=>(
           <button key={id} onClick={()=>setActiveView(id)} style={{padding:"0 18px",height:42,border:"none",borderBottom:`2px solid ${view===id?T.accent:"transparent"}`,background:"transparent",color:view===id?T.accent:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:view===id?600:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,transition:"color 0.15s, border-color 0.15s"}}>
             {label}
           </button>
@@ -9169,41 +9174,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </>);
           })()}
 
-          {safeProdTab==="editores"&&!prodLoading&&(
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",marginBottom:16}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:12}}>Gestionar editores</div>
-              <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
-                <input value={nuevoEditor} onChange={e=>setNuevoEditor(e.target.value)} onKeyDown={e=>e.key==="Enter"&&agregarEditor()} placeholder="Nombre del editor…" style={{...iS,fontSize:13,flex:1}}/>
-                <AsyncButton onClick={agregarEditor} style={{...BtnPrimary(T),flexShrink:0}}>+ Agregar</AsyncButton>
-              </div>
-              {(produccion?.editores||[]).length===0&&<div style={{fontSize:12,color:T.textSm,textAlign:"center",padding:"16px 0"}}>Sin editores. Agregá el primero arriba.</div>}
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {(produccion?.editores||[]).map(ed=>{
-                  const edC=(produccion?.creativos||[]).filter(c=>c.editor===ed);
-                  const edPub=edC.filter(c=>c.estado==="publicado").length;
-                  const edLink=editorPortalLink(ed);
-                  const waLink=edLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${ed.split(" ")[0]} 👋, acá podés ver tus creativos:\n${edLink}`)}`:null;
-                  return (
-                    <div key={ed} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 14px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:edLink?8:0}}>
-                        <div style={{width:32,height:32,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:T.accent,flexShrink:0}}>{ed[0].toUpperCase()}</div>
-                        <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{ed}</div><div style={{fontSize:11,color:T.textSm}}>{edC.length} creativos · {edPub} publicados</div></div>
-                        <div style={{display:"flex",gap:5}}>
-                          {!edLink?<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"4px 9px"}}>🔗 Link</AsyncButton>:<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 9px"}}>🔄</AsyncButton>}
-                          <AsyncButton onClick={()=>eliminarEditor(ed)} style={{...BtnDanger(T),fontSize:11,padding:"4px 9px"}}>✕</AsyncButton>
-                        </div>
-                      </div>
-                      {edLink&&<div style={{background:T.card,border:`1px solid ${T.borderL}`,borderRadius:7,padding:"6px 10px",display:"flex",alignItems:"center",gap:6}}>
-                        <span style={{fontSize:10,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{edLink}</span>
-                        <button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Link copiado","success"))} style={{...BtnSecondary(T),fontSize:10,padding:"2px 7px"}}>Copiar</button>
-                        {waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:10,padding:"2px 7px",textDecoration:"none",color:"#22c55e",border:"1px solid #22c55e33"}}>WA</a>}
-                      </div>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
 
           {/* ── Tandas ── */}
@@ -9610,6 +9580,49 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 );
               })}
             </div>
+
+            {/* ── Editores de producción (dentro de Equipo) ── */}
+            <div style={{marginTop:28}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>Editores de producción</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Reciben un link para ver sus creativos asignados sin necesidad de cuenta</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+                <input value={nuevoEditor} onChange={e=>setNuevoEditor(e.target.value)} onKeyDown={e=>e.key==="Enter"&&agregarEditor()} placeholder="Nombre del editor…" style={{...iS,fontSize:13,flex:1}}/>
+                <AsyncButton onClick={agregarEditor} style={{...BtnPrimary(T),flexShrink:0}}>+ Agregar editor</AsyncButton>
+              </div>
+              {(produccion?.editores||[]).length===0
+                ?<div style={{fontSize:12,color:T.textSm,textAlign:"center",padding:"16px 0",border:`1px dashed ${T.border}`,borderRadius:10}}>Sin editores todavía. Agregá el primero arriba.</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {(produccion?.editores||[]).map(ed=>{
+                    const edC=(produccion?.creativos||[]).filter(c=>c.editor===ed);
+                    const edPub=edC.filter(c=>c.estado==="publicado").length;
+                    const edLink=editorPortalLink(ed);
+                    const waLink=edLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${ed.split(" ")[0]} 👋, acá podés ver tus creativos:\n${edLink}`)}`:null;
+                    return (
+                      <div key={ed} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:edLink?8:0}}>
+                          <div style={{width:32,height:32,borderRadius:"50%",background:T.accentSolid+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:T.accent,flexShrink:0}}>{ed[0].toUpperCase()}</div>
+                          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{ed}</div><div style={{fontSize:11,color:T.textSm}}>{edC.length} creativos · {edPub} publicados</div></div>
+                          <div style={{display:"flex",gap:5}}>
+                            {!edLink?<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"4px 9px"}}>🔗 Link</AsyncButton>:<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnSecondary(T),fontSize:11,padding:"4px 9px"}}>🔄 Renovar</AsyncButton>}
+                            <AsyncButton onClick={()=>eliminarEditor(ed)} style={{...BtnDanger(T),fontSize:11,padding:"4px 9px"}}>✕</AsyncButton>
+                          </div>
+                        </div>
+                        {edLink&&<div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:7,padding:"6px 10px",display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:10,color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{edLink}</span>
+                          <button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Link copiado","success"))} style={{...BtnSecondary(T),fontSize:10,padding:"2px 7px"}}>Copiar</button>
+                          {waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:10,padding:"2px 7px",textDecoration:"none",color:"#22c55e",border:"1px solid #22c55e33"}}>WA</a>}
+                        </div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              }
+            </div>
+
           </div>
         )}
 
