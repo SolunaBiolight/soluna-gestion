@@ -270,10 +270,13 @@ function _showDrivePicker(token, onSelect, onCancel) {
 async function _requestDriveToken(onDone, onFail) {
   try {
     await _loadDriveScripts();
+    // Timeout de seguridad — si en 60s no llegó nada, resetear
+    const timeout = setTimeout(() => onFail("timeout"), 60000);
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: GDRIVE_CLIENT_ID,
       scope: "https://www.googleapis.com/auth/drive.readonly",
       callback: r => {
+        clearTimeout(timeout);
         if (r.access_token) {
           const exp = Date.now() + ((r.expires_in || 3599) * 1000) - 60000;
           _saveDriveToken(r.access_token, exp);
@@ -282,9 +285,10 @@ async function _requestDriveToken(onDone, onFail) {
           onFail(r.error || "sin_token");
         }
       },
-      error_callback: e => { onFail(e?.type || "error"); },
+      error_callback: e => { clearTimeout(timeout); onFail(e?.type || "error"); },
     });
-    client.requestAccessToken({ prompt: "" });
+    // prompt:"consent" fuerza la pantalla de autorización — más confiable que prompt:""
+    client.requestAccessToken({ prompt: "consent" });
   } catch(e) { onFail(e.message); }
 }
 
@@ -8498,7 +8502,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ntTitulo, setNtTitulo] = useState("");
   const [ntDesc, setNtDesc] = useState("");
   const [ntBrief, setNtBrief] = useState("");
-  const [ntLinks, setNtLinks] = useState([]);       // [{name,url}]
+  const [ntLinks, setNtLinks] = useState([{name:"",url:""}]);       // [{name,url}]
   const [ntChecklist, setNtChecklist] = useState([]); // [{id,text,done}]
   const [ntAsignado, setNtAsignado] = useState("");
   const [ntDeadline, setNtDeadline] = useState("");
@@ -8652,7 +8656,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const checkArr = ntChecklist.filter(i=>i.text.trim());
     const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||""});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal");
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal");
     // Panel de notificación
     if(colab) setNotifPanel({tarea:d,colab});
   }
