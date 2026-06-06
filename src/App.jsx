@@ -207,7 +207,19 @@ function Btn({T, variant="primary", size="md", icon, children, onClick, disabled
 const GDRIVE_API_KEY   = import.meta.env.VITE_GOOGLE_API_KEY   || "";
 const GDRIVE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 let _gapiReady = false, _gisReady = false;
-let _driveToken = null, _driveTokenExp = 0;
+
+// Token persistido en sessionStorage — sobrevive navegación SPA, no página refresh
+function _saveToken(t, exp) {
+  try { sessionStorage.setItem("_gdt", JSON.stringify({ t, exp })); } catch(_) {}
+}
+function _loadToken() {
+  try {
+    const s = sessionStorage.getItem("_gdt");
+    if (!s) return null;
+    const { t, exp } = JSON.parse(s);
+    return Date.now() < exp ? t : null;
+  } catch(_) { return null; }
+}
 
 function _loadDriveScripts() {
   return new Promise(resolve => {
@@ -218,18 +230,19 @@ function _loadDriveScripts() {
       el.src = "https://apis.google.com/js/api.js";
       el.onload = () => { window.gapi.load("picker", () => { _gapiReady = g = true; done(); }); };
       document.head.appendChild(el);
-    }
+    } else { g = true; }
     if (!_gisReady) {
       const el = document.createElement("script");
       el.src = "https://accounts.google.com/gsi/client";
       el.onload = () => { _gisReady = s = true; done(); };
       document.head.appendChild(el);
-    }
-    if (_gapiReady && _gisReady) resolve();
+    } else { s = true; }
+    if (g && s) resolve();
   });
 }
 
-function _buildPicker(token, onSelect) {
+// Abre el picker — DEBE llamarse desde un gesto directo del usuario
+function _openPickerWithToken(token, onSelect) {
   const myDrive = new window.google.picker.DocsView()
     .setIncludeFolders(true).setSelectFolderEnabled(false);
   const shared = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
@@ -238,7 +251,6 @@ function _buildPicker(token, onSelect) {
     .setTitle("Elegir archivo de Google Drive")
     .addView(myDrive)
     .addView(shared)
-    .addView(new window.google.picker.DocsUploadView())
     .setOAuthToken(token)
     .setDeveloperKey(GDRIVE_API_KEY)
     .enableFeature(window.google.picker.Feature.SUPPORT_DRIVES)
@@ -248,62 +260,101 @@ function _buildPicker(token, onSelect) {
         onSelect({ name: d.name, url: d.url, id: d.id, mimeType: d.mimeType });
       }
     })
-    .build()
-    .setVisible(true);
+    .build().setVisible(true);
 }
 
-async function openDrivePicker(onSelect) {
-  if (!GDRIVE_API_KEY || !GDRIVE_CLIENT_ID) {
-    alert("Drive no configurado. Verificá VITE_GOOGLE_API_KEY y VITE_GOOGLE_CLIENT_ID en Vercel.");
-    return;
-  }
+// Solicita token OAuth — NO abre picker (popup chain bloqueado por browsers)
+async function _requestDriveToken(onReady) {
   await _loadDriveScripts();
-  // Token vigente → abrir picker directo sin ningún popup
-  if (_driveToken && Date.now() < _driveTokenExp) {
-    _buildPicker(_driveToken, onSelect);
-    return;
-  }
-  // Crear tokenClient nuevo por llamada — así el callback siempre apunta al onSelect correcto
   const client = window.google.accounts.oauth2.initTokenClient({
     client_id: GDRIVE_CLIENT_ID,
     scope: "https://www.googleapis.com/auth/drive.readonly",
     callback: r => {
       if (r.access_token) {
-        _driveToken = r.access_token;
-        _driveTokenExp = Date.now() + ((r.expires_in || 3599) * 1000) - 60000;
-        _buildPicker(r.access_token, onSelect);
+        const exp = Date.now() + ((r.expires_in || 3599) * 1000) - 60000;
+        _saveToken(r.access_token, exp);
+        onReady(r.access_token); // avisa al componente que ya tiene token
       }
     },
   });
-  // Sin prompt si ya autorizó antes, con "select_account" la primera vez
-  client.requestAccessToken({ prompt: _driveToken ? "" : "select_account" });
+  client.requestAccessToken({ prompt: "select_account" });
 }
 
+// DriveBtn — maneja el flujo de 2 pasos:
+// 1er click sin token → OAuth → botón cambia a "✓ Elegir archivo"
+// 2do click con token  → abre picker directamente (gesto del usuario)
 function DriveBtn({ T, onPick, size = "sm" }) {
-  const [loading, setLoading] = React.useState(false);
+  const [step, setStep] = React.useState("idle"); // idle | authing | ready | picking
+  const [tok, setTok]   = React.useState(() => _loadToken()); // token precargado si existe
+
   const pad = size === "sm" ? "4px 8px" : "6px 12px";
   const fs  = size === "sm" ? 11 : 12;
+
+  const driveSvg = (
+    <svg width="12" height="9" viewBox="0 0 87.3 78" style={{flexShrink:0}}>
+      <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+      <path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/>
+      <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/>
+      <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/>
+      <path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/>
+      <path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+    </svg>
+  );
+
+  // Ya tiene token → un solo click abre el picker
+  if (tok) {
+    return (
+      <button title="Elegir desde Google Drive"
+        onClick={() => {
+          setStep("picking");
+          _loadDriveScripts().then(() => {
+            _openPickerWithToken(tok, f => { onPick(f); setStep("idle"); });
+          });
+        }}
+        style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif",
+          ...(step==="picking"?{opacity:0.6}:{}) }}>
+        {step === "picking" ? <Spinner size={10} color={T.accent}/> : <>{driveSvg} Drive</>}
+      </button>
+    );
+  }
+
+  // Sin token y autenticando → spinner
+  if (step === "authing") {
+    return (
+      <button disabled style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif", opacity:0.6 }}>
+        <Spinner size={10} color={T.accent}/> Conectando…
+      </button>
+    );
+  }
+
+  // Sin token y auth lista → segundo click abre picker
+  if (step === "ready") {
+    return (
+      <button title="Ahora elegí el archivo"
+        onClick={() => {
+          const t = _loadToken();
+          if (!t) { setStep("idle"); return; }
+          setTok(t); setStep("picking");
+          _loadDriveScripts().then(() => {
+            _openPickerWithToken(t, f => { onPick(f); setStep("idle"); });
+          });
+        }}
+        style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif", background: T.green+"22", borderColor: T.green }}>
+        <span style={{color:T.green}}>✓ Elegir archivo →</span>
+      </button>
+    );
+  }
+
+  // Estado inicial → primer click pide OAuth
   return (
-    <button
-      title="Elegir desde Google Drive"
+    <button title="Conectar Google Drive"
       onClick={() => {
-        setLoading(true);
-        openDrivePicker(f => { onPick(f); setLoading(false); })
-          .catch(() => setLoading(false))
-          .finally(() => setTimeout(() => setLoading(false), 10000));
+        if (!GDRIVE_API_KEY || !GDRIVE_CLIENT_ID) { alert("Drive no configurado."); return; }
+        setStep("authing");
+        _requestDriveToken(t => { setTok(t); setStep("idle"); });
       }}
       style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif" }}>
-      {loading
-        ? <Spinner size={10} color={T.accent}/>
-        : <><svg width="12" height="9" viewBox="0 0 87.3 78" fill="currentColor" style={{opacity:0.75}}>
-            <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-            <path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/>
-            <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/>
-            <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/>
-            <path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/>
-            <path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
-          </svg> Drive</>
-      }
+      {driveSvg} Drive
     </button>
   );
 }
