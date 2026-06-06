@@ -9787,7 +9787,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       placeholder="Nombre (ej: Brief PDF)" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
                       placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveBtn T={T} onPick={f=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:f.url,name:x.name||f.name}:x))}/>
                     <DriveOpenBtn T={T} url={l.url}/>
                     <button onClick={()=>setNtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
@@ -9868,7 +9867,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       placeholder="Nombre" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
                       placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveBtn T={T} onPick={f=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:f.url,name:x.name||f.name}:x))}/>
                     <DriveOpenBtn T={T} url={l.url}/>
                     <button onClick={()=>setEtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
@@ -9943,7 +9941,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div key={r.id||i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={r.nombre} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))} placeholder="Nombre" style={{...iS,fontSize:12,width:100,flexShrink:0}}/>
                     <input value={r.url} onChange={e=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))} placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveBtn T={T} onPick={f=>setTRecursos(prev=>prev.map((x,j)=>j===i?{...x,url:f.url,nombre:x.nombre||f.name}:x))}/>
                     <DriveOpenBtn T={T} url={r.url}/>
                     <button onClick={()=>setTRecursos(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
