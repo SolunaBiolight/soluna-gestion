@@ -369,13 +369,13 @@ function DriveOpenBtn({ T, url = "", size = "sm" }) {
     <a href={url.trim()} target="_blank" rel="noreferrer"
       title="Abrir en nueva pestaña"
       style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"inline-flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif", textDecoration:"none" }}>
-      {icon} Abrir
+      {icon} Abrir en Drive
     </a>
   );
   return (
     <button disabled title="Pegá primero la URL"
       style={{ ...BtnSecondary(T), padding: pad, fontSize: fs, display:"inline-flex", alignItems:"center", gap:4, flexShrink:0, fontFamily:"'Inter',system-ui,sans-serif", opacity:0.35, cursor:"default" }}>
-      {icon} Abrir
+      {icon} Abrir en Drive
     </button>
   );
 }
