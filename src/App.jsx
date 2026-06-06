@@ -9584,31 +9584,37 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {c&&!editing&&(()=>{
                           const activas=userTareas.filter(t=>t.estado!=="aprobado");
                           const ESTILO={
-                            pendiente:{l:"Pendiente",c:T.textSm,bg:T.surface},
-                            en_proceso:{l:"En proceso",c:T.blue,bg:T.blue+"18"},
-                            entregado:{l:"Entregado",c:T.orange,bg:T.orange+"18"},
-                            revision:{l:"Corrección",c:T.red,bg:T.red+"18"},
+                            pendiente:  {l:"Pendiente", c:"#9ca3af", bg:T.surface,       dot:"#9ca3af"},
+                            en_proceso: {l:"En proceso",c:T.blue,    bg:T.blue+"18",     dot:T.blue},
+                            entregado:  {l:"Entregado", c:T.orange,  bg:T.orange+"18",   dot:T.orange},
+                            revision:   {l:"Corrección",c:T.red,     bg:T.red+"18",      dot:T.red},
                           };
                           return (
                             <div>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
-                                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tareas</div>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                                  Tareas {activas.length>0&&<span style={{fontWeight:400,color:T.textSm}}>({activas.length})</span>}
+                                </div>
                                 <button onClick={e=>{e.stopPropagation();setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}}
                                   style={{...BtnSecondary(T),fontSize:13,padding:"6px 14px"}}>+ Tarea</button>
                               </div>
                               {activas.length===0
-                                ?<span style={{fontSize:12,color:T.textSm}}>Sin tareas activas</span>
-                                :<div style={{display:"flex",flexDirection:"column",gap:5}}>
-                                  {activas.slice(0,6).map(t=>{
-                                    const est=ESTILO[t.estado]||{l:t.estado,c:T.textSm,bg:T.surface};
+                                ?<div style={{fontSize:12,color:T.textSm,padding:"10px 0"}}>Sin tareas activas</div>
+                                :<div style={{display:"flex",flexDirection:"column",gap:4}}>
+                                  {activas.slice(0,8).map(t=>{
+                                    const est=ESTILO[t.estado]||{l:t.estado,c:T.textSm,bg:T.surface,dot:"#9ca3af"};
                                     return (
-                                      <div key={t._id} style={{fontSize:12,color:T.text,lineHeight:1.5}}>
-                                        <span style={{marginRight:6}}>{t.titulo}</span>
-                                        <span style={{fontSize:10,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"1px 8px",whiteSpace:"nowrap",verticalAlign:"middle"}}>{est.l}</span>
+                                      <div key={t._id} onClick={e=>{e.stopPropagation();setKanbanSelected(t);}}
+                                        style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,cursor:"pointer",transition:"border-color 0.15s"}}
+                                        onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+                                        onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                                        <div style={{width:8,height:8,borderRadius:"50%",background:est.dot,flexShrink:0}}/>
+                                        <span style={{flex:1,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
+                                        <span style={{fontSize:11,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"2px 9px",flexShrink:0,whiteSpace:"nowrap"}}>{est.l}</span>
                                       </div>
                                     );
                                   })}
-                                  {activas.length>6&&<span style={{fontSize:11,color:T.textSm}}>+{activas.length-6} más</span>}
+                                  {activas.length>8&&<div style={{fontSize:11,color:T.textSm,padding:"4px 0"}}>+{activas.length-8} más</div>}
                                 </div>
                               }
                             </div>
