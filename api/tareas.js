@@ -527,6 +527,18 @@ export default async function handler(req, res) {
       if (rol!==undefined) upd.rol = rol;
       if (telefono!==undefined) upd.telefono = telefono;
       if (email!==undefined) upd.email = email.toLowerCase().trim();
+      // Si cambia el email, reasignar todas las tareas que usaban el email viejo
+      if (email!==undefined) {
+        const colabDoc = await db.collection("colaboradores").doc(colabId).get();
+        const oldEmail = colabDoc.data()?.email;
+        const newEmail = email.toLowerCase().trim();
+        if (oldEmail && oldEmail !== newEmail) {
+          const tareasSnap = await db.collection("tareas").where("uid","==",uid).where("asignadoEmail","==",oldEmail).get();
+          const batch = db.batch();
+          tareasSnap.docs.forEach(doc => batch.update(doc.ref, { asignadoEmail: newEmail, updatedAt: now }));
+          await batch.commit();
+        }
+      }
       await db.collection("colaboradores").doc(colabId).update(upd);
       return res.json({ ok:true });
     }
