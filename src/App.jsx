@@ -208,6 +208,21 @@ const GDRIVE_API_KEY   = import.meta.env.VITE_GOOGLE_API_KEY   || "";
 const GDRIVE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 let _gapiReady = false, _gisReady = false;
 
+// Pre-cargar scripts al arrancar la app (no en el click) para que el
+// popup OAuth quede en la cadena de gesto del usuario → no bloqueado por browser
+if (GDRIVE_API_KEY && GDRIVE_CLIENT_ID) {
+  const s1 = document.createElement("script");
+  s1.src = "https://apis.google.com/js/api.js";
+  s1.async = true;
+  s1.onload = () => window.gapi.load("picker", () => { _gapiReady = true; });
+  document.head.appendChild(s1);
+  const s2 = document.createElement("script");
+  s2.src = "https://accounts.google.com/gsi/client";
+  s2.async = true;
+  s2.onload = () => { _gisReady = true; };
+  document.head.appendChild(s2);
+}
+
 function _saveDriveToken(t, exp) {
   try { sessionStorage.setItem("_gdt", JSON.stringify({ t, exp })); } catch(_) {}
 }
@@ -265,13 +280,15 @@ function _showDrivePicker(token, onSelect, onCancel) {
     .build().setVisible(true);
 }
 
-// Solicita token OAuth (abre popup de Google).
-// onDone(token) cuando éxito, onFail(err) cuando falla o se cierra sin completar.
-async function _requestDriveToken(onDone, onFail) {
+// Solicita token OAuth — SINCRÓNICO para mantener el gesto del usuario.
+// El popup NO se bloquea porque no hay ningún await antes de requestAccessToken.
+function _requestDriveToken(onDone, onFail) {
+  if (!_gisReady || !window.google?.accounts?.oauth2) {
+    onFail("scripts_no_cargados");
+    return;
+  }
+  const timeout = setTimeout(() => onFail("timeout"), 60000);
   try {
-    await _loadDriveScripts();
-    // Timeout de seguridad — si en 60s no llegó nada, resetear
-    const timeout = setTimeout(() => onFail("timeout"), 60000);
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: GDRIVE_CLIENT_ID,
       scope: "https://www.googleapis.com/auth/drive.readonly",
@@ -287,9 +304,8 @@ async function _requestDriveToken(onDone, onFail) {
       },
       error_callback: e => { clearTimeout(timeout); onFail(e?.type || "error"); },
     });
-    // prompt:"consent" fuerza la pantalla de autorización — más confiable que prompt:""
     client.requestAccessToken({ prompt: "consent" });
-  } catch(e) { onFail(e.message); }
+  } catch(e) { clearTimeout(timeout); onFail(e.message); }
 }
 
 // DriveBtn — botón que abre Google Drive Picker.
@@ -316,10 +332,9 @@ function DriveBtn({ T, onPick, size = "sm" }) {
   const openPicker = () => {
     const tok = tokenRef.current || _getSavedDriveToken();
     if (!tok) { setStep("idle"); return; }
+    if (!_gapiReady || !window.google?.picker) { setStep("idle"); return; }
     setStep("picking");
-    _loadDriveScripts().then(() => {
-      _showDrivePicker(tok, f => { onPick(f); setStep("idle"); }, () => setStep("idle"));
-    }).catch(() => setStep("idle"));
+    _showDrivePicker(tok, f => { onPick(f); setStep("idle"); }, () => setStep("idle"));
   };
 
   if (step === "authing") return (
@@ -352,7 +367,9 @@ function DriveBtn({ T, onPick, size = "sm" }) {
   return (
     <button title="Conectar Google Drive" onClick={() => {
       if (!GDRIVE_API_KEY || !GDRIVE_CLIENT_ID) { alert("Drive no configurado en Vercel."); return; }
+      if (!_gisReady) { alert("Cargando Drive, intentá en unos segundos..."); return; }
       setStep("authing");
+      // SINCRÓNICO — sin await para mantener gesto del usuario y evitar popup bloqueado
       _requestDriveToken(
         tok => { tokenRef.current = tok; setStep("authed"); },
         err => { console.warn("[Drive]", err); setStep("idle"); }
