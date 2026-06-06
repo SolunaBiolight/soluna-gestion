@@ -8790,8 +8790,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       if(email) {
         const d = await tareasApi({action:"createColaborador",nombre,email,rol:ncRol.trim(),telefono:ncTelefono.trim()});
+        console.log("[agregarMiembro] API response:", JSON.stringify(d));
         if(!d||!d._id) throw new Error("Respuesta inválida del servidor");
-        setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
+        setDatos(prev=>{
+          const next = {...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]};
+          console.log("[agregarMiembro] colaboradores después:", next.colaboradores.map(c=>c.email));
+          return next;
+        });
         setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
         toast("Miembro agregado ✓","success");
         try { await navigator.clipboard.writeText(colabLink(d.token)); toast("Link copiado 📋","success"); } catch(_){}
