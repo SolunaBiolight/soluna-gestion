@@ -8595,6 +8595,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ntLinks, setNtLinks] = useState([{name:"",url:""}]);       // [{name,url}]
   const [ntChecklist, setNtChecklist] = useState([]); // [{id,text,done}]
   const [ntAsignados, setNtAsignados] = useState([]);
+  const [assigneeSelectKey, setAssigneeSelectKey] = useState(0); // fuerza reset del select al agregar
   function setNtAsignado(email){ setNtAsignados(email?[email]:[]); }
   const [ntDeadline, setNtDeadline] = useState("");
   const [ntPrioridad, setNtPrioridad] = useState("normal");
@@ -9173,46 +9174,45 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </div>
           </div>
         )}
-        {/* Asignados — chips + agregar */}
+        {/* Asignados — chips + select normal */}
         {colaboradores.length>0&&(()=>{
           const asignados=getAsignados(t);
           const disponibles=colaboradores.filter(c=>!asignados.some(a=>a.email===c.email));
           return(
             <div style={{marginBottom:16}}>
               <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Asignado a</div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                {asignados.map(({email,nombre,rol})=>(
-                  <div key={email} style={{display:"flex",alignItems:"center",gap:7,background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 10px 5px 5px",maxWidth:220}}>
-                    <div style={{width:26,height:26,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:T.accent,flexShrink:0}}>
-                      {(nombre||"?")[0].toUpperCase()}
-                    </div>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>
-                      {rol&&<div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rol}</div>}
-                    </div>
-                    {asignados.length>1&&(
-                      <button onClick={()=>removeAssignee(t._id,email)}
-                        style={{background:"transparent",border:"none",color:T.textSm,fontSize:13,cursor:"pointer",padding:"0 0 0 2px",lineHeight:1,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}
-                        title="Quitar">✕</button>
-                    )}
-                  </div>
-                ))}
-                {disponibles.length>0&&(
-                  <div style={{position:"relative"}}>
-                    <select onChange={e=>{if(e.target.value){addAssignee(t._id,e.target.value);e.target.value="";}}}
-                      defaultValue=""
-                      style={{appearance:"none",WebkitAppearance:"none",fontSize:12,padding:"6px 28px 6px 12px",borderRadius:20,border:`1.5px dashed ${T.border}`,background:"transparent",color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",outline:"none"}}>
-                      <option value="" disabled>+ Agregar persona</option>
-                      {disponibles.map(c=>(
-                        <option key={c._id} value={c.email}>{c.nombre}{c.rol?` · ${c.rol}`:""}</option>
-                      ))}
-                    </select>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}} fill={T.textSm}>
-                      <path d="M2 3l3 4 3-4" stroke={T.textSm} strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-                    </svg>
-                  </div>
-                )}
-              </div>
+              {asignados.length>0&&(
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                  {asignados.map(({email,nombre,rol})=>{
+                    const n=nombre||"?";
+                    return(
+                      <div key={email} style={{display:"flex",alignItems:"center",gap:6,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}44`,borderRadius:20,padding:"4px 8px 4px 5px"}}>
+                        <div style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:T.accent,flexShrink:0}}>
+                          {(n[0]||"?").toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>{n}</div>
+                          {rol&&<div style={{fontSize:10,color:T.textSm}}>{rol}</div>}
+                        </div>
+                        {asignados.length>1&&(
+                          <button onClick={()=>removeAssignee(t._id,email)}
+                            style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,cursor:"pointer",padding:0,marginLeft:2,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {disponibles.length>0&&(
+                <select key={asignados.length} defaultValue=""
+                  onChange={e=>{if(e.target.value)addAssignee(t._id,e.target.value);}}
+                  style={{...iS,fontSize:12,width:"100%"}}>
+                  <option value="" disabled>+ Agregar persona a esta tarea</option>
+                  {disponibles.map(c=>(
+                    <option key={c._id} value={c.email}>{c.nombre}{c.rol?` · ${c.rol}`:""}</option>
+                  ))}
+                </select>
+              )}
             </div>
           );
         })()}
@@ -10219,38 +10219,43 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:6}}>Asignado a *</div>
                 {colaboradores.length===0
                   ? <div style={{fontSize:12,color:T.textSm}}>No tenés colaboradores. <button onClick={()=>{setShowNT(false);setShowNC(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>Agregar uno</button></div>
-                  : <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                      {ntAsignados.map(email=>{
-                        const c=colaboradores.find(x=>x.email===email);
-                        const nombre=c?.nombre||email;
-                        return(
-                          <div key={email} style={{display:"flex",alignItems:"center",gap:7,background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 10px 5px 5px"}}>
-                            <div style={{width:26,height:26,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:T.accent,flexShrink:0}}>
-                              {nombre[0].toUpperCase()}
-                            </div>
-                            <div>
-                              <div style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.2}}>{nombre}</div>
-                              {c?.rol&&<div style={{fontSize:10,color:T.textSm}}>{c.rol}</div>}
-                            </div>
-                            <button onClick={()=>setNtAsignados(p=>p.filter(e=>e!==email))}
-                              style={{background:"transparent",border:"none",color:T.textSm,fontSize:13,cursor:"pointer",padding:"0 0 0 2px",lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
-                          </div>
-                        );
-                      })}
-                      {colaboradores.filter(c=>!ntAsignados.includes(c.email)).length>0&&(
-                        <div style={{position:"relative"}}>
-                          <select onChange={e=>{if(e.target.value){setNtAsignados(p=>[...p,e.target.value]);e.target.value="";}}}
-                            defaultValue=""
-                            style={{appearance:"none",WebkitAppearance:"none",fontSize:12,padding:"7px 28px 7px 14px",borderRadius:20,border:`1.5px dashed ${ntAsignados.length===0?T.red:T.border}`,background:"transparent",color:ntAsignados.length===0?T.accent:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",outline:"none",fontWeight:ntAsignados.length===0?600:400}}>
-                            <option value="" disabled>{ntAsignados.length===0?"+ Elegir persona…":"+ Agregar persona"}</option>
-                            {colaboradores.filter(c=>!ntAsignados.includes(c.email)).map(c=>(
-                              <option key={c._id} value={c.email}>{c.nombre}{c.rol?` · ${c.rol}`:""}</option>
-                            ))}
-                          </select>
-                          <svg width="10" height="10" viewBox="0 0 10 10" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}} fill="none">
-                            <path d="M2 3l3 4 3-4" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round"/>
-                          </svg>
+                  : <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      {/* Chips de personas seleccionadas */}
+                      {ntAsignados.length>0&&(
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                          {ntAsignados.map(email=>{
+                            const c=colaboradores.find(x=>x.email===email);
+                            const nombre=(c?.nombre||email||"?");
+                            return(
+                              <div key={email} style={{display:"flex",alignItems:"center",gap:6,background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}44`,borderRadius:20,padding:"4px 8px 4px 5px"}}>
+                                <div style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:T.accent,flexShrink:0}}>
+                                  {(nombre[0]||"?").toUpperCase()}
+                                </div>
+                                <span style={{fontSize:12,fontWeight:600,color:T.text}}>{nombre}</span>
+                                {c?.rol&&<span style={{fontSize:10,color:T.textSm}}>· {c.rol}</span>}
+                                <button onClick={()=>{setNtAsignados(p=>p.filter(e=>e!==email));setAssigneeSelectKey(k=>k+1);}}
+                                  style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,cursor:"pointer",padding:0,lineHeight:1,marginLeft:2,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                              </div>
+                            );
+                          })}
                         </div>
+                      )}
+                      {/* Select para agregar */}
+                      {colaboradores.filter(c=>!ntAsignados.includes(c.email)).length>0&&(
+                        <select key={assigneeSelectKey}
+                          defaultValue=""
+                          onChange={e=>{
+                            if(e.target.value){
+                              setNtAsignados(p=>[...p,e.target.value]);
+                              setAssigneeSelectKey(k=>k+1);
+                            }
+                          }}
+                          style={{...iS,fontSize:13,width:"100%",borderColor:ntAsignados.length===0?"#ef4444":undefined}}>
+                          <option value="" disabled>{ntAsignados.length===0?"Elegir persona asignada…":"+ Agregar otra persona"}</option>
+                          {colaboradores.filter(c=>!ntAsignados.includes(c.email)).map(c=>(
+                            <option key={c._id} value={c.email}>{c.nombre}{c.rol?` · ${c.rol}`:""}</option>
+                          ))}
+                        </select>
                       )}
                     </div>
                 }
