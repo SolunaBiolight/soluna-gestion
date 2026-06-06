@@ -9569,7 +9569,17 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           {tieneEditor&&creativos.length>0&&<span style={{color:T.textMd}}>{creativos.length} creativo{creativos.length!==1?"s":""}</span>}
                         </div>
                       </div>
-                      <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>{expanded?"▲":"▼"}</span>
+                      {/* Acciones rápidas siempre visibles + chevron */}
+                      <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                        {c&&<button onClick={()=>copyLink(c.token)}
+                          style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>📋 Link</button>}
+                        {!c&&portalLink&&<button onClick={()=>navigator.clipboard.writeText(portalLink).then(()=>toast("Link copiado","success"))}
+                          style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>📋 Link</button>}
+                        {waHref&&<a href={waHref} target="_blank" rel="noreferrer"
+                          style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>💬 WA</a>}
+                        <span onClick={e=>{e.stopPropagation();setExpandedEquipo(expanded?null:_key);setEditingMember(null);}}
+                          style={{fontSize:11,color:T.textSm,marginLeft:2,cursor:"pointer",padding:"4px 6px"}}>{expanded?"▲":"▼"}</span>
+                      </div>
                     </div>
 
                     {/* Expandido */}
@@ -9620,9 +9630,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                   {activas.slice(0,6).map(t=>{
                                     const est=ESTILO[t.estado]||{l:t.estado,c:T.textSm,bg:T.surface};
                                     return (
-                                      <div key={t._id} style={{display:"flex",alignItems:"center",gap:8}}>
-                                        <div style={{flex:1,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
-                                        <span style={{fontSize:10,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"1px 8px",flexShrink:0,whiteSpace:"nowrap"}}>{est.l}</span>
+                                      <div key={t._id} style={{fontSize:12,color:T.text,lineHeight:1.5}}>
+                                        <span style={{marginRight:6}}>{t.titulo}</span>
+                                        <span style={{fontSize:10,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"1px 8px",whiteSpace:"nowrap",verticalAlign:"middle"}}>{est.l}</span>
                                       </div>
                                     );
                                   })}
@@ -9633,22 +9643,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           );
                         })()}
 
-                        {/* Link + WA */}
-                        {!editing&&(
-                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                            {c&&<button onClick={e=>{e.stopPropagation();copyLink(c.token);}}
-                              style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>📋 Copiar link</button>}
-                            {!c&&(portalLink
-                              ?<button onClick={e=>{e.stopPropagation();navigator.clipboard.writeText(portalLink).then(()=>toast("Link copiado","success"));}}
-                                  style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>📋 Copiar link</button>
-                              :<AsyncButton onClick={()=>generarLinkEditor(nombre)}
-                                  style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Generar link</AsyncButton>
-                            )}
-                            {waHref&&<a href={waHref} target="_blank" rel="noreferrer"
-                              style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>
-                              💬 WA
-                            </a>}
-                          </div>
+                        {/* Generar link (solo si no tiene link aún) */}
+                        {!editing&&!c&&!portalLink&&(
+                          <AsyncButton onClick={()=>generarLinkEditor(nombre)}
+                            style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Generar link</AsyncButton>
                         )}
 
                         {/* Formulario edición inline */}
