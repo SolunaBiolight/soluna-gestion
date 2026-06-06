@@ -9574,12 +9574,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                     {/* Expandido */}
                     {expanded&&(
-                      <div style={{borderTop:`1px solid ${T.border}`,padding:"14px 16px",display:"flex",flexDirection:"column",gap:14}}>
+                      <div style={{borderTop:`1px solid ${T.border}`,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
+
+                        {/* Email */}
+                        {c&&<div style={{fontSize:12,color:T.textSm}}>{c.email}</div>}
 
                         {/* Permisos — solo para colabs */}
                         {c&&(
                           <div>
-                            <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Permisos</div>
+                            <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:7}}>Permisos</div>
                             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                               {PERMISOS.map(({key,label})=>{
                                 const val=!!(liveColab?.permisos||{})[key];
@@ -9595,11 +9598,44 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </div>
                         )}
 
-                        {/* Acciones */}
+                        {/* Lista de tareas */}
+                        {c&&!editing&&(()=>{
+                          const activas=userTareas.filter(t=>t.estado!=="aprobado");
+                          const ESTILO={
+                            pendiente:{l:"Pendiente",c:T.textSm,bg:T.surface},
+                            en_proceso:{l:"En proceso",c:T.blue,bg:T.blue+"18"},
+                            entregado:{l:"Entregado",c:T.orange,bg:T.orange+"18"},
+                            revision:{l:"Corrección",c:T.red,bg:T.red+"18"},
+                          };
+                          return (
+                            <div>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tareas</div>
+                                <button onClick={e=>{e.stopPropagation();setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}}
+                                  style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>+ Tarea</button>
+                              </div>
+                              {activas.length===0
+                                ?<span style={{fontSize:12,color:T.textSm}}>Sin tareas activas</span>
+                                :<div style={{display:"flex",flexDirection:"column",gap:5}}>
+                                  {activas.slice(0,6).map(t=>{
+                                    const est=ESTILO[t.estado]||{l:t.estado,c:T.textSm,bg:T.surface};
+                                    return (
+                                      <div key={t._id} style={{display:"flex",alignItems:"center",gap:8}}>
+                                        <div style={{flex:1,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
+                                        <span style={{fontSize:10,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"1px 8px",flexShrink:0,whiteSpace:"nowrap"}}>{est.l}</span>
+                                      </div>
+                                    );
+                                  })}
+                                  {activas.length>6&&<span style={{fontSize:11,color:T.textSm}}>+{activas.length-6} más</span>}
+                                </div>
+                              }
+                            </div>
+                          );
+                        })()}
+
+                        {/* Link + WA */}
                         {!editing&&(
-                          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                            {c&&<button onClick={e=>{e.stopPropagation();setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}}
-                              style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Tarea</button>}
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                             {c&&<button onClick={e=>{e.stopPropagation();copyLink(c.token);}}
                               style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>📋 Copiar link</button>}
                             {!c&&(portalLink
@@ -9612,8 +9648,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>
                               💬 WA
                             </a>}
-                            <button onClick={e=>{e.stopPropagation();setEditingMember(_key);setEditData({nombre:c?.nombre||nombre,rol:c?.rol||"",wa:c?.telefono||""});}}
-                              style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>✏️ Editar</button>
                           </div>
                         )}
 
@@ -9662,9 +9696,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </div>
                         )}
 
-                        {/* Eliminar */}
+                        {/* Footer: Editar + Eliminar */}
                         {!editing&&(
-                          <div style={{paddingTop:4,borderTop:`1px solid ${T.border}`}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:`1px solid ${T.border}`}}>
+                            <button onClick={e=>{e.stopPropagation();setEditingMember(_key);setEditData({nombre:c?.nombre||nombre,rol:c?.rol||"",wa:c?.telefono||""});}}
+                              style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px"}}>✏️ Editar datos</button>
                             <AsyncButton onClick={async()=>{
                               if(c){
                                 await deleteColab(c._id);
@@ -9674,8 +9710,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 await eliminarEditor(nombre);
                               }
                               setExpandedEquipo(null);
-                            }} style={{...BtnDanger(T),fontSize:11,padding:"4px 12px"}}>
-                              Eliminar miembro
+                            }} style={{background:"transparent",border:"none",color:T.red,fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:"5px 4px"}}>
+                              Eliminar
                             </AsyncButton>
                           </div>
                         )}
