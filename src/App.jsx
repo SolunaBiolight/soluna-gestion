@@ -8762,6 +8762,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignados[0],asignadoNombre:colab?.nombre||"",asignadosEmails:ntAsignados,deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
     setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal");
+    // Mostrar resultado de emails
+    const emailResults = d._emailResults||[];
+    const failedEmails = emailResults.filter(r=>!r.ok);
+    if(failedEmails.length>0) toast(`⚠️ Tarea creada, pero ${failedEmails.length} email(s) fallaron: ${failedEmails.map(r=>r.error||"error").join(", ")}`,"warning");
+    else if(emailResults.length>0) toast("📧 Notificaciones enviadas ✓","success");
     if(colab) setNotifPanel({tarea:d,colab});
   }
 
@@ -9435,109 +9440,114 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </div>
                 </div>
               )}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(420px,1fr))",gap:10}}>
-                {produccion.editores.map(ed=>{
-                  const edC=creativosActivos.filter(c=>c.editor===ed);
-                  if(!edC.length) return null;
-                  const CEST2={idea:{l:"Idea",c:"#6b7280",dot:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue,dot:T.blue},"en-produccion":{l:"En prod.",c:T.orange,dot:T.orange},entregado:{l:"Entregado",c:T.yellow||"#d97706",dot:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green,dot:T.green}};
-                  return(
-                    <div key={ed} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                      <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
-                        <div style={{width:40,height:40,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accent,flexShrink:0}}>{ed[0].toUpperCase()}</div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:14,fontWeight:600,color:T.text}}>{ed}</div>
-                          <div style={{fontSize:12,color:T.textSm}}>{edC.length} creativo{edC.length!==1?"s":""} activo{edC.length!==1?"s":""}</div>
-                        </div>
-                        <button onClick={()=>{setCEditor(ed);openCreativo();}} style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>+ Creativo</button>
-                      </div>
-                      <div style={{borderTop:`1px solid ${T.border}`,padding:"8px 12px",display:"flex",flexDirection:"column",gap:4}}>
-                        {edC.map(c=>{
-                          const ce=CEST2[c.estado]||{l:c.estado,c:T.textSm,dot:"#9ca3af"};
-                          return(
-                            <div key={c.id} onClick={()=>setCreativoDetail(c)}
-                              style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,cursor:"pointer",transition:"border-color 0.15s"}}
-                              onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
-                              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                              <div style={{width:8,height:8,borderRadius:"50%",background:ce.dot,flexShrink:0}}/>
-                              <span style={{fontSize:11,fontWeight:700,color:T.accent,background:T.accentSolid+"15",borderRadius:4,padding:"1px 6px",flexShrink:0}}>{c.codigo}</span>
-                              <span style={{flex:1,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.angulo||"Sin ángulo"}</span>
-                              <span style={{fontSize:11,fontWeight:600,color:ce.c,background:ce.c+"18",borderRadius:20,padding:"2px 9px",flexShrink:0}}>{ce.l}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-                {colaboradores.map(colab=>{
-                  const colabTareas=tareasActivas.filter(t=>(t.asignadosEmails?.length?t.asignadosEmails:([t.asignadoEmail])).includes(colab.email));
-                  if(!colabTareas.length) return null;
-                  const tieneEntregado=colabTareas.some(t=>t.estado==="entregado");
-                  const ESTILO_T={pendiente:{l:"Pendiente",c:"#9ca3af",bg:T.surface,dot:"#9ca3af"},en_proceso:{l:"En proceso",c:T.blue,bg:T.blue+"18",dot:T.blue},entregado:{l:"Entregado",c:T.orange,bg:T.orange+"18",dot:T.orange},revision:{l:"Corrección",c:T.red,bg:T.red+"18",dot:T.red}};
-                  const isDragOverTodo=dragOverColab===colab._id&&draggedTarea?.fromColabKey!==colab._id;
-                  return(
-                    <div key={colab._id}
-                      onDragOver={e=>{e.preventDefault();if(draggedTarea&&draggedTarea.fromColabKey!==colab._id)setDragOverColab(colab._id);}}
-                      onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverColab(null);}}
-                      onDrop={e=>{e.preventDefault();if(draggedTarea&&draggedTarea.fromColabKey!==colab._id){reassignTarea(draggedTarea.id,colab.email);}setDragOverColab(null);}}
-                      style={{background:T.card,border:`2px solid ${isDragOverTodo?T.accent:tieneEntregado?T.orange+"44":T.border}`,borderRadius:12,overflow:"hidden",transition:"border-color 0.15s",boxShadow:isDragOverTodo?`0 0 0 3px ${T.accent}22`:"none"}}>
-                      <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
-                        <div style={{position:"relative",flexShrink:0}}>
-                          <div style={{width:40,height:40,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accent}}>{colab.nombre[0].toUpperCase()}</div>
-                          {tieneEntregado&&<div style={{position:"absolute",bottom:1,right:1,width:10,height:10,borderRadius:"50%",background:T.orange,border:`2px solid ${T.card}`}}/>}
-                        </div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:14,fontWeight:600,color:T.text}}>{colab.nombre}</div>
-                          <div style={{fontSize:12,color:T.textSm}}>{colab.rol||colab.email}</div>
-                        </div>
-                        <span style={{fontSize:12,color:T.textSm,flexShrink:0}}>{colabTareas.length} tarea{colabTareas.length!==1?"s":""}</span>
-                        <button onClick={()=>{setNtAsignado(colab.email);setShowNT(true);}} style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>+ Tarea</button>
-                      </div>
-                      <div style={{borderTop:`1px solid ${T.border}`,padding:"8px 12px",display:"flex",flexDirection:"column",gap:4}}>
-                        {isDragOverTodo&&(
-                          <div style={{padding:"12px",borderRadius:8,border:`2px dashed ${T.accent}`,background:T.accent+"0f",textAlign:"center",fontSize:12,color:T.accent,fontWeight:600}}>
-                            Soltar acá para reasignar a {colab.nombre}
+              {/* ── GRID DE TAREAS — una card por tarea ── */}
+              {tareasActivas.length>0&&(()=>{
+                const EST_CARD={
+                  pendiente: {l:"Pendiente",c:"#9ca3af",bg:"#9ca3af18",dot:"#9ca3af"},
+                  en_proceso:{l:"En proceso",c:T.blue,    bg:T.blue+"18",    dot:T.blue},
+                  entregado: {l:"Entregado", c:T.orange,  bg:T.orange+"18",  dot:T.orange},
+                  revision:  {l:"Corrección",c:T.red,     bg:T.red+"18",     dot:T.red},
+                  bloqueada: {l:"Bloqueada", c:"#6b7280", bg:"#6b728018",    dot:"#6b7280"},
+                };
+                return(
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10,marginBottom:16}}>
+                    {tareasActivas.map(t=>{
+                      const est=EST_CARD[t.estado]||EST_CARD.pendiente;
+                      const days=dLeft(t.deadline);
+                      const asignados=getAsignados(t);
+                      const isEntregado=t.estado==="entregado";
+                      const isUrgente=t.prioridad==="urgente";
+                      const borderColor=isEntregado?T.orange:isUrgente?T.red+"66":T.border;
+                      return(
+                        <div key={t._id} onClick={()=>setKanbanSelected(t)}
+                          style={{background:T.card,border:`1.5px solid ${borderColor}`,borderRadius:12,padding:14,cursor:"pointer",display:"flex",flexDirection:"column",gap:10,transition:"border-color 0.15s, box-shadow 0.15s"}}
+                          onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.boxShadow=`0 2px 12px ${T.accent}18`;}}
+                          onMouseLeave={e=>{e.currentTarget.style.borderColor=borderColor;e.currentTarget.style.boxShadow="none";}}>
+                          {/* Top: número + estado */}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <span style={{fontSize:10,fontWeight:700,color:T.textSm,background:T.surface,borderRadius:5,padding:"2px 6px",border:`1px solid ${T.border}`}}>
+                              {t.tareaNumStr?"#"+t.tareaNumStr:"—"}
+                            </span>
+                            <span style={{fontSize:10,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"2px 8px"}}>{est.l}</span>
                           </div>
-                        )}
-                        {colabTareas.map(t=>{
-                          const est=ESTILO_T[t.estado]||ESTILO_T.pendiente;
-                          const days=dLeft(t.deadline);
-                          const isDraggingThis=draggedTarea?.id===t._id;
-                          return(
-                            <div key={t._id}
-                              draggable={true}
-                              onDragStart={e=>{e.stopPropagation();setDraggedTarea({id:t._id,fromColabKey:colab._id});e.dataTransfer.effectAllowed="move";}}
-                              onDragEnd={()=>{setDraggedTarea(null);setDragOverColab(null);}}
-                              onClick={()=>setKanbanSelected(t)}
-                              style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,cursor:"grab",transition:"opacity 0.15s, border-color 0.15s",opacity:isDraggingThis?0.35:1,userSelect:"none"}}
-                              onMouseEnter={e=>{if(!isDraggingThis)e.currentTarget.style.borderColor=T.accent}}
-                              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                              <svg width="10" height="14" viewBox="0 0 10 14" fill={T.textSm} style={{flexShrink:0,opacity:0.4}}>
-                                <circle cx="3" cy="2" r="1.5"/><circle cx="7" cy="2" r="1.5"/>
-                                <circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/>
-                                <circle cx="3" cy="12" r="1.5"/><circle cx="7" cy="12" r="1.5"/>
-                              </svg>
-                              <div style={{width:8,height:8,borderRadius:"50%",background:est.dot,flexShrink:0}}/>
-                              <span style={{flex:1,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
-                              {t.prioridad==="urgente"&&<span style={{fontSize:10,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"1px 6px",flexShrink:0}}>URGENTE</span>}
-                              {days!==null&&<span style={{fontSize:11,color:days<=2?T.red:days<=4?T.orange:T.textSm,fontWeight:days<=2?700:400,flexShrink:0}}>📅 {days<0?`${Math.abs(days)}d venc.`:days===0?"hoy":`${days}d`}</span>}
-                              <span style={{fontSize:11,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"2px 9px",flexShrink:0}}>{est.l}</span>
+                          {/* Título */}
+                          <div style={{fontSize:13,fontWeight:600,color:T.text,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",flex:1}}>
+                            {isUrgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:4,padding:"1px 5px",marginRight:5}}>URGENTE</span>}
+                            {t.titulo}
+                          </div>
+                          {/* Footer: avatares + deadline */}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <div style={{display:"flex"}}>
+                              {asignados.slice(0,3).map((a,i)=>(
+                                <div key={a.email} title={a.nombre}
+                                  style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid+"22",border:`2px solid ${T.card}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.accent,marginLeft:i>0?-6:0,zIndex:3-i,flexShrink:0}}>
+                                  {(a.nombre[0]||"?").toUpperCase()}
+                                </div>
+                              ))}
+                              {asignados.length>3&&(
+                                <div style={{width:22,height:22,borderRadius:"50%",background:T.surface,border:`2px solid ${T.card}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:T.textSm,marginLeft:-6}}>
+                                  +{asignados.length-3}
+                                </div>
+                              )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-                {tareasActivas.length===0&&creativosActivos.length===0&&(
-                  <div style={{textAlign:"center",padding:"70px 24px",background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`}}>
-                    <div style={{fontSize:48,marginBottom:16}}>🚀</div>
-                    <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>Todo al día</div>
-                    <div style={{fontSize:13,color:T.textMd,marginBottom:24}}>No hay trabajo activo.</div>
-                    <button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Nueva tarea</button>
+                            {days!==null&&(
+                              <span style={{fontSize:10,fontWeight:days<=2?700:400,color:days<0?T.red:days<=2?T.red:days<=4?T.orange:T.textSm}}>
+                                📅 {days<0?`${Math.abs(days)}d venc.`:days===0?"hoy":`${days}d`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
+                );
+              })()}
+              {/* Creativos por editor */}
+              {creativosActivos.length>0&&(
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:10}}>
+                  {produccion.editores.map(ed=>{
+                    const edC=creativosActivos.filter(c=>c.editor===ed);
+                    if(!edC.length) return null;
+                    const CEST2={idea:{l:"Idea",c:"#6b7280",dot:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue,dot:T.blue},"en-produccion":{l:"En prod.",c:T.orange,dot:T.orange},entregado:{l:"Entregado",c:T.yellow||"#d97706",dot:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green,dot:T.green}};
+                    return(
+                      <div key={ed} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                        <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
+                          <div style={{width:36,height:36,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.accent,flexShrink:0}}>{ed[0].toUpperCase()}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{ed}</div>
+                            <div style={{fontSize:11,color:T.textSm}}>{edC.length} creativo{edC.length!==1?"s":""}</div>
+                          </div>
+                          <button onClick={()=>{setCEditor(ed);openCreativo();}} style={{...BtnSecondary(T),fontSize:12,padding:"5px 10px"}}>+ Creativo</button>
+                        </div>
+                        <div style={{borderTop:`1px solid ${T.border}`,padding:"6px 10px",display:"flex",flexDirection:"column",gap:3}}>
+                          {edC.map(c=>{
+                            const ce=CEST2[c.estado]||{l:c.estado,c:T.textSm,dot:"#9ca3af"};
+                            return(
+                              <div key={c.id} onClick={()=>setCreativoDetail(c)}
+                                style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,background:T.surface,border:`1px solid ${T.border}`,cursor:"pointer",transition:"border-color 0.15s"}}
+                                onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+                                onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                                <div style={{width:6,height:6,borderRadius:"50%",background:ce.dot,flexShrink:0}}/>
+                                <span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accentSolid+"15",borderRadius:4,padding:"1px 5px",flexShrink:0}}>{c.codigo}</span>
+                                <span style={{flex:1,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.angulo||"Sin ángulo"}</span>
+                                <span style={{fontSize:10,fontWeight:600,color:ce.c,background:ce.c+"18",borderRadius:20,padding:"2px 7px",flexShrink:0}}>{ce.l}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {tareasActivas.length===0&&creativosActivos.length===0&&(
+                <div style={{textAlign:"center",padding:"70px 24px",background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`}}>
+                  <div style={{fontSize:48,marginBottom:16}}>🚀</div>
+                  <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>Todo al día</div>
+                  <div style={{fontSize:13,color:T.textMd,marginBottom:24}}>No hay trabajo activo.</div>
+                  <button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Nueva tarea</button>
+                </div>
+              )}
             </>);
           })()}
 

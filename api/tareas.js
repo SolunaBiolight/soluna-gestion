@@ -586,27 +586,28 @@ export default async function handler(req, res) {
         createdAt:now, updatedAt:now,
       };
       const ref = await db.collection("tareas").add(data);
-      // Cargar todos los colaboradores de este uid de una sola vez
+      // Cargar todos los colaboradores de este uid
       const colabsSnap = await db.collection("colaboradores").where("uid","==",uid).get();
       const colabsByEmail = {};
-      colabsSnap.docs.forEach(d => { colabsByEmail[d.data().email?.toLowerCase()] = d.data(); });
-      // Enviar email a cada asignado
-      const emailPromises = todosEmails.map(async email => {
-        const colab = colabsByEmail[email.toLowerCase()];
-        if (!colab) { console.warn(`[createTarea] colaborador no encontrado para email: ${email}`); return; }
-        try {
-          await sendEmail({
-            to: email,
-            subject: `📋 Nueva tarea: ${titulo}`,
-            html: emailTareaAsignada({ colab, tarea:{...data,deadline:deadline?new Date(deadline):null}, link:colabPortalLink(origin, colab.token) }),
-          });
-          console.log(`[createTarea] email enviado a ${email}`);
-        } catch(e) {
-          console.error(`[createTarea] error enviando email a ${email}:`, e.message);
+      colabsSnap.docs.forEach(d => { const em=d.data().email; if(em) colabsByEmail[em.toLowerCase()] = d.data(); });
+      const emailResults = [];
+      for (const email of todosEmails) {
+        let colab = colabsByEmail[email.toLowerCase()];
+        if (!colab) {
+          // Fallback: buscar por email sin filtro de uid (datos inconsistentes de tests anteriores)
+          const byEmail = await db.collection("colaboradores").where("email","==",email.toLowerCase()).limit(1).get();
+          if (!byEmail.empty) { colab = byEmail.docs[0].data(); console.log(`[email] colab found by email-only: ${email}`); }
         }
-      });
-      await Promise.all(emailPromises);
-      return res.json({ _id:ref.id, ...data });
+        if (!colab) { console.warn(`[email] colaborador no encontrado para: ${email}`); emailResults.push({email,ok:false,error:"colab_not_found"}); continue; }
+        const result = await sendEmail({
+          to: email,
+          subject: `📋 Nueva tarea: ${titulo}`,
+          html: emailTareaAsignada({ colab, tarea:{...data,deadline:deadline?new Date(deadline):null}, link:colabPortalLink(origin, colab.token) }),
+        });
+        console.log(`[email] resultado para ${email}:`, JSON.stringify(result));
+        emailResults.push({email, ...result});
+      }
+      return res.json({ _id:ref.id, ...data, _emailResults:emailResults });
     }
 
     if (action === "updateTarea") {
