@@ -9743,13 +9743,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div style={{fontWeight:700,fontSize:16,color:T.text}}>Nueva tarea</div>
               <button onClick={()=>setShowNT(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
             </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              {/* Título */}
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Título *</div>
-                <input value={ntTitulo} onChange={e=>setNtTitulo(e.target.value)} placeholder="Ej: Editar video de lanzamiento" style={{...iS,fontSize:13,width:"100%"}}/>
+                <input value={ntTitulo} onChange={e=>setNtTitulo(e.target.value)} placeholder="Ej: Editar video de lanzamiento" style={{...iS,fontSize:14,width:"100%"}}/>
               </div>
-              <div style={{display:"flex",gap:12}}>
-                <div style={{flex:1}}>
+              {/* Asignado + Prioridad + Deadline en una fila */}
+              <div style={{display:"flex",gap:10}}>
+                <div style={{flex:2}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Asignado a *</div>
                   {colaboradores.length===0
                     ?<div style={{fontSize:12,color:T.textSm}}>No tenés colaboradores. <button onClick={()=>{setShowNT(false);setShowNC(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>Agregar uno</button></div>
@@ -9759,7 +9761,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </select>
                   }
                 </div>
-                <div style={{minWidth:130}}>
+                <div style={{flex:1}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Prioridad</div>
                   <select value={ntPrioridad} onChange={e=>setNtPrioridad(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
                     <option value="urgente">🔴 Urgente</option>
@@ -9767,49 +9769,34 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <option value="baja">⬇️ Baja</option>
                   </select>
                 </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
+                  <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
+                </div>
               </div>
+              {/* Brief — campo principal */}
               <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Descripción corta (opcional)</div>
-                <input value={ntDesc} onChange={e=>setNtDesc(e.target.value)} placeholder="Breve descripción" style={{...iS,fontSize:13,width:"100%"}}/>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Brief / Instrucciones</div>
+                <textarea value={ntBrief} onChange={e=>setNtBrief(e.target.value)}
+                  placeholder="Detallá qué tiene que hacer: formato, duración, estilo, paleta de colores, referencias, entregables esperados..."
+                  style={{...iS,fontSize:12,width:"100%",minHeight:130,resize:"vertical",lineHeight:1.6}}/>
               </div>
+              {/* Links */}
               <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Brief / Instrucciones detalladas</div>
-                <textarea value={ntBrief} onChange={e=>setNtBrief(e.target.value)} placeholder="Formato, duración, estilo, paleta, referencias..." style={{...iS,fontSize:12,width:"100%",minHeight:100,resize:"vertical",lineHeight:1.5}}/>
-              </div>
-              <div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
                   <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
                 </div>
-                {ntLinks.length===0&&<div style={{fontSize:12,color:T.textSm,padding:"6px 0"}}>Sin links agregados.</div>}
                 {ntLinks.map((l,i)=>(
                   <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={l.name} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
-                      placeholder="Nombre (ej: Brief PDF)" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
+                      placeholder="Nombre (ej: Brief, Referencia…)" style={{...iS,fontSize:12,width:140,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
                       placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
                     <DriveOpenBtn T={T} url={l.url}/>
                     <button onClick={()=>setNtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
-              </div>
-              <div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Checklist de requisitos</div>
-                  <button onClick={()=>setNtChecklist(prev=>[...prev,{id:mkId(),text:"",done:false}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
-                </div>
-                {ntChecklist.map((item,i)=>(
-                  <div key={item.id} style={{display:"flex",gap:6,marginBottom:5,alignItems:"center"}}>
-                    <div style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${T.border}`,flexShrink:0}}/>
-                    <input value={item.text} onChange={e=>setNtChecklist(prev=>prev.map((x,j)=>j===i?{...x,text:e.target.value}:x))}
-                      placeholder={`Paso ${i+1}`} style={{...iS,fontSize:12,flex:1}}/>
-                    <button onClick={()=>setNtChecklist(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
-                  </div>
-                ))}
-              </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite (opcional)</div>
-                <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
               </div>
             </div>
             <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
