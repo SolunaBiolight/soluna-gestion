@@ -8499,7 +8499,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
-  const ALL_VIEWS = ["todo","tandas","lista","equipo"];
+  const ALL_VIEWS = ["todo","equipo"];
   const [activeView, setActiveView] = useState("todo");
   const view = ALL_VIEWS.includes(activeView) ? activeView : "todo";
   // compat aliases para lógica existente
@@ -8540,6 +8540,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [expandedEquipo, setExpandedEquipo] = useState(null);
   const [editingMember, setEditingMember] = useState(null);
   const [editData, setEditData] = useState({nombre:"",rol:"",wa:""});
+  const [permisosModal, setPermisosModal] = useState(null); // {colabId, nombre}
   const [ncNombre, setNcNombre] = useState("");
   const [ncEmail, setNcEmail] = useState("");
   const [ncRol, setNcRol] = useState("");
@@ -9030,9 +9031,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           <span style={{width:5,height:5,borderRadius:"50%",background:"rgba(255,255,255,0.75)",display:"inline-block",animation:"pulse 1.5s infinite"}}/>{paraRevisar.length} para revisar
         </span>}
         {enRevision.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>🔁 {enRevision.length} en corrección</span>}
-        {(view==="todo"||view==="lista")&&<button onClick={()=>openCreativo()} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Creativo</button>}
         {view==="todo"&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
-        {view==="tandas"&&<button onClick={()=>openTanda()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Tanda</button>}
         {view==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
       </AppTopbar>
 
@@ -9049,17 +9048,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             );
           })}
         </div>
-        {/* Sub-nav dentro de Tareas */}
-        {view!=="equipo"&&(
-          <div style={{display:"flex",gap:4,padding:"6px 24px",borderTop:`1px solid ${T.border}`}}>
-            {[["todo","Todo"],["tandas","Tandas"],["lista","Creativos"]].map(([id,label])=>(
-              <button key={id} onClick={()=>setActiveView(id)}
-                style={{padding:"3px 12px",height:26,borderRadius:20,border:`1px solid ${view===id?T.accent:T.border}`,background:view===id?T.accentSolid+"18":"transparent",color:view===id?T.accent:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:view===id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.15s"}}>
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       <div style={{padding:"20px 24px"}}>
@@ -9577,6 +9565,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px"}}>📋 Link</button>}
                         {waHref&&<a href={waHref} target="_blank" rel="noreferrer"
                           style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>💬 WA</a>}
+                        {c&&<button onClick={()=>setPermisosModal({colabId:c._id,nombre:c.nombre})}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"4px 8px",color:T.textSm}}
+                          title="Configurar permisos">⚙</button>}
                         <span onClick={e=>{e.stopPropagation();setExpandedEquipo(expanded?null:_key);setEditingMember(null);}}
                           style={{fontSize:11,color:T.textSm,marginLeft:2,cursor:"pointer",padding:"4px 6px"}}>{expanded?"▲":"▼"}</span>
                       </div>
@@ -9589,24 +9580,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {/* Email */}
                         {c&&<div style={{fontSize:12,color:T.textSm}}>{c.email}</div>}
 
-                        {/* Permisos — solo para colabs */}
-                        {c&&(
-                          <div>
-                            <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:7}}>Permisos</div>
-                            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                              {PERMISOS.map(({key,label})=>{
-                                const val=!!(liveColab?.permisos||{})[key];
-                                return (
-                                  <button key={key} onClick={()=>updateColabPermisos(c._id,key,!val)}
-                                    style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:20,border:`1px solid ${val?T.accent:T.border}`,background:val?T.accentSolid+"15":"transparent",color:val?T.accent:T.textSm,fontSize:11,fontWeight:val?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
-                                    <div style={{width:6,height:6,borderRadius:"50%",background:val?T.accent:"#9ca3af",flexShrink:0}}/>
-                                    {label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
 
                         {/* Lista de tareas */}
                         {c&&!editing&&(()=>{
@@ -9995,6 +9968,49 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           </div>
         </div>
       )}
+
+      {/* MODAL ⚙ Permisos */}
+      {permisosModal&&(()=>{
+        const colab=colaboradores.find(c=>c._id===permisosModal.colabId);
+        const PERMISOS_DEF=[
+          {key:"verTareas",       label:"Ver trabajo completo",   desc:"Kanban con todas las tareas — ideal para CM"},
+          {key:"verCreativos",    label:"Ver board de Creativos", desc:"Tablero de producción de creativos"},
+          {key:"verEquipo",       label:"Ver estado del equipo",  desc:"Tareas de todos, solo lectura"},
+          {key:"comentarTareas",  label:"Comentar en tareas",     desc:"Puede dejar notas en sus tareas"},
+          {key:"editorProduccion",label:"Editor de producción",   desc:"Puede recibir creativos asignados"},
+        ];
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+            onClick={e=>{if(e.target===e.currentTarget)setPermisosModal(null);}}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:380}}>
+              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>Permisos · {permisosModal.nombre}</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Lo que puede ver en su portal</div>
+                </div>
+                <button onClick={()=>setPermisosModal(null)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:15}}>✕</button>
+              </div>
+              <div style={{padding:"14px 18px",display:"flex",flexDirection:"column",gap:12}}>
+                {PERMISOS_DEF.map(({key,label,desc})=>{
+                  const val=!!(colab?.permisos||{})[key];
+                  return (
+                    <div key={key} style={{display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:500,color:T.text}}>{label}</div>
+                        <div style={{fontSize:11,color:T.textSm}}>{desc}</div>
+                      </div>
+                      <button onClick={()=>updateColabPermisos(permisosModal.colabId,key,!val)}
+                        style={{width:38,height:22,borderRadius:11,border:"none",cursor:"pointer",background:val?T.green:"#6b7280",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
+                        <div style={{position:"absolute",top:3,left:val?18:3,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.25)"}}/>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL Nuevo Colaborador */}
       {/* MODAL Nueva/Editar Tanda */}
