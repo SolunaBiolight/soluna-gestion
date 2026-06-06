@@ -8594,7 +8594,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ntBrief, setNtBrief] = useState("");
   const [ntLinks, setNtLinks] = useState([{name:"",url:""}]);       // [{name,url}]
   const [ntChecklist, setNtChecklist] = useState([]); // [{id,text,done}]
-  const [ntAsignado, setNtAsignado] = useState("");
+  const [ntAsignados, setNtAsignados] = useState([]);
+  function setNtAsignado(email){ setNtAsignados(email?[email]:[]); }
   const [ntDeadline, setNtDeadline] = useState("");
   const [ntPrioridad, setNtPrioridad] = useState("normal");
   const [draggedTarea, setDraggedTarea] = useState(null);   // {id, fromColabKey}
@@ -8753,13 +8754,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   });
 
   async function crearTarea() {
-    if(!ntTitulo.trim()||!ntAsignado) return appAlert("Completá título y asignado");
-    const colab = colaboradores.find(c=>c.email===ntAsignado);
+    if(!ntTitulo.trim()||!ntAsignados.length) return appAlert("Completá título y asigná al menos una persona");
+    const colab = colaboradores.find(c=>c.email===ntAsignados[0]);
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignado,asignadoNombre:colab?.nombre||"",deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null});
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignados[0],asignadoNombre:colab?.nombre||"",asignadosEmails:ntAsignados,deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignado(""); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal");
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal");
     if(colab) setNotifPanel({tarea:d,colab});
   }
 
@@ -10213,18 +10214,49 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Título *</div>
                 <input value={ntTitulo} onChange={e=>setNtTitulo(e.target.value)} placeholder="Ej: Editar video de lanzamiento" style={{...iS,fontSize:14,width:"100%"}}/>
               </div>
-              {/* Asignado + Prioridad + Deadline en una fila */}
+              {/* Asignado a — chips multi-persona */}
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:6}}>Asignado a *</div>
+                {colaboradores.length===0
+                  ? <div style={{fontSize:12,color:T.textSm}}>No tenés colaboradores. <button onClick={()=>{setShowNT(false);setShowNC(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>Agregar uno</button></div>
+                  : <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                      {ntAsignados.map(email=>{
+                        const c=colaboradores.find(x=>x.email===email);
+                        const nombre=c?.nombre||email;
+                        return(
+                          <div key={email} style={{display:"flex",alignItems:"center",gap:7,background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 10px 5px 5px"}}>
+                            <div style={{width:26,height:26,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:T.accent,flexShrink:0}}>
+                              {nombre[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.2}}>{nombre}</div>
+                              {c?.rol&&<div style={{fontSize:10,color:T.textSm}}>{c.rol}</div>}
+                            </div>
+                            <button onClick={()=>setNtAsignados(p=>p.filter(e=>e!==email))}
+                              style={{background:"transparent",border:"none",color:T.textSm,fontSize:13,cursor:"pointer",padding:"0 0 0 2px",lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                          </div>
+                        );
+                      })}
+                      {colaboradores.filter(c=>!ntAsignados.includes(c.email)).length>0&&(
+                        <div style={{position:"relative"}}>
+                          <select onChange={e=>{if(e.target.value){setNtAsignados(p=>[...p,e.target.value]);e.target.value="";}}}
+                            defaultValue=""
+                            style={{appearance:"none",WebkitAppearance:"none",fontSize:12,padding:"7px 28px 7px 14px",borderRadius:20,border:`1.5px dashed ${ntAsignados.length===0?T.red:T.border}`,background:"transparent",color:ntAsignados.length===0?T.accent:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",outline:"none",fontWeight:ntAsignados.length===0?600:400}}>
+                            <option value="" disabled>{ntAsignados.length===0?"+ Elegir persona…":"+ Agregar persona"}</option>
+                            {colaboradores.filter(c=>!ntAsignados.includes(c.email)).map(c=>(
+                              <option key={c._id} value={c.email}>{c.nombre}{c.rol?` · ${c.rol}`:""}</option>
+                            ))}
+                          </select>
+                          <svg width="10" height="10" viewBox="0 0 10 10" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}} fill="none">
+                            <path d="M2 3l3 4 3-4" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round"/>
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                }
+              </div>
+              {/* Prioridad + Deadline */}
               <div style={{display:"flex",gap:10}}>
-                <div style={{flex:2}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Asignado a *</div>
-                  {colaboradores.length===0
-                    ?<div style={{fontSize:12,color:T.textSm}}>No tenés colaboradores. <button onClick={()=>{setShowNT(false);setShowNC(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>Agregar uno</button></div>
-                    :<select value={ntAsignado} onChange={e=>setNtAsignado(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
-                      <option value="">Seleccioná…</option>
-                      {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre}{c.rol?` (${c.rol})`:""}</option>)}
-                    </select>
-                  }
-                </div>
                 <div style={{flex:1}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Prioridad</div>
                   <select value={ntPrioridad} onChange={e=>setNtPrioridad(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
