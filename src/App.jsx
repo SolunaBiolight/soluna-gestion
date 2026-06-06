@@ -8597,6 +8597,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ntAsignado, setNtAsignado] = useState("");
   const [ntDeadline, setNtDeadline] = useState("");
   const [ntPrioridad, setNtPrioridad] = useState("normal");
+  const [reassigningTarea, setReassigningTarea] = useState(null); // tareaId en modo reasignación
   // Modal editar tarea
   const [editTarea, setEditTarea] = useState(null);
   const [etTitulo, setEtTitulo] = useState("");
@@ -8821,6 +8822,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       setEditingMember(null);
       toast("Datos guardados ✓","success");
     } catch(e){ appAlert("Error: "+e.message); }
+  }
+
+  async function reassignTarea(tareaId, newEmail) {
+    const colab = colaboradores.find(c=>c.email===newEmail);
+    await tareasApi({action:"updateTarea",tareaId,asignadoEmail:newEmail,asignadoNombre:colab?.nombre||""});
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,asignadoEmail:newEmail,asignadoNombre:colab?.nombre||""}:t)}));
+    setReassigningTarea(null);
+    toast("Tarea reasignada ✓","success");
   }
 
   async function updateEstado(tareaId, estado, feedback="") {
@@ -9858,14 +9867,39 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 :<div style={{display:"flex",flexDirection:"column",gap:4}}>
                                   {activas.slice(0,8).map(t=>{
                                     const est=ESTILO[t.estado]||{l:t.estado,c:T.textSm,bg:T.surface,dot:"#9ca3af"};
+                                    const isReassigning=reassigningTarea===t._id;
                                     return (
-                                      <div key={t._id} onClick={e=>{e.stopPropagation();setKanbanSelected(t);}}
-                                        style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,cursor:"pointer",transition:"border-color 0.15s"}}
-                                        onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
-                                        onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                                        <div style={{width:8,height:8,borderRadius:"50%",background:est.dot,flexShrink:0}}/>
-                                        <span style={{flex:1,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
-                                        <span style={{fontSize:11,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"2px 9px",flexShrink:0,whiteSpace:"nowrap"}}>{est.l}</span>
+                                      <div key={t._id} style={{borderRadius:8,background:T.surface,border:`1px solid ${isReassigning?T.accent:T.border}`,overflow:"hidden",transition:"border-color 0.15s"}}>
+                                        <div onClick={e=>{e.stopPropagation();if(!isReassigning)setKanbanSelected(t);}}
+                                          style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",cursor:isReassigning?"default":"pointer"}}
+                                          onMouseEnter={e=>{if(!isReassigning)e.currentTarget.parentElement.style.borderColor=T.accent}}
+                                          onMouseLeave={e=>{if(!isReassigning)e.currentTarget.parentElement.style.borderColor=T.border}}>
+                                          <div style={{width:8,height:8,borderRadius:"50%",background:est.dot,flexShrink:0}}/>
+                                          <span style={{flex:1,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</span>
+                                          <span style={{fontSize:11,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"2px 9px",flexShrink:0,whiteSpace:"nowrap"}}>{est.l}</span>
+                                          <button onClick={e=>{e.stopPropagation();setReassigningTarea(isReassigning?null:t._id);}}
+                                            title="Reasignar"
+                                            style={{background:"transparent",border:`1px solid ${isReassigning?T.accent:T.border}`,borderRadius:6,color:isReassigning?T.accent:T.textSm,fontSize:11,padding:"2px 7px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+                                            ⇄
+                                          </button>
+                                        </div>
+                                        {isReassigning&&(
+                                          <div onClick={e=>e.stopPropagation()} style={{padding:"0 12px 10px",display:"flex",alignItems:"center",gap:8}}>
+                                            <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>Asignar a:</span>
+                                            <select onChange={e=>{if(e.target.value)reassignTarea(t._id,e.target.value);}}
+                                              defaultValue=""
+                                              style={{flex:1,fontSize:12,padding:"5px 8px",borderRadius:6,border:`1px solid ${T.border}`,background:T.card,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
+                                              <option value="" disabled>Elegir colaborador…</option>
+                                              {colaboradores.map(col=>(
+                                                <option key={col._id} value={col.email}>
+                                                  {col.nombre}{col.email===t.asignadoEmail?" (actual)":""}{col.rol?` · ${col.rol}`:""}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <button onClick={e=>{e.stopPropagation();setReassigningTarea(null);}}
+                                              style={{background:"transparent",border:"none",color:T.textSm,fontSize:13,cursor:"pointer",padding:"4px",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>✕</button>
+                                          </div>
+                                        )}
                                       </div>
                                     );
                                   })}
