@@ -2427,36 +2427,24 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       <div style={{padding:"20px 24px 64px",maxWidth:1400,margin:"0 auto",width:"100%",boxSizing:"border-box",paddingRight:activeReclamo?460:24,transition:`padding-right 0.25s ${DS.ease}`}}>
 
         {/* GUÍA ¿Cómo funciona? */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:16}}>📖</span>
-              <div style={{textAlign:"left"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Pipeline de Reclamos?</div>
-                <div style={{fontSize:11,color:T.textSm}}>Guía rápida · tocá para {showGuia?"cerrar":"ver"}</div>
-              </div>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s"}}><path d="M6 9l6 6 6-6"/></svg>
+        <div style={{marginBottom:16}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
           </button>
           {showGuia&&(
-            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
-                {[
-                  {n:1,icon:"📋",title:"Pipeline Kanban",c:T.blue,desc:"Los reclamos se organizan por etapa: Nuevo → En proceso → Esperando cliente → Resuelto. Mové las cards entre columnas según el avance."},
-                  {n:2,icon:"➕",title:"Nuevo reclamo",c:T.orange,desc:"Registrá el problema con el número de pedido, el cliente y qué pasó. Cuanto más detalle, más fácil resolverlo rápido."},
-                  {n:3,icon:"🔄",title:"Cambios de producto",c:"#6366f1",desc:"Si hay cambio o devolución, registrá qué productos entran y cuáles salen para tener el historial completo."},
-                  {n:4,icon:"📦",title:"Tracking",c:T.green,desc:"Cargá el número de seguimiento del envío de cambio directamente en el reclamo para que todo quede en un solo lugar."},
-                  {n:5,icon:"✅",title:"Historial",c:T.green,desc:"Todos los reclamos cerrados quedan guardados. Useful para analizar patrones, mejorar el servicio y responder disputas."},
-                ].map(s=>(
-                  <div key={s.n} style={{display:"flex",gap:10,padding:14,background:T.surface,borderRadius:10,border:`1px solid ${T.border}`}}>
-                    <div style={{width:28,height:28,borderRadius:7,background:s.c+"18",border:`1px solid ${s.c}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.c,flexShrink:0}}>{s.n}</div>
-                    <div>
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3}}>{s.icon} {s.title}</div>
-                      <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>{s.desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+              {[
+                {n:1,icon:"📋",title:"Pipeline Kanban",desc:"Los reclamos se organizan por etapa: Nuevo → En proceso → Esperando cliente → Resuelto. Mové las cards entre columnas según el avance."},
+                {n:2,icon:"➕",title:"Nuevo reclamo",desc:"Registrá el problema con el número de pedido, el cliente y qué pasó. Cuanto más detalle, más fácil resolverlo rápido."},
+                {n:3,icon:"🔄",title:"Cambios de producto",desc:"Si hay cambio o devolución, registrá qué productos entran y cuáles salen para tener el historial completo."},
+                {n:4,icon:"📦",title:"Tracking",desc:"Cargá el número de seguimiento del envío de cambio directamente en el reclamo para que todo quede en un solo lugar."},
+                {n:5,icon:"✅",title:"Historial",desc:"Todos los reclamos cerrados quedan guardados. Útil para analizar patrones, mejorar el servicio y responder disputas."},
+              ].map(s=>(
+                <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                  <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -3562,36 +3550,24 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
       <div style={{padding:"24px 24px 64px",maxWidth:1280,margin:"0 auto",width:"100%"}}>
         {/* GUÍA ¿Cómo funciona? */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:16}}>📖</span>
-              <div style={{textAlign:"left"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Canjes con Influencers?</div>
-                <div style={{fontSize:11,color:T.textSm}}>Guía rápida · tocá para {showGuia?"cerrar":"ver"}</div>
-              </div>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s"}}><path d="M6 9l6 6 6-6"/></svg>
+        <div style={{marginBottom:16}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
           </button>
           {showGuia&&(
-            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
-                {[
-                  {n:1,icon:"➕",title:"Nuevo canje",c:T.blue,desc:"Registrá el influencer, qué producto se envía y a cambio de qué contenido (post, story, reel, mención, etc)."},
-                  {n:2,icon:"📊",title:"Seguimiento",c:T.green,desc:"Seguí el ciclo completo: producto enviado → contenido publicado → canje cumplido. Marcá cada etapa a medida que avanza."},
-                  {n:3,icon:"📋",title:"Contenido pactado",c:"#6366f1",desc:"Especificá exactamente qué contenido pediste (ej: 3 stories + 1 reel) para poder verificarlo cuando lo publiquen."},
-                  {n:4,icon:"📈",title:"Análisis de resultados",c:T.orange,desc:"Ves el historial de todos los canjes para calcular el costo real de esta estrategia y entender qué tipo de contenido funciona mejor."},
-                  {n:5,icon:"🚚",title:"Convertir a envío",c:T.accent,desc:"Si el canje requiere mandar un producto, podés generar el envío Andreani directamente desde acá sin cambiar de sección."},
-                ].map(s=>(
-                  <div key={s.n} style={{display:"flex",gap:10,padding:14,background:T.surface,borderRadius:10,border:`1px solid ${T.border}`}}>
-                    <div style={{width:28,height:28,borderRadius:7,background:s.c+"18",border:`1px solid ${s.c}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.c,flexShrink:0}}>{s.n}</div>
-                    <div>
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3}}>{s.icon} {s.title}</div>
-                      <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>{s.desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+              {[
+                {n:1,icon:"➕",title:"Nuevo canje",desc:"Registrá el influencer, qué producto se envía y a cambio de qué contenido (post, story, reel, mención, etc)."},
+                {n:2,icon:"📊",title:"Seguimiento",desc:"Seguí el ciclo completo: producto enviado → contenido publicado → canje cumplido. Marcá cada etapa a medida que avanza."},
+                {n:3,icon:"📋",title:"Contenido pactado",desc:"Especificá exactamente qué contenido pediste (ej: 3 stories + 1 reel) para poder verificarlo cuando lo publiquen."},
+                {n:4,icon:"📈",title:"Análisis de resultados",desc:"Ves el historial de todos los canjes para calcular el costo real de esta estrategia y entender qué tipo de contenido funciona mejor."},
+                {n:5,icon:"🚚",title:"Convertir a envío",desc:"Si el canje requiere mandar un producto, podés generar el envío Andreani directamente desde acá sin cambiar de sección."},
+              ].map(s=>(
+                <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                  <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -5640,36 +5616,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {tab==="panel"&&(
           <div>
             {/* GUÍA ¿Cómo funciona? */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}>
-              <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{fontSize:16}}>📖</span>
-                  <div style={{textAlign:"left"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Envíos y Logística?</div>
-                    <div style={{fontSize:11,color:T.textSm}}>Guía rápida · tocá para {showGuia?"cerrar":"ver"}</div>
-                  </div>
-                </div>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s"}}><path d="M6 9l6 6 6-6"/></svg>
+            <div style={{marginBottom:16}}>
+              <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
               </button>
               {showGuia&&(
-                <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
-                    {[
-                      {n:1,icon:"🛒",title:"Pedidos automáticos",c:T.blue,desc:"Los pedidos de Tienda Nube se sincronizan solos. Ves todos los que están listos para preparar y despachar."},
-                      {n:2,icon:"📦",title:"Generar etiqueta",c:T.green,desc:"Seleccioná un pedido y hacé click en 'Generar etiqueta Andreani'. Elegí entre domicilio o retiro en sucursal (HOP)."},
-                      {n:3,icon:"🔍",title:"Seguimiento",c:T.orange,desc:"Una vez generada la etiqueta, el tracking se actualiza automáticamente. Ves el estado de cada envío en tiempo real."},
-                      {n:4,icon:"📄",title:"Facturar pedidos",c:"#6366f1",desc:"Si tenés ARCA configurado, podés generar la factura del pedido desde el mismo panel de envíos."},
-                      {n:5,icon:"🔄",title:"Reclamos",c:T.red,desc:"Si un cliente tiene un problema con un envío, usá 'Generar reclamo' para pasarlo al pipeline de Reclamos y darle seguimiento."},
-                    ].map(s=>(
-                      <div key={s.n} style={{display:"flex",gap:10,padding:14,background:T.surface,borderRadius:10,border:`1px solid ${T.border}`}}>
-                        <div style={{width:28,height:28,borderRadius:7,background:s.c+"18",border:`1px solid ${s.c}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.c,flexShrink:0}}>{s.n}</div>
-                        <div>
-                          <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3}}>{s.icon} {s.title}</div>
-                          <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>{s.desc}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+                  {[
+                    {n:1,icon:"🛒",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. Ves todos los que están listos para preparar y despachar."},
+                    {n:2,icon:"📦",title:"Generar etiqueta",desc:"Seleccioná un pedido y hacé click en 'Generar etiqueta Andreani'. Elegí entre domicilio o retiro en sucursal (HOP)."},
+                    {n:3,icon:"🔍",title:"Seguimiento",desc:"Una vez generada la etiqueta, el tracking se actualiza automáticamente. Ves el estado de cada envío en tiempo real."},
+                    {n:4,icon:"📄",title:"Facturar pedidos",desc:"Si tenés ARCA configurado, podés generar la factura del pedido desde el mismo panel de envíos."},
+                    {n:5,icon:"🔄",title:"Reclamos",desc:"Si un cliente tiene un problema con un envío, usá 'Generar reclamo' para pasarlo al pipeline de Reclamos y darle seguimiento."},
+                  ].map(s=>(
+                    <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                      <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                      <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -9227,37 +9191,25 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             const CEST2={idea:{l:"Idea",c:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue},"en-produccion":{l:"En prod.",c:T.orange||"#f97316"},entregado:{l:"Entregado",c:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green}};
             return(<>
               {/* GUÍA ¿Cómo funciona? */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}>
-                <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10}}>
-                    <span style={{fontSize:16}}>📖</span>
-                    <div style={{textAlign:"left"}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Gestión de Tareas?</div>
-                      <div style={{fontSize:11,color:T.textSm}}>Guía rápida · tocá para {showGuia?"cerrar":"ver"}</div>
-                    </div>
-                  </div>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s"}}><path d="M6 9l6 6 6-6"/></svg>
+              <div style={{marginBottom:16}}>
+                <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
                 </button>
                 {showGuia&&(
-                  <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
-                      {[
-                        {n:1,icon:"📝",title:"Crear tarea",c:T.blue,desc:"Hacé click en '+ Tarea'. Completá título, asignado y deadline. El Brief es donde van las instrucciones o el link de Drive con el material."},
-                        {n:2,icon:"🔄",title:"Estados",c:T.green,desc:"Las tareas pasan por: Pendiente → En proceso → Entregado → Aprobado. Tu equipo actualiza desde su portal, sin crear cuenta."},
-                        {n:3,icon:"📦",title:"Revisar entregas",c:T.orange,desc:"Cuando alguien entrega aparece en la sección naranja 'Para revisar'. Podés ver el trabajo, pedir correcciones o aprobar con un click."},
-                        {n:4,icon:"🔁",title:"Correcciones",c:T.red,desc:"Al pedir cambios, escribí exactamente qué modificar. El texto le llega automáticamente por email al colaborador."},
-                        {n:5,icon:"📅",title:"Calendario",c:"#6366f1",desc:"El botón '📅 Calendario' muestra todos los deadlines y eventos del mes. Agregá fechas clave como Hot Sale, lanzamientos y festividades."},
-                        {n:6,icon:"🔁",title:"Recurrentes",c:T.green,desc:"Activá 'Tarea recurrente' al crear. Cuando la aprobás, la siguiente se crea sola con el deadline desplazado automáticamente."},
-                      ].map(s=>(
-                        <div key={s.n} style={{display:"flex",gap:10,padding:14,background:T.surface,borderRadius:10,border:`1px solid ${T.border}`}}>
-                          <div style={{width:28,height:28,borderRadius:7,background:s.c+"18",border:`1px solid ${s.c}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.c,flexShrink:0}}>{s.n}</div>
-                          <div>
-                            <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3}}>{s.icon} {s.title}</div>
-                            <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>{s.desc}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+                    {[
+                      {n:1,icon:"📝",title:"Crear tarea",desc:"Hacé click en '+ Tarea'. Completá título, asignado y deadline. El Brief es donde van las instrucciones o el link de Drive con el material."},
+                      {n:2,icon:"🔄",title:"Estados",desc:"Las tareas pasan por: Pendiente → En proceso → Entregado → Aprobado. Tu equipo actualiza desde su portal, sin crear cuenta."},
+                      {n:3,icon:"📦",title:"Revisar entregas",desc:"Cuando alguien entrega aparece en la sección naranja 'Para revisar'. Podés ver el trabajo, pedir correcciones o aprobar con un click."},
+                      {n:4,icon:"🔁",title:"Correcciones",desc:"Al pedir cambios, escribí exactamente qué modificar. El texto le llega automáticamente por email al colaborador."},
+                      {n:5,icon:"📅",title:"Calendario",desc:"El botón '📅 Calendario' muestra todos los deadlines y eventos del mes. Agregá fechas clave como Hot Sale, lanzamientos y festividades."},
+                      {n:6,icon:"🔁",title:"Recurrentes",desc:"Activá 'Tarea recurrente' al crear. Cuando la aprobás, la siguiente se crea sola con el deadline desplazado automáticamente."},
+                    ].map(s=>(
+                      <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                        <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -9791,36 +9743,24 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           return (
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {/* GUÍA ¿Cómo funciona? — Equipo */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:4}}>
-                <button onClick={()=>setShowGuiaEquipo(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10}}>
-                    <span style={{fontSize:16}}>📖</span>
-                    <div style={{textAlign:"left"}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Gestión de Equipo?</div>
-                      <div style={{fontSize:11,color:T.textSm}}>Guía rápida · tocá para {showGuiaEquipo?"cerrar":"ver"}</div>
-                    </div>
-                  </div>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuiaEquipo?"rotate(180deg)":"none",transition:"transform 0.2s"}}><path d="M6 9l6 6 6-6"/></svg>
+              <div style={{marginBottom:16}}>
+                <button onClick={()=>setShowGuiaEquipo(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuiaEquipo?"▲":"▾"}</span>
                 </button>
                 {showGuiaEquipo&&(
-                  <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
-                      {[
-                        {n:1,icon:"➕",title:"Agregar miembro",c:T.blue,desc:"Usá '+ Equipo'. Con email: recibe tareas, accede a su portal y recibe notificaciones. Sin email: solo producción de creativos."},
-                        {n:2,icon:"🔗",title:"Portal sin cuenta",c:T.green,desc:"Cada colaborador recibe un link único. Desde ahí ve sus tareas, sube entregas y comenta. No necesita crear ninguna cuenta."},
-                        {n:3,icon:"🔐",title:"Permisos",c:"#6366f1",desc:"Clickeá 'Permisos' en la card para elegir qué puede ver en su portal: kanban de tareas, creativos, estado del equipo."},
-                        {n:4,icon:"✏️",title:"Editar datos",c:T.orange,desc:"Expandí la card y usá '✏️ Editar datos' para cambiar nombre, rol y WhatsApp. Los cambios se guardan en Firestore."},
-                        {n:5,icon:"📋",title:"Compartir acceso",c:T.accent,desc:"Usá '📋 Copiar link' para enviar el acceso al portal. También podés enviarlo directo por '💬 WhatsApp' desde la misma card."},
-                      ].map(s=>(
-                        <div key={s.n} style={{display:"flex",gap:10,padding:14,background:T.surface,borderRadius:10,border:`1px solid ${T.border}`}}>
-                          <div style={{width:28,height:28,borderRadius:7,background:s.c+"18",border:`1px solid ${s.c}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.c,flexShrink:0}}>{s.n}</div>
-                          <div>
-                            <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3}}>{s.icon} {s.title}</div>
-                            <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>{s.desc}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+                    {[
+                      {n:1,icon:"➕",title:"Agregar miembro",desc:"Usá '+ Equipo'. Con email: recibe tareas, accede a su portal y recibe notificaciones. Sin email: solo producción de creativos."},
+                      {n:2,icon:"🔗",title:"Portal sin cuenta",desc:"Cada colaborador recibe un link único. Desde ahí ve sus tareas, sube entregas y comenta. No necesita crear ninguna cuenta."},
+                      {n:3,icon:"🔐",title:"Permisos",desc:"Clickeá 'Permisos' en la card para elegir qué puede ver en su portal: kanban de tareas, creativos, estado del equipo."},
+                      {n:4,icon:"✏️",title:"Editar datos",desc:"Expandí la card y usá '✏️ Editar datos' para cambiar nombre, rol y WhatsApp."},
+                      {n:5,icon:"📋",title:"Compartir acceso",desc:"Usá '📋 Copiar link' para enviar el acceso. También podés enviarlo directo por '💬 WhatsApp' desde la misma card."},
+                    ].map(s=>(
+                      <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                        <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -16004,36 +15944,24 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
         {/* GUÍA ¿Cómo funciona? */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:16}}>📖</span>
-              <div style={{textAlign:"left"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Meta Ads?</div>
-                <div style={{fontSize:11,color:T.textSm}}>Guía rápida · tocá para {showGuia?"cerrar":"ver"}</div>
-              </div>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s"}}><path d="M6 9l6 6 6-6"/></svg>
+        <div style={{marginBottom:16}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
           </button>
           {showGuia&&(
-            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
-                {[
-                  {n:1,icon:"🔗",title:"Conectar Meta",c:T.blue,desc:"Necesitás un token desde Business Manager → Usuarios del sistema. Configuralo en Config → Meta Ads siguiendo las instrucciones exactas de permisos."},
-                  {n:2,icon:"📊",title:"Ver campañas",c:"#6366f1",desc:"Ves todas tus campañas activas con gasto, alcance, impresiones y resultados del período seleccionado."},
-                  {n:3,icon:"✨",title:"Copy con IA",c:T.accent,desc:"Subí un creativo y Growith analiza la imagen y escribe el copy automáticamente usando el contexto de tu marca y el estilo que definiste."},
-                  {n:4,icon:"📅",title:"Comparar períodos",c:T.green,desc:"Usá el selector de fechas para ver la evolución semana a semana o comparar con el mes anterior y detectar tendencias."},
-                  {n:5,icon:"⚠️",title:"Token expirado",c:T.red,desc:"Si ves un error de permisos, normalmente el token expiró. Regeneralo desde Business Manager y actualizalo en Config → Meta Ads."},
-                ].map(s=>(
-                  <div key={s.n} style={{display:"flex",gap:10,padding:14,background:T.surface,borderRadius:10,border:`1px solid ${T.border}`}}>
-                    <div style={{width:28,height:28,borderRadius:7,background:s.c+"18",border:`1px solid ${s.c}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.c,flexShrink:0}}>{s.n}</div>
-                    <div>
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3}}>{s.icon} {s.title}</div>
-                      <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>{s.desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+              {[
+                {n:1,icon:"🔗",title:"Conectar Meta",desc:"Necesitás un token desde Business Manager → Usuarios del sistema. Configuralo en Config → Meta Ads siguiendo las instrucciones exactas de permisos."},
+                {n:2,icon:"📊",title:"Ver campañas",desc:"Ves todas tus campañas activas con gasto, alcance, impresiones y resultados del período seleccionado."},
+                {n:3,icon:"✨",title:"Copy con IA",desc:"Subí un creativo y Growith analiza la imagen y escribe el copy automáticamente usando el contexto de tu marca y el estilo que definiste."},
+                {n:4,icon:"📅",title:"Comparar períodos",desc:"Usá el selector de fechas para ver la evolución semana a semana o comparar con el mes anterior y detectar tendencias."},
+                {n:5,icon:"⚠️",title:"Token expirado",desc:"Si ves un error de permisos, normalmente el token expiró. Regeneralo desde Business Manager y actualizalo en Config → Meta Ads."},
+              ].map(s=>(
+                <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                  <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -19360,36 +19288,24 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
 
         {/* GUÍA ¿Cómo funciona? */}
-        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px 18px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:16}}>📖</span>
-              <div style={{textAlign:"left"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text}}>¿Cómo funciona Stock y Analytics?</div>
-                <div style={{fontSize:11,color:T.textSm}}>Guía rápida · tocá para {showGuia?"cerrar":"ver"}</div>
-              </div>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s"}}><path d="M6 9l6 6 6-6"/></svg>
+        <div style={{marginBottom:16}}>
+          <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <span style={{fontSize:11,color:T.textSm}}>📖 ¿Cómo funciona? {showGuia?"▲":"▾"}</span>
           </button>
           {showGuia&&(
-            <div style={{padding:"0 18px 18px",borderTop:`1px solid ${T.border}`}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}}>
-                {[
-                  {n:1,icon:"🔗",title:"Conectar tienda",c:T.blue,desc:"Para ver el stock real, primero conectá Tienda Nube o Shopify desde Config → Integraciones. Una vez conectado, los datos se sincronizan solos."},
-                  {n:2,icon:"⚠️",title:"Alertas de stock",c:T.red,desc:"Configurá un umbral por producto para recibir alertas cuando el stock baje de ese número. Cada SKU puede tener su propio límite."},
-                  {n:3,icon:"⏱",title:"Lead time",c:T.orange,desc:"Ingresá cuántos días tardás en reponer cada producto. Las alertas te avisan con suficiente anticipación para no quedarte sin stock."},
-                  {n:4,icon:"📊",title:"Análisis de ventas",c:"#6366f1",desc:"Ves ventas por período, rotación por SKU y comparativas entre plataformas (Tienda Nube vs Mercado Libre)."},
-                  {n:5,icon:"🔄",title:"Historial de agotados",c:T.textSm,desc:"Registra automáticamente cuándo y por cuánto tiempo estuviste sin stock de cada producto. Útil para planificar mejor los pedidos."},
-                ].map(s=>(
-                  <div key={s.n} style={{display:"flex",gap:10,padding:14,background:T.surface,borderRadius:10,border:`1px solid ${T.border}`}}>
-                    <div style={{width:28,height:28,borderRadius:7,background:s.c+"18",border:`1px solid ${s.c}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:s.c,flexShrink:0}}>{s.n}</div>
-                    <div>
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:3}}>{s.icon} {s.title}</div>
-                      <div style={{fontSize:11,color:T.textMd,lineHeight:1.6}}>{s.desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
+              {[
+                {n:1,icon:"🔗",title:"Conectar tienda",desc:"Para ver el stock real, primero conectá Tienda Nube o Shopify desde Config → Integraciones. Una vez conectado, los datos se sincronizan solos."},
+                {n:2,icon:"⚠️",title:"Alertas de stock",desc:"Configurá un umbral por producto para recibir alertas cuando el stock baje de ese número. Cada SKU puede tener su propio límite."},
+                {n:3,icon:"⏱",title:"Lead time",desc:"Ingresá cuántos días tardás en reponer cada producto. Las alertas te avisan con suficiente anticipación para no quedarte sin stock."},
+                {n:4,icon:"📊",title:"Análisis de ventas",desc:"Ves ventas por período, rotación por SKU y comparativas entre plataformas (Tienda Nube vs Mercado Libre)."},
+                {n:5,icon:"🔄",title:"Historial de agotados",desc:"Registra automáticamente cuándo y por cuánto tiempo estuviste sin stock de cada producto. Útil para planificar mejor los pedidos."},
+              ].map(s=>(
+                <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
+                  <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
