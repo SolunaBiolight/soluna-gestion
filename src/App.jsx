@@ -7763,7 +7763,7 @@ function AppAdmin({T, user, onBack}) {
   async function loadData() {
     setLoading(true);
     try {
-      const d = await adminApi({action:"getData"});
+      const d = await adminApi({action:"adminGetData"});
       setDatos(d);
     } catch(e){ appAlert("Error: "+e.message); }
     setLoading(false);

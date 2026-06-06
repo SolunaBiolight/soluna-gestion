@@ -902,7 +902,7 @@ export default async function handler(req, res) {
     }
 
     // Acciones solo-admin
-    const adminActions = ["setSectionsConfig","getData","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin"];
+    const adminActions = ["setSectionsConfig","adminGetData","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin"];
     if (adminActions.includes(action)) {
       if (!ADMIN_UIDS.includes(uid)) {
         try {
@@ -919,7 +919,7 @@ export default async function handler(req, res) {
         return res.json({ ok: true, adminOnlySections });
       }
 
-      if (action === "getData") {
+      if (action === "adminGetData") {
         const [pagSnap, usSnap] = await Promise.all([
           db.collection("pagos").orderBy("createdAt", "desc").get(),
           db.collection("users").get(),
