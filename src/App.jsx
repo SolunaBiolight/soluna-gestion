@@ -8537,7 +8537,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [etAsignado, setEtAsignado] = useState("");
   // Modal nuevo colaborador
   const [showNC, setShowNC] = useState(false);
-  const [neType, setNeType] = useState("colab");
   const [expandedEquipo, setExpandedEquipo] = useState(null);
   const [ncNombre, setNcNombre] = useState("");
   const [ncEmail, setNcEmail] = useState("");
@@ -8703,18 +8702,25 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     toast("Tarea actualizada ✓","success");
   }
 
-  async function crearColaborador() {
-    if(!ncNombre.trim()||!ncEmail.trim()) return appAlert("Nombre y email son requeridos");
+  async function agregarMiembro() {
+    if(!ncNombre.trim()) return appAlert("El nombre es requerido");
     try {
-      const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim(),telefono:ncTelefono.trim()});
-      if(!d || !d._id) throw new Error("Respuesta inválida del servidor");
-      setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
+      if(ncEmail.trim()) {
+        const d = await tareasApi({action:"createColaborador",nombre:ncNombre.trim(),email:ncEmail.trim().toLowerCase(),rol:ncRol.trim(),telefono:ncTelefono.trim()});
+        if(!d||!d._id) throw new Error("Respuesta inválida del servidor");
+        setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
+        toast("Miembro agregado ✓","success");
+        copyLink(d.token);
+      } else {
+        const nombre=ncNombre.trim();
+        if((produccion?.editores||[]).includes(nombre)) return appAlert("Ya existe un miembro con ese nombre");
+        await saveProd({...produccion,editores:[...(produccion?.editores||[]),nombre]});
+        toast("Miembro agregado ✓","success");
+      }
       setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
-      toast("Colaborador agregado ✓","success");
-      copyLink(d.token);
     } catch(e) {
-      console.error("crearColaborador error:", e);
-      appAlert("Error al agregar colaborador: " + e.message);
+      console.error("agregarMiembro error:",e);
+      appAlert("Error: "+e.message);
     }
   }
 
@@ -8817,7 +8823,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const colab=colaboradores.find(c=>c._id===colabId);
     const newPermisos={...(colab?.permisos||{}),[key]:value};
     setDatos(prev=>({...prev,colaboradores:prev.colaboradores.map(c=>c._id===colabId?{...c,permisos:newPermisos}:c)}));
-    try { await tareasApi({action:"updateColaboradorPermisos",colabId,permisos:newPermisos}); }
+    try {
+      await tareasApi({action:"updateColaboradorPermisos",colabId,permisos:newPermisos});
+      if(key==="editorProduccion"&&colab) {
+        const eds=produccion?.editores||[];
+        await saveProd({...produccion,editores:value?[...eds.filter(e=>e!==colab.nombre),colab.nombre]:eds.filter(e=>e!==colab.nombre)});
+      }
+    }
     catch(e){ loadData(); }
   }
 
@@ -9466,198 +9478,154 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
         {/* ── TAB EQUIPO ── */}
         {!loading&&tab==="equipo"&&(()=>{
-          // Lista unificada: colaboradores + editores de producción
-          const todosEnEquipo = [
-            ...colaboradores.map(c=>({_type:"colab", _key:c._id, data:c})),
-            ...(produccion?.editores||[]).map(ed=>({_type:"editor", _key:"ed_"+ed, data:ed})),
+          // Miembros con email (colaboradores completos)
+          // Miembros sin email: solo aparecen si NO tienen un colaborador con el mismo nombre
+          const editoresLegacy=(produccion?.editores||[]).filter(ed=>!colaboradores.some(c=>c.nombre===ed));
+          const todos=[
+            ...colaboradores.map(c=>({_type:"colab",_key:c._id,data:c})),
+            ...editoresLegacy.map(ed=>({_type:"editor",_key:"ed_"+ed,data:ed})),
           ];
-          if(todosEnEquipo.length===0) return (
-            <div style={{textAlign:"center",padding:"70px 0",color:T.textSm}}>
+          if(todos.length===0) return (
+            <div style={{textAlign:"center",padding:"70px 0"}}>
               <div style={{fontSize:44,marginBottom:14}}>👥</div>
               <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Sin miembros en el equipo</div>
-              <div style={{fontSize:13,color:T.textSm,marginBottom:24,maxWidth:360,margin:"0 auto 24px"}}>Agregá colaboradores (CM, asistentes) o editores de producción</div>
-              <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
-                <button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Colaborador</button>
-                <button onClick={()=>document.getElementById("add-editor-input")?.focus()} style={{...BtnSecondary(T),fontSize:13}}>+ Editor</button>
-              </div>
+              <div style={{fontSize:13,color:T.textSm,marginBottom:24}}>Agregá a alguien para asignarle tareas, creativos y permisos</div>
+              <button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Agregar miembro</button>
             </div>
           );
           return (
-            <div>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {todosEnEquipo.map(({_type,_key,data})=>{
-                  if(_type==="colab") {
-                    const c=data;
-                    const userTareas=tareas.filter(t=>t.asignadoEmail===c.email);
-                    const pending=userTareas.filter(t=>t.estado==="pendiente"||t.estado==="en_proceso").length;
-                    const entregado=userTareas.filter(t=>t.estado==="entregado").length;
-                    const expanded=expandedEquipo===_key;
-                    const waHref=c.telefono
-                      ?`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`
-                      :`https://wa.me/?text=${encodeURIComponent(`Hola ${c.nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`;
-                    return (
-                      <div key={_key} onClick={()=>setExpandedEquipo(expanded?null:_key)}
-                        style={{background:T.card,border:`1px solid ${entregado>0?(T.orange+"44"):T.border}`,borderRadius:12,padding:"14px 16px",cursor:"pointer"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:14}}>
-                          {/* Avatar */}
-                          <div style={{position:"relative",flexShrink:0}}>
-                            <div style={{width:40,height:40,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accent}}>
-                              {c.nombre[0].toUpperCase()}
-                            </div>
-                            {(pending>0||entregado>0)&&<div style={{position:"absolute",bottom:1,right:1,width:10,height:10,borderRadius:"50%",background:entregado>0?T.orange:T.green,border:`2px solid ${T.card}`}}/>}
-                          </div>
-                          {/* Info */}
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
-                              <span style={{fontSize:14,fontWeight:600,color:T.text}}>{c.nombre}</span>
-                              {c.rol&&<span style={{fontSize:10,fontWeight:600,color:T.accent,background:T.accentSolid+"18",borderRadius:20,padding:"1px 8px"}}>{c.rol}</span>}
-                              {entregado>0&&<span style={{fontSize:10,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 8px"}}>📦 {entregado} para revisar</span>}
-                            </div>
-                            <div style={{fontSize:12,color:T.textSm}}>
-                              {pending>0&&<span style={{color:T.textMd}}>{pending} activa{pending!==1?"s":""}</span>}
-                              {pending>0&&userTareas.length>pending&&<span style={{color:T.textSm}}> · {userTareas.length} total</span>}
-                              {pending===0&&userTareas.length===0&&<span style={{color:T.textSm}}>Sin tareas asignadas</span>}
-                              {pending===0&&userTareas.length>0&&<span style={{color:T.green}}>{userTareas.length} tarea{userTareas.length!==1?"s":""} ✓</span>}
-                            </div>
-                          </div>
-                          {/* Acciones */}
-                          <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-                            <button onClick={()=>{setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}}
-                              style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Tarea</button>
-                            <button onClick={()=>copyLink(c.token)}
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {todos.map(({_type,_key,data})=>{
+                const nombre=_type==="colab"?data.nombre:data;
+                const c=_type==="colab"?data:null;
+                const ed=_type==="editor"?data:null;
+                const expanded=expandedEquipo===_key;
+                const userTareas=c?tareas.filter(t=>t.asignadoEmail===c.email):[];
+                const pending=userTareas.filter(t=>t.estado==="pendiente"||t.estado==="en_proceso").length;
+                const entregado=userTareas.filter(t=>t.estado==="entregado").length;
+                const creativos=(produccion?.creativos||[]).filter(cr=>cr.editor===nombre);
+                const tieneEditor=c?!!(c.permisos||{}).editorProduccion:true;
+                const hasActivity=pending>0||entregado>0||(tieneEditor&&creativos.filter(cr=>cr.estado!=="publicado").length>0);
+                const dotColor=entregado>0?T.orange:T.green;
+                const portalLink=c?colabLink(c.token):editorPortalLink(nombre);
+                const waHref=c
+                  ?(c.telefono?`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`:
+                    `https://wa.me/?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]} 👋, tu portal:\n${colabLink(c.token)}`)}`)
+                  :(portalLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${nombre.split(" ")[0]} 👋, tus creativos:\n${portalLink}`)}`:null);
+                return (
+                  <div key={_key} onClick={()=>setExpandedEquipo(expanded?null:_key)}
+                    style={{background:T.card,border:`1px solid ${entregado>0?(T.orange+"44"):T.border}`,borderRadius:12,padding:"14px 16px",cursor:"pointer"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:14}}>
+                      <div style={{position:"relative",flexShrink:0}}>
+                        <div style={{width:40,height:40,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accent}}>
+                          {nombre[0].toUpperCase()}
+                        </div>
+                        {hasActivity&&<div style={{position:"absolute",bottom:1,right:1,width:10,height:10,borderRadius:"50%",background:dotColor,border:`2px solid ${T.card}`}}/>}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
+                          <span style={{fontSize:14,fontWeight:600,color:T.text}}>{nombre}</span>
+                          {c?.rol&&<span style={{fontSize:10,fontWeight:600,color:T.accent,background:T.accentSolid+"18",borderRadius:20,padding:"1px 8px"}}>{c.rol}</span>}
+                          {!c&&<span style={{fontSize:10,fontWeight:600,color:T.textSm,background:T.surface,borderRadius:20,padding:"1px 8px",border:`1px solid ${T.border}`}}>Sin email</span>}
+                          {entregado>0&&<span style={{fontSize:10,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 8px"}}>📦 {entregado} para revisar</span>}
+                        </div>
+                        <div style={{fontSize:12,color:T.textSm,display:"flex",gap:8,flexWrap:"wrap"}}>
+                          {c&&pending>0&&<span style={{color:T.textMd}}>{pending} tarea{pending!==1?"s":""} activa{pending!==1?"s":""}</span>}
+                          {c&&pending===0&&userTareas.length>0&&<span style={{color:T.green}}>{userTareas.length} tarea{userTareas.length!==1?"s":""} ✓</span>}
+                          {c&&userTareas.length===0&&!tieneEditor&&<span>Sin actividad</span>}
+                          {tieneEditor&&creativos.length>0&&<span style={{color:T.textMd}}>{creativos.length} creativo{creativos.length!==1?"s":""}</span>}
+                          {tieneEditor&&creativos.length===0&&!c&&<span>Sin creativos asignados</span>}
+                        </div>
+                      </div>
+                      <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+                        {c&&<button onClick={()=>{setNtAsignado(c.email);setActiveView("todo");setShowNT(true);}}
+                          style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>+ Tarea</button>}
+                        {c&&<button onClick={()=>copyLink(c.token)}
+                          style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>📋 Copiar link</button>}
+                        {!c&&(portalLink
+                          ?<button onClick={()=>navigator.clipboard.writeText(portalLink).then(()=>toast("Link copiado","success"))}
                               style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>📋 Copiar link</button>
-                            <button onClick={()=>setEquipoSettings({type:"colab",data:c})}
-                              style={{...BtnSecondary(T),fontSize:13,padding:"5px 8px",color:T.textSm}}>···</button>
-                          </div>
-                        </div>
-                        {expanded&&(
-                          <div onClick={e=>e.stopPropagation()} style={{borderTop:`1px solid ${T.border}`,marginTop:12,paddingTop:12,display:"flex",gap:8,flexWrap:"wrap"}}>
-                            <a href={waHref} target="_blank" rel="noreferrer"
-                              style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e44`}}>
-                              💬 WhatsApp
-                            </a>
-                          </div>
+                          :<AsyncButton onClick={()=>generarLinkEditor(nombre)}
+                              style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>🔗 Generar link</AsyncButton>
                         )}
+                        <button onClick={()=>setEquipoSettings(_type==="colab"?{type:"colab",data:c}:{type:"editor",name:ed})}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"5px 8px",color:T.textSm}}>···</button>
                       </div>
-                    );
-                  }
-                  // type === editor
-                  const ed=data;
-                  const edC=(produccion?.creativos||[]).filter(c=>c.editor===ed);
-                  const edLink=editorPortalLink(ed);
-                  const expanded=expandedEquipo===_key;
-                  const waEd=edLink?`https://wa.me/?text=${encodeURIComponent(`Hola ${ed.split(" ")[0]} 👋, tus creativos:\n${edLink}`)}`:null;
-                  return (
-                    <div key={_key} onClick={()=>setExpandedEquipo(expanded?null:_key)}
-                      style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",cursor:"pointer"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:14}}>
-                        {/* Avatar */}
-                        <div style={{position:"relative",flexShrink:0}}>
-                          <div style={{width:40,height:40,borderRadius:"50%",background:"#6366f122",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:"#818cf8"}}>
-                            {ed[0].toUpperCase()}
-                          </div>
-                          {edC.filter(c=>c.estado!=="publicado").length>0&&<div style={{position:"absolute",bottom:1,right:1,width:10,height:10,borderRadius:"50%",background:T.green,border:`2px solid ${T.card}`}}/>}
-                        </div>
-                        {/* Info */}
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
-                            <span style={{fontSize:14,fontWeight:600,color:T.text}}>{ed}</span>
-                            <span style={{fontSize:10,fontWeight:600,color:"#818cf8",background:"#6366f118",borderRadius:20,padding:"1px 8px"}}>Editor</span>
-                          </div>
-                          <div style={{fontSize:12,color:T.textSm}}>
-                            {edC.length} creativo{edC.length!==1?"s":""} asignado{edC.length!==1?"s":""}
-                            {edC.filter(c=>c.estado==="publicado").length>0&&<span style={{color:T.green}}> · {edC.filter(c=>c.estado==="publicado").length} publicado{edC.filter(c=>c.estado==="publicado").length!==1?"s":""}</span>}
-                          </div>
-                        </div>
-                        {/* Acciones */}
-                        <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-                          {edLink
-                            ?<button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Link copiado","success"))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>📋 Copiar link</button>
-                            :<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 10px"}}>🔗 Generar link</AsyncButton>
-                          }
-                          <button onClick={()=>setEquipoSettings({type:"editor",name:ed})}
-                            style={{...BtnSecondary(T),fontSize:13,padding:"5px 8px",color:T.textSm}}>···</button>
-                        </div>
-                      </div>
-                      {expanded&&(
-                        <div onClick={e=>e.stopPropagation()} style={{borderTop:`1px solid ${T.border}`,marginTop:12,paddingTop:12,display:"flex",gap:8,flexWrap:"wrap"}}>
-                          {waEd
-                            ?<a href={waEd} target="_blank" rel="noreferrer"
-                                style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e44`}}>
-                                💬 WhatsApp
-                              </a>
-                            :<span style={{fontSize:12,color:T.textSm}}>Generá el portal para poder enviar por WhatsApp</span>
-                          }
-                        </div>
-                      )}
                     </div>
-                  );
-                })}
-              </div>
+                    {expanded&&waHref&&(
+                      <div onClick={e=>e.stopPropagation()} style={{borderTop:`1px solid ${T.border}`,marginTop:12,paddingTop:12}}>
+                        <a href={waHref} target="_blank" rel="noreferrer"
+                          style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e44`}}>
+                          💬 WhatsApp
+                        </a>
+                      </div>
+                    )}
+                    {expanded&&!waHref&&(
+                      <div onClick={e=>e.stopPropagation()} style={{borderTop:`1px solid ${T.border}`,marginTop:12,paddingTop:12}}>
+                        <span style={{fontSize:12,color:T.textSm}}>Generá el link para poder enviar por WhatsApp</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
         })()}
 
       </div>{/* cierre: div padding 20px 24px */}
 
-      {/* MODAL ··· Configuración de miembro del equipo */}
+      {/* MODAL ··· Configuración de miembro */}
       {equipoSettings&&(()=>{
-        const isColab = equipoSettings.type==="colab";
-        const c = isColab ? equipoSettings.data : null;
-        const ed = isColab ? null : equipoSettings.name;
-        const edLink = ed ? editorPortalLink(ed) : null;
-        const PERMISOS_DEF = [
-          {key:"verTareas",    label:"Ver trabajo completo", desc:"Kanban con todas las tareas — ideal para CM"},
-          {key:"verCreativos", label:"Ver board de Creativos", desc:"Tablero de producción de creativos"},
-          {key:"verEquipo",    label:"Ver estado del equipo", desc:"Tareas de todos, solo lectura"},
-          {key:"comentarTareas",label:"Comentar en tareas", desc:"Puede dejar notas en sus tareas"},
+        const isColab=equipoSettings.type==="colab";
+        const c=isColab?equipoSettings.data:null;
+        const ed=isColab?null:equipoSettings.name;
+        const edLink=ed?editorPortalLink(ed):null;
+        const nombre=isColab?c.nombre:ed;
+        const PERMISOS_DEF=[
+          {key:"verTareas",       label:"Ver trabajo completo",    desc:"Kanban con todas las tareas — ideal para CM"},
+          {key:"verCreativos",    label:"Ver board de Creativos",  desc:"Tablero de producción de creativos"},
+          {key:"verEquipo",       label:"Ver estado del equipo",   desc:"Tareas de todos, solo lectura"},
+          {key:"comentarTareas",  label:"Comentar en tareas",      desc:"Puede dejar notas en sus tareas"},
+          {key:"editorProduccion",label:"Editor de producción",    desc:"Puede recibir creativos asignados y acceder al portal de producción"},
         ];
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
             onClick={e=>{if(e.target===e.currentTarget)setEquipoSettings(null);}}>
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:420,maxHeight:"90vh",overflowY:"auto"}}>
-              {/* Header */}
               <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:12}}>
                 <div style={{width:36,height:36,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:T.accent,flexShrink:0}}>
-                  {(isColab?c.nombre:ed)[0].toUpperCase()}
+                  {nombre[0].toUpperCase()}
                 </div>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>{isColab?c.nombre:ed}</div>
-                  <div style={{fontSize:11,color:T.textSm}}>{isColab?(c.rol||c.email):"Editor de producción"}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>{nombre}</div>
+                  <div style={{fontSize:11,color:T.textSm}}>{isColab?(c.rol||c.email):"Sin email · Solo producción"}</div>
                 </div>
                 <button onClick={()=>setEquipoSettings(null)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
               </div>
 
               <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:16}}>
-                {isColab&&<>
-                  {/* Editar datos */}
-                  <div>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Datos</div>
-                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                      <div style={{fontSize:11,color:T.textSm}}>Email: <span style={{color:T.text}}>{c.email}</span></div>
-                      <button onClick={()=>{const t2=prompt("WhatsApp (con código de país):",c.telefono||"");if(t2!==null)updateColabTelefono(c._id,t2.trim());}}
-                        style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",width:"100%",textAlign:"left"}}>
-                        📱 {c.telefono||"Agregar WhatsApp"}
-                      </button>
-                    </div>
-                  </div>
 
-                  {/* Link portal */}
+                {/* ── COLAB CON EMAIL ── */}
+                {isColab&&<>
                   <div>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Link de portal</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Datos</div>
+                    <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>{c.email}</div>
+                    <button onClick={()=>{const t2=prompt("WhatsApp (con código de país):",c.telefono||"");if(t2!==null)updateColabTelefono(c._id,t2.trim());}}
+                      style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",width:"100%",textAlign:"left"}}>
+                      📱 {c.telefono||"Agregar WhatsApp"}
+                    </button>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Portal</div>
                     <div style={{display:"flex",gap:8}}>
                       <button onClick={()=>copyLink(c.token)} style={{...BtnPrimary(T),flex:1,fontSize:12,justifyContent:"center"}}>📋 Copiar link</button>
                       <AsyncButton onClick={()=>regenerateToken(c._id)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔄 Renovar</AsyncButton>
                     </div>
                   </div>
-
-                  {/* Permisos */}
                   <div>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Permisos en el portal</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Permisos</div>
                     <div style={{display:"flex",flexDirection:"column",gap:10}}>
                       {PERMISOS_DEF.map(({key,label,desc})=>{
-                        const val=!!(c.permisos||{})[key];
-                        // Sync with live data
                         const liveColab=colaboradores.find(x=>x._id===c._id);
                         const liveVal=!!(liveColab?.permisos||{})[key];
                         return (
@@ -9677,10 +9645,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </div>
                 </>}
 
+                {/* ── SIN EMAIL (legacy editor) ── */}
                 {!isColab&&<>
-                  {/* Link editor */}
+                  <div style={{fontSize:12,color:T.textSm,lineHeight:1.6,padding:"10px 12px",background:T.surface,borderRadius:8}}>
+                    Este miembro no tiene email. Puede recibir creativos asignados pero no tiene portal de tareas.
+                  </div>
                   <div>
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Link de producción</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Portal de producción</div>
                     {edLink
                       ?<div style={{display:"flex",gap:8}}>
                           <button onClick={()=>navigator.clipboard.writeText(edLink).then(()=>toast("Link copiado","success"))} style={{...BtnPrimary(T),flex:1,fontSize:12,justifyContent:"center"}}>📋 Copiar link</button>
@@ -9688,20 +9659,38 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                       :<AsyncButton onClick={()=>generarLinkEditor(ed)} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>🔗 Generar link de acceso</AsyncButton>
                     }
-                    <div style={{fontSize:11,color:T.textSm,marginTop:8}}>El editor puede ver sus creativos asignados sin necesidad de crear una cuenta.</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Agregar email</div>
+                    <button onClick={async()=>{
+                      const email=prompt("Email del miembro:");
+                      if(!email?.trim()) return;
+                      try {
+                        const d=await tareasApi({action:"createColaborador",nombre:ed,email:email.trim().toLowerCase(),rol:"",telefono:""});
+                        if(!d||!d._id) throw new Error("Error del servidor");
+                        setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(cc=>cc._id!==d._id),d]}));
+                        await saveProd({...produccion,editores:(produccion?.editores||[]).filter(e=>e!==ed)});
+                        setEquipoSettings({type:"colab",data:d});
+                        toast("Miembro actualizado ✓","success");
+                      } catch(e){ appAlert("Error: "+e.message); }
+                    }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",width:"100%",textAlign:"left"}}>
+                      📧 Agregar email para habilitar tareas y portal
+                    </button>
                   </div>
                 </>}
 
-                {/* Zona de peligro */}
                 <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14}}>
                   <AsyncButton onClick={async()=>{
                     if(isColab){
-                      await deleteColab(c._id); setEquipoSettings(null);
+                      await deleteColab(c._id);
+                      if((produccion?.editores||[]).includes(c.nombre))
+                        await saveProd({...produccion,editores:(produccion?.editores||[]).filter(e=>e!==c.nombre)});
                     } else {
-                      await eliminarEditor(ed); setEquipoSettings(null);
+                      await eliminarEditor(ed);
                     }
+                    setEquipoSettings(null);
                   }} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:13}}>
-                    Eliminar {isColab?"colaborador":"editor"}
+                    Eliminar miembro
                   </AsyncButton>
                 </div>
               </div>
@@ -10239,62 +10228,35 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:440}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-              <div style={{fontWeight:700,fontSize:16,color:T.text}}>+ Equipo</div>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>Agregar miembro</div>
               <button onClick={()=>setShowNC(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
             </div>
-            {/* Toggle tipo */}
-            <div style={{display:"flex",gap:4,background:T.surface,borderRadius:10,padding:4,marginBottom:20}}>
-              {[{k:"colab",l:"Colaborador"},{k:"editor",l:"Editor de producción"}].map(({k,l})=>(
-                <button key={k} onClick={()=>setNeType(k)}
-                  style={{flex:1,padding:"7px 0",borderRadius:7,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",
-                    background:neType===k?T.accentSolid:"transparent",color:neType===k?"#fff":T.textSm,transition:"all 0.15s"}}>
-                  {l}
-                </button>
-              ))}
+            <div style={{fontSize:13,color:T.textMd,marginBottom:16,lineHeight:1.5,padding:"10px 12px",background:T.surface,borderRadius:8}}>
+              Con email: puede recibir tareas y acceder a su portal. Sin email: solo producción de creativos.
             </div>
-            {neType==="colab"&&<>
-              <div style={{fontSize:13,color:T.textMd,marginBottom:16,lineHeight:1.5,padding:"10px 12px",background:T.surface,borderRadius:8}}>
-                💡 Recibe un <strong style={{color:T.text}}>link único</strong> donde ve sus tareas y sube entregas. <strong style={{color:T.text}}>Sin crear cuenta.</strong>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                <div>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Nombre *</div>
-                  <input value={ncNombre} onChange={e=>setNcNombre(e.target.value)} placeholder="Ej: María García" style={{...iS,fontSize:13,width:"100%"}}/>
-                </div>
-                <div>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Email *</div>
-                  <input value={ncEmail} onChange={e=>setNcEmail(e.target.value)} placeholder="colaborador@email.com" style={{...iS,fontSize:13,width:"100%"}}/>
-                </div>
-                <div>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Rol (opcional)</div>
-                  <input value={ncRol} onChange={e=>setNcRol(e.target.value)} placeholder="Ej: Editora de video, Community Manager…" style={{...iS,fontSize:13,width:"100%"}}/>
-                </div>
-                <div>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>WhatsApp (opcional)</div>
-                  <input type="tel" value={ncTelefono} onChange={e=>setNcTelefono(e.target.value)} placeholder="Ej: 5491112345678" style={{...iS,fontSize:13,width:"100%"}}/>
-                  <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Con código de país, sin + ni espacios.</div>
-                </div>
-              </div>
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
-                <button onClick={()=>setShowNC(false)} style={BtnSecondary(T)}>Cancelar</button>
-                <AsyncButton onClick={crearColaborador} style={BtnPrimary(T)}>Crear y copiar link</AsyncButton>
-              </div>
-            </>}
-            {neType==="editor"&&<>
-              <div style={{fontSize:13,color:T.textMd,marginBottom:16,lineHeight:1.5,padding:"10px 12px",background:T.surface,borderRadius:8}}>
-                💡 El editor de producción recibe un <strong style={{color:T.text}}>link</strong> donde ve sus creativos asignados. <strong style={{color:T.text}}>Sin crear cuenta.</strong>
-              </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Nombre *</div>
-                <input value={nuevoEditor} onChange={e=>setNuevoEditor(e.target.value)}
-                  onKeyDown={e=>e.key==="Enter"&&agregarEditor().then(()=>setShowNC(false))}
-                  placeholder="Ej: Diego Sánchez" style={{...iS,fontSize:13,width:"100%"}}/>
+                <input value={ncNombre} onChange={e=>setNcNombre(e.target.value)} placeholder="Ej: María García" style={{...iS,fontSize:13,width:"100%"}} autoFocus/>
               </div>
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
-                <button onClick={()=>setShowNC(false)} style={BtnSecondary(T)}>Cancelar</button>
-                <AsyncButton onClick={async()=>{await agregarEditor();setShowNC(false);}} style={BtnPrimary(T)}>Agregar editor</AsyncButton>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Email <span style={{fontWeight:400}}>(opcional)</span></div>
+                <input value={ncEmail} onChange={e=>setNcEmail(e.target.value)} placeholder="colaborador@email.com" style={{...iS,fontSize:13,width:"100%"}}/>
               </div>
-            </>}
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Rol <span style={{fontWeight:400}}>(opcional)</span></div>
+                <input value={ncRol} onChange={e=>setNcRol(e.target.value)} placeholder="Ej: Editora de video, Community Manager…" style={{...iS,fontSize:13,width:"100%"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>WhatsApp <span style={{fontWeight:400}}>(opcional)</span></div>
+                <input type="tel" value={ncTelefono} onChange={e=>setNcTelefono(e.target.value)} placeholder="Ej: 5491112345678" style={{...iS,fontSize:13,width:"100%"}}/>
+                <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Con código de país, sin + ni espacios.</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+              <button onClick={()=>setShowNC(false)} style={BtnSecondary(T)}>Cancelar</button>
+              <AsyncButton onClick={agregarMiembro} style={BtnPrimary(T)}>Agregar</AsyncButton>
+            </div>
           </div>
         </div>
       )}
