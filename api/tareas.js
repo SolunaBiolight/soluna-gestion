@@ -603,6 +603,57 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
 
+    // ── COLABORADOR PÚBLICO: editar su última entrega ──────────────────────────
+    if (action === "publicUpdateLastDeliverable") {
+      const { tareaId, link, label, nota } = body;
+      if (!token || !tareaId) return res.status(400).json({ error:"Faltan parámetros" });
+      const cSnap2 = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (cSnap2.empty) return res.status(403).json({ error:"Token inválido" });
+      const colab2 = cSnap2.docs[0].data();
+      const ref2 = db.collection("tareas").doc(tareaId);
+      const t2 = await ref2.get();
+      if (!t2.exists) return res.status(404).json({ error:"Tarea no encontrada" });
+      const emails2 = t2.data().asignadosEmails?.length ? t2.data().asignadosEmails : [t2.data().asignadoEmail].filter(Boolean);
+      if (!emails2.includes(colab2.email)) return res.status(403).json({ error:"No autorizado" });
+      if (t2.data().estado === "aprobado") return res.status(400).json({ error:"La tarea ya fue aprobada" });
+      const prevDels2 = t2.data().deliverables || [];
+      if (prevDels2.length === 0) return res.status(400).json({ error:"No hay entregas para editar" });
+      const lastIdx2 = prevDels2.length - 1;
+      const newDels2 = prevDels2.map((d,i) => i===lastIdx2 ? { ...d, ...(link!==undefined&&{link:link.trim()}), ...(label!==undefined&&{label:label.trim()}), ...(nota!==undefined&&{nota:nota.trim()}), editedAt:now } : d);
+      const act2 = { tipo:"progreso", autor:colab2.nombre, fecha:now, detalle:`Editó entrega: ${newDels2[lastIdx2].label||`v${lastIdx2+1}`}` };
+      await ref2.update({ deliverables:newDels2, updatedAt:now, activity:[...(t2.data().activity||[]), act2] });
+      return res.json({ ok:true, deliverables:newDels2 });
+    }
+
+    // ── COLABORADOR PÚBLICO: eliminar su última entrega ────────────────────────
+    if (action === "publicDeleteLastDeliverable") {
+      const { tareaId } = body;
+      if (!token || !tareaId) return res.status(400).json({ error:"Faltan parámetros" });
+      const cSnap3 = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (cSnap3.empty) return res.status(403).json({ error:"Token inválido" });
+      const colab3 = cSnap3.docs[0].data();
+      const ref3 = db.collection("tareas").doc(tareaId);
+      const t3 = await ref3.get();
+      if (!t3.exists) return res.status(404).json({ error:"Tarea no encontrada" });
+      const emails3 = t3.data().asignadosEmails?.length ? t3.data().asignadosEmails : [t3.data().asignadoEmail].filter(Boolean);
+      if (!emails3.includes(colab3.email)) return res.status(403).json({ error:"No autorizado" });
+      if (t3.data().estado === "aprobado") return res.status(400).json({ error:"La tarea ya fue aprobada. Pedile al equipo que revierta el estado." });
+      const prevDels3 = t3.data().deliverables || [];
+      if (prevDels3.length === 0) return res.status(400).json({ error:"No hay entregas para eliminar" });
+      const deleted3 = prevDels3[prevDels3.length - 1];
+      const newDels3 = prevDels3.slice(0, -1);
+      const upd3 = { deliverables:newDels3, updatedAt:now };
+      const act3 = { tipo:"progreso", autor:colab3.nombre, fecha:now, detalle:`Eliminó entrega: ${deleted3.label||`v${prevDels3.length}`}` };
+      upd3.activity = [...(t3.data().activity||[]), act3];
+      if (["entregado","revision"].includes(t3.data().estado)) {
+        upd3.estado = newDels3.length > 0 ? "entregado" : "en_proceso";
+        upd3.feedbackActual = null;
+        upd3.progresoLabel = newDels3.length > 0 ? "Listo para entregar" : "";
+      }
+      await ref3.update(upd3);
+      return res.json({ ok:true, deliverables:newDels3, estado:upd3.estado||t3.data().estado });
+    }
+
     // ── ACCIONES AUTENTICADAS (uid requerido) ─────────────────────────────────
 
     if (!uid) return res.status(403).json({ error: "No autorizado" });
@@ -845,27 +896,6 @@ export default async function handler(req, res) {
       return res.json({ ok:true, deliverables:newDels });
     }
 
-    // ── COLABORADOR PÚBLICO: editar su última entrega ──────────────────────────
-    if (action === "publicUpdateLastDeliverable") {
-      const { tareaId, link, label, nota } = body;
-      if (!token || !tareaId) return res.status(400).json({ error:"Faltan parámetros" });
-      const cSnap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
-      if (cSnap.empty) return res.status(403).json({ error:"Token inválido" });
-      const colab = cSnap.docs[0].data();
-      const ref = db.collection("tareas").doc(tareaId);
-      const t = await ref.get();
-      if (!t.exists) return res.status(404).json({ error:"Tarea no encontrada" });
-      const emails = t.data().asignadosEmails || [t.data().asignadoEmail];
-      if (!emails.includes(colab.email)) return res.status(403).json({ error:"No autorizado" });
-      if (t.data().estado === "aprobado") return res.status(400).json({ error:"La tarea ya fue aprobada" });
-      const prevDels = t.data().deliverables || [];
-      if (prevDels.length === 0) return res.status(400).json({ error:"No hay entregas para editar" });
-      const lastIdx = prevDels.length - 1;
-      const newDels = prevDels.map((d,i) => i===lastIdx ? { ...d, ...(link!==undefined&&{link:link.trim()}), ...(label!==undefined&&{label:label.trim()}), ...(nota!==undefined&&{nota:nota.trim()}), editedAt:now } : d);
-      const act = { tipo:"progreso", autor:colab.nombre, fecha:now, detalle:`Editó entrega: ${newDels[lastIdx].label||`v${lastIdx+1}`}` };
-      await ref.update({ deliverables:newDels, updatedAt:now, activity:[...(t.data().activity||[]), act] });
-      return res.json({ ok:true, deliverables:newDels });
-    }
 
     // ── ADMIN: eliminar entrega por índice ─────────────────────────────────────
     if (action === "deleteDeliverable") {
@@ -910,8 +940,7 @@ export default async function handler(req, res) {
       return res.json({ ok:true, estado:newEstado });
     }
 
-    // ── COLABORADOR PÚBLICO: eliminar su última entrega ────────────────────────
-    if (action === "publicDeleteLastDeliverable") {
+    if (action === "PLACEHOLDER_NEVER_REACHED_publicDeleteLastDeliverable_REMOVE") {
       const { tareaId } = body;
       if (!token || !tareaId) return res.status(400).json({ error:"Faltan parámetros" });
       const cSnap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
@@ -1365,6 +1394,41 @@ export default async function handler(req, res) {
       }
     }
     // ── fin Admin actions ────────────────────────────────────────────────────
+
+    // ── Programar email recordatorio de canje ─────────────────────────────────
+    if (action === "scheduleCanjeEmail") {
+      const { influencer, producto, tracking, fechaEnvioProgr, delayMs } = body;
+      if (!uid || !influencer || !fechaEnvioProgr) return res.status(400).json({ error:"Faltan parámetros" });
+      // Buscar el email del owner para notificarle
+      const userSnap = await db.collection("users").doc(uid).get();
+      const ownerEmail = userSnap.data()?.email;
+      if (!ownerEmail) return res.status(400).json({ error:"No se encontró email del usuario" });
+      const fechaFmt = new Date(fechaEnvioProgr + "T12:00:00").toLocaleDateString("es-AR", {weekday:"long",day:"numeric",month:"long"});
+      const trackingHtml = tracking ? `<div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #22c55e;font-size:13px;color:#374151">📦 Tracking Andreani: <strong>${tracking}</strong><br/><a href="https://www.andreani.com/#!/informacionEnvio/${tracking}" style="color:#6366f1;font-size:12px">Ver seguimiento →</a></div>` : "";
+      const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:26px;margin-bottom:6px">📦</div>
+    <div style="font-size:18px;font-weight:700;color:#fff">Hoy toca enviar un canje</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">${fechaFmt}</div>
+  </div>
+  <p style="font-size:14px;color:#374151">Acordate de enviar el canje de <strong>${influencer}</strong>${producto?` — <strong>${producto}</strong>`:""} hoy.</p>
+  ${trackingHtml}
+  <div style="background:#f9fafb;border-radius:8px;padding:14px 16px;font-size:13px;color:#374151;line-height:1.6;margin:16px 0">
+    💡 <strong>No te olvides de:</strong><br/>
+    • Mandarle el número de tracking por WhatsApp<br/>
+    • Recordarle los acuerdos de contenido<br/>
+    • Si es envío a sucursal HOP, avisarle que ya puede ir a buscarlo
+  </div>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Gestión de canjes</p>
+</div>`;
+      const result = await sendEmail({
+        to: ownerEmail,
+        subject: `📦 Hoy toca enviar el canje de ${influencer}`,
+        html,
+        delayMs: delayMs && Number(delayMs) > 60000 ? Number(delayMs) : undefined,
+      });
+      return res.json({ ok: true, emailId: result.id });
+    }
 
     return res.status(400).json({ error:"Acción desconocida" });
 

@@ -3529,6 +3529,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     contenido: ACTIVIDADES.map(tipo=>({tipo, acordados:0, entregados:0})),
     historial:[],
     recordatorio:"",
+    fechaEnvioProgr:"",
     codigoDescuento:"", comisionPct:"",
   });
 
@@ -3548,14 +3549,30 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         contenido:form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),
         historial:form.historial||[],
         recordatorio:form.recordatorio||"",
+        fechaEnvioProgr:form.fechaEnvioProgr||"",
         codigoDescuento:(form.codigoDescuento||"").toUpperCase().trim(),
         comisionPct:form.comisionPct||"",
       };
+      const prev=canjes.find(c=>c._docId===form._docId);
       if(form._docId) {
-        const prev=canjes.find(c=>c._docId===form._docId);
         await updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Cerrado"&&prev?.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});
       } else {
         await addDoc(collection(db,"canjes"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      }
+      // Programar email de recordatorio si hay fechaEnvioProgr nueva o cambiada
+      const prevFecha = prev?.fechaEnvioProgr;
+      if(p.fechaEnvioProgr && p.fechaEnvioProgr !== prevFecha) {
+        const envioDate = new Date(p.fechaEnvioProgr + "T09:00:00");
+        const msHasta = envioDate.getTime() - Date.now();
+        if(msHasta > 60000) { // solo si es en el futuro (más de 1 min)
+          fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+            action:"scheduleCanjeEmail",uid:user.uid,
+            influencer:p.influencer, producto:p.producto||((p.productosCanje||[])[0]?.nombre||""),
+            tracking:p.tracking||"", fechaEnvioProgr:p.fechaEnvioProgr,
+            delayMs: msHasta,
+          })}).catch(()=>{});
+          toast(`📅 Recordatorio de envío programado para el ${new Date(p.fechaEnvioProgr+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}`, "info", 4000);
+        }
       }
       const editedId=form._docId;
       setForm(null);
@@ -3635,6 +3652,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     const alerts=[];
     canjes.forEach(c=>{
       if(c.recordatorio&&c.recordatorio<=hoy) alerts.push({tipo:"recordatorio",canje:c,msg:`Recordatorio vencido`});
+      if(c.fechaEnvioProgr&&c.fechaEnvioProgr<=hoy&&c.estado==="Por enviar")
+        alerts.push({tipo:"envio_programado",canje:c,msg:`Hoy toca enviar este canje 📦`});
       if(c.estado==="Enviado"&&c.fechaEnvio&&c.fechaEnvio<=hace15) alerts.push({tipo:"sinrespuesta",canje:c,msg:`Enviado hace +15 días sin respuesta`});
       if(c.estado==="Contenido pendiente"){
         const cont=c.contenido||[];
@@ -3645,6 +3664,23 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     });
     return alerts;
   },[canjes]);
+
+  // Helper: genera mensaje de WhatsApp pre-armado para recordar retiro y acuerdos del canje
+  function waCanjeMsg(c) {
+    const nombre = c.influencer?.split(" ")[0] || "hola";
+    const productos = (c.productosCanje||[]).map(p=>p.nombre).filter(Boolean).join(", ") || c.producto || "tu canje";
+    const tracking = c.tracking?.trim();
+    const cont = (c.contenido||[]).filter(x=>(x.acordados||0)>0);
+    const acuerdos = cont.map(x=>`  • ${x.acordados} ${x.tipo}`).join("\n");
+    let msg = `Hola ${nombre}! 🌟\n\nYa despachamos tu canje de *${productos}*. 🎁`;
+    if(tracking) msg += `\n\n📦 Podés seguir el envío acá:\nhttps://www.andreani.com/#!/informacionEnvio/${tracking}`;
+    msg += `\n\nRecordamos los acuerdos:`;
+    if(acuerdos) msg += `\n${acuerdos}`;
+    else msg += `\n  • Contenido por acordar`;
+    if(c.codigoDescuento) msg += `\n\n🏷️ Tu código de descuento: *${c.codigoDescuento}*`;
+    msg += `\n\n¡Gracias y cualquier duda nos escribís! 🙏`;
+    return encodeURIComponent(msg);
+  }
 
   async function addNota(docId, texto) {
     if(!texto.trim()) return;
@@ -3725,6 +3761,48 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             );
           })}
         </div>
+
+        {/* ── ALERTAS DE CANJES ── */}
+        {alertas.length>0&&(
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+            {alertas.filter(a=>a.tipo==="envio_programado").map((a,i)=>(
+              <div key={i} className="gh-accordion" style={{background:"linear-gradient(135deg,#6366f112,#a855f708)",border:"1.5px solid #6366f140",borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <span style={{fontSize:20}}>📦</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#6366f1"}}>Hoy toca enviar: {a.canje.influencer}</div>
+                  <div style={{fontSize:12,color:T.textMd}}>{a.canje.producto||((a.canje.productosCanje||[])[0]?.nombre)||""}
+                    {a.canje.tracking&&<span style={{marginLeft:8,color:T.textSm}}>· Tracking: <code style={{fontSize:11}}>{a.canje.tracking}</code></span>}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                  <button onClick={()=>setDetail(a.canje._docId)} style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver canje</button>
+                  {a.canje.telefono&&<a href={`https://wa.me/${a.canje.telefono.replace(/\D/g,"")}?text=${waCanjeMsg(a.canje)}`} target="_blank" rel="noreferrer"
+                    style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:"#22c55e",color:"#fff",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                    Enviar WA
+                  </a>}
+                </div>
+              </div>
+            ))}
+            {alertas.filter(a=>a.tipo!=="envio_programado").length>0&&(
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px"}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>⚠️ Otras alertas</div>
+                <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                  {alertas.filter(a=>a.tipo!=="envio_programado").map((a,i)=>{
+                    const colors={recordatorio:"#d97706",sinrespuesta:"#3b82f6",contenido:"#f97316"};
+                    return (
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
+                        <span style={{width:7,height:7,borderRadius:"50%",background:colors[a.tipo]||T.accent,flexShrink:0}}/>
+                        <span style={{flex:1,color:T.textMd}}><span style={{fontWeight:600,color:T.text}}>{a.canje.influencer}</span> — {a.msg}</span>
+                        <button onClick={()=>setDetail(a.canje._docId)} style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.card,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
         <div style={{display:"flex",gap:8,marginBottom:showGuia?8:16,alignItems:"center",justifyContent:"flex-end"}}>
@@ -4445,8 +4523,43 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>Fecha de envío</div>
                     <input type="date" value={c.fechaEnvio||""} style={{...iS,fontSize:12,padding:"6px 10px"}} onChange={e=>save({fechaEnvio:e.target.value})}/>
                   </div>
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>📅 Programar envío</div>
+                    <input type="date" value={c.fechaEnvioProgr||""} style={{...iS,fontSize:12,padding:"6px 10px",borderColor:c.fechaEnvioProgr?"#6366f140":undefined}}
+                      onChange={async e=>{
+                        await save({fechaEnvioProgr:e.target.value});
+                        if(e.target.value) {
+                          const d=new Date(e.target.value+"T09:00:00");
+                          const ms=d.getTime()-Date.now();
+                          if(ms>60000) {
+                            fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+                              action:"scheduleCanjeEmail",uid:user.uid,
+                              influencer:c.influencer, producto:c.producto||((c.productosCanje||[])[0]?.nombre||""),
+                              tracking:c.tracking||"", fechaEnvioProgr:e.target.value, delayMs:ms,
+                            })}).catch(()=>{});
+                            toast(`📅 Programado para el ${d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}`, "success", 3000);
+                          }
+                        }
+                      }}/>
+                    {c.fechaEnvioProgr&&<div style={{fontSize:10,color:"#6366f1",marginTop:3}}>Te mandamos un mail ese día</div>}
+                  </div>
                 </div>
               </div>
+
+              {/* ── BOTÓN WA PRE-ARMADO ── */}
+              {c.telefono&&(c.tracking||c.estado==="Por enviar")&&(
+                <div style={{background:"#22c55e0a",border:"1px solid #22c55e30",borderRadius:10,padding:"12px 14px"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#22c55e",marginBottom:8}}>💬 Mensaje de WhatsApp pre-armado</div>
+                  <div style={{fontSize:12,color:T.textMd,marginBottom:8,lineHeight:1.5}}>
+                    Incluye tracking{c.tracking?" ("+c.tracking+")":""}, acuerdos de contenido{c.codigoDescuento?" y código "+c.codigoDescuento:""}.
+                  </div>
+                  <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}?text=${waCanjeMsg(c)}`} target="_blank" rel="noreferrer"
+                    style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,background:"#22c55e",color:"#fff",textDecoration:"none",fontSize:13,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                    Enviar mensaje WA
+                  </a>
+                </div>
+              )}
 
               {/* ── PRODUCTOS ── */}
               <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
