@@ -566,7 +566,7 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
   }
 
   return ReactDOM.createPortal(
-    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",padding:16}} onClick={()=>!saving&&onClose()}>
+    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",padding:16}} onClick={()=>!saving&&onClose()}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px",boxShadow:DS.shadow.xl,animation:"growith-modalIn 0.22s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div>
@@ -634,7 +634,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   }
 
   return ReactDOM.createPortal(
-    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",padding:16}} onClick={()=>!saving&&onClose()}>
+    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",padding:16}} onClick={()=>!saving&&onClose()}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px",boxShadow:DS.shadow.xl,animation:"growith-modalIn 0.22s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div style={{fontSize:17,fontWeight:700,color:T.text}}>Gestionar organización</div>
@@ -653,7 +653,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
         </div>
 
         {canDelete && (
-          <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:8}}>
+          <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:8}}>
             {!confirmDel ? (
               <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px",borderRadius:10}}>🗑 Borrar esta organización</button>
             ) : (
@@ -860,7 +860,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       <OrgSwitcher T={T} user={user} userPlan={userPlan} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={onOpenCreateOrg} onOpenManageOrg={onOpenManageOrg} collapsed={collapsed}/>
 
       {/* User Section */}
-      <div style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm,marginTop:DS.sp.sm}}>
+      <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm,marginTop:DS.sp.sm}}>
         {!collapsed&&(
           <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:DS.sp.sm,marginBottom:DS.sp.xs}}>
             {user?.photoURL
@@ -935,10 +935,10 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
 
   if(!open) return null;
   return ReactDOM.createPortal(
-    <div onClick={onClose}
+    <div className="gh-overlay" onClick={onClose}
       style={{position:"fixed", inset:0, zIndex:10000, background:"rgba(0,0,0,0.5)", backdropFilter:"blur(6px)", display:"flex", alignItems:"flex-start", justifyContent:"center", paddingTop:"15vh"}}>
       <div onClick={e=>e.stopPropagation()}
-        style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], width:"100%", maxWidth:560, boxShadow:DS.shadow.xl, overflow:"hidden"}}>
+        style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], width:"100%", maxWidth:560, boxShadow:DS.shadow.xl, overflow:"hidden", animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
         <div style={{display:"flex", alignItems:"center", gap:10, padding:"14px 18px", borderBottom:`1px solid ${T.border}`}}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           <input ref={inputRef} type="text" placeholder="Buscar sección, acción..." value={q} onChange={e=>setQ(e.target.value)}
@@ -1025,8 +1025,8 @@ function OnboardingWizard({T, user, onComplete}) {
   const current = steps[step-1];
 
   return (
-    <div style={{position:"fixed",inset:0,background:T.bg,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:DS.sp.lg}}>
-      <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], padding:"40px 36px", maxWidth:520, width:"100%", boxShadow:DS.shadow.xl}}>
+    <div className="gh-overlay" style={{position:"fixed",inset:0,background:T.bg,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:DS.sp.lg}}>
+      <div style={{background:T.card, border:`1px solid ${T.border}`, borderRadius:DS.r["2xl"], padding:"40px 36px", maxWidth:520, width:"100%", boxShadow:DS.shadow.xl, animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
         {/* Progress */}
         <div style={{display:"flex",gap:6,marginBottom:DS.sp["3xl"]}}>
           {[1,2,3].map(n=>(
@@ -1149,7 +1149,7 @@ function AppPromptHost({ T }) {
     ? <><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>
     : <><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>;
   return ReactDOM.createPortal(
-    <div style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
+    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
       onClick={() => isConfirm ? closeWith(false) : (isPromptInput ? closeWith(null) : closeWith(true))}>
       <div onClick={e => e.stopPropagation()}
         style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:20,width:"100%",maxWidth:420,boxShadow:`0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px ${accentColor}18`,animation:"growith-modalIn 0.28s cubic-bezier(0.34,1.4,0.64,1) both",overflow:"hidden"}}>
@@ -1271,7 +1271,7 @@ function DateRangePicker({ T, since, until, onChange, presets }) {
         📅 <span>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
       </button>
       {open && (
-        <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",minWidth:340}}>
+        <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",minWidth:340}}>
           {/* Presets */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:6,marginBottom:10}}>
             {PRESETS.map(p => (
@@ -1439,43 +1439,173 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
   const s=document.createElement("style");
   s.id="growith-spin";
   s.textContent=`
-    /* -- Keyframes -- */
-    @keyframes growith-spin    { to { transform: rotate(360deg); } }
-    @keyframes growith-fadeIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes growith-fadeInFast { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes growith-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-    @keyframes growith-skeleton{ 0%,100%{opacity:0.4} 50%{opacity:0.8} }
-    @keyframes growith-toast-in{ from{opacity:0;transform:translateY(16px) scale(0.95)} to{opacity:1;transform:translateY(0) scale(1)} }
-    @keyframes growith-slideIn { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
-    @keyframes growith-scaleIn { from{opacity:0;transform:scale(0.97)} to{opacity:1;transform:scale(1)} }
-    @keyframes growith-popIn   { from{opacity:0;transform:scale(0.94) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
-    @keyframes growith-bounceIn{ 0%{opacity:0;transform:scale(0.4)} 55%{opacity:1;transform:scale(1.12)} 75%{transform:scale(0.93)} 100%{transform:scale(1)} }
-    @keyframes growith-modalIn { from{opacity:0;transform:scale(0.96) translateY(12px)} to{opacity:1;transform:scale(1) translateY(0)} }
-    @keyframes slideInRight    { from{opacity:0;transform:translateX(100%)} to{opacity:1;transform:translateX(0)} }
+    /* ═══════════════════════════════════════════
+       GROWITH — SISTEMA DE ANIMACIONES GLOBAL
+       Todos los movimientos de la app pasan por acá.
+       Durations: fast=120ms | normal=200ms | slow=320ms
+       Easing: ease = cubic-bezier(0.4,0,0.2,1)
+               spring = cubic-bezier(0.22,1,0.36,1)  — overshoots leve, se siente vivo
+               bounce = cubic-bezier(0.34,1.56,0.64,1) — más rebote, para elementos pequeños
+    ═══════════════════════════════════════════ */
 
-    /* -- Page / section transitions -- */
-    .gh-page {
-      animation: growith-pageEnter 0.32s cubic-bezier(0.22,1,0.36,1) both;
-    }
+    /* ── Keyframes: entradas ── */
+    @keyframes growith-spin       { to { transform: rotate(360deg); } }
+    @keyframes growith-fadeIn     { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes growith-fadeInFast { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes growith-fadeInDown { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes growith-fadeInLeft { from{opacity:0;transform:translateX(8px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes growith-overlayIn  { from{opacity:0} to{opacity:1} }
+    @keyframes growith-scaleIn    { from{opacity:0;transform:scale(0.97)} to{opacity:1;transform:scale(1)} }
+    @keyframes growith-popIn      { from{opacity:0;transform:scale(0.93) translateY(5px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    @keyframes growith-dropdownIn { from{opacity:0;transform:scale(0.97) translateY(-4px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    @keyframes growith-modalIn    { from{opacity:0;transform:scale(0.96) translateY(10px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    @keyframes growith-panelRight { from{opacity:0;transform:translateX(32px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes growith-panelUp    { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes growith-slideIn    { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes slideInRight       { from{opacity:0;transform:translateX(100%)} to{opacity:1;transform:translateX(0)} }
+    @keyframes growith-bounceIn   { 0%{opacity:0;transform:scale(0.4)} 55%{opacity:1;transform:scale(1.1)} 75%{transform:scale(0.94)} 100%{transform:scale(1)} }
+    @keyframes growith-shimmer    { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    @keyframes growith-skeleton   { 0%,100%{opacity:0.4} 50%{opacity:0.8} }
+
+    /* ── Keyframes: salidas ── */
+    @keyframes growith-fadeOut    { from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(4px)} }
+    @keyframes growith-scaleOut   { from{opacity:1;transform:scale(1)} to{opacity:0;transform:scale(0.96)} }
+    @keyframes growith-overlayOut { from{opacity:1} to{opacity:0} }
+
+    /* ── Keyframes: toasts ── */
+    @keyframes growith-toast-in  { from{opacity:0;transform:translateY(14px) scale(0.94)} to{opacity:1;transform:translateY(0) scale(1)} }
+    @keyframes growith-toast-out { from{opacity:1;transform:translateY(0) scale(1)} to{opacity:0;transform:translateY(-8px) scale(0.96)} }
+
+    /* ── Keyframes: transición de página ── */
     @keyframes growith-pageEnter {
-      from { opacity: 0; transform: translateY(6px) scale(0.998); filter: blur(2px); }
-      to   { opacity: 1; transform: translateY(0)   scale(1);     filter: blur(0);   }
+      from { opacity:0; transform:translateY(5px) scale(0.999); }
+      to   { opacity:1; transform:translateY(0) scale(1); }
     }
 
-    /* -- Smooth scroll global -- */
-    html { scroll-behavior: smooth; }
-    body { overscroll-behavior: none; }
+    /* ══════════════════════════════════════
+       CLASES DE ANIMACIÓN — usar con className
+    ══════════════════════════════════════ */
 
-    /* -- Selection custom -- */
+    /* Páginas y secciones */
+    .gh-page        { animation: growith-pageEnter 0.28s cubic-bezier(0.22,1,0.36,1) both; }
+    .gh-tab-content { animation: growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both; }
+    .gh-section     { animation: growith-fadeIn 0.22s cubic-bezier(0.22,1,0.36,1) both; }
+
+    /* Overlays / backdrops de modales */
+    .gh-overlay, .gh-modal-backdrop {
+      animation: growith-overlayIn 0.2s ease both;
+    }
+    .gh-overlay-closing { animation: growith-overlayOut 0.18s ease both; }
+
+    /* Contenido de modales */
+    .gh-modal   { animation: growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both; }
+    .gh-modal-closing { animation: growith-scaleOut 0.18s ease both; }
+
+    /* Dropdowns, popovers, menus contextuales */
+    .gh-dropdown {
+      animation: growith-dropdownIn 0.16s cubic-bezier(0.22,1,0.36,1) both;
+      transform-origin: top center;
+    }
+    .gh-dropdown-up {
+      animation: growith-popIn 0.16s cubic-bezier(0.22,1,0.36,1) both;
+      transform-origin: bottom center;
+    }
+
+    /* Paneles laterales */
+    .gh-panel-right { animation: growith-panelRight 0.28s cubic-bezier(0.22,1,0.36,1) both; }
+    .gh-panel-up    { animation: growith-panelUp 0.24s cubic-bezier(0.22,1,0.36,1) both; }
+
+    /* Accordion / detalle expandible */
+    .gh-accordion   { animation: growith-fadeIn 0.2s cubic-bezier(0.22,1,0.36,1) both; }
+
+    /* Items de lista y cards */
+    .gh-list-item  { animation: growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both; }
+    .gh-card-enter { animation: growith-popIn 0.22s cubic-bezier(0.22,1,0.36,1) both; }
+
+    /* ══════════════════════════════════════
+       TRANSICIONES GLOBALES DE ELEMENTOS
+    ══════════════════════════════════════ */
+
+    /* Botones — press + hover */
+    button, a[role="button"] {
+      transition: filter 0.14s ease, transform 0.14s cubic-bezier(0.34,1.4,0.64,1),
+                  background 0.14s ease, border-color 0.14s ease,
+                  box-shadow 0.16s ease, opacity 0.14s ease !important;
+    }
+    button:not(:disabled):hover  { filter: brightness(1.08); transform: translateY(-1px); }
+    button:not(:disabled):active { transform: scale(0.95) translateY(0px) !important; filter: brightness(0.94) !important; transition-duration: 0.06s !important; }
+    button:disabled { cursor: not-allowed !important; opacity: 0.38 !important; }
+
+    /* Links */
+    a { transition: opacity 0.14s ease, color 0.14s ease !important; }
+    a:active { opacity: 0.65 !important; transition-duration: 0.06s !important; }
+
+    /* Inputs */
+    input, textarea, select {
+      transition: border-color 0.16s ease, box-shadow 0.18s ease, background 0.16s ease !important;
+    }
+    input:focus, textarea:focus, select:focus {
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.14) !important;
+      outline: none !important;
+    }
+
+    /* Cards clicables */
+    .gh-clickable {
+      transition: background 0.15s ease, border-color 0.15s ease,
+                  transform 0.2s cubic-bezier(0.22,1,0.36,1),
+                  box-shadow 0.18s ease !important;
+      cursor: pointer;
+    }
+    .gh-clickable:hover  { transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(0,0,0,0.12) !important; }
+    .gh-clickable:active { transform: scale(0.98) translateY(0) !important; transition-duration: 0.07s !important; }
+
+    /* Filas de tabla */
+    .gh-row { transition: background 0.12s ease !important; cursor: pointer; }
+    .gh-row:hover  { background: var(--gh-surface) !important; }
+    .gh-row:active { background: var(--gh-card)    !important; }
+
+    /* Kanban cards */
+    .gh-kanban-card {
+      transition: transform 0.2s cubic-bezier(0.22,1,0.36,1),
+                  box-shadow 0.18s ease, border-color 0.14s ease !important;
+    }
+    .gh-kanban-card:hover { transform: translateY(-2px) !important; box-shadow: 0 6px 24px rgba(0,0,0,0.18) !important; }
+
+    /* Tabs */
+    .gh-tab {
+      transition: background 0.14s ease, color 0.14s ease,
+                  border-color 0.14s ease, transform 0.14s ease !important;
+    }
+    .gh-tab:hover  { transform: translateY(-1px) !important; }
+    .gh-tab:active { transform: scale(0.96) !important; }
+
+    /* Chips / filtros */
+    .gh-chip {
+      transition: background 0.14s ease, border-color 0.14s ease,
+                  color 0.14s ease, transform 0.16s cubic-bezier(0.22,1,0.36,1),
+                  box-shadow 0.14s ease !important;
+    }
+    .gh-chip:hover  { transform: translateY(-1px) !important; }
+    .gh-chip:active { transform: scale(0.95) !important; }
+
+    /* Toggle switch */
+    .gh-toggle        { transition: background 0.2s ease !important; cursor: pointer; }
+    .gh-toggle-thumb  { transition: left 0.22s cubic-bezier(0.34,1.3,0.64,1) !important; }
+
+    /* Smooth scroll */
+    html { scroll-behavior: smooth; }
+    body { overscroll-behavior: none; transition: background 0.22s ease !important; }
+
+    /* Selección de texto */
     ::selection { background: rgba(139,92,246,0.35); color: inherit; }
 
-    /* -- Scrollbar custom dark -- */
+    /* Scrollbar */
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); background-clip: padding-box; }
 
-    /* -- Focus visible refinado (saca outline azul fuerte) -- */
+    /* Focus rings */
     *:focus { outline: none; }
     button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
       outline: 2px solid rgba(139,92,246,0.55);
@@ -1483,101 +1613,26 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
       border-radius: 4px;
     }
 
-    /* -- Tab content -- */
-    .gh-tab-content {
-      animation: growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both;
-    }
-
-    /* -- Buttons -- */
-    button, a[role="button"] {
-      transition: filter 0.15s ease, transform 0.13s cubic-bezier(0.34,1.56,0.64,1),
-                  background 0.15s ease, border-color 0.15s ease,
-                  box-shadow 0.18s ease !important;
-    }
-    button:not(:disabled):hover  { filter: brightness(1.1); transform: translateY(-1px); }
-    button:not(:disabled):active { transform: scale(0.95) translateY(0) !important; filter: brightness(0.95) !important; }
-    button:disabled { cursor: not-allowed !important; opacity: 0.4 !important; }
-
-    /* -- Links -- */
-    a { transition: opacity 0.15s ease, color 0.15s ease !important; }
-    a:active { opacity: 0.7 !important; }
-
-    /* -- Inputs -- */
-    input, textarea, select {
-      transition: border-color 0.15s ease, box-shadow 0.18s ease !important;
-    }
-    input:focus, textarea:focus, select:focus {
-      box-shadow: 0 0 0 3px rgba(124,58,237,0.14) !important;
-      outline: none !important;
-    }
-
-    /* -- Clickable cards / rows -- */
-    .gh-clickable {
-      transition: background 0.15s ease, border-color 0.15s ease,
-                  transform 0.18s cubic-bezier(0.22,1,0.36,1),
-                  box-shadow 0.18s ease !important;
-      cursor: pointer;
-    }
-    .gh-clickable:hover  { transform: translateY(-1px) !important; }
-    .gh-clickable:active { transform: scale(0.98) !important; }
-
-    .gh-row {
-      transition: background 0.12s ease !important;
-      cursor: pointer;
-    }
-    .gh-row:hover  { background: var(--gh-surface) !important; }
-    .gh-row:active { background: var(--gh-card) !important; }
-
-    /* -- Kanban cards -- */
-    .gh-kanban-card {
-      transition: transform 0.18s cubic-bezier(0.22,1,0.36,1),
-                  box-shadow 0.18s ease, border-color 0.15s ease !important;
-    }
-    .gh-kanban-card:hover {
-      transform: translateY(-2px) !important;
-      box-shadow: 0 6px 24px rgba(0,0,0,0.2) !important;
-    }
-
-    /* -- Tabs -- */
-    .gh-tab {
-      transition: background 0.15s ease, color 0.15s ease,
-                  border-color 0.15s ease, transform 0.12s ease !important;
-    }
-    .gh-tab:hover { transform: translateY(-1px) !important; }
-    .gh-tab:active{ transform: scale(0.96) !important; }
-
-    /* -- Chips / filters -- */
-    .gh-chip {
-      transition: all 0.16s cubic-bezier(0.22,1,0.36,1) !important;
-    }
-    .gh-chip:hover  { transform: translateY(-1px) !important; opacity: 0.88; }
-    .gh-chip:active { transform: scale(0.95) !important; }
-
-    /* -- Toggle switch -- */
-    .gh-toggle        { transition: background 0.22s ease !important; cursor: pointer; }
-    .gh-toggle-thumb  { transition: left 0.22s cubic-bezier(0.34,1.26,0.64,1) !important; }
-
-    /* -- Modal backdrop -- */
-    .gh-modal-backdrop {
-      animation: growith-fadeIn 0.18s ease both;
-    }
-
-    /* -- List items staggered -- */
-    .gh-list-item {
-      animation: growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both;
-    }
-
-    /* -- Body theme transition -- */
-    body { transition: background 0.22s ease !important; }
-
-    /* -- Dark mode toggle smooth -- */
-    * { transition: background-color 0s, color 0s; }
-
-    /* -- Theme-aware hover helpers -- */
+    /* Hover helpers */
     .gh-hover-surface:hover { background: var(--gh-surface) !important; }
-    .gh-hover-card:hover { background: var(--gh-card) !important; }
-    .gh-hover-transparent:hover { background: transparent !important; }
-    .gh-hover-bg:hover { background: var(--gh-bg) !important; }
+    .gh-hover-card:hover    { background: var(--gh-card)    !important; }
+    .gh-hover-bg:hover      { background: var(--gh-bg)      !important; }
+
+    /* Accordion height transition helper */
+    .gh-collapse-content {
+      overflow: hidden;
+      transition: max-height 0.28s cubic-bezier(0.22,1,0.36,1),
+                  opacity 0.22s ease;
+    }
+
+    /* Stagger helpers (nth-child delays) */
+    .gh-stagger > *:nth-child(1)  { animation-delay: 0ms; }
+    .gh-stagger > *:nth-child(2)  { animation-delay: 35ms; }
+    .gh-stagger > *:nth-child(3)  { animation-delay: 70ms; }
+    .gh-stagger > *:nth-child(4)  { animation-delay: 105ms; }
+    .gh-stagger > *:nth-child(5)  { animation-delay: 140ms; }
+    .gh-stagger > *:nth-child(6)  { animation-delay: 175ms; }
+    .gh-stagger > *:nth-child(n+7){ animation-delay: 200ms; }
   `;
   document.head.appendChild(s);
 }
@@ -3133,7 +3188,7 @@ function DropdownChips({value, options, onSelect, placeholder, T, colorActive, b
         {value||placeholder||"+ Agregar"}
       </span>
       {open&&(
-        <div style={{position:"absolute",top:"110%",left:0,zIndex:200,background:T.card,border:"1px solid "+T.border,borderRadius:10,padding:8,display:"flex",flexWrap:"wrap",gap:5,minWidth:180,boxShadow:"0 8px 24px rgba(0,0,0,0.35)"}}>
+        <div className="gh-dropdown" style={{position:"absolute",top:"110%",left:0,zIndex:200,background:T.card,border:"1px solid "+T.border,borderRadius:10,padding:8,display:"flex",flexWrap:"wrap",gap:5,minWidth:180,boxShadow:"0 8px 24px rgba(0,0,0,0.35)"}}>
           {options.map(opt=>(
             <button key={opt} onClick={()=>{ onSelect(value===opt?"":opt); setOpen(false); }}
               style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(value===opt?ca:T.border),
@@ -5443,9 +5498,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Seguimientos batch progress modal */}
       {/* Seguimientos — portal unificado activo + resultado */}
       {(seguimientoProgress.active||seguimientoProgress.done)&&ReactDOM.createPortal(
-        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
           onClick={seguimientoProgress.done?()=>setSeguimientoProgress(p=>({...p,done:false})):undefined}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.fail>0?T.orange+"55":T.green+"55"):T.green+"44"}`}}
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${seguimientoProgress.done?(seguimientoProgress.fail>0?T.orange+"55":T.green+"55"):T.green+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
             onClick={e=>e.stopPropagation()}>
             {!seguimientoProgress.done ? (
               <>
@@ -5515,9 +5570,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
       {/* Generar etiquetas — portal unificado activo + resultado */}
       {(exporting||!!exportDone)&&ReactDOM.createPortal(
-        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}
           onClick={exportDone?()=>{const d=exportDone;setExportDone(null);setExportProgress({step:"",pct:0,current:0,total:0});if(d.esquinas>0&&d.esquinaOrders?.length>0)setEsquinaModal({orders:d.esquinaOrders});}:undefined}>
-          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${exportDone?T.green+"55":T.blue+"44"}`}}
+          <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${exportDone?T.green+"55":T.blue+"44"}`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
             onClick={e=>e.stopPropagation()}>
             {!exportDone ? (
               <>
@@ -5726,7 +5781,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 {showPagePicker&&(
                   <>
                     <div onClick={()=>setShowPagePicker(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
-                    <div style={{position:"absolute",top:"110%",left:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"6px",zIndex:200,minWidth:250,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
+                    <div className="gh-dropdown" style={{position:"absolute",top:"110%",left:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"6px",zIndex:200,minWidth:250,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
                       {/* Esta página */}
                       <div onClick={toggleCurrentPage}
                         style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",cursor:"pointer",fontSize:12,color:T.text,borderRadius:7,
@@ -5767,7 +5822,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         </>
                       )}
                       {/* Seleccionar todo / Limpiar */}
-                      <div style={{borderTop:`1px solid ${T.borderL}`,margin:"4px 0 0",padding:"6px 6px 2px",display:"flex",gap:4}}>
+                      <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,margin:"4px 0 0",padding:"6px 6px 2px",display:"flex",gap:4}}>
                         <button onClick={()=>toggleAll()} style={{flex:1,fontSize:11,padding:"6px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
                           {selected.size===exportables.length&&exportables.length>0?`Limpiar todo`:`Seleccionar todo (${exportables.length})`}
                         </button>
@@ -5786,7 +5841,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 {showColMenu&&(
                   <>
                     <div onClick={()=>setShowColMenu(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
-                    <div style={{position:"absolute",top:"110%",right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px",zIndex:100,minWidth:160,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
+                    <div className="gh-dropdown" style={{position:"absolute",top:"110%",right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px",zIndex:100,minWidth:160,boxShadow:"0 8px 24px rgba(0,0,0,0.3)"}}>
                       {[["estado","Estado"],["envio","Envío"],["total","Total"]].map(([col,label])=>(
                         <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",fontSize:13,color:T.text,borderRadius:6}}>
                           <input type="checkbox" checked={!hiddenCols.has(col)} onChange={()=>toggleCol(col)} style={{cursor:"pointer"}}/>
@@ -7405,8 +7460,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
         {/* Modal conectar Shopify */}
         {showShopifyModal && (
-          <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingShopify && setShowShopifyModal(false)}>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+          <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingShopify && setShowShopifyModal(false)}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
                 <div>
                   <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Shopify</div>
@@ -7471,8 +7526,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
         {/* Modal conectar Mercado Libre */}
         {showMLModal && (
-          <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingML && setShowMLModal(false)}>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:480,padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+          <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingML && setShowMLModal(false)}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:480,padding:"24px 28px",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <div style={{width:40,height:40,borderRadius:10,background:"#FFE600",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>🛒</div>
@@ -7508,8 +7563,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
         {/* Modal conectar Meta */}
         {showMetaModal && (
-          <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingMeta && setShowMetaModal(false)}>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:640,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px"}} onClick={e=>e.stopPropagation()}>
+          <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!connectingMeta && setShowMetaModal(false)}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:640,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
                 <div>
                   <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Meta Ads</div>
@@ -7986,7 +8041,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
                 {esFree&&userPlan==="free"&&<div style={{padding:"11px",textAlign:"center",fontSize:13,color:T.textSm,fontWeight:600,marginBottom:20}}>Plan actual</div>}
 
                 {/* Separator */}
-                <div style={{borderTop:`1px solid ${T.borderL}`,marginBottom:16,marginTop:"auto"}}/>
+                <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,marginBottom:16,marginTop:"auto"}}/>
 
                 {/* Features */}
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -8525,7 +8580,7 @@ function AppAdmin({T, user, onBack}) {
 
                 {/* Panel expandido */}
                 {expanded&&(
-                  <div style={{borderTop:`1px solid ${T.border}`,background:T.bg}}>
+                  <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,background:T.bg}}>
 
                     {/* Estado actual */}
                     <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -8568,7 +8623,7 @@ function AppAdmin({T, user, onBack}) {
                         </AsyncButton>
                       </div>
                       {u.plan!=="free"&&(
-                        <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:10}}>
+                        <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,paddingTop:10}}>
                           <div style={{fontSize:11,color:T.textSm,marginBottom:6}}>Ajustar días al vencimiento:</div>
                           <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
                             {[-30,-14,-7,-3,-1,1,3,7,14,30].map(d=>(
@@ -9179,7 +9234,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const checklist = t.checklist||[];
     const activity = t.activity||[];
     return (
-      <div style={{borderTop:`1px solid ${T.border}`,background:T.bg,padding:16}}>
+      <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,background:T.bg,padding:16}}>
         {/* Número + meta */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
           {t.tareaNumStr&&<span style={{fontSize:11,fontWeight:700,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px"}}>#{t.tareaNumStr}</span>}
@@ -9381,7 +9436,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           );
         })()}
         {/* Acciones */}
-        <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:12,display:"flex",gap:8,justifyContent:"space-between",flexWrap:"wrap"}}>
+        <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,paddingTop:12,display:"flex",gap:8,justifyContent:"space-between",flexWrap:"wrap"}}>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,color:"#22c55e",border:`1px solid #22c55e44`}}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
@@ -9686,7 +9741,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </div>
                           <button onClick={()=>{setCEditor(ed);openCreativo();}} style={{...BtnSecondary(T),fontSize:12,padding:"5px 10px"}}>+ Creativo</button>
                         </div>
-                        <div style={{borderTop:`1px solid ${T.border}`,padding:"6px 10px",display:"flex",flexDirection:"column",gap:3}}>
+                        <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:"6px 10px",display:"flex",flexDirection:"column",gap:3}}>
                           {edC.map(c=>{
                             const ce=CEST2[c.estado]||{l:c.estado,c:T.textSm,dot:"#9ca3af"};
                             return(
@@ -10116,7 +10171,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                     {/* Expandido */}
                     {expanded&&(
-                      <div style={{borderTop:`1px solid ${T.border}`,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
+                      <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
 
                         {/* Email */}
                         {c&&<div style={{fontSize:12,color:T.textSm}}>{c.email}</div>}
@@ -10259,8 +10314,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* MODAL Kanban — detalle tarea */}
       {kanbanSelected&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setKanbanSelected(null);}}>
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto"}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setKanbanSelected(null);}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
             <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:T.card,zIndex:1}}>
               <div>
                 <div style={{fontWeight:700,fontSize:15,color:T.text}}>{kanbanSelected.titulo}</div>
@@ -10281,8 +10336,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         const ce=CEST2[c.estado]||CEST2.idea;
         const fmtC=v=>{if(!v)return"—";try{const d=v._seconds?new Date(v._seconds*1000):new Date(v);return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});}catch(e){return"—";}};
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setCreativoDetail(null);}}>
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
+          <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setCreativoDetail(null);}}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
               {/* Header */}
               <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",position:"sticky",top:0,background:T.card,zIndex:1,gap:10}}>
                 <div style={{flex:1,minWidth:0}}>
@@ -10379,7 +10434,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* MODAL Nueva Tarea */}
       {showNT&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontWeight:700,fontSize:16,color:T.text}}>Nueva tarea</div>
@@ -10527,7 +10582,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* MODAL Editar Tarea */}
       {editTarea&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontWeight:700,fontSize:16,color:T.text}}>✏️ Editar tarea</div>
@@ -10616,7 +10671,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           {key:"editorProduccion",label:"Editor de producción",   desc:"Puede recibir creativos asignados"},
         ];
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+          <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
             onClick={e=>{if(e.target===e.currentTarget)setPermisosModal(null);}}>
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:380}}>
               <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -10650,7 +10705,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* MODAL Nuevo Evento */}
       {showNEvento&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
           onClick={e=>{if(e.target===e.currentTarget)setShowNEvento(false);}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:400}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
@@ -10691,7 +10746,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       {/* MODAL Nuevo Colaborador */}
       {/* MODAL Nueva/Editar Tanda */}
       {showNT2&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editTanda?"✏️ Editar tanda":"📦 Nueva tanda"}</div>
@@ -10746,7 +10801,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* MODAL Nuevo/Editar Creativo */}
       {showNC2&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editCreativo2?"✏️ Editar creativo":"🎬 Nuevo creativo"}</div>
@@ -10855,7 +10910,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* MODAL Nueva/Editar Idea */}
       {showNI&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:480}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontWeight:700,fontSize:16,color:T.text}}>{editIdea?"✏️ Editar idea":"💡 Nueva idea"}</div>
@@ -10942,7 +10997,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       )}
 
       {showNC&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:440}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <div style={{fontWeight:700,fontSize:16,color:T.text}}>Agregar miembro</div>
@@ -11107,7 +11162,7 @@ function EditorProduccionView({T, token}) {
                   </div>
                 </div>
                 {tanda&&(tanda.recursos||[]).length>0&&(
-                  <div style={{borderTop:`1px solid ${T.borderL}`,padding:"10px 16px",background:T.surface}}>
+                  <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,padding:"10px 16px",background:T.surface}}>
                     <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Recursos de la tanda</div>
                     <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                       {tanda.recursos.map((r,ri)=>(
@@ -11457,7 +11512,7 @@ function ColaboradorPublicView({T, token}) {
               </div>
 
               {expanded&&(
-                <div style={{borderTop:`1px solid ${T.border}`,padding:"16px",background:T.bg}}>
+                <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:"16px",background:T.bg}}>
                   {/* Banner revisión con feedback */}
                   {isRevision&&(
                     <div style={{marginBottom:16,padding:"14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444418"}}>
@@ -12764,7 +12819,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg>
           </button>
           {showCuitMenu && (
-            <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:280,background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:6,zIndex:200,boxShadow:"0 8px 30px rgba(0,0,0,0.35)"}}>
+            <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:280,background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:6,zIndex:200,boxShadow:"0 8px 30px rgba(0,0,0,0.35)"}}>
               {cuits.map(c=>(
                 <div key={c.cuit} style={{display:"flex",alignItems:"center",gap:4,padding:"4px",borderRadius:8,background:cuitSel===c.cuit?T.accentSolid+"18":"transparent"}}
                   onMouseEnter={e=>{if(cuitSel!==c.cuit)e.currentTarget.style.background=T.surface;}}
@@ -12785,7 +12840,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>🗑</button>
                 </div>
               ))}
-              <div style={{borderTop:"1px solid "+T.border,marginTop:4,paddingTop:4}}>
+              <div className="gh-accordion" style={{borderTop:"1px solid "+T.border,marginTop:4,paddingTop:4}}>
                 <button onClick={()=>{setShowCuitMenu(false);setShowWizard(true);}} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",borderRadius:8,border:"none",background:"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.accent,fontSize:13,fontWeight:600}}
                   onMouseEnter={e=>e.currentTarget.style.background=T.surface}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -13365,7 +13420,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                     </div>
                     {showArcaConfirm&&ReactDOM.createPortal(
-                        <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+                        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
                           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:460,padding:"28px 28px 24px"}} onClick={e=>e.stopPropagation()}>
                             <div style={{fontSize:20,marginBottom:8}}>🧾</div>
                             <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:6}}>¿Emitir facturas en ARCA?</div>
@@ -13578,7 +13633,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 110px 30px",gap:8,alignItems:"center"}}>
                           <div style={{position:"relative"}}>
                             <input value={it.nombre} onChange={e=>{const arr=[...manualItems];arr[i].nombre=e.target.value;setManualItems(arr);}} onFocus={()=>setConceptoAcIdx(`a${i}`)} onBlur={()=>setTimeout(()=>setConceptoAcIdx(null),150)} placeholder="Producto / servicio" style={{...iS,fontSize:12}}/>
-                            {showAc&&<div style={{position:"absolute",top:"100%",left:0,right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,zIndex:50,boxShadow:"0 4px 16px rgba(0,0,0,0.25)",marginTop:2,overflow:"hidden"}}>
+                            {showAc&&<div className="gh-dropdown" style={{position:"absolute",top:"100%",left:0,right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,zIndex:50,boxShadow:"0 4px 16px rgba(0,0,0,0.25)",marginTop:2,overflow:"hidden"}}>
                               {suggestions.map((s,si)=>(
                                 <div key={si} onMouseDown={()=>{const arr=[...manualItems];arr[i].nombre=s;setManualItems(arr);setConceptoAcIdx(null);}} style={{padding:"7px 10px",fontSize:12,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{s}</div>
                               ))}
@@ -13695,7 +13750,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </button>
                         </div>
                         {isExpanded && (
-                          <div style={{borderTop:"1px solid "+T.borderL,background:T.card}}>
+                          <div className="gh-accordion" style={{borderTop:"1px solid "+T.borderL,background:T.card}}>
                             {(b.resumen||[]).map((r,i)=>(
                               <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:i<b.resumen.length-1?"1px solid "+T.borderL:"none"}}>
                                 <div style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:"1px solid "+T.accent+"44",color:T.accent,background:T.accent+"11",flexShrink:0}}>F{r.letra}</div>
@@ -13778,8 +13833,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* ══ WIZARD MODAL ══ */}
       {showWizard && (
-        <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={resetWizard}>
-          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto",padding:"28px 32px"}} onClick={e=>e.stopPropagation()}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}} onClick={resetWizard}>
+          <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both",padding:"28px 32px"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
               <div style={{fontSize:17,fontWeight:700,color:T.accent}}>Conectar nuevo CUIT a ARCA</div>
               <button onClick={resetWizard} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
@@ -14083,7 +14138,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
       {/* ══ MODAL EDITAR CUIT ══ */}
       {showEditCuit && editCuit && ReactDOM.createPortal(
-        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",overflowY:"auto",padding:"24px 16px"}} onClick={()=>setShowEditCuit(false)}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",overflowY:"auto",padding:"24px 16px"}} onClick={()=>setShowEditCuit(false)}>
           <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:16,width:"100%",maxWidth:520,padding:"24px 28px",marginTop:"auto",marginBottom:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
               <div>
@@ -14221,7 +14276,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 70px 110px 30px",gap:8,alignItems:"center"}}>
                       <div style={{position:"relative"}}>
                         <input value={it.nombre} onChange={e=>{const arr=[...manualItems];arr[i].nombre=e.target.value;setManualItems(arr);}} onFocus={()=>setConceptoAcIdx(`b${i}`)} onBlur={()=>setTimeout(()=>setConceptoAcIdx(null),150)} placeholder="Producto / servicio" style={{...iS,fontSize:12}}/>
-                        {showAc&&<div style={{position:"absolute",top:"100%",left:0,right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,zIndex:50,boxShadow:"0 4px 16px rgba(0,0,0,0.25)",marginTop:2,overflow:"hidden"}}>
+                        {showAc&&<div className="gh-dropdown" style={{position:"absolute",top:"100%",left:0,right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,zIndex:50,boxShadow:"0 4px 16px rgba(0,0,0,0.25)",marginTop:2,overflow:"hidden"}}>
                           {suggestions.map((s,si)=>(
                             <div key={si} onMouseDown={()=>{const arr=[...manualItems];arr[i].nombre=s;setManualItems(arr);setConceptoAcIdx(null);}} style={{padding:"7px 10px",fontSize:12,cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{s}</div>
                           ))}
@@ -14302,7 +14357,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       )}
       {/* ── MODAL PROGRESO EMISIÓN ARCA ── */}
       {(emitProgress.active||emitProgress.done)&&ReactDOM.createPortal(
-        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
+        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
           <div style={{background:T.card,borderRadius:20,padding:"36px 40px",minWidth:380,maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${emitProgress.done?(emitProgress.fail>0?T.orange+"55":T.green+"55"):T.accentSolid+"44"}`}}>
             {!emitProgress.done?(
               <>
@@ -14486,7 +14541,7 @@ function ProductEditor({T, initialProduct, onSave, onCancel}) {
     if(!ok) return;
   }
   return ReactDOM.createPortal(
-    <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onCancel()}>
+    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onCancel()}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:560,maxHeight:"92vh",overflowY:"auto",padding:"24px 28px",fontFamily:"'Inter',system-ui,sans-serif"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
           <div>
@@ -14750,7 +14805,7 @@ function AccountSwitcher({T, accounts, activeAcc, onSwitch, onGoConnect}) {
         <span style={{color:T.textSm,fontSize:10,marginLeft:2}}>▾</span>
       </button>
       {open && (
-        <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:280,maxWidth:360,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:6,zIndex:60,boxShadow:"0 10px 28px rgba(0,0,0,0.5)"}}>
+        <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:280,maxWidth:360,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:6,zIndex:60,boxShadow:"0 10px 28px rgba(0,0,0,0.5)"}}>
           <div style={{fontSize:9,color:T.textSm,padding:"6px 10px 4px",textTransform:"uppercase",fontWeight:700,letterSpacing:0.6}}>Cuentas publicitarias</div>
           {list.length === 0 ? (
             <div style={{padding:"14px 12px",fontSize:12,color:T.textSm}}>No hay cuentas conectadas.</div>
@@ -14773,7 +14828,7 @@ function AccountSwitcher({T, accounts, activeAcc, onSwitch, onGoConnect}) {
               </button>
             );
           })}
-          <div style={{borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:4}}>
+          <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:4}}>
             <button onClick={()=>{ setOpen(false); onGoConnect(); }}
               style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 10px",border:"none",background:"transparent",borderRadius:8,cursor:"pointer",color:T.accent,fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600}}>
               <span style={{width:18,height:18,borderRadius:5,background:T.accentSolid+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:14,lineHeight:1}}>+</span>
@@ -16400,7 +16455,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{position:"relative"}}>
                       <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⚙ Columnas</button>
                       {aColsOpen && (
-                        <div style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
+                        <div className="gh-dropdown" style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
                           {[
                             {k:"spend",l:"Gasto"},{k:"purchases",l:"Compras"},{k:"purchase_value",l:"Valor compras"},
                             {k:"roas",l:"ROAS"},{k:"cpa",l:"CPA"},{k:"ctr",l:"CTR"},{k:"cpm",l:"CPM"},{k:"cpc",l:"CPC"},
@@ -17844,7 +17899,7 @@ LONGITUD Y FORMATO
 
               {/* ── Modal: Nueva campaña + AdSets ───────────── */}
               {showNewCampModal && ReactDOM.createPortal(
-                <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewCampModal(false)}>
+                <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewCampModal(false)}>
                   <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:560,maxHeight:"88vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
                       <h3 style={{margin:0,fontSize:18,fontWeight:800,background:`linear-gradient(90deg, ${T.green}, ${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Nueva campaña + AdSets</h3>
@@ -17919,7 +17974,7 @@ LONGITUD Y FORMATO
 
               {/* ── Modal: Nuevo AdSet (en campaña existente) ───────── */}
               {showNewAdsetModal && ReactDOM.createPortal(
-                <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewAdsetModal(false)}>
+                <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewAdsetModal(false)}>
                   <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:460,fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
                       <h3 style={{margin:0,fontSize:18,fontWeight:800}}>Nuevo AdSet</h3>
@@ -17956,7 +18011,7 @@ LONGITUD Y FORMATO
 
               {/* ── Modal: Cambiar recursos (ad accounts, pages, IG, pixels) ── */}
               {showResourcesModal && ReactDOM.createPortal(
-                <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowResourcesModal(false)}>
+                <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowResourcesModal(false)}>
                   <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"22px 24px",width:"100%",maxWidth:760,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                       <h3 style={{margin:0,fontSize:18,fontWeight:800,background:`linear-gradient(90deg, ${T.text}, ${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Cambiar recursos</h3>
@@ -18689,7 +18744,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
 
         {/* Modal Edit single */}
         {editingItem && ReactDOM.createPortal(
-          <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
+          <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
             <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:560,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
                 {editingItem.thumbnail && <img src={editingItem.thumbnail} alt="" style={{width:60,height:60,borderRadius:8,objectFit:"cover"}}/>}
@@ -20028,7 +20083,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                 {/* Modal editar warehouse */}
                 {editingWarehouse && ReactDOM.createPortal(
-                  <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingWarehouse(null)}>
+                  <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingWarehouse(null)}>
                     <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:440,fontFamily:"'Inter',system-ui,sans-serif"}}>
                       <h3 style={{margin:"0 0 14px",fontSize:17,fontWeight:800,color:T.text}}>{editingWarehouse==="new"?"Nuevo depósito":"Editar depósito"}</h3>
                       <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Nombre</label>
@@ -20046,7 +20101,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                 {/* Modal editar stock por depósito */}
                 {editingStockItem && ReactDOM.createPortal(
-                  <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingStockItem(null)}>
+                  <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingStockItem(null)}>
                     <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:520,fontFamily:"'Inter',system-ui,sans-serif"}}>
                       <h3 style={{margin:"0 0 6px",fontSize:17,fontWeight:800,color:T.text}}>{editingStockItem.nombre}</h3>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:16}}>Ajustá el stock por depósito. El total se calcula automáticamente.</div>
@@ -20081,7 +20136,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
             {/* Modal transferencia entre depósitos */}
             {transferModal&&ReactDOM.createPortal(
-              <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setTransferModal(null)}>
+              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setTransferModal(null)}>
                 <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:460,fontFamily:"'Inter',system-ui,sans-serif"}}>
                   <h3 style={{margin:"0 0 4px",fontSize:17,fontWeight:800,color:T.text}}>⇄ Transferir stock</h3>
                   <div style={{fontSize:11,color:T.textSm,marginBottom:18}}>Mover unidades de un depósito a otro. Queda registrado en el historial.</div>
@@ -20377,7 +20432,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
             {/* ── MODAL Crear/Editar Item ── */}
             {editingItem && ReactDOM.createPortal(
-              <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
+              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
                 <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,width:"100%",maxWidth:720,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
                   {/* Header */}
                   <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
