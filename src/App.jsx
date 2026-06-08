@@ -2224,28 +2224,83 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
   const reclamosRef = useRef([]);
   useEffect(()=>{ reclamosRef.current = reclamos; }, [reclamos]);
 
-  // Mapea el estado de Andreani al estado del reclamo en Growith
+  // ─── Mapeo de estados Andreani → estados Growith ───────────────────────────
   function mapAndreaniEstado(estadoAndreani, tipoTracking) {
-    const e = (estadoAndreani||"").toLowerCase();
-    const entregado = e.includes("entregado") || e.includes("delivered") || e.includes("devolución aceptada");
-    const enCamino  = e.includes("camino") || e.includes("tránsito") || e.includes("transito") ||
-                      e.includes("distribuc") || e.includes("en viaje") || e.includes("en reparto") ||
-                      e.includes("en curso") || e.includes("clasificad");
+    if(!estadoAndreani) return null;
+    const e = estadoAndreani.toLowerCase()
+      .normalize("NFD").replace(/[̀-ͯ]/g, ""); // quitar tildes para comparar
+
+    const esEntregado = e.includes("entregado") || e.includes("entrega realizada") ||
+                        e.includes("delivered") || e.includes("devolucion aceptada") ||
+                        e.includes("devolución aceptada") || e.includes("devuelto al remitente") ||
+                        e.includes("recibido en destino");
+
+    const enSucursal  = e.includes("sucursal") || e.includes("disponible para retiro") ||
+                        e.includes("disponible en") || e.includes("en agencia") ||
+                        e.includes("punto de retiro") || e.includes("en andreani") ||
+                        e.includes("retiro en") || e.includes("listo para retirar") ||
+                        e.includes("en oficina") || e.includes("hop") || e.includes("andreani point");
+
+    const enCamino    = e.includes("transito") || e.includes("en viaje") || e.includes("en camino") ||
+                        e.includes("distribuc") || e.includes("en reparto") || e.includes("en curso") ||
+                        e.includes("clasificad") || e.includes("salida") || e.includes("en despacho") ||
+                        e.includes("despachado") || e.includes("retirado por") || e.includes("recogido") ||
+                        e.includes("en proceso") || e.includes("en preparacion");
+
     if(tipoTracking === "devolucion") {
-      // Devolución: cliente → nosotros
-      if(entregado) return "Producto recibido";
+      // Cliente → nosotros: nos devuelven el producto
+      if(esEntregado) return "Producto recibido"; // llegó a nuestro depósito
+      if(enSucursal)  return "Esperando producto"; // está en sucursal esperando que lo retiremos
+      if(enCamino)    return "Esperando producto"; // viene en camino hacia nosotros
       return null;
     }
+
     if(tipoTracking === "cambio") {
-      // Cambio enviado: nosotros → cliente
-      if(entregado) return "Resuelto";
-      if(enCamino)  return "Envío en camino";
+      // Nosotros → cliente: enviamos el cambio
+      if(esEntregado) return "Resuelto";
+      if(enSucursal)  return "Envío en camino"; // listo en HOP para que lo retire el cliente
+      if(enCamino)    return "Envío en camino";
       return null;
     }
+
     return null;
   }
 
-  // -- Andreani polling: monitorear todos los trackings y actualizar estados automáticamente --
+  // ─── Consulta tracking de un número Andreani ────────────────────────────────
+  async function fetchAndreaniTracking(nroTracking) {
+    try {
+      const res = await fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(nroTracking.trim())}`);
+      // La API ahora siempre devuelve 200 (con estado null si no encontró)
+      const d = await res.json();
+      const estado = d?.estado || d?.estadoActual || d?.ultimoEvento?.estado || "";
+      return { ok: true, estado: estado || "", data: d };
+    } catch(e) {
+      console.warn("[andreani] fetch error:", e.message);
+      return { ok: false, estado: "", data: null };
+    }
+  }
+
+  // ─── Detecta si un paquete está listo para retirar en sucursal ──────────────
+  function esEnSucursal(estado) {
+    if(!estado) return false;
+    const e = estado.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    return e.includes("sucursal") || e.includes("disponible para retiro") ||
+           e.includes("disponible en") || e.includes("en agencia") ||
+           e.includes("punto de retiro") || e.includes("listo para retirar") ||
+           e.includes("hop") || e.includes("andreani point") || e.includes("en oficina") ||
+           e.includes("para retirar");
+  }
+
+  // ─── Detecta si el paquete ya fue retirado / entregado ─────────────────────
+  function esFueRetirado(estado) {
+    if(!estado) return false;
+    const e = estado.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    return e.includes("entregado") || e.includes("entrega realizada") ||
+           e.includes("retirado") || e.includes("delivered") ||
+           e.includes("recibido") || e.includes("devolucion aceptada");
+  }
+
+  // ─── Polling Andreani: corre al montar y cada 30 min ─────────────────────────
   useEffect(()=>{
     if(!reclamos.length) return;
 
@@ -2257,46 +2312,65 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
     async function checkAndreani() {
       const alertas = [];
-      const actuales = reclamosRef.current; // frescos para comparar estado actual
+      const actuales = reclamosRef.current;
 
       await Promise.all(conTracking.map(async (rOrig) => {
-        // Usar datos frescos del snapshot para el estado actual
         const r = actuales.find(x=>x._docId===rOrig._docId) || rOrig;
         if(["Resuelto","Rechazado"].includes(r.estado)) return;
 
         // 1. Tracking de devolución (cliente → nosotros)
         if(r.trackingDevolucion?.trim()) {
-          try {
-            const res = await fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(r.trackingDevolucion.trim())}`);
-            if(res.ok) {
-              const d = await res.json();
-              const ea = d?.estado || d?.estadoActual || d?.ultimoEvento?.estado || "";
-              // Alerta si está en sucursal (listo para retirar)
-              if(esEnSucursal(ea)) alertas.push({docId:r._docId, orderNum:r.orderNum, tracking:r.trackingDevolucion.trim(), estado:ea, nombre:r.clienteNombre});
-              // Auto-update si corresponde avanzar el estado
-              const nuevo = mapAndreaniEstado(ea, "devolucion");
-              if(nuevo && nuevo !== r.estado && ESTADOS_R.indexOf(nuevo) > ESTADOS_R.indexOf(r.estado)) {
-                await updateEstado(r._docId, nuevo);
-                toast(`Reclamo #${r.orderNum} actualizado a "${nuevo}" (Andreani)`, "success");
-              }
+          const { ok, estado: ea } = await fetchAndreaniTracking(r.trackingDevolucion.trim());
+          if(ok && ea) {
+            // Alerta si llegó a sucursal (listo para que lo retiremos)
+            if(esEnSucursal(ea)) {
+              alertas.push({
+                docId: r._docId, orderNum: r.orderNum,
+                tracking: r.trackingDevolucion.trim(),
+                estado: ea, nombre: r.clienteNombre,
+                tipo: "devolucion", msg: `📦 Devolución de ${r.clienteNombre||r.orderNum} lista para retirar`,
+              });
             }
-          } catch(_) {}
+            // Alerta si ya fue retirado (nosotros lo fuimos a buscar)
+            if(esFueRetirado(ea)) {
+              alertas.push({
+                docId: r._docId, orderNum: r.orderNum,
+                tracking: r.trackingDevolucion.trim(),
+                estado: ea, nombre: r.clienteNombre,
+                tipo: "devolucion_ok", msg: `✅ Devolución de ${r.clienteNombre||r.orderNum} recibida`,
+              });
+            }
+            const nuevo = mapAndreaniEstado(ea, "devolucion");
+            if(nuevo && nuevo !== r.estado && ESTADOS_R.indexOf(nuevo) > ESTADOS_R.indexOf(r.estado)) {
+              try {
+                await updateEstado(r._docId, nuevo);
+                toast(`📦 Reclamo #${r.orderNum} → "${nuevo}" (Andreani)`, "success");
+              } catch(_) {}
+            }
+          }
         }
 
         // 2. Tracking de cambio (nosotros → cliente)
         if(r.trackingCambio?.trim()) {
-          try {
-            const res = await fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(r.trackingCambio.trim())}`);
-            if(res.ok) {
-              const d = await res.json();
-              const ea = d?.estado || d?.estadoActual || d?.ultimoEvento?.estado || "";
-              const nuevo = mapAndreaniEstado(ea, "cambio");
-              if(nuevo && nuevo !== r.estado && ESTADOS_R.indexOf(nuevo) > ESTADOS_R.indexOf(r.estado)) {
-                await updateEstado(r._docId, nuevo);
-                toast(`Reclamo #${r.orderNum} actualizado a "${nuevo}" (Andreani)`, "success");
-              }
+          const { ok, estado: ea } = await fetchAndreaniTracking(r.trackingCambio.trim());
+          if(ok && ea) {
+            // Alerta si llegó a sucursal HOP para que lo retire el cliente
+            if(esEnSucursal(ea)) {
+              alertas.push({
+                docId: r._docId, orderNum: r.orderNum,
+                tracking: r.trackingCambio.trim(),
+                estado: ea, nombre: r.clienteNombre,
+                tipo: "cambio_sucursal", msg: `🏪 Cambio de ${r.clienteNombre||r.orderNum} listo para retirar en sucursal`,
+              });
             }
-          } catch(_) {}
+            const nuevo = mapAndreaniEstado(ea, "cambio");
+            if(nuevo && nuevo !== r.estado && ESTADOS_R.indexOf(nuevo) > ESTADOS_R.indexOf(r.estado)) {
+              try {
+                await updateEstado(r._docId, nuevo);
+                toast(`🔄 Reclamo #${r.orderNum} → "${nuevo}" (Andreani)`, "success");
+              } catch(_) {}
+            }
+          }
         }
       }));
 
@@ -2310,22 +2384,18 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     return () => clearInterval(interval);
   }, [reclamos.length]);
 
-  function esEnSucursal(estado) {
-    if(!estado) return false;
-    const e = estado.toLowerCase();
-    return e.includes("sucursal") || e.includes("retiro") || e.includes("disponible") || e.includes("listo") || e.includes("en agencia");
-  }
-
   function dispararNotificacionBrowser(alertas) {
     if(!("Notification" in window)) return;
-    const msg = alertas.length === 1
-      ? `📦 Paquete listo para retirar - Tracking ${alertas[0].tracking} (Pedido #${alertas[0].orderNum})`
-      : `📦 ${alertas.length} paquetes listos para retirar en sucursal`;
+    const urgentes = alertas.filter(a => a.tipo === "devolucion" || a.tipo === "cambio_sucursal");
+    if(!urgentes.length) return;
+    const msg = urgentes.length === 1
+      ? urgentes[0].msg
+      : `📦 ${urgentes.length} paquetes listos para retirar en sucursal`;
     if(Notification.permission === "granted") {
-      new Notification("Growith - Andreani 📦", { body: msg, icon: "/favicon.ico" });
+      new Notification("Growith - Andreani", { body: msg, icon: "/favicon.ico" });
     } else if(Notification.permission !== "denied") {
       Notification.requestPermission().then(p => {
-        if(p === "granted") new Notification("Growith - Andreani 📦", { body: msg, icon: "/favicon.ico" });
+        if(p === "granted") new Notification("Growith - Andreani", { body: msg, icon: "/favicon.ico" });
       });
     }
   }
@@ -2506,52 +2576,58 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         </div>
 
         {/* BANNER ANDREANI - Paquetes listos para retirar */}
-        {andreaniAlertas.length > 0 && (
-          <div style={{
-            background: "linear-gradient(135deg, #052e16 0%, #0a2a1a 100%)",
-            border: `1.5px solid ${T.green}55`,
-            borderRadius: 12,
-            padding: "14px 18px",
-            margin: "16px 0 4px",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 14,
-            animation: "growith-fadeIn 0.4s ease",
-            boxShadow: `0 0 24px ${T.green}22`,
-          }}>
-            <div style={{fontSize:28,flexShrink:0}}>📦</div>
-            <div style={{flex:1}}>
-              <div style={{fontWeight:700,fontSize:14,color:T.green,marginBottom:4}}>
-                {andreaniAlertas.length === 1
-                  ? "¡Paquete listo para retirar en sucursal!"
-                  : `¡${andreaniAlertas.length} paquetes listos para retirar!`}
-              </div>
-              {andreaniAlertas.map((a,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
-                  <span style={{fontSize:12,color:T.textMd}}>
-                    Pedido <span style={{color:T.accent,fontWeight:600}}>#{a.orderNum}</span>
-                    {a.nombre ? ` · ${a.nombre}` : ""}
-                    {" · "}<span style={{color:T.green,fontWeight:600}}>{a.tracking}</span>
-                  </span>
-                  <a
-                    href={`https://www.andreani.com/#!/informacionEnvio/${a.tracking}`}
-                    target="_blank" rel="noopener noreferrer"
-                    style={{fontSize:11,color:T.blue,borderBottom:`1px solid ${T.blue}44`,textDecoration:"none"}}
-                  >Ver en Andreani →</a>
-                  <button
-                    onClick={()=>{ setActiveReclamo(a.docId); setView("reclamos"); }}
-                    style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.surface,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer"}}
-                  >Ver reclamo</button>
+        {andreaniAlertas.length > 0 && (()=>{
+          const retiros = andreaniAlertas.filter(a=>a.tipo==="devolucion"||a.tipo==="cambio_sucursal");
+          const recibidos = andreaniAlertas.filter(a=>a.tipo==="devolucion_ok");
+          return (
+          <div style={{display:"flex",flexDirection:"column",gap:8,margin:"16px 0 4px"}}>
+            {retiros.length>0&&(
+              <div style={{background:"linear-gradient(135deg,#052e16,#0a2a1a)",border:`1.5px solid ${T.green}55`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease",boxShadow:`0 0 24px ${T.green}22`}}>
+                <div style={{fontSize:26,flexShrink:0}}>🏪</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:14,color:T.green,marginBottom:6}}>
+                    {retiros.length===1?"¡Paquete listo para retirar en sucursal!":
+                     `¡${retiros.length} paquetes listos para retirar!`}
+                  </div>
+                  {retiros.map((a,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:i>0?6:0,flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,padding:"2px 7px",borderRadius:10,background:a.tipo==="cambio_sucursal"?"#3b82f620":"#22c55e20",color:a.tipo==="cambio_sucursal"?"#3b82f6":"#22c55e",fontWeight:600}}>
+                        {a.tipo==="cambio_sucursal"?"CAMBIO":"DEVOLUCIÓN"}
+                      </span>
+                      <span style={{fontSize:12,color:T.textMd}}>
+                        Pedido <span style={{color:T.accent,fontWeight:600}}>#{a.orderNum}</span>
+                        {a.nombre?` · ${a.nombre}`:""}
+                        {" · "}<code style={{fontSize:11,color:T.green}}>{a.tracking}</code>
+                      </span>
+                      <span style={{fontSize:11,color:T.textSm,fontStyle:"italic"}}>{a.estado}</span>
+                      <a href={`https://www.andreani.com/#!/informacionEnvio/${a.tracking}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.blue,textDecoration:"none",borderBottom:`1px solid ${T.blue}44`}}>Ver en Andreani →</a>
+                      <button onClick={()=>{setActiveReclamo(a.docId);setView("reclamos");}} style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.surface,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver reclamo</button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <button
-              onClick={()=>setAndreaniAlertas([])}
-              style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:18,padding:0,flexShrink:0}}
-              title="Cerrar"
-            >✕</button>
+                <button onClick={()=>setAndreaniAlertas(p=>p.filter(a=>a.tipo!=="devolucion"&&a.tipo!=="cambio_sucursal"))} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:18,padding:0,flexShrink:0}}>✕</button>
+              </div>
+            )}
+            {recibidos.length>0&&(
+              <div style={{background:"linear-gradient(135deg,#0a1628,#0d1f35)",border:`1.5px solid #3b82f655`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease"}}>
+                <div style={{fontSize:26,flexShrink:0}}>✅</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:14,color:"#3b82f6",marginBottom:6}}>
+                    {recibidos.length===1?"Devolución recibida y registrada":"Devoluciones recibidas"}
+                  </div>
+                  {recibidos.map((a,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:i>0?6:0,flexWrap:"wrap"}}>
+                      <span style={{fontSize:12,color:T.textMd}}>Pedido <span style={{color:T.accent,fontWeight:600}}>#{a.orderNum}</span>{a.nombre?` · ${a.nombre}`:""}</span>
+                      <button onClick={()=>{setActiveReclamo(a.docId);setView("reclamos");}} style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.surface,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver reclamo</button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={()=>setAndreaniAlertas(p=>p.filter(a=>a.tipo!=="devolucion_ok"))} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:18,padding:0,flexShrink:0}}>✕</button>
+              </div>
+            )}
           </div>
-        )}
+          );
+        })()}
         {/* === RECLAMOS TAB === */}
         {view==="reclamos"&&(
           <div>
