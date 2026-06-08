@@ -829,6 +829,78 @@ export default async function handler(req, res) {
       return res.json({ ok:true });
     }
 
+    // ── ADMIN: eliminar entrega por índice ─────────────────────────────────────
+    if (action === "deleteDeliverable") {
+      const { tareaId, deliverableIndex } = body;
+      const ref = db.collection("tareas").doc(tareaId);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
+      const prevDels = snap.data().deliverables || [];
+      const idx = Number(deliverableIndex);
+      if (isNaN(idx) || idx < 0 || idx >= prevDels.length) return res.status(400).json({ error:"Índice inválido" });
+      const deleted = prevDels[idx];
+      const newDels = prevDels.filter((_,i) => i !== idx);
+      const wasLast = idx === prevDels.length - 1;
+      const upd = { deliverables: newDels, updatedAt: now };
+      const act = { tipo:"admin", autor:"manager", fecha:now, detalle:`Entrega eliminada: ${deleted.label||`v${idx+1}`}` };
+      upd.activity = [...(snap.data().activity||[]), act];
+      // Si era la última entrega y el estado era entregado/revision, revertir
+      if (wasLast && ["entregado","revision","aprobado"].includes(snap.data().estado)) {
+        upd.estado = newDels.length > 0 ? "entregado" : "en_proceso";
+        upd.feedbackActual = null;
+        upd.progresoLabel = newDels.length > 0 ? "Listo para entregar" : "";
+      }
+      await ref.update(upd);
+      return res.json({ ok:true, deliverables:newDels, estado:upd.estado||snap.data().estado });
+    }
+
+    // ── ADMIN: revertir estado al paso anterior ────────────────────────────────
+    if (action === "revertEstado") {
+      const { tareaId } = body;
+      const ref = db.collection("tareas").doc(tareaId);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
+      const cur = snap.data().estado;
+      const prevMap = { aprobado:"entregado", revision:"en_proceso", entregado:"en_proceso", en_proceso:"pendiente", bloqueada:"en_proceso" };
+      const newEstado = prevMap[cur];
+      if (!newEstado) return res.status(400).json({ error:"No se puede revertir desde este estado" });
+      const upd = { estado:newEstado, updatedAt:now, feedbackActual:null };
+      if (!["entregado","aprobado"].includes(newEstado)) upd.progresoLabel = "";
+      const act = { tipo:"admin", autor:"manager", fecha:now, detalle:`Estado revertido: ${cur} → ${newEstado}` };
+      upd.activity = [...(snap.data().activity||[]), act];
+      await ref.update(upd);
+      return res.json({ ok:true, estado:newEstado });
+    }
+
+    // ── COLABORADOR PÚBLICO: eliminar su última entrega ────────────────────────
+    if (action === "publicDeleteLastDeliverable") {
+      const { tareaId } = body;
+      if (!token || !tareaId) return res.status(400).json({ error:"Faltan parámetros" });
+      const cSnap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (cSnap.empty) return res.status(403).json({ error:"Token inválido" });
+      const colab = cSnap.docs[0].data();
+      const ref = db.collection("tareas").doc(tareaId);
+      const t = await ref.get();
+      if (!t.exists) return res.status(404).json({ error:"Tarea no encontrada" });
+      const emails = t.data().asignadosEmails || [t.data().asignadoEmail];
+      if (!emails.includes(colab.email)) return res.status(403).json({ error:"No autorizado" });
+      if (t.data().estado === "aprobado") return res.status(400).json({ error:"La tarea ya fue aprobada. Pedile al equipo que revierta el estado." });
+      const prevDels = t.data().deliverables || [];
+      if (prevDels.length === 0) return res.status(400).json({ error:"No hay entregas para eliminar" });
+      const deleted = prevDels[prevDels.length - 1];
+      const newDels = prevDels.slice(0, -1);
+      const upd = { deliverables:newDels, updatedAt:now };
+      const act = { tipo:"progreso", autor:colab.nombre, fecha:now, detalle:`Eliminó entrega: ${deleted.label||`v${prevDels.length}`}` };
+      upd.activity = [...(t.data().activity||[]), act];
+      if (["entregado","revision"].includes(t.data().estado)) {
+        upd.estado = newDels.length > 0 ? "entregado" : "en_proceso";
+        upd.feedbackActual = null;
+        upd.progresoLabel = newDels.length > 0 ? "Listo para entregar" : "";
+      }
+      await ref.update(upd);
+      return res.json({ ok:true, deliverables:newDels, estado:upd.estado||t.data().estado });
+    }
+
     if (action === "duplicateTarea") {
       const { tareaId } = body;
       const ref = db.collection("tareas").doc(tareaId);

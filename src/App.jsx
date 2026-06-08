@@ -9225,6 +9225,25 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     catch(e){ loadData(); }
   }
 
+  async function deleteDeliverable(tareaId, deliverableIndex) {
+    const del = tareas.find(t=>t._id===tareaId)?.deliverables?.[deliverableIndex];
+    if (!await appConfirm(`¿Eliminar la entrega "${del?.label||`v${deliverableIndex+1}`}"?\nEsto revertirá el estado de la tarea.`, {danger:true, okLabel:"Eliminar entrega"})) return;
+    const d = await tareasApi({action:"deleteDeliverable", tareaId, deliverableIndex});
+    setDatos(prev=>({...prev, tareas:prev.tareas.map(t=>t._id===tareaId?{...t, deliverables:d.deliverables, estado:d.estado, feedbackActual:null}:t)}));
+    if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev, deliverables:d.deliverables, estado:d.estado, feedbackActual:null}));
+    toast("Entrega eliminada","warning");
+  }
+
+  async function revertEstadoAdmin(tareaId) {
+    const t = tareas.find(x=>x._id===tareaId);
+    const estadoLabels = {aprobado:"Aprobado",revision:"En revisión",entregado:"Entregado",en_proceso:"En proceso",pendiente:"Pendiente",bloqueada:"Bloqueada"};
+    if (!await appConfirm(`¿Revertir el estado actual "${estadoLabels[t?.estado]||t?.estado}" al paso anterior?`, {okLabel:"Sí, revertir"})) return;
+    const d = await tareasApi({action:"revertEstado", tareaId});
+    setDatos(prev=>({...prev, tareas:prev.tareas.map(t=>t._id===tareaId?{...t, estado:d.estado, feedbackActual:null, progresoLabel:""}:t)}));
+    if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev, estado:d.estado, feedbackActual:null, progresoLabel:""}));
+    toast("Estado revertido ↩","warning");
+  }
+
   // Helper para renderizar el detalle expandido de una tarea (función, no componente React)
   function renderDetalle(t) {
     const colab = colaboradores.find(c=>c.email===t.asignadoEmail);
@@ -9339,13 +9358,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {del.feedbackRecibido}
                   </div>
                 )}
-                {i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&(
-                  <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap",alignItems:"center"}}>
+                  {i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
                     <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px",background:T.green}}>✓ Aprobar</AsyncButton>
                     <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>🔁 Pedir cambios</button>
                     {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
-                  </div>
-                )}
+                  </>}
+                  <AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar entrega</AsyncButton>
+                </div>
               </div>
             ))}
           </div>
@@ -9444,6 +9464,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             </a>}
             {colab&&<button onClick={()=>copyLink(colab.token)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>📋 Link colaborador</button>}
             <AsyncButton onClick={()=>duplicateTarea(t._id)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>📋 Duplicar</AsyncButton>
+            {t.estado!=="pendiente"&&<AsyncButton onClick={()=>revertEstadoAdmin(t._id)} style={{fontSize:11,padding:"5px 11px",borderRadius:7,background:"#f59e0b10",color:"#d97706",border:"1px solid #f59e0b35",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>↩ Revertir estado</AsyncButton>}
           </div>
           <div style={{display:"flex",gap:6}}>
             <button onClick={()=>openEditModal(t)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>✏️ Editar</button>
@@ -11583,21 +11604,38 @@ function ColaboradorPublicView({T, token}) {
                   {hasDels&&(
                     <div style={{marginBottom:14}}>
                       <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Historial de entregas</div>
-                      {(t.deliverables||[]).map((del,i)=>(
-                        <div key={i} style={{background:T.surface,borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${T.borderL}`}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:"#6366f1",fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
-                            <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{del.fecha?fmtDate(del.fecha):""}</span>
-                          </div>
-                          {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{del.nota}</div>}
-                          {del.feedbackRecibido&&(
-                            <div style={{marginTop:8,padding:"8px 10px",background:"#ef444412",borderLeft:"3px solid #ef4444",borderRadius:4,fontSize:12,color:T.text}}>
-                              <div style={{fontSize:10,color:"#ef4444",fontWeight:600,marginBottom:2}}>Feedback recibido:</div>
-                              {del.feedbackRecibido}
+                      {(t.deliverables||[]).map((del,i)=>{
+                        const isLast = i===(t.deliverables||[]).length-1;
+                        const canDelete = isLast && !isAprobado;
+                        return (
+                          <div key={i} style={{background:T.surface,borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${canDelete?"#ef444430":T.borderL}`,position:"relative"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:"#6366f1",fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
+                              <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{del.fecha?fmtDate(del.fecha):""}</span>
                             </div>
-                          )}
-                        </div>
-                      ))}
+                            {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{del.nota}</div>}
+                            {del.feedbackRecibido&&(
+                              <div style={{marginTop:8,padding:"8px 10px",background:"#ef444412",borderLeft:"3px solid #ef4444",borderRadius:4,fontSize:12,color:T.text}}>
+                                <div style={{fontSize:10,color:"#ef4444",fontWeight:600,marginBottom:2}}>Feedback recibido:</div>
+                                {del.feedbackRecibido}
+                              </div>
+                            )}
+                            {canDelete&&(
+                              <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.borderL}`}}>
+                                <AsyncButton onClick={async()=>{
+                                  if(!await appConfirm(`¿Eliminar esta entrega "${del.label||`v${i+1}`}"?\nEl estado de la tarea va a volver atrás.`,{danger:true,okLabel:"Sí, eliminar"})) return;
+                                  const d=await publicApi({action:"publicDeleteLastDeliverable",tareaId:t._id});
+                                  setData(prev=>({...prev,tareas:prev.tareas.map(x=>x._id===t._id?{...x,deliverables:d.deliverables,estado:d.estado,feedbackActual:null}:x)}));
+                                  setEntregaEnviada(prev=>({...prev,[t._id]:null}));
+                                  toast("Entrega eliminada ↩","warning");
+                                }} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                  🗑️ Cometí un error — Eliminar esta entrega
+                                </AsyncButton>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   {/* ── SELECTOR DE PROGRESO ── */}
