@@ -4859,6 +4859,21 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               })}
             </div>
 
+            {/* Fecha de envío programado — opcional */}
+            <div style={{background:`${T.accentSolid}08`,border:`1px dashed ${T.accentSolid}40`,borderRadius:10,padding:"12px 14px"}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.accent,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>
+                📅 Programar fecha de envío <span style={{fontWeight:400,color:T.textSm,textTransform:"none",letterSpacing:0}}>(opcional)</span>
+              </label>
+              <input type="date" value={form.fechaEnvioProgr||""} style={{...iS,fontSize:13,borderColor:form.fechaEnvioProgr?T.accentSolid+"60":undefined}}
+                onChange={e=>setForm(f=>({...f,fechaEnvioProgr:e.target.value}))}/>
+              {form.fechaEnvioProgr&&(
+                <div style={{fontSize:11,color:T.accent,marginTop:5,display:"flex",alignItems:"center",gap:5}}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.8 19.79 19.79 0 01.22 2.2 2 2 0 012.18 0h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.27 8a16 16 0 006.72 6.72l1.38-1.18a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
+                  Te mandamos un email el {new Date(form.fechaEnvioProgr+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})} a las 9AM
+                </div>
+              )}
+            </div>
+
             {/* Botones */}
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:8,borderTop:"1px solid "+T.borderL}}>
               <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
