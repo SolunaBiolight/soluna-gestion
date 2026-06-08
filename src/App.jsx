@@ -8797,6 +8797,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [commentText, setCommentText] = useState({});
   const [feedbackText, setFeedbackText] = useState({});
   const [showFeedback, setShowFeedback] = useState({});
+  // Edición inline de entregas: { "tareaId-idx": {link,label,nota} }
+  const [editDeliverable, setEditDeliverable] = useState({});
   // Guías ¿Cómo funciona?
   const [showGuia, setShowGuia] = useState(false);
   const [showGuiaEquipo, setShowGuiaEquipo] = useState(false);
@@ -9345,29 +9347,62 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         {hasDels&&(
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>📦 Entregas ({(t.deliverables||[]).length})</div>
-            {(t.deliverables||[]).map((del,i)=>(
-              <div key={i} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"10px 12px",marginBottom:8}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:del.nota?4:0}}>
-                  <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:T.accent,fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
-                  <span style={{fontSize:10,color:T.textSm}}>{fmtDate(del.fecha)}</span>
-                </div>
-                {del.nota&&<div style={{fontSize:12,color:T.textMd,marginBottom:6}}>{del.nota}</div>}
-                {del.feedbackRecibido&&(
-                  <div style={{marginTop:6,padding:"7px 10px",background:T.red+"10",borderLeft:`2px solid ${T.red}`,borderRadius:4,fontSize:12,color:T.text}}>
-                    <span style={{fontSize:10,color:T.red,fontWeight:600,display:"block",marginBottom:2}}>Feedback recibido:</span>
-                    {del.feedbackRecibido}
+            {(t.deliverables||[]).map((del,i)=>{
+              const edKey=`${t._id}-${i}`;
+              const isEditing=!!editDeliverable[edKey];
+              const edData=editDeliverable[edKey]||{};
+              return (
+              <div key={i} style={{background:T.surface,border:`1px solid ${isEditing?T.accent+"60":T.borderL}`,borderRadius:8,padding:"10px 12px",marginBottom:8}}>
+                {isEditing?(
+                  <div className="gh-accordion">
+                    <div style={{fontSize:11,fontWeight:700,color:T.accent,marginBottom:8}}>✏️ Editando entrega {del.label||`v${i+1}`}</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <input value={edData.label??del.label??""} onChange={e=>setEditDeliverable(p=>({...p,[edKey]:{...edData,label:e.target.value}}))}
+                        placeholder="Etiqueta (ej: v2, Final, Con correcciones...)" style={{...iS,fontSize:12}}/>
+                      <input value={edData.link??del.link??""} onChange={e=>setEditDeliverable(p=>({...p,[edKey]:{...edData,link:e.target.value}}))}
+                        placeholder="Link de la entrega (Drive, Figma, WeTransfer...)" style={{...iS,fontSize:12}}/>
+                      <textarea value={edData.nota??del.nota??""} onChange={e=>setEditDeliverable(p=>({...p,[edKey]:{...edData,nota:e.target.value}}))}
+                        placeholder="Notas (opcional)" style={{...iS,fontSize:12,minHeight:48,resize:"vertical"}}/>
+                    </div>
+                    <div style={{display:"flex",gap:6,marginTop:8}}>
+                      <AsyncButton onClick={async()=>{
+                        const d=await tareasApi({action:"updateDeliverable",tareaId:t._id,deliverableIndex:i,link:edData.link??del.link,label:edData.label??del.label,nota:edData.nota??del.nota??""});
+                        setDatos(prev=>({...prev,tareas:prev.tareas.map(x=>x._id===t._id?{...x,deliverables:d.deliverables}:x)}));
+                        if(kanbanSelected?._id===t._id) setKanbanSelected(prev=>({...prev,deliverables:d.deliverables}));
+                        setEditDeliverable(p=>{const n={...p};delete n[edKey];return n;});
+                        toast("Entrega actualizada ✓","success");
+                      }} style={{...BtnPrimary(T),fontSize:11,padding:"5px 14px"}}>Guardar cambios</AsyncButton>
+                      <button onClick={()=>setEditDeliverable(p=>{const n={...p};delete n[edKey];return n;})}
+                        style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>Cancelar</button>
+                    </div>
                   </div>
+                ):(
+                  <>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:del.nota?4:0}}>
+                      <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:T.accent,fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
+                      <span style={{fontSize:10,color:T.textSm}}>{fmtDate(del.fecha)}{del.editedAt?" ✏️":""}</span>
+                    </div>
+                    {del.nota&&<div style={{fontSize:12,color:T.textMd,marginBottom:6}}>{del.nota}</div>}
+                    {del.feedbackRecibido&&(
+                      <div style={{marginTop:6,padding:"7px 10px",background:T.red+"10",borderLeft:`2px solid ${T.red}`,borderRadius:4,fontSize:12,color:T.text}}>
+                        <span style={{fontSize:10,color:T.red,fontWeight:600,display:"block",marginBottom:2}}>Feedback recibido:</span>
+                        {del.feedbackRecibido}
+                      </div>
+                    )}
+                    <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap",alignItems:"center"}}>
+                      {i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
+                        <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px",background:T.green}}>✓ Aprobar</AsyncButton>
+                        <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>🔁 Pedir cambios</button>
+                        {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
+                      </>}
+                      {t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
+                      <AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>
+                    </div>
+                  </>
                 )}
-                <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap",alignItems:"center"}}>
-                  {i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
-                    <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px",background:T.green}}>✓ Aprobar</AsyncButton>
-                    <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>🔁 Pedir cambios</button>
-                    {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
-                  </>}
-                  <AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar entrega</AsyncButton>
-                </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {/* Comentarios */}
@@ -11228,6 +11263,8 @@ function ColaboradorPublicView({T, token}) {
   const [showProgress, setShowProgress] = useState({});
   const [showBloqueo, setShowBloqueo] = useState({});
   const [bloqueoMotivo, setBloqueoMotivo] = useState({});
+  const [editingEntrega, setEditingEntrega] = useState(null); // tareaId cuando está editando su última entrega
+  const [editEntregaData, setEditEntregaData] = useState({link:"",label:"",nota:""});
   const [bannerClosed, setBannerClosed] = useState(()=>{
     try{return localStorage.getItem(`growith_colab_banner_${token}`)==="1";}catch(e){return false;}
   });
@@ -11606,32 +11643,77 @@ function ColaboradorPublicView({T, token}) {
                       <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Historial de entregas</div>
                       {(t.deliverables||[]).map((del,i)=>{
                         const isLast = i===(t.deliverables||[]).length-1;
-                        const canDelete = isLast && !isAprobado;
+                        const canEdit = isLast && !isAprobado;
+                        const isEditing = editingEntrega===t._id && isLast;
                         return (
-                          <div key={i} style={{background:T.surface,borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${canDelete?"#ef444430":T.borderL}`,position:"relative"}}>
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:"#6366f1",fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
-                              <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{del.fecha?fmtDate(del.fecha):""}</span>
-                            </div>
-                            {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{del.nota}</div>}
-                            {del.feedbackRecibido&&(
-                              <div style={{marginTop:8,padding:"8px 10px",background:"#ef444412",borderLeft:"3px solid #ef4444",borderRadius:4,fontSize:12,color:T.text}}>
-                                <div style={{fontSize:10,color:"#ef4444",fontWeight:600,marginBottom:2}}>Feedback recibido:</div>
-                                {del.feedbackRecibido}
+                          <div key={i} style={{background:T.surface,borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${isEditing?"#6366f150":T.borderL}`}}>
+                            {isEditing?(
+                              <div className="gh-accordion">
+                                <div style={{fontSize:12,fontWeight:700,color:"#6366f1",marginBottom:10}}>✏️ Editar entrega {del.label||`v${i+1}`}</div>
+                                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                                  <div>
+                                    <div style={{fontSize:11,color:T.textSm,marginBottom:3}}>Etiqueta</div>
+                                    <input value={editEntregaData.label} onChange={e=>setEditEntregaData(p=>({...p,label:e.target.value}))}
+                                      placeholder="Ej: v2, Final, Con correcciones..." style={{...iS,fontSize:13,width:"100%"}}/>
+                                  </div>
+                                  <div>
+                                    <div style={{fontSize:11,color:T.textSm,marginBottom:3}}>Link de la entrega</div>
+                                    <input value={editEntregaData.link} onChange={e=>setEditEntregaData(p=>({...p,link:e.target.value}))}
+                                      placeholder="Drive, Figma, WeTransfer..." style={{...iS,fontSize:13,width:"100%"}}/>
+                                  </div>
+                                  <div>
+                                    <div style={{fontSize:11,color:T.textSm,marginBottom:3}}>Notas (opcional)</div>
+                                    <textarea value={editEntregaData.nota} onChange={e=>setEditEntregaData(p=>({...p,nota:e.target.value}))}
+                                      placeholder="Aclaraciones para el equipo..." style={{...iS,fontSize:12,width:"100%",minHeight:50,resize:"none"}}/>
+                                  </div>
+                                </div>
+                                <div style={{display:"flex",gap:7,marginTop:10}}>
+                                  <AsyncButton onClick={async()=>{
+                                    if(!editEntregaData.link.trim()) return appAlert("El link de la entrega es obligatorio");
+                                    const d=await publicApi({action:"publicUpdateLastDeliverable",tareaId:t._id,...editEntregaData});
+                                    setData(prev=>({...prev,tareas:prev.tareas.map(x=>x._id===t._id?{...x,deliverables:d.deliverables}:x)}));
+                                    setEditingEntrega(null);
+                                    toast("Entrega actualizada ✓","success");
+                                  }} style={{flex:1,padding:"10px",borderRadius:9,background:"#6366f1",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700,fontSize:13,textAlign:"center"}}>
+                                    Guardar cambios
+                                  </AsyncButton>
+                                  <button onClick={()=>setEditingEntrega(null)}
+                                    style={{padding:"10px 14px",borderRadius:9,background:T.surface,color:T.textMd,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13}}>
+                                    Cancelar
+                                  </button>
+                                </div>
                               </div>
-                            )}
-                            {canDelete&&(
-                              <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.borderL}`}}>
-                                <AsyncButton onClick={async()=>{
-                                  if(!await appConfirm(`¿Eliminar esta entrega "${del.label||`v${i+1}`}"?\nEl estado de la tarea va a volver atrás.`,{danger:true,okLabel:"Sí, eliminar"})) return;
-                                  const d=await publicApi({action:"publicDeleteLastDeliverable",tareaId:t._id});
-                                  setData(prev=>({...prev,tareas:prev.tareas.map(x=>x._id===t._id?{...x,deliverables:d.deliverables,estado:d.estado,feedbackActual:null}:x)}));
-                                  setEntregaEnviada(prev=>({...prev,[t._id]:null}));
-                                  toast("Entrega eliminada ↩","warning");
-                                }} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                  🗑️ Cometí un error — Eliminar esta entrega
-                                </AsyncButton>
-                              </div>
+                            ):(
+                              <>
+                                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                  <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:"#6366f1",fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
+                                  <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{del.fecha?fmtDate(del.fecha):""}{del.editedAt?" ✏️":""}</span>
+                                </div>
+                                {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{del.nota}</div>}
+                                {del.feedbackRecibido&&(
+                                  <div style={{marginTop:8,padding:"8px 10px",background:"#ef444412",borderLeft:"3px solid #ef4444",borderRadius:4,fontSize:12,color:T.text}}>
+                                    <div style={{fontSize:10,color:"#ef4444",fontWeight:600,marginBottom:2}}>Feedback recibido:</div>
+                                    {del.feedbackRecibido}
+                                  </div>
+                                )}
+                                {canEdit&&(
+                                  <div style={{display:"flex",gap:7,marginTop:8,paddingTop:8,borderTop:`1px solid ${T.borderL}`}}>
+                                    <button onClick={()=>{setEditingEntrega(t._id);setEditEntregaData({link:del.link||"",label:del.label||"",nota:del.nota||""});}}
+                                      style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:"#6366f110",color:"#6366f1",border:"1px solid #6366f130",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
+                                      ✏️ Editar esta entrega
+                                    </button>
+                                    <AsyncButton onClick={async()=>{
+                                      if(!await appConfirm(`¿Eliminar esta entrega "${del.label||`v${i+1}`}"?\nEl estado va a volver atrás.`,{danger:true,okLabel:"Sí, eliminar"})) return;
+                                      const d=await publicApi({action:"publicDeleteLastDeliverable",tareaId:t._id});
+                                      setData(prev=>({...prev,tareas:prev.tareas.map(x=>x._id===t._id?{...x,deliverables:d.deliverables,estado:d.estado,feedbackActual:null}:x)}));
+                                      setEntregaEnviada(prev=>({...prev,[t._id]:null}));
+                                      toast("Entrega eliminada ↩","warning");
+                                    }} style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                      🗑️ Eliminar
+                                    </AsyncButton>
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         );

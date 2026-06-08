@@ -829,6 +829,44 @@ export default async function handler(req, res) {
       return res.json({ ok:true });
     }
 
+    // ── ADMIN: editar una entrega por índice ──────────────────────────────────
+    if (action === "updateDeliverable") {
+      const { tareaId, deliverableIndex, link, label, nota } = body;
+      const ref = db.collection("tareas").doc(tareaId);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
+      if (snap.data().estado === "aprobado") return res.status(400).json({ error:"No se puede editar una entrega aprobada" });
+      const prevDels = snap.data().deliverables || [];
+      const idx = Number(deliverableIndex);
+      if (isNaN(idx) || idx < 0 || idx >= prevDels.length) return res.status(400).json({ error:"Índice inválido" });
+      const newDels = prevDels.map((d,i) => i===idx ? { ...d, ...(link!==undefined&&{link:link.trim()}), ...(label!==undefined&&{label:label.trim()}), ...(nota!==undefined&&{nota:nota.trim()}), editedAt:now } : d);
+      const act = { tipo:"admin", autor:"manager", fecha:now, detalle:`Entrega editada: ${newDels[idx].label||`v${idx+1}`}` };
+      await ref.update({ deliverables:newDels, updatedAt:now, activity:[...(snap.data().activity||[]), act] });
+      return res.json({ ok:true, deliverables:newDels });
+    }
+
+    // ── COLABORADOR PÚBLICO: editar su última entrega ──────────────────────────
+    if (action === "publicUpdateLastDeliverable") {
+      const { tareaId, link, label, nota } = body;
+      if (!token || !tareaId) return res.status(400).json({ error:"Faltan parámetros" });
+      const cSnap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (cSnap.empty) return res.status(403).json({ error:"Token inválido" });
+      const colab = cSnap.docs[0].data();
+      const ref = db.collection("tareas").doc(tareaId);
+      const t = await ref.get();
+      if (!t.exists) return res.status(404).json({ error:"Tarea no encontrada" });
+      const emails = t.data().asignadosEmails || [t.data().asignadoEmail];
+      if (!emails.includes(colab.email)) return res.status(403).json({ error:"No autorizado" });
+      if (t.data().estado === "aprobado") return res.status(400).json({ error:"La tarea ya fue aprobada" });
+      const prevDels = t.data().deliverables || [];
+      if (prevDels.length === 0) return res.status(400).json({ error:"No hay entregas para editar" });
+      const lastIdx = prevDels.length - 1;
+      const newDels = prevDels.map((d,i) => i===lastIdx ? { ...d, ...(link!==undefined&&{link:link.trim()}), ...(label!==undefined&&{label:label.trim()}), ...(nota!==undefined&&{nota:nota.trim()}), editedAt:now } : d);
+      const act = { tipo:"progreso", autor:colab.nombre, fecha:now, detalle:`Editó entrega: ${newDels[lastIdx].label||`v${lastIdx+1}`}` };
+      await ref.update({ deliverables:newDels, updatedAt:now, activity:[...(t.data().activity||[]), act] });
+      return res.json({ ok:true, deliverables:newDels });
+    }
+
     // ── ADMIN: eliminar entrega por índice ─────────────────────────────────────
     if (action === "deleteDeliverable") {
       const { tareaId, deliverableIndex } = body;
