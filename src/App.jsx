@@ -13427,9 +13427,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {/* Pills de canal — multi-selección */}
                     {(()=>{
                       const canales=[
-                        {id:"tiendanube", label:"TN", color:"#2D8DF2"},
+                        {id:"tiendanube", label:"TiendaNube", color:"#2D8DF2"},
                         {id:"shopify", label:"Shopify", color:"#96BF48"},
-                        {id:"mercadolibre", label:"ML", color:"#FFE600", textColor:"#1a1a1a"},
+                        {id:"mercadolibre", label:"Mercado Libre", color:"#FFE600", textColor:"#1a1a1a"},
                       ];
                       const allOff = canalesSel.length===0;
                       const toggle=(id)=>{
@@ -13626,9 +13626,16 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       }
                     };
                     return (
-                      <>
+                      <div style={{position:"relative"}}>
+                        {/* Overlay de carga — aparece cuando cambia fecha o filtro de plataforma */}
+                        {tnLoading&&(
+                          <div style={{position:"absolute",inset:0,zIndex:10,borderRadius:10,background:T.card+"cc",backdropFilter:"blur(3px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,pointerEvents:"all"}}>
+                            <Spinner size={28} color={T.accent}/>
+                            <span style={{fontSize:12,color:T.textMd,fontWeight:600}}>Actualizando ventas…</span>
+                          </div>
+                        )}
                         {/* Barra de herramientas */}
-                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap",opacity:tnLoading?0.4:1,transition:"opacity 0.2s"}}>
                           {/* Checkbox "seleccionar todas" */}
                           <div onClick={()=>{
                             const ns={...tnSelected};itemsSelectables.forEach(([id])=>ns[id]=!allSel);setTnSelected(ns);
@@ -13673,7 +13680,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             {mesStats&&<span style={{fontSize:11,color:T.textSm}}>{mesStats.totalOrdenes} órd. en {mesStats.mesLabel}</span>}
                           </div>
                         </div>
-                        <div style={{maxHeight:420,overflowY:"auto"}}>
+                        <div style={{maxHeight:420,overflowY:"auto",opacity:tnLoading?0.35:1,transition:"opacity 0.25s"}}>
                           {items.map(([id,o])=>{
                             const billed = !!o._billed;
                             const wasAnulada = !billed && !!o._was_anulada;
@@ -13741,7 +13748,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         )}
 
                         {/* Footer con total y botón Facturar */}
-                        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14,paddingTop:14,borderTop:"1px solid "+T.borderL}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14,paddingTop:14,borderTop:"1px solid "+T.borderL,opacity:tnLoading?0.4:1,transition:"opacity 0.2s"}}>
                           <div style={{flex:1,fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                             {selectedCount>0 ? (
                               <>
@@ -13764,7 +13771,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             Facturar {selectedCount>0?selectedCount:""} {selectedCount>0?"→":""}
                           </button>
                         </div>
-                      </>
+                      </div>
                     );
                   })()}
 
