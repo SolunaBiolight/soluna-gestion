@@ -217,7 +217,8 @@ async function mercadolibreOauthStart(req, res, db) {
     return res.status(500).json({ error: "No se pudo guardar el estado OAuth: " + e.message });
   }
 
-  const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${encodeURIComponent(ML_CLIENT_ID)}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}&state=${encodeURIComponent(state)}`;
+  const ML_SCOPES = "write:billing_data";
+  const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${encodeURIComponent(ML_CLIENT_ID)}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}&state=${encodeURIComponent(state)}&scope=${encodeURIComponent(ML_SCOPES)}`;
   return res.json({ url });
 }
 
