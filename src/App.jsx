@@ -4886,6 +4886,40 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     </button>
                   );
                 })}
+                {/* Chips de tipos personalizados ya agregados */}
+                {(form.contenido||[]).filter(x=>!ACTIVIDADES.includes(x.tipo)&&(x.acordados||0)>0).map(item=>(
+                  <button key={item.tipo} type="button" onClick={()=>{
+                    const lista=form.contenido||[];
+                    const ex=lista.findIndex(x=>x.tipo===item.tipo);
+                    const upd=lista.map((x,i)=>i===ex?{...x,acordados:x.acordados+1}:x);
+                    setForm(f=>({...f,contenido:upd}));
+                  }} style={{fontSize:11,padding:"5px 12px",borderRadius:99,border:`1.5px solid ${T.accentSolid}`,background:T.accentSolid+"18",color:T.accent,cursor:"pointer",fontWeight:700,transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    ✓ {item.tipo} ({item.acordados})
+                  </button>
+                ))}
+                {/* Input contenido personalizado */}
+                <form onSubmit={e=>{
+                  e.preventDefault();
+                  const tipo=customContenido.trim();
+                  if(!tipo) return;
+                  const lista=form.contenido||[];
+                  const ex=lista.findIndex(x=>x.tipo===tipo);
+                  const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo,acordados:1,entregados:0}];
+                  setForm(f=>({...f,contenido:upd}));
+                  setCustomContenido("");
+                }} style={{display:"flex",gap:4,alignItems:"center"}}>
+                  <input
+                    value={customContenido}
+                    onChange={e=>setCustomContenido(e.target.value)}
+                    placeholder="Personalizado…"
+                    style={{fontSize:11,padding:"5px 10px",borderRadius:99,border:`1.5px solid ${T.border}`,background:"transparent",color:T.text,outline:"none",width:130,fontFamily:"'Inter',system-ui,sans-serif"}}
+                  />
+                  {customContenido.trim()&&(
+                    <button type="submit" style={{fontSize:11,padding:"5px 10px",borderRadius:99,border:`1.5px solid ${T.accentSolid}`,background:T.accentSolid+"18",color:T.accent,cursor:"pointer",fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      + Agregar
+                    </button>
+                  )}
+                </form>
               </div>
               {/* Ajustar cantidad por tipo */}
               {(form.contenido||[]).filter(x=>(x.acordados||0)>0).map((item,i)=>{
