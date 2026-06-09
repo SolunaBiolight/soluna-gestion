@@ -3397,6 +3397,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     if (setTabProp) setTabProp(internalToSidebar[v] || v);
   };
   const [showGuia,setShowGuia]=useState(false);
+  const [openAlertDrop,setOpenAlertDrop]=useState(null); // "contenido"|"sinrespuesta"|"recordatorio"|null
   // Perfiles de influencers
   const [influencers,setInfluencers]=useState([]);
   const [showInfluencerForm,setShowInfluencerForm]=useState(false);
@@ -3784,23 +3785,69 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 </div>
               </div>
             ))}
-            {alertas.filter(a=>a.tipo!=="envio_programado").length>0&&(
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px"}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>⚠️ Otras alertas</div>
-                <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                  {alertas.filter(a=>a.tipo!=="envio_programado").map((a,i)=>{
-                    const colors={recordatorio:"#d97706",sinrespuesta:"#3b82f6",contenido:"#f97316"};
+            {(()=>{
+              const otros=alertas.filter(a=>a.tipo!=="envio_programado");
+              if(!otros.length) return null;
+              const chipDefs=[
+                {tipo:"contenido", icon:"📋", label:"Deben\ncontenido", color:"#f97316"},
+                {tipo:"sinrespuesta", icon:"💬", label:"Sin respuesta\n+15 días", color:"#3b82f6"},
+                {tipo:"recordatorio", icon:"🔔", label:"Recordatorios\nvencidos", color:"#d97706"},
+              ];
+              return (
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {chipDefs.map(def=>{
+                    const items=otros.filter(a=>a.tipo===def.tipo);
+                    if(!items.length) return null;
+                    const isOpen=openAlertDrop===def.tipo;
+                    const col=def.color;
                     return (
-                      <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
-                        <span style={{width:7,height:7,borderRadius:"50%",background:colors[a.tipo]||T.accent,flexShrink:0}}/>
-                        <span style={{flex:1,color:T.textMd}}><span style={{fontWeight:600,color:T.text}}>{a.canje.influencer}</span> — {a.msg}</span>
-                        <button onClick={()=>setDetail(a.canje._docId)} style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.card,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver</button>
+                      <div key={def.tipo} style={{flex:1,minWidth:0}}>
+                        {/* Chip */}
+                        <div onClick={()=>setOpenAlertDrop(isOpen?null:def.tipo)}
+                          style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,cursor:"pointer",
+                            border:`1.5px solid ${isOpen?col:col+"50"}`,
+                            background:isOpen?col+"20":col+"12",
+                            color:col,transition:"all 0.15s ease",userSelect:"none",width:"100%"}}>
+                          <span style={{fontSize:16,flexShrink:0}}>{def.icon}</span>
+                          <span style={{fontSize:22,fontWeight:800,letterSpacing:-0.5,lineHeight:1,flexShrink:0}}>{items.length}</span>
+                          <span style={{fontSize:11,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.04em",lineHeight:1.35,opacity:.8,flex:1,whiteSpace:"pre-line"}}>{def.label}</span>
+                          <span style={{fontSize:10,opacity:isOpen?.8:.5,transition:"transform 0.2s",display:"inline-block",transform:isOpen?"rotate(180deg)":"rotate(0deg)",flexShrink:0}}>▼</span>
+                        </div>
+                        {/* Dropdown */}
+                        {isOpen&&(
+                          <div style={{marginTop:4,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
+                            {items.map((a,i)=>{
+                              const initials=(a.canje.influencer||"?").split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
+                              return (
+                                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",
+                                  borderBottom:i<items.length-1?`1px solid ${T.borderL}`:"none",
+                                  cursor:"pointer",transition:"background 0.12s"}}
+                                  onMouseEnter={e=>e.currentTarget.style.background=T.card}
+                                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                                  <div style={{width:28,height:28,borderRadius:"50%",background:col+"20",color:col,
+                                    display:"flex",alignItems:"center",justifyContent:"center",
+                                    fontSize:10,fontWeight:700,flexShrink:0}}>{initials}</div>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.canje.influencer}</div>
+                                    <div style={{fontSize:11,color:T.textSm,marginTop:1}}>{a.msg}</div>
+                                  </div>
+                                  <button onClick={()=>{setDetail(a.canje._docId);setOpenAlertDrop(null);}}
+                                    style={{fontSize:11,padding:"4px 10px",borderRadius:6,background:T.card,
+                                      border:`1px solid ${T.border}`,color:T.textMd,cursor:"pointer",
+                                      fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>
+                                    Ver →
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
