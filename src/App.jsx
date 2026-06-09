@@ -718,8 +718,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
 },
     { group:"FINANZAS" },
-    {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
-      subs:[{id:"pendientes",label:"Pendientes"},{id:"metricas",label:"Métricas"},{id:"manual",label:"Factura manual"},{id:"historico",label:"Registros"},{id:"cuits",label:"CUITs"}]},
+    {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
   ];
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
   const W = collapsed ? 64 : 224;
@@ -12442,7 +12441,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [productos, setProductos] = useState([]);
   const [productMap, setProductMap] = useState({});
   const [emitting, setEmitting] = useState(false);
-  const [showArcaConfirm, setShowArcaConfirm] = useState(false);
+  const [showEmitModal, setShowEmitModal] = useState(false);
+  const [duplicatesInModal, setDuplicatesInModal] = useState(null); // array|null
   const [emitProgress, setEmitProgress] = useState({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
   // Fecha YYYY-MM-DD con la que ARCA va a registrar la factura. Default = hoy.
   // El merchant la puede cambiar libremente; el único límite es ARCA (10 días
@@ -12748,10 +12748,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const productos = [...new Set(Object.values(filtered).flatMap(o => o.items.map(i => i.nombre_original)))];
     setProductos(productos);
     setProductMap(Object.fromEntries(productos.map(p=>[p,""])));
-    toast(`${Object.keys(filtered).length} ventas listas para emitir`,"success");
-    setTimeout(()=>{
-      document.getElementById("arca-preview-ordenes")?.scrollIntoView({behavior:"smooth",block:"start"});
-    }, 100);
+    setResultados(null);
+    setDuplicatesInModal(null);
+    setShowEmitModal(true);
   }
 
   // ── Anular facturas con Nota de Crédito ──
@@ -13009,30 +13008,16 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     toast(d.total+" órdenes listas para facturar","success"); setParsing(false);
   }
 
-  async function handleEmit() {
+  async function handleEmit(skipDupCheck=false) {
     if(!ordenes||!cuitSel) return;
     const orderIds = Object.keys(ordenes);
-    const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds});
-    const duplicates = dupRes?.duplicates || [];
-    // Confirmación con CUIT emisor BIEN VISIBLE para que el user no facture
-    // con el CUIT equivocado por error.
-    const cuitActivoData = cuits.find(c => c.cuit === cuitSel);
-    const emisorInfo = cuitActivoData
-      ? `\n\n📋 CUIT EMISOR: ${formatCuit(cuitActivoData.cuit)}\n   ${cuitActivoData.razon_social || cuitActivoData.nombre_fantasia || ""}\n   PV ${String(cuitActivoData.punto_venta || 1).padStart(5,"0")} · ${cuitActivoData.arca_prod ? "Producción" : "Homologación"}`
-      : `\n\n⚠ CUIT ${cuitSel} (datos incompletos)`;
-    // Mostrar la fecha exacta con la que va ARCA a registrar las facturas.
-    // Es lo que el merchant eligió en el date picker. Sin transformaciones.
-    const fechaImputadaLabel = fechaFactura
-      ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})
-      : "(sin fecha — error)";
-    const fechaInfo = `\n\n📅 FECHA DE LAS FACTURAS: ${fechaImputadaLabel}`;
-    let msg = `¿Emitir ${orderIds.length} factura${orderIds.length>1?"s":""} en ARCA?${fechaInfo}${emisorInfo}\n\n⚠ Verificá la fecha arriba. Una vez emitidas, sólo se pueden revertir con Nota de Crédito.`;
-    if(duplicates.length > 0) {
-      const ids = duplicates.slice(0, 5).map(d => `· ${d.orden_id} (F${d.letra} ${String(d.nro).padStart(8,"0")})`).join("\n");
-      const masMsg = duplicates.length > 5 ? `\n…y ${duplicates.length - 5} más` : "";
-      msg = `⚠ Hay ${duplicates.length} órden${duplicates.length>1?"es":""} ya facturada${duplicates.length>1?"s":""} este mes:\n${ids}${masMsg}\n\n¿Querés refacturarla${duplicates.length>1?"s":""} igual? Se van a emitir nuevos comprobantes (los anteriores no se anulan).${fechaInfo}${emisorInfo}`;
+    // Chequeo de duplicados — si hay, mostrar aviso inline en el modal
+    if(!skipDupCheck) {
+      const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds});
+      const duplicates = dupRes?.duplicates || [];
+      if(duplicates.length > 0) { setDuplicatesInModal(duplicates); return; }
     }
-    if(!await appConfirm(msg,{okLabel:"Sí, emitir con esa fecha y CUIT"})) return;
+    setDuplicatesInModal(null);
     const total = orderIds.length;
     setEmitting(true);
     setEmitProgress({active:true,current:0,total,ok:0,fail:0,done:false,errors:[]});
@@ -13113,6 +13098,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   function downloadPDF(pdf) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+pdf.bytes; a.download=pdf.nombre; a.click(); }
   function downloadAllPDFs() { pdfs.forEach((pdf,i)=>setTimeout(()=>downloadPDF(pdf),i*300)); }
+  function closeModal() { setShowEmitModal(false); setOrdenes(null); setResultados(null); setPdfs([]); setArchivo(null); setDuplicatesInModal(null); }
 
   if(loading) return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
@@ -13383,6 +13369,31 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
               </div>
             )}
+
+            {/* ── Tabs internos ── */}
+            {(()=>{
+              const TABS=[
+                {id:"pendientes", label:"Pendientes"},
+                {id:"metricas",   label:"Métricas"},
+                {id:"manual",     label:"Factura manual"},
+                {id:"historico",  label:"Registros"},
+                {id:"cuits",      label:"CUITs"},
+              ];
+              const activeTab = sidebarTab||"pendientes";
+              return (
+                <div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:4,marginBottom:20,overflowX:"auto"}}>
+                  {TABS.map(t=>{
+                    const isActive = activeTab===t.id;
+                    return (
+                      <button key={t.id} onClick={()=>setSidebarTab&&setSidebarTab(t.id)}
+                        style={{padding:"7px 16px",fontSize:12,fontWeight:isActive?700:500,borderRadius:DS.r.md,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:isActive?T.surface:"transparent",color:isActive?T.text:T.textSm,whiteSpace:"nowrap",transition:"all 0.15s",flexShrink:0}}>
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Zona de facturación — wrapper contiene Pendientes y Manual */}
             <div style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -13759,188 +13770,181 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                 </div>
 
-                {/* Preview órdenes */}
-                {ordenes&&(() => {
-                  const totalGeneral = Object.values(ordenes).reduce((s,o)=>s+(o.total||0), 0);
-                  const netoTotal = esMono ? totalGeneral : Math.round((totalGeneral / 1.21) * 100) / 100;
-                  const ivaTotal = esMono ? 0 : Math.round((totalGeneral - netoTotal) * 100) / 100;
-                  return (
-                  <div id="arca-preview-ordenes" style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 22px",marginBottom:16}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-                      <span style={{width:28,height:28,borderRadius:8,background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.green}}>2</span>
-                      <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>
-                        {Object.keys(ordenes).length} órdenes a facturar
-                      </div>
-                    </div>
-                    {showArcaConfirm&&ReactDOM.createPortal(
-                        <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-                          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:460,padding:"28px 28px 24px"}} onClick={e=>e.stopPropagation()}>
-                            <div style={{fontSize:20,marginBottom:8}}>🧾</div>
-                            <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:6}}>¿Emitir facturas en ARCA?</div>
-                            <div style={{fontSize:13,color:T.textMd,marginBottom:20,lineHeight:1.6}}>
-                              Vas a emitir <strong style={{color:T.text}}>{Object.keys(ordenes||{}).length} comprobante{Object.keys(ordenes||{}).length!==1?"s":""}</strong> por un total de <strong style={{color:T.accent}}>$ {Object.values(ordenes||{}).reduce((s,o)=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2})}</strong>.<br/>
-                              Esta acción es <strong style={{color:T.red}}>irreversible</strong> — ARCA emite los comprobantes con CAE y no pueden anularse desde Growith.
-                            </div>
-                            <div style={{padding:"10px 14px",background:T.redBg,border:`1.5px solid ${T.red}44`,borderRadius:8,fontSize:12,color:T.red,marginBottom:20,boxShadow:`0 0 0 1px ${T.red}18, 0 4px 16px ${T.red}14`}}>
-                              ⚠ Verificá que los montos y destinatarios sean correctos antes de continuar.
-                            </div>
-                            <div style={{display:"flex",gap:10}}>
-                              <button onClick={()=>setShowArcaConfirm(false)} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 0"}}>Cancelar</button>
-                              <button onClick={()=>{setShowArcaConfirm(false);handleEmit();}} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:7,padding:"10px 0",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:"pointer",background:"#16a34a",color:"#fff",boxShadow:"0 4px 16px rgba(22,163,74,0.35)",transition:"all 0.15s"}}>
-                                🧾 Confirmar y emitir
-                              </button>
-                            </div>
-                          </div>
-                        </div>,
-                        document.body
-                      )}
+              </div>
 
-                    {/* Resumen totales */}
-                    <div style={{display:"grid",gridTemplateColumns: esRI ? "1fr 1fr 1fr" : "1fr",gap:10,marginBottom:14,padding:"12px 14px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10}}>
-                      {esRI ? (
+            {/* ── Unified emit modal ── */}
+            {showEmitModal&&ReactDOM.createPortal(
+              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{if(!emitting)closeModal();}}>
+                <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:18,width:"100%",maxWidth:520,maxHeight:"90vh",overflow:"auto",padding:"28px 28px 24px",display:"flex",flexDirection:"column",gap:18}} onClick={e=>e.stopPropagation()}>
+
+                  {/* Phase: emitting */}
+                  {emitting&&(
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20,padding:"16px 0 8px"}}>
+                      <Spinner size={38} color={T.accent}/>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text,textAlign:"center"}}>Emitiendo facturas en ARCA…</div>
+                      {emitProgress.total>0&&(
                         <>
-                          <div>
-                            <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Subtotal neto</div>
-                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {netoTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                          <div style={{fontSize:13,color:T.textMd,textAlign:"center"}}>{emitProgress.current} de {emitProgress.total}</div>
+                          <div style={{width:"100%",height:8,background:T.bg,borderRadius:99,overflow:"hidden"}}>
+                            <div style={{height:"100%",background:"#16a34a",borderRadius:99,transition:"width 0.3s ease",width:`${Math.round((emitProgress.current/emitProgress.total)*100)}%`}}/>
                           </div>
-                          <div style={{borderLeft:"1px solid "+T.borderL,paddingLeft:14}}>
-                            <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>IVA 21%</div>
-                            <div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {ivaTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                          </div>
-                          <div style={{borderLeft:"1px solid "+T.borderL,paddingLeft:14}}>
-                            <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total a facturar</div>
-                            <div style={{fontSize:16,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                          </div>
+                          {(emitProgress.ok>0||emitProgress.fail>0)&&<div style={{fontSize:12,color:T.textSm}}>✅ {emitProgress.ok} ok · 🔴 {emitProgress.fail} errores</div>}
                         </>
-                      ) : (
-                        <div>
-                          <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total a facturar (Factura C)</div>
-                          <div style={{fontSize:18,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                        </div>
                       )}
+                      <div style={{fontSize:11,color:T.textSm}}>No cierres esta ventana hasta que finalice.</div>
                     </div>
+                  )}
 
-                    {/* Selector de fecha de la factura — un solo date picker.
-                        La fecha que el merchant elija es la que va a ARCA.
-                        Sin toggles ni "mes actual vs anterior". */}
-                    {(() => {
-                      const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
-                      const pad = n => String(n).padStart(2,"0");
-                      // Min = hace 10 días corridos (límite real de ARCA). Max = hoy.
-                      const hoyIso = `${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
-                      const min = new Date(nowArg.getTime() - 10 * 86400000);
-                      const minIso = `${min.getFullYear()}-${pad(min.getMonth()+1)}-${pad(min.getDate())}`;
-                      const fechaLabel = fechaFactura
-                        ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})
-                        : "";
-                      const diasAtras = fechaFactura ? Math.round((new Date(hoyIso)-new Date(fechaFactura))/86400000) : 0;
-                      return (
-                        <div style={{marginBottom:14,padding:"12px 16px",background:T.bg,border:"1px solid "+T.borderL,borderRadius:10}}>
+                  {/* Phase: done */}
+                  {!emitting&&resultados&&(
+                    <>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{fontSize:16,fontWeight:800,color:T.text,flex:1}}>Emisión completada</div>
+                        <DSBadge T={T} color={resultados.filter(r=>r.ok).length===resultados.length?T.green:T.orange} size="sm">{resultados.filter(r=>r.ok).length}/{resultados.length} ok</DSBadge>
+                      </div>
+                      <div style={{maxHeight:320,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
+                        {resultados.map((r,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                            <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{r.ok?"✅":"🔴"}</span>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.orden_id}</div>
+                              {r.ok
+                                ? <div style={{fontSize:11,color:T.textSm}}>F-{r.letra} Nro {String(r.comprobante).padStart(8,"0")} · CAE {r.cae} · Vto {r.cae_vto}</div>
+                                : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>}
+                              {r.ok&&r.orden_id?.startsWith("ML-")&&(r.ml_uploaded
+                                ? <div style={{fontSize:10,color:T.green,marginTop:3}}>🟢 Factura adjuntada en Mercado Libre ✓</div>
+                                : r.ml_upload_error
+                                  ? <div style={{fontSize:10,color:T.orange,marginTop:3}}>⚠ No se adjuntó en ML: {r.ml_upload_error}</div>
+                                  : null)}
+                            </div>
+                            <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>${r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{display:"flex",gap:10,marginTop:4}}>
+                        {pdfs.length>0&&(
+                          <button onClick={downloadCurrentBatchZip} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 18px",background:"#16a34a",border:"none",color:"#fff",borderRadius:DS.r.md,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flex:1,boxShadow:"0 4px 14px rgba(22,163,74,0.3)"}}>
+                            ⬇ Descargar PDFs (.zip)
+                          </button>
+                        )}
+                        <button onClick={closeModal} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 0"}}>Cerrar</button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Phase: preview */}
+                  {!emitting&&!resultados&&ordenes&&(()=>{
+                    const totalGeneral = Object.values(ordenes).reduce((s,o)=>s+(o.total||0),0);
+                    const netoTotal = esMono ? totalGeneral : Math.round((totalGeneral/1.21)*100)/100;
+                    const ivaTotal = esMono ? 0 : Math.round((totalGeneral-netoTotal)*100)/100;
+                    const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
+                    const pad = n=>String(n).padStart(2,"0");
+                    const hoyIso = `${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
+                    const minD = new Date(nowArg.getTime()-10*86400000);
+                    const minIso = `${minD.getFullYear()}-${pad(minD.getMonth()+1)}-${pad(minD.getDate())}`;
+                    const fechaLabel = fechaFactura ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}) : "";
+                    const diasAtras = fechaFactura ? Math.round((new Date(hoyIso)-new Date(fechaFactura))/86400000) : 0;
+                    return (
+                      <>
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <div style={{fontSize:16,fontWeight:800,color:T.text,flex:1}}>🧾 Emitir {Object.keys(ordenes).length} factura{Object.keys(ordenes).length!==1?"s":""} en ARCA</div>
+                          <ModalCloseBtn T={T} onClick={closeModal}/>
+                        </div>
+
+                        {/* Totals */}
+                        <div style={{display:"grid",gridTemplateColumns:esRI?"1fr 1fr 1fr":"1fr",gap:10,padding:"14px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                          {esRI ? (
+                            <>
+                              <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Subtotal neto</div><div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {netoTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
+                              <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:14}}><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>IVA 21%</div><div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {ivaTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
+                              <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:14}}><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total</div><div style={{fontSize:16,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
+                            </>
+                          ) : (
+                            <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total a facturar (Factura C)</div><div style={{fontSize:18,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
+                          )}
+                        </div>
+
+                        {/* Date picker */}
+                        <div style={{padding:"12px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                             <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>📅 Fecha de las facturas</span>
                             <input type="date" value={fechaFactura} min={minIso} max={hoyIso} onChange={e=>setFechaFactura(e.target.value)}
-                              style={{background:T.card,border:"1px solid "+T.borderL,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                              style={{background:T.card,border:`1px solid ${T.borderL}`,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                             {fechaLabel&&<span style={{fontSize:12,color:T.text,fontWeight:500,textTransform:"capitalize"}}>{fechaLabel}</span>}
                           </div>
                           <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>
-                            Podés elegir cualquier día de los últimos 10 corridos (límite ARCA). {diasAtras>0?`Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
+                            Podés elegir cualquier día de los últimos 10 corridos (límite ARCA).{diasAtras>0?` Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
                           </div>
                         </div>
-                      );
-                    })()}
 
-                    <div style={{maxHeight:350,overflowY:"auto",borderRadius:8,marginBottom:16}}>
-                      {Object.entries(ordenes).map(([id,o])=>(
-                        <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid "+T.borderL}}>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:12,fontWeight:600,color:T.text}}>{o.nombre||"Consumidor Final"}</div>
-                            <div style={{fontSize:11,color:T.textSm}}>{id} · {esMono?"Factura C":(o.doc_tipo==="CUIT"?"Factura A":"Factura B")}{o.doc_nro?" · "+o.doc_tipo+" "+o.doc_nro:""}</div>
+                        {/* Duplicate warning */}
+                        {duplicatesInModal&&duplicatesInModal.length>0&&(
+                          <div style={{padding:"12px 14px",background:"#f9731610",border:`1.5px solid #f9731644`,borderRadius:8}}>
+                            <div style={{fontSize:13,fontWeight:700,color:"#f97316",marginBottom:6}}>⚠ {duplicatesInModal.length} órdenes ya fueron facturadas</div>
+                            <div style={{fontSize:11,color:T.textMd,marginBottom:10}}>
+                              {duplicatesInModal.slice(0,3).join(", ")}{duplicatesInModal.length>3?` y ${duplicatesInModal.length-3} más`:""}.
+                            </div>
+                            <button onClick={()=>handleEmit(true)} style={{fontSize:12,fontWeight:600,padding:"6px 14px",background:"#f97316",border:"none",color:"#fff",borderRadius:6,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                              Emitir de todas formas
+                            </button>
                           </div>
-                          <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>${o.total.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                        </div>
-                      ))}
-                    </div>
-                    {!resultados && (
-                      <button onClick={()=>setShowArcaConfirm(true)} disabled={emitting||!cuitSel}
-                        style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"13px 22px",fontSize:14,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:(emitting||!cuitSel)?"not-allowed":"pointer",background:(emitting||!cuitSel)?"#166534":"#16a34a",color:"#fff",boxShadow:(emitting||!cuitSel)?"none":"0 4px 18px rgba(22,163,74,0.35)",transition:"all 0.15s",opacity:(emitting||!cuitSel)?0.55:1}}>
-                        {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:<>🧾 Emitir facturas en ARCA</>}
-                      </button>
-                    )}
-                  </div>
-                  );
-                })()}
+                        )}
 
-                {/* Resultados */}
-                {resultados&&(
-                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"18px 22px"}}>
-                    <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Resultado de emisión</div>
-                    {resultados.map((r,i)=>(
-                      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 0",borderBottom:"1px solid "+T.borderL}}>
-                        <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{r.ok?"✅":"🔴"}</span>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.orden_id}</div>
-                          {r.ok
-                            ? <div style={{fontSize:11,color:T.textSm}}>F-{r.letra} Nro {String(r.comprobante).padStart(8,"0")} · CAE {r.cae} · Vto {r.cae_vto}</div>
-                            : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>}
-                          {r.ok && r.orden_id?.startsWith("ML-") && (
-                            r.ml_uploaded
-                              ? <div style={{fontSize:10,color:T.green,marginTop:3}}>🟡 Factura adjuntada en Mercado Libre ✓</div>
-                              : r.ml_upload_error
-                                ? <div style={{fontSize:10,color:T.orange,marginTop:3}}>⚠ No se adjuntó en ML: {r.ml_upload_error}</div>
-                                : null
-                          )}
-                        </div>
-                        <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>${r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                        {/* Products names */}
+                        {productos.length>0&&(
+                          <details style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                            <summary style={{cursor:"pointer",padding:"10px 14px",fontSize:12,fontWeight:600,color:T.text,listStyle:"none",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                              <span>📝 Nombre de productos <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>({productos.length})</span></span>
+                              <span style={{fontSize:11,color:T.textSm}}>Click para personalizar ▾</span>
+                            </summary>
+                            <div style={{padding:"4px 14px 14px"}}>
+                              <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Personalizá cómo aparece cada producto en el PDF.</div>
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
+                                {productos.map(p=>(
+                                  <div key={p}>
+                                    <div style={{fontSize:10,color:T.textSm,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p}</div>
+                                    <input value={productMap[p]||""} onChange={e=>setProductMap(prev=>({...prev,[p]:e.target.value}))} placeholder={p.slice(0,30)+"..."} style={{...iS,fontSize:11}}/>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </details>
+                        )}
 
-              {/* Panel de productos / PDFs / Nueva facturación */}
-              {ordenes && (
-                <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                  {productos.length>0&&(
-                    <details style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"4px 0"}}>
-                      <summary style={{cursor:"pointer",padding:"12px 18px",fontSize:13,fontWeight:600,color:T.text,listStyle:"none",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <span>📝 Nombre de productos en la factura <span style={{fontSize:11,color:T.textSm,fontWeight:400}}>({productos.length} productos detectados)</span></span>
-                        <span style={{fontSize:11,color:T.textSm}}>Click para personalizar ▾</span>
-                      </summary>
-                      <div style={{padding:"4px 18px 16px"}}>
-                        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.4}}>Cambiá cómo aparece cada producto en el PDF. Dejalo vacío para usar el nombre original.</div>
-                        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
-                          {productos.map(p=>(
-                            <div key={p}>
-                              <div style={{fontSize:11,color:T.textSm,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p}</div>
-                              <input value={productMap[p]||""} onChange={e=>setProductMap(prev=>({...prev,[p]:e.target.value}))} placeholder={p.slice(0,35)+"..."} style={{...iS,fontSize:12}}/>
+                        {/* Orders list */}
+                        <div style={{maxHeight:200,overflowY:"auto",borderRadius:8}}>
+                          {Object.entries(ordenes).map(([id,o])=>(
+                            <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:12,fontWeight:600,color:T.text}}>{o.nombre||"Consumidor Final"}</div>
+                                <div style={{fontSize:11,color:T.textSm}}>{id} · {esMono?"Factura C":(o.doc_tipo==="CUIT"?"Factura A":"Factura B")}{o.doc_nro?" · "+o.doc_tipo+" "+o.doc_nro:""}</div>
+                              </div>
+                              <div style={{fontSize:13,fontWeight:700,color:T.text,flexShrink:0}}>${o.total.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
                             </div>
                           ))}
                         </div>
-                      </div>
-                    </details>
-                  )}
-                  {pdfs.length>0&&(
-                    <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,gap:10,flexWrap:"wrap"}}>
-                        <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>{pdfs.length} PDFs generados</div>
-                        <button onClick={downloadCurrentBatchZip} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>⬇ Descargar todos (.zip)</button>
-                      </div>
-                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:6,maxHeight:240,overflowY:"auto"}}>
-                        {pdfs.map((pdf,i)=>(
-                          <button key={i} onClick={()=>downloadPDF(pdf)} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                            📄 {pdf.nombre}
+
+                        {/* Irreversible warning */}
+                        <div style={{padding:"10px 14px",background:T.redBg,border:`1.5px solid ${T.red}44`,borderRadius:8,fontSize:12,color:T.red}}>
+                          ⚠ Esta acción es <strong>irreversible</strong> — ARCA emite los comprobantes con CAE y no pueden anularse desde Growith.
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{display:"flex",gap:10}}>
+                          <button onClick={closeModal} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"11px 0"}}>Cancelar</button>
+                          <button onClick={()=>handleEmit(false)} disabled={!cuitSel}
+                            style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px 0",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:!cuitSel?"not-allowed":"pointer",background:!cuitSel?"#166534":"#16a34a",color:"#fff",boxShadow:!cuitSel?"none":"0 4px 18px rgba(22,163,74,0.35)",transition:"all 0.15s",opacity:!cuitSel?0.55:1}}>
+                            🧾 Confirmar y emitir
                           </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {(ordenes||resultados)&&(
-                    <button onClick={()=>{setOrdenes(null);setResultados(null);setPdfs([]);setArchivo(null);}} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",alignSelf:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                      ↺ Nueva facturación
-                    </button>
-                  )}
+                        </div>
+                      </>
+                    );
+                  })()}
+
                 </div>
-              )}
+              </div>,
+              document.body
+            )}
             </div>
 
             {/* ══ FACTURA MANUAL — formulario inline (sólo tab Manual) ══ */}
