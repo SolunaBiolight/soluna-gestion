@@ -713,8 +713,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
     {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red",
       subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
-    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange",
-      subs:[{id:"activos",label:"Activos"},{id:"historial",label:"Historial"},{id:"influencers",label:"Influencers"}]},
+    {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
 },
     { group:"FINANZAS" },
@@ -3850,12 +3849,27 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           </div>
         )}
 
-        {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
-        <div style={{display:"flex",gap:8,marginBottom:showGuia?8:16,alignItems:"center",justifyContent:"flex-end"}}>
-          <button onClick={()=>setShowGuia(s=>!s)} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",fontSize:11,fontWeight:500,background:"transparent",border:`1px solid ${T.border}`,borderRadius:20,cursor:"pointer",color:showGuia?T.textMd:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
-            <span style={{width:14,height:14,borderRadius:"50%",background:T.border,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.textMd,flexShrink:0}}>?</span>
-            {showGuia?"Cerrar":"Cómo funciona"}
-          </button>
+        {/* ── Tabs internos ── */}
+        <div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:4,marginBottom:16,overflowX:"auto",alignItems:"center"}}>
+          {[
+            {id:"kanban",    label:"Canjes activos"},
+            {id:"comisiones",label:"Historial"},
+            {id:"perfiles",  label:"Influencers"},
+          ].map(t=>{
+            const isActive=viewTab===t.id;
+            return (
+              <button key={t.id} onClick={()=>setViewTab(t.id)}
+                style={{padding:"7px 16px",fontSize:12,fontWeight:isActive?700:500,borderRadius:DS.r.md,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:isActive?T.surface:"transparent",color:isActive?T.text:T.textSm,whiteSpace:"nowrap",transition:"all 0.15s",flexShrink:0}}>
+                {t.label}
+              </button>
+            );
+          })}
+          <div style={{marginLeft:"auto",flexShrink:0,paddingRight:4}}>
+            <button onClick={()=>setShowGuia(s=>!s)} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",fontSize:11,fontWeight:500,background:"transparent",border:`1px solid ${T.border}`,borderRadius:20,cursor:"pointer",color:showGuia?T.textMd:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
+              <span style={{width:14,height:14,borderRadius:"50%",background:T.border,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.textMd,flexShrink:0}}>?</span>
+              {showGuia?"Cerrar":"Cómo funciona"}
+            </button>
+          </div>
         </div>
         {showGuia&&(
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",flexDirection:"column",gap:5}}>
