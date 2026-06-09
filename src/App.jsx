@@ -13391,25 +13391,25 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {/* ══ VENTAS PENDIENTES (desde integraciones conectadas) ══ */}
                 <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"22px 24px",marginBottom:16}}>
                   {/* Header */}
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
                     <div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Ventas pendientes de facturar</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Seleccioná las que querés facturar y tocá "Facturar"</div>
                     </div>
-                    <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar ventas" style={{...BtnSecondary(T),padding:"7px 12px",fontSize:12,gap:6,flexShrink:0}}>
-                      {tnLoading ? <Spinner size={11} color={T.textMd}/> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}
-                      Actualizar
-                    </button>
-                  </div>
-                  {/* Fila 1: Período con pills rápidos */}
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-                    <span style={{fontSize:11,fontWeight:600,color:T.textSm,flexShrink:0}}>Período:</span>
-                    {[{v:"7",l:"7 días"},{v:"15",l:"15 días"},{v:"30",l:"30 días"},{v:"90",l:"3 meses"}].map(p=>(
-                      <button key={p.v} onClick={()=>{ setPeriodoModo(p.v); const d=parseInt(p.v); const now=new Date(); setFechaHasta(now.toISOString().slice(0,10)); setFechaDesde(new Date(now-d*86400000).toISOString().slice(0,10)); }} style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:`1px solid ${periodoModo===p.v?T.accentSolid:T.border}`,borderRadius:6,background:periodoModo===p.v?T.accentSolid:"transparent",color:periodoModo===p.v?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
-                        {p.l}
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                      <DateRangePicker T={T} since={fechaDesde} until={fechaHasta} onChange={(s,u)=>{ setPeriodoModo("custom"); setFechaDesde(s); setFechaHasta(u); }}
+                        presets={[
+                          {id:"7d",  label:"Últimos 7 días",  days:7},
+                          {id:"15d", label:"Últimos 15 días", days:15},
+                          {id:"30d", label:"Últimos 30 días", days:30},
+                          {id:"90d", label:"3 meses",         days:90},
+                        ]}
+                      />
+                      <button onClick={loadPendingOrders} disabled={tnLoading} title="Refrescar ventas" style={{...BtnSecondary(T),padding:"7px 10px",fontSize:12,gap:5,flexShrink:0}}>
+                        {tnLoading ? <Spinner size={11} color={T.textMd}/> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}
+                        Actualizar
                       </button>
-                    ))}
-                    <DateRangePicker T={T} since={fechaDesde} until={fechaHasta} onChange={(s,u)=>{ setPeriodoModo("custom"); setFechaDesde(s); setFechaHasta(u); }}/>
+                    </div>
                   </div>
                   {/* Fila 2: Canal (pills) + Pago + Monto */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
@@ -13786,8 +13786,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             </div>
                             <div style={{display:"flex",gap:10}}>
                               <button onClick={()=>setShowArcaConfirm(false)} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 0"}}>Cancelar</button>
-                              <button onClick={()=>{setShowArcaConfirm(false);handleEmit();}} style={{...BtnPrimary(T),flex:1,justifyContent:"center",background:"rgba(22,163,74,0.13)",border:"1.5px solid rgba(22,163,74,0.55)",color:"#4ade80",boxShadow:"0 0 0 1px #16a34a15, 0 4px 20px #16a34a22",fontSize:13,padding:"10px 0"}}>
-                                Confirmar y emitir
+                              <button onClick={()=>{setShowArcaConfirm(false);handleEmit();}} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:7,padding:"10px 0",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:"pointer",background:"#16a34a",color:"#fff",boxShadow:"0 4px 16px rgba(22,163,74,0.35)",transition:"all 0.15s"}}>
+                                🧾 Confirmar y emitir
                               </button>
                             </div>
                           </div>
@@ -13862,8 +13862,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                     {!resultados && (
                       <button onClick={()=>setShowArcaConfirm(true)} disabled={emitting||!cuitSel}
-                        style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:14,padding:"13px 22px",background:"rgba(22,163,74,0.13)",border:"1.5px solid rgba(22,163,74,0.55)",color:"#4ade80",boxShadow:"0 0 0 1px #16a34a15, 0 4px 20px #16a34a22",opacity:(emitting||!cuitSel)?0.45:1}}>
-                        {emitting?<><Spinner size={14} color="#4ade80"/> Emitiendo en ARCA...</>:<>🧾 Emitir facturas en ARCA</>}
+                        style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"13px 22px",fontSize:14,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:(emitting||!cuitSel)?"not-allowed":"pointer",background:(emitting||!cuitSel)?"#166534":"#16a34a",color:"#fff",boxShadow:(emitting||!cuitSel)?"none":"0 4px 18px rgba(22,163,74,0.35)",transition:"all 0.15s",opacity:(emitting||!cuitSel)?0.55:1}}>
+                        {emitting?<><Spinner size={14} color="#fff"/> Emitiendo en ARCA...</>:<>🧾 Emitir facturas en ARCA</>}
                       </button>
                     )}
                   </div>
