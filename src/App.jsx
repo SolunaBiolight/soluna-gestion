@@ -10028,6 +10028,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
                             {t.titulo}
                           </div>
+                          {t.propuestaPor&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:"#6366f118",color:"#818cf8",fontWeight:700,alignSelf:"flex-start",border:"1px solid #6366f130"}}>⬆ Propuesta por {t.propuestaPor}</span>}
                           {/* Brief preview */}
                           {brief&&(
                             <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",flex:1}}>
@@ -10651,7 +10652,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       {/* MODAL Kanban — detalle tarea */}
       {kanbanSelected&&(
         <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setKanbanSelected(null);}}>
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
+          <div key={kanbanSelected?._id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
             <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:T.card,zIndex:1}}>
               <div>
                 <div style={{fontWeight:700,fontSize:15,color:T.text}}>{kanbanSelected.titulo}</div>
@@ -11545,6 +11546,12 @@ function ColaboradorPublicView({T, token}) {
   const [bloqueoMotivo, setBloqueoMotivo] = useState({});
   const [editingEntrega, setEditingEntrega] = useState(null); // tareaId cuando está editando su última entrega
   const [editEntregaData, setEditEntregaData] = useState({link:"",label:"",nota:""});
+  const [showProponerTarea, setShowProponerTarea] = useState(false);
+  const [propTitulo, setPropTitulo] = useState("");
+  const [propDesc, setPropDesc] = useState("");
+  const [propLink, setPropLink] = useState("");
+  const [propLinkLabel, setPropLinkLabel] = useState("");
+  const [propSaving, setPropSaving] = useState(false);
   const [bannerClosed, setBannerClosed] = useState(()=>{
     try{return localStorage.getItem(`growith_colab_banner_${token}`)==="1";}catch(e){return false;}
   });
@@ -11618,6 +11625,20 @@ function ColaboradorPublicView({T, token}) {
     setEntregaNota(prev=>({...prev,[tareaId]:""}));
     setEntregaEnviada(prev=>({...prev,[tareaId]:d.entrega}));
     toast("¡Entrega enviada! ✓","success");
+  }
+
+  async function proponerTarea() {
+    if(!propTitulo.trim()) return;
+    setPropSaving(true);
+    try {
+      const d = await publicApi({action:"publicProponerTarea",titulo:propTitulo.trim(),descripcion:propDesc.trim(),link:propLink.trim(),linkLabel:propLinkLabel.trim()});
+      setData(prev=>({...prev,tareas:[...(prev.tareas||[]),d.tarea]}));
+      setExpandedTarea(d.tarea._id);
+      setShowProponerTarea(false);
+      setPropTitulo(""); setPropDesc(""); setPropLink(""); setPropLinkLabel("");
+      toast("Tarea creada ✓","success");
+    } catch(e){ toast(e.message||"Error","error"); }
+    finally{ setPropSaving(false); }
   }
 
   async function addComment(tareaId) {
@@ -11803,6 +11824,59 @@ function ColaboradorPublicView({T, token}) {
           </div>
         )}
 
+        {/* Encabezado sección tareas + botón proponer */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
+          <div style={{fontSize:13,fontWeight:600,color:T.textSm}}>{sortedTareas.length>0?`${sortedTareas.length} tarea${sortedTareas.length!==1?"s":""}`:""}</div>
+          <button onClick={()=>setShowProponerTarea(true)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 16px",background:"#6366f1",border:"none",color:"#fff",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:"0 4px 14px #6366f140"}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Proponer tarea
+          </button>
+        </div>
+
+        {/* Modal: proponer tarea */}
+        {showProponerTarea&&ReactDOM.createPortal(
+          <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget){setShowProponerTarea(false);}}}>
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:460,padding:"24px 24px 20px",display:"flex",flexDirection:"column",gap:16}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{fontSize:15,fontWeight:700,color:T.text}}>Proponer tarea</div>
+                <button onClick={()=>setShowProponerTarea(false)} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:20,lineHeight:1,padding:"0 4px"}}>×</button>
+              </div>
+              <div style={{fontSize:12,color:T.textSm,marginTop:-8,lineHeight:1.5}}>Describí qué necesitás hacer y tu encargada lo va a revisar.</div>
+
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:5}}>Título *</div>
+                <input value={propTitulo} onChange={e=>setPropTitulo(e.target.value)} placeholder="ej: Reels semana del 10/06" autoFocus
+                  style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"9px 12px",fontSize:13,fontFamily:"'Inter',system-ui,sans-serif",outline:"none",boxSizing:"border-box"}}/>
+              </div>
+
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:5}}>Descripción <span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}>(opcional)</span></div>
+                <textarea value={propDesc} onChange={e=>setPropDesc(e.target.value)} placeholder="Qué incluye, formato, deadline si lo sabés..." rows={3}
+                  style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"9px 12px",fontSize:13,fontFamily:"'Inter',system-ui,sans-serif",outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
+              </div>
+
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:5}}>Link de entrega <span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}>(si ya tenés algo listo)</span></div>
+                <input value={propLink} onChange={e=>setPropLink(e.target.value)} placeholder="https://drive.google.com/..."
+                  style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"9px 12px",fontSize:13,fontFamily:"'Inter',system-ui,sans-serif",outline:"none",boxSizing:"border-box",marginBottom:6}}/>
+                {propLink.trim()&&(
+                  <input value={propLinkLabel} onChange={e=>setPropLinkLabel(e.target.value)} placeholder='Nombre del archivo (ej: "Reels finales")'
+                    style={{width:"100%",background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"8px 12px",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",outline:"none",boxSizing:"border-box"}}/>
+                )}
+              </div>
+
+              <div style={{display:"flex",gap:10,paddingTop:4,borderTop:`1px solid ${T.borderL}`}}>
+                <button onClick={()=>setShowProponerTarea(false)} style={{flex:1,padding:"10px 0",background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500,fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                <button onClick={proponerTarea} disabled={propSaving||!propTitulo.trim()}
+                  style={{flex:2,padding:"10px 0",background:propSaving||!propTitulo.trim()?"#4338ca":"#6366f1",border:"none",color:"#fff",borderRadius:8,cursor:propSaving||!propTitulo.trim()?"not-allowed":"pointer",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",opacity:propSaving||!propTitulo.trim()?0.6:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  {propSaving?<><Spinner size={12} color="#fff"/> Enviando…</>:"Enviar tarea →"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
         <div style={{display:"grid",gridTemplateColumns:sortedTareas.length===1?"minmax(0,520px)":"repeat(2,1fr)",gap:12,alignItems:"start",justifyContent:"center"}}>
         {sortedTareas.map(t=>{
           const est = ESTADOS[t.estado]||ESTADOS.pendiente;
@@ -11832,6 +11906,7 @@ function ColaboradorPublicView({T, token}) {
                       {isUrgente&&<span style={{fontSize:10,color:"#ef4444",fontWeight:800}}>🔴</span>}
                       {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600}}>#{t.tareaNumStr}</span>}
                       <span style={{fontSize:15,fontWeight:600,color:T.text}}>{t.titulo}</span>
+                      {t.propuestaPor&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#6366f120",color:"#818cf8",fontWeight:700,flexShrink:0}}>Propuesta por vos</span>}
                       {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:20,background:"#ef444420",color:"#ef4444",fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
                       {t.leidoAt&&<span style={{fontSize:10,color:"#22c55e",flexShrink:0}}>👁</span>}
                     </div>

@@ -568,6 +568,41 @@ export default async function handler(req, res) {
       return res.json({ ok: true, entrega });
     }
 
+    if (action === "publicProponerTarea") {
+      const { titulo, descripcion="", link="", linkLabel="" } = body;
+      if (!token || !titulo?.trim()) return res.status(400).json({ error: "Título requerido" });
+      const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (snap.empty) return res.status(403).json({ error: "Token inválido" });
+      const colab = snap.docs[0].data();
+      const ref = db.collection("tareas").doc();
+      const deliverables = [];
+      if (link?.trim()) {
+        deliverables.push({ link: link.trim(), label: linkLabel?.trim()||"Entrega inicial", nota:"", version:1, fecha: now });
+      }
+      const tarea = {
+        titulo: titulo.trim(),
+        descripcion: descripcion?.trim()||"",
+        brief: "",
+        links: [],
+        estado: deliverables.length > 0 ? "entregado" : "pendiente",
+        prioridad: "normal",
+        asignadoEmail: colab.email,
+        asignadoNombre: colab.nombre,
+        ownerId: colab.ownerId,
+        managerEmail: colab.managerEmail || "",
+        propuestaPor: colab.nombre,
+        deliverables,
+        activity: [{ tipo:"creacion", autor:colab.nombre, fecha:now, detalle:"Propuso esta tarea" }],
+        checklist: [],
+        historial: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      await ref.set(tarea);
+      const created = { ...tarea, _id: ref.id };
+      return res.json({ ok: true, tarea: created });
+    }
+
     // ── ACCIONES PÚBLICAS EDITOR PRODUCCIÓN ──────────────────────────────────
 
     if (action === "getEditorProduccion") {
