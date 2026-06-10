@@ -12216,10 +12216,16 @@ function ColaboradorPublicView({T, token}) {
                           <textarea value={entregaNota[t._id]||""} onChange={e=>setEntregaNota(prev=>({...prev,[t._id]:e.target.value}))}
                             placeholder="Notas para el equipo (opcional)"
                             style={{...iS,fontSize:12,width:"100%",minHeight:50,resize:"vertical",marginBottom:10}}/>
-                          <AsyncButton onClick={()=>submitEntrega(t._id)}
-                            style={{...BtnPrimary(T),fontSize:14,padding:"12px 20px",width:"100%",justifyContent:"center",background:"#6366f1",display:"flex"}}>
-                            Enviar entrega
-                          </AsyncButton>
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            <AsyncButton onClick={()=>submitEntrega(t._id)}
+                              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:7,padding:"11px 20px",borderRadius:10,border:"none",background:"#22c55e",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
+                              📤 Enviar entrega
+                            </AsyncButton>
+                            <button onClick={()=>setShowEntregarForm(p=>({...p,[t._id]:false}))}
+                              style={{padding:"11px 16px",borderRadius:10,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                              Cancelar
+                            </button>
+                          </div>
                         </>
                       )}
                     </div>
