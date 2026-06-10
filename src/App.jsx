@@ -12107,6 +12107,7 @@ function ColaboradorPublicView({T, token}) {
                     const STEPS=[
                       {id:"pendiente",  label:"Sin empezar",  icon:"⏳", estado:"pendiente",  progresoLabel:""},
                       {id:"en_proceso", label:"En proceso",   icon:"🔄", estado:"en_proceso", progresoLabel:"En proceso"},
+                      {id:"entregar",   label:"Entregar",     icon:"📤", isAction:true},
                     ];
                     const currentStep = t.estado==="bloqueada"?"bloqueada"
                       : t.estado==="en_proceso"?"en_proceso"
@@ -12115,12 +12116,15 @@ function ColaboradorPublicView({T, token}) {
                       <div style={{marginBottom:14}}>
                         <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:8,background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`,overflow:"hidden"}}>
                           {STEPS.map((step,i)=>{
-                            const active=currentStep===step.id;
-                            const stepColor=step.id==="listo"?"#22c55e":step.id==="en_proceso"?"#3b82f6":"#d97706";
+                            const active=step.isAction?!!showEntregarForm[t._id]:currentStep===step.id;
+                            const stepColor=step.id==="entregar"?"#22c55e":step.id==="en_proceso"?"#3b82f6":"#d97706";
                             return (
                               <AsyncButton key={step.id}
-                                onClick={()=>!active&&publicSetEstado(t._id, step.estado, step.progresoLabel)}
-                                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"12px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="listo"?"#22c55e18":step.id==="en_proceso"?"#3b82f615":"#d9770615":"transparent",transition:"background 0.18s, opacity 0.18s",cursor:active?"default":"pointer",border:"none",borderRadius:0,outline:"none",opacity:active?1:0.55,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                onClick={()=>{
+                                  if(step.isAction){setShowEntregarForm(p=>({...p,[t._id]:!p[t._id]}));}
+                                  else if(!active){publicSetEstado(t._id, step.estado, step.progresoLabel);}
+                                }}
+                                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"12px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="entregar"?"#22c55e18":step.id==="en_proceso"?"#3b82f615":"#d9770615":"transparent",transition:"background 0.18s, opacity 0.18s",cursor:active&&!step.isAction?"default":"pointer",border:"none",borderRadius:0,outline:"none",opacity:active?1:0.55,fontFamily:"'Inter',system-ui,sans-serif"}}>
                                 <span style={{fontSize:20,marginBottom:3}}>{step.icon}</span>
                                 <span style={{fontSize:10,fontWeight:active?700:500,color:active?stepColor:T.textSm,textAlign:"center",lineHeight:1.3}}>{step.label}</span>
                                 {active&&<div style={{width:20,height:2.5,borderRadius:2,background:stepColor,marginTop:5}}/>}
@@ -12182,17 +12186,6 @@ function ColaboradorPublicView({T, token}) {
                       </div>
                     );
                   })()}
-                  {/* ── BOTÓN ENTREGAR (toggle form) ── */}
-                  {!isAprobado&&(
-                    <button
-                      onClick={()=>setShowEntregarForm(p=>({...p,[t._id]:!p[t._id]}))}
-                      style={{width:"100%",marginBottom:14,padding:"11px 16px",borderRadius:10,border:`1.5px solid ${showEntregarForm[t._id]?"#22c55e55":T.border}`,background:showEntregarForm[t._id]?"#22c55e18":"transparent",color:showEntregarForm[t._id]?"#22c55e":T.textMd,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all 0.15s",letterSpacing:"0.01em"}}>
-                      {showEntregarForm[t._id]
-                        ? <><span style={{fontSize:16,lineHeight:1}}>✕</span> Cerrar</>
-                        : <><span style={{fontSize:16,lineHeight:1}}>📤</span> Entregar</>
-                      }
-                    </button>
-                  )}
                   {!isAprobado&&showEntregarForm[t._id]&&(
                     <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?"#ef444440":T.borderL}`,marginBottom:14}}>
                       {lastEntregaJustSent?(
