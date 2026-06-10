@@ -11561,6 +11561,7 @@ function ColaboradorPublicView({T, token}) {
   const [entregaLabel, setEntregaLabel] = useState({});
   const [entregaNota, setEntregaNota] = useState({});
   const [entregaEnviada, setEntregaEnviada] = useState({}); // {id: entrega} after submit
+  const [showEntregarForm, setShowEntregarForm] = useState({}); // toggle form de entrega por tarea
   const [commentText, setCommentText] = useState({});
   const [consultaText, setConsultaText] = useState({});
   const [showConsulta, setShowConsulta] = useState({});
@@ -12104,12 +12105,10 @@ function ColaboradorPublicView({T, token}) {
                   {/* ── SELECTOR DE PROGRESO ── */}
                   {!isAprobado&&t.estado!=="entregado"&&(()=>{
                     const STEPS=[
-                      {id:"pendiente",  label:"Sin empezar",           icon:"⏳", estado:"pendiente",  progresoLabel:""},
-                      {id:"en_proceso", label:"En proceso",             icon:"🔄", estado:"en_proceso", progresoLabel:"En proceso"},
-                      {id:"listo",      label:"Listo para entregar",    icon:"✋", estado:"en_proceso", progresoLabel:"Listo para entregar"},
+                      {id:"pendiente",  label:"Sin empezar",  icon:"⏳", estado:"pendiente",  progresoLabel:""},
+                      {id:"en_proceso", label:"En proceso",   icon:"🔄", estado:"en_proceso", progresoLabel:"En proceso"},
                     ];
                     const currentStep = t.estado==="bloqueada"?"bloqueada"
-                      : t.progresoLabel==="Listo para entregar"?"listo"
                       : t.estado==="en_proceso"?"en_proceso"
                       : "pendiente";
                     return (
@@ -12183,7 +12182,18 @@ function ColaboradorPublicView({T, token}) {
                       </div>
                     );
                   })()}
+                  {/* ── BOTÓN ENTREGAR (toggle form) ── */}
                   {!isAprobado&&(
+                    <button
+                      onClick={()=>setShowEntregarForm(p=>({...p,[t._id]:!p[t._id]}))}
+                      style={{width:"100%",marginBottom:14,padding:"11px 16px",borderRadius:10,border:`1.5px solid ${showEntregarForm[t._id]?"#22c55e55":T.border}`,background:showEntregarForm[t._id]?"#22c55e18":"transparent",color:showEntregarForm[t._id]?"#22c55e":T.textMd,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all 0.15s",letterSpacing:"0.01em"}}>
+                      {showEntregarForm[t._id]
+                        ? <><span style={{fontSize:16,lineHeight:1}}>✕</span> Cerrar</>
+                        : <><span style={{fontSize:16,lineHeight:1}}>📤</span> Entregar</>
+                      }
+                    </button>
+                  )}
+                  {!isAprobado&&showEntregarForm[t._id]&&(
                     <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?"#ef444440":T.borderL}`,marginBottom:14}}>
                       {lastEntregaJustSent?(
                         <div style={{textAlign:"center"}}>

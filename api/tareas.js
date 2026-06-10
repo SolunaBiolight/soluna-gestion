@@ -394,27 +394,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // Si había un email de "Listo para entregar" pendiente y el estado cambió → cancelarlo
-      if (prevProgresoLabel==="Listo para entregar" && progresoLabel!=="Listo para entregar") {
-        const pendingId = t.data().pendingListoEmailId;
-        if (pendingId) {
-          cancelEmail(pendingId);
-          upd.pendingListoEmailId = null;
-        }
-      }
-
-      // Listo para entregar → notificar al manager con delay de 3 min
-      if (estado==="en_proceso" && progresoLabel==="Listo para entregar"
-          && prevProgresoLabel!=="Listo para entregar" && managerEmailPub) {
-        const emailRes = await sendEmail({
-          to: managerEmailPub,
-          subject: `✋ ${colab.nombre} está listo para entregar — ${t.data().titulo}`,
-          html: emailListoParaEntregar({ colab, tarea:t.data(), link:tareaLink }),
-          delayMs: 3 * 60 * 1000,
-        });
-        if (emailRes.id) upd.pendingListoEmailId = emailRes.id;
-      }
-
       // Retoma el trabajo tras bloqueo → notificar al manager (inmediato, es urgente resolverlo)
       if (estado==="en_proceso" && prevEstado==="bloqueada" && managerEmailPub) {
         sendEmail({
@@ -683,7 +662,7 @@ export default async function handler(req, res) {
       if (["entregado","revision"].includes(t3.data().estado)) {
         upd3.estado = newDels3.length > 0 ? "entregado" : "en_proceso";
         upd3.feedbackActual = null;
-        upd3.progresoLabel = newDels3.length > 0 ? "Listo para entregar" : "";
+        upd3.progresoLabel = "";
       }
       await ref3.update(upd3);
       return res.json({ ok:true, deliverables:newDels3, estado:upd3.estado||t3.data().estado });
@@ -951,7 +930,7 @@ export default async function handler(req, res) {
       if (wasLast && ["entregado","revision","aprobado"].includes(snap.data().estado)) {
         upd.estado = newDels.length > 0 ? "entregado" : "en_proceso";
         upd.feedbackActual = null;
-        upd.progresoLabel = newDels.length > 0 ? "Listo para entregar" : "";
+        upd.progresoLabel = "";
       }
       await ref.update(upd);
       return res.json({ ok:true, deliverables:newDels, estado:upd.estado||snap.data().estado });
@@ -997,7 +976,7 @@ export default async function handler(req, res) {
       if (["entregado","revision"].includes(t.data().estado)) {
         upd.estado = newDels.length > 0 ? "entregado" : "en_proceso";
         upd.feedbackActual = null;
-        upd.progresoLabel = newDels.length > 0 ? "Listo para entregar" : "";
+        upd.progresoLabel = "";
       }
       await ref.update(upd);
       return res.json({ ok:true, deliverables:newDels, estado:upd.estado||t.data().estado });
