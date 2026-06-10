@@ -9096,6 +9096,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ntPrioridad, setNtPrioridad] = useState("normal");
   const [draggedTarea, setDraggedTarea] = useState(null);   // {id, fromColabKey}
   const [dragOverColab, setDragOverColab] = useState(null); // _key del card destino
+  const [filterColab, setFilterColab] = useState(""); // email | "" = todos
   // Modal editar tarea
   const [editTarea, setEditTarea] = useState(null);
   const [etTitulo, setEtTitulo] = useState("");
@@ -9831,7 +9832,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             const hoy=new Date();
             function dLeft(val){if(!val)return null;const d=val._seconds?new Date(val._seconds*1000):new Date(val);return Math.ceil((d-hoy)/86400000);}
             const creativosActivos=produccion.creativos.filter(c=>!["publicado","archivado"].includes(c.estado));
-            const tareasActivas=tareas.filter(t=>t.estado!=="aprobado");
+            const tareasActivas=tareas.filter(t=>t.estado!=="aprobado"&&(!filterColab||(t.asignadoEmail===filterColab||(t.asignadosEmails||[]).includes(filterColab))));
             const proximasItems=tareas.filter(t=>t.deadline&&t.estado!=="aprobado").map(t=>({nombre:t.asignadoNombre||"?",titulo:t.titulo,days:dLeft(t.deadline),id:t._id})).sort((a,b)=>(a.days??999)-(b.days??999)).slice(0,8);
             const CEST2={idea:{l:"Idea",c:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue},"en-produccion":{l:"En prod.",c:T.orange||"#f97316"},entregado:{l:"Entregado",c:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green}};
             return(<>
@@ -9990,6 +9991,31 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </div>
                 </div>
               )}
+              {/* ── Pills filtro por colaborador ── */}
+              {colaboradores.length>0&&(
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+                  <button onClick={()=>setFilterColab("")}
+                    style={{padding:"5px 14px",fontSize:12,fontWeight:filterColab===""?700:500,borderRadius:99,border:`1.5px solid ${filterColab===""?T.accentSolid:T.border}`,background:filterColab===""?T.accentSolid:"transparent",color:filterColab===""?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
+                    Todos
+                  </button>
+                  {colaboradores.map(c=>{
+                    const active=filterColab===c.email;
+                    const count=tareas.filter(t=>t.estado!=="aprobado"&&(t.asignadoEmail===c.email||(t.asignadosEmails||[]).includes(c.email))).length;
+                    if(!count&&!active) return null;
+                    return (
+                      <button key={c._id} onClick={()=>setFilterColab(active?"":c.email)}
+                        style={{padding:"5px 14px",fontSize:12,fontWeight:active?700:500,borderRadius:99,border:`1.5px solid ${active?T.accentSolid:T.border}`,background:active?T.accentSolid+"18":"transparent",color:active?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6}}>
+                        <span style={{width:18,height:18,borderRadius:"50%",background:active?T.accentSolid:T.surface,border:`1px solid ${active?T.accentSolid:T.border}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:active?"#fff":T.textMd,flexShrink:0}}>
+                          {(c.nombre[0]||"?").toUpperCase()}
+                        </span>
+                        {c.nombre.split(" ")[0]}
+                        <span style={{fontSize:10,background:active?T.accentSolid+"30":T.surface,color:active?T.accent:T.textSm,borderRadius:99,padding:"0px 5px",fontWeight:700}}>{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* ── GRID DE TAREAS — una card por tarea ── */}
               {tareasActivas.length>0&&(()=>{
                 const EST_CARD={
