@@ -5599,50 +5599,61 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     try {
       const text=await extractPdfText(file);
       const pages=text.split("---PAGE---");
-      const results=[];
 
-      for(let i=0;i<pages.length;i++) {
-        const pageText=pages[i];
-        // N° seguimiento Andreani: 15 dígitos empezando con 36
+      // 1ª pasada: extraer datos de cada página sin llamadas a la API
+      const pageData=pages.map((pageText,i)=>{
         const trackingMatch=pageText.match(/(36\d{13})/);
-        // N° Interno: acepta variaciones de espaciado
         const internoMatch=pageText.match(/N[°ºo]?\s*[°º]?\s*Interno\s*:?\s*#?\s*(\d{3,6})/i);
-        // Destinatario
         const destMatch=pageText.match(/Destinatario\s*:\s*([^\n\r]{2,60})/i);
+        if(!trackingMatch||!internoMatch) return null;
+        return {
+          pagina:i+1,
+          tracking:trackingMatch[1].trim(),
+          pedidoNum:internoMatch[1].trim(),
+          destinatario:destMatch?destMatch[1].trim():"",
+        };
+      }).filter(Boolean);
 
-        if(trackingMatch&&internoMatch) {
-          const tracking=trackingMatch[1].trim();
-          const pedidoNum=internoMatch[1].trim();
-          const destinatario=destMatch?destMatch[1].trim():"";
-          if(type==="sku") {
-            // Buscar en tabOrders primero (pedidos del tab activo), luego en orders prop
-            let order = tabOrders.find(o=>o.numero===pedidoNum)
-                     || orders.find(o=>o.numero===pedidoNum);
-            // Si no está en memoria, buscar en TN API
-            if(!order) {
-              try {
-                const r=await fetch(`/api/orders?uid=${user?.uid||""}&q=${encodeURIComponent(pedidoNum)}&tab=total`);
-                if(r.ok){
-                  const data=await r.json();
-                  if(Array.isArray(data)&&data.length>0){
-                    const built=buildOrdersFromAPI(data);
-                    order=built.find(o=>o.numero===pedidoNum)||built[0]||null;
-                  }
-                }
-              } catch(_){}
+      if(type==="sku") {
+        // 2ª pasada: identificar pedidos que NO están en memoria
+        const missingNums=[...new Set(
+          pageData
+            .filter(p=>!tabOrders.find(o=>o.numero===p.pedidoNum)&&!orders.find(o=>o.numero===p.pedidoNum))
+            .map(p=>p.pedidoNum)
+        )];
+
+        // Fetch en paralelo de todos los pedidos faltantes
+        const fetchedMap={};
+        await Promise.all(missingNums.map(async num=>{
+          try {
+            const r=await fetch(`/api/orders?uid=${user?.uid||""}&q=${encodeURIComponent(num)}&tab=total`);
+            if(r.ok){
+              const data=await r.json();
+              if(Array.isArray(data)&&data.length>0){
+                const built=buildOrdersFromAPI(data);
+                const found=built.find(o=>o.numero===num)||built[0]||null;
+                if(found) fetchedMap[num]=found;
+              }
             }
-            const skuLines=order?order.productos.map(p=>`${p.sku} (x${p.cantidad})`):[];
-            const skus=order?skuLines.join(', '):"No encontrado en TN";
-            results.push({pagina:i+1,pedidoNum,tracking,skus,found:!!order,destinatario,skuLines});
-          } else {
-            results.push({pagina:i+1,tracking,pedidoNum,destinatario,status:"pending"});
-          }
-        }
+          } catch(_){}
+        }));
+
+        // 3ª pasada: construir resultados con los datos ya cargados
+        const results=pageData.map(p=>{
+          const order=tabOrders.find(o=>o.numero===p.pedidoNum)
+                   ||orders.find(o=>o.numero===p.pedidoNum)
+                   ||fetchedMap[p.pedidoNum]||null;
+          const skuLines=order?order.productos.map(pr=>`${pr.sku} (x${pr.cantidad})`):[];
+          return {...p,skus:order?skuLines.join(', '):"No encontrado en TN",found:!!order,skuLines};
+        });
+        resultSetter(results);
+      } else {
+        resultSetter(pageData.map(p=>({...p,status:"pending"})));
       }
-      resultSetter(results);
-      if(results.length===0) toast("No se encontraron rótulos válidos en el PDF","warning");
+
+      if(pageData.length===0) toast("No se encontraron rótulos válidos en el PDF","warning");
       // No auto-generar — el usuario confirma con botón
-      if(type==="sku"&&results.length>0) { setter(false); return; }
+      if(type==="sku"&&pageData.length>0) { setter(false); return; }
     } catch(e){ toast("Error al procesar el PDF: "+e.message,"error"); }
     setter(false);
   }
@@ -6358,30 +6369,32 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 </div>
 
-                {/* Botones acción — arriba de la lista para acceso rápido */}
-                {(found.length>0||Object.keys(skuTotals).length>0)&&(
-                  <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
-                    {found.length>0&&!skuBlob&&(
-                      <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnPrimary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
-                        {skuGenerating?<><Spinner size={13} color="#fff"/> Generando...</>:"✔ Generar PDF con SKUs"}
-                      </AsyncButton>
-                    )}
-                    {skuBlob&&!skuGenerating&&(
-                      <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnSecondary(T),justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
-                        Regenerar PDF
-                      </AsyncButton>
-                    )}
-                    {Object.keys(skuTotals).length>0&&(
-                      <button onClick={()=>{
-                        const lines=["RESUMEN SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString("es-AR"),"","DETALLE:",""];
-                        Object.entries(skuTotals).sort().forEach(([k,v])=>lines.push(`${k}: ${v}u`));
-                        const a=document.createElement("a");
-                        a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(lines.join("\n"));
-                        a.download="resumen-sku.txt";a.click();
-                      }} style={{...BtnSecondary(T),padding:"10px 18px",fontSize:13}}>
-                        Exportar resumen
-                      </button>
-                    )}
+                {/* Botón Generar PDF — mismo diseño que Descargar */}
+                {found.length>0&&!skuBlob&&!skuGenerating&&(
+                  <div style={{background:"linear-gradient(135deg,#7c3aed18,#7c3aed08)",border:"2px solid #7c3aed66",borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
+                    <div style={{width:44,height:44,borderRadius:12,background:"#7c3aed22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>✨</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:15,fontWeight:800,color:"#a78bfa",marginBottom:3}}>Resultados listos</div>
+                      <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos encontrados{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
+                    </div>
+                    <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}}
+                      style={{background:"#7c3aed",border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:"0 4px 16px #7c3aed44"}}>
+                      ✔ Generar PDF con SKUs
+                    </AsyncButton>
+                  </div>
+                )}
+                {/* Exportar resumen */}
+                {Object.keys(skuTotals).length>0&&(
+                  <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+                    <button onClick={()=>{
+                      const lines=["RESUMEN SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString("es-AR"),"","DETALLE:",""];
+                      Object.entries(skuTotals).sort().forEach(([k,v])=>lines.push(`${k}: ${v}u`));
+                      const a=document.createElement("a");
+                      a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(lines.join("\n"));
+                      a.download="resumen-sku.txt";a.click();
+                    }} style={{...BtnSecondary(T),padding:"8px 16px",fontSize:12}}>
+                      Exportar resumen
+                    </button>
                   </div>
                 )}
 
