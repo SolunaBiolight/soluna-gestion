@@ -9661,6 +9661,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:del.nota?4:0}}>
                       <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:T.accent,fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
+                      {del.parcial&&<span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:5,background:"#f9731618",color:"#fb923c",border:"1px solid #f9731630",whiteSpace:"nowrap"}}>PARCIAL</span>}
                       <span style={{fontSize:10,color:T.textSm}}>{fmtDate(del.fecha)}{del.editedAt?" ✏️":""}</span>
                     </div>
                     {del.nota&&<div style={{fontSize:12,color:T.textMd,marginBottom:6}}>{del.nota}</div>}
@@ -10055,6 +10056,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             {t.titulo}
                           </div>
                           {t.propuestaPor&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:"#6366f118",color:"#818cf8",fontWeight:700,alignSelf:"flex-start",border:"1px solid #6366f130"}}>⬆ Propuesta por {t.propuestaPor}</span>}
+                          {(t.deliverables||[]).some(d=>d.parcial)&&t.estado!=="entregado"&&t.estado!=="aprobado"&&(
+                            <span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:"#f9731618",color:"#fb923c",fontWeight:700,alignSelf:"flex-start",border:"1px solid #f9731630"}}>📦 Entrega parcial</span>
+                          )}
                           {/* Brief preview */}
                           {brief&&(
                             <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",flex:1}}>
@@ -11640,18 +11644,18 @@ function ColaboradorPublicView({T, token}) {
     toast("Marcado como leído ✓","success");
   }
 
-  async function submitEntrega(tareaId) {
+  async function submitEntrega(tareaId, esFinal=true) {
     const link = (entregaLink[tareaId]||"").trim();
     const nota = (entregaNota[tareaId]||"").trim();
     const label = (entregaLabel[tareaId]||"").trim();
     if(!link) return appAlert("Pegá el link de tu entrega (Drive, WeTransfer, Dropbox, etc.)");
-    const d = await publicApi({action:"publicAddEntrega",tareaId,link,nota,label});
-    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado:"entregado",feedbackActual:null,deliverables:[...(t.deliverables||[]),d.entrega]}:t)}));
+    const d = await publicApi({action:"publicAddEntrega",tareaId,link,nota,label,esFinal});
+    setData(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado:esFinal?"entregado":t.estado,feedbackActual:null,deliverables:[...(t.deliverables||[]),d.entrega]}:t)}));
     setEntregaLink(prev=>({...prev,[tareaId]:""}));
     setEntregaLabel(prev=>({...prev,[tareaId]:""}));
     setEntregaNota(prev=>({...prev,[tareaId]:""}));
-    setEntregaEnviada(prev=>({...prev,[tareaId]:d.entrega}));
-    toast("¡Entrega enviada! ✓","success");
+    setEntregaEnviada(prev=>({...prev,[tareaId]:{...d.entrega,esFinal}}));
+    toast(esFinal?"¡Entrega final enviada! ✓":"📦 Entrega parcial guardada","success");
   }
 
   async function proponerTarea() {
@@ -12190,11 +12194,11 @@ function ColaboradorPublicView({T, token}) {
                     <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?"#ef444440":T.borderL}`,marginBottom:14}}>
                       {lastEntregaJustSent?(
                         <div style={{textAlign:"center"}}>
-                          <div style={{fontSize:32,marginBottom:8}}>🎉</div>
-                          <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:4}}>¡Entrega enviada!</div>
-                          <div style={{fontSize:12,color:T.textMd,marginBottom:14}}>El equipo va a revisarla y te avisamos pronto.</div>
+                          <div style={{fontSize:32,marginBottom:8}}>{lastEntregaJustSent.esFinal===false?"📦":"🎉"}</div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:4}}>{lastEntregaJustSent.esFinal===false?"¡Entrega parcial guardada!":"¡Entrega final enviada!"}</div>
+                          <div style={{fontSize:12,color:T.textMd,marginBottom:14}}>{lastEntregaJustSent.esFinal===false?"Podés seguir subiendo más entregas cuando tengas más listo.":"El equipo va a revisarla y te avisamos pronto."}</div>
                           <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
-                            <button onClick={()=>setEntregaEnviada(prev=>({...prev,[t._id]:null}))} style={{...BtnSecondary(T),fontSize:12}}>+ Enviar otra versión</button>
+                            <button onClick={()=>setEntregaEnviada(prev=>({...prev,[t._id]:null}))} style={{...BtnSecondary(T),fontSize:12}}>+ Subir otra entrega</button>
                             <a href={`https://wa.me/${adminWa?adminWa.replace(/\D/g,""):""}?text=${encodeURIComponent(`Hola! Acabo de subir mi entrega para "${t.titulo}". Por favor revisala cuando puedas 👍`)}`} target="_blank" rel="noreferrer"
                               style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5,color:"#22c55e",border:"1px solid #22c55e44"}}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
@@ -12217,12 +12221,16 @@ function ColaboradorPublicView({T, token}) {
                             placeholder="Notas para el equipo (opcional)"
                             style={{...iS,fontSize:12,width:"100%",minHeight:50,resize:"vertical",marginBottom:10}}/>
                           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                            <AsyncButton onClick={()=>submitEntrega(t._id)}
-                              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:7,padding:"11px 20px",borderRadius:10,border:"none",background:"#22c55e",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
-                              📤 Enviar entrega
+                            <AsyncButton onClick={()=>submitEntrega(t._id,false)}
+                              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px 10px",borderRadius:10,border:"1.5px solid #f9731650",background:"#f9731612",color:"#fb923c",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
+                              📦 Subir parcial
+                            </AsyncButton>
+                            <AsyncButton onClick={()=>submitEntrega(t._id,true)}
+                              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px 10px",borderRadius:10,border:"1.5px solid #22c55e50",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
+                              ✅ Entrega final
                             </AsyncButton>
                             <button onClick={()=>setShowEntregarForm(p=>({...p,[t._id]:false}))}
-                              style={{padding:"11px 16px",borderRadius:10,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                              style={{padding:"11px 12px",borderRadius:10,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
                               Cancelar
                             </button>
                           </div>

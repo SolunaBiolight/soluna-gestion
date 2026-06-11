@@ -516,7 +516,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "publicAddEntrega") {
-      const { tareaId, link, nota, label } = body;
+      const { tareaId, link, nota, label, esFinal=true } = body;
       if (!token || !tareaId || !link) return res.status(400).json({ error: "Link de entrega requerido" });
       const snap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
       if (snap.empty) return res.status(403).json({ error: "Token inválido" });
@@ -526,21 +526,24 @@ export default async function handler(req, res) {
       if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error: "No autorizado" });
       const prevDels = t.data().deliverables || [];
       const version = prevDels.length + 1;
-      const entrega = { link, nota: nota||"", label: label||`v${version}`, version, fecha: now };
-      const act = { tipo:"entrega", autor:colab.nombre, fecha:now, detalle:`Entregó versión ${version}` };
-      await ref.update({
+      const entrega = { link, nota: nota||"", label: label||`v${version}`, version, fecha: now, parcial: !esFinal };
+      const act = { tipo:"entrega", autor:colab.nombre, fecha:now, detalle: esFinal ? `Entregó versión ${version} (final)` : `Subió entrega parcial v${version}` };
+      const upd = {
         deliverables:[...prevDels, entrega],
-        estado:"entregado",
         feedbackActual:null,
         updatedAt:now,
         activity:[...(t.data().activity||[]), act],
-      });
-      // Email al manager
+      };
+      if (esFinal) upd.estado = "entregado";
+      await ref.update(upd);
+      // Email al manager solo en entrega final
       const managerEmail = t.data().managerEmail;
       if (managerEmail) {
         sendEmail({
           to: managerEmail,
-          subject: `📦 Nueva entrega de ${colab.nombre} — ${t.data().titulo}`,
+          subject: esFinal
+            ? `📦 Entrega final de ${colab.nombre} — ${t.data().titulo}`
+            : `📦 Entrega parcial de ${colab.nombre} — ${t.data().titulo}`,
           html: emailEntregaRecibida({ colab, tarea:t.data(), entrega, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }),
         });
       }
