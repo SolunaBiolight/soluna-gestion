@@ -9672,7 +9672,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     )}
                     <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap",alignItems:"center"}}>
                       {i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
-                        <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{...BtnPrimary(T),fontSize:11,padding:"4px 10px",background:T.green}}>✓ Aprobar</AsyncButton>
+                        <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#22c55e",color:"#fff",border:"1.5px solid #16a34a55",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>✓ Aprobar</AsyncButton>
                         <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>🔁 Pedir cambios</button>
                         {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
                       </>}
@@ -9983,7 +9983,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </div>
                           <div style={{display:"flex",gap:8,flexShrink:0}}>
                             <button onClick={()=>setKanbanSelected(t)} style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>Ver</button>
-                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:13,padding:"7px 14px",borderRadius:8,border:"none",background:T.green,color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
+                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:13,padding:"7px 14px",borderRadius:8,border:"1.5px solid #16a34a55",background:"#22c55e",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
                           </div>
                         </div>
                       );
