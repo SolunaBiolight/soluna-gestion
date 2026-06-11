@@ -6358,6 +6358,33 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 </div>
 
+                {/* Botones acción — arriba de la lista para acceso rápido */}
+                {(found.length>0||Object.keys(skuTotals).length>0)&&(
+                  <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
+                    {found.length>0&&!skuBlob&&(
+                      <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnPrimary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
+                        {skuGenerating?<><Spinner size={13} color="#fff"/> Generando...</>:"✔ Generar PDF con SKUs"}
+                      </AsyncButton>
+                    )}
+                    {skuBlob&&!skuGenerating&&(
+                      <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnSecondary(T),justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
+                        Regenerar PDF
+                      </AsyncButton>
+                    )}
+                    {Object.keys(skuTotals).length>0&&(
+                      <button onClick={()=>{
+                        const lines=["RESUMEN SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString("es-AR"),"","DETALLE:",""];
+                        Object.entries(skuTotals).sort().forEach(([k,v])=>lines.push(`${k}: ${v}u`));
+                        const a=document.createElement("a");
+                        a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(lines.join("\n"));
+                        a.download="resumen-sku.txt";a.click();
+                      }} style={{...BtnSecondary(T),padding:"10px 18px",fontSize:13}}>
+                        Exportar resumen
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {/* Botón de descarga prominente cuando está listo */}
                 {skuBlob&&!skuGenerating&&(
                   <div style={{background:"linear-gradient(135deg,#16a34a18,#16a34a08)",border:`2px solid ${T.green}66`,borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
@@ -6417,30 +6444,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   ))}
                 </div>
 
-                {/* Botones acción */}
-                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                  {found.length>0&&!skuBlob&&(
-                    <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnPrimary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
-                      {skuGenerating?<><Spinner size={13} color="#fff"/> Generando...</>:"✔ Generar PDF con SKUs"}
-                    </AsyncButton>
-                  )}
-                  {skuBlob&&!skuGenerating&&(
-                    <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}} style={{...BtnSecondary(T),justifyContent:"center",fontSize:13,padding:"10px 18px"}}>
-                      Regenerar PDF
-                    </AsyncButton>
-                  )}
-                  {Object.keys(skuTotals).length>0&&(
-                    <button onClick={()=>{
-                      const lines=["RESUMEN SKU DESPACHADOS","Fecha: "+new Date().toLocaleDateString("es-AR"),"","DETALLE:",""];
-                      Object.entries(skuTotals).sort().forEach(([k,v])=>lines.push(`${k}: ${v}u`));
-                      const a=document.createElement("a");
-                      a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(lines.join("\n"));
-                      a.download="resumen-sku.txt";a.click();
-                    }} style={{...BtnSecondary(T),padding:"10px 18px",fontSize:13}}>
-                      Exportar resumen
-                    </button>
-                  )}
-                </div>
               </div>);
             })()}
           </div>
