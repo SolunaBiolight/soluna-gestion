@@ -2415,10 +2415,14 @@ export default async function handler(req, res) {
         const allTN = [];
         for (let page = 1; page <= 5; page++) {
           // Timezone Argentina (UTC-3): until incluye hasta 23:59:59 hora AR (= 02:59:59 UTC del día siguiente).
-        // Si filtraramos en UTC plano, las ventas entre 21:00-23:59 hora AR del día until caerían fuera.
-        let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
+          // Sin filtro payment_status en la URL — filtramos en JS para incluir "authorized"
+          // (MercadoPago puede dejar pedidos recientes en "authorized" por 24-72hs antes de confirmar "paid").
+          let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&sort_by=created_at&sort_direction=desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
           const tnRes = await fetch(tnUrl, { headers });
-          if (!tnRes.ok) break;
+          if (!tnRes.ok) {
+            console.warn(`[tn-pending] page ${page} failed: status=${tnRes.status}`);
+            break;
+          }
           const batch = await tnRes.json();
           if (!Array.isArray(batch) || batch.length === 0) break;
           allTN.push(...batch);
@@ -2427,9 +2431,10 @@ export default async function handler(req, res) {
         for (const o of allTN) {
           const orderId = "TN-" + String(o.number || o.id);
           if ((o.status || "").toLowerCase() === "cancelled") continue;
-          // Filtros estrictos de pago: solo pagadas, sin devoluciones
+          // Incluir "paid" y "authorized" — MercadoPago puede tardar hasta 72hs en pasar de
+          // "authorized" a "paid", y esos pedidos son perfectamente facturables.
           const pStatus = (o.payment_status || "").toLowerCase();
-          if (pStatus !== "paid") continue;
+          if (!["paid", "authorized"].includes(pStatus)) continue;
           const docRaw = extractTNDoc(o);
           const clas = clasificarDoc(docRaw);
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
@@ -2450,8 +2455,8 @@ export default async function handler(req, res) {
             subtotal: parseFloat(o.subtotal) || 0,
             descuento: parseFloat(o.discount) || 0,
             envio: parseFloat(o.shipping_cost_customer) || 0,
-            estado_pago: "paid",
-            fecha: o.paid_at || o.created_at || "",
+            estado_pago: pStatus,
+            fecha: o.paid_at || o.updated_at || o.created_at || "",
             ciudad: o.shipping_address?.city || o.billing_city || "",
             provincia: o.shipping_address?.province || o.billing_province || "",
             // TN tiene address (calle), number, floor, locality. Combinamos todo.
@@ -2755,10 +2760,10 @@ export default async function handler(req, res) {
       };
       const allOrders = [];
       for (let page = 1; page <= 5; page++) {
-        let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=paid&created_at_min=${sinceDate}T00:00:00-03:00`;
+        let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&sort_by=created_at&sort_direction=desc&created_at_min=${sinceDate}T00:00:00-03:00`;
         if (untilDate) tnUrl += `&created_at_max=${untilDate}T23:59:59-03:00`;
         const tnRes = await fetch(tnUrl, { headers });
-        if (!tnRes.ok) break;
+        if (!tnRes.ok) { console.warn(`[tn-legacy] page ${page} failed: ${tnRes.status}`); break; }
         const batch = await tnRes.json();
         if (!Array.isArray(batch) || batch.length === 0) break;
         allOrders.push(...batch);
@@ -2775,8 +2780,10 @@ export default async function handler(req, res) {
       for (const o of allOrders) {
         const orderId = String(o.number || o.id);
         if (billedIds.has(orderId)) continue;
-        // Skip canceladas
+        // Skip canceladas y no-pagas (incluir "authorized" para órdenes recientes con MercadoPago)
         if ((o.status || "").toLowerCase() === "cancelled") continue;
+        const pStatusLeg = (o.payment_status || "").toLowerCase();
+        if (!["paid", "authorized"].includes(pStatusLeg)) continue;
 
         const docRaw = String(o.customer?.identification || "").replace(/[.\-]/g, "");
         const clas = clasificarDoc(docRaw);

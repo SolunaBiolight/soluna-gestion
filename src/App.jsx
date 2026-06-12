@@ -13891,6 +13891,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <span style={{fontSize:10,color:T.textSm,minWidth:68}}>{fechaHora}</span>
                                 <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:badgeColor(plat),color:badgeTextColor(plat),fontWeight:700,minWidth:24,textAlign:"center"}}>{label}</span>
                                 {wasAnulada&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"22",color:T.textSm,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>ANULADA</span>}
+                                {o.estado_pago==="authorized"&&!billed&&<span title="Pago autorizado por MercadoPago — aún no liquidado. Podés facturarla igual." style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:"#f59e0b18",color:"#f59e0b",fontWeight:700,whiteSpace:"nowrap",flexShrink:0,border:"1px solid #f59e0b33"}}>AUTORIZ.</span>}
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
                                   <div style={{fontSize:12,fontWeight:600,color:billed?T.green:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
                                   <div style={{fontSize:10,color:T.textSm}}>
