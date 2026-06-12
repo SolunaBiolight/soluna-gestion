@@ -867,7 +867,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
             }
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
-              <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="free"?"Plan Free":userPlan==="plus"?"Pro":userPlan==="full"?"Scale":"Free"}</div>
+              <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"?"Pro":userPlan==="full"?"Scale":isInTrial?"✨ Prueba gratis":"Plan Free"}</div>
             </div>
           </div>
         )}
@@ -7234,12 +7234,14 @@ function AuthScreen({T, darkMode, onToggleDark}) {
     const ref = doc(db, "users", user.uid);
     const snap = await getDoc(ref);
     if(!snap.exists()) {
+      const trialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       await setDoc(ref, {
         uid: user.uid,
         email: user.email,
         nombre: displayName || user.displayName || user.email.split("@")[0],
         createdAt: serverTimestamp(),
         plan: "free",
+        trialEnd,
         stores: [],
       });
     }
@@ -7256,6 +7258,13 @@ function AuthScreen({T, darkMode, onToggleDark}) {
             <div style={{fontSize:32,fontWeight:800,color:T.text,letterSpacing:-1,lineHeight:1}}>Growith</div>
           </div>
           <div style={{fontSize:13,color:T.textSm,marginTop:4}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
+          {mode==="register"&&(
+            <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:10,background:"linear-gradient(135deg,#22c55e18,#22c55e08)",border:"1.5px solid #22c55e55",borderRadius:20,padding:"6px 14px"}}>
+              <span style={{fontSize:15}}>🎁</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>7 días de prueba gratis</span>
+              <span style={{fontSize:12,color:"#6b7280"}}>· sin tarjeta</span>
+            </div>
+          )}
         </div>
 
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:28}}>
@@ -21871,8 +21880,9 @@ export default function App() {
   const [alertas,setAlertas]=useState([]);
   const [darkMode,setDarkMode]=useState(()=>{ try { return localStorage.getItem("growith_theme")!=="light"; } catch(e){ return true; } });
   const [migrated,setMigrated]=useState(false);
-  const [userPlan,setUserPlan]=useState("free"); // free | starter | pro | total
+  const [userPlan,setUserPlan]=useState("free"); // free | plus | full
   const [planExpiry,setPlanExpiry]=useState(null); // Date or null
+  const [trialEnd,setTrialEnd]=useState(null);    // Date or null — fin del período de prueba
   const [isAdmin,setIsAdmin]=useState(false);
   const [adminOnlySections,setAdminOnlySections]=useState(["rendimiento"]); // default, se sobreescribe al cargar
 
@@ -22005,6 +22015,7 @@ export default function App() {
             const d=userSnap.data();
             setUserPlan(d.plan||"free");
             setPlanExpiry(d.planExpiry?.toDate?.()||null);
+            setTrialEnd(d.trialEnd instanceof Date ? d.trialEnd : d.trialEnd?.toDate?.()??null);
           }
           // Check admin
           setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid) || d?.isAdmin===true);
@@ -22303,10 +22314,18 @@ export default function App() {
     </div>
   );
 
+  // ─── Trial computed values ───
+  const _now = new Date();
+  const isInTrial    = !!(trialEnd && _now < trialEnd && userPlan === "free");
+  const trialExpired = !!(trialEnd && _now >= trialEnd && userPlan === "free");
+  const trialDaysLeft = isInTrial ? Math.max(1, Math.ceil((trialEnd - _now) / (1000*60*60*24))) : 0;
+
   // ─── Render page content ───
-  // Plan gate: devuelve <UpgradeWall> si el plan del usuario no alcanza, o null si puede pasar
+  // Plan gate: devuelve <UpgradeWall> si el plan no alcanza, o null si puede pasar
+  // Durante el trial (isInTrial), todos los gates se bypasean — acceso completo
   const PLAN_LEVEL = {free:0, plus:1, full:2};
   const planGate = (req) => {
+    if (isInTrial) return null; // trial = acceso completo a todo
     if ((PLAN_LEVEL[userPlan]??0) < (PLAN_LEVEL[req]??0))
       return <UpgradeWall T={T} requiredPlan={req} onNavigate={setPage}/>;
     return null;
@@ -22361,6 +22380,11 @@ export default function App() {
           <div className="hide-mobile" style={{position:"sticky",top:0,zIndex:40,background:T.bg+"f5",backdropFilter:"blur(8px)",borderBottom:`1px solid ${T.border}`,padding:"10px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:DS.sp.md,height:48}}>
             <div/>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
+              {isInTrial&&(
+                <button onClick={()=>setPage("planes")} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 12px",background:"#22c55e18",border:"1.5px solid #22c55e55",borderRadius:20,color:"#22c55e",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                  🎁 Prueba gratis · {trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días`}
+                </button>
+              )}
               {tareasForReview>0&&(
                 <button onClick={()=>setPage("tareas")} title={`${tareasForReview} entrega${tareasForReview!==1?"s":""} esperando revisión`}
                   style={{position:"relative",padding:"5px 8px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,cursor:"pointer",display:"flex",alignItems:"center",color:T.text,animation:"bellShake 0.5s ease"}}>
@@ -22382,6 +22406,43 @@ export default function App() {
       <ToastContainer T={T}/>
       <AppPromptHost T={T}/>
       {user && <AndreaniPollingService uid={user.uid} onAlerts={setAndreaniAlertCount}/>}
+
+      {/* ── Banner prueba activa ── */}
+      {isInTrial&&ReactDOM.createPortal(
+        <div style={{position:"fixed",bottom:72,left:"50%",transform:"translateX(-50%)",zIndex:9000,pointerEvents:"none",display:"flex",justifyContent:"center"}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,#16a34a,#22c55e)",borderRadius:20,padding:"8px 18px",boxShadow:"0 4px 20px #22c55e44",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <span style={{fontSize:14}}>🎁</span>
+            <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>Prueba gratis</span>
+            <span style={{fontSize:12,color:"#dcfce7",fontWeight:500}}>·</span>
+            <span style={{fontSize:12,color:"#dcfce7"}}>{trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días restantes`}</span>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Overlay trial expirado ── */}
+      {trialExpired&&page!=="planes"&&ReactDOM.createPortal(
+        <div style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.85)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:36,maxWidth:420,width:"100%",textAlign:"center",boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:52,marginBottom:16}}>⏰</div>
+            <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>Tu prueba gratuita terminó</div>
+            <div style={{fontSize:14,color:T.textMd,lineHeight:1.6,marginBottom:28}}>
+              Espero que hayas disfrutado los 7 días. Para seguir usando Growith elegí el plan que mejor te queda.
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <button onClick={()=>setPage("planes")}
+                style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#7c3aed,#a78bfa)",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:"0 4px 16px #7c3aed44"}}>
+                ✨ Ver planes
+              </button>
+              <button onClick={()=>{try{signOut(auth);}catch(_){}}}
+                style={{width:"100%",padding:"10px",borderRadius:12,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                Cerrar sesión
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 }
