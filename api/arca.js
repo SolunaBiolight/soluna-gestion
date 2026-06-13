@@ -2412,27 +2412,34 @@ export default async function handler(req, res) {
           "Authentication": `bearer ${tnStore.accessToken}`,
           "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
         };
-        const allTN = [];
-        for (let page = 1; page <= 5; page++) {
-          // Timezone Argentina (UTC-3): until incluye hasta 23:59:59 hora AR (= 02:59:59 UTC del día siguiente).
-          // Sin filtro payment_status en la URL — filtramos en JS para incluir "authorized"
-          // (MercadoPago puede dejar pedidos recientes en "authorized" por 24-72hs antes de confirmar "paid").
-          let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&sort_by=created_at&sort_direction=desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
-          const tnRes = await fetch(tnUrl, { headers });
-          if (!tnRes.ok) {
-            console.warn(`[tn-pending] page ${page} failed: status=${tnRes.status}`);
-            break;
+        // Llamada helper: trae hasta N páginas de TN con un filtro de payment_status dado.
+        const fetchTNStatus = async (status) => {
+          const out = [];
+          const baseParams = `per_page=200&payment_status=${status}&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
+          for (let page = 1; page <= 5; page++) {
+            const url = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?${baseParams}&page=${page}`;
+            const r = await fetch(url, { headers });
+            if (!r.ok) { console.warn(`[tn-pending] ${status} page ${page} failed: ${r.status}`); break; }
+            const batch = await r.json();
+            if (!Array.isArray(batch) || batch.length === 0) break;
+            out.push(...batch);
+            if (batch.length < 200) break;
           }
-          const batch = await tnRes.json();
-          if (!Array.isArray(batch) || batch.length === 0) break;
-          allTN.push(...batch);
-          if (batch.length < 200) break;
-        }
+          return out;
+        };
+        // Dos llamadas en paralelo: una para "paid" y otra para "authorized"
+        // (authorized = MercadoPago aprobó pero aún no liquidó, igual es facturable)
+        const [paidBatch, authBatch] = await Promise.all([
+          fetchTNStatus("paid"),
+          fetchTNStatus("authorized"),
+        ]);
+        // Mergear deduplicando por id de orden (por si alguno aparece en ambos)
+        const tnById = new Map();
+        for (const o of [...paidBatch, ...authBatch]) tnById.set(o.id ?? o.number, o);
+        const allTN = [...tnById.values()];
         for (const o of allTN) {
           const orderId = "TN-" + String(o.number || o.id);
           if ((o.status || "").toLowerCase() === "cancelled") continue;
-          // Incluir "paid" y "authorized" — MercadoPago puede tardar hasta 72hs en pasar de
-          // "authorized" a "paid", y esos pedidos son perfectamente facturables.
           const pStatus = (o.payment_status || "").toLowerCase();
           if (!["paid", "authorized"].includes(pStatus)) continue;
           const docRaw = extractTNDoc(o);
@@ -2758,17 +2765,24 @@ export default async function handler(req, res) {
         "Authentication": `bearer ${tnStore.accessToken}`,
         "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
       };
-      const allOrders = [];
-      for (let page = 1; page <= 5; page++) {
-        let tnUrl = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&sort_by=created_at&sort_direction=desc&created_at_min=${sinceDate}T00:00:00-03:00`;
-        if (untilDate) tnUrl += `&created_at_max=${untilDate}T23:59:59-03:00`;
-        const tnRes = await fetch(tnUrl, { headers });
-        if (!tnRes.ok) { console.warn(`[tn-legacy] page ${page} failed: ${tnRes.status}`); break; }
-        const batch = await tnRes.json();
-        if (!Array.isArray(batch) || batch.length === 0) break;
-        allOrders.push(...batch);
-        if (batch.length < 200) break;
-      }
+      const fetchLegacyStatus = async (status) => {
+        const out = [];
+        for (let page = 1; page <= 5; page++) {
+          let url = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&payment_status=${status}&created_at_min=${sinceDate}T00:00:00-03:00`;
+          if (untilDate) url += `&created_at_max=${untilDate}T23:59:59-03:00`;
+          const r = await fetch(url, { headers });
+          if (!r.ok) { console.warn(`[tn-legacy] ${status} page ${page} failed: ${r.status}`); break; }
+          const batch = await r.json();
+          if (!Array.isArray(batch) || batch.length === 0) break;
+          out.push(...batch);
+          if (batch.length < 200) break;
+        }
+        return out;
+      };
+      const [paidLeg, authLeg] = await Promise.all([fetchLegacyStatus("paid"), fetchLegacyStatus("authorized")]);
+      const legById = new Map();
+      for (const o of [...paidLeg, ...authLeg]) legById.set(o.id ?? o.number, o);
+      const allOrders = [...legById.values()];
 
       // 3) Filtrar las que ya están facturadas (cruzando con arca_comprobantes)
       const billedSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
