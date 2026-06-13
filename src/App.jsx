@@ -12582,7 +12582,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if(!descartadasKey) return new Set();
     try { return new Set(JSON.parse(localStorage.getItem(descartadasKey)||"[]")); } catch(_){ return new Set(); }
   });
-  const [showDescartadas, setShowDescartadas] = useState(false);
+  const [showDescartadas, setShowDescartadas] = useState(true); // visible por defecto para no perder órdenes
   const [autoDescartar, setAutoDescartar] = useState(true); // al facturar, descartar automáticamente las no-seleccionadas
   function saveDescartadas(set) {
     setDescartadas(set);
@@ -13596,7 +13596,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
                     <div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Ventas pendientes de facturar</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Seleccioná las que querés facturar y tocá "Facturar"</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>
+                        {tnData?._tn_debug
+                          ? <>TN devolvió <strong style={{color:T.text}}>{tnData._tn_debug.total_raw}</strong> ventas pagas en el período · mostrando <strong style={{color:T.text}}>{Object.keys(tnData.ordenes||{}).length}</strong> en total</>
+                          : "Seleccioná las que querés facturar y tocá \"Facturar\""
+                        }
+                      </div>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                       <DateRangePicker T={T} since={fechaDesde} until={fechaHasta} onChange={(s,u)=>{ setPeriodoModo("custom"); setFechaDesde(s); setFechaHasta(u); }}

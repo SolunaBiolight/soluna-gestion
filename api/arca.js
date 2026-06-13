@@ -2403,6 +2403,7 @@ export default async function handler(req, res) {
 
       const connections = [];
       const ordenes = {};
+      let tnDebug = null; // diagnóstico: cuántas órdenes trajo TN por status
 
       // ─── Tienda Nube ───
       const tnStore = stores.find(s => s.type === "tiendanube");
@@ -2412,11 +2413,11 @@ export default async function handler(req, res) {
           "Authentication": `bearer ${tnStore.accessToken}`,
           "User-Agent": "GrowithApp (soluna.biolight@gmail.com)",
         };
-        // Llamada helper: trae hasta N páginas de TN con un filtro de payment_status dado.
+        // Llamada helper: trae TODAS las páginas de TN para un payment_status dado.
         const fetchTNStatus = async (status) => {
           const out = [];
           const baseParams = `per_page=200&payment_status=${status}&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
-          for (let page = 1; page <= 5; page++) {
+          for (let page = 1; page <= 10; page++) { // hasta 2000 órdenes por status
             const url = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?${baseParams}&page=${page}`;
             const r = await fetch(url, { headers });
             if (!r.ok) { console.warn(`[tn-pending] ${status} page ${page} failed: ${r.status}`); break; }
@@ -2427,21 +2428,34 @@ export default async function handler(req, res) {
           }
           return out;
         };
-        // Dos llamadas en paralelo: una para "paid" y otra para "authorized"
-        // (authorized = MercadoPago aprobó pero aún no liquidó, igual es facturable)
-        const [paidBatch, authBatch] = await Promise.all([
+        // Tres llamadas en paralelo: paid, authorized y partially_paid
+        // paid        → pago confirmado (siempre facturable)
+        // authorized  → MercadoPago aprobó, aún no liquidó (facturable)
+        // partially_paid → pago parcial recibido (facturable por el monto recibido)
+        const [paidBatch, authBatch, partialBatch] = await Promise.all([
           fetchTNStatus("paid"),
           fetchTNStatus("authorized"),
+          fetchTNStatus("partially_paid"),
         ]);
-        // Mergear deduplicando por id de orden (por si alguno aparece en ambos)
+        // Mergear deduplicando por TN id interno
         const tnById = new Map();
-        for (const o of [...paidBatch, ...authBatch]) tnById.set(o.id ?? o.number, o);
+        for (const o of [...paidBatch, ...authBatch, ...partialBatch]) {
+          tnById.set(String(o.id || o.number), o);
+        }
         const allTN = [...tnById.values()];
+        // Diagnóstico: cuántos trajo TN por status
+        tnDebug = {
+          paid: paidBatch.length,
+          authorized: authBatch.length,
+          partially_paid: partialBatch.length,
+          total_raw: allTN.length,
+        };
+        console.log(`[tn-pending] raw fetched — paid:${tnDebug.paid} auth:${tnDebug.authorized} partial:${tnDebug.partially_paid} total:${tnDebug.total_raw} range:${sinceDate}→${untilDate}`);
         for (const o of allTN) {
           const orderId = "TN-" + String(o.number || o.id);
           if ((o.status || "").toLowerCase() === "cancelled") continue;
           const pStatus = (o.payment_status || "").toLowerCase();
-          if (!["paid", "authorized"].includes(pStatus)) continue;
+          if (!["paid", "authorized", "partially_paid"].includes(pStatus)) continue;
           const docRaw = extractTNDoc(o);
           const clas = clasificarDoc(docRaw);
           const customerName = `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim()
@@ -2734,6 +2748,7 @@ export default async function handler(req, res) {
         connections,
         total_pending: Object.keys(ordenadas).length,
         ordenes: ordenadas,
+        _tn_debug: tnDebug || null, // cuántas trajo TN por status (para diagnóstico)
       });
     }
 
