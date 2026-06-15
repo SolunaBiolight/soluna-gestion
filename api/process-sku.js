@@ -74,7 +74,7 @@ function calcLayout(skuLines, zoneW, zoneH, maxFontSize = 6.5, minFontSize = 4.0
     for (let cols = 1; cols <= MAX_COLS; cols++) {
       const colW = zoneW / cols;
       const totalSlots = rowsPerCol * cols;
-      const charWidth = fs * 0.62;
+      const charWidth = fs * 0.70;
       const maxChars = Math.floor(colW / charWidth);
       const allFit = skuLines.every(l => l.length <= maxChars);
 
@@ -173,7 +173,7 @@ export default async function handler(req, res) {
         for (let row = 0; row < layout.rowsPerCol && lineIdx < skuLines.length; row++) {
           const line = skuLines[lineIdx];
           // Truncar si aun no entra (no deberia pasar con el layout correcto)
-          const maxCh = Math.floor(layout.colW / (layout.fontSize * 0.62));
+          const maxCh = Math.floor(layout.colW / (layout.fontSize * 0.70));
           const safe = line.length > maxCh ? line.slice(0, maxCh - 1) + '...' : line;
 
           // y crece hacia arriba en pdf-lib
