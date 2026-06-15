@@ -21991,6 +21991,8 @@ export default function App() {
   const [cmdOpen,setCmdOpen]=useState(false);
   const [andreaniAlertCount,setAndreaniAlertCount]=useState(0);
   const [tareasForReview,setTareasForReview]=useState(0);
+  const [tareasParaRevisarList,setTareasParaRevisarList]=useState([]);
+  const [bellPanelOpen,setBellPanelOpen]=useState(false);
   const [connectedStores,setConnectedStores]=useState({tn:false,shopify:false,ml:false,meta:false});
   // Multi-org Fase 1 — orgs[] vive en el user doc; active_org_id es el actual.
   // F1 sólo muestra el switcher y persiste la org activa. Las secciones siguen
@@ -22374,7 +22376,13 @@ export default function App() {
     if(!user?.uid) return;
     const poll=()=>{
       fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getData",uid:user.uid})})
-        .then(r=>r.json()).then(d=>{ if(d.tareas) setTareasForReview(d.tareas.filter(t=>t.estado==="entregado").length); })
+        .then(r=>r.json()).then(d=>{
+          if(d.tareas){
+            const pending=d.tareas.filter(t=>t.estado==="entregado");
+            setTareasForReview(pending.length);
+            setTareasParaRevisarList(pending.map(t=>({id:t._id,titulo:t.titulo,asignadoNombre:t.asignadoNombre||""})));
+          }
+        })
         .catch(()=>{});
     };
     poll();
@@ -22514,11 +22522,40 @@ export default function App() {
                 </button>
               )}
               {tareasForReview>0&&(
-                <button onClick={()=>setPage("tareas")} title={`${tareasForReview} entrega${tareasForReview!==1?"s":""} esperando revisión`}
-                  style={{position:"relative",padding:"5px 8px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,cursor:"pointer",display:"flex",alignItems:"center",color:T.text,animation:"bellShake 0.5s ease"}}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                  <span style={{position:"absolute",top:-4,right:-4,minWidth:16,height:16,borderRadius:8,background:"#ef4444",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px",fontFamily:"'Inter',system-ui,sans-serif"}}>{tareasForReview}</span>
-                </button>
+                <div style={{position:"relative"}}>
+                  <button onClick={()=>setBellPanelOpen(p=>!p)} title={`${tareasForReview} entrega${tareasForReview!==1?"s":""} esperando revisión`}
+                    style={{position:"relative",padding:"5px 8px",background:bellPanelOpen?T.surface:T.card,border:`1px solid ${bellPanelOpen?T.accent:T.border}`,borderRadius:DS.r.md,cursor:"pointer",display:"flex",alignItems:"center",color:T.text,animation:"bellShake 0.5s ease"}}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <span style={{position:"absolute",top:-4,right:-4,minWidth:16,height:16,borderRadius:8,background:"#ef4444",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px",fontFamily:"'Inter',system-ui,sans-serif"}}>{tareasForReview}</span>
+                  </button>
+                  {bellPanelOpen&&(
+                    <>
+                    <div onClick={()=>setBellPanelOpen(false)} style={{position:"fixed",inset:0,zIndex:199}}/>
+                    <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:200,width:300,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <div style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <span style={{fontSize:12,fontWeight:700,color:T.text}}>📦 Entregas para revisar</span>
+                        <button onClick={()=>setBellPanelOpen(false)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,lineHeight:1,padding:0}}>✕</button>
+                      </div>
+                      <div style={{maxHeight:260,overflowY:"auto"}}>
+                        {tareasParaRevisarList.map(t=>(
+                          <div key={t.id} style={{padding:"10px 14px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{width:32,height:32,borderRadius:"50%",background:T.orange+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.orange,flexShrink:0}}>
+                              {(t.asignadoNombre[0]||"?").toUpperCase()}
+                            </div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
+                              {t.asignadoNombre&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{t.asignadoNombre}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{padding:"10px 14px"}}>
+                        <button onClick={()=>{setBellPanelOpen(false);setPage("tareas");}} style={{...BtnPrimary(T),fontSize:12,width:"100%",justifyContent:"center"}}>Ver en Tareas →</button>
+                      </div>
+                    </div>
+                    </>
+                  )}
+                </div>
               )}
               <button onClick={()=>setCmdOpen(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 12px 5px 10px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,cursor:"pointer",fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
