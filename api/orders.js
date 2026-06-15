@@ -256,6 +256,11 @@ export default async function handler(req, res) {
   const calcStats = (orders, isShopify) => ({
     count: orders.length,
     revenue: orders.reduce((sum, o) => sum + parseFloat(isShopify ? (o.total_price || 0) : (o.total || 0)), 0),
+    units: orders.reduce((sum, o) => {
+      // Shopify: line_items[].quantity. TN: products[].quantity.
+      const items = isShopify ? (o.line_items || []) : (o.products || []);
+      return sum + items.reduce((s, it) => s + (parseInt(it.quantity) || 0), 0);
+    }, 0),
   });
 
   // ── ML orders helper ───────────────────────────────────────────
@@ -281,8 +286,13 @@ export default async function handler(req, res) {
   const calcMLStats = (mlOrders) => ({
     count: mlOrders.length,
     revenue: mlOrders.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0),
+    units: mlOrders.reduce((s, o) => s + ((o.order_items || []).reduce((u, it) => u + (parseInt(it.quantity) || 0), 0)), 0),
   });
-  const mergeStats = (a, b) => ({ count: (a.count || 0) + (b.count || 0), revenue: (a.revenue || 0) + (b.revenue || 0) });
+  const mergeStats = (a, b) => ({
+    count: (a.count || 0) + (b.count || 0),
+    revenue: (a.revenue || 0) + (b.revenue || 0),
+    units: (a.units || 0) + (b.units || 0),
+  });
 
   try {
     // Búsqueda directa por número (solo TN — Shopify devuelve vacío)

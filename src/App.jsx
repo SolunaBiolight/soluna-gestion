@@ -19629,11 +19629,14 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const [json, jsonPrev] = await Promise.all([r.json(), rPrev.json()]);
       if(json.error){toast(json.error,"error");setLoading(false);return;}
       if(json.products) {
-        // Override total_orders y total_revenue con los del Home (fuente
-        // confiable). Mantenemos products, daily_*, by_* del stock endpoint.
+        // Override total_orders, total_revenue Y total_units con los del Home
+        // (fuente confiable que cuenta bien por timezone AR y matchea Escalafy).
+        // Mantenemos products, daily_*, by_* del stock endpoint para los gráficos.
+        // Usamos ?? en vez de || para que valor 0 valga (no caer al fallback).
         if (homeStats?.current) {
-          json.total_orders  = homeStats.current.count   || json.total_orders;
-          json.total_revenue = homeStats.current.revenue || json.total_revenue;
+          json.total_orders  = homeStats.current.count   ?? json.total_orders;
+          json.total_revenue = homeStats.current.revenue ?? json.total_revenue;
+          json.total_units   = homeStats.current.units   ?? json.total_units;
         }
         setData(json);
       }
