@@ -9086,11 +9086,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
-  const ALL_VIEWS = ["todo","equipo"];
+  const ALL_VIEWS = ["todo","equipo","referencias"];
   const [activeView, setActiveView] = useState("todo");
   const view = ALL_VIEWS.includes(activeView) ? activeView : "todo";
   // compat aliases para lógica existente
-  const tab = view === "equipo" ? "equipo" : "trabajo";
+  const tab = view === "equipo" ? "equipo" : view === "referencias" ? "referencias" : "trabajo";
   const safeProdTab = view === "equipo" ? "todo" : view;
   const setTab = (v) => setActiveView(v === "equipo" ? "equipo" : "todo");
   const setProdTab = (v) => setActiveView(v);
@@ -9152,6 +9152,24 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [ncTelefono, setNcTelefono] = useState("");
   // Notificación post-creación
   const [notifPanel, setNotifPanel] = useState(null); // {tarea, colab}
+  // ── REFERENCIAS ──
+  const [referencias, setReferencias] = useState([]);
+  const [refLoading, setRefLoading] = useState(false);
+  const [showRefModal, setShowRefModal] = useState(false);
+  const [editingRef, setEditingRef] = useState(null);
+  const [refNombre, setRefNombre] = useState("");
+  const [refColor, setRefColor] = useState("#6366f1");
+  const [refLinks, setRefLinks] = useState([]);
+  const LINK_TIPOS = [
+    {id:"meta",      label:"Meta Ads",  icon:"📊", color:"#1877f2"},
+    {id:"instagram", label:"Instagram", icon:"📷", color:"#e1306c"},
+    {id:"tiktok",    label:"TikTok",    icon:"🎵", color:"#111"},
+    {id:"web",       label:"Website",   icon:"🌐", color:"#6366f1"},
+    {id:"drive",     label:"Drive",     icon:"📁", color:"#34a853"},
+    {id:"youtube",   label:"YouTube",   icon:"▶️", color:"#ff0000"},
+    {id:"otro",      label:"Otro",      icon:"🔗", color:"#6b7280"},
+  ];
+  const REF_COLORS = ["#6366f1","#f97316","#22c55e","#ef4444","#ec4899","#14b8a6","#f59e0b","#8b5cf6","#3b82f6","#64748b"];
   // ── PRODUCCIÓN CREATIVA ──
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
@@ -9205,7 +9223,32 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     catch(e){ /* silently use defaults */ }
     setProdLoading(false);
   }
-  useEffect(()=>{ loadData(); loadProduccion(); },[]);
+  async function loadReferencias(silent=false) {
+    if(!silent) setRefLoading(true);
+    try { const d=await tareasApi({action:"getGeneral"}); setReferencias(Array.isArray(d.referencias)?d.referencias:[]); }
+    catch(e){}
+    if(!silent) setRefLoading(false);
+  }
+  async function saveRefRemote(newRefs) {
+    await tareasApi({action:"saveReferencias", referencias:newRefs});
+    setReferencias(newRefs);
+  }
+  function openRefModal(ref=null) {
+    setEditingRef(ref); setRefNombre(ref?.nombre||""); setRefColor(ref?.color||REF_COLORS[0]);
+    setRefLinks(ref?.links ? ref.links.map(l=>({...l})) : []); setShowRefModal(true);
+  }
+  async function handleSaveRef() {
+    if(!refNombre.trim()) return appAlert("Ingresá el nombre de la marca");
+    const id=editingRef?.id||Math.random().toString(36).slice(2,14);
+    const brand={id,nombre:refNombre.trim(),color:refColor,links:refLinks.filter(l=>l.url&&l.url.trim())};
+    const updated=editingRef?referencias.map(r=>r.id===editingRef.id?brand:r):[...referencias,brand];
+    await saveRefRemote(updated); setShowRefModal(false);
+  }
+  async function handleDeleteRef(refId) {
+    if(!await appConfirm("¿Eliminar esta referencia?",{danger:true,okLabel:"Eliminar"})) return;
+    await saveRefRemote(referencias.filter(r=>r.id!==refId));
+  }
+  useEffect(()=>{ loadData(); loadProduccion(); loadReferencias(); },[]);
   useEffect(()=>{
     if(sidebarTab==="equipo") setActiveView("equipo");
     else if(sidebarTab==="trabajo"||sidebarTab) setActiveView("todo");
@@ -9828,13 +9871,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         {view==="todo"&&<button onClick={()=>setCalendarView(p=>!p)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>📅 {calendarView?"Tareas":"Calendario"}</button>}
         {view==="todo"&&!calendarView&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
         {view==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
+        {view==="referencias"&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Marca</button>}
       </AppTopbar>
 
       {/* Barra de tabs — 2 tabs principales */}
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:100,zIndex:29}}>
         <div style={{display:"flex",paddingLeft:24}}>
-          {[["todo","Tareas"],["equipo","Equipo"]].map(([id,label])=>{
-            const isActive=id==="equipo"?view==="equipo":view!=="equipo";
+          {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].map(([id,label])=>{
+            const isActive=view===id||(id==="todo"&&view!=="equipo"&&view!=="referencias");
             return (
               <button key={id} onClick={()=>setActiveView(id)}
                 style={{padding:"0 20px",height:42,border:"none",borderBottom:`2px solid ${isActive?T.accent:"transparent"}`,background:"transparent",color:isActive?T.accent:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:isActive?600:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,transition:"color 0.15s, border-color 0.15s"}}>
@@ -11353,6 +11397,101 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         </div>
       )}
 
+      {/* ── TAB REFERENCIAS ── */}
+      {!loading&&view==="referencias"&&(()=>{
+        const TIPO_META={meta:{icon:"📊",color:"#1877f2"},instagram:{icon:"📷",color:"#e1306c"},tiktok:{icon:"🎵",color:"#111"},web:{icon:"🌐",color:"#6366f1"},drive:{icon:"📁",color:"#34a853"},youtube:{icon:"▶️",color:"#ff0000"},otro:{icon:"🔗",color:"#6b7280"}};
+        return (
+          <div style={{padding:"20px 24px"}}>
+            {refLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
+            {!refLoading&&referencias.length===0&&(
+              <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Agregá marcas o tiendas de referencia para que tu equipo pueda acceder rápido a sus redes, ads y sitios." action={<Btn T={T} variant="primary" onClick={()=>openRefModal()}>+ Primera marca</Btn>}/>
+            )}
+            {!refLoading&&referencias.length>0&&(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:16}}>
+                {referencias.map(ref=>{
+                  const links=ref.links||[];
+                  const accentColor=ref.color||"#6366f1";
+                  return (
+                    <div key={ref.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+                      <div style={{background:`${accentColor}18`,borderBottom:`1px solid ${accentColor}30`,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{width:10,height:10,borderRadius:"50%",background:accentColor,flexShrink:0}}/>
+                        <div style={{flex:1,fontSize:14,fontWeight:700,color:T.text,lineHeight:1.3}}>{ref.nombre}</div>
+                        <button onClick={()=>openRefModal(ref)} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
+                        <button onClick={()=>handleDeleteRef(ref.id)} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                      </div>
+                      <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:7,flex:1}}>
+                        {links.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin links — editá para agregar</div>}
+                        {links.map((l,li)=>{
+                          const tp=TIPO_META[l.tipo||"otro"]||TIPO_META.otro;
+                          return (
+                            <a key={li} href={l.url} target="_blank" rel="noreferrer"
+                              style={{display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:tp.color,background:`${tp.color}12`,border:`1px solid ${tp.color}30`,borderRadius:8,padding:"7px 10px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                              <span style={{fontSize:14,flexShrink:0}}>{tp.icon}</span>
+                              <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.label||tp.label}</span>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{opacity:.4,flexShrink:0}}><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* MODAL Referencias — agregar / editar marca */}
+      {showRefModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowRefModal(false);}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontSize:15,fontWeight:700,color:T.text}}>{editingRef?"Editar marca":"Nueva marca"}</div>
+              <ModalCloseBtn T={T} onClick={()=>setShowRefModal(false)}/>
+            </div>
+            {/* Nombre */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Nombre de la marca *</div>
+              <input value={refNombre} onChange={e=>setRefNombre(e.target.value)} placeholder="ej: Nike Argentina" style={{...iS,width:"100%",fontSize:13}}/>
+            </div>
+            {/* Color */}
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:8}}>Color de la tarjeta</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {REF_COLORS.map(c=>(
+                  <button key={c} onClick={()=>setRefColor(c)}
+                    style={{width:28,height:28,borderRadius:"50%",background:c,border:refColor===c?`3px solid ${T.text}`:`2px solid transparent`,cursor:"pointer",outline:"none",padding:0,transition:"border 0.1s"}}/>
+                ))}
+              </div>
+            </div>
+            {/* Links */}
+            <div style={{marginBottom:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links</div>
+                <Btn T={T} variant="secondary" size="sm" onClick={()=>setRefLinks(p=>[...p,{id:Math.random().toString(36).slice(2),tipo:"web",label:"",url:""}])}>+ Agregar link</Btn>
+              </div>
+              {refLinks.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic",marginBottom:8,padding:"10px 0"}}>Sin links todavía — tocá "+ Agregar link"</div>}
+              {refLinks.map((l,li)=>(
+                <div key={l.id||li} style={{display:"grid",gridTemplateColumns:"140px 1fr 1fr auto",gap:6,marginBottom:8,alignItems:"center"}}>
+                  <select value={l.tipo||"web"} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,tipo:e.target.value}:x))} style={{...iS,fontSize:12,padding:"5px 8px"}}>
+                    {LINK_TIPOS.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                  </select>
+                  <input value={l.label} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,label:e.target.value}:x))} placeholder="Etiqueta (ej: @nikear)" style={{...iS,fontSize:12}}/>
+                  <input value={l.url} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,url:e.target.value}:x))} placeholder="https://..." style={{...iS,fontSize:12}}/>
+                  <button onClick={()=>setRefLinks(p=>p.filter((_,xi)=>xi!==li))} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",padding:"5px 6px",fontSize:18,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>×</button>
+                </div>
+              ))}
+            </div>
+            {/* Botones */}
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn T={T} variant="secondary" onClick={()=>setShowRefModal(false)}>Cancelar</Btn>
+              <AsyncButton onClick={handleSaveRef} style={BtnPrimary(T)}>Guardar</AsyncButton>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PANEL NOTIFICACIÓN post-creación de tarea */}
       {notifPanel&&(
         <div style={{position:"fixed",bottom:24,right:24,zIndex:300,maxWidth:340,width:"100%",background:T.card,border:`1px solid ${T.green}55`,borderRadius:16,padding:18,boxShadow:"0 8px 32px rgba(0,0,0,0.22)",animation:"slideUp 0.25s ease"}}>
@@ -12405,44 +12544,53 @@ function ColaboradorPublicView({T, token}) {
         )}
 
         {/* ── SECCIÓN REFERENCIAS ── */}
-        {referencias.length>0&&(
-          <div style={{marginTop:28}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(20,184,166,0.13),rgba(20,184,166,0.06))",borderRadius:12,border:"1.5px solid rgba(20,184,166,0.3)"}}>
-              <span style={{fontSize:18}}>🔍</span>
-              <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#0d9488"}}>Referencias</div>
-                <div style={{fontSize:11,color:T.textSm}}>{referencias.length} competidor{referencias.length!==1?"es":""}</div>
+        {referencias.length>0&&(()=>{
+          const TP={meta:{icon:"📊",color:"#1877f2"},instagram:{icon:"📷",color:"#e1306c"},tiktok:{icon:"🎵",color:"#111"},web:{icon:"🌐",color:"#6366f1"},drive:{icon:"📁",color:"#34a853"},youtube:{icon:"▶️",color:"#ff0000"},otro:{icon:"🔗",color:"#6b7280"}};
+          return (
+            <div style={{marginTop:28}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(20,184,166,0.13),rgba(20,184,166,0.06))",borderRadius:12,border:"1.5px solid rgba(20,184,166,0.3)"}}>
+                <span style={{fontSize:18}}>🔍</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#0d9488"}}>Referencias</div>
+                  <div style={{fontSize:11,color:T.textSm}}>{referencias.length} marca{referencias.length!==1?"s":""} de referencia</div>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
+                {referencias.map((ref,i)=>{
+                  const accentColor=ref.color||"#14b8a6";
+                  // Soporte formato nuevo (links[]) y viejo (web/metaAds/ig)
+                  const links = ref.links && ref.links.length>0 ? ref.links : [
+                    ref.web      && {tipo:"web",      label:"Web",      url:ref.web},
+                    (ref.metaAds||ref.meta) && {tipo:"meta",     label:"Meta Ads", url:ref.metaAds||ref.meta},
+                    ref.ig       && {tipo:"instagram", label:"Instagram", url:ref.ig},
+                  ].filter(Boolean);
+                  return (
+                    <div key={ref.id||i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                      <div style={{background:`${accentColor}18`,borderBottom:`1px solid ${accentColor}30`,padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{width:9,height:9,borderRadius:"50%",background:accentColor,flexShrink:0}}/>
+                        <div style={{fontSize:13,fontWeight:700,color:T.text,lineHeight:1.3}}>{ref.nombre}</div>
+                      </div>
+                      <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:6}}>
+                        {links.length===0&&<div style={{fontSize:11,color:T.textSm,fontStyle:"italic"}}>Sin links</div>}
+                        {links.map((l,li)=>{
+                          const tp=TP[l.tipo||"otro"]||TP.otro;
+                          return (
+                            <a key={li} href={l.url} target="_blank" rel="noreferrer"
+                              style={{display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:tp.color,background:`${tp.color}12`,border:`1px solid ${tp.color}30`,borderRadius:7,padding:"6px 10px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                              <span style={{fontSize:13,flexShrink:0}}>{tp.icon}</span>
+                              <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.label||tp.label}</span>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{opacity:.4,flexShrink:0}}><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
-              {referencias.map((ref,i)=>(
-                <div key={ref.id||i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10,lineHeight:1.3}}>{ref.nombre}</div>
-                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                    {ref.web&&(
-                      <a href={ref.web} target="_blank" rel="noreferrer"
-                        style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#6366f1",background:"#6366f115",border:"1px solid #6366f130",borderRadius:6,padding:"5px 9px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        🌐 Web
-                      </a>
-                    )}
-                    {(ref.metaAds||ref.meta)&&(
-                      <a href={ref.metaAds||ref.meta} target="_blank" rel="noreferrer"
-                        style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#1877f2",background:"#1877f215",border:"1px solid #1877f230",borderRadius:6,padding:"5px 9px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        📢 Meta Ads
-                      </a>
-                    )}
-                    {ref.ig&&(
-                      <a href={ref.ig} target="_blank" rel="noreferrer"
-                        style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#e1306c",background:"#e1306c15",border:"1px solid #e1306c30",borderRadius:6,padding:"5px 9px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        📸 IG
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ── SECCIÓN CREATIVOS (si tiene permiso) ── */}
         {creativos&&creativos.length>=0&&(

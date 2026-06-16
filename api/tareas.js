@@ -1225,6 +1225,19 @@ export default async function handler(req, res) {
       return res.json({ ok:true });
     }
 
+    if (action === "saveReferencias") {
+      const { referencias } = body;
+      if (!Array.isArray(referencias)) return res.status(400).json({ error:"referencias debe ser un array" });
+      const ref = db.collection("general").doc(uid);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set({ posts:[], referencias });
+      } else {
+        await ref.update({ referencias });
+      }
+      return res.json({ ok:true });
+    }
+
     // ── ADMIN ACTIONS (antiguo /api/admin) ───────────────────────────────────
 
     // getSectionsConfig: público (no requiere ser admin)
