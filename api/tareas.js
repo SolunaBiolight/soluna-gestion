@@ -570,7 +570,7 @@ export default async function handler(req, res) {
         prioridad: "normal",
         asignadoEmail: colab.email,
         asignadoNombre: colab.nombre,
-        ownerId: colab.ownerId,
+        uid: colab.uid,
         managerEmail: colab.managerEmail || "",
         propuestaPor: colab.nombre,
         deliverables,

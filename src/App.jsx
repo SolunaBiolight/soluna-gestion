@@ -11931,6 +11931,7 @@ function ColaboradorPublicView({T, token}) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 80px"}}>
+      <ToastContainer T={T}/>
       <AppPromptHost T={T}/>
 
       {/* Banner: guardá este link */}
