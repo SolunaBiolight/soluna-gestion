@@ -7386,6 +7386,22 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
       url.searchParams.delete("ml_error");
       url.searchParams.delete("status");
       window.history.replaceState({},"",url.pathname+url.search);
+    } else if(url.searchParams.get("tn_success")){
+      setMsg("Tienda Nube conectada ✓");
+      url.searchParams.delete("tn_success");
+      window.history.replaceState({},"",url.pathname+url.search);
+    } else if(url.searchParams.get("tn_error")){
+      const e=url.searchParams.get("tn_error");
+      const map={
+        token_failed:"Tienda Nube rechazó el intercambio. Intentá conectar de nuevo.",
+        token_invalid:"TN no devolvió access_token válido.",
+        user_not_found:"Tu usuario no se encontró en Firestore. Recargá la página e intentá de nuevo.",
+        shopify_already_connected:"Ya tenés Shopify conectado. Desvinculalo primero.",
+        server_error:"Error de conexión con Tienda Nube.",
+      };
+      setMsg("Error TN: "+(map[e]||e));
+      url.searchParams.delete("tn_error");
+      window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("meta_success")){
       setMsg("Meta conectada ✓");
       url.searchParams.delete("meta_success");
@@ -22372,6 +22388,10 @@ export default function App() {
     const unsub=onSnapshot(doc(db,"users",user.uid),snap=>{
       if(!snap.exists()) return;
       const d=snap.data();
+      // Sincronizar plan y trial en tiempo real (cubre race condition en primer login)
+      setUserPlan(d.plan||"free");
+      setPlanExpiry(d.planExpiry?.toDate?.()||null);
+      setTrialEnd(d.trialEnd instanceof Date ? d.trialEnd : d.trialEnd?.toDate?.()??null);
       const tn=d.stores?.find(s=>s.type==="tiendanube");
       const shopify=d.stores?.find(s=>s.type==="shopify");
       const ml=d.stores?.find(s=>s.type==="meli");
