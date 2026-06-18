@@ -897,6 +897,36 @@ export default async function handler(req, res) {
       return res.json({ ok:true });
     }
 
+    if (action === "sendRecordatorio") {
+      const { tareaId } = body;
+      const tareaSnap = await db.collection("tareas").doc(tareaId).get();
+      if (!tareaSnap.exists || tareaSnap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
+      const tarea = tareaSnap.data();
+      const colabSnap = await db.collection("colaboradores")
+        .where("uid","==",uid).where("email","==",tarea.asignadoEmail).limit(1).get();
+      if (colabSnap.empty) return res.status(404).json({ error:"Colaborador no encontrado" });
+      const colab = colabSnap.docs[0].data();
+      const link = colabPortalLink(origin, colab.token);
+      const html = `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#818cf8);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">🔔</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Recordatorio de tarea</div>
+  </div>
+  <p style="font-size:15px;color:#374151">Hola <strong>${colab.nombre.split(" ")[0]}</strong>,</p>
+  <p style="font-size:14px;color:#6b7280">Te mandamos este recordatorio sobre tu tarea pendiente:</p>
+  <div style="background:#f0f0ff;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #6366f1">
+    <div style="font-size:16px;font-weight:700;color:#1e1b4b">${tarea.titulo}</div>
+    ${tarea.descripcion?`<div style="font-size:13px;color:#6b7280;margin-top:6px">${tarea.descripcion}</div>`:""}
+    ${tarea.deadline?`<div style="font-size:13px;color:#d97706;margin-top:8px;font-weight:600">📅 Fecha límite: ${new Date(tarea.deadline._seconds?tarea.deadline._seconds*1000:tarea.deadline).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>`:""}
+  </div>
+  <a href="${link}" style="display:block;text-align:center;background:#6366f1;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver mi tarea →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+      const result = await sendEmail({ to: tarea.asignadoEmail, subject: `🔔 Recordatorio — ${tarea.titulo}`, html });
+      if (result.error) return res.status(500).json({ error: result.error });
+      return res.json({ ok: true });
+    }
+
     // ── ADMIN: editar una entrega por índice ──────────────────────────────────
     if (action === "updateDeliverable") {
       const { tareaId, deliverableIndex, link, label, nota } = body;
