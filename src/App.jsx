@@ -11778,6 +11778,7 @@ function ColaboradorPublicView({T, token}) {
   const [propLink, setPropLink] = useState("");
   const [propLinkLabel, setPropLinkLabel] = useState("");
   const [propSaving, setPropSaving] = useState(false);
+  const [showHistorial, setShowHistorial] = useState(false);
   const [bannerClosed, setBannerClosed] = useState(()=>{
     try{return localStorage.getItem(`growith_colab_banner_${token}`)==="1";}catch(e){return false;}
   });
@@ -11952,13 +11953,14 @@ function ColaboradorPublicView({T, token}) {
   const totalTareas = tareas.length;
   const progressPct = totalTareas>0?Math.round(aprobadas.length/totalTareas*100):0;
 
-  const sortedTareas = [...tareas].sort((a,b)=>{
-    const order={revision:0,pendiente:1,en_proceso:2,bloqueada:2,entregado:3,aprobado:4};
+  const sortedTareas = [...tareas].filter(t=>t.estado!=="aprobado").sort((a,b)=>{
+    const order={revision:0,pendiente:1,en_proceso:2,bloqueada:2,entregado:3};
     const oa=order[a.estado]??5, ob=order[b.estado]??5;
     if(oa!==ob) return oa-ob;
     const pa=a.prioridad==="urgente"?0:1, pb=b.prioridad==="urgente"?0:1;
     return pa-pb;
   });
+  const historialTareas = [...aprobadas].sort((a,b)=>(b.updatedAt?._seconds||b.createdAt?._seconds||0)-(a.updatedAt?._seconds||a.createdAt?._seconds||0));
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 80px"}}>
@@ -12053,7 +12055,7 @@ function ColaboradorPublicView({T, token}) {
 
         {/* Encabezado sección tareas + botón proponer */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
-          <div style={{fontSize:13,fontWeight:600,color:T.textSm}}>{sortedTareas.length>0?`${sortedTareas.length} tarea${sortedTareas.length!==1?"s":""}`:""}</div>
+          <div style={{fontSize:13,fontWeight:600,color:T.textSm}}>{sortedTareas.length>0?`${sortedTareas.length} tarea${sortedTareas.length!==1?"s":""} activa${sortedTareas.length!==1?"s":""}`:""}</div>
           <button onClick={()=>setShowProponerTarea(true)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 16px",background:"#6366f1",border:"none",color:"#fff",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:"0 4px 14px #6366f140"}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Proponer tarea
@@ -12507,6 +12509,62 @@ function ColaboradorPublicView({T, token}) {
           );
         })}
         </div>
+
+        {/* ── HISTORIAL DE TAREAS COMPLETADAS ── */}
+        {historialTareas.length>0&&(
+          <div style={{marginTop:28}}>
+            <button onClick={()=>setShowHistorial(v=>!v)}
+              style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:showHistorial?12:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:16}}>✅</span>
+                <div style={{textAlign:"left"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text}}>Historial</div>
+                  <div style={{fontSize:11,color:T.textSm}}>{historialTareas.length} tarea{historialTareas.length!==1?"s":""} completada{historialTareas.length!==1?"s":""}</div>
+                </div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{transform:showHistorial?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s"}}><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            {showHistorial&&(
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {historialTareas.map(t=>{
+                  const lastDel=(t.deliverables||[]).slice(-1)[0];
+                  const linksNorm=normalizeLinks(t.links);
+                  return(
+                    <div key={t._id} style={{background:T.card,border:`1px solid #22c55e30`,borderRadius:10,padding:"12px 14px"}}>
+                      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:lastDel||linksNorm.length?10:0}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                            {t.tareaNumStr&&<span style={{fontSize:10,fontWeight:700,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:4,padding:"1px 6px"}}>#{t.tareaNumStr}</span>}
+                            <span style={{fontSize:13,fontWeight:700,color:T.text}}>{t.titulo}</span>
+                          </div>
+                          {t.updatedAt&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>Completada el {fmtDate(t.updatedAt)}</div>}
+                        </div>
+                        <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#22c55e18",color:"#22c55e",border:"1px solid #22c55e30",flexShrink:0}}>✅ Aprobada</span>
+                      </div>
+                      {(lastDel||linksNorm.length>0)&&(
+                        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                          {lastDel&&lastDel.link&&(
+                            <a href={lastDel.link} target="_blank" rel="noreferrer"
+                              style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#6366f1",background:"#6366f112",border:"1px solid #6366f130",borderRadius:6,padding:"4px 10px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                              <span>📦</span>{lastDel.label||"Entrega final"}
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                            </a>
+                          )}
+                          {linksNorm.map((l,i)=>(
+                            <a key={i} href={l.url} target="_blank" rel="noreferrer"
+                              style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 10px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                              🔗 {l.name||"Archivo"}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── SECCIÓN EQUIPO (si tiene permiso verEquipo) ── */}
         {equipoTareas&&(
