@@ -22692,6 +22692,19 @@ export default function App() {
   const trialExpired = !!(trialEnd && _now >= trialEnd && userPlan === "free");
   const trialDaysLeft = isInTrial ? Math.max(1, Math.ceil((trialEnd - _now) / (1000*60*60*24))) : 0;
 
+  // ─── Plan expiry warning (trial ≤5d OR paid plan ≤5d) ───
+  const planDaysLeft = (userPlan !== "free" && planExpiry && planExpiry > _now)
+    ? Math.max(0, Math.ceil((planExpiry - _now) / (1000*60*60*24)))
+    : null;
+  const planExpiring  = planDaysLeft !== null && planDaysLeft <= 5;
+  const trialExpiring = isInTrial && trialDaysLeft <= 5;
+  const showExpiryWarning = planExpiring || trialExpiring;
+  const expiryDays = planExpiring ? planDaysLeft : trialDaysLeft;
+  const expiryIsTrial = trialExpiring && !planExpiring;
+  // Dismiss per-expiry-date so banner reappears each day
+  const _expiryDismissKey = `growith_expiry_dismiss_${user?.uid}_${(planExpiring?planExpiry:trialEnd)?.toDateString?.()}`;
+  const [expiryDismissed, setExpiryDismissed] = React.useState(()=>{try{return localStorage.getItem(_expiryDismissKey)==="1";}catch(e){return false;}});
+
   // ─── Render page content ───
   // Plan gate: devuelve <UpgradeWall> si el plan no alcanza, o null si puede pasar
   // Durante el trial (isInTrial), todos los gates se bypasean — acceso completo
@@ -22753,8 +22766,8 @@ export default function App() {
             <div/>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               {isInTrial&&(
-                <button onClick={()=>setPage("planes")} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 12px",background:"#22c55e18",border:"1.5px solid #22c55e55",borderRadius:20,color:"#22c55e",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
-                  🎁 Prueba gratis · {trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días`}
+                <button onClick={()=>setPage("planes")} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 12px",background:trialExpiring?"#ef444418":"#22c55e18",border:`1.5px solid ${trialExpiring?"#ef444455":"#22c55e55"}`,borderRadius:20,color:trialExpiring?"#ef4444":"#22c55e",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                  {trialExpiring?"⚠️":"🎁"} Prueba gratis · {trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días`}
                 </button>
               )}
               {tareasForReview>0&&(
@@ -22800,6 +22813,29 @@ export default function App() {
               </button>
             </div>
           </div>
+          {showExpiryWarning&&!expiryDismissed&&(
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 24px",background:expiryDays<=1?"#ef444415":"#f97316 15",backgroundImage:"none",backgroundColor:expiryDays<=1?"#ef444415":"#f9741615",borderBottom:`1px solid ${expiryDays<=1?"#ef444440":"#f9741640"}`,fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:18}}>{expiryDays<=1?"🚨":"⏰"}</span>
+                <div>
+                  <span style={{fontSize:13,fontWeight:700,color:expiryDays<=1?"#ef4444":"#f97316"}}>
+                    {expiryIsTrial
+                      ? expiryDays<=1 ? "¡Hoy vence tu prueba gratuita!" : `Tu prueba gratuita vence en ${expiryDays} días`
+                      : expiryDays<=1 ? "¡Hoy vence tu plan!" : `Tu plan vence en ${expiryDays} días`}
+                  </span>
+                  <span style={{fontSize:12,color:T.textMd,marginLeft:8}}>
+                    {expiryIsTrial ? "Activá un plan para no perder el acceso." : "Renovalo para no perder el acceso."}
+                  </span>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                <button onClick={()=>setPage("planes")} style={{padding:"5px 14px",background:expiryDays<=1?"#ef4444":"#f97316",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                  {expiryIsTrial?"Ver planes":"Renovar plan"}
+                </button>
+                <button onClick={()=>{try{localStorage.setItem(_expiryDismissKey,"1");}catch(e){}setExpiryDismissed(true);}} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:18,lineHeight:1,padding:"2px 4px"}}>✕</button>
+              </div>
+            </div>
+          )}
           <div key={page} style={{animation:"fadeIn 0.15s ease"}}>{pageContent}</div>
         </div>
       </div>
