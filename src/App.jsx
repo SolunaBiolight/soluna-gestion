@@ -9102,6 +9102,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
+  const [boardToken, setBoardTokenAdmin] = useState(null);
+  const [showBoardModal, setShowBoardModal] = useState(false);
+  const [boardLinkLoading, setBoardLinkLoading] = useState(false);
   const ALL_VIEWS = ["todo","equipo","referencias"];
   const [activeView, setActiveView] = useState("todo");
   const view = ALL_VIEWS.includes(activeView) ? activeView : "todo";
@@ -9220,7 +9223,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   async function loadData(silent=false) {
     if(!silent) setLoading(true);
-    try { const d = await tareasApi({action:"getData"}); setDatos(d); }
+    try {
+      const d = await tareasApi({action:"getData"});
+      setDatos(d);
+      if(d.boardToken) setBoardTokenAdmin(d.boardToken);
+    }
     catch(e){ if(!silent) appAlert("Error al cargar tareas: "+e.message); }
     if(!silent) setLoading(false);
   }
@@ -9899,6 +9906,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         {view==="todo"&&<button onClick={()=>setCalendarView(p=>!p)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>📅 {calendarView?"Tareas":"Calendario"}</button>}
         {view==="todo"&&!calendarView&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
         {view==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
+        {view==="equipo"&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Tablero compartido</button>}
         {view==="referencias"&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Marca</button>}
       </AppTopbar>
 
@@ -11591,6 +11599,58 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           </div>
         </div>
       )}
+
+      {/* Modal: Tablero compartido */}
+      {showBoardModal&&(
+        <>
+          <div onClick={()=>setShowBoardModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000}}/>
+          <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:1001,width:"min(440px,92vw)",background:T.card,borderRadius:16,padding:"24px",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <div style={{fontSize:16,fontWeight:700,color:T.text}}>🔗 Tablero compartido</div>
+              <button onClick={()=>setShowBoardModal(false)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:20,lineHeight:1,padding:0}}>✕</button>
+            </div>
+            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:16}}>
+              Compartí este link con tu equipo. Todas las colaboradoras pueden ver todas las tareas, actualizar el estado de las suyas y dejar comentarios — sin necesidad de crear una cuenta.
+            </div>
+            {boardLinkLoading?(
+              <div style={{padding:"16px",textAlign:"center",color:T.textSm,fontSize:13}}>Generando link...</div>
+            ):boardToken?(()=>{
+              const boardLink=`${window.location.origin}/#/tablero/${boardToken}`;
+              return(
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
+                    <div style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",lineHeight:1.4}}>{boardLink}</div>
+                    <button onClick={async()=>{try{await navigator.clipboard.writeText(boardLink);toast("Link copiado 📋","success");}catch(e){toast("Link: "+boardLink,"info");}}} style={{...BtnPrimary(T),fontSize:12,padding:"5px 12px",whiteSpace:"nowrap",flexShrink:0}}>Copiar</button>
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <a href={boardLink} target="_blank" rel="noopener noreferrer" style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,...BtnSecondary(T),fontSize:12,textDecoration:"none"}}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                      Vista previa
+                    </a>
+                    <button onClick={async()=>{if(!await appConfirm("¿Regenerar el link? El link anterior dejará de funcionar.",{danger:true,okLabel:"Regenerar"})) return; setBoardLinkLoading(true); try{const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"generateBoardToken",uid:user?.uid,_forceNew:true})}); const d=await r.json(); if(d.token) setBoardTokenAdmin(d.token); toast("Link regenerado ✓","success");}catch(e){toast("Error","error");} setBoardLinkLoading(false);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>
+                      🔄 Regenerar
+                    </button>
+                  </div>
+                  <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}30`,borderRadius:8}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.accent,marginBottom:4}}>¿Qué pueden hacer en el tablero?</div>
+                    <div style={{fontSize:11,color:T.textMd,lineHeight:1.7}}>
+                      ✅ Ver todas las tareas del equipo<br/>
+                      🔄 Actualizar el estado de sus tareas<br/>
+                      📦 Entregar trabajo con link<br/>
+                      💬 Comentar en cualquier tarea<br/>
+                      🔒 No pueden crear ni eliminar tareas
+                    </div>
+                  </div>
+                </div>
+              );
+            })():(
+              <div style={{textAlign:"center",padding:"10px"}}>
+                <div style={{fontSize:13,color:T.textSm}}>Error generando el link. Cerrá y volvé a intentar.</div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -12736,6 +12796,455 @@ function ColaboradorPublicView({T, token}) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ===========================================
+// TABLERO COMPARTIDO — Vista pública de equipo
+// ===========================================
+function ColaboradorBoardView({T, boardToken}) {
+  const [boardData, setBoardData]       = useState(null);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState(null);
+  const [identity, setIdentity]         = useState(()=>{ try{return JSON.parse(sessionStorage.getItem(`growith_board_id_${boardToken}`)||"null");}catch(e){return null;} });
+  const [showIdModal, setShowIdModal]   = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [showAprobadas, setShowAprobadas] = useState(false);
+  const [commentText, setCommentText]   = useState("");
+  const [entregaLink, setEntregaLink]   = useState("");
+  const [entregaLabel, setEntregaLabel] = useState("");
+  const [entregaNota, setEntregaNota]   = useState("");
+  const [showEntregaForm, setShowEntregaForm] = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [toastMsg, setToastMsg]         = useState(null);
+
+  async function boardApi(body) {
+    const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,boardToken})});
+    const d = await r.json();
+    if(!r.ok||d.error) throw new Error(d.error||"Error");
+    return d;
+  }
+
+  async function loadBoard(silent=false) {
+    try {
+      const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getBoardData",boardToken})});
+      const d = await r.json();
+      if(d.error){setError(d.error);return;}
+      setBoardData(d);
+      setSelectedTask(prev=>prev?d.tareas.find(t=>t._id===prev._id)||prev:null);
+    } catch(e){if(!silent)setError(e.message);}
+    finally{setLoading(false);}
+  }
+
+  useEffect(()=>{
+    loadBoard();
+    const id=setInterval(()=>loadBoard(true),30000);
+    return()=>clearInterval(id);
+  },[boardToken]);
+
+  function showToast(msg,type="success"){setToastMsg({msg,type});setTimeout(()=>setToastMsg(null),3000);}
+
+  function setIdent(colab){
+    const id={email:colab.email,nombre:colab.nombre};
+    try{sessionStorage.setItem(`growith_board_id_${boardToken}`,JSON.stringify(id));}catch(e){}
+    setIdentity(id);setShowIdModal(false);
+    showToast(`Hola ${colab.nombre.split(" ")[0]} 👋`);
+  }
+
+  function isMyTask(t){
+    if(!identity) return false;
+    return [t.asignadoEmail,...(t.asignadosEmails||[])].filter(Boolean).includes(identity.email);
+  }
+
+  const ESTADOS={
+    pendiente: {label:"Pendiente",color:"#d97706",bg:"#d9770620",icon:"⏳"},
+    en_proceso:{label:"En proceso",color:"#3b82f6",bg:"#3b82f620",icon:"🔄"},
+    bloqueada: {label:"Bloqueada",color:"#6b7280",bg:"#6b728018",icon:"🚫"},
+    revision:  {label:"A revisar",color:"#ef4444",bg:"#ef444420",icon:"🔁"},
+    entregado: {label:"Entregado",color:"#f97316",bg:"#f9731620",icon:"📦"},
+    aprobado:  {label:"Aprobado",color:"#22c55e",bg:"#22c55e20",icon:"✅"},
+  };
+  const KANBAN=[
+    {id:"pendiente",label:"Pendiente",icon:"⏳",color:"#d97706"},
+    {id:"en_proceso",label:"En proceso",icon:"🔄",color:"#3b82f6"},
+    {id:"bloqueada",label:"Bloqueada",icon:"🚫",color:"#6b7280"},
+    {id:"revision",label:"Para revisar",icon:"🔁",color:"#ef4444"},
+    {id:"entregado",label:"Entregado",icon:"📦",color:"#f97316"},
+  ];
+  const AVATAR_COLORS=["#6366f1","#ec4899","#f97316","#22c55e","#3b82f6","#a855f7","#14b8a6","#0ea5e9"];
+
+  if(loading) return(
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center"}}>
+        <GrowithLogo size={48} variant="color"/>
+        <div style={{marginTop:16,fontSize:13,color:T.textSm}}>Cargando tablero...</div>
+      </div>
+    </div>
+  );
+  if(error) return(
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}>
+      <div style={{fontSize:32}}>🔒</div>
+      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Tablero no encontrado</div>
+      <div style={{fontSize:13,color:T.textSm}}>{error}</div>
+    </div>
+  );
+  if(!boardData) return null;
+
+  const {workspace,tareas,colaboradores}=boardData;
+  const colabColorMap={};
+  colaboradores.forEach((c,i)=>{colabColorMap[c.email]=AVATAR_COLORS[i%AVATAR_COLORS.length];});
+
+  function getColabName(email){const c=colaboradores.find(x=>x.email===email);return c?c.nombre:email;}
+  function getAssignees(t){return[t.asignadoEmail,...(t.asignadosEmails||[])].filter(Boolean).map(e=>({email:e,nombre:getColabName(e),color:colabColorMap[e]||"#6366f1",initial:(getColabName(e)[0]||"?").toUpperCase()}));}
+
+  function fmtDeadline(d){
+    if(!d) return null;
+    const date=d._seconds?new Date(d._seconds*1000):d?.toDate?.()||new Date(d);
+    const diff=Math.ceil((date-new Date())/86400000);
+    if(diff<0) return{label:`Vencida (${Math.abs(diff)}d)`,color:"#ef4444"};
+    if(diff===0) return{label:"Hoy",color:"#f97316"};
+    if(diff===1) return{label:"Mañana",color:"#f97316"};
+    if(diff<=3) return{label:`${diff}d`,color:"#d97706"};
+    return{label:date.toLocaleDateString("es-AR",{day:"2-digit",month:"short"}),color:T.textSm};
+  }
+
+  const activasTareas=tareas.filter(t=>t.estado!=="aprobado");
+  const aprobadasTareas=tareas.filter(t=>t.estado==="aprobado").sort((a,b)=>(b.updatedAt?._seconds||0)-(a.updatedAt?._seconds||0));
+
+  return(
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:T.bg}}>
+      {/* Toast */}
+      {toastMsg&&(
+        <div style={{position:"fixed",top:16,right:16,zIndex:9999,padding:"10px 16px",background:toastMsg.type==="error"?"#ef4444":"#22c55e",color:"#fff",borderRadius:10,fontSize:13,fontWeight:600,boxShadow:"0 4px 20px rgba(0,0,0,0.2)",fontFamily:"'Inter',system-ui,sans-serif",maxWidth:320}}>
+          {toastMsg.msg}
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,position:"sticky",top:0,zIndex:40,backdropFilter:"blur(8px)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <GrowithLogo size={26} variant="color"/>
+          <div>
+            <div style={{fontSize:14,fontWeight:700,color:T.text}}>Tablero de equipo</div>
+            <div style={{fontSize:11,color:T.textSm}}>{workspace.nombre||"Growith"}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {identity?(
+            <button onClick={()=>setShowIdModal(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 12px",background:T.card,border:`1px solid ${T.border}`,borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:600,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <div style={{width:20,height:20,borderRadius:"50%",background:colabColorMap[identity.email]||"#6366f1",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#fff"}}>{identity.nombre[0].toUpperCase()}</div>
+              {identity.nombre.split(" ")[0]}
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          ):(
+            <button onClick={()=>setShowIdModal(true)} style={{padding:"5px 14px",background:T.accent,border:"none",borderRadius:20,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              👋 Identificate
+            </button>
+          )}
+          <button onClick={()=>loadBoard(true)} title="Actualizar" style={{width:32,height:32,borderRadius:8,background:"transparent",border:`1px solid ${T.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:T.textSm,flexShrink:0}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Kanban */}
+      <div style={{overflowX:"auto",padding:"16px 16px 8px"}}>
+        <div style={{display:"flex",gap:10,minWidth:900,alignItems:"flex-start"}}>
+          {KANBAN.map(col=>{
+            const colTareas=activasTareas.filter(t=>t.estado===col.id).sort((a,b)=>{
+              if(a.prioridad==="urgente"&&b.prioridad!=="urgente") return -1;
+              if(b.prioridad==="urgente"&&a.prioridad!=="urgente") return 1;
+              const da=a.deadline?._seconds||0;const db2=b.deadline?._seconds||0;
+              if(da&&db2) return da-db2;
+              return(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0);
+            });
+            return(
+              <div key={col.id} style={{flex:1,minWidth:180}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,padding:"0 2px"}}>
+                  <span style={{fontSize:13}}>{col.icon}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:T.text,flex:1}}>{col.label}</span>
+                  <span style={{minWidth:20,height:20,borderRadius:10,background:col.color+"22",color:col.color,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{colTareas.length}</span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {colTareas.map(t=>{
+                    const assignees=getAssignees(t);
+                    const dl=fmtDeadline(t.deadline);
+                    const mine=isMyTask(t);
+                    return(
+                      <div key={t._id} onClick={()=>{setSelectedTask(t);setCommentText("");setEntregaLink("");setEntregaLabel("");setEntregaNota("");setShowEntregaForm(false);}}
+                        style={{background:T.card,border:`1.5px solid ${mine?T.accent+"60":T.border}`,borderRadius:10,padding:"10px 11px",cursor:"pointer",transition:"box-shadow 0.12s",position:"relative"}}>
+                        {mine&&<div style={{position:"absolute",top:0,left:0,width:3,bottom:0,borderRadius:"10px 0 0 10px",background:T.accent}}/>}
+                        {t.prioridad==="urgente"&&<div style={{display:"inline-flex",alignItems:"center",gap:3,background:"#ef444420",color:"#ef4444",borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginBottom:5}}>🔴 URGENTE</div>}
+                        <div style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.4,marginBottom:7,paddingLeft:mine?6:0}}>{t.titulo}</div>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4,paddingLeft:mine?6:0}}>
+                          <div style={{display:"flex"}}>
+                            {assignees.map((a,i)=>(
+                              <div key={a.email} title={a.nombre} style={{width:20,height:20,borderRadius:"50%",background:a.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:"#fff",border:`2px solid ${T.card}`,marginLeft:i>0?-5:0,flexShrink:0}}>{a.initial}</div>
+                            ))}
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:5}}>
+                            {(t.deliverables||[]).length>0&&<span style={{fontSize:10,color:T.textSm}}>📦{t.deliverables.length}</span>}
+                            {dl&&<span style={{fontSize:10,fontWeight:600,color:dl.color}}>{dl.label}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {colTareas.length===0&&(
+                    <div style={{padding:"18px 8px",textAlign:"center",color:T.textSm,fontSize:11,borderRadius:8,border:`1.5px dashed ${T.border}`}}>Vacío</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Aprobadas colapsable */}
+      {aprobadasTareas.length>0&&(
+        <div style={{padding:"12px 16px 32px"}}>
+          <button onClick={()=>setShowAprobadas(p=>!p)} style={{display:"flex",alignItems:"center",gap:7,background:"transparent",border:"none",cursor:"pointer",color:T.textMd,fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:"6px 0",marginBottom:showAprobadas?8:0}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{transform:showAprobadas?"rotate(90deg)":"none",transition:"transform 0.2s"}}><polyline points="9 18 15 12 9 6"/></svg>
+            ✅ Aprobadas ({aprobadasTareas.length})
+          </button>
+          {showAprobadas&&(
+            <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
+              {aprobadasTareas.map(t=>(
+                <div key={t._id} onClick={()=>{setSelectedTask(t);setCommentText("");setShowEntregaForm(false);}}
+                  style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
+                  <span style={{fontSize:11,color:"#22c55e"}}>✅</span>
+                  <span style={{fontSize:12,color:T.textMd,fontWeight:500}}>{t.titulo}</span>
+                  {getAssignees(t).map((a,i)=>(
+                    <div key={a.email} style={{width:18,height:18,borderRadius:"50%",background:a.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:"#fff"}}>{a.initial}</div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal de identidad */}
+      {showIdModal&&(
+        <>
+          <div onClick={()=>setShowIdModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:200}}/>
+          <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:201,width:"min(340px,92vw)",background:T.card,borderRadius:16,padding:"22px",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:4}}>👋 ¿Quién sos?</div>
+            <div style={{fontSize:13,color:T.textSm,marginBottom:14}}>Seleccioná tu nombre para interactuar con tus tareas.</div>
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {colaboradores.map(c=>(
+                <button key={c._id} onClick={()=>setIdent(c)}
+                  style={{display:"flex",alignItems:"center",gap:10,padding:"10px 13px",background:identity?.email===c.email?T.accent+"20":T.surface,border:`1.5px solid ${identity?.email===c.email?T.accent:T.border}`,borderRadius:10,cursor:"pointer",textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",transition:"border-color 0.15s"}}>
+                  <div style={{width:34,height:34,borderRadius:"50%",background:colabColorMap[c.email]||"#6366f1",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:"#fff",flexShrink:0}}>{c.nombre[0].toUpperCase()}</div>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>{c.nombre}</div>
+                    {c.rol&&<div style={{fontSize:11,color:T.textSm}}>{c.rol}</div>}
+                  </div>
+                  {identity?.email===c.email&&<svg style={{marginLeft:"auto",color:T.accent,flexShrink:0}} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                </button>
+              ))}
+            </div>
+            {identity&&<button onClick={()=>{try{sessionStorage.removeItem(`growith_board_id_${boardToken}`);}catch(e){}setIdentity(null);setShowIdModal(false);}} style={{marginTop:10,width:"100%",padding:"7px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,cursor:"pointer",color:T.textSm,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>Salir (solo ver)</button>}
+            {!identity&&<button onClick={()=>setShowIdModal(false)} style={{marginTop:10,width:"100%",padding:"7px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,cursor:"pointer",color:T.textSm,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>Solo ver (sin identificarme)</button>}
+          </div>
+        </>
+      )}
+
+      {/* Panel lateral de tarea */}
+      {selectedTask&&(()=>{
+        const t=boardData.tareas.find(x=>x._id===selectedTask._id)||selectedTask;
+        const mine=isMyTask(t);
+        const dl=fmtDeadline(t.deadline);
+        const assignees=getAssignees(t);
+        const est=ESTADOS[t.estado]||ESTADOS.pendiente;
+
+        async function addComment(){
+          if(!commentText.trim()||!identity) return;
+          setSaving(true);
+          try{await boardApi({action:"boardAddComment",colabEmail:identity.email,tareaId:t._id,texto:commentText});setCommentText("");await loadBoard(true);showToast("Comentario enviado ✓");}
+          catch(e){showToast(e.message,"error");}
+          finally{setSaving(false);}
+        }
+        async function addEntrega(){
+          if(!entregaLink.trim()||!identity) return;
+          setSaving(true);
+          try{await boardApi({action:"boardAddEntrega",colabEmail:identity.email,tareaId:t._id,link:entregaLink,label:entregaLabel,nota:entregaNota});setEntregaLink("");setEntregaLabel("");setEntregaNota("");setShowEntregaForm(false);await loadBoard(true);showToast("Entrega enviada ✓ 📦");}
+          catch(e){showToast(e.message,"error");}
+          finally{setSaving(false);}
+        }
+        async function changeStatus(estado){
+          if(!identity) return;
+          setSaving(true);
+          try{await boardApi({action:"boardUpdateStatus",colabEmail:identity.email,tareaId:t._id,estado});await loadBoard(true);showToast(`Estado → ${ESTADOS[estado]?.label}`);}
+          catch(e){showToast(e.message,"error");}
+          finally{setSaving(false);}
+        }
+
+        return(
+          <>
+            <div onClick={()=>setSelectedTask(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:300}}/>
+            <div style={{position:"fixed",top:0,right:0,bottom:0,width:"min(460px,100vw)",background:T.card,zIndex:301,overflowY:"auto",boxShadow:"-8px 0 40px rgba(0,0,0,0.2)",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
+              {/* Panel header */}
+              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,flexShrink:0,background:T.card,position:"sticky",top:0,zIndex:1}}>
+                <button onClick={()=>setSelectedTask(null)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:22,lineHeight:1,padding:0,flexShrink:0}}>←</button>
+                <div style={{flex:1,fontSize:13,fontWeight:700,color:T.text,lineHeight:1.3}}>{t.titulo}</div>
+                <span style={{padding:"3px 8px",background:est.bg,color:est.color,borderRadius:6,fontSize:11,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{est.icon} {est.label}</span>
+              </div>
+
+              <div style={{padding:"16px 18px",display:"flex",flexDirection:"column",gap:14,flex:1}}>
+                {/* Meta chips */}
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {assignees.map(a=>(
+                    <div key={a.email} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:T.surface,borderRadius:20,border:`1px solid ${T.border}`}}>
+                      <div style={{width:18,height:18,borderRadius:"50%",background:a.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:"#fff"}}>{a.initial}</div>
+                      <span style={{fontSize:12,color:T.text,fontWeight:500}}>{a.nombre}</span>
+                    </div>
+                  ))}
+                  {dl&&<div style={{padding:"4px 10px",background:dl.color+"20",borderRadius:20,fontSize:12,fontWeight:600,color:dl.color}}>📅 {dl.label}</div>}
+                  {t.prioridad==="urgente"&&<div style={{padding:"4px 10px",background:"#ef444420",borderRadius:20,fontSize:12,fontWeight:700,color:"#ef4444"}}>🔴 URGENTE</div>}
+                  {t.tareaNumStr&&<div style={{padding:"4px 10px",background:T.surface,borderRadius:20,fontSize:11,color:T.textSm}}>#{t.tareaNumStr}</div>}
+                </div>
+
+                {/* Descripción */}
+                {t.descripcion&&<div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>{t.descripcion}</div>}
+
+                {/* Brief */}
+                {t.brief&&(
+                  <div style={{background:T.surface,borderRadius:10,padding:"12px 14px",border:`1px solid ${T.border}`}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief</div>
+                    <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{t.brief}</div>
+                  </div>
+                )}
+
+                {/* Links de referencia */}
+                {(t.links||[]).length>0&&(
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {(t.links||[]).map((l,i)=>{const url=typeof l==="string"?l:l.url;const name=typeof l==="string"?"Link":l.name||"Link";return(
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",background:T.accent+"15",border:`1px solid ${T.accent}40`,borderRadius:6,fontSize:12,color:T.accent,textDecoration:"none",fontWeight:500}}>🔗 {name}</a>
+                    );})}
+                  </div>
+                )}
+
+                {/* Checklist */}
+                {(t.checklist||[]).length>0&&(
+                  <div style={{background:T.surface,borderRadius:10,padding:"10px 13px",border:`1px solid ${T.border}`}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>Checklist</div>
+                    {t.checklist.map(item=>(
+                      <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",borderBottom:`1px solid ${T.borderL}`}}>
+                        <span style={{fontSize:14,flexShrink:0}}>{item.done?"☑":"☐"}</span>
+                        <span style={{fontSize:12,color:item.done?T.textSm:T.text,textDecoration:item.done?"line-through":"none"}}>{item.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Entregas previas */}
+                {(t.deliverables||[]).length>0&&(
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>Entregas ({t.deliverables.length})</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {t.deliverables.map((d,i)=>(
+                        <div key={i} style={{background:T.surface,borderRadius:8,padding:"9px 11px",border:`1px solid ${T.border}`}}>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                            <span style={{fontSize:12,fontWeight:600,color:T.text}}>{d.label||`v${i+1}`}</span>
+                            <a href={d.link} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.accent,textDecoration:"none",fontWeight:600}}>Ver →</a>
+                          </div>
+                          {d.nota&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>{d.nota}</div>}
+                          {t.feedbackActual&&i===t.deliverables.length-1&&(
+                            <div style={{marginTop:6,padding:"6px 8px",background:"#ef444415",border:"1px solid #ef444430",borderRadius:6,fontSize:11,color:"#ef4444"}}>
+                              💬 Corrección: {t.feedbackActual}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Acciones — solo si es mi tarea y no está aprobada */}
+                {mine&&t.estado!=="aprobado"&&(
+                  <div style={{border:`1.5px solid ${T.accent}50`,borderRadius:12,padding:"13px",background:T.accent+"08"}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.accent,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Mis acciones</div>
+                    <div style={{marginBottom:10}}>
+                      <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Cambiar estado:</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                        {Object.entries(ESTADOS).filter(([k])=>k!=="aprobado"&&k!==t.estado).map(([k,v])=>(
+                          <button key={k} onClick={()=>changeStatus(k)} disabled={saving}
+                            style={{padding:"4px 8px",background:v.bg,border:`1px solid ${v.color}50`,borderRadius:6,color:v.color,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:saving?0.5:1}}>
+                            {v.icon} {v.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {!showEntregaForm?(
+                      <button onClick={()=>setShowEntregaForm(true)}
+                        style={{width:"100%",padding:"8px",background:T.accent,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        📦 Entregar trabajo
+                      </button>
+                    ):(
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        <input value={entregaLink} onChange={e=>setEntregaLink(e.target.value)} placeholder="Link del trabajo (Drive, WeTransfer, Dropbox...)" style={{padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:7,fontSize:12,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
+                        <input value={entregaLabel} onChange={e=>setEntregaLabel(e.target.value)} placeholder="Etiqueta: v1, v2, Final..." style={{padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:7,fontSize:12,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
+                        <textarea value={entregaNota} onChange={e=>setEntregaNota(e.target.value)} placeholder="Nota (opcional)" rows={2} style={{padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:7,fontSize:12,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",outline:"none",resize:"none"}}/>
+                        <div style={{display:"flex",gap:6}}>
+                          <button onClick={addEntrega} disabled={!entregaLink.trim()||saving}
+                            style={{flex:1,padding:"8px",background:T.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:!entregaLink.trim()||saving?0.5:1}}>
+                            {saving?"Enviando...":"Enviar entrega"}
+                          </button>
+                          <button onClick={()=>setShowEntregaForm(false)}
+                            style={{padding:"8px 11px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:7,cursor:"pointer",fontSize:12,color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Comentarios */}
+                {(t.comments||[]).length>0&&(
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>Comentarios ({t.comments.length})</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {t.comments.map((c,i)=>{
+                        const isManager=c.autor==="manager";
+                        return(
+                          <div key={i} style={{background:isManager?T.accent+"10":T.surface,borderRadius:8,padding:"8px 11px",border:`1px solid ${isManager?T.accent+"30":T.border}`}}>
+                            <div style={{fontSize:10,fontWeight:700,color:isManager?T.accent:colabColorMap[c.autorEmail]||T.textMd,marginBottom:3}}>
+                              {isManager?"👩‍💼 Manager":`💬 ${c.autor||"Colaborador"}`}
+                            </div>
+                            <div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{c.texto}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Input comentario */}
+                {identity?(
+                  <div style={{display:"flex",gap:6}}>
+                    <input value={commentText} onChange={e=>setCommentText(e.target.value)}
+                      onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();addComment();}}}
+                      placeholder="Escribir comentario..." style={{flex:1,padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:8,fontSize:12,background:T.surface,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
+                    <button onClick={addComment} disabled={!commentText.trim()||saving}
+                      style={{padding:"8px 13px",background:T.accent,border:"none",borderRadius:8,color:"#fff",fontSize:13,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:!commentText.trim()||saving?0.5:1}}>
+                      →
+                    </button>
+                  </div>
+                ):(
+                  <div style={{textAlign:"center",padding:"10px",background:T.surface,borderRadius:8,border:`1px dashed ${T.border}`}}>
+                    <button onClick={()=>setShowIdModal(true)} style={{fontSize:12,color:T.accent,background:"none",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                      Identificate para comentar y actualizar estado →
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -22172,6 +22681,9 @@ export default function App() {
   const [colabToken, setColabToken] = useState(_colabMatch ? _colabMatch[1] : null);
   const _editorMatch = _initialHash.match(/^editor-produccion\/([a-z0-9]{8,})/i);
   const [editorProdToken, setEditorProdToken] = useState(_editorMatch ? _editorMatch[1] : null);
+  // Tablero compartido: #/tablero/BOARD_TOKEN
+  const _boardMatch = _initialHash.match(/^tablero\/([a-z0-9]{8,})/i);
+  const [boardToken, setBoardToken] = useState(_boardMatch ? _boardMatch[1] : null);
   const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "home");
   const setPage = (p) => {
     _setPage(p);
@@ -22187,10 +22699,12 @@ export default function App() {
     const onHash = () => {
       const h = window.location.hash.replace(/^#\/?/, "") || "home";
       const cm = h.match(/^colaborador\/([a-z0-9]{8,})/i);
-      if (cm) { setColabToken(cm[1]); setEditorProdToken(null); return; }
+      if (cm) { setColabToken(cm[1]); setEditorProdToken(null); setBoardToken(null); return; }
       const em = h.match(/^editor-produccion\/([a-z0-9]{8,})/i);
-      if (em) { setEditorProdToken(em[1]); setColabToken(null); return; }
-      setColabToken(null); setEditorProdToken(null);
+      if (em) { setEditorProdToken(em[1]); setColabToken(null); setBoardToken(null); return; }
+      const bm = h.match(/^tablero\/([a-z0-9]{8,})/i);
+      if (bm) { setBoardToken(bm[1]); setColabToken(null); setEditorProdToken(null); return; }
+      setColabToken(null); setEditorProdToken(null); setBoardToken(null);
       if (VALID_PAGES.includes(h)) _setPage(h);
     };
     window.addEventListener("hashchange", onHash);
@@ -22629,6 +23143,7 @@ export default function App() {
   // Vistas públicas (sin login, acceso por token)
   if(editorProdToken) return <EditorProduccionView T={T} token={editorProdToken}/>;
   if(colabToken) return <ColaboradorPublicView T={T} token={colabToken}/>;
+  if(boardToken) return <ColaboradorBoardView T={T} boardToken={boardToken}/>;
 
   // Loading
   if(user===undefined) return (

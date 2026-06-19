@@ -676,13 +676,15 @@ export default async function handler(req, res) {
     if (!uid) return res.status(403).json({ error: "No autorizado" });
 
     if (action === "getData") {
-      const [cs, ts] = await Promise.all([
+      const [cs, ts, userSnap] = await Promise.all([
         db.collection("colaboradores").where("uid","==",uid).get(),
         db.collection("tareas").where("uid","==",uid).get(),
+        db.collection("users").doc(uid).get(),
       ]);
       return res.json({
         colaboradores: cs.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>a.nombre.localeCompare(b.nombre,"es")),
         tareas:        ts.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0)),
+        boardToken:    userSnap.exists ? (userSnap.data().boardToken || null) : null,
       });
     }
 
@@ -1488,6 +1490,109 @@ export default async function handler(req, res) {
         delayMs: delayMs && Number(delayMs) > 60000 ? Number(delayMs) : undefined,
       });
       return res.json({ ok: true, emailId: result.id });
+    }
+
+    // ── TABLERO COMPARTIDO ──────────────────────────────────────────────────
+
+    if (action === "generateBoardToken") {
+      const userRef = db.collection("users").doc(uid);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) return res.status(404).json({ error:"Usuario no encontrado" });
+      const existing = userSnap.data().boardToken;
+      if (existing) return res.json({ token: existing });
+      const token = randomToken(32);
+      await userRef.update({ boardToken: token });
+      return res.json({ token });
+    }
+
+    if (action === "getBoardData") {
+      const { boardToken } = body;
+      if (!boardToken) return res.status(400).json({ error:"boardToken requerido" });
+      const usersSnap = await db.collection("users").where("boardToken","==",boardToken).limit(1).get();
+      if (usersSnap.empty) return res.status(404).json({ error:"Tablero no encontrado" });
+      const boardUid = usersSnap.docs[0].id;
+      const userData = usersSnap.docs[0].data();
+      const [tareasSnap, colabsSnap, generalSnap] = await Promise.all([
+        db.collection("tareas").where("uid","==",boardUid).get(),
+        db.collection("colaboradores").where("uid","==",boardUid).get(),
+        db.collection("general").doc(boardUid).get(),
+      ]);
+      const tareas = tareasSnap.docs.map(d => ({ _id:d.id, ...d.data() }))
+        .sort((a,b) => (b.createdAt?._seconds||0) - (a.createdAt?._seconds||0));
+      const colaboradores = colabsSnap.docs.map(d => ({ _id:d.id, ...d.data() }))
+        .sort((a,b) => a.nombre.localeCompare(b.nombre,"es"));
+      const general = generalSnap.exists ? generalSnap.data() : { posts:[], referencias:[] };
+      return res.json({
+        workspace: { nombre: userData.nombre || userData.displayName || "Equipo" },
+        tareas,
+        colaboradores: colaboradores.map(c=>({ _id:c._id, nombre:c.nombre, email:c.email, rol:c.rol||"", token:c.token })),
+        posts: general.posts || [],
+        referencias: general.referencias || [],
+      });
+    }
+
+    if (action === "boardAddComment") {
+      const { boardToken, colabEmail, tareaId, texto } = body;
+      if (!boardToken || !colabEmail || !tareaId || !texto?.trim()) return res.status(400).json({ error:"Faltan parámetros" });
+      const usersSnap = await db.collection("users").where("boardToken","==",boardToken).limit(1).get();
+      if (usersSnap.empty) return res.status(404).json({ error:"Tablero no encontrado" });
+      const boardUid = usersSnap.docs[0].id;
+      const colabSnap = await db.collection("colaboradores").where("uid","==",boardUid).where("email","==",colabEmail).limit(1).get();
+      if (colabSnap.empty) return res.status(403).json({ error:"No autorizado" });
+      const colabData = colabSnap.docs[0].data();
+      const tareaRef = db.collection("tareas").doc(tareaId);
+      const tareaSnap = await tareaRef.get();
+      if (!tareaSnap.exists || tareaSnap.data().uid !== boardUid) return res.status(403).json({ error:"No autorizado" });
+      const comment = { texto:texto.trim(), autor:colabData.nombre, autorEmail:colabEmail, fecha:now, tipo:"mensaje" };
+      await tareaRef.update({ comments:[...(tareaSnap.data().comments||[]), comment] });
+      return res.json({ ok:true, comment });
+    }
+
+    if (action === "boardUpdateStatus") {
+      const { boardToken, colabEmail, tareaId, estado, progresoLabel="" } = body;
+      if (!boardToken || !colabEmail || !tareaId || !estado) return res.status(400).json({ error:"Faltan parámetros" });
+      const usersSnap = await db.collection("users").where("boardToken","==",boardToken).limit(1).get();
+      if (usersSnap.empty) return res.status(404).json({ error:"Tablero no encontrado" });
+      const boardUid = usersSnap.docs[0].id;
+      const colabSnap = await db.collection("colaboradores").where("uid","==",boardUid).where("email","==",colabEmail).limit(1).get();
+      if (colabSnap.empty) return res.status(403).json({ error:"No autorizado" });
+      const tareaRef = db.collection("tareas").doc(tareaId);
+      const tareaSnap = await tareaRef.get();
+      if (!tareaSnap.exists || tareaSnap.data().uid !== boardUid) return res.status(403).json({ error:"No autorizado" });
+      const tData = tareaSnap.data();
+      const asignados = [tData.asignadoEmail, ...(tData.asignadosEmails||[])].filter(Boolean);
+      if (!asignados.includes(colabEmail)) return res.status(403).json({ error:"Solo podés actualizar tus propias tareas" });
+      const act = { tipo:"estado", autor:colabSnap.docs[0].data().nombre, fecha:now, detalle:`→ ${estado}${progresoLabel?` (${progresoLabel})`:""}`};
+      await tareaRef.update({ estado, progresoLabel:progresoLabel||"", updatedAt:now, activity:[...(tData.activity||[]),act] });
+      return res.json({ ok:true });
+    }
+
+    if (action === "boardAddEntrega") {
+      const { boardToken, colabEmail, tareaId, link, label="", nota="" } = body;
+      if (!boardToken || !colabEmail || !tareaId || !link) return res.status(400).json({ error:"Faltan parámetros" });
+      const usersSnap = await db.collection("users").where("boardToken","==",boardToken).limit(1).get();
+      if (usersSnap.empty) return res.status(404).json({ error:"Tablero no encontrado" });
+      const boardUid = usersSnap.docs[0].id;
+      const userData = usersSnap.docs[0].data();
+      const colabSnap = await db.collection("colaboradores").where("uid","==",boardUid).where("email","==",colabEmail).limit(1).get();
+      if (colabSnap.empty) return res.status(403).json({ error:"No autorizado" });
+      const colabData = colabSnap.docs[0].data();
+      const tareaRef = db.collection("tareas").doc(tareaId);
+      const tareaSnap = await tareaRef.get();
+      if (!tareaSnap.exists || tareaSnap.data().uid !== boardUid) return res.status(403).json({ error:"No autorizado" });
+      const tData = tareaSnap.data();
+      const asignados = [tData.asignadoEmail, ...(tData.asignadosEmails||[])].filter(Boolean);
+      if (!asignados.includes(colabEmail)) return res.status(403).json({ error:"Solo podés entregar en tus propias tareas" });
+      const entrega = { link:link.trim(), label:(label.trim()||`v${(tData.deliverables||[]).length+1}`), nota:nota.trim(), fecha:now, entregadoPor:colabEmail };
+      await tareaRef.update({ deliverables:[...(tData.deliverables||[]),entrega], estado:"entregado", updatedAt:now });
+      if (userData.email) {
+        sendEmail({
+          to: userData.email,
+          subject: `📦 Nueva entrega en "${tData.titulo}"`,
+          html: emailEntregaRecibida({ colab:colabData, tarea:tData, entrega, link:origin }),
+        });
+      }
+      return res.json({ ok:true, entrega });
     }
 
     return res.status(400).json({ error:"Acción desconocida" });
