@@ -22739,6 +22739,7 @@ export default function App() {
   const [tareasForReview,setTareasForReview]=useState(0);
   const [tareasParaRevisarList,setTareasParaRevisarList]=useState([]);
   const [bellPanelOpen,setBellPanelOpen]=useState(false);
+  const [expiryDismissed, setExpiryDismissed]=useState(false);
   const [connectedStores,setConnectedStores]=useState({tn:false,shopify:false,ml:false,meta:false});
   // Multi-org Fase 1 — orgs[] vive en el user doc; active_org_id es el actual.
   // F1 sólo muestra el switcher y persiste la org activa. Las secciones siguen
@@ -23218,7 +23219,8 @@ export default function App() {
   const expiryIsTrial = trialExpiring && !planExpiring;
   // Dismiss per-expiry-date so banner reappears each day
   const _expiryDismissKey = `growith_expiry_dismiss_${user?.uid}_${(planExpiring?planExpiry:trialEnd)?.toDateString?.()}`;
-  const [expiryDismissed, setExpiryDismissed] = React.useState(()=>{try{return localStorage.getItem(_expiryDismissKey)==="1";}catch(e){return false;}});
+  const _expiryStoredDismiss = !expiryDismissed && (() => { try { return localStorage.getItem(_expiryDismissKey)==="1"; } catch(e) { return false; } })();
+  const _showExpiryBanner = showExpiryWarning && !expiryDismissed && !_expiryStoredDismiss;
 
   // ─── Render page content ───
   // Plan gate: devuelve <UpgradeWall> si el plan no alcanza, o null si puede pasar
@@ -23328,7 +23330,7 @@ export default function App() {
               </button>
             </div>
           </div>
-          {showExpiryWarning&&!expiryDismissed&&(
+          {_showExpiryBanner&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 24px",background:expiryDays<=1?"#ef444415":"#f97316 15",backgroundImage:"none",backgroundColor:expiryDays<=1?"#ef444415":"#f9741615",borderBottom:`1px solid ${expiryDays<=1?"#ef444440":"#f9741640"}`,fontFamily:"'Inter',system-ui,sans-serif"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontSize:18}}>{expiryDays<=1?"🚨":"⏰"}</span>
