@@ -9691,8 +9691,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             }
           </div>
         </div>}
-        {/* Recordar tarea por email — solo si no está aprobada y hay colaborador */}
-        {colab&&t.estado!=="aprobado"&&(
+        {/* Recordar tarea por email — solo si no está aprobada y hay colaborador (solo admin) */}
+        {!colabMode&&colab&&t.estado!=="aprobado"&&(
           <div style={{marginBottom:14}}>
             <AsyncButton onClick={async()=>{
               await tareasApi({action:"sendRecordatorio",tareaId:t._id});
@@ -9887,8 +9887,21 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {colabMode&&!(t.slots||[]).length&&t.estado!=="aprobado"&&(
           <div style={{marginBottom:14,padding:"12px 14px",background:T.accentSolid+"10",border:`1px solid ${T.accentSolid}30`,borderRadius:DS.r.lg}}>
             <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8}}>Subir entrega</div>
+            <input id={`entrega-link-${t._id}`} placeholder="Link de Drive, Dropbox, etc." style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
+            <input id={`entrega-nota-${t._id}`} placeholder="Nota opcional (qué incluye, versión, etc.)" style={{...iS,fontSize:12,width:"100%",marginBottom:8}}/>
             <div style={{display:"flex",gap:7}}>
-              <input id={`entrega-link-${t._id}`} placeholder="Link de Drive, Dropbox, etc." style={{...iS,fontSize:12,flex:1}}/>
+              <AsyncButton onClick={async()=>{
+                const inp=document.getElementById(`entrega-link-${t._id}`);
+                const link=inp?.value?.trim();
+                if(!link) return toast("Pegá un link primero","error");
+                const nota=document.getElementById(`entrega-nota-${t._id}`)?.value?.trim()||"";
+                try{
+                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,nota,esFinal:false})});
+                  toast("Entrega parcial enviada ✓","success");
+                  if(inp) inp.value="";
+                  loadData(true);
+                }catch(e){toast("Error: "+e.message,"error");}
+              }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flex:1}}>📦 Parcial</AsyncButton>
               <AsyncButton onClick={async()=>{
                 const inp=document.getElementById(`entrega-link-${t._id}`);
                 const link=inp?.value?.trim();
@@ -9896,13 +9909,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 const nota=document.getElementById(`entrega-nota-${t._id}`)?.value?.trim()||"";
                 try{
                   await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,nota,esFinal:true})});
-                  toast("Entrega enviada ✓","success");
+                  toast("Entrega final enviada ✓","success");
                   if(inp) inp.value="";
                   loadData(true);
                 }catch(e){toast("Error: "+e.message,"error");}
-              }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",whiteSpace:"nowrap"}}>Entregar</AsyncButton>
+              }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",flex:1}}>✅ Entrega final</AsyncButton>
             </div>
-            <input id={`entrega-nota-${t._id}`} placeholder="Nota opcional (qué incluye, versión, etc.)" style={{...iS,fontSize:12,width:"100%",marginTop:6}}/>
           </div>
         )}
         {/* Comentarios */}
@@ -10018,7 +10030,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           <span style={{width:5,height:5,borderRadius:"50%",background:"rgba(255,255,255,0.75)",display:"inline-block",animation:"pulse 1.5s infinite"}}/>{paraRevisar.length} para revisar
         </span>}
         {enRevision.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>🔁 {enRevision.length} en corrección</span>}
-        {view==="todo"&&<button onClick={()=>setCalendarView(p=>!p)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>📅 {calendarView?"Tareas":"Calendario"}</button>}
+        {view==="todo"&&!colabMode&&(
+          <div style={{display:"flex",borderRadius:8,border:`1px solid ${T.border}`,overflow:"hidden",flexShrink:0}}>
+            <button onClick={()=>setCalendarView(false)} style={{padding:"5px 12px",fontSize:12,fontWeight:calendarView?400:600,background:calendarView?"transparent":T.accentSolid,color:calendarView?T.textMd:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>Lista</button>
+            <button onClick={()=>setCalendarView(true)} style={{padding:"5px 12px",fontSize:12,fontWeight:calendarView?600:400,background:calendarView?T.accentSolid:"transparent",color:calendarView?"#fff":T.textMd,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>Calendario</button>
+          </div>
+        )}
         {view==="todo"&&!calendarView&&!colabMode&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
         {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
         {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Tablero compartido</button>}
@@ -10026,7 +10043,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       </AppTopbar>
 
       {/* Barra de tabs — 2 tabs principales */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:100,zIndex:29}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:colabMode?52:100,zIndex:29}}>
         <div style={{display:"flex",paddingLeft:24}}>
           {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>!colabMode||id!=="equipo").map(([id,label])=>{
             const isActive=view===id||(id==="todo"&&view!=="equipo"&&view!=="referencias");
@@ -10223,8 +10240,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 </div>
               )}
-              {/* ── Pills filtro por colaborador ── */}
-              {colaboradores.length>0&&(
+              {/* ── Pills filtro por colaborador (solo admin) ── */}
+              {!colabMode&&colaboradores.length>0&&(
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
                   <button onClick={()=>setFilterColab("")}
                     style={{padding:"5px 14px",fontSize:12,fontWeight:filterColab===""?700:500,borderRadius:99,border:`1.5px solid ${filterColab===""?T.accentSolid:T.border}`,background:filterColab===""?T.accentSolid:"transparent",color:filterColab===""?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
