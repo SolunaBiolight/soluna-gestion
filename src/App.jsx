@@ -10577,6 +10577,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {notifEmails.map((email,i)=>(
                       <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                         <span style={{flex:1,fontSize:12,color:T.text,background:T.surface,borderRadius:DS.r.md,padding:"6px 10px",border:`1px solid ${T.border}`,fontFamily:"'Inter',system-ui,sans-serif"}}>{email}</span>
+                        <AsyncButton onClick={async()=>{try{await tareasApi({action:"sendTestEmail",to:email});toast(`✅ Email enviado a ${email}`,"success");}catch(e){toast("Error: "+e.message,"error");}}}
+                          style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",whiteSpace:"nowrap"}}>Probar</AsyncButton>
                         <button onClick={()=>saveNotifEmailsFn(notifEmails.filter((_,j)=>j!==i))}
                           style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,padding:"5px 10px",cursor:"pointer",fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
                       </div>
