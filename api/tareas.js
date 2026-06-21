@@ -661,6 +661,16 @@ export default async function handler(req, res) {
       return res.json({ ok:true, deliverables:newDels3, estado:upd3.estado||t3.data().estado });
     }
 
+    // ── getColabByToken: acción pública para portal unificado ─────────────────
+    if (action === "getColabByToken") {
+      const { token: colabToken } = body;
+      if (!colabToken) return res.status(400).json({ error:"Token requerido" });
+      const snap = await db.collection("colaboradores").where("token","==",colabToken).limit(1).get();
+      if (snap.empty) return res.status(404).json({ error:"Token inválido" });
+      const colab = snap.docs[0].data();
+      return res.json({ email:colab.email, nombre:colab.nombre, token:colabToken, uid:colab.uid, permisos:colab.permisos||{}, rol:colab.rol||"" });
+    }
+
     // ── ACCIONES AUTENTICADAS (uid requerido) ─────────────────────────────────
 
     if (!uid) return res.status(403).json({ error: "No autorizado" });
@@ -738,7 +748,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "createTarea") {
-      const { titulo, descripcion="", asignadoEmail, asignadoNombre="", brief="", links=[], deadline, prioridad="normal", checklist=[], managerEmail="", asignadosEmails: asignadosEmailsRaw } = body;
+      const { titulo, descripcion="", asignadoEmail, asignadoNombre="", brief="", links=[], deadline, prioridad="normal", checklist=[], managerEmail="", asignadosEmails: asignadosEmailsRaw, esCampaña=false, slots=[] } = body;
       if (!titulo||!asignadoEmail) return res.status(400).json({ error:"Título y asignado requeridos" });
       // Normalizar lista de asignados: usar lo que manda el frontend, o al menos el primario
       const todosEmails = Array.isArray(asignadosEmailsRaw) && asignadosEmailsRaw.length
@@ -765,6 +775,8 @@ export default async function handler(req, res) {
         deadline: deadline ? new Date(deadline) : null,
         estado:"pendiente", deliverables:[], correcciones:0, feedbackActual:null, comments:[],
         activity, leidoAt:null, estimacion:null, managerEmail,
+        esCampaña: !!esCampaña,
+        slots: Array.isArray(slots) ? slots : [],
         createdAt:now, updatedAt:now,
       };
       const ref = await db.collection("tareas").add(data);
@@ -790,6 +802,27 @@ export default async function handler(req, res) {
         emailResults.push({email, ...result});
       }
       return res.json({ _id:ref.id, ...data, _emailResults:emailResults });
+    }
+
+    if (action === "addSlotEntrega") {
+      const { tareaId, slotId, link, nota="", esFinal=true } = body;
+      if (!tareaId||!slotId||!link) return res.status(400).json({ error:"Faltan parámetros" });
+      const ref = db.collection("tareas").doc(tareaId);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data().uid !== uid) return res.status(403).json({ error:"No autorizado" });
+      const prevDels = snap.data().deliverables || [];
+      const version = prevDels.filter(d=>d.slotId===slotId).length + 1;
+      const entrega = { link, nota, label:`v${version}`, version, fecha:now, slotId, parcial:!esFinal };
+      const act = { tipo:"entrega", autor:"colaborador", fecha:now, detalle:`Entregó slot ${slotId} v${version}` };
+      const upd = { deliverables:[...prevDels,entrega], updatedAt:now, activity:[...(snap.data().activity||[]),act] };
+      const slots = snap.data().slots || [];
+      const allDone = slots.length>0 && slots.every(s => [...prevDels,entrega].some(d=>d.slotId===s.id&&!d.parcial));
+      if (allDone) upd.estado = "entregado";
+      await ref.update(upd);
+      notifyManagers(db, uid, snap.data().managerEmail,
+        `📦 Nueva entrega en slot — ${snap.data().titulo}`,
+        emailEntregaRecibida({ colab:{nombre:"Colaborador"}, tarea:snap.data(), entrega, link:`${origin||"https://growithapp.com"}/#/tareas` }));
+      return res.json({ ok:true, entrega });
     }
 
     if (action === "updateTarea") {

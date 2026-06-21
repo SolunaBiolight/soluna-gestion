@@ -9101,7 +9101,7 @@ function AppAdmin({T, user, onBack}) {
 // ===========================================
 // APP TAREAS — Delegación a colaboradores externos
 // ===========================================
-function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
+function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, colabMode=null}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
@@ -9216,6 +9216,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [prodView, setProdView] = useState("tabla"); // tabla | tablero
   const [creativoDetail, setCreativoDetail] = useState(null);
   const [creativoCommentText, setCreativoCommentText] = useState({});
+  // ── CAMPAÑA ──
+  const [ntEsCampaña, setNtEsCampaña] = useState(false);
+  const [ntSlots, setNtSlots] = useState([]); // [{id,descripcion,tipo,asignadoEmail,asignadoNombre}]
   const [notifEmails, setNotifEmails] = useState([]);
   const [newNotifEmail, setNewNotifEmail] = useState("");
   const [showHistorial, setShowHistorial] = useState(false);
@@ -9354,13 +9357,17 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   });
 
   async function crearTarea() {
-    if(!ntTitulo.trim()||!ntAsignados.length) return appAlert("Completá título y asigná al menos una persona");
-    const colab = colaboradores.find(c=>c.email===ntAsignados[0]);
+    const slotsLimpios = ntEsCampaña ? ntSlots.filter(s=>s.descripcion.trim()&&s.asignadoEmail) : [];
+    const todosAsignados = ntEsCampaña && slotsLimpios.length ? [...new Set(slotsLimpios.map(s=>s.asignadoEmail))] : ntAsignados;
+    if(!ntTitulo.trim()||(ntEsCampaña?slotsLimpios.length===0:!ntAsignados.length)) return appAlert(ntEsCampaña?"Completá título y al menos un slot con descripción y asignado":"Completá título y asigná al menos una persona");
+    const primerAsignado = todosAsignados[0] || ntAsignados[0];
+    const primerColab = colaboradores.find(c=>c.email===primerAsignado);
+    const colab = primerColab;
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:ntAsignados[0],asignadoNombre:colab?.nombre||"",asignadosEmails:ntAsignados,deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null});
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal");
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
     // Mostrar resultado de emails
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
@@ -9649,7 +9656,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           {t.tiempoEntregaDias&&t.estado==="aprobado"&&<span style={{fontSize:11,color:T.blue,background:T.blue+"15",borderRadius:6,padding:"2px 8px"}}>⏱ {t.tiempoEntregaDias}d</span>}
         </div>
         {/* Estados */}
-        <div style={{marginBottom:14}}>
+        {!colabMode&&<div style={{marginBottom:14}}>
           <div style={{fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Estado</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {Object.entries(ESTADOS).filter(([k])=>k!=="revision").map(([key,val])=>(
@@ -9683,7 +9690,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
             }
           </div>
-        </div>
+        </div>}
         {/* Recordar tarea por email — solo si no está aprobada y hay colaborador */}
         {colab&&t.estado!=="aprobado"&&(
           <div style={{marginBottom:14}}>
@@ -9739,6 +9746,80 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             ))}
           </div>
         )}
+        {/* ── Slots de campaña ── */}
+        {(t.slots||[]).length>0&&(()=>{
+          const allSlots=(t.slots||[]).filter(slot=>!colabMode||slot.asignadoEmail===colabMode.email);
+          const totalSlots=allSlots.length;
+          const slotsDone=allSlots.filter(slot=>(t.deliverables||[]).some(d=>d.slotId===slot.id&&!d.parcial)).length;
+          const todosCompletos=slotsDone===totalSlots&&totalSlots>0;
+          if(allSlots.length===0) return null;
+          return(
+            <div style={{marginBottom:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.text}}>Entregas de campaña</div>
+                <span style={{fontSize:11,fontWeight:600,color:todosCompletos?T.green:T.accent}}>{slotsDone}/{totalSlots} completadas</span>
+              </div>
+              <div style={{height:5,borderRadius:3,background:T.border,overflow:"hidden",marginBottom:12}}>
+                <div style={{height:"100%",background:todosCompletos?T.green:T.accentSolid,width:`${totalSlots>0?(slotsDone/totalSlots*100):0}%`,borderRadius:3,transition:"width 0.3s"}}/>
+              </div>
+              {allSlots.map(slot=>{
+                const slotDels=(t.deliverables||[]).filter(d=>d.slotId===slot.id);
+                const slotFinal=slotDels.find(d=>!d.parcial);
+                const TIPO_COLOR={video:T.accentSolid,foto:"#0891b2",story:T.orange,texto:T.green,otro:T.textMd};
+                const tipoColor=TIPO_COLOR[slot.tipo]||T.accent;
+                return(
+                  <div key={slot.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 12px",marginBottom:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:20,background:tipoColor+"18",color:tipoColor,textTransform:"uppercase"}}>{slot.tipo}</span>
+                      <span style={{fontSize:12,fontWeight:600,color:T.text,flex:1}}>{slot.descripcion||"Sin descripción"}</span>
+                      <div style={{display:"flex",alignItems:"center",gap:5}}>
+                        <div style={{width:20,height:20,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.accent}}>{(slot.asignadoNombre||"?")[0].toUpperCase()}</div>
+                        <span style={{fontSize:11,color:T.textMd}}>{slot.asignadoNombre||"Sin asignar"}</span>
+                      </div>
+                      {slotFinal
+                        ? <span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.green+"18",color:T.green}}>✓ Entregado</span>
+                        : <span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.textSm+"15",color:T.textSm}}>Pendiente</span>}
+                    </div>
+                    {slotDels.length>0&&(
+                      <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:4}}>
+                        {slotDels.map((del,di)=>(
+                          <div key={di} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:T.card,borderRadius:DS.r.md,border:`1px solid ${T.border}`}}>
+                            <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{del.label||`v${di+1}`}</span>
+                            {del.link&&<a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.accent,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:"none"}}>🔗 {del.link.slice(0,40)}…</a>}
+                            {del.nota&&<span style={{fontSize:10,color:T.textSm}}>{del.nota}</span>}
+                            {del.parcial&&<span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:4,background:T.orange+"18",color:T.orange}}>PARCIAL</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!slotFinal&&colabMode&&slot.asignadoEmail===colabMode.email&&(
+                      <button onClick={()=>{
+                        const link=window.prompt("Link de entrega (Drive, Dropbox, etc.):");
+                        if(!link?.trim()) return;
+                        const nota=window.prompt("Nota opcional:")||"";
+                        tareasApi({action:"addSlotEntrega",tareaId:t._id,slotId:slot.id,link:link.trim(),nota,esFinal:true})
+                          .then(()=>{toast("Entrega enviada ✓","success");loadData(true);})
+                          .catch(e=>toast("Error: "+e.message,"error"));
+                      }} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px",marginTop:8}}>Entregar</button>
+                    )}
+                  </div>
+                );
+              })}
+              {!colabMode&&(
+                <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8,padding:"10px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:500,color:T.text}}>{todosCompletos?"¡Todas las entregas completadas!":"Esperando entregas restantes…"}</div>
+                    <div style={{fontSize:11,color:T.textSm}}>{todosCompletos?"Podés agregar este material a una campaña de Meta":"Completá todos los slots para habilitar la publicación"}</div>
+                  </div>
+                  <button disabled={!todosCompletos}
+                    style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",opacity:todosCompletos?1:0.4,cursor:todosCompletos?"pointer":"not-allowed",display:"flex",alignItems:"center",gap:6}}>
+                    <span>📊</span> Sumar a campaña
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {/* Entregas */}
         {hasDels&&(
           <div style={{marginBottom:14}}>
@@ -9890,18 +9971,18 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         {/* Acciones */}
         <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,paddingTop:12,display:"flex",gap:8,justifyContent:"space-between",flexWrap:"wrap"}}>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,color:"#22c55e",border:`1px solid #22c55e44`}}>
+            {!colabMode&&waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,color:"#22c55e",border:`1px solid #22c55e44`}}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
               WhatsApp
             </a>}
-            {colab&&<button onClick={()=>copyLink(colab.token)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>📋 Link colaborador</button>}
-            <AsyncButton onClick={()=>duplicateTarea(t._id)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>📋 Duplicar</AsyncButton>
-            {t.estado!=="pendiente"&&<AsyncButton onClick={()=>revertEstadoAdmin(t._id)} style={{fontSize:11,padding:"5px 11px",borderRadius:7,background:"#f59e0b10",color:"#d97706",border:"1px solid #f59e0b35",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>↩ Revertir estado</AsyncButton>}
+            {!colabMode&&colab&&<button onClick={()=>copyLink(colab.token)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>📋 Link colaborador</button>}
+            {!colabMode&&<AsyncButton onClick={()=>duplicateTarea(t._id)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>📋 Duplicar</AsyncButton>}
+            {!colabMode&&t.estado!=="pendiente"&&<AsyncButton onClick={()=>revertEstadoAdmin(t._id)} style={{fontSize:11,padding:"5px 11px",borderRadius:7,background:"#f59e0b10",color:"#d97706",border:"1px solid #f59e0b35",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>↩ Revertir estado</AsyncButton>}
           </div>
-          <div style={{display:"flex",gap:6}}>
+          {!colabMode&&<div style={{display:"flex",gap:6}}>
             <button onClick={()=>openEditModal(t)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 11px"}}>✏️ Editar</button>
             <AsyncButton onClick={()=>deleteTarea(t._id)} style={{...BtnDanger(T),fontSize:11,padding:"5px 11px"}}>Eliminar</AsyncButton>
-          </div>
+          </div>}
         </div>
       </div>
     );
@@ -9916,16 +9997,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         </span>}
         {enRevision.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>🔁 {enRevision.length} en corrección</span>}
         {view==="todo"&&<button onClick={()=>setCalendarView(p=>!p)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>📅 {calendarView?"Tareas":"Calendario"}</button>}
-        {view==="todo"&&!calendarView&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
-        {view==="equipo"&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
-        {view==="equipo"&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Tablero compartido</button>}
+        {view==="todo"&&!calendarView&&!colabMode&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
+        {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
+        {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Tablero compartido</button>}
         {view==="referencias"&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Marca</button>}
       </AppTopbar>
 
       {/* Barra de tabs — 2 tabs principales */}
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:100,zIndex:29}}>
         <div style={{display:"flex",paddingLeft:24}}>
-          {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].map(([id,label])=>{
+          {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>!colabMode||id!=="equipo").map(([id,label])=>{
             const isActive=view===id||(id==="todo"&&view!=="equipo"&&view!=="referencias");
             return (
               <button key={id} onClick={()=>setActiveView(id)}
@@ -9950,12 +10031,23 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             const hoy=new Date();
             function dLeft(val){if(!val)return null;const d=val._seconds?new Date(val._seconds*1000):new Date(val);return Math.ceil((d-hoy)/86400000);}
             const creativosActivos=produccion.creativos.filter(c=>!["publicado","archivado"].includes(c.estado));
-            const tareasActivas=tareas.filter(t=>t.estado!=="aprobado"&&(!filterColab||(t.asignadoEmail===filterColab||(t.asignadosEmails||[]).includes(filterColab))));
+            const tareasActivas=tareas.filter(t=>t.estado!=="aprobado"&&(!filterColab||(t.asignadoEmail===filterColab||(t.asignadosEmails||[]).includes(filterColab))))
+              .filter(t=>!colabMode||(t.asignadosEmails||[t.asignadoEmail]).includes(colabMode.email));
             const proximasItems=tareas.filter(t=>t.deadline&&t.estado!=="aprobado").map(t=>({nombre:t.asignadoNombre||"?",titulo:t.titulo,days:dLeft(t.deadline),id:t._id})).sort((a,b)=>(a.days??999)-(b.days??999)).slice(0,8);
             const CEST2={idea:{l:"Idea",c:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue},"en-produccion":{l:"En prod.",c:T.orange||"#f97316"},entregado:{l:"Entregado",c:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green}};
             return(<>
+              {/* Banner bienvenida colabMode */}
+              {colabMode&&(
+                <div style={{background:T.accentSolid+"12",border:`1px solid ${T.accentSolid}30`,borderRadius:DS.r.lg,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:32,height:32,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:T.accent,flexShrink:0}}>{(colabMode.nombre[0]||"?").toUpperCase()}</div>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text}}>Hola, {colabMode.nombre.split(" ")[0]} 👋</div>
+                    <div style={{fontSize:11,color:T.textSm}}>Estas son tus tareas activas</div>
+                  </div>
+                </div>
+              )}
               {/* GUÍA ¿Cómo funciona? */}
-              <div style={{marginBottom:16}}>
+              {!colabMode&&<div style={{marginBottom:16}}>
                 <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
                 </button>
@@ -9976,7 +10068,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     ))}
                   </div>
                 )}
-              </div>
+              </div>}
               {proximasItems.length>0&&(
                 <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 14px",marginBottom:14,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                   <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",flexShrink:0}}>📅 Próximas</span>
@@ -10176,13 +10268,38 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           {(t.deliverables||[]).some(d=>d.parcial)&&t.estado!=="entregado"&&t.estado!=="aprobado"&&(
                             <span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:T.orange+"18",color:T.orange,fontWeight:700,alignSelf:"flex-start",border:`1px solid ${T.orange}30`}}>📦 Entrega parcial</span>
                           )}
+                          {/* Slots progress si es campaña */}
+                          {(t.slots||[]).length>0&&(()=>{
+                            const total=(t.slots||[]).length;
+                            const completados=(t.deliverables||[]).filter(d=>!d.parcial&&d.slotId).reduce((acc,d)=>{const seen=acc.slotIds||new Set();if(!seen.has(d.slotId)){seen.add(d.slotId);return{count:acc.count+1,slotIds:seen};}return acc;},{count:0,slotIds:new Set()}).count;
+                            return(<>
+                              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                                <span style={{fontSize:10,color:T.textSm}}>Entregas</span>
+                                <span style={{fontSize:10,fontWeight:600,color:completados===total?T.green:T.accent}}>{completados}/{total}</span>
+                              </div>
+                              <div style={{height:3,borderRadius:2,background:T.border,overflow:"hidden"}}>
+                                <div style={{height:"100%",background:completados===total?T.green:T.accentSolid,width:`${total>0?(completados/total*100):0}%`,borderRadius:2}}/>
+                              </div>
+                              <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                                {(t.slots||[]).slice(0,2).map(slot=>{
+                                  const slotDone=(t.deliverables||[]).some(d=>d.slotId===slot.id&&!d.parcial);
+                                  return(<div key={slot.id} style={{display:"flex",alignItems:"center",gap:5,fontSize:10}}>
+                                    <div style={{width:5,height:5,borderRadius:"50%",background:slotDone?T.green:T.textSm,flexShrink:0}}/>
+                                    <span style={{color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{slot.descripcion||slot.tipo}</span>
+                                    <span style={{color:T.textSm,flexShrink:0}}>{slot.asignadoNombre?.split(" ")[0]||"?"}</span>
+                                  </div>);
+                                })}
+                                {(t.slots||[]).length>2&&<span style={{fontSize:10,color:T.textSm}}>+{(t.slots||[]).length-2} más</span>}
+                              </div>
+                            </>);
+                          })()}
                           {/* Brief preview */}
-                          {brief&&(
+                          {!(t.slots||[]).length&&brief&&(
                             <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",flex:1}}>
                               {brief}
                             </div>
                           )}
-                          {!brief&&<div style={{flex:1}}/>}
+                          {!(t.slots||[]).length&&!brief&&<div style={{flex:1}}/>}
                           {/* Footer: avatares con nombre + deadline */}
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:2}}>
                             <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}>
@@ -11051,6 +11168,45 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>{tmpl.nombre}</button>
                   ))}
                 </div>
+              </div>
+            )}
+            {/* Toggle Campaña */}
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${ntEsCampaña?T.accentSolid+"55":T.border}`}}>
+              <button onClick={()=>{setNtEsCampaña(p=>!p);if(!ntEsCampaña)setNtSlots([{id:mkId(),descripcion:"",tipo:"video",asignadoEmail:"",asignadoNombre:""}]);}}
+                style={{width:36,height:20,borderRadius:10,border:"none",cursor:"pointer",background:ntEsCampaña?T.accentSolid:"#6b7280",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
+                <div style={{position:"absolute",top:2,left:ntEsCampaña?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s"}}/>
+              </button>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:500,color:T.text}}>Tarea de campaña</div>
+                <div style={{fontSize:11,color:T.textSm}}>Define múltiples entregas con diferentes asignados</div>
+              </div>
+            </div>
+            {/* Slots de campaña */}
+            {ntEsCampaña&&(
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:12}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>Entregas requeridas</div>
+                {ntSlots.map((slot,si)=>(
+                  <div key={slot.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"center"}}>
+                    <select value={slot.tipo} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,tipo:e.target.value}:s))}
+                      style={{...iS,fontSize:11,width:80,padding:"5px 6px",flexShrink:0}}>
+                      <option value="video">Video</option>
+                      <option value="foto">Foto</option>
+                      <option value="story">Story</option>
+                      <option value="texto">Texto</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                    <input value={slot.descripcion} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,descripcion:e.target.value}:s))}
+                      placeholder="Descripción (ej: 2 reels, 4 fotos…)" style={{...iS,fontSize:12,flex:1}}/>
+                    <select value={slot.asignadoEmail} onChange={e=>{const c=colaboradores.find(x=>x.email===e.target.value);setNtSlots(p=>p.map((s,i)=>i===si?{...s,asignadoEmail:e.target.value,asignadoNombre:c?.nombre||""}:s));}}
+                      style={{...iS,fontSize:12,width:110,flexShrink:0}}>
+                      <option value="">Asignar…</option>
+                      {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre.split(" ")[0]}</option>)}
+                    </select>
+                    <button onClick={()=>setNtSlots(p=>p.filter((_,i)=>i!==si))} style={{...BtnSecondary(T),padding:"5px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
+                  </div>
+                ))}
+                <button onClick={()=>setNtSlots(p=>[...p,{id:mkId(),descripcion:"",tipo:"foto",asignadoEmail:"",asignadoNombre:""}])}
+                  style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px",width:"100%",marginTop:4}}>+ Agregar entrega</button>
               </div>
             )}
             {/* Recurrente */}
@@ -22820,6 +22976,50 @@ function AndreaniPollingService({uid, onAlerts}) {
   return null;
 }
 
+// ── Portal unificado para colaboradores (via hash #/colaborador/:token) ──
+function ColaboradorPortalUnificado({T}) {
+  const hash = window.location.hash;
+  const tokenMatch = hash.match(/^#\/colaborador\/([^/?]+)/);
+  const token = tokenMatch ? tokenMatch[1] : null;
+  const [colabData, setColabData] = React.useState(null);
+  const [loadingColab, setLoadingColab] = React.useState(true);
+  const [errorColab, setErrorColab] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!token) { setErrorColab("Token inválido"); setLoadingColab(false); return; }
+    fetch("/api/tareas", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({action:"getColabByToken", token})})
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) throw new Error(d.error);
+        setColabData(d);
+      })
+      .catch(e => setErrorColab(e.message))
+      .finally(() => setLoadingColab(false));
+  }, [token]);
+
+  if (loadingColab) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:32,marginBottom:12}}>⚙️</div>
+        <div style={{fontSize:14,color:T.textMd}}>Cargando tu portal…</div>
+      </div>
+    </div>
+  );
+
+  if (errorColab || !colabData) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:32,marginBottom:12}}>🔒</div>
+        <div style={{fontSize:14,color:T.red,marginBottom:6}}>Link inválido o vencido</div>
+        <div style={{fontSize:12,color:T.textSm}}>{errorColab}</div>
+      </div>
+    </div>
+  );
+
+  const fakeUser = { uid: colabData.uid, email: colabData.email, displayName: colabData.nombre };
+  return <AppTareas T={T} user={fakeUser} colabMode={{email:colabData.email, nombre:colabData.nombre, token, permisos:colabData.permisos||{}}} onHome={()=>{}} tab="todo" setTab={()=>{}} />;
+}
+
 // ROOT APP
 // ===========================================
 export default function App() {
@@ -23300,7 +23500,7 @@ export default function App() {
 
   // Vistas públicas (sin login, acceso por token)
   if(editorProdToken) return <EditorProduccionView T={T} token={editorProdToken}/>;
-  if(colabToken) return <ColaboradorPublicView T={T} token={colabToken}/>;
+  if(colabToken) return <ColaboradorPortalUnificado T={T}/>;
   if(boardToken) return <ColaboradorBoardView T={T} boardToken={boardToken}/>;
 
   // Loading
