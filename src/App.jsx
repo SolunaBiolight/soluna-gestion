@@ -22980,10 +22980,7 @@ function AndreaniPollingService({uid, onAlerts}) {
 }
 
 // ── Portal unificado para colaboradores (via hash #/colaborador/:token) ──
-function ColaboradorPortalUnificado({T}) {
-  const hash = window.location.hash;
-  const tokenMatch = hash.match(/^#\/colaborador\/([^/?]+)/);
-  const token = tokenMatch ? tokenMatch[1] : null;
+function ColaboradorPortalUnificado({T, token}) {
   const [colabData, setColabData] = React.useState(null);
   const [loadingColab, setLoadingColab] = React.useState(true);
   const [errorColab, setErrorColab] = React.useState(null);
@@ -23503,7 +23500,7 @@ export default function App() {
 
   // Vistas públicas (sin login, acceso por token)
   if(editorProdToken) return <EditorProduccionView T={T} token={editorProdToken}/>;
-  if(colabToken) return <ColaboradorPortalUnificado T={T}/>;
+  if(colabToken) return <ColaboradorPortalUnificado T={T} token={colabToken}/>;
   if(boardToken) return <ColaboradorBoardView T={T} boardToken={boardToken}/>;
 
   // Loading
