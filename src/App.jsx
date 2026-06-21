@@ -9306,7 +9306,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const ESTADOS = {
     pendiente:  {label:"⏳ Pendiente",  color:T.yellow,  bg:T.yellowBg},
     en_proceso: {label:"🔄 En proceso", color:T.blue,    bg:T.blueBg},
-    bloqueada:  {label:"🚫 Bloqueada",  color:"#6b7280", bg:"#6b728018"},
+    bloqueada:  {label:"🚫 Bloqueada",  color:T.textMd,  bg:T.textMd+"18"},
     entregado:  {label:"📦 Entregado",  color:T.orange||"#f97316", bg:(T.orangeBg||"#f9731620")},
     aprobado:   {label:"✅ Aprobado",   color:T.green,   bg:T.greenBg},
     revision:   {label:"🔁 A revisar",  color:T.red,     bg:T.redBg},
@@ -9767,7 +9767,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:del.nota?4:0}}>
                       <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:T.accent,fontWeight:600,textDecoration:"none",flex:1}}>🔗 {del.label||`Entrega ${i+1}`}</a>
-                      {del.parcial&&<span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:5,background:"#f9731618",color:"#fb923c",border:"1px solid #f9731630",whiteSpace:"nowrap"}}>PARCIAL</span>}
+                      {del.parcial&&<span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:5,background:T.orange+"18",color:T.orange,border:`1px solid ${T.orange}30`,whiteSpace:"nowrap"}}>PARCIAL</span>}
                       <span style={{fontSize:10,color:T.textSm}}>{fmtDate(del.fecha)}{del.editedAt?" ✏️":""}</span>
                     </div>
                     {del.nota&&<div style={{fontSize:12,color:T.textMd,marginBottom:6}}>{del.nota}</div>}
@@ -10064,19 +10064,19 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               {/* Métricas */}
               {!calendarView&&<div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
                 {[
-                  {l:"Activas",       v:tareasActivas.length,                              c:T.blue},
-                  {l:"Para revisar",  v:paraRevisar.length,                                c:T.orange},
-                  {l:"En producción", v:creativosActivos.length,                           c:"#6366f1"},
-                  {l:"Completadas",   v:tareas.filter(t=>t.estado==="aprobado").length,    c:T.green},
+                  {l:"Activas",       v:tareasActivas.length,                                    c:T.blue},
+                  {l:"Para revisar",  v:paraRevisar.length,                                      c:T.orange},
+                  {l:"Bloqueadas",    v:tareas.filter(t=>t.estado==="bloqueada").length,          c:T.textMd},
+                  {l:"Completadas",   v:tareas.filter(t=>t.estado==="aprobado").length,           c:T.green},
                 ].map(s=>(
-                  <div key={s.l} style={{flex:"1 1 100px",background:T.card,border:`1px solid ${s.c}28`,borderRadius:12,padding:"14px 16px"}}>
+                  <div key={s.l} style={{flex:"1 1 100px",background:T.card,border:`1px solid ${s.c}28`,borderRadius:DS.r.xl,padding:"14px 16px"}}>
                     <div style={{fontSize:26,fontWeight:800,color:s.c,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.v}</div>
                     <div style={{fontSize:12,color:T.textSm,marginTop:5}}>{s.l}</div>
                   </div>
                 ))}
               </div>}
               {paraRevisar.length>0&&(
-                <div style={{background:T.card,border:`1.5px solid ${T.orange}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+                <div style={{background:T.card,border:`1px solid ${T.orange}`,borderRadius:DS.r.xl,overflow:"hidden",marginBottom:16}}>
                   <div style={{background:T.orange,padding:"10px 16px"}}>
                     <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>📦 {paraRevisar.length} entrega{paraRevisar.length!==1?"s":""} esperando revisión</span>
                   </div>
@@ -10128,11 +10128,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               {/* ── GRID DE TAREAS — una card por tarea ── */}
               {tareasActivas.length>0&&(()=>{
                 const EST_CARD={
-                  pendiente: {l:"Pendiente",c:"#9ca3af",bg:"#9ca3af18",dot:"#9ca3af"},
+                  pendiente: {l:"Pendiente",c:T.textSm,  bg:T.textSm+"18",  dot:T.textSm},
                   en_proceso:{l:"En proceso",c:T.blue,    bg:T.blue+"18",    dot:T.blue},
                   entregado: {l:"Entregado", c:T.orange,  bg:T.orange+"18",  dot:T.orange},
                   revision:  {l:"Corrección",c:T.red,     bg:T.red+"18",     dot:T.red},
-                  bloqueada: {l:"Bloqueada", c:"#6b7280", bg:"#6b728018",    dot:"#6b7280"},
+                  bloqueada: {l:"Bloqueada", c:T.textMd,  bg:T.textMd+"18",  dot:T.textMd},
                 };
                 return(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
@@ -10146,8 +10146,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       const brief=(t.brief||t.descripcion||"").trim();
                       return(
                         <div key={t._id} onClick={()=>setKanbanSelected(t)}
-                          style={{background:T.card,border:`1.5px solid ${borderColor}`,borderRadius:14,padding:"18px 18px 14px",cursor:"pointer",display:"flex",flexDirection:"column",gap:12,minHeight:170,transition:"border-color 0.15s, box-shadow 0.15s"}}
-                          onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.boxShadow=`0 4px 16px ${T.accent}18`;}}
+                          style={{background:T.card,border:`1px solid ${borderColor}`,borderLeft:isUrgente?`3px solid ${T.red}`:`1px solid ${borderColor}`,borderRadius:DS.r.xl,padding:"14px 14px 12px",cursor:"pointer",display:"flex",flexDirection:"column",gap:10,transition:"border-color 0.15s, box-shadow 0.15s"}}
+                          onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.boxShadow=DS.shadow.md;}}
                           onMouseLeave={e=>{e.currentTarget.style.borderColor=borderColor;e.currentTarget.style.boxShadow="none";}}>
                           {/* Top: número + estado */}
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -10163,9 +10163,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
                             {t.titulo}
                           </div>
-                          {t.propuestaPor&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:"#6366f118",color:"#818cf8",fontWeight:700,alignSelf:"flex-start",border:"1px solid #6366f130"}}>⬆ Propuesta por {t.propuestaPor}</span>}
+                          {t.propuestaPor&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:T.accentSolid+"18",color:T.accent,fontWeight:700,alignSelf:"flex-start",border:`1px solid ${T.accentSolid}30`}}>⬆ Propuesta por {t.propuestaPor}</span>}
                           {(t.deliverables||[]).some(d=>d.parcial)&&t.estado!=="entregado"&&t.estado!=="aprobado"&&(
-                            <span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:"#f9731618",color:"#fb923c",fontWeight:700,alignSelf:"flex-start",border:"1px solid #f9731630"}}>📦 Entrega parcial</span>
+                            <span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:T.orange+"18",color:T.orange,fontWeight:700,alignSelf:"flex-start",border:`1px solid ${T.orange}30`}}>📦 Entrega parcial</span>
                           )}
                           {/* Brief preview */}
                           {brief&&(
@@ -10199,45 +10199,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </div>
                 );
               })()}
-              {/* Creativos por editor */}
-              {creativosActivos.length>0&&(
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:10}}>
-                  {produccion.editores.map(ed=>{
-                    const edC=creativosActivos.filter(c=>c.editor===ed);
-                    if(!edC.length) return null;
-                    const CEST2={idea:{l:"Idea",c:"#6b7280",dot:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue,dot:T.blue},"en-produccion":{l:"En prod.",c:T.orange,dot:T.orange},entregado:{l:"Entregado",c:T.yellow||"#d97706",dot:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green,dot:T.green}};
-                    return(
-                      <div key={ed} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                        <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
-                          <div style={{width:36,height:36,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.accent,flexShrink:0}}>{ed[0].toUpperCase()}</div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{ed}</div>
-                            <div style={{fontSize:11,color:T.textSm}}>{edC.length} creativo{edC.length!==1?"s":""}</div>
-                          </div>
-                          <button onClick={()=>{setCEditor(ed);openCreativo();}} style={{...BtnSecondary(T),fontSize:12,padding:"5px 10px"}}>+ Creativo</button>
-                        </div>
-                        <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:"6px 10px",display:"flex",flexDirection:"column",gap:3}}>
-                          {edC.map(c=>{
-                            const ce=CEST2[c.estado]||{l:c.estado,c:T.textSm,dot:"#9ca3af"};
-                            return(
-                              <div key={c.id} onClick={()=>setCreativoDetail(c)}
-                                style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,background:T.surface,border:`1px solid ${T.border}`,cursor:"pointer",transition:"border-color 0.15s"}}
-                                onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
-                                onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                                <div style={{width:6,height:6,borderRadius:"50%",background:ce.dot,flexShrink:0}}/>
-                                <span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accentSolid+"15",borderRadius:4,padding:"1px 5px",flexShrink:0}}>{c.codigo}</span>
-                                <span style={{flex:1,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.angulo||"Sin ángulo"}</span>
-                                <span style={{fontSize:10,fontWeight:600,color:ce.c,background:ce.c+"18",borderRadius:20,padding:"2px 7px",flexShrink:0}}>{ce.l}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {tareasActivas.length===0&&creativosActivos.length===0&&(
+              {tareasActivas.length===0&&(
                 <div style={{textAlign:"center",padding:"70px 24px",background:T.surface,borderRadius:14,border:`1px dashed ${T.border}`}}>
                   <div style={{fontSize:48,marginBottom:16}}>🚀</div>
                   <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>Todo al día</div>
