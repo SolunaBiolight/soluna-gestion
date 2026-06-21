@@ -10039,7 +10039,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {view==="todo"&&!calendarView&&!colabMode&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
         {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
         {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Tablero compartido</button>}
-        {view==="referencias"&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Marca</button>}
+        {view==="referencias"&&!colabMode&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Marca</button>}
       </AppTopbar>
 
       {/* Barra de tabs — 2 tabs principales */}
@@ -10215,7 +10215,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 ))}
               </div>}
-              {paraRevisar.length>0&&(
+              {!colabMode&&paraRevisar.length>0&&(
                 <div style={{background:T.card,border:`1px solid ${T.orange}`,borderRadius:DS.r.xl,overflow:"hidden",marginBottom:16}}>
                   <div style={{background:T.orange,padding:"10px 16px"}}>
                     <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>📦 {paraRevisar.length} entrega{paraRevisar.length!==1?"s":""} esperando revisión</span>
@@ -11684,8 +11684,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       <div style={{background:`${accentColor}18`,borderBottom:`1px solid ${accentColor}30`,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
                         <div style={{width:10,height:10,borderRadius:"50%",background:accentColor,flexShrink:0}}/>
                         <div style={{flex:1,fontSize:14,fontWeight:700,color:T.text,lineHeight:1.3}}>{ref.nombre}</div>
-                        <button onClick={()=>openRefModal(ref)} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
-                        <button onClick={()=>handleDeleteRef(ref.id)} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                        {!colabMode&&<button onClick={()=>openRefModal(ref)} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>}
+                        {!colabMode&&<button onClick={()=>handleDeleteRef(ref.id)} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
                       </div>
                       <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:7,flex:1}}>
                         {links.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin links — editá para agregar</div>}
@@ -23069,7 +23069,11 @@ export default function App() {
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
   // Detectar ruta pública de colaborador: #/colaborador/TOKEN
   const _colabMatch = _initialHash.match(/^colaborador\/([a-z0-9]{8,})/i);
-  const [colabToken, setColabToken] = useState(_colabMatch ? _colabMatch[1] : null);
+  const [colabToken, setColabToken] = useState(()=>{
+    const fromHash = _colabMatch ? _colabMatch[1] : null;
+    if (fromHash) { try { sessionStorage.setItem("growith_colab_token", fromHash); } catch(e){} return fromHash; }
+    try { return sessionStorage.getItem("growith_colab_token") || null; } catch(e) { return null; }
+  });
   const _editorMatch = _initialHash.match(/^editor-produccion\/([a-z0-9]{8,})/i);
   const [editorProdToken, setEditorProdToken] = useState(_editorMatch ? _editorMatch[1] : null);
   // Tablero compartido: #/tablero/BOARD_TOKEN
@@ -23090,11 +23094,12 @@ export default function App() {
     const onHash = () => {
       const h = window.location.hash.replace(/^#\/?/, "") || "home";
       const cm = h.match(/^colaborador\/([a-z0-9]{8,})/i);
-      if (cm) { setColabToken(cm[1]); setEditorProdToken(null); setBoardToken(null); return; }
+      if (cm) { try{sessionStorage.setItem("growith_colab_token",cm[1]);}catch(e){} setColabToken(cm[1]); setEditorProdToken(null); setBoardToken(null); return; }
       const em = h.match(/^editor-produccion\/([a-z0-9]{8,})/i);
       if (em) { setEditorProdToken(em[1]); setColabToken(null); setBoardToken(null); return; }
       const bm = h.match(/^tablero\/([a-z0-9]{8,})/i);
       if (bm) { setBoardToken(bm[1]); setColabToken(null); setEditorProdToken(null); return; }
+      try{sessionStorage.removeItem("growith_colab_token");}catch(e){}
       setColabToken(null); setEditorProdToken(null); setBoardToken(null);
       if (VALID_PAGES.includes(h)) _setPage(h);
     };
@@ -23694,26 +23699,28 @@ export default function App() {
                   {bellPanelOpen&&(
                     <>
                     <div onClick={()=>setBellPanelOpen(false)} style={{position:"fixed",inset:0,zIndex:199}}/>
-                    <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:200,width:300,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:200,width:320,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       <div style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <span style={{fontSize:12,fontWeight:700,color:T.text}}>📦 Entregas para revisar</span>
-                        <button onClick={()=>setBellPanelOpen(false)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,lineHeight:1,padding:0}}>✕</button>
+                        <span style={{fontSize:12,fontWeight:700,color:T.text}}>📦 {tareasParaRevisarList.length} entrega{tareasParaRevisarList.length!==1?"s":""} para revisar</span>
+                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                          <button onClick={()=>{setTareasForReview(0);setTareasParaRevisarList([]);setBellPanelOpen(false);}} style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
+                          <button onClick={()=>setBellPanelOpen(false)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,lineHeight:1,padding:0}}>✕</button>
+                        </div>
                       </div>
                       <div style={{maxHeight:260,overflowY:"auto"}}>
                         {tareasParaRevisarList.map(t=>(
-                          <div key={t.id} style={{padding:"10px 14px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:10}}>
+                          <div key={t.id} onClick={()=>{setBellPanelOpen(false);setPage("tareas");}} style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}
+                            onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                             <div style={{width:32,height:32,borderRadius:"50%",background:T.orange+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.orange,flexShrink:0}}>
-                              {(t.asignadoNombre[0]||"?").toUpperCase()}
+                              {(t.asignadoNombre?.[0]||"?").toUpperCase()}
                             </div>
                             <div style={{flex:1,minWidth:0}}>
                               <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
                               {t.asignadoNombre&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{t.asignadoNombre}</div>}
                             </div>
+                            <span style={{fontSize:10,color:T.orange,fontWeight:600,flexShrink:0}}>Ver →</span>
                           </div>
                         ))}
-                      </div>
-                      <div style={{padding:"10px 14px"}}>
-                        <button onClick={()=>{setBellPanelOpen(false);setPage("tareas");}} style={{...BtnPrimary(T),fontSize:12,width:"100%",justifyContent:"center"}}>Ver en Tareas →</button>
                       </div>
                     </div>
                     </>
