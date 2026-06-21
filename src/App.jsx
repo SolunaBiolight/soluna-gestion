@@ -9219,6 +9219,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   // ── CAMPAÑA ──
   const [ntEsCampaña, setNtEsCampaña] = useState(false);
   const [ntSlots, setNtSlots] = useState([]); // [{id,descripcion,tipo,asignadoEmail,asignadoNombre}]
+  // ── PROPONER TAREA (colabMode) ──
+  const [showNTColab, setShowNTColab] = useState(false);
+  const [ntColabTitulo, setNtColabTitulo] = useState("");
+  const [ntColabDesc, setNtColabDesc] = useState("");
+  const [ntColabLink, setNtColabLink] = useState("");
   const [notifEmails, setNotifEmails] = useState([]);
   const [newNotifEmail, setNewNotifEmail] = useState("");
   const [showHistorial, setShowHistorial] = useState(false);
@@ -9228,6 +9233,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const d = await r.json();
     if(!r.ok||d.error) throw new Error(d.error||"Error");
     return d;
+  }
+
+  async function proponerTareaColab() {
+    if(!ntColabTitulo.trim()) return toast("Ingresá un título","error");
+    try{
+      await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicProponerTarea",token:colabMode?.token,titulo:ntColabTitulo.trim(),descripcion:ntColabDesc.trim(),link:ntColabLink.trim()})});
+      toast("Propuesta enviada ✓","success");
+      setShowNTColab(false); setNtColabTitulo(""); setNtColabDesc(""); setNtColabLink("");
+      loadData(true);
+    }catch(e){toast("Error: "+e.message,"error");}
   }
 
   async function loadData(silent=false) {
@@ -10036,6 +10051,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
         {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Tablero compartido</button>}
         {view==="referencias"&&!colabMode&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Marca</button>}
+        {view==="todo"&&colabMode&&<button onClick={()=>setShowNTColab(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>+ Proponer tarea</button>}
       </AppTopbar>
 
       {/* Barra de tabs — 2 tabs principales */}
@@ -11706,6 +11722,33 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         );
       })()}
 
+      {/* MODAL Proponer tarea (colabMode) */}
+      {showNTColab&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowNTColab(false);}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:24,width:"100%",maxWidth:440}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontSize:15,fontWeight:700,color:T.text}}>Proponer tarea</div>
+              <ModalCloseBtn T={T} onClick={()=>setShowNTColab(false)}/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Título *</div>
+              <input value={ntColabTitulo} onChange={e=>setNtColabTitulo(e.target.value)} placeholder="¿Qué propones hacer?" style={{...iS,width:"100%",fontSize:13}} onKeyDown={e=>e.key==="Enter"&&proponerTareaColab()}/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Descripción</div>
+              <textarea value={ntColabDesc} onChange={e=>setNtColabDesc(e.target.value)} placeholder="Contexto, referencias, ideas..." rows={3} style={{...iS,width:"100%",fontSize:13,resize:"vertical"}}/>
+            </div>
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Link de referencia (opcional)</div>
+              <input value={ntColabLink} onChange={e=>setNtColabLink(e.target.value)} placeholder="https://..." style={{...iS,width:"100%",fontSize:13}}/>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn T={T} variant="secondary" onClick={()=>setShowNTColab(false)}>Cancelar</Btn>
+              <AsyncButton onClick={proponerTareaColab} style={BtnPrimary(T)}>Proponer</AsyncButton>
+            </div>
+          </div>
+        </div>
+      )}
       {/* MODAL Referencias — agregar / editar marca */}
       {showRefModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowRefModal(false);}}>
