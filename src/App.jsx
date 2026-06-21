@@ -11628,7 +11628,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
 
       {/* ── TAB REFERENCIAS ── */}
       {!loading&&view==="referencias"&&(()=>{
-        const TIPO_META={meta:{icon:"📊",color:"#1877f2"},instagram:{icon:"📷",color:"#e1306c"},tiktok:{icon:"🎵",color:"#111"},web:{icon:"🌐",color:"#6366f1"},drive:{icon:"📁",color:"#34a853"},youtube:{icon:"▶️",color:"#ff0000"},otro:{icon:"🔗",color:"#6b7280"}};
+        const TIPO_META={meta:{icon:"📊",color:"#1877f2",label:"Meta Ads"},instagram:{icon:"📷",color:"#e1306c",label:"Instagram"},tiktok:{icon:"🎵",color:"#111",label:"TikTok"},web:{icon:"🌐",color:"#6366f1",label:"Website"},drive:{icon:"📁",color:"#34a853",label:"Drive"},youtube:{icon:"▶️",color:"#ff0000",label:"YouTube"},otro:{icon:"🔗",color:"#6b7280",label:"Otro"}};
         return (
           <div style={{padding:"20px 24px"}}>
             {refLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
@@ -11701,16 +11701,19 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <Btn T={T} variant="secondary" size="sm" onClick={()=>setRefLinks(p=>[...p,{id:Math.random().toString(36).slice(2),tipo:"web",label:"",url:""}])}>+ Agregar link</Btn>
               </div>
               {refLinks.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic",marginBottom:8,padding:"10px 0"}}>Sin links todavía — tocá "+ Agregar link"</div>}
-              {refLinks.map((l,li)=>(
-                <div key={l.id||li} style={{display:"grid",gridTemplateColumns:"140px 1fr 1fr auto",gap:6,marginBottom:8,alignItems:"center"}}>
+              {refLinks.map((l,li)=>{
+                const esOtro=(l.tipo||"web")==="otro";
+                return(
+                <div key={l.id||li} style={{display:"grid",gridTemplateColumns:esOtro?"140px 1fr 1fr auto":"140px 1fr auto",gap:6,marginBottom:8,alignItems:"center"}}>
                   <select value={l.tipo||"web"} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,tipo:e.target.value}:x))} style={{...iS,fontSize:12,padding:"5px 8px"}}>
                     {LINK_TIPOS.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
                   </select>
-                  <input value={l.label} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,label:e.target.value}:x))} placeholder="Etiqueta (ej: @nikear)" style={{...iS,fontSize:12}}/>
+                  {esOtro&&<input value={l.label} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,label:e.target.value}:x))} placeholder="Descripción (ej: @nikear)" style={{...iS,fontSize:12}}/>}
                   <input value={l.url} onChange={e=>setRefLinks(p=>p.map((x,xi)=>xi===li?{...x,url:e.target.value}:x))} placeholder="https://..." style={{...iS,fontSize:12}}/>
                   <button onClick={()=>setRefLinks(p=>p.filter((_,xi)=>xi!==li))} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",padding:"5px 6px",fontSize:18,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>×</button>
                 </div>
-              ))}
+                );
+              })}
             </div>
             {/* Botones */}
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
