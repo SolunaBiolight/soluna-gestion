@@ -145,14 +145,16 @@ export default async function handler(req, res) {
     try {
       const db = initAdmin();
       const days = parseInt(req.query.days) || 30;
-      const nowDate = new Date();
-      const until = req.query.date_to || nowDate.toISOString().slice(0,10);
-      const since = req.query.date_from || new Date(nowDate - days * 86400000).toISOString().slice(0,10);
-      const periodMs = new Date(until+"T23:59:59") - new Date(since+"T00:00:00");
-      const prevUntilD = new Date(new Date(since+"T00:00:00") - 86400000);
-      const prevSinceD = new Date(prevUntilD - periodMs);
-      const prevSince = prevSinceD.toISOString().slice(0,10);
-      const prevUntil = prevUntilD.toISOString().slice(0,10);
+      // Día actual en zona Argentina (UTC-3) — alinea con api/stock.js (argTodayParts)
+      // para que el rango no se corra de día (antes se calculaba en UTC y stock.js
+      // lo reinterpretaba como AR, desalineando el revenue vs el tab Análisis).
+      const argToday = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year:"numeric", month:"2-digit", day:"2-digit" }).format(new Date());
+      const addDays = (ymd, n) => { const [y,m,d]=ymd.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)+n*86400000).toISOString().slice(0,10); };
+      const until = req.query.date_to || argToday;
+      const since = req.query.date_from || addDays(argToday, -(days-1));
+      const span = Math.round((Date.parse(until+"T00:00:00Z") - Date.parse(since+"T00:00:00Z"))/86400000); // nº de días - 1
+      const prevUntil = addDays(since, -1);
+      const prevSince = addDays(prevUntil, -span);
       const userSnap = await db.collection("users").doc(uid).get();
       const userData = userSnap.data() || {};
       const stores = userData.stores || [];
@@ -166,7 +168,16 @@ export default async function handler(req, res) {
           const r = await fetch(stockUrl.toString(), { headers: { host: req.headers.host } });
           if (!r.ok) return { dailyRevenue:{}, dailyOrders:{} };
           const j = await r.json();
-          return { dailyRevenue: j.daily_revenue||{}, dailyOrders: j.daily_orders||{} };
+          // Combinar TN/Shopify + Mercado Libre (ML viene aparte en ml_data),
+          // igual que el tab Análisis del front (mergeDaily). Antes se ignoraba ML
+          // → facturación incompleta en el tab Márgenes.
+          const dailyRevenue = { ...(j.daily_revenue||{}) };
+          const dailyOrders  = { ...(j.daily_orders||{}) };
+          const mlRev = j.ml_data?.daily_revenue || {};
+          const mlOrd = j.ml_data?.daily_orders  || {};
+          for (const [day,v] of Object.entries(mlRev)) dailyRevenue[day] = (dailyRevenue[day]||0) + (v||0);
+          for (const [day,v] of Object.entries(mlOrd)) dailyOrders[day]  = (dailyOrders[day]||0)  + (v||0);
+          return { dailyRevenue, dailyOrders };
         } catch(_) { return { dailyRevenue:{}, dailyOrders:{} }; }
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();

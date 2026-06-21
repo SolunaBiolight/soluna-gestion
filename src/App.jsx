@@ -696,7 +696,7 @@ function GrowithLogo({size=28, variant="color", darkMode=false}) {
   );
 }
 
-function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false}) {
+function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false}) {
   const GROUPS = [
     // Inicio queda suelto arriba de todo, sin etiqueta de grupo
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
@@ -705,7 +705,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
-      subs:[{id:"margenes",label:"Márgenes"},{id:"analisis",label:"Análisis"},{id:"productos",label:"Productos"},{id:"facturacion",label:"Facturación"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
+      subs:[{id:"analisis",label:"Análisis"},{id:"productos",label:"Productos"},{id:"facturacion",label:"Facturación"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
       subs:[{id:"gestion",label:"Gestión"},{id:"analytics",label:"Analytics"}]},
     { group:"OPERACIONES" },
@@ -717,6 +717,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
 },
     { group:"FINANZAS" },
+    {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
   ];
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
@@ -814,7 +816,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
                     // subActive solo cuando el módulo padre es el activo —
                     // antes daba highlight aún navegando otra sección, ahora
                     // que las subs son visibles siempre eso confundía.
-                    const subActive = active && ((item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id)||(item.id==="meta"&&metaTab===sub.id)||(item.id==="stock"&&stockTab===sub.id)||(item.id==="arca"&&arcaTab===sub.id)||(item.id==="tareas"&&tareasTab===sub.id)||(item.id==="canjes"&&canjesTab===sub.id)||(item.id==="ml"&&mlTab===sub.id));
+                    const subActive = active && ((item.id==="envios"&&enviosTab===sub.id)||(item.id==="reclamos"&&reclamosView===sub.id)||(item.id==="meta"&&metaTab===sub.id)||(item.id==="stock"&&stockTab===sub.id)||(item.id==="margenes"&&margenesTab===sub.id)||(item.id==="arca"&&arcaTab===sub.id)||(item.id==="tareas"&&tareasTab===sub.id)||(item.id==="canjes"&&canjesTab===sub.id)||(item.id==="ml"&&mlTab===sub.id));
                     return (
                       <button key={sub.id}
                         onClick={()=>{
@@ -823,6 +825,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
                           if(item.id==="reclamos") setReclamosView&&setReclamosView(sub.id);
                           if(item.id==="meta") setMetaTab&&setMetaTab(sub.id);
                           if(item.id==="stock") setStockTab&&setStockTab(sub.id);
+                          if(item.id==="margenes") setMargenesTab&&setMargenesTab(sub.id);
                           if(item.id==="arca") setArcaTab&&setArcaTab(sub.id);
                           if(item.id==="tareas") setTareasTab&&setTareasTab(sub.id);
                           if(item.id==="canjes") setCanjesTab&&setCanjesTab(sub.id);
@@ -20212,6 +20215,125 @@ function MargenesTab({ T, uid, days, useCustomDate, dateFrom, dateTo }) {
   );
 }
 
+// ===========================================
+// APP MÁRGENES — sección financiera propia (estilo Escalafy)
+// Sub-tabs (vía sidebar): Dashboard · Comisiones · Costos Adicionales ·
+// Cotización Dólar · Facturación Externa
+// ===========================================
+
+// Panel Comisiones — configura rendimientoCommission (alimenta el cálculo de
+// margen en /api/orders?action=daily_metrics).
+function ComisionesPanel({ T, uid }) {
+  const toast = useToast();
+  const [pct, setPct] = React.useState(3);
+  const [loaded, setLoaded] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!uid) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", uid));
+        const c = snap.exists() ? snap.data().rendimientoCommission : null;
+        if (typeof c === "number") setPct(+(c * 100).toFixed(2));
+      } catch (_) {}
+      setLoaded(true);
+    })();
+  }, [uid]);
+
+  async function save() {
+    const val = parseFloat(pct);
+    if (!isFinite(val) || val < 0 || val > 100) { toast("Ingresá un % entre 0 y 100", "warning"); return; }
+    setSaving(true);
+    try {
+      await setDoc(doc(db, "users", uid), { rendimientoCommission: val / 100 }, { merge: true });
+      toast("Comisión guardada ✓", "success");
+    } catch (e) { toast("Error al guardar: " + e.message, "error"); }
+    setSaving(false);
+  }
+
+  const fmtARS = n => "$ " + Math.round(n||0).toLocaleString("es-AR");
+  if (!loaded) return <div style={{padding:60,textAlign:"center",color:T.textSm}}>Cargando…</div>;
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:560}}>
+      <div>
+        <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Comisiones</div>
+        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Comisión de la plataforma de pago que se descuenta de la facturación para calcular la facturación neta y el margen.</div>
+      </div>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px"}}>
+        <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Comisión sobre facturación (%)</label>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <input type="number" step="0.1" min="0" max="100" value={pct}
+            onChange={e=>setPct(e.target.value)}
+            style={{...InputStyle(T),width:140,fontSize:16,fontWeight:700,padding:"10px 14px"}}/>
+          <span style={{fontSize:16,fontWeight:700,color:T.textSm}}>%</span>
+          <Btn T={T} variant="primary" onClick={save} disabled={saving} style={{marginLeft:"auto"}}>{saving?"Guardando…":"Guardar"}</Btn>
+        </div>
+        <div style={{fontSize:11,color:T.textSm,marginTop:12,lineHeight:1.5}}>
+          Ej: si vendés {fmtARS(100000)} y la comisión es {pct||0}%, la facturación neta es {fmtARS((1-(parseFloat(pct)||0)/100)*100000)}.
+          Este valor alimenta <strong style={{color:T.text}}>Facturación Neta</strong>, <strong style={{color:T.text}}>Ganancia</strong> y <strong style={{color:T.text}}>True ROAS</strong> en el Dashboard.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Placeholder para subsecciones pendientes de replicar desde Escalafy.
+function MargenesPlaceholder({ T, title, desc }) {
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:640}}>
+      <div>
+        <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{title}</div>
+        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>{desc}</div>
+      </div>
+      <div style={{background:T.surface,border:`1px dashed ${T.border}`,borderRadius:12,padding:"40px 24px",textAlign:"center"}}>
+        <div style={{fontSize:34,marginBottom:10,opacity:0.7}}>🚧</div>
+        <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>En construcción</div>
+        <div style={{fontSize:12,color:T.textSm,maxWidth:420,margin:"0 auto",lineHeight:1.5}}>
+          Para dejarla igual a Escalafy, pasame una captura de esta sección y la replico tal cual.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
+  const uid = user?.uid;
+  const [days, setDays] = React.useState(30);
+  const [useCustomDate, setUseCustomDate] = React.useState(false);
+  const [dateFrom, setDateFrom] = React.useState("");
+  const [dateTo, setDateTo] = React.useState("");
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      <AppTopbar T={T} section="Márgenes" onHome={onHome}/>
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
+        {tab==="dashboard" && (
+          <div style={{display:"flex",flexDirection:"column",gap:18}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período:</span>
+              {[{d:1,l:"Hoy"},{d:7,l:"7d"},{d:30,l:"30d"}].map(p=>(
+                <button key={p.d} onClick={()=>{setUseCustomDate(false);setDays(p.d);}}
+                  style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:`1px solid ${!useCustomDate&&days===p.d?T.accentSolid:T.border}`,borderRadius:6,background:!useCustomDate&&days===p.d?T.accentSolid:"transparent",color:!useCustomDate&&days===p.d?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
+              ))}
+              <DateRangePicker T={T}
+                since={useCustomDate?dateFrom:new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
+                until={useCustomDate?dateTo:new Date().toISOString().slice(0,10)}
+                onChange={(s,u)=>{setUseCustomDate(true);setDateFrom(s);setDateTo(u);const diff=Math.round((new Date(u)-new Date(s))/86400000)+1;setDays(diff);}}/>
+            </div>
+            <MargenesTab T={T} uid={uid} days={days} useCustomDate={useCustomDate} dateFrom={dateFrom} dateTo={dateTo}/>
+          </div>
+        )}
+        {tab==="comisiones" && <ComisionesPanel T={T} uid={uid}/>}
+        {tab==="costos" && <MargenesPlaceholder T={T} title="Costos Adicionales" desc="Costos operativos fijos y costo por producto (COGS) para calcular el margen real."/>}
+        {tab==="dolar" && <MargenesPlaceholder T={T} title="Cotización Dólar" desc="Cotización del dólar para costos/productos en USD."/>}
+        {tab==="facturacion_externa" && <MargenesPlaceholder T={T} title="Facturación Externa" desc="Ventas fuera de las plataformas conectadas, sumadas manualmente a la facturación."/>}
+      </div>
+    </div>
+  );
+}
+
 function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const uid = user?.uid;
   const [days, setDays] = useState(7);
@@ -21037,7 +21159,6 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
 
   const TABS=[
-    {id:"margenes",label:"💎 Márgenes"},
     {id:"analisis",label:"📊 Análisis"},
     {id:"productos",label:"📦 Productos"},
     {id:"facturacion",label:"💰 Facturación"},
@@ -21153,7 +21274,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           </div>
         ):data?(
           <>
-            {/* KPIs siempre visibles */}
+            {/* KPIs de stock/ventas — solo en tab Análisis */}
+            {tab==="analisis" && (
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
               {(()=>{
                 const prevU=dataPrev?.total_units||0;
@@ -21182,6 +21304,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 </div>
               ))}
             </div>
+            )}
 
             {/* Tabs internos REMOVIDOS — navegación va por el sidebar izquierdo */}
 
@@ -21207,13 +21330,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               </div>
             )}
 
-            {/* ── TAB MÁRGENES — métricas estilo Escalafy (ROAS, profit, etc) ── */}
-            {tab==="margenes" && (
-              <MargenesTab T={T} uid={uid} days={days} useCustomDate={useCustomDate} dateFrom={dateFrom} dateTo={dateTo}/>
-            )}
-
             {/* ── BLOQUE COMÚN: Gráfico + Resumen + Donuts ── */}
-            {tab!=="margenes" && (()=>{
+            {(()=>{
               // Config por tab — cada uno con sus propios datos
               const isAnalisis  = tab==="analisis";
               const isProductos  = tab==="productos";
@@ -22726,6 +22844,11 @@ export default function App() {
     if(parts[0]==="stock"&&parts[1]) return parts[1];
     return "analisis";
   });
+  const [margenesTab,setMargenesTab]=useState(()=>{
+    const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
+    if(parts[0]==="margenes"&&parts[1]) return parts[1];
+    return "dashboard";
+  });
   const [arcaTab,setArcaTab]=useState(()=>{
     const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
     if(parts[0]==="arca"&&parts[1]) return parts[1];
@@ -22861,12 +22984,12 @@ export default function App() {
   // Sincronizar hash con página y sub-tab activo
   useEffect(()=>{
     if(typeof window==="undefined") return;
-    const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:"";
+    const sub = page==="stock"?`/${stockTab}`:page==="margenes"?`/${margenesTab}`:page==="arca"?`/${arcaTab}`:"";
     const newHash = `#/${page}${sub}`;
     if(window.location.hash !== newHash) {
       window.history.replaceState(null,"",newHash);
     }
-  },[page, stockTab, arcaTab]);
+  },[page, stockTab, margenesTab, arcaTab]);
 
   // Auth state listener
   useEffect(()=>{
@@ -23252,6 +23375,7 @@ export default function App() {
   else if(page==="rendimiento") pageContent = adminGate("rendimiento") || <PageView T={T} pageKey="rendimiento"><AppRendimiento T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
   else if(page==="stock") pageContent = adminGate("stock") || planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
+  else if(page==="margenes") pageContent = adminGate("margenes") || planGate("plus") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="ml") pageContent = adminGate("ml") || planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
   else if(page==="meta") pageContent = adminGate("meta") || planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
   else if(page==="tareas") pageContent = adminGate("tareas") || planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab}/></PageView>;
@@ -23273,7 +23397,7 @@ export default function App() {
       )}
       <CommandPalette T={T} open={cmdOpen} onClose={()=>setCmdOpen(false)} setPage={setPage} isAdmin={isAdmin}/>
       <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial}/>
+        <Sidebar T={T} page={page} setPage={setPage} user={user} userPlan={userPlan} isAdmin={isAdmin} adminOnlySections={adminOnlySections} onToggleDark={()=>setDarkMode(d=>!d)} darkMode={darkMode} alerts={{reclamos: reclamosCount, canjes: canjesCount, stock: 0, envios: 0, tareas: tareasForReview, andreani: andreaniAlertCount}} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} enviosTab={enviosTab} setEnviosTab={setEnviosTab} reclamosView={reclamosView} setReclamosView={setReclamosView} metaTab={metaTab} setMetaTab={setMetaTab} stockTab={stockTab} setStockTab={setStockTab} margenesTab={margenesTab} setMargenesTab={setMargenesTab} arcaTab={arcaTab} setArcaTab={setArcaTab} tareasTab={tareasTab} setTareasTab={setTareasTab} canjesTab={canjesTab} setCanjesTab={setCanjesTab} mlTab={mlTab} setMlTab={setMlTab} connectedStores={connectedStores} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)} isInTrial={isInTrial}/>
       {/* Multi-org F2 modals */}
       {createOrgOpen && <NewOrgModal T={T} onClose={()=>setCreateOrgOpen(false)} onCreate={onCreateOrg} existingCount={orgs.length} userPlan={userPlan}/>}
       {manageOrgId && (() => { const o = orgs.find(x=>x.id===manageOrgId); return o ? <ManageOrgModal T={T} org={o} totalOrgs={orgs.length} onClose={()=>setManageOrgId(null)} onSave={onSaveOrg} onDelete={onDeleteOrg}/> : null; })()}
