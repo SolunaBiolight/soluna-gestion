@@ -9868,19 +9868,41 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       </div>
                     )}
                     <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap",alignItems:"center"}}>
-                      {i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
+                      {!colabMode&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
                         <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#22c55e",color:"#fff",border:"1.5px solid #16a34a55",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>✓ Aprobar</AsyncButton>
                         <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>🔁 Pedir cambios</button>
                         {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
                       </>}
-                      {t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
-                      <AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>
+                      {!colabMode&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
+                      {!colabMode&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>}
                     </div>
                   </>
                 )}
               </div>
               );
             })}
+          </div>
+        )}
+        {/* Botón entregar para colab en tareas sin slots */}
+        {colabMode&&!(t.slots||[]).length&&t.estado!=="aprobado"&&(
+          <div style={{marginBottom:14,padding:"12px 14px",background:T.accentSolid+"10",border:`1px solid ${T.accentSolid}30`,borderRadius:DS.r.lg}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8}}>Subir entrega</div>
+            <div style={{display:"flex",gap:7}}>
+              <input id={`entrega-link-${t._id}`} placeholder="Link de Drive, Dropbox, etc." style={{...iS,fontSize:12,flex:1}}/>
+              <AsyncButton onClick={async()=>{
+                const inp=document.getElementById(`entrega-link-${t._id}`);
+                const link=inp?.value?.trim();
+                if(!link) return toast("Pegá un link primero","error");
+                const nota=document.getElementById(`entrega-nota-${t._id}`)?.value?.trim()||"";
+                try{
+                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,nota,esFinal:true})});
+                  toast("Entrega enviada ✓","success");
+                  if(inp) inp.value="";
+                  loadData(true);
+                }catch(e){toast("Error: "+e.message,"error");}
+              }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 16px",whiteSpace:"nowrap"}}>Entregar</AsyncButton>
+            </div>
+            <input id={`entrega-nota-${t._id}`} placeholder="Nota opcional (qué incluye, versión, etc.)" style={{...iS,fontSize:12,width:"100%",marginTop:6}}/>
           </div>
         )}
         {/* Comentarios */}
