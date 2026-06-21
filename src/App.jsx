@@ -9216,6 +9216,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [prodView, setProdView] = useState("tabla"); // tabla | tablero
   const [creativoDetail, setCreativoDetail] = useState(null);
   const [creativoCommentText, setCreativoCommentText] = useState({});
+  const [notifEmails, setNotifEmails] = useState([]);
+  const [newNotifEmail, setNewNotifEmail] = useState("");
+  const [showHistorial, setShowHistorial] = useState(false);
 
   async function tareasApi(body) {
     const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
@@ -9230,6 +9233,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       const d = await tareasApi({action:"getData"});
       setDatos(d);
       if(d.boardToken) setBoardTokenAdmin(d.boardToken);
+      if(Array.isArray(d.notifEmails)) setNotifEmails(d.notifEmails);
     }
     catch(e){ if(!silent) appAlert("Error al cargar tareas: "+e.message); }
     if(!silent) setLoading(false);
@@ -9293,6 +9297,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   function colabLink(token) {
     return `${window.location.origin}/#/colaborador/${token}`;
   }
+  async function saveNotifEmailsFn(emails) {
+    try { await tareasApi({action:"saveNotifEmails",emails}); setNotifEmails(emails); toast("Emails guardados ✓","success"); }
+    catch(e){ toast("Error al guardar: "+e.message,"error"); }
+  }
+
   async function copyLink(token) {
     try { await navigator.clipboard.writeText(colabLink(token)); toast("Link copiado 📋","success"); }
     catch(e){ appAlert("Link: "+colabLink(token)); }
@@ -10207,6 +10216,34 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Nueva tarea</button>
                 </div>
               )}
+              {/* Historial de tareas aprobadas */}
+              {(()=>{
+                const aprobadas=tareas.filter(t=>t.estado==="aprobado").sort((a,b)=>(b.updatedAt?._seconds||0)-(a.updatedAt?._seconds||0));
+                if(!aprobadas.length) return null;
+                return(
+                  <div style={{marginTop:12}}>
+                    <button onClick={()=>setShowHistorial(s=>!s)}
+                      style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,padding:0,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:showHistorial?10:0}}>
+                      <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{showHistorial?"▲":"▾"} Historial · {aprobadas.length} tarea{aprobadas.length!==1?"s":""} completada{aprobadas.length!==1?"s":""}</span>
+                    </button>
+                    {showHistorial&&(
+                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                        {aprobadas.map(t=>(
+                          <div key={t._id} onClick={()=>setKanbanSelected(t)}
+                            style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:DS.r.lg,background:T.surface,border:`1px solid ${T.border}`,cursor:"pointer",transition:"border-color 0.15s"}}
+                            onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+                            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                            <span style={{fontSize:9,fontWeight:700,color:T.textSm,background:T.card,borderRadius:4,padding:"2px 6px",border:`1px solid ${T.border}`,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>{t.tareaNumStr?"#"+t.tareaNumStr:"—"}</span>
+                            <span style={{fontSize:12,fontWeight:600,color:T.textMd,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.titulo}</span>
+                            <span style={{fontSize:11,color:T.textSm,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>{t.asignadoNombre||"?"}</span>
+                            <span style={{fontSize:9,fontWeight:700,color:T.green,background:T.greenBg,borderRadius:20,padding:"2px 8px",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✅ Aprobado</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </>);
           })()}
 
@@ -10521,6 +10558,39 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           );
           return (
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {/* Emails de notificación */}
+              {(()=>{
+                const [inputVal, setInputVal] = [newNotifEmail, setNewNotifEmail];
+                const addEmail = () => {
+                  const v = inputVal.trim().toLowerCase();
+                  if(!v.includes("@")) return;
+                  if(notifEmails.includes(v)) { toast("Ese email ya está agregado","warning"); return; }
+                  const updated=[...notifEmails,v];
+                  saveNotifEmailsFn(updated);
+                  setNewNotifEmail("");
+                };
+                return(
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 16px",marginBottom:6}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>📧 Notificaciones</div>
+                    <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Estos emails reciben avisos de entregas, bloqueos y consultas de tu equipo.</div>
+                    {notifEmails.length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8,fontStyle:"italic"}}>Sin emails extra configurados</div>}
+                    {notifEmails.map((email,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                        <span style={{flex:1,fontSize:12,color:T.text,background:T.surface,borderRadius:DS.r.md,padding:"6px 10px",border:`1px solid ${T.border}`,fontFamily:"'Inter',system-ui,sans-serif"}}>{email}</span>
+                        <button onClick={()=>saveNotifEmailsFn(notifEmails.filter((_,j)=>j!==i))}
+                          style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.md,color:T.textSm,padding:"5px 10px",cursor:"pointer",fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+                      </div>
+                    ))}
+                    <div style={{display:"flex",gap:8,marginTop:notifEmails.length?8:0}}>
+                      <input value={newNotifEmail} onChange={e=>setNewNotifEmail(e.target.value)}
+                        onKeyDown={e=>e.key==="Enter"&&addEmail()}
+                        placeholder="email@ejemplo.com"
+                        style={{...iS,flex:1,fontSize:12,padding:"7px 10px"}}/>
+                      <button onClick={addEmail} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",whiteSpace:"nowrap"}}>+ Agregar</button>
+                    </div>
+                  </div>
+                );
+              })()}
               {/* GUÍA ¿Cómo funciona? — Equipo */}
               <div style={{marginBottom:16}}>
                 <button onClick={()=>setShowGuiaEquipo(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>

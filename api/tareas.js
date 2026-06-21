@@ -82,6 +82,19 @@ async function cancelEmail(emailId) {
   }
 }
 
+async function getNotifEmails(db, uid) {
+  if (!uid) return [];
+  try {
+    const snap = await db.collection("users").doc(uid).get();
+    return snap.exists ? (snap.data().notifEmails || []) : [];
+  } catch(e) { return []; }
+}
+async function notifyManagers(db, uid, managerEmail, subject, html) {
+  const extras = await getNotifEmails(db, uid);
+  const recipients = [...new Set([managerEmail, ...extras])].filter(Boolean);
+  await Promise.all(recipients.map(to => sendEmail({ to, subject, html })));
+}
+
 function emailTareaAsignada({ colab, tarea, link }) {
   const deadlineStr = tarea.deadline ? new Date(tarea.deadline).toLocaleDateString("es-AR") : null;
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
@@ -384,23 +397,17 @@ export default async function handler(req, res) {
         // Add motivo as a comment so admin sees it
         const comment = { texto: `🚫 Bloqueado: ${motivo}`, autor:colab.nombre, fecha:now, tipo:"bloqueo" };
         upd.comments = [...(t.data().comments||[]), comment];
-        // Notify manager
-        if (managerEmailPub) {
-          sendEmail({
-            to: managerEmailPub,
-            subject: `🚫 ${colab.nombre} está bloqueado — ${t.data().titulo}`,
-            html: emailConsultaRecibida({ colab, tarea:t.data(), texto:`🚫 Bloqueado: ${motivo}`, link:tareaLink }),
-          });
-        }
+        // Notify manager(s)
+        notifyManagers(db, t.data().uid, managerEmailPub,
+          `🚫 ${colab.nombre} está bloqueado — ${t.data().titulo}`,
+          emailConsultaRecibida({ colab, tarea:t.data(), texto:`🚫 Bloqueado: ${motivo}`, link:tareaLink }));
       }
 
       // Retoma el trabajo tras bloqueo → notificar al manager (inmediato, es urgente resolverlo)
-      if (estado==="en_proceso" && prevEstado==="bloqueada" && managerEmailPub) {
-        sendEmail({
-          to: managerEmailPub,
-          subject: `🔄 ${colab.nombre} retomó el trabajo — ${t.data().titulo}`,
-          html: emailRetomaTrabajo({ colab, tarea:t.data(), link:tareaLink }),
-        });
+      if (estado==="en_proceso" && prevEstado==="bloqueada") {
+        notifyManagers(db, t.data().uid, managerEmailPub,
+          `🔄 ${colab.nombre} retomó el trabajo — ${t.data().titulo}`,
+          emailRetomaTrabajo({ colab, tarea:t.data(), link:tareaLink }));
       }
 
       await ref.update(upd);
@@ -481,14 +488,9 @@ export default async function handler(req, res) {
         activity:[...(t.data().activity||[]), act],
       });
       // Notificar al manager por email
-      const managerEmail = t.data().managerEmail;
-      if (managerEmail) {
-        sendEmail({
-          to: managerEmail,
-          subject: `💬 Actualización de ${colab.nombre} — ${t.data().titulo}`,
-          html: emailNuevoComentario({ colab, tarea:t.data(), comentario:texto.trim(), link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }),
-        });
-      }
+      notifyManagers(db, t.data().uid, t.data().managerEmail,
+        `💬 Actualización de ${colab.nombre} — ${t.data().titulo}`,
+        emailNuevoComentario({ colab, tarea:t.data(), comentario:texto.trim(), link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }));
       return res.json({ ok:true, comment });
     }
 
@@ -504,14 +506,9 @@ export default async function handler(req, res) {
       const comment = { texto: texto.trim(), autor: colab.nombre, fecha:now, tipo:"consulta" };
       await ref.update({ comments:[...(t.data().comments||[]), comment] });
       // Notificar al manager por email
-      const managerEmail = t.data().managerEmail;
-      if (managerEmail) {
-        sendEmail({
-          to: managerEmail,
-          subject: `❓ Consulta de ${colab.nombre} — ${t.data().titulo}`,
-          html: emailConsultaRecibida({ colab, tarea:t.data(), texto:texto.trim(), link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }),
-        });
-      }
+      notifyManagers(db, t.data().uid, t.data().managerEmail,
+        `❓ Consulta de ${colab.nombre} — ${t.data().titulo}`,
+        emailConsultaRecibida({ colab, tarea:t.data(), texto:texto.trim(), link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }));
       return res.json({ ok:true, comment });
     }
 
@@ -536,17 +533,10 @@ export default async function handler(req, res) {
       };
       if (esFinal) upd.estado = "entregado";
       await ref.update(upd);
-      // Email al manager solo en entrega final
-      const managerEmail = t.data().managerEmail;
-      if (managerEmail) {
-        sendEmail({
-          to: managerEmail,
-          subject: esFinal
-            ? `📦 Entrega final de ${colab.nombre} — ${t.data().titulo}`
-            : `📦 Entrega parcial de ${colab.nombre} — ${t.data().titulo}`,
-          html: emailEntregaRecibida({ colab, tarea:t.data(), entrega, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }),
-        });
-      }
+      // Email al manager(s)
+      notifyManagers(db, t.data().uid, t.data().managerEmail,
+        esFinal ? `📦 Entrega final de ${colab.nombre} — ${t.data().titulo}` : `📦 Entrega parcial de ${colab.nombre} — ${t.data().titulo}`,
+        emailEntregaRecibida({ colab, tarea:t.data(), entrega, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }));
       return res.json({ ok: true, entrega });
     }
 
@@ -685,6 +675,7 @@ export default async function handler(req, res) {
         colaboradores: cs.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>a.nombre.localeCompare(b.nombre,"es")),
         tareas:        ts.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0)),
         boardToken:    userSnap.exists ? (userSnap.data().boardToken || null) : null,
+        notifEmails:   userSnap.exists ? (userSnap.data().notifEmails || []) : [],
       });
     }
 
@@ -736,6 +727,14 @@ export default async function handler(req, res) {
     if (action === "deleteColaborador") {
       await db.collection("colaboradores").doc(body.colabId).delete();
       return res.json({ ok:true });
+    }
+
+    if (action === "saveNotifEmails") {
+      const { emails } = body;
+      if (!Array.isArray(emails)) return res.status(400).json({ error:"emails debe ser array" });
+      const clean = [...new Set(emails.map(e=>e.toLowerCase().trim()).filter(e=>e.includes("@")))];
+      await db.collection("users").doc(uid).set({ notifEmails: clean }, { merge: true });
+      return res.json({ ok:true, notifEmails: clean });
     }
 
     if (action === "createTarea") {
@@ -1585,13 +1584,8 @@ export default async function handler(req, res) {
       if (!asignados.includes(colabEmail)) return res.status(403).json({ error:"Solo podés entregar en tus propias tareas" });
       const entrega = { link:link.trim(), label:(label.trim()||`v${(tData.deliverables||[]).length+1}`), nota:nota.trim(), fecha:now, entregadoPor:colabEmail };
       await tareaRef.update({ deliverables:[...(tData.deliverables||[]),entrega], estado:"entregado", updatedAt:now });
-      if (userData.email) {
-        sendEmail({
-          to: userData.email,
-          subject: `📦 Nueva entrega en "${tData.titulo}"`,
-          html: emailEntregaRecibida({ colab:colabData, tarea:tData, entrega, link:origin }),
-        });
-      }
+      const boardNotifRecipients = [...new Set([userData.email, ...(userData.notifEmails||[])])].filter(Boolean);
+      boardNotifRecipients.forEach(to => sendEmail({ to, subject:`📦 Nueva entrega en "${tData.titulo}"`, html:emailEntregaRecibida({ colab:colabData, tarea:tData, entrega, link:origin }) }));
       return res.json({ ok:true, entrega });
     }
 
