@@ -9874,7 +9874,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
                       </>}
                       {!colabMode&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
-                      {!colabMode&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>}
+                      <AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>
                     </div>
                   </>
                 )}
@@ -9887,33 +9887,29 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {colabMode&&!(t.slots||[]).length&&t.estado!=="aprobado"&&(
           <div style={{marginBottom:14,padding:"12px 14px",background:T.accentSolid+"10",border:`1px solid ${T.accentSolid}30`,borderRadius:DS.r.lg}}>
             <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8}}>Subir entrega</div>
+            <input id={`entrega-nombre-${t._id}`} placeholder="Nombre de la entrega (ej: Fotos look invierno, Reel batch 2)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
             <input id={`entrega-link-${t._id}`} placeholder="Link de Drive, Dropbox, etc." style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
-            <input id={`entrega-nota-${t._id}`} placeholder="Nota opcional (qué incluye, versión, etc.)" style={{...iS,fontSize:12,width:"100%",marginBottom:8}}/>
-            <div style={{display:"flex",gap:7}}>
+            <input id={`entrega-nota-${t._id}`} placeholder="Nota opcional" style={{...iS,fontSize:12,width:"100%",marginBottom:8}}/>
+            <div style={{display:"flex",gap:7,alignItems:"center"}}>
+              <select id={`entrega-tipo-${t._id}`} style={{...iS,fontSize:12,flex:"0 0 auto",width:"auto"}}>
+                <option value="parcial">Entrega parcial</option>
+                <option value="final">Entrega final ✓</option>
+              </select>
               <AsyncButton onClick={async()=>{
                 const inp=document.getElementById(`entrega-link-${t._id}`);
                 const link=inp?.value?.trim();
                 if(!link) return toast("Pegá un link primero","error");
+                const nombre=document.getElementById(`entrega-nombre-${t._id}`)?.value?.trim()||"";
                 const nota=document.getElementById(`entrega-nota-${t._id}`)?.value?.trim()||"";
+                const tipo=document.getElementById(`entrega-tipo-${t._id}`)?.value;
+                const esFinal=tipo==="final";
                 try{
-                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,nota,esFinal:false})});
-                  toast("Entrega parcial enviada ✓","success");
-                  if(inp) inp.value="";
+                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label:nombre,nota,esFinal})});
+                  toast(esFinal?"✅ Entrega final enviada":"📦 Entrega parcial registrada","success");
+                  ["entrega-nombre-","entrega-link-","entrega-nota-"].forEach(p=>{const el=document.getElementById(p+t._id);if(el)el.value="";});
                   loadData(true);
                 }catch(e){toast("Error: "+e.message,"error");}
-              }} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flex:1}}>📦 Parcial</AsyncButton>
-              <AsyncButton onClick={async()=>{
-                const inp=document.getElementById(`entrega-link-${t._id}`);
-                const link=inp?.value?.trim();
-                if(!link) return toast("Pegá un link primero","error");
-                const nota=document.getElementById(`entrega-nota-${t._id}`)?.value?.trim()||"";
-                try{
-                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,nota,esFinal:true})});
-                  toast("Entrega final enviada ✓","success");
-                  if(inp) inp.value="";
-                  loadData(true);
-                }catch(e){toast("Error: "+e.message,"error");}
-              }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",flex:1}}>✅ Entrega final</AsyncButton>
+              }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",flex:1}}>Enviar entrega</AsyncButton>
             </div>
           </div>
         )}
@@ -23056,7 +23052,13 @@ function ColaboradorPortalUnificado({T, token}) {
   );
 
   const fakeUser = { uid: colabData.uid, email: colabData.email, displayName: colabData.nombre };
-  return <AppTareas T={T} user={fakeUser} colabMode={{email:colabData.email, nombre:colabData.nombre, token, permisos:colabData.permisos||{}}} onHome={()=>{}} tab="todo" setTab={()=>{}} />;
+  return (
+    <div style={{background:T.bg,minHeight:"100vh"}}>
+      <div style={{maxWidth:920,margin:"0 auto",paddingLeft:24,paddingRight:24}}>
+        <AppTareas T={T} user={fakeUser} colabMode={{email:colabData.email, nombre:colabData.nombre, token, permisos:colabData.permisos||{}}} onHome={()=>{}} tab="todo" setTab={()=>{}} />
+      </div>
+    </div>
+  );
 }
 
 // ROOT APP
@@ -23104,10 +23106,8 @@ export default function App() {
       if (VALID_PAGES.includes(h)) _setPage(h);
     };
     window.addEventListener("hashchange", onHash);
-    window.addEventListener("popstate", onHash);
     return ()=>{
       window.removeEventListener("hashchange", onHash);
-      window.removeEventListener("popstate", onHash);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
