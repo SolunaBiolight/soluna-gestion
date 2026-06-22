@@ -5124,6 +5124,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
   function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
 
+  // Registro de uso (fire-and-forget, no bloquea la UI ni rompe si falla)
+  function logUsage(metric, n=1) {
+    if(!user?.uid) return;
+    fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"logUsage",uid:user.uid,metric,n,section:"envios"})}).catch(()=>{});
+  }
   // Andreani locations cache - lee del template xlsx directamente
   const andreaniLocsRef=_andreaniLocsCache;
   async function loadAndreaniLocations() {
@@ -5540,6 +5546,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       locationOverridesRef.current={}; sucursalOverridesRef.current={};
       try{localStorage.removeItem("growith_locOverrides");localStorage.removeItem("growith_sucOverrides");}catch(_){}
       setExportDone({count:finalOrders.length, esquinas:esquinaOrders.length, esquinaOrders});
+      logUsage("etiquetas", finalOrders.length);
     } catch(e){
       console.error("exportAndreani:",e);
       toast("Error al exportar: "+e.message,"error");
@@ -5691,6 +5698,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       setSkuBlob(blob);  // guardar - el usuario descarga cuando quiera
       setSkuProgress(100);
       const notFound=results.filter(r=>!r.found).length;
+      logUsage("skus", results.length);
       if(notFound>0) toast(`PDF listo - ${notFound} pedido${notFound>1?"s":""} no encontrado${notFound>1?"s":""}`, "warning");
       else toast(`PDF listo para descargar - ${results.length} rotulos`, "success");
       setTimeout(()=>{setSkuGenerating(false);setSkuProgress(0);},600);
@@ -5746,6 +5754,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         if(res.ok&&!data.error) {
           setTrackingSent(p=>({...p,[result.pedidoNum]:"ok"}));
           setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
+          logUsage("seguimientos", 1);
           return;
         }
         lastErr=new Error(data.error||`Error ${res.status} al actualizar tracking en TN`);
@@ -8472,6 +8481,15 @@ function AppAdmin({T, user, onBack}) {
   const [uCantidad, setUCantidad] = useState({});
   const [uUnidad,   setUUnidad]   = useState({});
   const [uDias,     setUDias]     = useState({});
+  const [usageByUid, setUsageByUid] = useState({}); // {uid: {loading, usage:[], totales}}
+
+  async function loadUsage(targetUid) {
+    setUsageByUid(prev=>({...prev,[targetUid]:{...(prev[targetUid]||{}),loading:true}}));
+    try {
+      const d = await adminApi({action:"adminGetUsage", targetUid, days:30});
+      setUsageByUid(prev=>({...prev,[targetUid]:{loading:false, usage:d.usage||[], totales:d.totales||{}}}));
+    } catch(e){ setUsageByUid(prev=>({...prev,[targetUid]:{loading:false, usage:[], totales:{}, error:e.message}})); }
+  }
 
   async function adminApi(body) {
     const r = await fetch("/api/tareas", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
@@ -8877,7 +8895,7 @@ function AppAdmin({T, user, onBack}) {
             return (
               <div key={u._id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,marginBottom:8,overflow:"hidden"}}>
                 {/* Cabecera */}
-                <div onClick={()=>setExpandedUser(expanded?null:u._id)}
+                <div onClick={()=>{const willExpand=!expanded;setExpandedUser(willExpand?u._id:null);if(willExpand&&!usageByUid[u._id])loadUsage(u._id);}}
                   style={{padding:"13px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                   <div style={{width:32,height:32,borderRadius:"50%",background:PLAN_BG[u.plan||"free"]||T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:PLAN_C[u.plan||"free"]||T.textSm,flexShrink:0}}>
                     {(u.email||u.nombre||"?")[0].toUpperCase()}
@@ -8919,6 +8937,62 @@ function AppAdmin({T, user, onBack}) {
                         </>
                       )}
                     </div>
+
+                    {/* Uso — Envíos */}
+                    {(()=>{
+                      const u_=usageByUid[u._id];
+                      const tot=u_?.totales||{etiquetas:0,skus:0,seguimientos:0};
+                      const rows=(u_?.usage||[]).filter(r=>(r.etiquetas||0)+(r.skus||0)+(r.seguimientos||0)>0);
+                      const METRICS=[
+                        {key:"etiquetas",label:"Etiquetas",icon:"📦",color:T.blue},
+                        {key:"skus",label:"SKUs",icon:"🏷️",color:T.accent},
+                        {key:"seguimientos",label:"Seguimientos",icon:"🔔",color:T.green},
+                      ];
+                      const maxDay=Math.max(1,...rows.map(r=>Math.max(r.etiquetas||0,r.skus||0,r.seguimientos||0)));
+                      return (
+                        <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`}}>
+                          <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Uso — Envíos · últimos 30 días</div>
+                          {u_?.loading?(
+                            <div style={{fontSize:12,color:T.textSm,padding:"8px 0"}}><Spinner size={14} color={T.accent}/> Cargando uso…</div>
+                          ):(
+                            <>
+                              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:rows.length?12:0}}>
+                                {METRICS.map(m=>(
+                                  <div key={m.key} style={{flex:"1 1 100px",background:T.card,border:`1px solid ${m.color}28`,borderRadius:DS.r.lg,padding:"10px 12px"}}>
+                                    <div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.4,marginBottom:4}}>{m.icon} {m.label}</div>
+                                    <div style={{fontSize:22,fontWeight:800,color:m.color,lineHeight:1}}>{tot[m.key]||0}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              {rows.length===0?(
+                                <div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin actividad registrada en Envíos todavía.</div>
+                              ):(
+                                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                  {rows.map(r=>(
+                                    <div key={r.date} style={{display:"flex",alignItems:"center",gap:10}}>
+                                      <span style={{fontSize:11,color:T.textSm,width:74,flexShrink:0}}>{r.date.slice(5)}</span>
+                                      <div style={{flex:1,display:"flex",gap:5}}>
+                                        {METRICS.map(m=>{
+                                          const v=r[m.key]||0;
+                                          return (
+                                            <div key={m.key} title={`${v} ${m.label}`} style={{flex:1,display:"flex",alignItems:"center",gap:5}}>
+                                              <div style={{flex:1,height:8,borderRadius:4,background:T.surface,overflow:"hidden"}}>
+                                                <div style={{height:"100%",width:`${(v/maxDay)*100}%`,background:m.color,borderRadius:4}}/>
+                                              </div>
+                                              <span style={{fontSize:11,fontWeight:600,color:v?m.color:T.textSm,width:18,textAlign:"right"}}>{v}</span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Gestionar suscripción */}
                     <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`}}>

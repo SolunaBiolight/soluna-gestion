@@ -2,7 +2,7 @@
 // Autenticación dual: uid (manager) o token (colaborador público)
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -690,6 +690,22 @@ export default async function handler(req, res) {
 
     if (!uid) return res.status(403).json({ error: "No autorizado" });
 
+    // Registro de uso diario por usuario (contadores incrementales)
+    if (action === "logUsage") {
+      const { metric, n = 1, section = "envios" } = body;
+      const ALLOWED = ["etiquetas", "skus", "seguimientos"];
+      if (!ALLOWED.includes(metric)) return res.status(400).json({ error: "métrica inválida" });
+      // Día calendario en hora Argentina (UTC-3)
+      const day = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+      const inc = Math.max(1, Number(n) || 1);
+      await db.collection("usage").doc(`${uid}_${day}`).set({
+        uid, date: day, section,
+        [metric]: FieldValue.increment(inc),
+        updatedAt: now,
+      }, { merge: true });
+      return res.json({ ok: true });
+    }
+
     if (action === "getData") {
       const [cs, ts, userSnap] = await Promise.all([
         db.collection("colaboradores").where("uid","==",uid).get(),
@@ -1319,7 +1335,7 @@ export default async function handler(req, res) {
     }
 
     // Acciones solo-admin
-    const adminActions = ["setSectionsConfig","adminGetData","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin"];
+    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin"];
     if (adminActions.includes(action)) {
       if (!ADMIN_UIDS.includes(uid)) {
         try {
@@ -1368,6 +1384,21 @@ export default async function handler(req, res) {
           mrrUsdt, mrrArs, totalUSDT, totalARS, vencenPronto: vencenPronto.length,
         };
         return res.json({ pagos, usuarios, stats });
+      }
+
+      if (action === "adminGetUsage") {
+        const { targetUid, days = 30 } = body;
+        if (!targetUid) return res.status(400).json({ error: "targetUid requerido" });
+        const snap = await db.collection("usage").where("uid", "==", targetUid).get();
+        const rows = snap.docs.map(d => d.data())
+          .sort((a, b) => (a.date < b.date ? 1 : -1))
+          .slice(0, Number(days) || 30);
+        const totales = rows.reduce((acc, r) => ({
+          etiquetas:    acc.etiquetas    + (r.etiquetas    || 0),
+          skus:         acc.skus         + (r.skus         || 0),
+          seguimientos: acc.seguimientos + (r.seguimientos || 0),
+        }), { etiquetas: 0, skus: 0, seguimientos: 0 });
+        return res.json({ usage: rows, totales });
       }
 
       if (action === "activarPlan") {
