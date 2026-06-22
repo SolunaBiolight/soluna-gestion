@@ -9744,6 +9744,37 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             ))}
           </div>
         )}
+        {colabMode&&referencias.length>0&&(()=>{
+          const TP={meta:{icon:"📊",color:"#1877f2"},instagram:{icon:"📷",color:"#e1306c"},tiktok:{icon:"🎵",color:"#111"},web:{icon:"🌐",color:"#6366f1"},drive:{icon:"📁",color:"#34a853"},youtube:{icon:"▶️",color:"#ff0000"},otro:{icon:"🔗",color:"#6b7280"}};
+          return(
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>🔍 Referencias</div>
+              {referencias.map((ref,ri)=>{
+                const links=ref.links||[];
+                const ac=ref.color||"#6366f1";
+                return(
+                  <div key={ref.id||ri} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"8px 12px",marginBottom:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:links.length?6:0}}>
+                      <div style={{width:8,height:8,borderRadius:"50%",background:ac,flexShrink:0}}/>
+                      <span style={{fontSize:12,fontWeight:700,color:T.text}}>{ref.nombre}</span>
+                    </div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                      {links.map((l,li)=>{
+                        const tp=TP[l.tipo||"otro"]||TP.otro;
+                        return(
+                          <a key={li} href={l.url} target="_blank" rel="noreferrer"
+                            style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:tp.color,background:`${tp.color}12`,border:`1px solid ${tp.color}30`,borderRadius:6,padding:"4px 9px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                            <span style={{fontSize:12}}>{tp.icon}</span>{l.label||tp.label}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
         {/* Checklist */}
         {checklist.length>0&&(
           <div style={{marginBottom:14}}>
@@ -9905,26 +9936,35 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <input id={`entrega-nombre-${t._id}`} placeholder="Nombre de la entrega (ej: Fotos look invierno, Reel batch 2)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
             <input id={`entrega-link-${t._id}`} placeholder="Link de Drive, Dropbox, etc." style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
             <input id={`entrega-nota-${t._id}`} placeholder="Nota opcional" style={{...iS,fontSize:12,width:"100%",marginBottom:8}}/>
-            <div style={{display:"flex",gap:7,alignItems:"center"}}>
-              <select id={`entrega-tipo-${t._id}`} style={{...iS,fontSize:12,flex:"0 0 auto",width:"auto"}}>
-                <option value="parcial">Entrega parcial</option>
-                <option value="final">Entrega final ✓</option>
-              </select>
+            <div style={{display:"flex",gap:8}}>
               <AsyncButton onClick={async()=>{
-                const inp=document.getElementById(`entrega-link-${t._id}`);
-                const link=inp?.value?.trim();
+                const link=document.getElementById(`entrega-link-${t._id}`)?.value?.trim();
                 if(!link) return toast("Pegá un link primero","error");
                 const nombre=document.getElementById(`entrega-nombre-${t._id}`)?.value?.trim()||"";
                 const nota=document.getElementById(`entrega-nota-${t._id}`)?.value?.trim()||"";
-                const tipo=document.getElementById(`entrega-tipo-${t._id}`)?.value;
-                const esFinal=tipo==="final";
                 try{
-                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label:nombre,nota,esFinal})});
-                  toast(esFinal?"✅ Entrega final enviada":"📦 Entrega parcial registrada","success");
+                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label:nombre,nota,esFinal:false})});
+                  toast("📦 Entrega parcial registrada","success");
                   ["entrega-nombre-","entrega-link-","entrega-nota-"].forEach(p=>{const el=document.getElementById(p+t._id);if(el)el.value="";});
                   loadData(true);
                 }catch(e){toast("Error: "+e.message,"error");}
-              }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",flex:1}}>Enviar entrega</AsyncButton>
+              }} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:`1.5px solid ${T.accentSolid}50`,background:"transparent",color:T.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                📦 Parcial
+              </AsyncButton>
+              <AsyncButton onClick={async()=>{
+                const link=document.getElementById(`entrega-link-${t._id}`)?.value?.trim();
+                if(!link) return toast("Pegá un link primero","error");
+                const nombre=document.getElementById(`entrega-nombre-${t._id}`)?.value?.trim()||"";
+                const nota=document.getElementById(`entrega-nota-${t._id}`)?.value?.trim()||"";
+                try{
+                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label:nombre,nota,esFinal:true})});
+                  toast("✅ Entrega final enviada","success");
+                  ["entrega-nombre-","entrega-link-","entrega-nota-"].forEach(p=>{const el=document.getElementById(p+t._id);if(el)el.value="";});
+                  loadData(true);
+                }catch(e){toast("Error: "+e.message,"error");}
+              }} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"none",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                ✅ Entregar
+              </AsyncButton>
             </div>
           </div>
         )}
