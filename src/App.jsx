@@ -23305,12 +23305,13 @@ export default function App() {
   // Sincronizar hash con página y sub-tab activo
   useEffect(()=>{
     if(typeof window==="undefined") return;
+    if(colabToken || editorProdToken || boardToken) return;
     const sub = page==="stock"?`/${stockTab}`:page==="margenes"?`/${margenesTab}`:page==="arca"?`/${arcaTab}`:"";
     const newHash = `#/${page}${sub}`;
     if(window.location.hash !== newHash) {
       window.history.replaceState(null,"",newHash);
     }
-  },[page, stockTab, margenesTab, arcaTab]);
+  },[page, stockTab, margenesTab, arcaTab, colabToken, editorProdToken, boardToken]);
 
   // Auth state listener
   useEffect(()=>{
