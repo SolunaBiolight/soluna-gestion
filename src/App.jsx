@@ -1814,9 +1814,9 @@ function TabView({children, tabKey}) {
   );
 }
 // --- Shared AppTopbar ---
-function AppTopbar({T, section, onHome, children}) {
+function AppTopbar({T, section, onHome, children, top=48}) {
   return (
-    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e0",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 24px",position:"sticky",top:48,zIndex:30}}>
+    <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e0",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 24px",position:"sticky",top,zIndex:30}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:52,gap:16,maxWidth:1400,margin:"0 auto"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button onClick={onHome} className="mobile-only" style={{display:"none",alignItems:"center",gap:6,padding:"5px 10px",fontSize:DS.font.sm,fontWeight:DS.w.medium,borderRadius:DS.r.md,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -9899,7 +9899,17 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
                       </>}
                       {!colabMode&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
-                      <AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>
+                      {!colabMode&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>}
+                      {colabMode&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<AsyncButton onClick={async()=>{
+                        if(!await appConfirm(`¿Eliminar tu entrega "${del.label||`v${i+1}`}"?`,{danger:true,okLabel:"Eliminar"})) return;
+                        try{
+                          const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicDeleteLastDeliverable",token:colabMode.token,tareaId:t._id})});
+                          const d=await r.json();
+                          if(!r.ok||d.error) throw new Error(d.error||"Error");
+                          toast("Entrega eliminada","warning");
+                          loadData(true);
+                        }catch(e){toast("Error: "+e.message,"error");}
+                      }} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>}
                     </div>
                   </>
                 )}
@@ -10105,7 +10115,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Topbar */}
-      <AppTopbar T={T} section="Trabajo" onHome={onHome}>
+      <AppTopbar T={T} section="Trabajo" onHome={onHome} top={colabMode?0:48}>
         {paraRevisar.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f97316",color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>
           <span style={{width:5,height:5,borderRadius:"50%",background:"rgba(255,255,255,0.75)",display:"inline-block",animation:"pulse 1.5s infinite"}}/>{paraRevisar.length} para revisar
         </span>}

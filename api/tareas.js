@@ -520,7 +520,9 @@ export default async function handler(req, res) {
       const colab = snap.docs[0].data();
       const ref = db.collection("tareas").doc(tareaId);
       const t = await ref.get();
-      if (!t.exists || t.data().asignadoEmail !== colab.email) return res.status(403).json({ error: "No autorizado" });
+      if (!t.exists) return res.status(404).json({ error: "Tarea no encontrada" });
+      const emailsAssign = t.data().asignadosEmails?.length ? t.data().asignadosEmails : [t.data().asignadoEmail].filter(Boolean);
+      if (!emailsAssign.includes(colab.email)) return res.status(403).json({ error: "No autorizado" });
       const prevDels = t.data().deliverables || [];
       const version = prevDels.length + 1;
       const entrega = { link, nota: nota||"", label: label||`v${version}`, version, fecha: now, parcial: !esFinal };
@@ -531,7 +533,8 @@ export default async function handler(req, res) {
         updatedAt:now,
         activity:[...(t.data().activity||[]), act],
       };
-      if (esFinal) upd.estado = "entregado";
+      // Tanto parcial como final pasan a "entregado" para que el admin las vea en "para revisar"
+      upd.estado = "entregado";
       await ref.update(upd);
       // Email al manager(s)
       notifyManagers(db, t.data().uid, t.data().managerEmail,
