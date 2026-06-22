@@ -9179,6 +9179,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [refLoading, setRefLoading] = useState(false);
   const [showRefModal, setShowRefModal] = useState(false);
   const [editingRef, setEditingRef] = useState(null);
+  const [showBloqueoColab, setShowBloqueoColab] = useState({});
+  const [bloqueoMotivoColab, setBloqueoMotivoColab] = useState({});
   const [refNombre, setRefNombre] = useState("");
   const [refColor, setRefColor] = useState("#6366f1");
   const [refLinks, setRefLinks] = useState([]);
@@ -9966,6 +9968,56 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 ✅ Entregar
               </AsyncButton>
             </div>
+          </div>
+        )}
+        {/* Estoy bloqueada — solo colabMode */}
+        {colabMode&&t.estado!=="aprobado"&&(
+          <div style={{marginBottom:14}}>
+            {t.estado==="bloqueada"?(
+              <>
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:DS.r.lg,border:"1.5px solid #ef444440",marginBottom:8}}>
+                  <span style={{fontSize:16}}>🚫</span>
+                  <div style={{flex:1,fontSize:12,color:"#ef4444",fontWeight:600}}>Bloqueada — el equipo ya fue notificado</div>
+                </div>
+                <AsyncButton onClick={async()=>{
+                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"en_proceso",progresoLabel:"En proceso"})});
+                  loadData(true);
+                }} style={{width:"100%",fontSize:12,padding:"8px 0",borderRadius:DS.r.lg,background:"#3b82f612",color:"#3b82f6",border:"1px solid #3b82f630",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,textAlign:"center",display:"block",boxSizing:"border-box"}}>
+                  🔄 Retomé el trabajo
+                </AsyncButton>
+              </>
+            ):(
+              <>
+                <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:!p[t._id]}))}
+                  style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:DS.r.lg,border:"1px solid #ef444430",background:"#ef44440a",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box"}}>
+                  🚫 Estoy bloqueada
+                </button>
+                {showBloqueoColab[t._id]&&(
+                  <div style={{marginTop:8,background:"linear-gradient(135deg,#ef444412,#ef444408)",borderRadius:DS.r.lg,padding:"12px",border:"1.5px solid #ef444440"}}>
+                    <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:.7}}>(el equipo va a ver esto)</span></div>
+                    <textarea value={bloqueoMotivoColab[t._id]||""} onChange={e=>setBloqueoMotivoColab(p=>({...p,[t._id]:e.target.value}))}
+                      placeholder="Ej: No tengo acceso al Drive, falta el logo en alta resolución..."
+                      style={{...iS,fontSize:12,width:"100%",minHeight:55,resize:"none",marginBottom:8,borderColor:"#ef444444"}}/>
+                    <div style={{display:"flex",gap:7}}>
+                      <AsyncButton onClick={async()=>{
+                        const motivo=(bloqueoMotivoColab[t._id]||"").trim();
+                        if(!motivo) return toast("Contanos qué te está frenando","error");
+                        await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"bloqueada",progresoLabel:"",motivo})});
+                        toast("🚫 Equipo notificado","success");
+                        setShowBloqueoColab(p=>({...p,[t._id]:false}));
+                        loadData(true);
+                      }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:"#ef4444",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                        Avisar al equipo
+                      </AsyncButton>
+                      <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:false}))}
+                        style={{fontSize:12,padding:"7px 14px",borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
         {/* Comentarios */}
