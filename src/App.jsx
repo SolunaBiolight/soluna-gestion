@@ -23097,9 +23097,7 @@ function ColaboradorPortalUnificado({T, token}) {
   const fakeUser = { uid: colabData.uid, email: colabData.email, displayName: colabData.nombre };
   return (
     <div style={{background:T.bg,minHeight:"100vh"}}>
-      <div style={{maxWidth:960,margin:"0 auto"}}>
-        <AppTareas T={T} user={fakeUser} colabMode={{email:colabData.email, nombre:colabData.nombre, token, permisos:colabData.permisos||{}}} onHome={()=>{}} tab="todo" setTab={()=>{}} />
-      </div>
+      <AppTareas T={T} user={fakeUser} colabMode={{email:colabData.email, nombre:colabData.nombre, token, permisos:colabData.permisos||{}}} onHome={()=>{}} tab="todo" setTab={()=>{}} />
     </div>
   );
 }
