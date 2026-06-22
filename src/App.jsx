@@ -9277,7 +9277,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [ntTitulo, setNtTitulo] = useState("");
   const [ntDesc, setNtDesc] = useState("");
   const [ntBrief, setNtBrief] = useState("");
-  const [ntLinks, setNtLinks] = useState([]);                        // [{name,url}]
+  const [ntLinks, setNtLinks] = useState([{name:"",url:""}]);       // [{name,url}]
   const [ntChecklist, setNtChecklist] = useState([]); // [{id,text,done}]
   const [ntAsignados, setNtAsignados] = useState([]);
   const [assigneeSelectKey, setAssigneeSelectKey] = useState(0); // fuerza reset del select al agregar
@@ -9535,7 +9535,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const checkArr = ntChecklist.filter(i=>i.text.trim());
     const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
     // Mostrar resultado de emails
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
@@ -11339,28 +11339,22 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       {showNT&&(
         <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
-            <div style={{marginBottom:20}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                <div style={{fontWeight:700,fontSize:16,color:T.text}}>Nueva tarea</div>
-                <button onClick={()=>setShowNT(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
-              </div>
-              {/* Selector de modo */}
-              <div style={{display:"flex",gap:0,background:T.surface,borderRadius:DS.r.lg,padding:3,border:`1px solid ${T.border}`}}>
-                <button onClick={()=>setNtEsCampaña(false)}
-                  style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:ntEsCampaña?400:600,borderRadius:DS.r.md,border:"none",cursor:"pointer",
-                    background:ntEsCampaña?"transparent":T.card,color:ntEsCampaña?T.textSm:T.text,
-                    transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",
-                    boxShadow:ntEsCampaña?"none":"0 1px 3px rgba(0,0,0,0.12)"}}>
-                  Tarea simple
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div style={{fontWeight:700,fontSize:16,color:T.text}}>Nueva tarea</div>
+              <button onClick={()=>setShowNT(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
+            </div>
+            {/* Selector de modo */}
+            <div style={{display:"flex",background:T.surface,borderRadius:DS.r.lg,padding:3,border:`1px solid ${T.border}`,marginBottom:18}}>
+              {[["Tarea simple",false],["Campaña",true]].map(([label,isCamp])=>(
+                <button key={label}
+                  onClick={()=>{setNtEsCampaña(isCamp);if(isCamp&&!ntEsCampaña)setNtSlots([{id:mkId(),descripcion:"",tipo:"video",asignadoEmail:"",asignadoNombre:"",url:""}]);}}
+                  style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,borderRadius:DS.r.md,border:"none",cursor:"pointer",
+                    background:ntEsCampaña===isCamp?T.accentSolid:"transparent",
+                    color:ntEsCampaña===isCamp?"#fff":T.textSm,
+                    transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  {label}
                 </button>
-                <button onClick={()=>{setNtEsCampaña(true);if(!ntEsCampaña)setNtSlots([{id:mkId(),descripcion:"",tipo:"video",asignadoEmail:"",asignadoNombre:""}]);}}
-                  style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:ntEsCampaña?600:400,borderRadius:DS.r.md,border:"none",cursor:"pointer",
-                    background:ntEsCampaña?T.accentSolid:"transparent",color:ntEsCampaña?"#fff":T.textSm,
-                    transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",
-                    boxShadow:ntEsCampaña?"0 1px 3px rgba(0,0,0,0.12)":"none"}}>
-                  Campaña
-                </button>
-              </div>
+              ))}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               {/* Título */}
@@ -11474,26 +11468,33 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:12}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>Entregas requeridas</div>
                 {ntSlots.map((slot,si)=>(
-                  <div key={slot.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"center"}}>
-                    <select value={slot.tipo} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,tipo:e.target.value}:s))}
-                      style={{...iS,fontSize:11,width:80,padding:"5px 6px",flexShrink:0}}>
-                      <option value="video">Video</option>
-                      <option value="foto">Foto</option>
-                      <option value="story">Story</option>
-                      <option value="texto">Texto</option>
-                      <option value="otro">Otro</option>
-                    </select>
-                    <input value={slot.descripcion} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,descripcion:e.target.value}:s))}
-                      placeholder="Descripción (ej: 2 reels, 4 fotos…)" style={{...iS,fontSize:12,flex:1}}/>
-                    <select value={slot.asignadoEmail} onChange={e=>{const c=colaboradores.find(x=>x.email===e.target.value);setNtSlots(p=>p.map((s,i)=>i===si?{...s,asignadoEmail:e.target.value,asignadoNombre:c?.nombre||""}:s));}}
-                      style={{...iS,fontSize:12,width:110,flexShrink:0}}>
-                      <option value="">Asignar…</option>
-                      {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre.split(" ")[0]}</option>)}
-                    </select>
-                    <button onClick={()=>setNtSlots(p=>p.filter((_,i)=>i!==si))} style={{...BtnSecondary(T),padding:"5px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
+                  <div key={slot.id} style={{marginBottom:10}}>
+                    <div style={{display:"flex",gap:7,marginBottom:5,alignItems:"center"}}>
+                      <select value={slot.tipo} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,tipo:e.target.value}:s))}
+                        style={{...iS,fontSize:11,width:80,padding:"5px 6px",flexShrink:0}}>
+                        <option value="video">Video</option>
+                        <option value="foto">Foto</option>
+                        <option value="story">Story</option>
+                        <option value="texto">Texto</option>
+                        <option value="otro">Otro</option>
+                      </select>
+                      <input value={slot.descripcion} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,descripcion:e.target.value}:s))}
+                        placeholder="Descripción (ej: 2 reels, 4 fotos…)" style={{...iS,fontSize:12,flex:1}}/>
+                      <select value={slot.asignadoEmail} onChange={e=>{const c=colaboradores.find(x=>x.email===e.target.value);setNtSlots(p=>p.map((s,i)=>i===si?{...s,asignadoEmail:e.target.value,asignadoNombre:c?.nombre||""}:s));}}
+                        style={{...iS,fontSize:12,width:110,flexShrink:0}}>
+                        <option value="">Asignar…</option>
+                        {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre.split(" ")[0]}</option>)}
+                      </select>
+                      <button onClick={()=>setNtSlots(p=>p.filter((_,i)=>i!==si))} style={{...BtnSecondary(T),padding:"5px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
+                    </div>
+                    <div style={{display:"flex",gap:6,alignItems:"center",paddingLeft:2}}>
+                      <input value={slot.url||""} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,url:e.target.value}:s))}
+                        placeholder="Link de referencia (Drive, Notion…)" style={{...iS,fontSize:11,flex:1}}/>
+                      <DriveOpenBtn T={T} url={slot.url||""}/>
+                    </div>
                   </div>
                 ))}
-                <button onClick={()=>setNtSlots(p=>[...p,{id:mkId(),descripcion:"",tipo:"foto",asignadoEmail:"",asignadoNombre:""}])}
+                <button onClick={()=>setNtSlots(p=>[...p,{id:mkId(),descripcion:"",tipo:"foto",asignadoEmail:"",asignadoNombre:"",url:""}])}
                   style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px",width:"100%",marginTop:4}}>+ Agregar entrega</button>
               </div>
             )}
