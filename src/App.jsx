@@ -9277,7 +9277,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [ntTitulo, setNtTitulo] = useState("");
   const [ntDesc, setNtDesc] = useState("");
   const [ntBrief, setNtBrief] = useState("");
-  const [ntLinks, setNtLinks] = useState([{name:"",url:""}]);       // [{name,url}]
+  const [ntLinks, setNtLinks] = useState([{name:"",url:"",asignadoEmail:""}]); // [{name,url,asignadoEmail}]
   const [ntChecklist, setNtChecklist] = useState([]); // [{id,text,done}]
   const [ntAsignados, setNtAsignados] = useState([]);
   const [assigneeSelectKey, setAssigneeSelectKey] = useState(0); // fuerza reset del select al agregar
@@ -9525,9 +9525,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   });
 
   async function crearTarea() {
-    const slotsLimpios = ntEsCampaña ? ntSlots.filter(s=>s.descripcion.trim()&&s.asignadoEmail) : [];
+    const slotsLimpios = ntEsCampaña ? ntLinks.filter(l=>l.asignadoEmail).map(l=>({id:mkId(),tipo:"link",descripcion:l.name||"",asignadoEmail:l.asignadoEmail,asignadoNombre:colaboradores.find(c=>c.email===l.asignadoEmail)?.nombre||"",url:l.url||""})) : [];
     const todosAsignados = ntEsCampaña && slotsLimpios.length ? [...new Set(slotsLimpios.map(s=>s.asignadoEmail))] : ntAsignados;
-    if(!ntTitulo.trim()||(ntEsCampaña?slotsLimpios.length===0:!ntAsignados.length)) return appAlert(ntEsCampaña?"Completá título y al menos un slot con descripción y asignado":"Completá título y asigná al menos una persona");
+    if(!ntTitulo.trim()||(ntEsCampaña?slotsLimpios.length===0:!ntAsignados.length)) return appAlert(ntEsCampaña?"Completá título y al menos una entrega con asignado":"Completá título y asigná al menos una persona");
     const primerAsignado = todosAsignados[0] || ntAsignados[0];
     const primerColab = colaboradores.find(c=>c.email===primerAsignado);
     const colab = primerColab;
@@ -9535,7 +9535,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const checkArr = ntChecklist.filter(i=>i.text.trim());
     const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
     // Mostrar resultado de emails
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
@@ -11430,22 +11430,29 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   placeholder="Detallá qué tiene que hacer: formato, duración, estilo, paleta de colores, referencias, entregables esperados..."
                   style={{...iS,fontSize:12,width:"100%",minHeight:130,resize:"vertical",lineHeight:1.6}}/>
               </div>
-              {/* Links */}
+              {/* Links / Entregas — unified: simple=links, campaña=links con asignado */}
               <div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:ntEsCampaña?2:6}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                   <div>
-                    <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>{ntEsCampaña?"Material compartido":"Links de referencia"}</div>
-                    {ntEsCampaña&&<div style={{fontSize:10,color:T.textSm,marginTop:1}}>Visible para todos los asignados</div>}
+                    <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>{ntEsCampaña?"Entregas requeridas":"Links de referencia"}</div>
+                    {ntEsCampaña&&<div style={{fontSize:10,color:T.textSm,marginTop:1}}>Asigná cada entrega a una persona del equipo</div>}
                   </div>
-                  <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                  <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:"",asignadoEmail:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
                 </div>
                 {ntLinks.map((l,i)=>(
                   <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
                     <input value={l.name} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
-                      placeholder="Nombre (ej: Brief, Referencia…)" style={{...iS,fontSize:12,width:140,flexShrink:0}}/>
+                      placeholder={ntEsCampaña?"Tipo (ej: Video, Story…)":"Nombre (ej: Brief, Referencia…)"} style={{...iS,fontSize:12,width:130,flexShrink:0}}/>
                     <input value={l.url} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
                       placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
                     <DriveOpenBtn T={T} url={l.url}/>
+                    {ntEsCampaña&&(
+                      <select value={l.asignadoEmail||""} onChange={e=>setNtLinks(prev=>prev.map((x,j)=>j===i?{...x,asignadoEmail:e.target.value}:x))}
+                        style={{...iS,fontSize:11,width:100,flexShrink:0}}>
+                        <option value="">Asignar…</option>
+                        {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre.split(" ")[0]}</option>)}
+                      </select>
+                    )}
                     <button onClick={()=>setNtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
                   </div>
                 ))}
@@ -11464,40 +11471,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               </div>
             )}
             {/* Slots de campaña */}
-            {ntEsCampaña&&(
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:12}}>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>Entregas requeridas</div>
-                {ntSlots.map((slot,si)=>(
-                  <div key={slot.id} style={{marginBottom:10}}>
-                    <div style={{display:"flex",gap:7,marginBottom:5,alignItems:"center"}}>
-                      <select value={slot.tipo} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,tipo:e.target.value}:s))}
-                        style={{...iS,fontSize:11,width:80,padding:"5px 6px",flexShrink:0}}>
-                        <option value="video">Video</option>
-                        <option value="foto">Foto</option>
-                        <option value="story">Story</option>
-                        <option value="texto">Texto</option>
-                        <option value="otro">Otro</option>
-                      </select>
-                      <input value={slot.descripcion} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,descripcion:e.target.value}:s))}
-                        placeholder="Descripción (ej: 2 reels, 4 fotos…)" style={{...iS,fontSize:12,flex:1}}/>
-                      <select value={slot.asignadoEmail} onChange={e=>{const c=colaboradores.find(x=>x.email===e.target.value);setNtSlots(p=>p.map((s,i)=>i===si?{...s,asignadoEmail:e.target.value,asignadoNombre:c?.nombre||""}:s));}}
-                        style={{...iS,fontSize:12,width:110,flexShrink:0}}>
-                        <option value="">Asignar…</option>
-                        {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre.split(" ")[0]}</option>)}
-                      </select>
-                      <button onClick={()=>setNtSlots(p=>p.filter((_,i)=>i!==si))} style={{...BtnSecondary(T),padding:"5px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
-                    </div>
-                    <div style={{display:"flex",gap:6,alignItems:"center",paddingLeft:2}}>
-                      <input value={slot.url||""} onChange={e=>setNtSlots(p=>p.map((s,i)=>i===si?{...s,url:e.target.value}:s))}
-                        placeholder="Link de referencia (Drive, Notion…)" style={{...iS,fontSize:11,flex:1}}/>
-                      <DriveOpenBtn T={T} url={slot.url||""}/>
-                    </div>
-                  </div>
-                ))}
-                <button onClick={()=>setNtSlots(p=>[...p,{id:mkId(),descripcion:"",tipo:"foto",asignadoEmail:"",asignadoNombre:"",url:""}])}
-                  style={{...BtnSecondary(T),fontSize:12,padding:"5px 12px",width:"100%",marginTop:4}}>+ Agregar entrega</button>
-              </div>
-            )}
             {/* Recurrente */}
             <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`}}>
               <button onClick={()=>setNtRecurrente(p=>!p)}
