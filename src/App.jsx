@@ -9746,37 +9746,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             ))}
           </div>
         )}
-        {colabMode&&referencias.length>0&&(()=>{
-          const TP={meta:{icon:"📊",color:"#1877f2"},instagram:{icon:"📷",color:"#e1306c"},tiktok:{icon:"🎵",color:"#111"},web:{icon:"🌐",color:"#6366f1"},drive:{icon:"📁",color:"#34a853"},youtube:{icon:"▶️",color:"#ff0000"},otro:{icon:"🔗",color:"#6b7280"}};
-          return(
-            <div style={{marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>🔍 Referencias</div>
-              {referencias.map((ref,ri)=>{
-                const links=ref.links||[];
-                const ac=ref.color||"#6366f1";
-                return(
-                  <div key={ref.id||ri} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"8px 12px",marginBottom:6}}>
-                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:links.length?6:0}}>
-                      <div style={{width:8,height:8,borderRadius:"50%",background:ac,flexShrink:0}}/>
-                      <span style={{fontSize:12,fontWeight:700,color:T.text}}>{ref.nombre}</span>
-                    </div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                      {links.map((l,li)=>{
-                        const tp=TP[l.tipo||"otro"]||TP.otro;
-                        return(
-                          <a key={li} href={l.url} target="_blank" rel="noreferrer"
-                            style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:tp.color,background:`${tp.color}12`,border:`1px solid ${tp.color}30`,borderRadius:6,padding:"4px 9px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                            <span style={{fontSize:12}}>{tp.icon}</span>{l.label||tp.label}
-                          </a>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
         {/* Checklist */}
         {checklist.length>0&&(
           <div style={{marginBottom:14}}>
@@ -10149,7 +10118,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       {/* Barra de tabs — 2 tabs principales */}
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:colabMode?52:100,zIndex:29}}>
         <div style={{display:"flex",paddingLeft:24}}>
-          {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>!colabMode||id!=="equipo").map(([id,label])=>{
+          {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>{
+            if(!colabMode) return true;
+            if(id==="equipo") return !!colabMode.permisos?.verEquipo;
+            return true;
+          }).map(([id,label])=>{
             const isActive=view===id||(id==="todo"&&view!=="equipo"&&view!=="referencias");
             return (
               <button key={id} onClick={()=>setActiveView(id)}
