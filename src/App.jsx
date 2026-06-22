@@ -9275,8 +9275,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   }
   async function loadReferencias(silent=false) {
     if(!silent) setRefLoading(true);
-    try { const d=await tareasApi({action:"getGeneral"}); setReferencias(Array.isArray(d.referencias)?d.referencias:[]); }
-    catch(e){}
+    try {
+      let d;
+      if(colabMode) {
+        const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"getGeneralByToken",token:colabMode.token})});
+        d=await r.json();
+      } else {
+        d=await tareasApi({action:"getGeneral"});
+      }
+      setReferencias(Array.isArray(d.referencias)?d.referencias:[]);
+    } catch(e){}
     if(!silent) setRefLoading(false);
   }
   async function saveRefRemote(newRefs) {
