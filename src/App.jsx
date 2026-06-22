@@ -11349,8 +11349,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Título *</div>
                 <input value={ntTitulo} onChange={e=>setNtTitulo(e.target.value)} placeholder="Ej: Editar video de lanzamiento" style={{...iS,fontSize:14,width:"100%"}}/>
               </div>
-              {/* Asignado a — chips multi-persona */}
-              <div>
+              {/* Asignado a — chips multi-persona (oculto en modo campaña, cada entrega tiene su propio asignado) */}
+              {!ntEsCampaña&&<div>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:6}}>Asignado a *</div>
                 {colaboradores.length===0
                   ? <div style={{fontSize:12,color:T.textSm}}>No tenés colaboradores. <button onClick={()=>{setShowNT(false);setShowNC(true);}} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>Agregar uno</button></div>
@@ -11394,7 +11394,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       )}
                     </div>
                 }
-              </div>
+              </div>}
               {/* Prioridad + Deadline */}
               <div style={{display:"flex",gap:10}}>
                 <div style={{flex:1}}>
