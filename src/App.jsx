@@ -9277,7 +9277,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [ntTitulo, setNtTitulo] = useState("");
   const [ntDesc, setNtDesc] = useState("");
   const [ntBrief, setNtBrief] = useState("");
-  const [ntLinks, setNtLinks] = useState([{name:"",url:""}]);       // [{name,url}]
+  const [ntLinks, setNtLinks] = useState([]);                        // [{name,url}]
   const [ntChecklist, setNtChecklist] = useState([]); // [{id,text,done}]
   const [ntAsignados, setNtAsignados] = useState([]);
   const [assigneeSelectKey, setAssigneeSelectKey] = useState(0); // fuerza reset del select al agregar
@@ -9535,7 +9535,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const checkArr = ntChecklist.filter(i=>i.text.trim());
     const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
     // Mostrar resultado de emails
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
