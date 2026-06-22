@@ -674,6 +674,18 @@ export default async function handler(req, res) {
       return res.json({ email:colab.email, nombre:colab.nombre, token:colabToken, uid:colab.uid, permisos:colab.permisos||{}, rol:colab.rol||"" });
     }
 
+    // Referencias compartidas para el portal del colaborador (público, vía token)
+    if (action === "getGeneralByToken") {
+      if (!token) return res.status(400).json({ error:"Token requerido" });
+      const colSnap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
+      if (colSnap.empty) return res.status(404).json({ error:"Token inválido" });
+      const colabUid = colSnap.docs[0].data().uid;
+      const gSnap = await db.collection("general").doc(colabUid).get();
+      if (!gSnap.exists) return res.json({ posts:[], referencias:[] });
+      const gd = gSnap.data();
+      return res.json({ posts:gd.posts||[], referencias:gd.referencias||[] });
+    }
+
     // ── ACCIONES AUTENTICADAS (uid requerido) ─────────────────────────────────
 
     if (!uid) return res.status(403).json({ error: "No autorizado" });
@@ -1221,18 +1233,6 @@ export default async function handler(req, res) {
     }
 
     // ── TABLÓN + REFERENCIAS ──────────────────────────────────────────────────
-
-    if (action === "getGeneralByToken") {
-      // Para el portal del colaborador — lookup por token → uid
-      if (!token) return res.status(400).json({ error:"Token requerido" });
-      const colSnap = await db.collection("colaboradores").where("token","==",token).limit(1).get();
-      if (colSnap.empty) return res.status(404).json({ error:"Token inválido" });
-      const colabUid = colSnap.docs[0].data().uid;
-      const gSnap = await db.collection("general").doc(colabUid).get();
-      if (!gSnap.exists) return res.json({ posts:[], referencias:[] });
-      const gd = gSnap.data();
-      return res.json({ posts:gd.posts||[], referencias:gd.referencias||[] });
-    }
 
     if (action === "getGeneral") {
       const snap = await db.collection("general").doc(uid).get();

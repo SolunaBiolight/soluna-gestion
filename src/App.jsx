@@ -11767,7 +11767,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           <div style={{padding:"20px 24px"}}>
             {refLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
             {!refLoading&&referencias.length===0&&(
-              <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Agregá marcas o tiendas de referencia para que tu equipo pueda acceder rápido a sus redes, ads y sitios." action={<Btn T={T} variant="primary" onClick={()=>openRefModal()}>+ Primera marca</Btn>}/>
+              colabMode
+                ? <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Todavía no hay marcas de referencia cargadas. El equipo las agrega desde el panel."/>
+                : <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Agregá marcas o tiendas de referencia para que tu equipo pueda acceder rápido a sus redes, ads y sitios." action={<Btn T={T} variant="primary" onClick={()=>openRefModal()}>+ Primera marca</Btn>}/>
             )}
             {!refLoading&&referencias.length>0&&(
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:16}}>
