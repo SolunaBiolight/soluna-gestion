@@ -11344,17 +11344,25 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <button onClick={()=>setShowNT(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
             </div>
             {/* Selector de modo */}
-            <div style={{display:"flex",background:T.surface,borderRadius:DS.r.lg,padding:3,border:`1px solid ${T.border}`,marginBottom:18}}>
-              {[["Tarea simple",false],["Campaña",true]].map(([label,isCamp])=>(
-                <button key={label}
-                  onClick={()=>{setNtEsCampaña(isCamp);if(isCamp&&!ntEsCampaña)setNtSlots([{id:mkId(),descripcion:"",tipo:"video",asignadoEmail:"",asignadoNombre:"",url:""}]);}}
-                  style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,borderRadius:DS.r.md,border:"none",cursor:"pointer",
-                    background:ntEsCampaña===isCamp?T.accentSolid:"transparent",
-                    color:ntEsCampaña===isCamp?"#fff":T.textSm,
-                    transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  {label}
-                </button>
-              ))}
+            <div style={{marginBottom:18}}>
+              <div style={{position:"relative",display:"flex",background:T.surface,borderRadius:DS.r.lg,padding:4,border:`1px solid ${T.border}`}}>
+                {/* indicador deslizante */}
+                <div style={{position:"absolute",top:4,bottom:4,width:"calc(50% - 4px)",left:ntEsCampaña?"calc(50%)":"4px",borderRadius:DS.r.md,background:T.accentSolid,transition:`left 0.24s ${DS.ease}`,boxShadow:`0 2px 10px ${T.accentSolid}55`,pointerEvents:"none"}}/>
+                {[["Simple",false],["Grupal",true]].map(([label,isCamp])=>(
+                  <button key={label}
+                    onClick={()=>{setNtEsCampaña(isCamp);if(isCamp&&!ntEsCampaña)setNtSlots([{id:mkId(),descripcion:"",tipo:"video",asignadoEmail:"",asignadoNombre:"",url:""}]);}}
+                    style={{flex:1,padding:"9px 0",fontSize:13,fontWeight:600,border:"none",cursor:"pointer",background:"transparent",
+                      color:ntEsCampaña===isCamp?"#fff":T.textSm,
+                      position:"relative",zIndex:1,
+                      transition:`color 0.24s ${DS.ease}`,
+                      fontFamily:"'Inter',system-ui,sans-serif",letterSpacing:"0.01em"}}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:7,textAlign:"center",transition:`opacity 0.2s`}}>
+                {ntEsCampaña?"Múltiples entregas, cada una asignada a una persona distinta":"Una tarea asignada a una o más personas del equipo"}
+              </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               {/* Título */}
