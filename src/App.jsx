@@ -9919,8 +9919,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   ["entrega-nombre-","entrega-link-","entrega-nota-"].forEach(p=>{const el=document.getElementById(p+t._id);if(el)el.value="";});
                   loadData(true);
                 }catch(e){toast("Error: "+e.message,"error");}
-              }} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:`1.5px solid ${T.accentSolid}50`,background:"transparent",color:T.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                📦 Parcial
+              }} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"1.5px solid #f9731660",background:"#f9731618",color:"#f97316",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                📦 Entrega parcial
               </AsyncButton>
               <AsyncButton onClick={async()=>{
                 const link=document.getElementById(`entrega-link-${t._id}`)?.value?.trim();
@@ -9934,7 +9934,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   loadData(true);
                 }catch(e){toast("Error: "+e.message,"error");}
               }} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"none",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                ✅ Entregar
+                ✅ Entrega final
               </AsyncButton>
             </div>
           </div>
