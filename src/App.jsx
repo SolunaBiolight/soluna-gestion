@@ -9099,6 +9099,75 @@ function AppAdmin({T, user, onBack}) {
 
 
 // ===========================================
+// REFERENCIAS — cards de marcas/tiendas de referencia
+// ===========================================
+const REF_TIPOS = {
+  web:       { label:"Website",   color:"#6366f1" },
+  meta:      { label:"Meta Ads",  color:"#1877f2" },
+  instagram: { label:"Instagram", color:"#e1306c" },
+  tiktok:    { label:"TikTok",    color:"#26c4d6" },
+  youtube:   { label:"YouTube",   color:"#ff0000" },
+  drive:     { label:"Drive",     color:"#34a853" },
+  otro:      { label:"Link",      color:"#8b95a5" },
+};
+function RefTipoIcon({tipo, size=15}) {
+  const c="currentColor";
+  const p={width:size,height:size,viewBox:"0 0 24 24",style:{flexShrink:0,display:"block"}};
+  switch(tipo){
+    case "instagram": return <svg {...p} fill="none" stroke={c} strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill={c} stroke="none"/></svg>;
+    case "meta": return <svg {...p} fill={c}><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.8 3.7-3.8 1.1 0 2.2.2 2.2.2v2.4h-1.2c-1.2 0-1.6.8-1.6 1.5V12h2.7l-.4 2.9h-2.3v7A10 10 0 0 0 22 12z"/></svg>;
+    case "tiktok": return <svg {...p} fill={c}><path d="M16 3v3.2a4.8 4.8 0 0 0 4 4.7v3a7.7 7.7 0 0 1-4-1.2v5.6A6.3 6.3 0 1 1 9.7 11v3.2a3.1 3.1 0 1 0 3.1 3.1V3z"/></svg>;
+    case "youtube": return <svg {...p} fill={c}><path d="M23 12s0-3.3-.4-4.8a2.5 2.5 0 0 0-1.8-1.8C19.3 5 12 5 12 5s-7.3 0-8.8.4A2.5 2.5 0 0 0 1.4 7.2C1 8.7 1 12 1 12s0 3.3.4 4.8a2.5 2.5 0 0 0 1.8 1.8C4.7 19 12 19 12 19s7.3 0 8.8-.4a2.5 2.5 0 0 0 1.8-1.8C23 15.3 23 12 23 12zM9.8 15.3V8.7l5.7 3.3z"/></svg>;
+    case "drive": return <svg {...p} fill={c}><path d="M8.3 3l-6 10.4 3 5.2 6-10.4zm1.5 0l6 10.4h6L15.8 3zM2.6 14.2L5.6 19.4h11.2l-3-5.2z"/></svg>;
+    case "web": return <svg {...p} fill="none" stroke={c} strokeWidth="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>;
+    default: return <svg {...p} fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1L11 5"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1L13 19"/></svg>;
+  }
+}
+function RefLinkRow({T, link}) {
+  const [h,setH]=React.useState(false);
+  const meta=REF_TIPOS[link.tipo||"otro"]||REF_TIPOS.otro;
+  return (
+    <a href={link.url} target="_blank" rel="noreferrer"
+      onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{display:"flex",alignItems:"center",gap:10,padding:"8px 11px",borderRadius:DS.r.md,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",background:h?meta.color+"1f":T.surface,border:`1px solid ${h?meta.color+"55":T.border}`,transition:`all 0.15s ${DS.ease}`}}>
+      <span style={{display:"grid",placeItems:"center",width:24,height:24,borderRadius:7,background:meta.color+"22",color:meta.color,flexShrink:0}}><RefTipoIcon tipo={link.tipo||"otro"}/></span>
+      <span style={{flex:1,fontSize:DS.font.md,fontWeight:DS.w.semibold,color:h?T.text:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{link.label||meta.label}</span>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{color:meta.color,opacity:h?0.9:0.35,flexShrink:0,transition:"opacity 0.15s"}}><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
+    </a>
+  );
+}
+function RefCard({T, refData, colabMode, onEdit, onDelete}) {
+  const [h,setH]=React.useState(false);
+  const accent=refData.color||"#6366f1";
+  const links=refData.links||[];
+  return (
+    <div onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{background:T.card,border:`1px solid ${h?accent+"55":T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",display:"flex",flexDirection:"column",transition:`all 0.2s ${DS.ease}`,transform:h?"translateY(-3px)":"none",boxShadow:h?`0 12px 32px rgba(0,0,0,0.22), 0 0 0 1px ${accent}22`:"0 1px 3px rgba(0,0,0,0.08)"}}>
+      <div style={{height:3,background:`linear-gradient(90deg,${accent},${accent}55)`}}/>
+      <div style={{padding:"14px 16px",display:"flex",flexDirection:"column",gap:12,flex:1}}>
+        <div style={{display:"flex",alignItems:"center",gap:11}}>
+          <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${accent},${accent}aa)`,display:"grid",placeItems:"center",fontSize:15,fontWeight:DS.w.bold,color:"#fff",flexShrink:0,boxShadow:`0 2px 8px ${accent}40`}}>{(refData.nombre||"?")[0].toUpperCase()}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,lineHeight:1.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{refData.nombre}</div>
+            <div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:2}}>{links.length} {links.length===1?"enlace":"enlaces"}</div>
+          </div>
+          {!colabMode&&(
+            <div style={{display:"flex",gap:2,opacity:h?1:0,transition:"opacity 0.15s"}}>
+              <button onClick={()=>onEdit(refData)} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"4px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
+              <button onClick={()=>onDelete(refData.id)} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"4px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+            </div>
+          )}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:7}}>
+          {links.length===0&&<div style={{fontSize:DS.font.sm,color:T.textSm,fontStyle:"italic"}}>Sin enlaces{colabMode?"":" — editá para agregar"}</div>}
+          {links.map((l,li)=><RefLinkRow key={li} T={T} link={l}/>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===========================================
 // APP TAREAS — Delegación a colaboradores externos
 // ===========================================
 function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, colabMode=null}) {
@@ -11772,35 +11841,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 : <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Agregá marcas o tiendas de referencia para que tu equipo pueda acceder rápido a sus redes, ads y sitios." action={<Btn T={T} variant="primary" onClick={()=>openRefModal()}>+ Primera marca</Btn>}/>
             )}
             {!refLoading&&referencias.length>0&&(
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:16}}>
-                {referencias.map(ref=>{
-                  const links=ref.links||[];
-                  const accentColor=ref.color||"#6366f1";
-                  return (
-                    <div key={ref.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-                      <div style={{background:`${accentColor}18`,borderBottom:`1px solid ${accentColor}30`,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
-                        <div style={{width:10,height:10,borderRadius:"50%",background:accentColor,flexShrink:0}}/>
-                        <div style={{flex:1,fontSize:14,fontWeight:700,color:T.text,lineHeight:1.3}}>{ref.nombre}</div>
-                        {!colabMode&&<button onClick={()=>openRefModal(ref)} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>}
-                        {!colabMode&&<button onClick={()=>handleDeleteRef(ref.id)} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
-                      </div>
-                      <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:7,flex:1}}>
-                        {links.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic"}}>Sin links — editá para agregar</div>}
-                        {links.map((l,li)=>{
-                          const tp=TIPO_META[l.tipo||"otro"]||TIPO_META.otro;
-                          return (
-                            <a key={li} href={l.url} target="_blank" rel="noreferrer"
-                              style={{display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:tp.color,background:`${tp.color}12`,border:`1px solid ${tp.color}30`,borderRadius:8,padding:"7px 10px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                              <span style={{fontSize:14,flexShrink:0}}>{tp.icon}</span>
-                              <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.label||tp.label}</span>
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{opacity:.4,flexShrink:0}}><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                            </a>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(264px,1fr))",gap:16}}>
+                {referencias.map(ref=>(
+                  <RefCard key={ref.id} T={T} refData={ref} colabMode={colabMode} onEdit={openRefModal} onDelete={handleDeleteRef}/>
+                ))}
               </div>
             )}
           </div>
