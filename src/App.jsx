@@ -11339,9 +11339,28 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       {showNT&&(
         <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:16,color:T.text}}>Nueva tarea</div>
-              <button onClick={()=>setShowNT(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
+            <div style={{marginBottom:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:16,color:T.text}}>Nueva tarea</div>
+                <button onClick={()=>setShowNT(false)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
+              </div>
+              {/* Selector de modo */}
+              <div style={{display:"flex",gap:0,background:T.surface,borderRadius:DS.r.lg,padding:3,border:`1px solid ${T.border}`}}>
+                <button onClick={()=>setNtEsCampaña(false)}
+                  style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:ntEsCampaña?400:600,borderRadius:DS.r.md,border:"none",cursor:"pointer",
+                    background:ntEsCampaña?"transparent":T.card,color:ntEsCampaña?T.textSm:T.text,
+                    transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",
+                    boxShadow:ntEsCampaña?"none":"0 1px 3px rgba(0,0,0,0.12)"}}>
+                  Tarea simple
+                </button>
+                <button onClick={()=>{setNtEsCampaña(true);if(!ntEsCampaña)setNtSlots([{id:mkId(),descripcion:"",tipo:"video",asignadoEmail:"",asignadoNombre:""}]);}}
+                  style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:ntEsCampaña?600:400,borderRadius:DS.r.md,border:"none",cursor:"pointer",
+                    background:ntEsCampaña?T.accentSolid:"transparent",color:ntEsCampaña?"#fff":T.textSm,
+                    transition:"all 0.15s",fontFamily:"'Inter',system-ui,sans-serif",
+                    boxShadow:ntEsCampaña?"0 1px 3px rgba(0,0,0,0.12)":"none"}}>
+                  Campaña
+                </button>
+              </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               {/* Título */}
@@ -11419,8 +11438,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               </div>
               {/* Links */}
               <div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:ntEsCampaña?2:6}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>{ntEsCampaña?"Material compartido":"Links de referencia"}</div>
+                    {ntEsCampaña&&<div style={{fontSize:10,color:T.textSm,marginTop:1}}>Visible para todos los asignados</div>}
+                  </div>
                   <button onClick={()=>setNtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
                 </div>
                 {ntLinks.map((l,i)=>(
@@ -11447,17 +11469,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </div>
               </div>
             )}
-            {/* Toggle Campaña */}
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${ntEsCampaña?T.accentSolid+"55":T.border}`}}>
-              <button onClick={()=>{setNtEsCampaña(p=>!p);if(!ntEsCampaña)setNtSlots([{id:mkId(),descripcion:"",tipo:"video",asignadoEmail:"",asignadoNombre:""}]);}}
-                style={{width:36,height:20,borderRadius:10,border:"none",cursor:"pointer",background:ntEsCampaña?T.accentSolid:"#6b7280",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
-                <div style={{position:"absolute",top:2,left:ntEsCampaña?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s"}}/>
-              </button>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,fontWeight:500,color:T.text}}>Tarea de campaña</div>
-                <div style={{fontSize:11,color:T.textSm}}>Define múltiples entregas con diferentes asignados</div>
-              </div>
-            </div>
             {/* Slots de campaña */}
             {ntEsCampaña&&(
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:12}}>
