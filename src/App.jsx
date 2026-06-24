@@ -720,6 +720,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     { group:"FINANZAS" },
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
   ];
+  const [closedSubs, setClosedSubs] = React.useState(new Set());
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
   const W = collapsed ? 64 : 224;
 
@@ -728,7 +729,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     const badgeColor = item.badge==="red" ? T.red : item.badge==="orange" ? T.orange : T.accent;
     const isConnected = item.integrationKey ? connectedStores[item.integrationKey] : undefined;
     return (
-      <button onClick={()=>setPage(item.id)} title={collapsed?item.label:undefined}
+      <button onClick={()=>{if(active&&item.subs?.length>0){setClosedSubs(p=>{const n=new Set(p);n.has(item.id)?n.delete(item.id):n.add(item.id);return n;});}else{setPage(item.id);setClosedSubs(p=>{const n=new Set(p);n.delete(item.id);return n;});}}} title={collapsed?item.label:undefined}
         style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"10px 0":"8px 10px",
           background:active?T.accentSolid+"20":"transparent",border:"none",
           borderRadius:DS.r.md,cursor:"pointer",textAlign:"left",
@@ -743,7 +744,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
           : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?"2.2":"1.8"} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.65}}><path d={item.icon}/></svg>
         }
         {!collapsed&&<span style={{flex:1}}>{item.label}</span>}
-        {!collapsed&&item.subs?.length>0&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.4,transition:`transform 0.18s ${DS.ease}`,transform:active?"rotate(90deg)":"rotate(0deg)"}}><path d="M9 18l6-6-6-6"/></svg>}
+        {!collapsed&&item.subs?.length>0&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.4,transition:`transform 0.18s ${DS.ease}`,transform:(active&&!closedSubs.has(item.id))?"rotate(90deg)":"rotate(0deg)"}}><path d="M9 18l6-6-6-6"/></svg>}
         {!collapsed&&item.count>0&&<span style={{fontSize:10,fontWeight:DS.w.bold,padding:"1px 6px",borderRadius:DS.r.full,background:badgeColor+(active?"33":"22"),color:badgeColor,lineHeight:1.5,minWidth:18,textAlign:"center"}}>{item.count>99?"99+":item.count}</span>}
         {!collapsed&&isConnected!==undefined&&<span style={{width:7,height:7,borderRadius:"50%",background:isConnected?T.green:T.textSm,flexShrink:0,opacity:0.8}} title={isConnected?"Conectado":"Sin conectar"}/>}
         {collapsed&&item.count>0&&<span style={{position:"absolute",top:6,right:8,width:6,height:6,borderRadius:DS.r.full,background:badgeColor}}/>}
@@ -796,7 +797,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
           // Subs solo cuando estás dentro del módulo (revertido del bloque
           // siempre-desplegado de Escalafy — el usuario prefiere la fluidez
           // del despliegue al click). Se ocultan otra vez al cambiar de módulo.
-          const showSubs = active && item.subs && !collapsed;
+          const showSubs = active && item.subs && !collapsed && !closedSubs.has(item.id);
           return (
             <React.Fragment key={item.id}>
               <NavBtn item={item}/>
@@ -2381,7 +2382,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     checkAndreani();
     const interval = setInterval(checkAndreani, 30 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [reclamos.length]);
+  }, [reclamos.map(r=>`${r._docId}${r.trackingDevolucion||""}${r.trackingCambio||""}${r.estado}`).join("|")]);
 
   function dispararNotificacionBrowser(alertas) {
     if(!("Notification" in window)) return;
@@ -3520,6 +3521,31 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       if(onClearPendingCanje) onClearPendingCanje();
     }
   },[pendingCanje]);
+
+  // Polling Andreani para canjes con tracking
+  useEffect(()=>{
+    const conTracking = canjes.filter(c=>c.tracking?.trim()&&!["Rechazado"].includes(c.estado));
+    if(!conTracking.length) return;
+    async function checkCanjesAndreani() {
+      for(const canje of conTracking) {
+        try {
+          const res = await fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(canje.tracking.trim())}`);
+          if(!res.ok) continue;
+          const d = await res.json();
+          const ea = d?.estado||d?.estadoActual||d?.ultimoEvento?.estado||"";
+          if(!ea) continue;
+          const eaN = ea.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+          if(eaN.includes("sucursal")||eaN.includes("disponible")||eaN.includes("hop")||eaN.includes("para retirar")||eaN.includes("punto de retiro")||eaN.includes("en agencia"))
+            toast(`🏪 Canje ${canje.influencer}: paquete listo para retirar en sucursal (${canje.tracking})`, "info");
+          else if(eaN.includes("entregado")||eaN.includes("entrega realizada")||eaN.includes("retirado"))
+            toast(`✅ Canje ${canje.influencer}: paquete entregado (${canje.tracking})`, "success");
+        } catch(_){}
+      }
+    }
+    checkCanjesAndreani();
+    const iv = setInterval(checkCanjesAndreani, 30*60*1000);
+    return ()=>clearInterval(iv);
+  },[canjes.map(c=>`${c._docId}${c.tracking||""}${c.estado}`).join("|")]);
 
   const emptyForm=()=>({
     _docId:null, influencer:"", usuario:"", red:"Instagram", seguidores:"", email:"", telefono:"", linkInstagram:"", pedidoRef:"",
@@ -23225,8 +23251,12 @@ function AndreaniPollingService({uid, onAlerts}) {
             if(!res.ok) continue;
             const d = await res.json();
             const ea = d?.estado||d?.estadoActual||d?.ultimoEvento?.estado||"";
-            if(ea.toLowerCase().includes("sucursal")||ea.toLowerCase().includes("disponible")||ea.toLowerCase().includes("listo"))
-              alertas.push({docId:r._docId,orderNum:r.orderNum,tracking:trk.trim()});
+            const eaN = ea.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+            const esAlerta = eaN.includes("sucursal")||eaN.includes("disponible")||eaN.includes("listo")||
+              eaN.includes("en agencia")||eaN.includes("hop")||eaN.includes("andreani point")||
+              eaN.includes("en oficina")||eaN.includes("para retirar")||eaN.includes("punto de retiro")||
+              eaN.includes("entregado")||eaN.includes("entrega realizada")||eaN.includes("retirado");
+            if(esAlerta) alertas.push({docId:r._docId,orderNum:r.orderNum,tracking:trk.trim(),estado:ea});
           } catch(_){}
         }
       }));
@@ -23241,7 +23271,7 @@ function AndreaniPollingService({uid, onAlerts}) {
     checkAndreani();
     const interval = setInterval(checkAndreani, 30*60*1000);
     return ()=>clearInterval(interval);
-  },[reclamos.length]);
+  },[reclamos.map(r=>`${r._docId}${r.trackingDevolucion||""}${r.trackingCambio||""}${r.estado}`).join("|")]);
 
   return null;
 }
