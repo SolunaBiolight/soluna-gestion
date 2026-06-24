@@ -700,6 +700,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
   const GROUPS = [
     // Inicio queda suelto arriba de todo, sin etiqueta de grupo
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
+    {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
@@ -716,8 +718,6 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
 },
     { group:"FINANZAS" },
-    {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
-      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
   ];
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
@@ -23290,7 +23290,7 @@ export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","arca","meta","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock","ml","tareas","rendimiento"];
+  const VALID_PAGES = ["home","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock","ml","tareas","rendimiento"];
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
   // Detectar ruta pública de colaborador: #/colaborador/TOKEN
   const _colabMatch = _initialHash.match(/^colaborador\/([a-z0-9]{8,})/i);
@@ -23304,7 +23304,7 @@ export default function App() {
   // Tablero compartido: #/tablero/BOARD_TOKEN
   const _boardMatch = _initialHash.match(/^tablero\/([a-z0-9]{8,})/i);
   const [boardToken, setBoardToken] = useState(_boardMatch ? _boardMatch[1] : null);
-  const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "home");
+  const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "margenes");
   const setPage = (p) => {
     _setPage(p);
     if (typeof window !== "undefined") {
