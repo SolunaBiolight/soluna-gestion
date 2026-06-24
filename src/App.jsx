@@ -20845,9 +20845,13 @@ function ComisionesPanel({ T, uid }) {
 // ningún sistema sabe cuánto te cuesta el producto).
 function CostosPanel({ T, uid }) {
   const [envio, setEnvio] = React.useState("");
-  const [cogs, setCogs] = React.useState([]);
+  const [products, setProducts] = React.useState([]);
+  const [mlItems, setMlItems] = React.useState([]);
+  const [costos, setCostos] = React.useState({}); // { [key]: costo }
   const [fijos, setFijos] = React.useState([]);
   const [loaded, setLoaded] = React.useState(false);
+  const [loadingProds, setLoadingProds] = React.useState(true);
+  const [busqProd, setBusqProd] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -20857,26 +20861,49 @@ function CostosPanel({ T, uid }) {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data() : {};
         setEnvio(d.margenesEnvioProm ?? "");
-        setCogs(Array.isArray(d.margenesCogs) ? d.margenesCogs : []);
+        setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
       } catch (_) {}
       setLoaded(true);
+      try {
+        // Mapeo de productos reales (como el mapeo de items de Stock)
+        const r = await fetch(`/api/stock?action=products&uid=${uid}&days=90`);
+        const j = await r.json();
+        setProducts(Array.isArray(j.products) ? j.products : []);
+        setMlItems(Object.keys(j.ml_data?.by_variant || {}));
+      } catch (_) {}
+      setLoadingProds(false);
     })();
   }, [uid]);
 
   async function save() {
     setSaving(true);
     try {
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: cogs, margenesCostosFijos: fijos }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
+  const setCosto = (key,val)=>setCostos(c=>({...c,[key]:val}));
 
   const totalFijos = fijos.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
 
+  // Una fila por variante de cada producto TN/Shopify.
+  const prodRows = products.flatMap(p => (p.variants||[]).map(v => ({
+    key: v.sku || String(v.id),
+    img: p.imagen,
+    nombre: p.nombre,
+    variante: v.nombre && v.nombre!=="Default" ? v.nombre : "",
+    sku: v.sku || "",
+    price: v.price || 0,
+  })));
+  const q = busqProd.trim().toLowerCase();
+  const visRows = q ? prodRows.filter(r => `${r.nombre} ${r.variante} ${r.sku}`.toLowerCase().includes(q)) : prodRows;
+  const visMl = q ? mlItems.filter(n => n.toLowerCase().includes(q)) : mlItems;
+  const conCosto = Object.values(costos).filter(v => parseFloat(v) > 0).length;
+
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:18,maxWidth:760}}>
+    <div style={{display:"flex",flexDirection:"column",gap:18,maxWidth:860}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
         <div>
           <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Costos</div>
@@ -20897,18 +20924,43 @@ function CostosPanel({ T, uid }) {
         </div>
       </div>
 
+      {/* Costo por producto — mapeo de productos reales */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>📦 Costo por producto (COGS)</div>
-        {cogs.length===0 && <div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Cargá cuánto te cuesta cada producto/SKU.</div>}
-        {cogs.map(r=>(
-          <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-            <input value={r.sku} onChange={e=>setCogs(cs=>cs.map(x=>x.id===r.id?{...x,sku:e.target.value}:x))} placeholder="SKU / producto" style={{...InputStyle(T),flex:1,fontSize:13}}/>
-            <span style={{fontSize:12,color:T.textSm}}>$</span>
-            <input type="number" min="0" value={r.costo} onChange={e=>setCogs(cs=>cs.map(x=>x.id===r.id?{...x,costo:e.target.value}:x))} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
-            <button onClick={()=>setCogs(cs=>cs.filter(x=>x.id!==r.id))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>📦 Costo por producto (COGS)</div>
+          {(prodRows.length+mlItems.length)>0 && <span style={{fontSize:11,color:T.textSm}}>{conCosto}/{prodRows.length+mlItems.length} con costo cargado</span>}
+        </div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Aparece cada producto de Shopify/TN y cada publicación de ML. Poné cuánto te cuesta cada uno.</div>
+        {(prodRows.length+mlItems.length)>6 && <input value={busqProd} onChange={e=>setBusqProd(e.target.value)} placeholder="Buscar producto o SKU…" style={{...InputStyle(T),width:"100%",fontSize:13,marginBottom:10}}/>}
+        {loadingProds && <div style={{padding:"24px 0",textAlign:"center",color:T.textSm,fontSize:12}}>Cargando productos…</div>}
+        {!loadingProds && prodRows.length===0 && mlItems.length===0 && <div style={{fontSize:12,color:T.textSm}}>No se encontraron productos. Conectá tu tienda desde Config.</div>}
+        {visRows.map(r=>(
+          <div key={r.key} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
+            {r.img
+              ? <img src={r.img} alt="" style={{width:34,height:34,borderRadius:6,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
+              : <div style={{width:34,height:34,borderRadius:6,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>📦</div>}
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}{r.variante?` · ${r.variante}`:""}</div>
+              <div style={{fontSize:10,color:T.textSm}}>{r.sku?`SKU ${r.sku} · `:""}{fmtARSm(r.price)}</div>
+            </div>
+            <span style={{fontSize:12,color:T.textSm}}>costo $</span>
+            <input type="number" min="0" value={costos[r.key]??""} onChange={e=>setCosto(r.key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
           </div>
         ))}
-        <button onClick={()=>setCogs(cs=>[...cs,{id:margId(),sku:"",costo:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar producto</button>
+        {visMl.length>0 && <div style={{fontSize:11,fontWeight:700,color:T.textSm,margin:"12px 0 4px",textTransform:"uppercase",letterSpacing:0.4}}>🛒 Mercado Libre</div>}
+        {visMl.map(name=>{
+          const key = "ml:"+name;
+          return (
+            <div key={key} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
+              <div style={{width:34,height:34,borderRadius:6,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🛒</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>
+              </div>
+              <span style={{fontSize:12,color:T.textSm}}>costo $</span>
+              <input type="number" min="0" value={costos[key]??""} onChange={e=>setCosto(key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
+            </div>
+          );
+        })}
       </div>
 
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
