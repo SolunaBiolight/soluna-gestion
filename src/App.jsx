@@ -23214,12 +23214,12 @@ function AppRendimiento({T, user, onHome}) {
 
         {/* Nav tabs — always visible */}
         <div style={{display:"flex",gap:3,background:T.surface,borderRadius:10,padding:3,width:"fit-content",marginBottom:18,flexWrap:"wrap"}}>
-          {[["overview","💡 Insights"],["tabla","📋 Tabla"],["dow","📅 Por semana"],["margenes","📊 Márgenes"],["comisiones","💳 Comisiones"],["costos","⚙ Costos"],["dolar","💵 Dólar"],["facturacion","🧾 Facturación"]].map(([id,l])=>(
+          {[["overview","💡 Insights"],["tabla","📋 Tabla"],["dow","📅 Por semana"]].map(([id,l])=>(
             <button key={id} onClick={()=>setViewTab(id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:viewTab===id?T.card:"transparent",color:viewTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>{l}</button>
           ))}
         </div>
 
-        {!["margenes","comisiones","costos","dolar","facturacion"].includes(viewTab)&&!rendData&&!loading&&(
+        {!rendData&&!loading&&(
           <div style={{textAlign:"center",padding:"80px 24px"}}>
             <div style={{fontSize:64,marginBottom:20}}>📊</div>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:12}}>Dashboard Financiero</div>
@@ -23231,7 +23231,7 @@ function AppRendimiento({T, user, onHome}) {
           </div>
         )}
 
-        {!["margenes","comisiones","costos","dolar","facturacion"].includes(viewTab)&&rendData&&!loading&&(()=>{
+        {rendData&&!loading&&(()=>{
           return(<>
 
           {/* Status row */}
@@ -23502,12 +23502,6 @@ function AppRendimiento({T, user, onHome}) {
           </>);
         })()}
 
-        {/* Márgenes tab content */}
-        {viewTab==="margenes"&&<MargenesTab T={T} uid={uid} days={days} useCustomDate={useCustom} dateFrom={dateFrom} dateTo={dateTo}/>}
-        {viewTab==="comisiones"&&<ComisionesPanel T={T} uid={uid}/>}
-        {viewTab==="costos"&&<MargenesPlaceholder T={T} title="Costos Adicionales" desc="Costos operativos fijos y costo por producto (COGS) para calcular el margen real."/>}
-        {viewTab==="dolar"&&<MargenesPlaceholder T={T} title="Cotización Dólar" desc="Cotización del dólar para costos/productos en USD."/>}
-        {viewTab==="facturacion"&&<MargenesPlaceholder T={T} title="Facturación Externa" desc="Ventas fuera de las plataformas conectadas, sumadas manualmente a la facturación."/>}
       </div>
     </div>
   );
@@ -24210,6 +24204,7 @@ export default function App() {
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
   else if(page==="rendimiento") pageContent = adminGate("rendimiento") || <PageView T={T} pageKey="rendimiento"><AppRendimiento T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  else if(page==="margenes") pageContent = adminGate("margenes") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
   else if(page==="stock") pageContent = adminGate("stock") || planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
   else if(page==="ml") pageContent = adminGate("ml") || planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
