@@ -21344,9 +21344,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         // Mantenemos products, daily_*, by_* del stock endpoint para los gráficos.
         // Usamos ?? en vez de || para que valor 0 valga (no caer al fallback).
         if (homeStats?.current) {
-          json.total_orders  = homeStats.current.count   ?? json.total_orders;
-          json.total_revenue = homeStats.current.revenue ?? json.total_revenue;
-          json.total_units   = homeStats.current.units   ?? json.total_units;
+          // Usar breakdown.primary (solo TN/Shopify, sin ML) para que el frontend
+          // pueda sumar ML de ml_data una sola vez. Si usamos current (TN+ML) el
+          // frontend volvería a sumar mlRevenue → TN + 2×ML.
+          const primary = homeStats.breakdown?.primary ?? homeStats.current;
+          json.total_orders  = primary.count   ?? json.total_orders;
+          json.total_revenue = primary.revenue ?? json.total_revenue;
+          json.total_units   = primary.units   ?? json.total_units;
         }
         setData(json);
       }
