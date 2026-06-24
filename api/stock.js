@@ -437,6 +437,7 @@ export default async function handler(req, res) {
           daily_orders:  mlAnalytics.dailyOrders,   // órdenes por día
           by_variant:    mlAnalytics.byVariant,     // unidades por variante
           by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante (bruto)
+          ml_products:   Object.entries(mlAnalytics.map||{}).map(([id,v])=>({id, nombre:v.nombre||id, units:v.units})), // publicaciones ML (no variantes)
           by_province:   mlAnalytics.byProv,
           by_hour:       mlAnalytics.byHour,
           by_payment:    mlAnalytics.byPayment,
@@ -462,6 +463,7 @@ export default async function handler(req, res) {
           daily_orders:  mlAnalytics.dailyOrders,   // órdenes por día
           by_variant:    mlAnalytics.byVariant,     // unidades por variante
           by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante (bruto)
+          ml_products:   Object.entries(mlAnalytics.map||{}).map(([id,v])=>({id, nombre:v.nombre||id, units:v.units})), // publicaciones ML (no variantes)
           by_province:   mlAnalytics.byProv,
           by_hour:       mlAnalytics.byHour,
           by_payment:    mlAnalytics.byPayment,

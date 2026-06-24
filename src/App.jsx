@@ -20873,7 +20873,7 @@ function CostosPanel({ T, uid }) {
         const r = await fetch(`/api/stock?action=products&uid=${uid}&days=90`);
         const j = await r.json();
         setProducts(Array.isArray(j.products) ? j.products : []);
-        setMlItems(Object.keys(j.ml_data?.by_variant || {}));
+        setMlItems(Array.isArray(j.ml_data?.ml_products) ? j.ml_data.ml_products : []);
       } catch (_) {}
       setLoadingProds(false);
     })();
@@ -20902,7 +20902,7 @@ function CostosPanel({ T, uid }) {
   })));
   const q = busqProd.trim().toLowerCase();
   const visRows = q ? prodRows.filter(r => `${r.nombre} ${r.variante} ${r.sku}`.toLowerCase().includes(q)) : prodRows;
-  const visMl = q ? mlItems.filter(n => n.toLowerCase().includes(q)) : mlItems;
+  const visMl = q ? mlItems.filter(p => String(p.nombre||"").toLowerCase().includes(q)) : mlItems;
   const conCosto = Object.values(costos).filter(v => parseFloat(v) > 0).length;
 
   return (
@@ -20951,13 +20951,13 @@ function CostosPanel({ T, uid }) {
           </div>
         ))}
         {visMl.length>0 && <div style={{fontSize:11,fontWeight:700,color:T.textSm,margin:"12px 0 4px",textTransform:"uppercase",letterSpacing:0.4}}>🛒 Mercado Libre</div>}
-        {visMl.map(name=>{
-          const key = "ml:"+name;
+        {visMl.map(p=>{
+          const key = "ml:"+p.id;
           return (
             <div key={key} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
               <div style={{width:34,height:34,borderRadius:6,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🛒</div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>
+                <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.nombre}>{p.nombre}</div>
               </div>
               <span style={{fontSize:12,color:T.textSm}}>costo $</span>
               <input type="number" min="0" value={costos[key]??""} onChange={e=>setCosto(key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
