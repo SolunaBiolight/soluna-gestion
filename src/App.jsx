@@ -698,27 +698,23 @@ function GrowithLogo({size=28, variant="color", darkMode=false}) {
 
 function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false}) {
   const GROUPS = [
-    // Inicio queda suelto arriba de todo, sin etiqueta de grupo
+    // Sin títulos de grupo — todas las secciones al mismo nivel, en orden de uso.
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
       subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
-    { group:"ANALYTICS" },
+    {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
+    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
+      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
       subs:[{id:"analisis",label:"Análisis"},{id:"productos",label:"Productos"},{id:"facturacion",label:"Facturación"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
       subs:[{id:"gestion",label:"Gestión"},{id:"analytics",label:"Analytics"}]},
-    { group:"OPERACIONES" },
-    {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
-      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
     {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", count:alerts.reclamos, badge:"red",
       subs:[{id:"reclamos",label:"Reclamos"},{id:"historial",label:"Historial"}]},
     {id:"canjes",   label:"Canjes",    icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z", count:alerts.canjes, badge:"orange"},
-    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
-},
-    { group:"FINANZAS" },
-    {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
+    {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange"},
   ];
   const [closedSubs, setClosedSubs] = React.useState(new Set());
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
@@ -1208,7 +1204,8 @@ function DateRangePicker({ T, since, until, onChange, presets }) {
   ];
   function applyPreset(p) {
     const today = new Date();
-    const fmt = (d) => d.toISOString().slice(0,10);
+    // Zona Argentina (UTC-3) — evita el corrimiento de día que dejaba fechas mal.
+    const fmt = (d) => new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(d);
     if (p.days === 0) onChange(fmt(today), fmt(today));
     else if (p.days === -1) {
       const y = new Date(today.getTime() - 86400000);
@@ -13795,8 +13792,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [tnData, setTnData] = useState(null); // {connected, store_name, ordenes, total_pending}
   const [tnSelected, setTnSelected] = useState({}); // {orderId: true|false}
   const [periodoModo, setPeriodoModo] = useState("7"); // "1"|"7"|"15"|"30"|"60"|"90"|"custom"
-  const [fechaDesde, setFechaDesde] = useState(new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10));
-  const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0,10));
+  // Fechas en zona Argentina (UTC-3) — antes se calculaban en UTC y corrían el
+  // día, dejando entrar/faltar ventas en los bordes del rango.
+  const [fechaDesde, setFechaDesde] = useState(new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(Date.now()-7*86400000)));
+  const [fechaHasta, setFechaHasta] = useState(new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date()));
   const [canalesSel, setCanalesSel] = useState([]); // [] = todos, o array de plataformas activas
   const canalSel = canalesSel.length===0?"todos":canalesSel[0]; // compat legado
   const [metodoPagoSel, setMetodoPagoSel] = useState("todos"); // "todos" | string literal
@@ -13817,7 +13816,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if(!descartadasKey) return new Set();
     try { return new Set(JSON.parse(localStorage.getItem(descartadasKey)||"[]")); } catch(_){ return new Set(); }
   });
-  const [showDescartadas, setShowDescartadas] = useState(true); // visible por defecto para no perder órdenes
+  const [showDescartadas, setShowDescartadas] = useState(false); // colapsado por defecto — desplegable para no hacer la lista interminable
   const [autoDescartar, setAutoDescartar] = useState(true); // al facturar, descartar automáticamente las no-seleccionadas
   function saveDescartadas(set) {
     setDescartadas(set);
@@ -14159,12 +14158,36 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setTnSelected(newSel);
   }
 
+  // Predicado de filtros visibles — MISMO criterio que la lista en pantalla
+  // (canal, método de pago, rango de monto, buscador, descartadas). Se usa
+  // tanto para renderizar como para facturar, de modo que "lo que ves
+  // seleccionado = lo que se factura". Antes facturarSeleccionadas recorría
+  // TODO tnData.ordenes ignorando el filtro de plataforma → podía emitir
+  // órdenes ocultas por el filtro y facturar de más (bug 41→87).
+  function ordenPasaFiltros(id, o) {
+    if (descartadas.has(String(id))) return false;
+    if (canalesSel.length>0 && !canalesSel.includes(o._platform)) return false;
+    if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
+    const minN = montoMin === "" ? null : parseFloat(montoMin);
+    const maxN = montoMax === "" ? null : parseFloat(montoMax);
+    if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
+    if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
+    const busqTokens = busquedaPend.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (busqTokens.length > 0) {
+      const hay = [id, o.numero, o.order_number, o.pack_id, o.nombre, o.email, o.dni, o.doc_nro]
+        .filter(Boolean).map(v => String(v).toLowerCase()).join(" ");
+      for (const t of busqTokens) if (!hay.includes(t)) return false;
+    }
+    return true;
+  }
+
   function facturarSeleccionadas() {
     if(!tnData?.ordenes) return;
     const filtered = {};
     const noSeleccionadasIds = [];
     Object.entries(tnData.ordenes).forEach(([id,o])=>{
-      if(tnSelected[id] && !o._billed) filtered[id] = o;
+      // Solo se factura lo seleccionado Y visible con el filtro actual.
+      if(tnSelected[id] && !o._billed && ordenPasaFiltros(id,o)) filtered[id] = o;
       else if(!tnSelected[id] && !o._billed && !descartadas.has(String(id))) noSeleccionadasIds.push(id);
     });
     if(Object.keys(filtered).length === 0) return toast("Tildá al menos una venta","warning");
@@ -14984,30 +15007,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   ) : (() => {
                     // El backend ya manda ordenado por fecha desc. Filtros locales: canal y rango de monto.
                     const all = Object.entries(tnData.ordenes);
-                    const minN = montoMin === "" ? null : parseFloat(montoMin);
-                    const maxN = montoMax === "" ? null : parseFloat(montoMax);
-                    // Tokens del buscador — normalizados a lowercase. Soporta
-                    // múltiples palabras: "juan 1234" matchea órdenes que
-                    // contengan AMBAS en algún campo.
-                    const busqTokens = busquedaPend.trim().toLowerCase().split(/\s+/).filter(Boolean);
-                    const items = all.filter(([id, o]) => {
-                      if (descartadas.has(String(id))) return false; // excluir descartadas
-                      if (canalesSel.length>0 && !canalesSel.includes(o._platform)) return false;
-                      if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
-                      if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
-                      if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
-                      if (busqTokens.length > 0) {
-                        // Concatenamos todos los campos donde puede aparecer
-                        // el match: ID de orden (Shopify/TN/ML), número de
-                        // pedido, nombre del cliente, email, DNI/CUIT.
-                        const hay = [
-                          id, o.numero, o.order_number, o.pack_id,
-                          o.nombre, o.email, o.dni, o.doc_nro
-                        ].filter(Boolean).map(v => String(v).toLowerCase()).join(" ");
-                        for (const t of busqTokens) if (!hay.includes(t)) return false;
-                      }
-                      return true;
-                    });
+                    // Mismo predicado que usa facturarSeleccionadas → la lista
+                    // visible y lo que se factura son siempre el mismo conjunto.
+                    const items = all.filter(([id, o]) => ordenPasaFiltros(id, o));
                     // Órdenes descartadas (para mostrar en panel separado)
                     const itemsDescartados = all.filter(([id, o]) => descartadas.has(String(id)) && !o._billed);
                     if (items.length === 0) {
@@ -15060,7 +15062,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{position:"relative"}}>
                         {/* Overlay de carga — aparece cuando cambia fecha o filtro de plataforma */}
                         {tnLoading&&(
-                          <div style={{position:"absolute",inset:0,zIndex:10,borderRadius:10,background:T.card+"cc",backdropFilter:"blur(3px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,pointerEvents:"all"}}>
+                          <div style={{position:"absolute",inset:0,zIndex:10,borderRadius:10,background:T.card,backdropFilter:"blur(4px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,pointerEvents:"all"}}>
                             <Spinner size={28} color={T.accent}/>
                             <span style={{fontSize:12,color:T.textMd,fontWeight:600}}>Actualizando ventas…</span>
                           </div>
@@ -15098,6 +15100,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
                               {itemsDescartados.length} descartadas
                               {mesStats&&<span style={{background:"rgba(249,115,22,0.13)",border:"1px solid rgba(249,115,22,0.4)",borderRadius:4,padding:"1px 6px",fontWeight:700,color:"#fb923c"}}>{pctDescartadasN}% órd · {pctDescartadasM}% $</span>}
+                              <span style={{fontSize:10,transition:"transform 0.15s",transform:showDescartadas?"rotate(180deg)":"none"}}>▾</span>
                             </button>
                           )}
 
@@ -15166,6 +15169,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <button onClick={restaurarTodas} style={{...BtnSecondary(T),padding:"3px 10px",fontSize:11,color:T.accent}}>Restaurar todas</button>
                               </div>
                             </div>
+                            <div style={{maxHeight:260,overflowY:"auto"}}>
                             {itemsDescartados.map(([id,o])=>(
                               <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderBottom:`1px solid ${T.borderL}`,opacity:0.7}}>
                                 <span style={{fontSize:10,color:T.textSm,minWidth:68}}>{fmtFechaHora(o.fecha)}</span>
@@ -15176,6 +15180,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <button onClick={()=>restaurarOrden(id)} title="Volver al listado" style={{...BtnSecondary(T),padding:"3px 10px",fontSize:10,flexShrink:0}}>Restaurar</button>
                               </div>
                             ))}
+                            </div>
                           </div>
                         )}
 
@@ -15283,11 +15288,24 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const minIso = `${minD.getFullYear()}-${pad(minD.getMonth()+1)}-${pad(minD.getDate())}`;
                     const fechaLabel = fechaFactura ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}) : "";
                     const diasAtras = fechaFactura ? Math.round((new Date(hoyIso)-new Date(fechaFactura))/86400000) : 0;
+                    // CUIT emisor + desglose por plataforma para el cartel de confirmación.
+                    const cuitActivo = cuits.find(c => c.cuit === cuitSel);
+                    const platLabel = {tiendanube:"TN", shopify:"Shopify", mercadolibre:"ML"};
+                    const platCount = Object.values(ordenes).reduce((acc,o)=>{const p=o._platform||"—";acc[p]=(acc[p]||0)+1;return acc;},{});
+                    const platResumen = Object.entries(platCount).map(([p,n])=>`${n} ${platLabel[p]||p}`).join(" · ");
                     return (
                       <>
                         <div style={{display:"flex",alignItems:"center",gap:10}}>
                           <div style={{fontSize:16,fontWeight:800,color:T.text,flex:1}}>🧾 Emitir {Object.keys(ordenes).length} factura{Object.keys(ordenes).length!==1?"s":""} en ARCA</div>
                           <ModalCloseBtn T={T} onClick={closeModal}/>
+                        </div>
+
+                        {/* CUIT emisor + desglose por plataforma — confirmación antes de facturar */}
+                        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:12,marginTop:2}}>
+                          <span style={{color:T.textSm,fontWeight:600}}>CUIT emisor:</span>
+                          <span style={{fontWeight:700,color:T.text}}>{cuitActivo?formatCuit(cuitActivo.cuit):"—"}</span>
+                          {cuitActivo?.razon_social && <span style={{color:T.textMd}}>· {cuitActivo.razon_social}</span>}
+                          {platResumen && <span style={{marginLeft:"auto",fontWeight:600,color:T.textMd}}>{platResumen}</span>}
                         </div>
 
                         {/* Totals */}

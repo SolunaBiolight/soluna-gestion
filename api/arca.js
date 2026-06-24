@@ -2367,15 +2367,16 @@ export default async function handler(req, res) {
       const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
-      // Rango de fechas
+      // Rango de fechas — en zona Argentina (UTC-3) para no correr el día.
+      const argYmd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
       let sinceDate, untilDate;
       if (req.query.since) {
         sinceDate = String(req.query.since).slice(0, 10);
-        untilDate = req.query.until ? String(req.query.until).slice(0, 10) : new Date().toISOString().slice(0, 10);
+        untilDate = req.query.until ? String(req.query.until).slice(0, 10) : argYmd(new Date());
       } else {
         const days = Math.min(parseInt(req.query.days) || 7, 365);
-        sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-        untilDate = new Date().toISOString().slice(0, 10);
+        sinceDate = argYmd(new Date(Date.now() - days * 86400000));
+        untilDate = argYmd(new Date());
       }
 
       const userSnap = await db.collection("users").doc(uid).get();
@@ -2759,13 +2760,15 @@ export default async function handler(req, res) {
       if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
 
       // Rango de fechas: usa `since` y `until` si vienen, sino calcula desde `days`
+      // (en zona Argentina UTC-3 para no correr el día).
+      const argYmd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
       let sinceDate, untilDate;
       if (req.query.since) {
         sinceDate = String(req.query.since).slice(0, 10);
-        untilDate = req.query.until ? String(req.query.until).slice(0, 10) : new Date().toISOString().slice(0, 10);
+        untilDate = req.query.until ? String(req.query.until).slice(0, 10) : argYmd(new Date());
       } else {
         const days = Math.min(parseInt(req.query.days) || 7, 365);
-        sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        sinceDate = argYmd(new Date(Date.now() - days * 86400000));
         untilDate = null;
       }
 
