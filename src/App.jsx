@@ -20729,9 +20729,62 @@ function MargenesTab({ T, uid, days, useCustomDate, dateFrom, dateTo }) {
 
 // Panel Comisiones — configura rendimientoCommission (alimenta el cálculo de
 // margen en /api/orders?action=daily_metrics).
+// ─── Helpers compartidos de los paneles de Márgenes ───
+const margId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+const fmtARSm = n => "$ " + Math.round(n||0).toLocaleString("es-AR");
+
+// Comisiones — AUTOMÁTICAS: se leen del fee real de cada orden (no se cargan a
+// mano). Panel informativo que muestra qué se detecta por plataforma.
 function ComisionesPanel({ T, uid }) {
+  const [efectiva, setEfectiva] = React.useState(null);
+  React.useEffect(() => {
+    if (!uid) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", uid));
+        const c = snap.exists() ? snap.data().rendimientoCommission : null;
+        if (typeof c === "number") setEfectiva(+(c * 100).toFixed(2));
+      } catch (_) {}
+    })();
+  }, [uid]);
+
+  const plats = [
+    { nombre:"Mercado Libre", icon:"🛒", desc:"Comisión real de cada venta (categoría, FULL, cuotas y costo de publicación), tomada directo de la orden." },
+    { nombre:"Mercado Pago", icon:"💳", desc:"Comisión de la pasarela + IVA 21% sobre la comisión, en ventas de Tienda Nube / Shopify." },
+  ];
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:680}}>
+      <div>
+        <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Comisiones</div>
+        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Se leen <strong style={{color:T.text}}>automáticamente</strong> de cada orden — no hace falta cargar nada. Se descuentan solas para calcular la facturación neta y el margen.</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+        {plats.map(p=>(
+          <div key={p.nombre} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,gap:8}}>
+              <span style={{fontSize:14,fontWeight:700,color:T.text}}>{p.icon} {p.nombre}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,whiteSpace:"nowrap"}}>● AUTOMÁTICO</span>
+            </div>
+            <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{p.desc}</div>
+          </div>
+        ))}
+      </div>
+      {efectiva!=null && (
+        <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 16px",fontSize:12,color:T.textMd,lineHeight:1.5}}>
+          Comisión promedio aplicada hoy en el Dashboard: <strong style={{color:T.text}}>{efectiva}%</strong>. Cuando conectemos el fee real por orden de ML, este número va a reflejar la comisión exacta de cada venta en vez de un promedio.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Costos Adicionales — COGS por producto + costos fijos mensuales (manuales:
+// ningún sistema sabe cuánto te cuesta el producto).
+function CostosPanel({ T, uid }) {
   const toast = useToast();
-  const [pct, setPct] = React.useState(3);
+  const [cogs, setCogs] = React.useState([]);
+  const [fijos, setFijos] = React.useState([]);
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
@@ -20740,66 +20793,194 @@ function ComisionesPanel({ T, uid }) {
     (async () => {
       try {
         const snap = await getDoc(doc(db, "users", uid));
-        const c = snap.exists() ? snap.data().rendimientoCommission : null;
-        if (typeof c === "number") setPct(+(c * 100).toFixed(2));
+        const d = snap.exists() ? snap.data() : {};
+        setCogs(Array.isArray(d.margenesCogs) ? d.margenesCogs : []);
+        setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
       } catch (_) {}
       setLoaded(true);
     })();
   }, [uid]);
 
   async function save() {
-    const val = parseFloat(pct);
-    if (!isFinite(val) || val < 0 || val > 100) { toast("Ingresá un % entre 0 y 100", "warning"); return; }
     setSaving(true);
     try {
-      await setDoc(doc(db, "users", uid), { rendimientoCommission: val / 100 }, { merge: true });
-      toast("Comisión guardada ✓", "success");
-    } catch (e) { toast("Error al guardar: " + e.message, "error"); }
+      await setDoc(doc(db,"users",uid), { margenesCogs: cogs, margenesCostosFijos: fijos }, { merge: true });
+      toast("Costos guardados ✓", "success");
+    } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
 
-  const fmtARS = n => "$ " + Math.round(n||0).toLocaleString("es-AR");
+  const totalFijos = fijos.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:18,maxWidth:760}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Costos Adicionales</div>
+          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Costo por producto (COGS) y costos fijos mensuales. Se restan para calcular el margen real.</div>
+        </div>
+        <Btn T={T} variant="primary" onClick={save} disabled={saving||!loaded}>{saving?"Guardando…":"Guardar todo"}</Btn>
+      </div>
+
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>📦 Costo por producto (COGS)</div>
+        {cogs.length===0 && <div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Cargá cuánto te cuesta cada producto/SKU.</div>}
+        {cogs.map(r=>(
+          <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <input value={r.sku} onChange={e=>setCogs(cs=>cs.map(x=>x.id===r.id?{...x,sku:e.target.value}:x))} placeholder="SKU / producto" style={{...InputStyle(T),flex:1,fontSize:13}}/>
+            <span style={{fontSize:12,color:T.textSm}}>$</span>
+            <input type="number" min="0" value={r.costo} onChange={e=>setCogs(cs=>cs.map(x=>x.id===r.id?{...x,costo:e.target.value}:x))} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
+            <button onClick={()=>setCogs(cs=>cs.filter(x=>x.id!==r.id))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
+          </div>
+        ))}
+        <button onClick={()=>setCogs(cs=>[...cs,{id:margId(),sku:"",costo:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar producto</button>
+      </div>
+
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>🏢 Costos fijos mensuales</div>
+          <span style={{fontSize:12,fontWeight:700,color:T.accent}}>Total: {fmtARSm(totalFijos)}/mes</span>
+        </div>
+        {fijos.map(r=>(
+          <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <input value={r.nombre} onChange={e=>setFijos(fs=>fs.map(x=>x.id===r.id?{...x,nombre:e.target.value}:x))} placeholder="Ej: Sueldos, Alquiler, Apps" style={{...InputStyle(T),flex:1,fontSize:13}}/>
+            <span style={{fontSize:12,color:T.textSm}}>$</span>
+            <input type="number" min="0" value={r.monto} onChange={e=>setFijos(fs=>fs.map(x=>x.id===r.id?{...x,monto:e.target.value}:x))} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
+            <button onClick={()=>setFijos(fs=>fs.filter(x=>x.id!==r.id))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
+          </div>
+        ))}
+        <button onClick={()=>setFijos(fs=>[...fs,{id:margId(),nombre:"",monto:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar costo fijo</button>
+      </div>
+      <div style={{fontSize:11,color:T.textSm}}>⚙ Quedan guardados. La resta automática en el margen del Dashboard se conecta en la próxima iteración del cálculo.</div>
+    </div>
+  );
+}
+
+// Cotización Dólar — editable + botón para traer el blue actual (dolarapi.com).
+function DolarPanel({ T, uid }) {
+  const toast = useToast();
+  const [valor, setValor] = React.useState("");
+  const [actualizado, setActualizado] = React.useState(null);
+  const [loaded, setLoaded] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [fetching, setFetching] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!uid) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db,"users",uid));
+        const d = snap.exists() ? snap.data().margenesDolar : null;
+        if (d) { setValor(d.valor||""); setActualizado(d.actualizado||null); }
+      } catch (_) {}
+      setLoaded(true);
+    })();
+  }, [uid]);
+
+  async function traerCotizacion() {
+    setFetching(true);
+    try {
+      const r = await fetch("https://dolarapi.com/v1/dolares/blue");
+      const j = await r.json();
+      if (j?.venta) { setValor(j.venta); toast(`Dólar blue: $${j.venta}`, "success"); }
+      else toast("No vino la cotización", "warning");
+    } catch (_) { toast("No se pudo traer la cotización", "error"); }
+    setFetching(false);
+  }
+
+  async function save() {
+    const v = parseFloat(valor);
+    if (!isFinite(v) || v<=0) { toast("Ingresá una cotización válida", "warning"); return; }
+    setSaving(true);
+    const now = new Date().toISOString();
+    try {
+      await setDoc(doc(db,"users",uid), { margenesDolar: { valor: v, actualizado: now } }, { merge: true });
+      setActualizado(now);
+      toast("Cotización guardada ✓", "success");
+    } catch (e) { toast("Error: "+e.message, "error"); }
+    setSaving(false);
+  }
+
   if (!loaded) return <div style={{padding:60,textAlign:"center",color:T.textSm}}>Cargando…</div>;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:560}}>
       <div>
-        <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Comisiones</div>
-        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Comisión de la plataforma de pago que se descuenta de la facturación para calcular la facturación neta y el margen.</div>
+        <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Cotización Dólar</div>
+        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Valor del dólar para convertir costos en USD a pesos. Traé el blue actual o poné el que uses (oficial, MEP).</div>
       </div>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px"}}>
-        <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Comisión sobre facturación (%)</label>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <input type="number" step="0.1" min="0" max="100" value={pct}
-            onChange={e=>setPct(e.target.value)}
-            style={{...InputStyle(T),width:140,fontSize:16,fontWeight:700,padding:"10px 14px"}}/>
-          <span style={{fontSize:16,fontWeight:700,color:T.textSm}}>%</span>
+        <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Cotización (ARS por USD)</label>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:18,fontWeight:700,color:T.textSm}}>$</span>
+          <input type="number" step="1" min="0" value={valor} onChange={e=>setValor(e.target.value)} placeholder="0" style={{...InputStyle(T),width:150,fontSize:18,fontWeight:700,padding:"10px 14px"}}/>
+          <button onClick={traerCotizacion} disabled={fetching} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px"}}>{fetching?"Trayendo…":"↻ Traer blue actual"}</button>
           <Btn T={T} variant="primary" onClick={save} disabled={saving} style={{marginLeft:"auto"}}>{saving?"Guardando…":"Guardar"}</Btn>
         </div>
-        <div style={{fontSize:11,color:T.textSm,marginTop:12,lineHeight:1.5}}>
-          Ej: si vendés {fmtARS(100000)} y la comisión es {pct||0}%, la facturación neta es {fmtARS((1-(parseFloat(pct)||0)/100)*100000)}.
-          Este valor alimenta <strong style={{color:T.text}}>Facturación Neta</strong>, <strong style={{color:T.text}}>Ganancia</strong> y <strong style={{color:T.text}}>True ROAS</strong> en el Dashboard.
-        </div>
+        {actualizado && <div style={{fontSize:11,color:T.textSm,marginTop:12}}>Última actualización: {new Date(actualizado).toLocaleString("es-AR")}</div>}
       </div>
     </div>
   );
 }
 
-// Placeholder para subsecciones pendientes de replicar desde Escalafy.
-function MargenesPlaceholder({ T, title, desc }) {
+// Facturación Externa — ventas fuera de las plataformas (efectivo, mayorista).
+function FacturacionExternaPanel({ T, uid }) {
+  const toast = useToast();
+  const [rows, setRows] = React.useState([]);
+  const [loaded, setLoaded] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!uid) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db,"users",uid));
+        const d = snap.exists() ? snap.data().margenesFactExterna : null;
+        setRows(Array.isArray(d) ? d : []);
+      } catch (_) {}
+      setLoaded(true);
+    })();
+  }, [uid]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await setDoc(doc(db,"users",uid), { margenesFactExterna: rows }, { merge: true });
+      toast("Ventas externas guardadas ✓", "success");
+    } catch (e) { toast("Error: "+e.message, "error"); }
+    setSaving(false);
+  }
+
+  const total = rows.reduce((s,r)=>s+(parseFloat(r.monto)||0),0);
+  const hoy = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
+
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:640}}>
-      <div>
-        <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{title}</div>
-        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>{desc}</div>
-      </div>
-      <div style={{background:T.surface,border:`1px dashed ${T.border}`,borderRadius:12,padding:"40px 24px",textAlign:"center"}}>
-        <div style={{fontSize:34,marginBottom:10,opacity:0.7}}>🚧</div>
-        <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>En construcción</div>
-        <div style={{fontSize:12,color:T.textSm,maxWidth:420,margin:"0 auto",lineHeight:1.5}}>
-          Para dejarla igual a Escalafy, pasame una captura de esta sección y la replico tal cual.
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:760}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Facturación Externa</div>
+          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Ventas fuera de las plataformas conectadas (efectivo, transferencia, mayorista). Se suman a la facturación.</div>
         </div>
+        <Btn T={T} variant="primary" onClick={save} disabled={saving||!loaded}>{saving?"Guardando…":"Guardar"}</Btn>
       </div>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Ventas cargadas</div>
+          <span style={{fontSize:13,fontWeight:800,color:T.green}}>Total: {fmtARSm(total)}</span>
+        </div>
+        {rows.length===0 && <div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Todavía no cargaste ventas externas.</div>}
+        {rows.map(r=>(
+          <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+            <input type="date" value={r.fecha} onChange={e=>setRows(rs=>rs.map(x=>x.id===r.id?{...x,fecha:e.target.value}:x))} style={{...InputStyle(T),width:150,fontSize:13}}/>
+            <input value={r.descripcion} onChange={e=>setRows(rs=>rs.map(x=>x.id===r.id?{...x,descripcion:e.target.value}:x))} placeholder="Descripción" style={{...InputStyle(T),flex:1,minWidth:140,fontSize:13}}/>
+            <span style={{fontSize:12,color:T.textSm}}>$</span>
+            <input type="number" min="0" value={r.monto} onChange={e=>setRows(rs=>rs.map(x=>x.id===r.id?{...x,monto:e.target.value}:x))} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
+            <button onClick={()=>setRows(rs=>rs.filter(x=>x.id!==r.id))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
+          </div>
+        ))}
+        <button onClick={()=>setRows(rs=>[...rs,{id:margId(),fecha:hoy,descripcion:"",monto:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar venta</button>
+      </div>
+      <div style={{fontSize:11,color:T.textSm}}>⚙ Quedan guardadas. La suma automática a la Facturación del Dashboard se conecta en la próxima iteración del cálculo.</div>
     </div>
   );
 }
@@ -20819,9 +21000,9 @@ function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
       <AppTopbar T={T} section="Márgenes" onHome={onHome}/>
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
         {tab==="comisiones" && <ComisionesPanel T={T} uid={uid}/>}
-        {tab==="costos" && <MargenesPlaceholder T={T} title="Costos Adicionales" desc="Costos operativos fijos y costo por producto (COGS) para calcular el margen real."/>}
-        {tab==="dolar" && <MargenesPlaceholder T={T} title="Cotización Dólar" desc="Cotización del dólar para costos/productos en USD."/>}
-        {tab==="facturacion_externa" && <MargenesPlaceholder T={T} title="Facturación Externa" desc="Ventas fuera de las plataformas conectadas, sumadas manualmente a la facturación."/>}
+        {tab==="costos" && <CostosPanel T={T} uid={uid}/>}
+        {tab==="dolar" && <DolarPanel T={T} uid={uid}/>}
+        {tab==="facturacion_externa" && <FacturacionExternaPanel T={T} uid={uid}/>}
       </div>
     </div>
   );
