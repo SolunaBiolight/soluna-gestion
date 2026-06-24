@@ -20736,7 +20736,6 @@ const fmtARSm = n => "$ " + Math.round(n||0).toLocaleString("es-AR");
 // Comisiones — estilo Escalafy. MP y ML automáticos; impuestos, comisión de
 // plataforma y métodos de pago configurables a mano.
 function ComisionesPanel({ T, uid }) {
-  const toast = useToast();
   const [cfg, setCfg] = React.useState({ impuestos:"", shopify:"", metodos:[] });
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -20829,7 +20828,6 @@ function ComisionesPanel({ T, uid }) {
 // Costos Adicionales — COGS por producto + costos fijos mensuales (manuales:
 // ningún sistema sabe cuánto te cuesta el producto).
 function CostosPanel({ T, uid }) {
-  const toast = useToast();
   const [envio, setEnvio] = React.useState("");
   const [cogs, setCogs] = React.useState([]);
   const [fijos, setFijos] = React.useState([]);
@@ -20928,7 +20926,6 @@ const DOLAR_TIPOS = [
   { id:"manual",  label:"Manual",  ep:null },
 ];
 function DolarPanel({ T, uid }) {
-  const toast = useToast();
   const [tipo, setTipo] = React.useState("blue");
   const [valor, setValor] = React.useState("");
   const [ajuste, setAjuste] = React.useState("");
@@ -21027,7 +21024,6 @@ function DolarPanel({ T, uid }) {
 
 // Facturación Externa — ventas fuera de las plataformas (efectivo, mayorista).
 function FacturacionExternaPanel({ T, uid }) {
-  const toast = useToast();
   const [rows, setRows] = React.useState([]);
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
