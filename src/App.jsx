@@ -700,8 +700,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
   const GROUPS = [
     // Inicio queda suelto arriba de todo, sin etiqueta de grupo
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
+    {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
     { group:"ANALYTICS" },
-    {id:"rendimiento", label:"Dashboard", icon:"M18 20V10M12 20V4M6 20v-6", adminOnly:true},
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
@@ -20764,31 +20765,18 @@ function MargenesPlaceholder({ T, title, desc }) {
 
 function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
   const uid = user?.uid;
-  const [days, setDays] = React.useState(30);
-  const [useCustomDate, setUseCustomDate] = React.useState(false);
-  const [dateFrom, setDateFrom] = React.useState("");
-  const [dateTo, setDateTo] = React.useState("");
+
+  // El sub-tab "Dashboard" ES el dashboard financiero completo (AppRendimiento):
+  // revenue/profit/ROAS, gráfico, calendario de performance, proyección 30d,
+  // tabla diaria y por día de semana. Renderiza su propio topbar + controles.
+  if (tab === "dashboard") {
+    return <AppRendimiento T={T} user={user} onHome={onHome}/>;
+  }
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Márgenes" onHome={onHome}/>
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
-        {tab==="dashboard" && (
-          <div style={{display:"flex",flexDirection:"column",gap:18}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <span style={{fontSize:12,color:T.textSm,fontWeight:500}}>Período:</span>
-              {[{d:1,l:"Hoy"},{d:7,l:"7d"},{d:30,l:"30d"}].map(p=>(
-                <button key={p.d} onClick={()=>{setUseCustomDate(false);setDays(p.d);}}
-                  style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:`1px solid ${!useCustomDate&&days===p.d?T.accentSolid:T.border}`,borderRadius:6,background:!useCustomDate&&days===p.d?T.accentSolid:"transparent",color:!useCustomDate&&days===p.d?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{p.l}</button>
-              ))}
-              <DateRangePicker T={T}
-                since={useCustomDate?dateFrom:new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
-                until={useCustomDate?dateTo:new Date().toISOString().slice(0,10)}
-                onChange={(s,u)=>{setUseCustomDate(true);setDateFrom(s);setDateTo(u);const diff=Math.round((new Date(u)-new Date(s))/86400000)+1;setDays(diff);}}/>
-            </div>
-            <MargenesTab T={T} uid={uid} days={days} useCustomDate={useCustomDate} dateFrom={dateFrom} dateTo={dateTo}/>
-          </div>
-        )}
         {tab==="comisiones" && <ComisionesPanel T={T} uid={uid}/>}
         {tab==="costos" && <MargenesPlaceholder T={T} title="Costos Adicionales" desc="Costos operativos fijos y costo por producto (COGS) para calcular el margen real."/>}
         {tab==="dolar" && <MargenesPlaceholder T={T} title="Cotización Dólar" desc="Cotización del dólar para costos/productos en USD."/>}
@@ -22872,7 +22860,7 @@ function AppRendimiento({T, user, onHome}) {
 
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Dashboard" onHome={onHome}>
+      <AppTopbar T={T} section="Márgenes" onHome={onHome}>
         <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:0}}>
           {[{d:7,l:"7d"},{d:30,l:"30d"},{d:60,l:"60d"},{d:90,l:"90d"}].map(p=>(
             <button key={p.d} onClick={()=>{setUseCustom(false);setDays(p.d);loadData(p.d,"","");}}
@@ -23309,7 +23297,7 @@ export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","arca","meta","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock","ml","tareas","rendimiento"];
+  const VALID_PAGES = ["home","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock","ml","tareas","rendimiento"];
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
   // Detectar ruta pública de colaborador: #/colaborador/TOKEN
   const _colabMatch = _initialHash.match(/^colaborador\/([a-z0-9]{8,})/i);
@@ -23323,7 +23311,7 @@ export default function App() {
   // Tablero compartido: #/tablero/BOARD_TOKEN
   const _boardMatch = _initialHash.match(/^tablero\/([a-z0-9]{8,})/i);
   const [boardToken, setBoardToken] = useState(_boardMatch ? _boardMatch[1] : null);
-  const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "home");
+  const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "margenes");
   const setPage = (p) => {
     _setPage(p);
     if (typeof window !== "undefined") {
