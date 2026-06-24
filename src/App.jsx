@@ -701,7 +701,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     // Sin títulos de grupo — todas las secciones al mismo nivel, en orden de uso.
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
-      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
@@ -20752,11 +20752,14 @@ function ComisionesPanel({ T, uid }) {
         if (d) setCfg({ impuestos:d.impuestos??"", shopify:d.shopify??"", metodos:(d.metodos && typeof d.metodos==="object" && !Array.isArray(d.metodos)) ? d.metodos : {} });
       } catch (_) {}
       try {
-        // Métodos de pago detectados en las órdenes (excluye MP/ML que son automáticos).
+        // Métodos de pago detectados en las órdenes (solo TN/Shopify). Se excluye
+        // ML (sus pagos son Mercado Pago = automático) y los sub-tipos internos de
+        // MP (credit_card, account_money, ticket, etc.) que no son medios propios.
         const r = await fetch(`/api/stock?action=products&uid=${uid}&days=90`);
         const j = await r.json();
-        const names = [...Object.keys(j.by_payment||{}), ...Object.keys(j.ml_data?.by_payment||{})]
-          .filter(n => n && !/mercado\s*pago|mercado\s*libre|^otro$|^pagado$/i.test(String(n).trim()));
+        const MP_CODE = /^(account_money|credit_card|debit_card|prepaid_card|ticket|bank_transfer|digital_currency|atm|crypto_transfer|voucher_card|mercado\s*pago|mercado\s*libre|otro|pagado)$/i;
+        const names = Object.keys(j.by_payment||{})
+          .filter(n => { const t=String(n).trim(); return t && !t.includes(",") && !MP_CODE.test(t); });
         setDetected([...new Set(names)]);
       } catch (_) {}
       setLoaded(true);
