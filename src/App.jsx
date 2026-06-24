@@ -23364,6 +23364,8 @@ function AppRendimiento({T, user, onHome}) {
               {label:"CPA",        val:fmtM(tot.cpa),             good:true,                          hint:"Ad Spend / Órdenes"},
               {label:"Órdenes",    val:fmtInt(tot.orders),         good:(tot.orders||0)>0,             hint:"Con revenue"},
               {label:"Margen",     val:fmtPct(tot.profitMargin),   good:(tot.profitMargin||0)>0.05,    hint:"Profit / Revenue"},
+              {label:"MER %",      val:fmtPct(tot.mer),            good:true,                          hint:"Ad Spend / Revenue"},
+              {label:"Break Even", val:fmtX(tot.breakEvenRoas),    good:true,                          hint:"ROAS de equilibrio"},
               {label:"CTR",        val:fmtPct(tot.ctr,2),          good:(tot.ctr||0)>0.01,             hint:"Clicks / Impresiones"},
               {label:"Días profit",val:`${profitDays}/${dailyRows.length}`, good:profitDays>=lossDays, hint:"Días positivos"},
             ].map(k=>(
@@ -23371,6 +23373,23 @@ function AppRendimiento({T, user, onHome}) {
                 <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
                 <div style={{fontSize:15,fontWeight:800,color:k.good?T.text:T.red,letterSpacing:-0.5}}>{k.val}</div>
                 <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desglose de costos — estilo Escalafy */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:18}}>
+            {[
+              {label:"Costos de Productos",  val:tot.costoProductos,     color:"#ef4444", icon:"📦"},
+              {label:"Costos de Envío",      val:tot.costoEnvio,         color:"#f97316", icon:"🚚"},
+              {label:"Impuestos",            val:tot.impuestos,          color:"#eab308", icon:"🧾"},
+              {label:"Comisiones Plataforma",val:tot.comisionPlataforma, color:"#a855f7", icon:"🏪"},
+              {label:"Comisiones de Pago",   val:tot.comisionPago,       color:"#ec4899", icon:"💳"},
+              {label:"Costos Adicionales",   val:tot.costosAdicionales,  color:"#6366f1", icon:"🏢"},
+            ].map(k=>(
+              <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
+                <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.icon} {k.label}</div>
+                <div style={{fontSize:17,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{fmtM(k.val||0)}</div>
               </div>
             ))}
           </div>

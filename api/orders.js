@@ -177,8 +177,8 @@ export default async function handler(req, res) {
           const mlOrd = j.ml_data?.daily_orders  || {};
           for (const [day,v] of Object.entries(mlRev)) dailyRevenue[day] = (dailyRevenue[day]||0) + (v||0);
           for (const [day,v] of Object.entries(mlOrd)) dailyOrders[day]  = (dailyOrders[day]||0)  + (v||0);
-          return { dailyRevenue, dailyOrders };
-        } catch(_) { return { dailyRevenue:{}, dailyOrders:{} }; }
+          return { dailyRevenue, dailyOrders, raw: j };
+        } catch(_) { return { dailyRevenue:{}, dailyOrders:{}, raw:{} }; }
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
@@ -190,10 +190,64 @@ export default async function handler(req, res) {
       ]);
       const rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
       const prevRows = buildRendRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
-      const totals = computeRendTotals(rows); const prevTotals = computeRendTotals(prevRows);
+      let totals = computeRendTotals(rows); let prevTotals = computeRendTotals(prevRows);
       const byDow = computeRendDow(rows);
+
+      // ── Capas de costo configuradas en Márgenes → margen real estilo Escalafy ──
+      const cogsMap   = userData.margenesCogs && typeof userData.margenesCogs==="object" && !Array.isArray(userData.margenesCogs) ? userData.margenesCogs : {};
+      const comCfg    = userData.margenesComisionesCfg || {};
+      const metodos   = comCfg.metodos && typeof comCfg.metodos==="object" ? comCfg.metodos : {};
+      const envioProm = parseFloat(userData.margenesEnvioProm) || 0;
+      const fijos     = Array.isArray(userData.margenesCostosFijos) ? userData.margenesCostosFijos : [];
+      const dolarCfg  = userData.margenesDolar || {};
+      const factExt   = Array.isArray(userData.margenesFactExterna) ? userData.margenesFactExterna : [];
+      const fijosMensual = fijos.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
+      const pctImp    = (parseFloat(comCfg.impuestos)||0)/100;
+      const pctPlat   = (parseFloat(comCfg.shopify)||0)/100;
+      const metPcts   = Object.values(metodos).map(m=>parseFloat(m.pct)||0).filter(x=>x>0);
+      const pctPago   = metPcts.length ? (metPcts.reduce((a,b)=>a+b,0)/metPcts.length)/100 : 0;
+      const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
+
+      function aplicarCostos(tot, raw, sinceR, untilR, dias) {
+        // COGS = unidades vendidas × costo cargado por producto/variante.
+        let cogs = 0;
+        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
+          const c = parseFloat(cogsMap[v.sku || String(v.id)]); if (c>0) cogs += c*(v.units_sold||0);
+        }
+        for (const m of (raw?.ml_data?.ml_products||[])) {
+          const c = parseFloat(cogsMap["ml:"+m.id]); if (c>0) cogs += c*(m.units||0);
+        }
+        const storeRev = Object.values(raw?.daily_revenue||{}).reduce((a,b)=>a+b,0);
+        const factExtTot = factExt.filter(r => r.fecha && r.fecha>=sinceR && r.fecha<=untilR).reduce((s,r)=>s+(parseFloat(r.monto)||0),0);
+        const revenue   = (tot.revenue||0) + factExtTot;
+        const impuestos = revenue * pctImp;
+        const comPlat   = storeRev * pctPlat;
+        const comPago   = storeRev * pctPago;
+        const envio     = (tot.orders||0) * envioProm;
+        const costosAdic= dias>0 ? (fijosMensual/30)*dias : 0;
+        const adSpendEf = (tot.adSpend||0) * (1+feeAd);
+        const netRevenue= revenue - impuestos - comPlat - comPago;
+        const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;
+        return { ...tot,
+          revenue, adSpend: adSpendEf, netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
+          costoProductos: +cogs.toFixed(2), impuestos: +impuestos.toFixed(2),
+          comisionPlataforma: +comPlat.toFixed(2), comisionPago: +comPago.toFixed(2),
+          costoEnvio: +envio.toFixed(2), costosAdicionales: +costosAdic.toFixed(2),
+          facturacionExterna: +factExtTot.toFixed(2),
+          profitMargin: revenue>0 ? profit/revenue : 0,
+          roas: adSpendEf>0 ? revenue/adSpendEf : 0,
+          trueRoas: adSpendEf>0 ? netRevenue/adSpendEf : 0,
+          cpa: (tot.orders||0)>0 ? adSpendEf/tot.orders : 0,
+          mer: revenue>0 ? adSpendEf/revenue : 0,
+          breakEvenRoas: (1-(pctImp+pctPlat+pctPago))>0 ? 1/(1-(pctImp+pctPlat+pctPago)) : 0,
+        };
+      }
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1);
+
       return res.json({ rows, prevRows, totals, prevTotals, byDow, since, until, prevSince, prevUntil,
-        meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length } });
+        meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
+          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, fijosMensual, feeAd: feeAd*100 } } });
     } catch(e) { console.error("Dashboard error:", e); return res.status(500).json({ error: e.message }); }
   }
 
