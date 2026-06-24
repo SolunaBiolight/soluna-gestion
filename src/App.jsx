@@ -19150,7 +19150,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,fontSize:12,fontWeight:600}}>
                     <span style={{display:"flex",alignItems:"center",gap:8}}>
                       <span style={{fontSize:14}}>📋</span>
-                      Plantilla recomendada — copiá, completá con tu producto y pegá acá abajo
+                      Prompt recomendado — pegalo en ChatGPT, Claude o Gemini con los datos de tu producto, y pegá acá abajo el texto que te devuelva la IA
                     </span>
                     <span style={{fontSize:10,color:T.textSm,transform:showBrandTemplate?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
                   </button>
@@ -19310,7 +19310,7 @@ Generá todo el sistema en un documento único para ESTE PRODUCTO. Empezá ahora
                       <div style={{marginTop:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
                         <div style={{padding:"10px 14px",background:T.bg,borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
                           <div style={{fontSize:11,color:T.textMd,lineHeight:1.55,flex:1,minWidth:280}}>
-                            Completá los campos marcados con <code style={{background:T.card,padding:"1px 5px",borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:10,color:T.accent}}>[PRODUCTO]</code> con tus datos reales. Si tenés varios productos, hacé un set por cada uno y pegá todo. Cuanto más data, mejor copy.
+                            Copiá este prompt, completá los campos marcados con <code style={{background:T.card,padding:"1px 5px",borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:10,color:T.accent}}>[PRODUCTO]</code> con tus datos reales y pegalo en <strong>ChatGPT, Claude o Gemini</strong>. El texto que te devuelva la IA es lo que va en el campo de abajo. Si tenés varios productos, hacé un set por cada uno. Cuanto más data, mejor copy.
                           </div>
                           <button onClick={async()=>{
                             try { await navigator.clipboard.writeText(BRAND_TEMPLATE); setBrandTemplateCopied(true); setTimeout(()=>setBrandTemplateCopied(false),2000); }
