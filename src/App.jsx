@@ -850,8 +850,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
         })}
       </nav>
 
-      {/* Org Switcher (multi-org F1) — encima del User Section */}
-      <OrgSwitcher T={T} user={user} userPlan={userPlan} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={onOpenCreateOrg} onOpenManageOrg={onOpenManageOrg} collapsed={collapsed}/>
+      {/* Multi-tienda cancelado — una sola tienda por usuario. Sin selector de org. */}
 
       {/* User Section */}
       <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm,marginTop:DS.sp.sm}}>
