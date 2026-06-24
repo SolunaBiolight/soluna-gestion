@@ -7135,6 +7135,29 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           sub={stockAlertas.length>0?"Productos en alerta":"Sin alertas"} onClick={()=>onNavigate("stock")}/>
       </div>
 
+      {/* Desglose TN vs ML */}
+      {!orderStatsLoading && orderStats?.breakdown && (
+        <div style={{display:"flex",gap:DS.sp.lg,marginBottom:DS.sp.lg,padding:"8px 14px",background:T.surface,borderRadius:DS.r.md,border:`1px solid ${T.border}`,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,textTransform:"uppercase",letterSpacing:0.6,opacity:0.6}}>Desglose</span>
+          <div style={{display:"flex",gap:4,alignItems:"center"}}>
+            <span style={{fontSize:10,background:"#2563eb22",color:"#2563eb",borderRadius:4,padding:"1px 6px",fontWeight:DS.w.bold}}>TN</span>
+            <span style={{fontSize:DS.font.sm,color:T.text,fontWeight:DS.w.semibold}}>{fmtARS(orderStats.breakdown.primary?.revenue||0)}</span>
+            <span style={{fontSize:DS.font.xs,color:T.textSm}}>· {fmt(orderStats.breakdown.primary?.count||0)} pedidos</span>
+          </div>
+          <span style={{color:T.border,fontSize:DS.font.xs}}>+</span>
+          <div style={{display:"flex",gap:4,alignItems:"center"}}>
+            <span style={{fontSize:10,background:"#f59e0b22",color:"#d97706",borderRadius:4,padding:"1px 6px",fontWeight:DS.w.bold}}>ML</span>
+            <span style={{fontSize:DS.font.sm,color:T.text,fontWeight:DS.w.semibold}}>{fmtARS(orderStats.breakdown.ml?.revenue||0)}</span>
+            <span style={{fontSize:DS.font.xs,color:T.textSm}}>· {fmt(orderStats.breakdown.ml?.count||0)} pedidos</span>
+          </div>
+          <span style={{color:T.border,fontSize:DS.font.xs}}>=</span>
+          <div style={{display:"flex",gap:4,alignItems:"center"}}>
+            <span style={{fontSize:DS.font.sm,color:T.text,fontWeight:DS.w.bold}}>{fmtARS(orderStats.current?.revenue||0)}</span>
+            <span style={{fontSize:DS.font.xs,color:T.textSm}}>· {fmt(orderStats.current?.count||0)} pedidos totales</span>
+          </div>
+        </div>
+      )}
+
       {/* Pendientes por categoría */}
       <Card T={T} padding="lg" style={{border:`1px solid ${T.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:totalPendientes>0?DS.sp.xl:0}}>
