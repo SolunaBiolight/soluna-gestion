@@ -20757,9 +20757,9 @@ function ComisionesPanel({ T, uid }) {
         // MP (credit_card, account_money, ticket, etc.) que no son medios propios.
         const r = await fetch(`/api/stock?action=products&uid=${uid}&days=90`);
         const j = await r.json();
-        const MP_CODE = /^(account_money|credit_card|debit_card|prepaid_card|ticket|bank_transfer|digital_currency|atm|crypto_transfer|voucher_card|mercado\s*pago|mercado\s*libre|otro|pagado)$/i;
+        const isMP = t => /mercado\s*pago|mercado\s*libre/i.test(t) || /^(account_money|credit_card|debit_card|prepaid_card|ticket|bank_transfer|digital_currency|atm|crypto_transfer|voucher_card|otro|pagado)$/i.test(t);
         const names = Object.keys(j.by_payment||{})
-          .filter(n => { const t=String(n).trim(); return t && !t.includes(",") && !MP_CODE.test(t); });
+          .filter(n => { const t=String(n).trim(); return t && !t.includes(",") && !isMP(t); });
         setDetected([...new Set(names)]);
       } catch (_) {}
       setLoaded(true);
@@ -20999,43 +20999,43 @@ const DOLAR_TIPOS = [
 function DolarPanel({ T, uid }) {
   const [tipo, setTipo] = React.useState("blue");
   const [valor, setValor] = React.useState("");
-  const [ajuste, setAjuste] = React.useState("");
+  const [fee, setFee] = React.useState(""); // % que se suma al Ad Spend (costo del dólar/tarjeta para Meta)
   const [actualizado, setActualizado] = React.useState(null);
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [fetching, setFetching] = React.useState(false);
 
-  React.useEffect(() => {
-    if (!uid) return;
-    (async () => {
-      try {
-        const snap = await getDoc(doc(db,"users",uid));
-        const d = snap.exists() ? snap.data().margenesDolar : null;
-        if (d) { setTipo(d.tipo||"blue"); setValor(d.valor||""); setAjuste(d.ajuste??""); setActualizado(d.actualizado||null); }
-      } catch (_) {}
-      setLoaded(true);
-    })();
-  }, [uid]);
-
-  async function traerCotizacion(tipoId) {
+  async function traerCotizacion(tipoId, silent) {
     const t = DOLAR_TIPOS.find(x=>x.id===tipoId);
     if (!t || !t.ep) return;
     setFetching(true);
     try {
       const r = await fetch(`https://dolarapi.com/v1/dolares/${t.ep}`);
       const j = await r.json();
-      if (j?.venta) { setValor(j.venta); toast(`Dólar ${t.label}: $${j.venta}`, "success"); }
-      else toast("No vino la cotización", "warning");
-    } catch (_) { toast("No se pudo traer la cotización", "error"); }
+      if (j?.venta) { setValor(j.venta); setActualizado(new Date().toISOString()); if(!silent) toast(`Dólar ${t.label}: $${j.venta}`, "success"); }
+      else if(!silent) toast("No vino la cotización", "warning");
+    } catch (_) { if(!silent) toast("No se pudo traer la cotización", "error"); }
     setFetching(false);
   }
+
+  React.useEffect(() => {
+    if (!uid) return;
+    (async () => {
+      let savedTipo = "blue";
+      try {
+        const snap = await getDoc(doc(db,"users",uid));
+        const d = snap.exists() ? snap.data().margenesDolar : null;
+        if (d) { savedTipo=d.tipo||"blue"; setTipo(savedTipo); setValor(d.valor||""); setFee(d.feeAdSpend??d.ajuste??""); setActualizado(d.actualizado||null); }
+      } catch (_) {}
+      setLoaded(true);
+      if (savedTipo !== "manual") traerCotizacion(savedTipo, true); // auto-actualiza al entrar
+    })();
+  }, [uid]);
 
   function onChangeTipo(id) {
     setTipo(id);
     if (id !== "manual") traerCotizacion(id);
   }
-
-  const efectivo = (parseFloat(valor)||0) * (1 + (parseFloat(ajuste)||0)/100);
 
   async function save() {
     const v = parseFloat(valor);
@@ -21043,20 +21043,22 @@ function DolarPanel({ T, uid }) {
     setSaving(true);
     const now = new Date().toISOString();
     try {
-      await setDoc(doc(db,"users",uid), { margenesDolar: { tipo, valor: v, ajuste: parseFloat(ajuste)||0, efectivo: Math.round(efectivo), actualizado: now } }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesDolar: { tipo, valor: v, feeAdSpend: parseFloat(fee)||0, actualizado: now } }, { merge: true });
       setActualizado(now);
-      toast("Cotización guardada ✓", "success");
+      toast("Guardado ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
 
   if (!loaded) return <div style={{padding:60,textAlign:"center",color:T.textSm}}>Cargando…</div>;
 
+  const esManual = tipo==="manual";
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:600}}>
       <div>
         <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Cotización Dólar</div>
-        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Elegí qué dólar usar para convertir costos en USD a pesos. El Dashboard siempre muestra todo en pesos con este valor.</div>
+        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Para convertir costos en USD a pesos. Se actualiza solo según el tipo elegido — el Dashboard siempre muestra todo en pesos.</div>
       </div>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px"}}>
         <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Tipo de dólar</label>
@@ -21067,27 +21069,27 @@ function DolarPanel({ T, uid }) {
         </div>
         <div style={{display:"flex",alignItems:"flex-end",gap:14,flexWrap:"wrap"}}>
           <div>
-            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}}>Cotización (ARS por USD)</label>
+            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}}>Cotización (ARS por USD){!esManual && <span style={{color:T.textSm}}> · automático</span>}</label>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:18,fontWeight:700,color:T.textSm}}>$</span>
-              <input type="number" step="1" min="0" value={valor} onChange={e=>setValor(e.target.value)} disabled={tipo!=="manual"&&fetching} placeholder="0" style={{...InputStyle(T),width:140,fontSize:18,fontWeight:700,padding:"10px 14px"}}/>
+              <input type="number" step="1" min="0" value={valor} onChange={e=>setValor(e.target.value)} disabled={!esManual} placeholder="0" style={{...InputStyle(T),width:140,fontSize:18,fontWeight:700,padding:"10px 14px",opacity:esManual?1:0.7,cursor:esManual?"text":"not-allowed"}}/>
             </div>
           </div>
-          <div>
-            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}}>Ajuste manual</label>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <input type="number" step="0.5" value={ajuste} onChange={e=>setAjuste(e.target.value)} placeholder="0" style={{...InputStyle(T),width:80,fontSize:14,padding:"10px 12px",textAlign:"right"}}/>
-              <span style={{fontSize:14,color:T.textSm}}>%</span>
-            </div>
-          </div>
-          {tipo!=="manual" && <button onClick={()=>traerCotizacion(tipo)} disabled={fetching} style={{...BtnSecondary(T),fontSize:12,padding:"10px 12px"}}>{fetching?"Trayendo…":"↻ Actualizar"}</button>}
+          {!esManual && <button onClick={()=>traerCotizacion(tipo)} disabled={fetching} style={{...BtnSecondary(T),fontSize:12,padding:"10px 12px"}}>{fetching?"Trayendo…":"↻ Actualizar"}</button>}
           <Btn T={T} variant="primary" onClick={save} disabled={saving} style={{marginLeft:"auto"}}>{saving?"Guardando…":"Guardar"}</Btn>
         </div>
-        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-          <span style={{fontSize:12,color:T.textSm}}>Cotización efectiva (con ajuste):</span>
-          <span style={{fontSize:18,fontWeight:800,color:T.accent}}>{fmtARSm(efectivo)}</span>
+        {actualizado && <div style={{fontSize:11,color:T.textSm,marginTop:12}}>Última actualización: {new Date(actualizado).toLocaleString("es-AR")}</div>}
+      </div>
+
+      {/* Fee del dólar para Ad Spend */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>💳 Fee del dólar para Meta Ads</div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Meta cobra la publicidad en USD. Lo que te cuesta <strong style={{color:T.text}}>de más</strong> comprar esos dólares (recargo de la tarjeta, fee de la agencia, % de tu app de pago, etc.) <strong style={{color:T.text}}>se suma al Ad Spend</strong> porque es parte de lo que te cuesta pautar.</div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:13,color:T.textSm,flex:1}}>% que se suma al Ad Spend</span>
+          <input type="number" step="0.5" min="0" value={fee} onChange={e=>setFee(e.target.value)} placeholder="0" style={{...InputStyle(T),width:90,fontSize:14,padding:"10px 12px",textAlign:"right"}}/>
+          <span style={{fontSize:14,color:T.textSm}}>%</span>
         </div>
-        {actualizado && <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Última actualización: {new Date(actualizado).toLocaleString("es-AR")}</div>}
       </div>
     </div>
   );
