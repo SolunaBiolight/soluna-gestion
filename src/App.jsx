@@ -20733,48 +20733,95 @@ function MargenesTab({ T, uid, days, useCustomDate, dateFrom, dateTo }) {
 const margId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 const fmtARSm = n => "$ " + Math.round(n||0).toLocaleString("es-AR");
 
-// Comisiones — AUTOMÁTICAS: se leen del fee real de cada orden (no se cargan a
-// mano). Panel informativo que muestra qué se detecta por plataforma.
+// Comisiones — estilo Escalafy. MP y ML automáticos; impuestos, comisión de
+// plataforma y métodos de pago configurables a mano.
 function ComisionesPanel({ T, uid }) {
-  const [efectiva, setEfectiva] = React.useState(null);
+  const toast = useToast();
+  const [cfg, setCfg] = React.useState({ impuestos:"", shopify:"", metodos:[] });
+  const [loaded, setLoaded] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+
   React.useEffect(() => {
     if (!uid) return;
     (async () => {
       try {
         const snap = await getDoc(doc(db, "users", uid));
-        const c = snap.exists() ? snap.data().rendimientoCommission : null;
-        if (typeof c === "number") setEfectiva(+(c * 100).toFixed(2));
+        const d = snap.exists() ? snap.data().margenesComisionesCfg : null;
+        if (d) setCfg({ impuestos:d.impuestos??"", shopify:d.shopify??"", metodos:Array.isArray(d.metodos)?d.metodos:[] });
       } catch (_) {}
+      setLoaded(true);
     })();
   }, [uid]);
 
-  const plats = [
-    { nombre:"Mercado Libre", icon:"🛒", desc:"Comisión real de cada venta (categoría, FULL, cuotas y costo de publicación), tomada directo de la orden." },
-    { nombre:"Mercado Pago", icon:"💳", desc:"Comisión de la pasarela + IVA 21% sobre la comisión, en ventas de Tienda Nube / Shopify." },
-  ];
+  async function save() {
+    setSaving(true);
+    try { await setDoc(doc(db,"users",uid), { margenesComisionesCfg: cfg }, { merge:true }); toast("Comisiones guardadas ✓","success"); }
+    catch (e) { toast("Error: "+e.message, "error"); }
+    setSaving(false);
+  }
+  const setMet = (id,patch)=>setCfg(c=>({...c,metodos:c.metodos.map(m=>m.id===id?{...m,...patch}:m)}));
+
+  if (!loaded) return <div style={{padding:60,textAlign:"center",color:T.textSm}}>Cargando…</div>;
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:680}}>
-      <div>
-        <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Comisiones</div>
-        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Se leen <strong style={{color:T.text}}>automáticamente</strong> de cada orden — no hace falta cargar nada. Se descuentan solas para calcular la facturación neta y el margen.</div>
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:720}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Comisiones</div>
+          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Mercado Pago y Mercado Libre se leen automáticos. Impuestos, comisión de plataforma y métodos de pago los configurás acá.</div>
+        </div>
+        <Btn T={T} variant="primary" onClick={save} disabled={saving}>{saving?"Guardando…":"Guardar"}</Btn>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
-        {plats.map(p=>(
-          <div key={p.nombre} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,gap:8}}>
-              <span style={{fontSize:14,fontWeight:700,color:T.text}}>{p.icon} {p.nombre}</span>
+
+      {/* Automáticos */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
+        {[{n:"Mercado Pago",d:"Comisión por transacción, automática desde tu cuenta."},{n:"Mercado Libre",d:"Comisión de venta, cuotas y envíos — automática desde ML."}].map(p=>(
+          <div key={p.n} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,gap:8}}>
+              <span style={{fontSize:13,fontWeight:700,color:T.text}}>{p.n}</span>
               <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,whiteSpace:"nowrap"}}>● AUTOMÁTICO</span>
             </div>
-            <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{p.desc}</div>
+            <div style={{fontSize:11,color:T.textSm,lineHeight:1.4}}>{p.d}</div>
           </div>
         ))}
       </div>
-      {efectiva!=null && (
-        <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 16px",fontSize:12,color:T.textMd,lineHeight:1.5}}>
-          Comisión promedio aplicada hoy en el Dashboard: <strong style={{color:T.text}}>{efectiva}%</strong>. Cuando conectemos el fee real por orden de ML, este número va a reflejar la comisión exacta de cada venta en vez de un promedio.
+
+      {/* Impuestos + comisión de plataforma */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Impuestos de la tienda</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>% sobre el total facturado (IVA, IIBB, etc.).</div>
+          </div>
+          <input type="number" step="0.1" min="0" value={cfg.impuestos} onChange={e=>setCfg(c=>({...c,impuestos:e.target.value}))} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
+          <span style={{fontSize:13,color:T.textSm}}>%</span>
         </div>
-      )}
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Comisión Shopify</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Por transacción, si no usás Shopify Payments.</div>
+          </div>
+          <input type="number" step="0.1" min="0" value={cfg.shopify} onChange={e=>setCfg(c=>({...c,shopify:e.target.value}))} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
+          <span style={{fontSize:13,color:T.textSm}}>%</span>
+        </div>
+      </div>
+
+      {/* Métodos de pago */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Comisiones por método de pago</div>
+        {cfg.metodos.length===0 && <div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Agregá métodos con comisión propia (ej: transferencia, AstroPay).</div>}
+        {cfg.metodos.map(m=>(
+          <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+            <input value={m.nombre} onChange={e=>setMet(m.id,{nombre:e.target.value})} placeholder="Método de pago" style={{...InputStyle(T),flex:1,minWidth:140,fontSize:13}}/>
+            <span style={{fontSize:12,color:T.textSm}}>%</span>
+            <input type="number" step="0.1" min="0" value={m.pct} onChange={e=>setMet(m.id,{pct:e.target.value})} placeholder="0" style={{...InputStyle(T),width:74,fontSize:13,textAlign:"right"}}/>
+            <span style={{fontSize:12,color:T.textSm}}>fijo $</span>
+            <input type="number" min="0" value={m.fijo} onChange={e=>setMet(m.id,{fijo:e.target.value})} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
+            <button onClick={()=>setCfg(c=>({...c,metodos:c.metodos.filter(x=>x.id!==m.id)}))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
+          </div>
+        ))}
+        <button onClick={()=>setCfg(c=>({...c,metodos:[...c.metodos,{id:margId(),nombre:"",pct:"",fijo:""}]}))} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar método de pago</button>
+      </div>
     </div>
   );
 }
@@ -20783,6 +20830,7 @@ function ComisionesPanel({ T, uid }) {
 // ningún sistema sabe cuánto te cuesta el producto).
 function CostosPanel({ T, uid }) {
   const toast = useToast();
+  const [envio, setEnvio] = React.useState("");
   const [cogs, setCogs] = React.useState([]);
   const [fijos, setFijos] = React.useState([]);
   const [loaded, setLoaded] = React.useState(false);
@@ -20794,6 +20842,7 @@ function CostosPanel({ T, uid }) {
       try {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data() : {};
+        setEnvio(d.margenesEnvioProm ?? "");
         setCogs(Array.isArray(d.margenesCogs) ? d.margenesCogs : []);
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
       } catch (_) {}
@@ -20804,7 +20853,7 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      await setDoc(doc(db,"users",uid), { margenesCogs: cogs, margenesCostosFijos: fijos }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: cogs, margenesCostosFijos: fijos }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -20816,10 +20865,22 @@ function CostosPanel({ T, uid }) {
     <div style={{display:"flex",flexDirection:"column",gap:18,maxWidth:760}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
         <div>
-          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Costos Adicionales</div>
-          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Costo por producto (COGS) y costos fijos mensuales. Se restan para calcular el margen real.</div>
+          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Costos</div>
+          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Envío, costo de producto (COGS) y costos fijos / empleados. Se restan de la ganancia neta.</div>
         </div>
         <Btn T={T} variant="primary" onClick={save} disabled={saving||!loaded}>{saving?"Guardando…":"Guardar todo"}</Btn>
+      </div>
+
+      {/* Costo promedio de envío */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text}}>🚚 Costo promedio de envío</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Por orden. Se usa cuando el costo real del envío no viene en la orden.</div>
+          </div>
+          <span style={{fontSize:13,color:T.textSm}}>$</span>
+          <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
+        </div>
       </div>
 
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
@@ -20838,7 +20899,7 @@ function CostosPanel({ T, uid }) {
 
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>🏢 Costos fijos mensuales</div>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>🏢 Costos fijos / empleados</div>
           <span style={{fontSize:12,fontWeight:700,color:T.accent}}>Total: {fmtARSm(totalFijos)}/mes</span>
         </div>
         {fijos.map(r=>(
@@ -20856,10 +20917,21 @@ function CostosPanel({ T, uid }) {
   );
 }
 
-// Cotización Dólar — editable + botón para traer el blue actual (dolarapi.com).
+// Cotización Dólar — estilo Escalafy: elegís el tipo (oficial/blue/MEP/cripto)
+// y se trae solo, o lo ponés manual. + ajuste manual %. El dashboard convierte
+// todo a pesos con este valor.
+const DOLAR_TIPOS = [
+  { id:"oficial", label:"Oficial", ep:"oficial" },
+  { id:"blue",    label:"Blue",    ep:"blue" },
+  { id:"mep",     label:"MEP",     ep:"bolsa" },
+  { id:"cripto",  label:"Cripto",  ep:"cripto" },
+  { id:"manual",  label:"Manual",  ep:null },
+];
 function DolarPanel({ T, uid }) {
   const toast = useToast();
+  const [tipo, setTipo] = React.useState("blue");
   const [valor, setValor] = React.useState("");
+  const [ajuste, setAjuste] = React.useState("");
   const [actualizado, setActualizado] = React.useState(null);
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -20871,22 +20943,31 @@ function DolarPanel({ T, uid }) {
       try {
         const snap = await getDoc(doc(db,"users",uid));
         const d = snap.exists() ? snap.data().margenesDolar : null;
-        if (d) { setValor(d.valor||""); setActualizado(d.actualizado||null); }
+        if (d) { setTipo(d.tipo||"blue"); setValor(d.valor||""); setAjuste(d.ajuste??""); setActualizado(d.actualizado||null); }
       } catch (_) {}
       setLoaded(true);
     })();
   }, [uid]);
 
-  async function traerCotizacion() {
+  async function traerCotizacion(tipoId) {
+    const t = DOLAR_TIPOS.find(x=>x.id===tipoId);
+    if (!t || !t.ep) return;
     setFetching(true);
     try {
-      const r = await fetch("https://dolarapi.com/v1/dolares/blue");
+      const r = await fetch(`https://dolarapi.com/v1/dolares/${t.ep}`);
       const j = await r.json();
-      if (j?.venta) { setValor(j.venta); toast(`Dólar blue: $${j.venta}`, "success"); }
+      if (j?.venta) { setValor(j.venta); toast(`Dólar ${t.label}: $${j.venta}`, "success"); }
       else toast("No vino la cotización", "warning");
     } catch (_) { toast("No se pudo traer la cotización", "error"); }
     setFetching(false);
   }
+
+  function onChangeTipo(id) {
+    setTipo(id);
+    if (id !== "manual") traerCotizacion(id);
+  }
+
+  const efectivo = (parseFloat(valor)||0) * (1 + (parseFloat(ajuste)||0)/100);
 
   async function save() {
     const v = parseFloat(valor);
@@ -20894,7 +20975,7 @@ function DolarPanel({ T, uid }) {
     setSaving(true);
     const now = new Date().toISOString();
     try {
-      await setDoc(doc(db,"users",uid), { margenesDolar: { valor: v, actualizado: now } }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesDolar: { tipo, valor: v, ajuste: parseFloat(ajuste)||0, efectivo: Math.round(efectivo), actualizado: now } }, { merge: true });
       setActualizado(now);
       toast("Cotización guardada ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
@@ -20904,20 +20985,41 @@ function DolarPanel({ T, uid }) {
   if (!loaded) return <div style={{padding:60,textAlign:"center",color:T.textSm}}>Cargando…</div>;
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:560}}>
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:600}}>
       <div>
         <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Cotización Dólar</div>
-        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Valor del dólar para convertir costos en USD a pesos. Traé el blue actual o poné el que uses (oficial, MEP).</div>
+        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Elegí qué dólar usar para convertir costos en USD a pesos. El Dashboard siempre muestra todo en pesos con este valor.</div>
       </div>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px"}}>
-        <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Cotización (ARS por USD)</label>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <span style={{fontSize:18,fontWeight:700,color:T.textSm}}>$</span>
-          <input type="number" step="1" min="0" value={valor} onChange={e=>setValor(e.target.value)} placeholder="0" style={{...InputStyle(T),width:150,fontSize:18,fontWeight:700,padding:"10px 14px"}}/>
-          <button onClick={traerCotizacion} disabled={fetching} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px"}}>{fetching?"Trayendo…":"↻ Traer blue actual"}</button>
+        <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Tipo de dólar</label>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+          {DOLAR_TIPOS.map(t=>(
+            <button key={t.id} onClick={()=>onChangeTipo(t.id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tipo===t.id?T.accentSolid:T.border}`,borderRadius:8,background:tipo===t.id?T.accentSolid:"transparent",color:tipo===t.id?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.label}</button>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:14,flexWrap:"wrap"}}>
+          <div>
+            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}}>Cotización (ARS por USD)</label>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:18,fontWeight:700,color:T.textSm}}>$</span>
+              <input type="number" step="1" min="0" value={valor} onChange={e=>setValor(e.target.value)} disabled={tipo!=="manual"&&fetching} placeholder="0" style={{...InputStyle(T),width:140,fontSize:18,fontWeight:700,padding:"10px 14px"}}/>
+            </div>
+          </div>
+          <div>
+            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}}>Ajuste manual</label>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <input type="number" step="0.5" value={ajuste} onChange={e=>setAjuste(e.target.value)} placeholder="0" style={{...InputStyle(T),width:80,fontSize:14,padding:"10px 12px",textAlign:"right"}}/>
+              <span style={{fontSize:14,color:T.textSm}}>%</span>
+            </div>
+          </div>
+          {tipo!=="manual" && <button onClick={()=>traerCotizacion(tipo)} disabled={fetching} style={{...BtnSecondary(T),fontSize:12,padding:"10px 12px"}}>{fetching?"Trayendo…":"↻ Actualizar"}</button>}
           <Btn T={T} variant="primary" onClick={save} disabled={saving} style={{marginLeft:"auto"}}>{saving?"Guardando…":"Guardar"}</Btn>
         </div>
-        {actualizado && <div style={{fontSize:11,color:T.textSm,marginTop:12}}>Última actualización: {new Date(actualizado).toLocaleString("es-AR")}</div>}
+        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+          <span style={{fontSize:12,color:T.textSm}}>Cotización efectiva (con ajuste):</span>
+          <span style={{fontSize:18,fontWeight:800,color:T.accent}}>{fmtARSm(efectivo)}</span>
+        </div>
+        {actualizado && <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Última actualización: {new Date(actualizado).toLocaleString("es-AR")}</div>}
       </div>
     </div>
   );
