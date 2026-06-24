@@ -1207,7 +1207,8 @@ function DateRangePicker({ T, since, until, onChange, presets }) {
   ];
   function applyPreset(p) {
     const today = new Date();
-    const fmt = (d) => d.toISOString().slice(0,10);
+    // Zona Argentina (UTC-3) — evita el corrimiento de día que dejaba fechas mal.
+    const fmt = (d) => new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(d);
     if (p.days === 0) onChange(fmt(today), fmt(today));
     else if (p.days === -1) {
       const y = new Date(today.getTime() - 86400000);
@@ -13769,8 +13770,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [tnData, setTnData] = useState(null); // {connected, store_name, ordenes, total_pending}
   const [tnSelected, setTnSelected] = useState({}); // {orderId: true|false}
   const [periodoModo, setPeriodoModo] = useState("7"); // "1"|"7"|"15"|"30"|"60"|"90"|"custom"
-  const [fechaDesde, setFechaDesde] = useState(new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10));
-  const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0,10));
+  // Fechas en zona Argentina (UTC-3) — antes se calculaban en UTC y corrían el
+  // día, dejando entrar/faltar ventas en los bordes del rango.
+  const [fechaDesde, setFechaDesde] = useState(new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(Date.now()-7*86400000)));
+  const [fechaHasta, setFechaHasta] = useState(new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date()));
   const [canalesSel, setCanalesSel] = useState([]); // [] = todos, o array de plataformas activas
   const canalSel = canalesSel.length===0?"todos":canalesSel[0]; // compat legado
   const [metodoPagoSel, setMetodoPagoSel] = useState("todos"); // "todos" | string literal
@@ -13791,7 +13794,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if(!descartadasKey) return new Set();
     try { return new Set(JSON.parse(localStorage.getItem(descartadasKey)||"[]")); } catch(_){ return new Set(); }
   });
-  const [showDescartadas, setShowDescartadas] = useState(true); // visible por defecto para no perder órdenes
+  const [showDescartadas, setShowDescartadas] = useState(false); // colapsado por defecto — desplegable para no hacer la lista interminable
   const [autoDescartar, setAutoDescartar] = useState(true); // al facturar, descartar automáticamente las no-seleccionadas
   function saveDescartadas(set) {
     setDescartadas(set);
@@ -14133,12 +14136,36 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setTnSelected(newSel);
   }
 
+  // Predicado de filtros visibles — MISMO criterio que la lista en pantalla
+  // (canal, método de pago, rango de monto, buscador, descartadas). Se usa
+  // tanto para renderizar como para facturar, de modo que "lo que ves
+  // seleccionado = lo que se factura". Antes facturarSeleccionadas recorría
+  // TODO tnData.ordenes ignorando el filtro de plataforma → podía emitir
+  // órdenes ocultas por el filtro y facturar de más (bug 41→87).
+  function ordenPasaFiltros(id, o) {
+    if (descartadas.has(String(id))) return false;
+    if (canalesSel.length>0 && !canalesSel.includes(o._platform)) return false;
+    if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
+    const minN = montoMin === "" ? null : parseFloat(montoMin);
+    const maxN = montoMax === "" ? null : parseFloat(montoMax);
+    if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
+    if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
+    const busqTokens = busquedaPend.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (busqTokens.length > 0) {
+      const hay = [id, o.numero, o.order_number, o.pack_id, o.nombre, o.email, o.dni, o.doc_nro]
+        .filter(Boolean).map(v => String(v).toLowerCase()).join(" ");
+      for (const t of busqTokens) if (!hay.includes(t)) return false;
+    }
+    return true;
+  }
+
   function facturarSeleccionadas() {
     if(!tnData?.ordenes) return;
     const filtered = {};
     const noSeleccionadasIds = [];
     Object.entries(tnData.ordenes).forEach(([id,o])=>{
-      if(tnSelected[id] && !o._billed) filtered[id] = o;
+      // Solo se factura lo seleccionado Y visible con el filtro actual.
+      if(tnSelected[id] && !o._billed && ordenPasaFiltros(id,o)) filtered[id] = o;
       else if(!tnSelected[id] && !o._billed && !descartadas.has(String(id))) noSeleccionadasIds.push(id);
     });
     if(Object.keys(filtered).length === 0) return toast("Tildá al menos una venta","warning");
@@ -14958,30 +14985,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   ) : (() => {
                     // El backend ya manda ordenado por fecha desc. Filtros locales: canal y rango de monto.
                     const all = Object.entries(tnData.ordenes);
-                    const minN = montoMin === "" ? null : parseFloat(montoMin);
-                    const maxN = montoMax === "" ? null : parseFloat(montoMax);
-                    // Tokens del buscador — normalizados a lowercase. Soporta
-                    // múltiples palabras: "juan 1234" matchea órdenes que
-                    // contengan AMBAS en algún campo.
-                    const busqTokens = busquedaPend.trim().toLowerCase().split(/\s+/).filter(Boolean);
-                    const items = all.filter(([id, o]) => {
-                      if (descartadas.has(String(id))) return false; // excluir descartadas
-                      if (canalesSel.length>0 && !canalesSel.includes(o._platform)) return false;
-                      if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
-                      if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
-                      if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
-                      if (busqTokens.length > 0) {
-                        // Concatenamos todos los campos donde puede aparecer
-                        // el match: ID de orden (Shopify/TN/ML), número de
-                        // pedido, nombre del cliente, email, DNI/CUIT.
-                        const hay = [
-                          id, o.numero, o.order_number, o.pack_id,
-                          o.nombre, o.email, o.dni, o.doc_nro
-                        ].filter(Boolean).map(v => String(v).toLowerCase()).join(" ");
-                        for (const t of busqTokens) if (!hay.includes(t)) return false;
-                      }
-                      return true;
-                    });
+                    // Mismo predicado que usa facturarSeleccionadas → la lista
+                    // visible y lo que se factura son siempre el mismo conjunto.
+                    const items = all.filter(([id, o]) => ordenPasaFiltros(id, o));
                     // Órdenes descartadas (para mostrar en panel separado)
                     const itemsDescartados = all.filter(([id, o]) => descartadas.has(String(id)) && !o._billed);
                     if (items.length === 0) {
@@ -15034,7 +15040,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{position:"relative"}}>
                         {/* Overlay de carga — aparece cuando cambia fecha o filtro de plataforma */}
                         {tnLoading&&(
-                          <div style={{position:"absolute",inset:0,zIndex:10,borderRadius:10,background:T.card+"cc",backdropFilter:"blur(3px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,pointerEvents:"all"}}>
+                          <div style={{position:"absolute",inset:0,zIndex:10,borderRadius:10,background:T.card,backdropFilter:"blur(4px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,pointerEvents:"all"}}>
                             <Spinner size={28} color={T.accent}/>
                             <span style={{fontSize:12,color:T.textMd,fontWeight:600}}>Actualizando ventas…</span>
                           </div>
@@ -15072,6 +15078,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
                               {itemsDescartados.length} descartadas
                               {mesStats&&<span style={{background:"rgba(249,115,22,0.13)",border:"1px solid rgba(249,115,22,0.4)",borderRadius:4,padding:"1px 6px",fontWeight:700,color:"#fb923c"}}>{pctDescartadasN}% órd · {pctDescartadasM}% $</span>}
+                              <span style={{fontSize:10,transition:"transform 0.15s",transform:showDescartadas?"rotate(180deg)":"none"}}>▾</span>
                             </button>
                           )}
 
@@ -15140,6 +15147,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <button onClick={restaurarTodas} style={{...BtnSecondary(T),padding:"3px 10px",fontSize:11,color:T.accent}}>Restaurar todas</button>
                               </div>
                             </div>
+                            <div style={{maxHeight:260,overflowY:"auto"}}>
                             {itemsDescartados.map(([id,o])=>(
                               <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderBottom:`1px solid ${T.borderL}`,opacity:0.7}}>
                                 <span style={{fontSize:10,color:T.textSm,minWidth:68}}>{fmtFechaHora(o.fecha)}</span>
@@ -15150,6 +15158,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <button onClick={()=>restaurarOrden(id)} title="Volver al listado" style={{...BtnSecondary(T),padding:"3px 10px",fontSize:10,flexShrink:0}}>Restaurar</button>
                               </div>
                             ))}
+                            </div>
                           </div>
                         )}
 
@@ -15257,11 +15266,24 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const minIso = `${minD.getFullYear()}-${pad(minD.getMonth()+1)}-${pad(minD.getDate())}`;
                     const fechaLabel = fechaFactura ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}) : "";
                     const diasAtras = fechaFactura ? Math.round((new Date(hoyIso)-new Date(fechaFactura))/86400000) : 0;
+                    // CUIT emisor + desglose por plataforma para el cartel de confirmación.
+                    const cuitActivo = cuits.find(c => c.cuit === cuitSel);
+                    const platLabel = {tiendanube:"TN", shopify:"Shopify", mercadolibre:"ML"};
+                    const platCount = Object.values(ordenes).reduce((acc,o)=>{const p=o._platform||"—";acc[p]=(acc[p]||0)+1;return acc;},{});
+                    const platResumen = Object.entries(platCount).map(([p,n])=>`${n} ${platLabel[p]||p}`).join(" · ");
                     return (
                       <>
                         <div style={{display:"flex",alignItems:"center",gap:10}}>
                           <div style={{fontSize:16,fontWeight:800,color:T.text,flex:1}}>🧾 Emitir {Object.keys(ordenes).length} factura{Object.keys(ordenes).length!==1?"s":""} en ARCA</div>
                           <ModalCloseBtn T={T} onClick={closeModal}/>
+                        </div>
+
+                        {/* CUIT emisor + desglose por plataforma — confirmación antes de facturar */}
+                        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:12,marginTop:2}}>
+                          <span style={{color:T.textSm,fontWeight:600}}>CUIT emisor:</span>
+                          <span style={{fontWeight:700,color:T.text}}>{cuitActivo?formatCuit(cuitActivo.cuit):"—"}</span>
+                          {cuitActivo?.razon_social && <span style={{color:T.textMd}}>· {cuitActivo.razon_social}</span>}
+                          {platResumen && <span style={{marginLeft:"auto",fontWeight:600,color:T.textMd}}>{platResumen}</span>}
                         </div>
 
                         {/* Totals */}
