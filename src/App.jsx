@@ -23304,24 +23304,10 @@ function AppRendimiento({T, user, onHome}) {
           since={useCustom?dateFrom:new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
           until={useCustom?dateTo:new Date().toISOString().slice(0,10)}
           onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
-        <button onClick={()=>setShowConfig(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:showConfig?T.accent:T.textMd}} title="Configurar">⚙</button>
         <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>
           {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
         </button>
       </AppTopbar>
-
-      {showConfig&&(
-        <div style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"12px 24px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12}}>
-          <span style={{fontWeight:600,color:T.text}}>⚙ Configuración</span>
-          <div style={{display:"flex",alignItems:"center",gap:8,color:T.textMd}}>
-            Comisión de plataforma:
-            <input type="number" min="0" max="50" step="0.5" value={(commission*100).toFixed(1)} onChange={e=>setCommission(parseFloat(e.target.value)/100||0)}
-              style={{width:60,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"5px 8px",fontSize:12,color:T.text,textAlign:"center",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-            % — se descuenta del Revenue para calcular Net Revenue y Profit
-            <button onClick={()=>saveCommission(commission)} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px"}}>Guardar</button>
-          </div>
-        </div>
-      )}
 
       <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px 64px",width:"100%"}}>
 
