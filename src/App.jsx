@@ -20734,10 +20734,12 @@ function MargenesTab({ T, uid, days, useCustomDate, dateFrom, dateTo }) {
 const margId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 const fmtARSm = n => "$ " + Math.round(n||0).toLocaleString("es-AR");
 
-// Comisiones — estilo Escalafy. MP y ML automáticos; impuestos, comisión de
-// plataforma y métodos de pago configurables a mano.
+// Comisiones — estilo Escalafy. MP y ML automáticos. Los métodos de pago se
+// AUTO-DETECTAN de las órdenes (los que la persona creó en Shopify/TN); el
+// usuario solo asigna la comisión promedio de cada uno.
 function ComisionesPanel({ T, uid }) {
-  const [cfg, setCfg] = React.useState({ impuestos:"", shopify:"", metodos:[] });
+  const [cfg, setCfg] = React.useState({ impuestos:"", shopify:"", metodos:{} }); // metodos: { [nombre]: {pct, fijo} }
+  const [detected, setDetected] = React.useState([]);
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
@@ -20747,11 +20749,21 @@ function ComisionesPanel({ T, uid }) {
       try {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data().margenesComisionesCfg : null;
-        if (d) setCfg({ impuestos:d.impuestos??"", shopify:d.shopify??"", metodos:Array.isArray(d.metodos)?d.metodos:[] });
+        if (d) setCfg({ impuestos:d.impuestos??"", shopify:d.shopify??"", metodos:(d.metodos && typeof d.metodos==="object" && !Array.isArray(d.metodos)) ? d.metodos : {} });
+      } catch (_) {}
+      try {
+        // Métodos de pago detectados en las órdenes (excluye MP/ML que son automáticos).
+        const r = await fetch(`/api/stock?action=products&uid=${uid}&days=90`);
+        const j = await r.json();
+        const names = [...Object.keys(j.by_payment||{}), ...Object.keys(j.ml_data?.by_payment||{})]
+          .filter(n => n && !/mercado\s*pago|mercado\s*libre|^otro$|^pagado$/i.test(String(n).trim()));
+        setDetected([...new Set(names)]);
       } catch (_) {}
       setLoaded(true);
     })();
   }, [uid]);
+
+  const setMet = (name,patch)=>setCfg(c=>({...c,metodos:{...c.metodos,[name]:{...(c.metodos[name]||{}),...patch}}}));
 
   async function save() {
     setSaving(true);
@@ -20759,9 +20771,10 @@ function ComisionesPanel({ T, uid }) {
     catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
-  const setMet = (id,patch)=>setCfg(c=>({...c,metodos:c.metodos.map(m=>m.id===id?{...m,...patch}:m)}));
 
   if (!loaded) return <div style={{padding:60,textAlign:"center",color:T.textSm}}>Cargando…</div>;
+
+  const metodos = [...new Set([...detected, ...Object.keys(cfg.metodos)])];
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:720}}>
@@ -20806,21 +20819,23 @@ function ComisionesPanel({ T, uid }) {
         </div>
       </div>
 
-      {/* Métodos de pago */}
+      {/* Métodos de pago — auto-detectados de las órdenes */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Comisiones por método de pago</div>
-        {cfg.metodos.length===0 && <div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Agregá métodos con comisión propia (ej: transferencia, AstroPay).</div>}
-        {cfg.metodos.map(m=>(
-          <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-            <input value={m.nombre} onChange={e=>setMet(m.id,{nombre:e.target.value})} placeholder="Método de pago" style={{...InputStyle(T),flex:1,minWidth:140,fontSize:13}}/>
-            <span style={{fontSize:12,color:T.textSm}}>%</span>
-            <input type="number" step="0.1" min="0" value={m.pct} onChange={e=>setMet(m.id,{pct:e.target.value})} placeholder="0" style={{...InputStyle(T),width:74,fontSize:13,textAlign:"right"}}/>
-            <span style={{fontSize:12,color:T.textSm}}>fijo $</span>
-            <input type="number" min="0" value={m.fijo} onChange={e=>setMet(m.id,{fijo:e.target.value})} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
-            <button onClick={()=>setCfg(c=>({...c,metodos:c.metodos.filter(x=>x.id!==m.id)}))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
-          </div>
-        ))}
-        <button onClick={()=>setCfg(c=>({...c,metodos:[...c.metodos,{id:margId(),nombre:"",pct:"",fijo:""}]}))} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar método de pago</button>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Comisiones por método de pago</div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Se detectan solos de tus órdenes (los que creaste en Shopify/TN). Poné la comisión promedio que te quita cada uno.</div>
+        {metodos.length===0 && <div style={{fontSize:12,color:T.textSm}}>Todavía no se detectaron métodos de pago distintos de Mercado Pago en tus últimas órdenes.</div>}
+        {metodos.map(name=>{
+          const m = cfg.metodos[name]||{};
+          return (
+            <div key={name} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+              <span style={{flex:1,minWidth:140,fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={name}>{name}</span>
+              <span style={{fontSize:12,color:T.textSm}}>%</span>
+              <input type="number" step="0.1" min="0" value={m.pct??""} onChange={e=>setMet(name,{pct:e.target.value})} placeholder="0" style={{...InputStyle(T),width:74,fontSize:13,textAlign:"right"}}/>
+              <span style={{fontSize:12,color:T.textSm}}>fijo $</span>
+              <input type="number" min="0" value={m.fijo??""} onChange={e=>setMet(name,{fijo:e.target.value})} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
