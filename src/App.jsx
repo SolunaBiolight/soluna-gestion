@@ -819,6 +819,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
                           if(item.id==="reclamos") setReclamosView&&setReclamosView(sub.id);
                           if(item.id==="meta") setMetaTab&&setMetaTab(sub.id);
                           if(item.id==="stock") setStockTab&&setStockTab(sub.id);
+                          if(item.id==="margenes") setMargenesTab&&setMargenesTab(sub.id);
                           if(item.id==="arca") setArcaTab&&setArcaTab(sub.id);
                           if(item.id==="tareas") setTareasTab&&setTareasTab(sub.id);
                           if(item.id==="canjes") setCanjesTab&&setCanjesTab(sub.id);
