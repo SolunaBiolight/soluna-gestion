@@ -23134,9 +23134,10 @@ function AppRendimiento({T, user, onHome}) {
     });
   },[uid]);
 
-  async function loadData(overrideDays, overrideFrom, overrideTo) {
+  async function loadData(overrideDays, overrideFrom, overrideTo, silent) {
     if(!uid){setError("Sin sesión");return;}
-    setLoading(true); setError(null);
+    if(!silent) setLoading(true);
+    setError(null);
     try {
       const d=overrideDays||days;
       const from=overrideFrom!=null?overrideFrom:(useCustom?dateFrom:"");
@@ -23149,8 +23150,18 @@ function AppRendimiento({T, user, onHome}) {
       if(j.error) throw new Error(j.error);
       setRendData({...j, loadedAt:new Date().toISOString()});
     }catch(e){setError(e.message);}
-    finally{setLoading(false);}
+    finally{if(!silent) setLoading(false);}
   }
+
+  // Carga automática al entrar + refresco silencioso cada 60s (sin botón).
+  const loadRef = React.useRef();
+  loadRef.current = loadData;
+  useEffect(()=>{
+    if(!uid) return;
+    loadRef.current();
+    const iv = setInterval(()=>loadRef.current(undefined,undefined,undefined,true), 60000);
+    return ()=>clearInterval(iv);
+  },[uid]);
 
   async function saveCommission(val) {
     const v=parseFloat(val)||0.03; setCommission(v);

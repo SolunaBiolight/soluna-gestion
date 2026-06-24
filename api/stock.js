@@ -89,7 +89,7 @@ async function shProducts(shop, tok) {
 async function shOrders(shop, tok, days, since, until) {
   // Format exact que usa Facturador: 2026-05-22T00:00:00-03:00 (sin URL-encode).
   // status=any incluye canceladas — filtramos por cancelled_at en JS.
-  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds`;
+  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway,payment_gateway_names,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds`;
   if(until) url+=`&created_at_max=${until}`;
   while(url){
     const r=await fetchT(url,{headers:SH_H(tok)});
@@ -201,7 +201,7 @@ function processSH(orders) {
     const day=dt.slice(0,10);
     const hour=dt.slice(11,13);
     const prov=o.shipping_address?.province||"Sin provincia";
-    const pay=o.payment_gateway||"Otro";
+    const pay=(Array.isArray(o.payment_gateway_names)&&o.payment_gateway_names.length?o.payment_gateway_names.join(", "):o.payment_gateway)||"Otro";
     let orderUnits=0;
 
     if(day) dailyOrders[day]=(dailyOrders[day]||0)+1;
