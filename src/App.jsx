@@ -23203,6 +23203,10 @@ function AppRendimiento({T, user, onHome}) {
               style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:!useCustom&&days===p.d?T.card:"transparent",color:!useCustom&&days===p.d?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:!useCustom&&days===p.d?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{p.l}</button>
           ))}
         </div>
+        <DateRangePicker T={T}
+          since={useCustom?dateFrom:new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
+          until={useCustom?dateTo:new Date().toISOString().slice(0,10)}
+          onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
         <button onClick={()=>setShowConfig(c=>!c)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:showConfig?T.accent:T.textMd}} title="Configurar">⚙</button>
         <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>
           {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
@@ -23223,13 +23227,6 @@ function AppRendimiento({T, user, onHome}) {
       )}
 
       <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px 64px",width:"100%"}}>
-
-        {/* Nav tabs — always visible */}
-        <div style={{display:"flex",gap:3,background:T.surface,borderRadius:10,padding:3,width:"fit-content",marginBottom:18,flexWrap:"wrap"}}>
-          {[["overview","💡 Insights"],["tabla","📋 Tabla"],["dow","📅 Por semana"]].map(([id,l])=>(
-            <button key={id} onClick={()=>setViewTab(id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:viewTab===id?T.card:"transparent",color:viewTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>{l}</button>
-          ))}
-        </div>
 
         {!rendData&&!loading&&(
           <div style={{textAlign:"center",padding:"80px 24px"}}>
@@ -23400,6 +23397,13 @@ function AppRendimiento({T, user, onHome}) {
 
 
           {/* Insights */}
+          {/* Nav tabs — justo arriba de la sección que controlan */}
+          <div style={{display:"flex",gap:3,background:T.surface,borderRadius:10,padding:3,width:"fit-content",marginBottom:14,marginTop:8,flexWrap:"wrap"}}>
+            {[["overview","💡 Insights"],["tabla","📋 Tabla"],["dow","📅 Por semana"]].map(([id,l])=>(
+              <button key={id} onClick={()=>setViewTab(id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:viewTab===id?T.card:"transparent",color:viewTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>{l}</button>
+            ))}
+          </div>
+
           {viewTab==="overview"&&(()=>{
             const ins=[];
             if(bestDay) ins.push({icon:"🏆",color:T.green,text:`Mejor día: ${fmtDate(bestDay.Fecha)} con ${fmtM(bestDay.Profit)} de profit y ${fmtM(bestDay.Revenue)} de revenue.`});
