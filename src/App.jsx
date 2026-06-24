@@ -717,8 +717,6 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"tareas",   label:"Tareas",    icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4", count:alerts.tareas, badge:"orange",
 },
     { group:"FINANZAS" },
-    {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
-      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
   ];
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
@@ -825,7 +823,6 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
                           if(item.id==="reclamos") setReclamosView&&setReclamosView(sub.id);
                           if(item.id==="meta") setMetaTab&&setMetaTab(sub.id);
                           if(item.id==="stock") setStockTab&&setStockTab(sub.id);
-                          if(item.id==="margenes") setMargenesTab&&setMargenesTab(sub.id);
                           if(item.id==="arca") setArcaTab&&setArcaTab(sub.id);
                           if(item.id==="tareas") setTareasTab&&setTareasTab(sub.id);
                           if(item.id==="canjes") setCanjesTab&&setCanjesTab(sub.id);
@@ -22903,7 +22900,14 @@ function AppRendimiento({T, user, onHome}) {
 
       <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px 64px",width:"100%"}}>
 
-        {!rendData&&!loading&&(
+        {/* Nav tabs — always visible */}
+        <div style={{display:"flex",gap:3,background:T.surface,borderRadius:10,padding:3,width:"fit-content",marginBottom:18,flexWrap:"wrap"}}>
+          {[["overview","💡 Insights"],["tabla","📋 Tabla"],["dow","📅 Por semana"],["margenes","📊 Márgenes"],["comisiones","💳 Comisiones"],["costos","⚙ Costos"],["dolar","💵 Dólar"],["facturacion","🧾 Facturación"]].map(([id,l])=>(
+            <button key={id} onClick={()=>setViewTab(id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:viewTab===id?T.card:"transparent",color:viewTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>{l}</button>
+          ))}
+        </div>
+
+        {!["margenes","comisiones","costos","dolar","facturacion"].includes(viewTab)&&!rendData&&!loading&&(
           <div style={{textAlign:"center",padding:"80px 24px"}}>
             <div style={{fontSize:64,marginBottom:20}}>📊</div>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:12}}>Dashboard Financiero</div>
@@ -22915,7 +22919,7 @@ function AppRendimiento({T, user, onHome}) {
           </div>
         )}
 
-        {rendData&&!loading&&(()=>{
+        {!["margenes","comisiones","costos","dolar","facturacion"].includes(viewTab)&&rendData&&!loading&&(()=>{
           return(<>
 
           {/* Status row */}
@@ -23070,12 +23074,6 @@ function AppRendimiento({T, user, onHome}) {
             </div>
           </div>
 
-          {/* Tabs */}
-          <div style={{display:"flex",gap:4,background:T.surface,borderRadius:10,padding:3,width:"fit-content",marginBottom:14}}>
-            {[["overview","💡 Insights"],["tabla","📋 Tabla diaria"],["dow","📅 Por día de semana"]].map(([id,l])=>(
-              <button key={id} onClick={()=>setViewTab(id)} style={{padding:"6px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:viewTab===id?T.card:"transparent",color:viewTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{l}</button>
-            ))}
-          </div>
 
           {/* Insights */}
           {viewTab==="overview"&&(()=>{
@@ -23191,6 +23189,13 @@ function AppRendimiento({T, user, onHome}) {
 
           </>);
         })()}
+
+        {/* Márgenes tab content */}
+        {viewTab==="margenes"&&<MargenesTab T={T} uid={uid} days={days} useCustomDate={useCustom} dateFrom={dateFrom} dateTo={dateTo}/>}
+        {viewTab==="comisiones"&&<ComisionesPanel T={T} uid={uid}/>}
+        {viewTab==="costos"&&<MargenesPlaceholder T={T} title="Costos Adicionales" desc="Costos operativos fijos y costo por producto (COGS) para calcular el margen real."/>}
+        {viewTab==="dolar"&&<MargenesPlaceholder T={T} title="Cotización Dólar" desc="Cotización del dólar para costos/productos en USD."/>}
+        {viewTab==="facturacion"&&<MargenesPlaceholder T={T} title="Facturación Externa" desc="Ventas fuera de las plataformas conectadas, sumadas manualmente a la facturación."/>}
       </div>
     </div>
   );
@@ -23500,7 +23505,7 @@ export default function App() {
   useEffect(()=>{
     if(typeof window==="undefined") return;
     if(colabToken || editorProdToken || boardToken) return;
-    const sub = page==="stock"?`/${stockTab}`:page==="margenes"?`/${margenesTab}`:page==="arca"?`/${arcaTab}`:"";
+    const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:"";
     const newHash = `#/${page}${sub}`;
     if(window.location.hash !== newHash) {
       window.history.replaceState(null,"",newHash);
@@ -23891,7 +23896,6 @@ export default function App() {
   else if(page==="rendimiento") pageContent = adminGate("rendimiento") || <PageView T={T} pageKey="rendimiento"><AppRendimiento T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
   else if(page==="stock") pageContent = adminGate("stock") || planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
-  else if(page==="margenes") pageContent = adminGate("margenes") || planGate("plus") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="ml") pageContent = adminGate("ml") || planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
   else if(page==="meta") pageContent = adminGate("meta") || planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
   else if(page==="tareas") pageContent = adminGate("tareas") || planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab}/></PageView>;
