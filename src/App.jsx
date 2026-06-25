@@ -20898,6 +20898,8 @@ function ComisionesPanel({ T, uid }) {
 function CostosPanel({ T, uid }) {
   const [envio, setEnvio] = React.useState("");
   const [mlAdsList, setMlAdsList] = React.useState([]);
+  const [mlAdsDraft, setMlAdsDraft] = React.useState({desde:"",hasta:"",monto:""});
+  const [mlAdsSaving, setMlAdsSaving] = React.useState(false);
   const [products, setProducts] = React.useState([]);
   const [mlItems, setMlItems] = React.useState([]);
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
@@ -20933,13 +20935,33 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      const mlAdsClean = mlAdsList.filter(e=>e.desde&&e.hasta&&(parseFloat(e.monto)||0)>0).map(e=>({desde:e.desde,hasta:e.hasta,monto:parseFloat(e.monto)||0}));
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesMlAds: mlAdsClean, margenesCogs: costos, margenesCostosFijos: fijos }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
   const setCosto = (key,val)=>setCostos(c=>({...c,[key]:val}));
+
+  async function persistMlAds(list) {
+    await setDoc(doc(db,"users",uid), { margenesMlAds: list }, { merge: true });
+  }
+  async function addMlAdsPeriod() {
+    const d = mlAdsDraft;
+    if (!d.desde || !d.hasta) { toast("Elegí las fechas del período", "error"); return; }
+    if (d.hasta < d.desde) { toast("La fecha final no puede ser anterior a la inicial", "error"); return; }
+    if (!((parseFloat(d.monto)||0) > 0)) { toast("Poné el monto gastado", "error"); return; }
+    setMlAdsSaving(true);
+    const nuevo = { desde:d.desde, hasta:d.hasta, monto:parseFloat(d.monto)||0 };
+    const list = [...mlAdsList, nuevo].sort((a,b)=>String(b.desde).localeCompare(String(a.desde)));
+    try { await persistMlAds(list); setMlAdsList(list); setMlAdsDraft({desde:"",hasta:"",monto:""}); toast("Período de ML Ads guardado ✓","success"); }
+    catch(e) { toast("Error: "+e.message,"error"); }
+    setMlAdsSaving(false);
+  }
+  async function delMlAdsPeriod(i) {
+    const list = mlAdsList.filter((_,j)=>j!==i);
+    try { await persistMlAds(list); setMlAdsList(list); toast("Período borrado","success"); }
+    catch(e) { toast("Error: "+e.message,"error"); }
+  }
 
   const totalFijos = fijos.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
 
@@ -20986,22 +21008,32 @@ function CostosPanel({ T, uid }) {
           <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá cuánto gastaste en publicidad de ML en cada rango de fechas. Se promedia por día y el dashboard toma el promedio diario según los días que se solapen. Ej: 10/06–19/06 $1.000.000 = $100.000/día.</div>
         </div>
         {(()=>{ const today=new Date().toISOString().slice(0,10);
-        const upd=(i,k,v)=>setMlAdsList(l=>l.map((e,j)=>j===i?{...e,[k]:v}:e));
-        const dias=e=>{ if(!e.desde||!e.hasta||e.hasta<e.desde) return 0; return Math.round((new Date(e.hasta)-new Date(e.desde))/86400000)+1; };
+        const fmtF=f=>{ try { return new Date(f+"T00:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}); } catch(_) { return f; } };
+        const dias=(a,b)=>{ if(!a||!b||b<a) return 0; return Math.round((new Date(b)-new Date(a))/86400000)+1; };
+        const dr=mlAdsDraft, dD=dias(dr.desde,dr.hasta), dProm=dD>0?(parseFloat(dr.monto)||0)/dD:0;
+        const setD=(k,v)=>setMlAdsDraft(s=>({...s,[k]:v}));
         return (<>
-          {mlAdsList.length===0 && <div style={{fontSize:12,color:T.textSm,padding:"6px 0"}}>Sin períodos cargados. Agregá uno abajo.</div>}
-          {mlAdsList.map((e,i)=>{ const d=dias(e), prom=d>0?(parseFloat(e.monto)||0)/d:0; const rangoMal=e.desde&&e.hasta&&e.hasta<e.desde; return (
-            <div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-              <input type="date" min="2023-01-01" max={e.hasta||today} value={e.desde||""} onChange={ev=>upd(i,"desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
-              <span style={{fontSize:12,color:T.textSm}}>→</span>
-              <input type="date" min={e.desde||"2023-01-01"} max={today} value={e.hasta||""} onChange={ev=>upd(i,"hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
-              <span style={{fontSize:13,color:T.textSm}}>$</span>
-              <input type="number" min="0" value={e.monto??""} onChange={ev=>upd(i,"monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
-              <span style={{fontSize:11,color:rangoMal?T.red:prom>0?T.accent:T.textSm,fontWeight:600,minWidth:130}}>{rangoMal?"⚠ fecha final < inicial":prom>0?`≈ $${Math.round(prom).toLocaleString("es-AR")}/día · ${d}d`:`${d} día(s)`}</span>
-              <button onClick={()=>setMlAdsList(l=>l.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red}}>✕</button>
-            </div>
-          );})}
-          <button onClick={()=>setMlAdsList(l=>[...l,{desde:"",hasta:"",monto:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:8}}>+ Agregar período</button>
+          {/* Períodos ya guardados */}
+          {mlAdsList.length>0 && <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+            {mlAdsList.map((e,i)=>{ const d=dias(e.desde,e.hasta), prom=d>0?(parseFloat(e.monto)||0)/d:0; return (
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
+                <span style={{fontSize:12,color:T.text,fontWeight:600}}>📅 {fmtF(e.desde)} → {fmtF(e.hasta)}</span>
+                <span style={{fontSize:12,color:T.textMd}}>${(parseFloat(e.monto)||0).toLocaleString("es-AR")}</span>
+                <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(prom).toLocaleString("es-AR")}/día · {d}d</span>
+                <button onClick={()=>delMlAdsPeriod(i)} title="Borrar período" style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red,marginLeft:"auto"}}>🗑</button>
+              </div>
+            );})}
+          </div>}
+          {/* Form para agregar un período nuevo */}
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:mlAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:mlAdsList.length>0?12:0}}>
+            <input type="date" min="2023-01-01" max={dr.hasta||today} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <span style={{fontSize:12,color:T.textSm}}>→</span>
+            <input type="date" min={dr.desde||"2023-01-01"} max={today} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <span style={{fontSize:13,color:T.textSm}}>$</span>
+            <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
+            {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
+            <button onClick={addMlAdsPeriod} disabled={mlAdsSaving} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>{mlAdsSaving?"Guardando…":"+ Guardar período"}</button>
+          </div>
         </>); })()}
       </div>
 
