@@ -349,7 +349,8 @@ export default async function handler(req, res) {
             for (let i=0; i<ids.length; i+=20) {
               const rs = await Promise.all(ids.slice(i,i+20).map(async id => {
                 try {
-                  const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}`, "x-format-new":"true" } });
+                  // SIN x-format-new: el formato clásico es el que trae logistic_type.
+                  const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
                   if (!r.ok) return [id, null];
                   const j = await r.json();
                   return [id, j.logistic_type || null];
