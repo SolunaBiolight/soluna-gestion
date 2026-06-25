@@ -215,12 +215,23 @@ export default async function handler(req, res) {
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
-      const metaCfg = metaAccounts[0] || null;
       const metaErr = {};
+      // Suma el gasto de TODAS las cuentas de Meta. Antes usaba solo la primera
+      // (metaAccounts[0]), por eso daba Ad Spend $0 si la cuenta con gasto no era
+      // la primera (ej: tener CP5 + CP7 activas).
+      async function fetchMetaAll(s, u, eRef) {
+        if (!metaAccounts.length) return {};
+        const arr = await Promise.all(metaAccounts.map(a => fetchMetaDailySpend(a, s, u, eRef)));
+        const merged = {};
+        for (const bd of arr) for (const [d,v] of Object.entries(bd)) {
+          const m = merged[d] || (merged[d] = { spend:0, impressions:0, clicks:0, reach:0, purchases:0, purchaseVal:0 });
+          m.spend+=v.spend||0; m.impressions+=v.impressions||0; m.clicks+=v.clicks||0; m.reach+=v.reach||0; m.purchases+=v.purchases||0; m.purchaseVal+=v.purchaseVal||0;
+        }
+        return merged;
+      }
       const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev] = await Promise.all([
         fetchStock(since, until), fetchStock(prevSince, prevUntil),
-        metaCfg ? fetchMetaDailySpend(metaCfg, since, until, metaErr) : Promise.resolve({}),
-        metaCfg ? fetchMetaDailySpend(metaCfg, prevSince, prevUntil) : Promise.resolve({}),
+        fetchMetaAll(since, until, metaErr), fetchMetaAll(prevSince, prevUntil),
         fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
       ]);
       const rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
@@ -283,7 +294,35 @@ export default async function handler(req, res) {
       totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr);
       prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, mpCommPrev);
 
-      return res.json({ rows, prevRows, totals, prevTotals, byDow, since, until, prevSince, prevUntil,
+      // ── Desglose por canal (Tienda vs Mercado Libre) para los tableros ──
+      function canal(raw, isMl, mpComm) {
+        const dr = isMl ? (raw?.ml_data?.daily_revenue||{}) : (raw?.daily_revenue||{});
+        const dord = isMl ? (raw?.ml_data?.daily_orders||{}) : (raw?.daily_orders||{});
+        const rev = Object.values(dr).reduce((a,b)=>a+b,0);
+        const ord = Object.values(dord).reduce((a,b)=>a+b,0);
+        let cogs = 0;
+        if (isMl) { for (const m of (raw?.ml_data?.ml_products||[])) { const c=parseFloat(cogsMap["ml:"+m.id]); if(c>0) cogs+=c*(m.units||0); } }
+        else { for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const c=parseFloat(cogsMap[v.sku||String(v.id)]); if(c>0) cogs+=c*(v.units_sold||0); } }
+        const impuestos = rev*pctImp;
+        const comis = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : (rev*pctPlat + (parseFloat(mpComm)||0));
+        const envio = isMl ? 0 : ord*envioProm;
+        const netRev = rev - impuestos - comis;
+        const profit = rev - cogs - impuestos - comis - envio;
+        return { orders:ord, revenue:+rev.toFixed(2), netRevenue:+netRev.toFixed(2),
+          costoProductos:+cogs.toFixed(2), impuestos:+impuestos.toFixed(2), comisiones:+comis.toFixed(2), costoEnvio:+envio.toFixed(2),
+          profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
+          aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
+      }
+      const byChannel = {
+        tienda: canal(curr.raw, false, mpCommCurr),
+        ml:     canal(curr.raw, true,  0),
+        tiendaPrev: canal(prev.raw, false, mpCommPrev),
+        mlPrev:     canal(prev.raw, true,  0),
+        platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
+        hasMl: !!(curr.raw?.ml_data),
+      };
+
+      return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, fijosMensual, feeAd: feeAd*100 } } });

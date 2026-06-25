@@ -23403,7 +23403,6 @@ function AppRendimiento({T, user, onHome}) {
               {label:"Margen",     val:fmtPct(tot.profitMargin),   good:(tot.profitMargin||0)>0.05,    hint:"Profit / Revenue"},
               {label:"MER %",      val:fmtPct(tot.mer),            good:true,                          hint:"Ad Spend / Revenue"},
               {label:"Break Even", val:fmtX(tot.breakEvenRoas),    good:true,                          hint:"ROAS de equilibrio"},
-              {label:"CTR",        val:fmtPct(tot.ctr,2),          good:(tot.ctr||0)>0.01,             hint:"Clicks / Impresiones"},
               {label:"Días profit",val:`${profitDays}/${dailyRows.length}`, good:profitDays>=lossDays, hint:"Días positivos"},
             ].map(k=>(
               <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
