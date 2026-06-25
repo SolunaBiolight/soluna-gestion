@@ -296,7 +296,11 @@ export default async function handler(req, res) {
           trueRoas: adSpendEf>0 ? netRevenue/adSpendEf : 0,
           cpa: (tot.orders||0)>0 ? adSpendEf/tot.orders : 0,
           mer: revenue>0 ? adSpendEf/revenue : 0,
-          breakEvenRoas: (1-(pctImp+pctPlat+pctPago))>0 ? 1/(1-(pctImp+pctPlat+pctPago)) : 0,
+          // Break even REAL: a qué ROAS el profit llega a 0 contando TODOS los
+          // costos (COGS, envío, comisiones, impuestos, fijos). Contribución antes
+          // de pauta = profit + adSpend. CPA break even = esa contribución / orden.
+          breakEvenRoas: (profit + adSpendEf)>0 ? revenue/(profit + adSpendEf) : 0,
+          cpaBreakEven: (tot.orders||0)>0 ? (profit + adSpendEf)/tot.orders : 0,
         };
       }
       totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr);

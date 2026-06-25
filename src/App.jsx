@@ -23214,6 +23214,17 @@ function AppRendimiento({T, user, onHome}) {
   const [reproc, setReproc] = useState(false);
   async function reprocesar60() {
     if(!uid) return;
+    // Límite: 1 reprocesamiento cada 5 minutos por cuenta.
+    const key = `growith_reproc_${uid}`;
+    let last = 0; try { last = parseInt(localStorage.getItem(key)||"0"); } catch(_) {}
+    const mins = (Date.now()-last)/60000;
+    if (last && mins < 5) { toast(`Esperá ${Math.ceil(5-mins)} min para volver a reprocesar.`, "warning"); return; }
+    const ok = await appConfirm(
+      "¿Reprocesar los últimos 60 días?\n\n⚠️ Los costos que tenías cargados antes se REEMPLAZAN por los costos que están cargados AHORA (COGS, comisiones, envío, impuestos, dólar). Se recalcula todo el período con tu configuración actual.\n\nSe puede reprocesar una vez cada 5 minutos.",
+      { okLabel:"🔄 Reprocesar 60 días" }
+    );
+    if (!ok) return;
+    try { localStorage.setItem(key, String(Date.now())); } catch(_) {}
     setReproc(true);
     try { await fetch(`/api/inventory?action=sync_sales&uid=${uid}`, { method:"POST" }); } catch(_) {}
     setUseCustom(false); setDays(60);
@@ -23366,8 +23377,6 @@ function AppRendimiento({T, user, onHome}) {
           {/* Status row */}
           <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{fontSize:11,color:T.textSm}}>{fmtDate(rendData.since)} — {fmtDate(rendData.until)} · {dailyRows.length}d</span>
-            {rendData.meta?.hasStoreData?<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:T.greenBg,color:T.green,border:`1px solid ${T.green}33`}}>✅ Tienda</span>:<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.yellowBg||(T.yellow+"18"),color:T.yellow||"#eab308",border:`1px solid ${(T.yellow||"#eab308")}33`,fontWeight:600}}>⚠ Sin tienda</span>}
-            {rendData.meta?.hasMetaData?<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:T.greenBg,color:T.green,border:`1px solid ${T.green}33`}}>✅ Meta Ads</span>:<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:T.surface,color:T.textSm,border:`1px solid ${T.border}`}}>ℹ Sin Meta Ads</span>}
             {hasPrev&&<span style={{fontSize:11,color:T.textSm}}>comparando vs {fmtDate(rendData.prevSince)}–{fmtDate(rendData.prevUntil)}</span>}
             <span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>act. {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>
           </div>
@@ -23399,7 +23408,8 @@ function AppRendimiento({T, user, onHome}) {
             {[
               {label:"ROAS",       val:fmtX(tot.roas),            good:(tot.roas||0)>=2,             hint:"Revenue / Ad Spend"},
               {label:"True ROAS",  val:fmtX(tot.trueRoas),        good:(tot.trueRoas||0)>=1.2,        hint:"Net Rev / Ad Spend"},
-              {label:"CPA",        val:fmtM(tot.cpa),             good:true,                          hint:"Ad Spend / Órdenes"},
+              {label:"CPA real",   val:fmtM(tot.cpa),             good:true,                          hint:"Ad Spend / Órdenes"},
+              {label:"CPA Break Even",val:fmtM(tot.cpaBreakEven), good:true,                          hint:"CPA máx. antes de perder"},
               {label:"Órdenes",    val:fmtInt(tot.orders),         good:(tot.orders||0)>0,             hint:"Con revenue"},
               {label:"Margen",     val:fmtPct(tot.profitMargin),   good:(tot.profitMargin||0)>0.05,    hint:"Profit / Revenue"},
               {label:"MER %",      val:fmtPct(tot.mer),            good:true,                          hint:"Ad Spend / Revenue"},
@@ -23435,7 +23445,7 @@ function AppRendimiento({T, user, onHome}) {
           {rendData.byChannel && (()=>{
             const bc = rendData.byChannel;
             const board = (titulo, icon, accent, c) => (
-              <div style={{marginBottom:18}}>
+              <div style={{marginBottom:18,borderTop:`1px solid ${T.border}`,paddingTop:18}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
                   <span style={{fontSize:16}}>{icon}</span>
                   <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</span>
@@ -23470,6 +23480,9 @@ function AppRendimiento({T, user, onHome}) {
               </>
             );
           })()}
+
+          {/* divisor antes de los gráficos */}
+          <div style={{borderTop:`1px solid ${T.border}`,marginBottom:18,paddingTop:2}}/>
 
           {/* Area Chart */}
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:16}}>
