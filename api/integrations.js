@@ -431,6 +431,47 @@ async function mpProbe(req, res, db) {
   return res.json({ ok:true, status:r.status, total: body.paging?.total, count: sample.length, sample, shopifyOrders });
 }
 
+// Sondeo de Mercado Ads (publicidad de ML) para descubrir la estructura de la
+// API y el gasto: Product Ads (PADS), Brand Ads (BADS), Display, Mercado Shops.
+async function mlAdsProbe(req, res, db) {
+  const { uid, from, to } = req.query;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  let tok;
+  try { tok = await getValidMLToken(db, uid); } catch (e) { return res.json({ ok:false, step:"token", error:e.message }); }
+  if (!tok?.accessToken) return res.json({ ok:false, step:"token", error:"Sin token ML — conectá Mercado Libre" });
+  const headers = { Authorization: `Bearer ${tok.accessToken}`, "Api-Version": "1" };
+  const date_to = to || new Date().toISOString().slice(0,10);
+  const date_from = from || new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+  const out = { ok:true, userId: tok.userId, date_from, date_to, steps: {} };
+
+  // 1) Advertisers por producto publicitario
+  for (const product of ["PADS","BADS","DISPLAY","MSHOPS"]) {
+    try {
+      const r = await fetch(`https://api.mercadolibre.com/advertising/advertisers?product_id=${product}`, { headers });
+      let body; try { body = await r.json(); } catch(_) { body = { raw: await r.text() }; }
+      out.steps[`advertisers_${product}`] = { status: r.status, body };
+    } catch(e) { out.steps[`advertisers_${product}`] = { error: e.message }; }
+  }
+
+  // 2) Si hay advertiser de Product Ads, traer campañas con métricas (cost = gasto)
+  const padsAdv = out.steps.advertisers_PADS?.body?.advertisers?.[0]?.advertiser_id;
+  if (padsAdv) {
+    out.padsAdvertiserId = padsAdv;
+    for (const path of [
+      `https://api.mercadolibre.com/advertising/product_ads/campaigns?advertiser_id=${padsAdv}&date_from=${date_from}&date_to=${date_to}&metrics=clicks,prints,cost,acos&limit=20`,
+      `https://api.mercadolibre.com/advertising/advertisers/${padsAdv}/product_ads/campaigns?date_from=${date_from}&date_to=${date_to}&limit=20`,
+    ]) {
+      try {
+        const r = await fetch(path, { headers });
+        let body; try { body = await r.json(); } catch(_) { body = { raw: await r.text() }; }
+        out.steps[`campaigns_try_${Object.keys(out.steps).length}`] = { url: path, status: r.status, body };
+        if (r.status === 200) break;
+      } catch(e) { out.steps[`campaigns_err`] = { error: e.message }; }
+    }
+  }
+  return res.json(out);
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
@@ -460,6 +501,7 @@ export default async function handler(req, res) {
       if (action === "callback" && req.method === "GET") return mercadolibreOauthCallback(req, res, db);
       if (action === "disconnect" && req.method === "POST") return mercadolibreDisconnect(req, res, db);
       if (action === "mp_probe" && req.method === "GET") return mpProbe(req, res, db);
+      if (action === "mlads_probe" && req.method === "GET") return mlAdsProbe(req, res, db);
     }
 
     return res.status(501).json({
