@@ -180,13 +180,43 @@ export default async function handler(req, res) {
           return { dailyRevenue, dailyOrders, raw: j };
         } catch(_) { return { dailyRevenue:{}, dailyOrders:{}, raw:{} }; }
       }
+      // Comisión REAL de Mercado Pago en ventas que NO son ML (Shopify/TN vía MP
+      // Checkout). Con el token de ML se consultan los pagos de MP y se suma el
+      // fee_details de los pagos de tienda (external_reference alfanumérico tipo
+      // rXXX = receipt_id de la transacción Shopify). Se excluyen: ML (ref
+      // numérica, ya contada en sale_fee), cashback, INSTORE, y no aprobados.
+      async function fetchMPCommission(sinceYmd, untilYmd) {
+        try {
+          const tok = await getValidMLToken(db, uid);
+          if (!tok?.accessToken) return 0;
+          const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
+          let total = 0, offset = 0;
+          for (let i=0; i<25; i++) {
+            const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(end)}&limit=100&offset=${offset}`;
+            const r = await fetch(url, { headers: { Authorization: `Bearer ${tok.accessToken}` } });
+            if (!r.ok) break;
+            const j = await r.json();
+            const results = j.results || [];
+            for (const p of results) {
+              const ref = String(p.external_reference || "");
+              if (p.status==="approved" && p.operation_type==="regular_payment" && /[a-zA-Z]/.test(ref) && !/^cashback|^INSTORE/i.test(ref)) {
+                total += (p.fee_details||[]).reduce((s,f)=>s+(parseFloat(f.amount)||0),0);
+              }
+            }
+            offset += results.length;
+            if (results.length < 100 || offset >= (j.paging?.total||0)) break;
+          }
+          return total;
+        } catch(_) { return 0; }
+      }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
       const metaCfg = metaAccounts[0] || null;
-      const [curr, prev, metaCurr, metaPrev] = await Promise.all([
+      const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev] = await Promise.all([
         fetchStock(since, until), fetchStock(prevSince, prevUntil),
         metaCfg ? fetchMetaDailySpend(metaCfg, since, until) : Promise.resolve({}),
         metaCfg ? fetchMetaDailySpend(metaCfg, prevSince, prevUntil) : Promise.resolve({}),
+        fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
       ]);
       const rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
       const prevRows = buildRendRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
@@ -208,7 +238,7 @@ export default async function handler(req, res) {
       const pctPago   = metPcts.length ? (metPcts.reduce((a,b)=>a+b,0)/metPcts.length)/100 : 0;
       const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
 
-      function aplicarCostos(tot, raw, sinceR, untilR, dias) {
+      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm) {
         // COGS = unidades vendidas × costo cargado por producto/variante.
         let cogs = 0;
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
@@ -225,7 +255,7 @@ export default async function handler(req, res) {
         // REAL de Mercado Libre (sale_fee de cada orden, ya incluye el pago de MP).
         const comML     = parseFloat(raw?.ml_data?.ml_commission)||0;
         const comPlat   = storeRev * pctPlat + comML;
-        const comPago   = storeRev * pctPago;
+        const comPago   = storeRev * pctPago + (parseFloat(mpComm)||0); // % configurado + comisión REAL de MP (Shopify)
         const envio     = (tot.orders||0) * envioProm;
         const costosAdic= dias>0 ? (fijosMensual/30)*dias : 0;
         const adSpendEf = (tot.adSpend||0) * (1+feeAd);
@@ -245,8 +275,8 @@ export default async function handler(req, res) {
           breakEvenRoas: (1-(pctImp+pctPlat+pctPago))>0 ? 1/(1-(pctImp+pctPlat+pctPago)) : 0,
         };
       }
-      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1);
-      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1);
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, mpCommPrev);
 
       return res.json({ rows, prevRows, totals, prevTotals, byDow, since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
