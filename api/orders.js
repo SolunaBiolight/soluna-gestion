@@ -262,7 +262,7 @@ export default async function handler(req, res) {
       const pctPago   = metPcts.length ? (metPcts.reduce((a,b)=>a+b,0)/metPcts.length)/100 : 0;
       const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
 
-      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm) {
+      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio) {
         // COGS = unidades vendidas × costo cargado por producto/variante.
         let cogs = 0;
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
@@ -280,7 +280,10 @@ export default async function handler(req, res) {
         const comML     = parseFloat(raw?.ml_data?.ml_commission)||0;
         const comPlat   = storeRev * pctPlat + comML;
         const comPago   = storeRev * pctPago + (parseFloat(mpComm)||0); // % configurado + comisión REAL de MP (Shopify)
-        const envio     = (tot.orders||0) * envioProm;
+        // Envío = órdenes de tienda (TN/Shopify) × promedio + envío de las órdenes
+        // ML que son Flex (el resto de ML es Mercado Envíos: lo cubre ML, no se cuenta).
+        const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
+        const envio     = storeOrders * envioProm + (parseFloat(mlEnvio)||0);
         const costosAdic= dias>0 ? (fijosMensual/30)*dias : 0;
         const adSpendEf = (tot.adSpend||0) * (1+feeAd);
         const netRevenue= revenue - impuestos - comPlat - comPago;
@@ -303,13 +306,42 @@ export default async function handler(req, res) {
           cpaBreakEven: (tot.orders||0)>0 ? (profit + adSpendEf)/tot.orders : 0,
         };
       }
-      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr);
-      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, mpCommPrev);
+      // ── Envío de ML: Flex (el vendedor paga) vs Mercado Envíos (lo cubre ML) ──
+      // Solo consultamos el tipo de envío de cada orden si hay envío promedio
+      // cargado (gated, para no recargar de gusto). logistic_type "self_service" = Flex.
+      const mlLogi = {};
+      if (envioProm > 0) {
+        try {
+          const tokML = await getValidMLToken(db, uid);
+          if (tokML?.accessToken) {
+            const ids = [...new Set([
+              ...(curr.raw?.ml_data?.ml_orders_detail||[]),
+              ...(prev.raw?.ml_data?.ml_orders_detail||[]),
+            ].map(o=>o.shippingId).filter(Boolean))].slice(0, 400);
+            for (let i=0; i<ids.length; i+=20) {
+              const rs = await Promise.all(ids.slice(i,i+20).map(async id => {
+                try {
+                  const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}`, "x-format-new":"true" } });
+                  if (!r.ok) return [id, null];
+                  const j = await r.json();
+                  return [id, j.logistic_type || null];
+                } catch(_) { return [id, null]; }
+              }));
+              for (const [id,lt] of rs) mlLogi[id] = lt;
+            }
+          }
+        } catch(_) {}
+      }
+      const mlEnvioDe  = o => (mlLogi[o?.shippingId] === "self_service") ? envioProm : 0;
+      const mlEnvioTot = raw => (raw?.ml_data?.ml_orders_detail||[]).reduce((s,o)=>s+mlEnvioDe(o),0);
+
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr, mlEnvioTot(curr.raw));
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, mpCommPrev, mlEnvioTot(prev.raw));
 
       // ── Desglose por canal (Tienda vs Mercado Libre) para los tableros ──
       // adSpend: Tienda = Meta Ads (toda la pauta de Meta empuja la tienda);
       // ML = publicidad de Mercado Ads (pendiente de integrar; por ahora 0).
-      function canal(raw, isMl, mpComm, adSpend) {
+      function canal(raw, isMl, mpComm, adSpend, mlEnv) {
         const dr = isMl ? (raw?.ml_data?.daily_revenue||{}) : (raw?.daily_revenue||{});
         const dord = isMl ? (raw?.ml_data?.daily_orders||{}) : (raw?.daily_orders||{});
         const rev = Object.values(dr).reduce((a,b)=>a+b,0);
@@ -319,7 +351,7 @@ export default async function handler(req, res) {
         else { for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const c=parseFloat(cogsMap[v.sku||String(v.id)]); if(c>0) cogs+=c*(v.units_sold||0); } }
         const impuestos = rev*pctImp;
         const comis = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : (rev*pctPlat + (parseFloat(mpComm)||0));
-        const envio = isMl ? 0 : ord*envioProm;
+        const envio = isMl ? (parseFloat(mlEnv)||0) : ord*envioProm;
         const ads = parseFloat(adSpend)||0;
         const netRev = rev - impuestos - comis;
         const profit = rev - cogs - impuestos - comis - envio - ads;
@@ -329,10 +361,10 @@ export default async function handler(req, res) {
           aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
       }
       const byChannel = {
-        tienda: canal(curr.raw, false, mpCommCurr, totals.adSpend),
-        ml:     canal(curr.raw, true,  0, 0),
-        tiendaPrev: canal(prev.raw, false, mpCommPrev, prevTotals.adSpend),
-        mlPrev:     canal(prev.raw, true,  0, 0),
+        tienda: canal(curr.raw, false, mpCommCurr, totals.adSpend, 0),
+        ml:     canal(curr.raw, true,  0, 0, mlEnvioTot(curr.raw)),
+        tiendaPrev: canal(prev.raw, false, mpCommPrev, prevTotals.adSpend, 0),
+        mlPrev:     canal(prev.raw, true,  0, 0, mlEnvioTot(prev.raw)),
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
       };
@@ -347,9 +379,9 @@ export default async function handler(req, res) {
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=parseFloat(o.saleFee)||0;
-          const profit=rev-cogs-imp-comis;
-          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:0, profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o);
+          const profit=rev-cogs-imp-comis-env;
+          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
         list.sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")));
         return list.slice(0, 600);
