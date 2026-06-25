@@ -20767,6 +20767,14 @@ function ComisionesPanel({ T, uid }) {
   const [detected, setDetected] = React.useState([]);
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [probe, setProbe] = React.useState(null);
+  const [probing, setProbing] = React.useState(false);
+  async function runProbe() {
+    setProbing(true); setProbe(null);
+    try { const r = await fetch(`/api/integrations?platform=mercadolibre&action=mp_probe&uid=${uid}`); setProbe(await r.json()); }
+    catch (e) { setProbe({ ok:false, error:e.message }); }
+    setProbing(false);
+  }
 
   React.useEffect(() => {
     if (!uid) return;
@@ -20864,6 +20872,15 @@ function ComisionesPanel({ T, uid }) {
             </div>
           );
         })}
+      </div>
+
+      {/* Sondeo MP (beta) — para conectar la comisión real de MP en Shopify */}
+      <div style={{background:T.surface,border:`1px dashed ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:T.textSm,flex:1,minWidth:200}}>🔬 <strong style={{color:T.text}}>Beta:</strong> probar si se puede leer la comisión real de Mercado Pago. Apretá y mandame captura del resultado.</div>
+          <button onClick={runProbe} disabled={probing} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>{probing?"Probando…":"Probar MP"}</button>
+        </div>
+        {probe && <pre style={{marginTop:10,maxHeight:280,overflow:"auto",background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 12px",fontSize:10,color:T.textMd,whiteSpace:"pre-wrap",wordBreak:"break-word",fontFamily:"'Cascadia Code','Consolas',monospace"}}>{JSON.stringify(probe,null,2)}</pre>}
       </div>
     </div>
   );

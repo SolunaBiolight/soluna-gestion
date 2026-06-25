@@ -381,6 +381,34 @@ export async function getValidMLToken(db, uid) {
 
 const PLATFORMS = ["shopify", "tiendanube", "mercadolibre"];
 
+// ── Sondeo: ¿el token de ML sirve para leer pagos de Mercado Pago? ──
+// Diagnóstico para decidir cómo calcular la comisión real de MP en ventas
+// que NO son de ML (Shopify/TN vía MP Checkout). Devuelve una muestra.
+async function mpProbe(req, res, db) {
+  const { uid, from, to } = req.query;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  let tok;
+  try { tok = await getValidMLToken(db, uid); } catch (e) { return res.json({ ok:false, step:"token", error:e.message }); }
+  if (!tok?.accessToken) return res.json({ ok:false, step:"token", error:"Sin token ML/MP — conectá Mercado Libre" });
+  const since = from || new Date(Date.now()-14*86400000).toISOString();
+  const until = to || new Date().toISOString();
+  const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(since)}&end_date=${encodeURIComponent(until)}&limit=30`;
+  let r, body;
+  try { r = await fetch(url, { headers: { Authorization: `Bearer ${tok.accessToken}` } }); } catch (e) { return res.json({ ok:false, step:"fetch", error:e.message }); }
+  try { body = await r.json(); } catch (_) { body = { raw: await r.text() }; }
+  if (r.status !== 200) return res.json({ ok:false, step:"mp_api", status:r.status, body });
+  const sample = (body.results||[]).map(p => ({
+    id: p.id, operation_type: p.operation_type, status: p.status,
+    amount: p.transaction_amount,
+    fee: (p.fee_details||[]).reduce((s,f)=>s+(f.amount||0),0),
+    fee_types: (p.fee_details||[]).map(f=>f.type),
+    external_reference: p.external_reference, order_id: p.order?.id,
+    pay_method: p.payment_method_id, marketplace: p.marketplace,
+    date: p.date_created,
+  }));
+  return res.json({ ok:true, status:r.status, total: body.paging?.total, count: sample.length, sample });
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
@@ -409,6 +437,7 @@ export default async function handler(req, res) {
       if (action === "oauth_start" && req.method === "POST") return mercadolibreOauthStart(req, res, db);
       if (action === "callback" && req.method === "GET") return mercadolibreOauthCallback(req, res, db);
       if (action === "disconnect" && req.method === "POST") return mercadolibreDisconnect(req, res, db);
+      if (action === "mp_probe" && req.method === "GET") return mpProbe(req, res, db);
     }
 
     return res.status(501).json({
