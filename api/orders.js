@@ -28,7 +28,7 @@ async function metaGet(path, params, token) {
   return j;
 }
 
-async function fetchMetaDailySpend(cfg, since, until) {
+async function fetchMetaDailySpend(cfg, since, until, errRef) {
   if (!cfg?.access_token || !cfg.ad_account_id) return {};
   try {
     const res = await metaGet(`${cfg.ad_account_id}/insights`, {
@@ -51,7 +51,11 @@ async function fetchMetaDailySpend(cfg, since, until) {
       };
     }
     return byDate;
-  } catch(e) { console.error("Meta daily spend error:", e.message); return {}; }
+  } catch(e) {
+    console.error("Meta daily spend error:", e.message);
+    if (errRef && /expired|invalid.*token|oauth|session|\b190\b|access token/i.test(e.message||"")) errRef.expired = true;
+    return {};
+  }
 }
 
 function buildRendRows(since, until, dailyRevenue, dailyOrders, metaDailySpend, commission) {
@@ -212,9 +216,10 @@ export default async function handler(req, res) {
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
       const metaCfg = metaAccounts[0] || null;
+      const metaErr = {};
       const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev] = await Promise.all([
         fetchStock(since, until), fetchStock(prevSince, prevUntil),
-        metaCfg ? fetchMetaDailySpend(metaCfg, since, until) : Promise.resolve({}),
+        metaCfg ? fetchMetaDailySpend(metaCfg, since, until, metaErr) : Promise.resolve({}),
         metaCfg ? fetchMetaDailySpend(metaCfg, prevSince, prevUntil) : Promise.resolve({}),
         fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
       ]);
@@ -280,6 +285,7 @@ export default async function handler(req, res) {
 
       return res.json({ rows, prevRows, totals, prevTotals, byDow, since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
+          metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, fijosMensual, feeAd: feeAd*100 } } });
     } catch(e) { console.error("Dashboard error:", e); return res.status(500).json({ error: e.message }); }
   }

@@ -23211,6 +23211,16 @@ function AppRendimiento({T, user, onHome}) {
     return ()=>clearInterval(iv);
   },[uid]);
 
+  const [reproc, setReproc] = useState(false);
+  async function reprocesar60() {
+    if(!uid) return;
+    setReproc(true);
+    try { await fetch(`/api/inventory?action=sync_sales&uid=${uid}`, { method:"POST" }); } catch(_) {}
+    setUseCustom(false); setDays(60);
+    await loadData(60, "", "");
+    setReproc(false);
+  }
+
   async function saveCommission(val) {
     const v=parseFloat(val)||0.03; setCommission(v);
     await fetch(`/api/orders?action=save_config&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commission:v})});
@@ -23321,10 +23331,20 @@ function AppRendimiento({T, user, onHome}) {
           since={useCustom?dateFrom:new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
           until={useCustom?dateTo:new Date().toISOString().slice(0,10)}
           onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
+        <button onClick={reprocesar60} disabled={reproc||loading} title="Re-sincroniza las ventas de los últimos 60 días desde las plataformas" style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>
+          {reproc?<><Spinner size={11} color={T.textMd}/> Reprocesando…</>:"🔄 Reprocesar 60 días"}
+        </button>
         <button onClick={()=>loadData()} disabled={loading} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>
           {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
         </button>
       </AppTopbar>
+
+      {rendData?.meta?.metaTokenExpired && (
+        <div style={{background:T.red+"18",borderBottom:`1px solid ${T.red}44`,padding:"10px 24px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.text,flexWrap:"wrap"}}>
+          <span style={{fontSize:16}}>⚠️</span>
+          <span><strong>El token de Meta Ads venció.</strong> El Ad Spend y el ROAS pueden estar en 0. Reconectá Meta Ads desde <strong>Configuración → Integraciones</strong> para volver a traer la inversión publicitaria.</span>
+        </div>
+      )}
 
       <div style={{maxWidth:1440,margin:"0 auto",padding:"20px 24px 64px",width:"100%"}}>
 
