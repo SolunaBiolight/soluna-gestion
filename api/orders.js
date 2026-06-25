@@ -252,6 +252,7 @@ export default async function handler(req, res) {
       const comCfg    = userData.margenesComisionesCfg || {};
       const metodos   = comCfg.metodos && typeof comCfg.metodos==="object" ? comCfg.metodos : {};
       const envioProm = parseFloat(userData.margenesEnvioProm) || 0;
+      const mlAdsMensual = parseFloat(userData.margenesMlAdsManual) || 0; // gasto mensual Mercado Ads (carga manual)
       const fijos     = Array.isArray(userData.margenesCostosFijos) ? userData.margenesCostosFijos : [];
       const dolarCfg  = userData.margenesDolar || {};
       const factExt   = Array.isArray(userData.margenesFactExterna) ? userData.margenesFactExterna : [];
@@ -285,11 +286,14 @@ export default async function handler(req, res) {
         const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
         const envio     = storeOrders * envioProm + (parseFloat(mlEnvio)||0);
         const costosAdic= dias>0 ? (fijosMensual/30)*dias : 0;
-        const adSpendEf = (tot.adSpend||0) * (1+feeAd);
+        // Ad Spend general = Meta (con fee del dólar) + Mercado Ads manual prorrateado.
+        const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
+        const adSpendMl   = dias>0 ? (mlAdsMensual/30)*dias : 0;
+        const adSpendEf = adSpendMeta + adSpendMl;
         const netRevenue= revenue - impuestos - comPlat - comPago;
         const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;
         return { ...tot,
-          revenue, adSpend: adSpendEf, netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
+          revenue, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
           costoProductos: +cogs.toFixed(2), impuestos: +impuestos.toFixed(2),
           comisionPlataforma: +comPlat.toFixed(2), comisionPago: +comPago.toFixed(2),
           costoEnvio: +envio.toFixed(2), costosAdicionales: +costosAdic.toFixed(2),
@@ -361,10 +365,10 @@ export default async function handler(req, res) {
           aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
       }
       const byChannel = {
-        tienda: canal(curr.raw, false, mpCommCurr, totals.adSpend, 0),
-        ml:     canal(curr.raw, true,  0, 0, mlEnvioTot(curr.raw)),
-        tiendaPrev: canal(prev.raw, false, mpCommPrev, prevTotals.adSpend, 0),
-        mlPrev:     canal(prev.raw, true,  0, 0, mlEnvioTot(prev.raw)),
+        tienda: canal(curr.raw, false, mpCommCurr, totals.adSpendMeta, 0),
+        ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw)),
+        tiendaPrev: canal(prev.raw, false, mpCommPrev, prevTotals.adSpendMeta, 0),
+        mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw)),
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
       };

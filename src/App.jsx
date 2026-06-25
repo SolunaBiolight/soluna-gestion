@@ -20897,6 +20897,7 @@ function ComisionesPanel({ T, uid }) {
 // ningún sistema sabe cuánto te cuesta el producto).
 function CostosPanel({ T, uid }) {
   const [envio, setEnvio] = React.useState("");
+  const [mlAds, setMlAds] = React.useState("");
   const [products, setProducts] = React.useState([]);
   const [mlItems, setMlItems] = React.useState([]);
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
@@ -20913,6 +20914,7 @@ function CostosPanel({ T, uid }) {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data() : {};
         setEnvio(d.margenesEnvioProm ?? "");
+        setMlAds(d.margenesMlAdsManual ?? "");
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
       } catch (_) {}
@@ -20931,7 +20933,7 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesMlAdsManual: parseFloat(mlAds)||0, margenesCogs: costos, margenesCostosFijos: fijos }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -20973,6 +20975,18 @@ function CostosPanel({ T, uid }) {
           </div>
           <span style={{fontSize:13,color:T.textSm}}>$</span>
           <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
+        </div>
+      </div>
+
+      {/* Gasto de Mercado Ads (carga manual, hasta integrar la API) */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text}}>🛒 Gasto de Mercado Ads (mensual)</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Tu inversión publicitaria en Mercado Libre por mes. Se prorratea al período y se suma al Ad Spend de ML y al general. (Carga manual hasta habilitar la API de Mercado Ads.)</div>
+          </div>
+          <span style={{fontSize:13,color:T.textSm}}>$</span>
+          <input type="number" min="0" value={mlAds} onChange={e=>setMlAds(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
         </div>
       </div>
 
