@@ -216,12 +216,20 @@ export default async function handler(req, res) {
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
       const metaErr = {};
-      // Suma el gasto de TODAS las cuentas de Meta. Antes usaba solo la primera
-      // (metaAccounts[0]), por eso daba Ad Spend $0 si la cuenta con gasto no era
-      // la primera (ej: tener CP5 + CP7 activas).
+      // Suma el gasto de TODAS las cuentas publicitarias que el token puede ver
+      // (CP5, CP7, etc.) — las descubre con /me/adaccounts, así no hay que
+      // agregar cada CP a mano en la app. Antes usaba solo metaAccounts[0], por
+      // eso daba Ad Spend $0 al cambiar de CP.
       async function fetchMetaAll(s, u, eRef) {
         if (!metaAccounts.length) return {};
-        const arr = await Promise.all(metaAccounts.map(a => fetchMetaDailySpend(a, s, u, eRef)));
+        const token = metaAccounts[0].access_token;
+        let accountIds = [];
+        try {
+          const acc = await metaGet("me/adaccounts", { fields: "account_id,name", limit: "100" }, token);
+          accountIds = (acc.data||[]).map(a => "act_" + a.account_id);
+        } catch(e) { console.error("Meta adaccounts list error:", e.message); }
+        if (!accountIds.length) accountIds = metaAccounts.map(a => a.ad_account_id).filter(Boolean);
+        const arr = await Promise.all(accountIds.map(id => fetchMetaDailySpend({ access_token: token, ad_account_id: id }, s, u, eRef)));
         const merged = {};
         for (const bd of arr) for (const [d,v] of Object.entries(bd)) {
           const m = merged[d] || (merged[d] = { spend:0, impressions:0, clicks:0, reach:0, purchases:0, purchaseVal:0 });
