@@ -406,7 +406,29 @@ async function mpProbe(req, res, db) {
     pay_method: p.payment_method_id, marketplace: p.marketplace,
     date: p.date_created,
   }));
-  return res.json({ ok:true, status:r.status, total: body.paging?.total, count: sample.length, sample });
+
+  // Además: traer unas órdenes de Shopify con sus transacciones, para ver qué
+  // campo linkea cada orden con su pago de MP (id de pago / external_reference).
+  let shopifyOrders = [];
+  try {
+    const userSnap = await db.collection("users").doc(uid).get();
+    const sh = (userSnap.data()?.stores||[]).find(s => s.type === "shopify");
+    if (sh?.shop && sh?.accessToken) {
+      const oRes = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?limit=5&status=any&fields=id,name,order_number,checkout_token,cart_token,note_attributes,payment_gateway_names,total_price,created_at`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+      const oj = await oRes.json();
+      for (const o of (oj.orders||[]).slice(0,5)) {
+        let txs = [];
+        try {
+          const tRes = await fetch(`https://${sh.shop}/admin/api/2024-10/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+          const tj = await tRes.json();
+          txs = (tj.transactions||[]).map(t => ({ gateway:t.gateway, authorization:t.authorization, receipt_id:t.receipt?.id||t.receipt?.payment_id, amount:t.amount, kind:t.kind, status:t.status }));
+        } catch(_) {}
+        shopifyOrders.push({ id:o.id, name:o.name, order_number:o.order_number, checkout_token:o.checkout_token, gateways:o.payment_gateway_names, note_attributes:o.note_attributes, total:o.total_price, transactions:txs });
+      }
+    }
+  } catch (e) { shopifyOrders = [{ error: e.message }]; }
+
+  return res.json({ ok:true, status:r.status, total: body.paging?.total, count: sample.length, sample, shopifyOrders });
 }
 
 export default async function handler(req, res) {
