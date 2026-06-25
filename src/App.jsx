@@ -20990,14 +20990,14 @@ function CostosPanel({ T, uid }) {
         const dias=e=>{ if(!e.desde||!e.hasta||e.hasta<e.desde) return 0; return Math.round((new Date(e.hasta)-new Date(e.desde))/86400000)+1; };
         return (<>
           {mlAdsList.length===0 && <div style={{fontSize:12,color:T.textSm,padding:"6px 0"}}>Sin períodos cargados. Agregá uno abajo.</div>}
-          {mlAdsList.map((e,i)=>{ const d=dias(e), prom=d>0?(parseFloat(e.monto)||0)/d:0; return (
+          {mlAdsList.map((e,i)=>{ const d=dias(e), prom=d>0?(parseFloat(e.monto)||0)/d:0; const rangoMal=e.desde&&e.hasta&&e.hasta<e.desde; return (
             <div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-              <input type="date" max={today} value={e.desde||""} onChange={ev=>upd(i,"desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+              <input type="date" min="2023-01-01" max={e.hasta||today} value={e.desde||""} onChange={ev=>upd(i,"desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
               <span style={{fontSize:12,color:T.textSm}}>→</span>
-              <input type="date" max={today} value={e.hasta||""} onChange={ev=>upd(i,"hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+              <input type="date" min={e.desde||"2023-01-01"} max={today} value={e.hasta||""} onChange={ev=>upd(i,"hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
               <span style={{fontSize:13,color:T.textSm}}>$</span>
               <input type="number" min="0" value={e.monto??""} onChange={ev=>upd(i,"monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
-              <span style={{fontSize:11,color:prom>0?T.accent:T.textSm,fontWeight:600,minWidth:120}}>{prom>0?`≈ $${Math.round(prom).toLocaleString("es-AR")}/día`:`${d} día(s)`}</span>
+              <span style={{fontSize:11,color:rangoMal?T.red:prom>0?T.accent:T.textSm,fontWeight:600,minWidth:130}}>{rangoMal?"⚠ fecha final < inicial":prom>0?`≈ $${Math.round(prom).toLocaleString("es-AR")}/día · ${d}d`:`${d} día(s)`}</span>
               <button onClick={()=>setMlAdsList(l=>l.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red}}>✕</button>
             </div>
           );})}
