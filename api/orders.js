@@ -221,7 +221,10 @@ export default async function handler(req, res) {
         const factExtTot = factExt.filter(r => r.fecha && r.fecha>=sinceR && r.fecha<=untilR).reduce((s,r)=>s+(parseFloat(r.monto)||0),0);
         const revenue   = (tot.revenue||0) + factExtTot;
         const impuestos = revenue * pctImp;
-        const comPlat   = storeRev * pctPlat;
+        // Comisión de plataforma = % configurado del store (Shopify/TN) + comisión
+        // REAL de Mercado Libre (sale_fee de cada orden, ya incluye el pago de MP).
+        const comML     = parseFloat(raw?.ml_data?.ml_commission)||0;
+        const comPlat   = storeRev * pctPlat + comML;
         const comPago   = storeRev * pctPago;
         const envio     = (tot.orders||0) * envioProm;
         const costosAdic= dias>0 ? (fijosMensual/30)*dias : 0;

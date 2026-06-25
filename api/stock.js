@@ -238,8 +238,10 @@ function processSH(orders) {
 
 // ── Procesar órdenes ML ───────────────────────────────────────────────
 function processML(orders) {
-  const map={}, daily={}, dailyRevenue={}, dailyOrders={}, byProv={}, byHour={}, byPayment={}, byVariant={}, byVariantRev={};
+  const map={}, daily={}, dailyRevenue={}, dailyOrders={}, byProv={}, byHour={}, byPayment={}, byVariant={}, byVariantRev={}, comisionMLDaily={};
+  let comisionML=0;
   for(const o of orders){
+    let orderFee=0;
     const dt=o.date_created||"";
     const day=dt.slice(0,10);
     const hour=dt.slice(11,13);
@@ -267,17 +269,20 @@ function processML(orders) {
       const vname=item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
       byVariantRev[vname]=(byVariantRev[vname]||0)+rev;
+      orderFee += parseFloat(item.sale_fee||0); // comisión real que ML cobró por esta venta
     }
     if(day){
       daily[day]  =(daily[day]  ||0)+orderUnits;
       dailyRevenue[day]=(dailyRevenue[day]||0)+orderRev;
       dailyOrders[day]=(dailyOrders[day]||0)+1;
+      comisionMLDaily[day]=(comisionMLDaily[day]||0)+orderFee;
     }
+    comisionML += orderFee;
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
   }
-  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,byVariantRev};
+  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,byVariantRev,comisionML,comisionMLDaily};
 }
 
 function daysLeft(stock, units, days) {
@@ -438,6 +443,8 @@ export default async function handler(req, res) {
           by_variant:    mlAnalytics.byVariant,     // unidades por variante
           by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante (bruto)
           ml_products:   Object.entries(mlAnalytics.map||{}).map(([id,v])=>({id, nombre:v.nombre||id, units:v.units})), // publicaciones ML (no variantes)
+          ml_commission: mlAnalytics.comisionML || 0,           // comisión REAL de ML (sale_fee, incluye MP)
+          ml_commission_daily: mlAnalytics.comisionMLDaily || {},
           by_province:   mlAnalytics.byProv,
           by_hour:       mlAnalytics.byHour,
           by_payment:    mlAnalytics.byPayment,
@@ -464,6 +471,8 @@ export default async function handler(req, res) {
           by_variant:    mlAnalytics.byVariant,     // unidades por variante
           by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante (bruto)
           ml_products:   Object.entries(mlAnalytics.map||{}).map(([id,v])=>({id, nombre:v.nombre||id, units:v.units})), // publicaciones ML (no variantes)
+          ml_commission: mlAnalytics.comisionML || 0,           // comisión REAL de ML (sale_fee, incluye MP)
+          ml_commission_daily: mlAnalytics.comisionMLDaily || {},
           by_province:   mlAnalytics.byProv,
           by_hour:       mlAnalytics.byHour,
           by_payment:    mlAnalytics.byPayment,
