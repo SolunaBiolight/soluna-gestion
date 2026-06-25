@@ -379,14 +379,22 @@ export default async function handler(req, res) {
         if (isMl) { for (const m of (raw?.ml_data?.ml_products||[])) { const c=parseFloat(cogsMap["ml:"+m.id]); if(c>0) cogs+=c*(m.units||0); } }
         else { for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const c=parseFloat(cogsMap[v.sku||String(v.id)]); if(c>0) cogs+=c*(v.units_sold||0); } }
         const impuestos = rev*pctImp;
-        const comis = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : (rev*pctPlat + (parseFloat(mpComm)||0) + Math.max(0, rev-(parseFloat(mpRev)||0))*pctPago);
+        // Comisión separada como en el general: Plataforma vs Pago.
+        const comPlat = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : rev*pctPlat;
+        const comPago = isMl ? 0 : ((parseFloat(mpComm)||0) + Math.max(0, rev-(parseFloat(mpRev)||0))*pctPago);
+        const comis = comPlat + comPago;
         const envio = isMl ? (parseFloat(mlEnv)||0) : ord*envioProm;
         const ads = parseFloat(adSpend)||0;
         const netRev = rev - impuestos - comis;
         const profit = rev - cogs - impuestos - comis - envio - ads;
         return { orders:ord, revenue:+rev.toFixed(2), netRevenue:+netRev.toFixed(2), adSpend:+ads.toFixed(2),
-          costoProductos:+cogs.toFixed(2), impuestos:+impuestos.toFixed(2), comisiones:+comis.toFixed(2), costoEnvio:+envio.toFixed(2),
-          profit:+profit.toFixed(2), margin: rev>0?profit/rev:0, roas: ads>0?rev/ads:0,
+          costoProductos:+cogs.toFixed(2), impuestos:+impuestos.toFixed(2),
+          comisiones:+comis.toFixed(2), comisionPlataforma:+comPlat.toFixed(2), comisionPago:+comPago.toFixed(2),
+          costoEnvio:+envio.toFixed(2), costosAdicionales:0,
+          profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
+          roas: ads>0?rev/ads:0, trueRoas: ads>0?netRev/ads:0,
+          cpa: ord>0?ads/ord:0, cpaBreakEven: ord>0?(profit+ads)/ord:0,
+          mer: rev>0?ads/rev:0, breakEvenRoas: (profit+ads)>0?rev/(profit+ads):0,
           aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
       }
       const byChannel = {

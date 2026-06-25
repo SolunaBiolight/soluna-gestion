@@ -23519,29 +23519,64 @@ function AppRendimiento({T, user, onHome}) {
           {/* Tableros por canal — Tienda y Mercado Libre (estilo Escalafy) */}
           {rendData.byChannel && (()=>{
             const bc = rendData.byChannel;
-            const board = (titulo, icon, accent, c) => (
+            const board = (titulo, icon, c, cp) => (
               <div style={{marginBottom:18,borderTop:`1px solid ${T.border}`,paddingTop:18}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
                   <span style={{fontSize:16}}>{icon}</span>
                   <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</span>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8}}>
+                {/* Hero del canal */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:12}}>
                   {[
-                    {l:"Órdenes",          v:fmtInt(c.orders)},
-                    {l:"Facturación",      v:fmtM(c.revenue),     color:accent},
-                    {l:"Facturación Neta", v:fmtM(c.netRevenue)},
-                    {l:"AOV",              v:fmtM(c.aov)},
-                    {l:"Ad Spend",         v:fmtM(c.adSpend),     color:"#f97316"},
-                    {l:"ROAS",             v:fmtX(c.roas)},
-                    {l:"Ganancia",         v:fmtM(c.profit),      color:(c.profit||0)>=0?T.green:T.red},
-                    {l:"Margen",           v:fmtPct(c.margin)},
-                    {l:"Costos Productos", v:fmtM(c.costoProductos)},
-                    {l:"Impuestos",        v:fmtM(c.impuestos)},
-                    {l:"Comisiones",       v:fmtM(c.comisiones)},
+                    {label:"Revenue",     val:c.revenue,    prev:cp?.revenue,    color:"#3b82f6", icon:"💰", desc:"Ingreso bruto"},
+                    {label:"Net Revenue", val:c.netRevenue, prev:cp?.netRevenue, color:"#6366f1", icon:"💵", desc:"Tras comisiones"},
+                    {label:"Ad Spend",    val:c.adSpend,    prev:cp?.adSpend,    color:"#f97316", icon:"📢", desc:"Gasto publicitario", inv:true},
+                    {label:"Profit",      val:c.profit,     prev:cp?.profit,     color:(c.profit||0)>=0?T.green:T.red, icon:(c.profit||0)>=0?"📈":"📉", desc:(c.profit||0)>=0?"Ganancia neta":"Pérdida neta"},
                   ].map(k=>(
-                    <div key={k.l} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
-                      <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.3,marginBottom:4}}>{k.l}</div>
-                      <div style={{fontSize:15,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5}}>{k.v}</div>
+                    <div key={k.label} style={{background:T.card,border:`1px solid ${k.color}28`,borderRadius:14,padding:"16px 16px 14px",position:"relative",overflow:"hidden"}}>
+                      <div style={{position:"absolute",top:-20,right:-20,width:90,height:90,background:k.color,opacity:0.05,borderRadius:"50%"}}/>
+                      <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.icon} {k.label}</div>
+                      <div style={{fontSize:24,fontWeight:800,color:k.color,letterSpacing:-1,lineHeight:1,marginBottom:4}}>{fmtM(k.val)}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:10,color:T.textSm}}>{k.desc}</span>
+                        {cp&&hasPrev&&<DeltaBadge curr={k.val} prev={k.prev} invert={k.inv}/>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* KPIs secundarios del canal */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:12}}>
+                  {[
+                    {label:"ROAS",          val:fmtX(c.roas),          good:(c.roas||0)>=2,       hint:"Revenue / Ad Spend"},
+                    {label:"True ROAS",     val:fmtX(c.trueRoas),      good:(c.trueRoas||0)>=1.2, hint:"Net Rev / Ad Spend"},
+                    {label:"CPA real",      val:fmtM(c.cpa),           good:true,                 hint:"Ad Spend / Órdenes"},
+                    {label:"CPA Break Even",val:fmtM(c.cpaBreakEven),  good:true,                 hint:"CPA máx. antes de perder"},
+                    {label:"Órdenes",       val:fmtInt(c.orders),      good:(c.orders||0)>0,      hint:"Con revenue"},
+                    {label:"Margen",        val:fmtPct(c.margin),      good:(c.margin||0)>0.05,   hint:"Profit / Revenue"},
+                    {label:"MER %",         val:fmtPct(c.mer),         good:true,                 hint:"Ad Spend / Revenue"},
+                    {label:"Break Even",    val:fmtX(c.breakEvenRoas), good:true,                 hint:"ROAS de equilibrio"},
+                    {label:"AOV",           val:fmtM(c.aov),           good:true,                 hint:"Ticket promedio"},
+                  ].map(k=>(
+                    <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+                      <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
+                      <div style={{fontSize:15,fontWeight:800,color:k.good?T.text:T.red,letterSpacing:-0.5}}>{k.val}</div>
+                      <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Desglose de costos del canal */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+                  {[
+                    {label:"Costos de Productos",  val:c.costoProductos,     color:"#ef4444", icon:"📦"},
+                    {label:"Costos de Envío",      val:c.costoEnvio,         color:"#f97316", icon:"🚚"},
+                    {label:"Impuestos",            val:c.impuestos,          color:"#eab308", icon:"🧾"},
+                    {label:"Comisiones Plataforma",val:c.comisionPlataforma, color:"#a855f7", icon:"🏪"},
+                    {label:"Comisiones de Pago",   val:c.comisionPago,       color:"#ec4899", icon:"💳"},
+                    {label:"Costos Adicionales",   val:c.costosAdicionales,  color:"#6366f1", icon:"🏢"},
+                  ].map(k=>(
+                    <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
+                      <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.icon} {k.label}</div>
+                      <div style={{fontSize:17,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{fmtM(k.val||0)}</div>
                     </div>
                   ))}
                 </div>
@@ -23550,8 +23585,8 @@ function AppRendimiento({T, user, onHome}) {
             const esShop = bc.platform==="shopify";
             return (
               <>
-                {board(esShop?"Shopify":"Tienda Nube", esShop?"🛍️":"🏪", esShop?"#96BF48":"#2D8DF2", bc.tienda||{})}
-                {bc.hasMl && board("Mercado Libre", "🛒", "#FFE600", bc.ml||{})}
+                {board(esShop?"Shopify":"Tienda Nube", esShop?"🛍️":"🏪", bc.tienda||{}, bc.tiendaPrev)}
+                {bc.hasMl && board("Mercado Libre", "🛒", bc.ml||{}, bc.mlPrev)}
               </>
             );
           })()}
