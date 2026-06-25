@@ -337,7 +337,26 @@ export default async function handler(req, res) {
         hasMl: !!(curr.raw?.ml_data),
       };
 
-      return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, since, until, prevSince, prevUntil,
+      // ── Venta por venta: cada orden con sus costos reales ──
+      function buildSales(raw) {
+        const list = [];
+        const cogsDe = items => (items||[]).reduce((s,it)=>s+(parseFloat(cogsMap[it.key])||0)*(it.qty||0),0);
+        for (const o of (raw?.orders_detail||[])) {
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=rev*(pctPlat+pctPago), env=envioProm;
+          const profit=rev-cogs-imp-comis-env;
+          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
+        }
+        for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=parseFloat(o.saleFee)||0;
+          const profit=rev-cogs-imp-comis;
+          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:0, profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
+        }
+        list.sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")));
+        return list.slice(0, 600);
+      }
+      const sales = buildSales(curr.raw);
+
+      return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, sales, since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, fijosMensual, feeAd: feeAd*100 } } });

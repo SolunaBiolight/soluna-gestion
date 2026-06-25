@@ -23624,53 +23624,54 @@ function AppRendimiento({T, user, onHome}) {
           })()}
 
           {/* Tabla */}
-          {viewTab==="tabla"&&(
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <thead style={{background:T.bg,position:"sticky",top:0}}>
-                    <tr>{[{k:"Fecha",l:"Fecha",a:"left"},{k:"Ordenes > $0",l:"Órdenes",a:"right"},{k:"Revenue",l:"Revenue",a:"right"},{k:"Ad Spend",l:"Ad Spend",a:"right"},{k:"Net Revenue",l:"Net Rev.",a:"right"},{k:"Profit",l:"Profit",a:"right"},{k:"Profit Margin",l:"Margen",a:"right"},{k:"ROAS",l:"ROAS",a:"right"},{k:"True ROAS",l:"True ROAS",a:"right"},{k:"CPA",l:"CPA",a:"right"}].map(col=>{
-                      const active=sortCol===col.k;
-                      return <th key={col.k} onClick={()=>{if(sortCol===col.k)setSortDir(d=>d==="desc"?"asc":"desc");else{setSortCol(col.k);setSortDir("desc");}}} style={{padding:"10px 12px",textAlign:col.a,fontSize:10,color:active?T.accent:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,cursor:"pointer",whiteSpace:"nowrap",userSelect:"none"}}>{col.l} {active?(sortDir==="desc"?"↓":"↑"):"↕"}</th>;
-                    })}</tr>
-                  </thead>
-                  <tbody>
-                    {[...dailyRows].sort((a,b)=>{const av=sortCol==="Fecha"?a.Fecha:Number(a[sortCol])||0,bv=sortCol==="Fecha"?b.Fecha:Number(b[sortCol])||0;return sortCol==="Fecha"?(sortDir==="desc"?String(bv).localeCompare(String(av)):String(av).localeCompare(String(bv))):(sortDir==="desc"?bv-av:av-bv);}).map((r,i)=>{
-                      const profit=r.Profit,roas=Number(r.ROAS),margin=Number(r["Profit Margin"]);
-                      return(
-                        <tr key={i} style={{borderBottom:`1px solid ${T.borderL}`,background:profit>0?T.green+"07":profit<0?T.red+"07":"transparent"}}>
-                          <td style={{padding:"8px 12px",fontWeight:500,color:T.text,whiteSpace:"nowrap"}}>{fmtDate(r.Fecha)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{r["Ordenes > $0"]||"—"}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#3b82f6",fontWeight:500}}>{fmtM(r.Revenue)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#f97316"}}>{fmtM(r["Ad Spend"])}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#6366f1"}}>{fmtM(r["Net Revenue"])}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:profit>0?T.green:profit<0?T.red:T.textMd}}>{fmtM(profit)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:margin>=0.1?T.green:margin>=0?(T.yellow||"#eab308"):T.red}}>{fmtPct(margin)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:roas>=3?T.green:roas>=2?(T.yellow||"#eab308"):roas>=1?T.text:T.red}}>{fmtX(roas)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:Number(r["True ROAS"])>=1?T.textMd:T.red}}>{fmtX(r["True ROAS"])}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:T.textMd}}>{fmtM(r.CPA)}</td>
+          {viewTab==="tabla"&&(()=>{
+            const sales = rendData.sales || [];
+            const fmtFecha = f => { try { return new Date(f).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}); } catch(_) { return String(f||"").slice(0,10); } };
+            const t2 = sales.reduce((a,s)=>({revenue:a.revenue+s.revenue,cogs:a.cogs+s.cogs,comisiones:a.comisiones+s.comisiones,impuestos:a.impuestos+s.impuestos,envio:a.envio+s.envio,profit:a.profit+s.profit}),{revenue:0,cogs:0,comisiones:0,impuestos:0,envio:0,profit:0});
+            return (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,fontSize:11,color:T.textSm}}>{sales.length} ventas · cada fila es una orden con sus costos reales (sin contar Ad Spend, que es a nivel cuenta)</div>
+                <div style={{maxHeight:520,overflow:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <thead style={{background:T.bg,position:"sticky",top:0,zIndex:1}}>
+                      <tr>{["Venta","Fecha","Canal","Revenue","COGS","Comisión","Impuestos","Envío","Profit","Margen"].map((l,i)=>(
+                        <th key={l} style={{padding:"10px 12px",textAlign:i<3?"left":"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{l}</th>
+                      ))}</tr>
+                    </thead>
+                    <tbody>
+                      {sales.length===0 && <tr><td colSpan={10} style={{padding:"30px",textAlign:"center",color:T.textSm}}>No hay ventas en el período.</td></tr>}
+                      {sales.map((s,i)=>(
+                        <tr key={s.id||i} style={{borderBottom:`1px solid ${T.borderL}`,background:s.profit>0?T.green+"07":s.profit<0?T.red+"07":"transparent"}}>
+                          <td style={{padding:"8px 12px",color:T.text,fontWeight:500,whiteSpace:"nowrap",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis"}}>{s.nombre||s.id}</td>
+                          <td style={{padding:"8px 12px",color:T.textMd,whiteSpace:"nowrap"}}>{fmtFecha(s.fecha)}</td>
+                          <td style={{padding:"8px 12px",color:T.textSm,whiteSpace:"nowrap"}}>{s.canal}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#3b82f6"}}>{fmtM(s.revenue)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#ef4444"}}>{fmtM(s.cogs)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#ec4899"}}>{fmtM(s.comisiones)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#eab308"}}>{fmtM(s.impuestos)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#f97316"}}>{fmtM(s.envio)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:s.profit>0?T.green:s.profit<0?T.red:T.textMd}}>{fmtM(s.profit)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:(s.margin||0)>=0.1?T.green:(s.margin||0)>=0?(T.yellow||"#eab308"):T.red}}>{fmtPct(s.margin)}</td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{background:T.surface,borderTop:`2px solid ${T.border}`}}>
-                      <td style={{padding:"9px 12px",fontWeight:700,color:T.textSm,fontSize:11}}>TOTAL</td>
-                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:T.text}}>{fmtInt(tot.orders)}</td>
-                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#3b82f6"}}>{fmtM(tot.revenue)}</td>
-                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#f97316"}}>{fmtM(tot.adSpend)}</td>
-                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#6366f1"}}>{fmtM(tot.netRevenue)}</td>
-                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:(tot.profit||0)>=0?T.green:T.red}}>{fmtM(tot.profit)}</td>
-                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:(tot.profitMargin||0)>=0.1?T.green:(T.yellow||"#eab308")}}>{fmtPct(tot.profitMargin)}</td>
-                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:(tot.roas||0)>=2?T.green:(T.yellow||"#eab308")}}>{fmtX(tot.roas)}</td>
-                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:(tot.trueRoas||0)>=1?T.textMd:T.red}}>{fmtX(tot.trueRoas)}</td>
-                      <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:T.textMd}}>{fmtM(tot.cpa)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{background:T.surface,borderTop:`2px solid ${T.border}`,position:"sticky",bottom:0}}>
+                        <td style={{padding:"9px 12px",fontWeight:700,color:T.textSm}} colSpan={3}>TOTAL · {sales.length}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#3b82f6"}}>{fmtM(t2.revenue)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#ef4444"}}>{fmtM(t2.cogs)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#ec4899"}}>{fmtM(t2.comisiones)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#eab308"}}>{fmtM(t2.impuestos)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#f97316"}}>{fmtM(t2.envio)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:t2.profit>=0?T.green:T.red}}>{fmtM(t2.profit)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:T.textMd}}>{fmtPct(t2.revenue>0?t2.profit/t2.revenue:0)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Por día de semana */}
           {viewTab==="dow"&&(
