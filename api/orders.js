@@ -295,7 +295,9 @@ export default async function handler(req, res) {
       prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, mpCommPrev);
 
       // ── Desglose por canal (Tienda vs Mercado Libre) para los tableros ──
-      function canal(raw, isMl, mpComm) {
+      // adSpend: Tienda = Meta Ads (toda la pauta de Meta empuja la tienda);
+      // ML = publicidad de Mercado Ads (pendiente de integrar; por ahora 0).
+      function canal(raw, isMl, mpComm, adSpend) {
         const dr = isMl ? (raw?.ml_data?.daily_revenue||{}) : (raw?.daily_revenue||{});
         const dord = isMl ? (raw?.ml_data?.daily_orders||{}) : (raw?.daily_orders||{});
         const rev = Object.values(dr).reduce((a,b)=>a+b,0);
@@ -306,18 +308,19 @@ export default async function handler(req, res) {
         const impuestos = rev*pctImp;
         const comis = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : (rev*pctPlat + (parseFloat(mpComm)||0));
         const envio = isMl ? 0 : ord*envioProm;
+        const ads = parseFloat(adSpend)||0;
         const netRev = rev - impuestos - comis;
-        const profit = rev - cogs - impuestos - comis - envio;
-        return { orders:ord, revenue:+rev.toFixed(2), netRevenue:+netRev.toFixed(2),
+        const profit = rev - cogs - impuestos - comis - envio - ads;
+        return { orders:ord, revenue:+rev.toFixed(2), netRevenue:+netRev.toFixed(2), adSpend:+ads.toFixed(2),
           costoProductos:+cogs.toFixed(2), impuestos:+impuestos.toFixed(2), comisiones:+comis.toFixed(2), costoEnvio:+envio.toFixed(2),
-          profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
+          profit:+profit.toFixed(2), margin: rev>0?profit/rev:0, roas: ads>0?rev/ads:0,
           aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
       }
       const byChannel = {
-        tienda: canal(curr.raw, false, mpCommCurr),
-        ml:     canal(curr.raw, true,  0),
-        tiendaPrev: canal(prev.raw, false, mpCommPrev),
-        mlPrev:     canal(prev.raw, true,  0),
+        tienda: canal(curr.raw, false, mpCommCurr, totals.adSpend),
+        ml:     canal(curr.raw, true,  0, 0),
+        tiendaPrev: canal(prev.raw, false, mpCommPrev, prevTotals.adSpend),
+        mlPrev:     canal(prev.raw, true,  0, 0),
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
       };

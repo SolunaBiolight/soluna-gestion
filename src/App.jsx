@@ -23446,6 +23446,8 @@ function AppRendimiento({T, user, onHome}) {
                     {l:"Facturación",      v:fmtM(c.revenue),     color:accent},
                     {l:"Facturación Neta", v:fmtM(c.netRevenue)},
                     {l:"AOV",              v:fmtM(c.aov)},
+                    {l:"Ad Spend",         v:fmtM(c.adSpend),     color:"#f97316"},
+                    {l:"ROAS",             v:fmtX(c.roas)},
                     {l:"Ganancia",         v:fmtM(c.profit),      color:(c.profit||0)>=0?T.green:T.red},
                     {l:"Margen",           v:fmtPct(c.margin)},
                     {l:"Costos Productos", v:fmtM(c.costoProductos)},
