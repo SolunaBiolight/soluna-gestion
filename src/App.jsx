@@ -23634,7 +23634,7 @@ function AppRendimiento({T, user, onHome}) {
                 <div style={{maxHeight:520,overflow:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <thead style={{background:T.bg,position:"sticky",top:0,zIndex:1}}>
-                      <tr>{["Venta","Fecha","Canal","Revenue","COGS","Comisión","Impuestos","Envío","Profit","Margen"].map((l,i)=>(
+                      <tr>{["Venta","Fecha","Canal","Revenue","COGS","Comisión","Impuestos","Envío","Margen Neto","Margen %"].map((l,i)=>(
                         <th key={l} style={{padding:"10px 12px",textAlign:i<3?"left":"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{l}</th>
                       ))}</tr>
                     </thead>
