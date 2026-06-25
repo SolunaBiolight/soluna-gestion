@@ -472,6 +472,43 @@ async function mlAdsProbe(req, res, db) {
   return res.json(out);
 }
 
+// Sondeo de envíos de ML: trae las últimas órdenes con el logistic_type y el
+// costo real del shipment, para saber qué marcar como Flex y cuánto de envío.
+async function mlShipProbe(req, res, db) {
+  const { uid } = req.query;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  let tok;
+  try { tok = await getValidMLToken(db, uid); } catch (e) { return res.json({ ok:false, step:"token", error:e.message }); }
+  if (!tok?.accessToken) return res.json({ ok:false, error:"Sin token ML — conectá Mercado Libre" });
+  const H = { Authorization: `Bearer ${tok.accessToken}` };
+  let orders = [];
+  try {
+    const r = await fetch(`https://api.mercadolibre.com/orders/search?seller=${tok.userId}&sort=date_desc&limit=8`, { headers: H });
+    const j = await r.json();
+    orders = j.results || [];
+  } catch (e) { return res.json({ ok:false, step:"orders", error:e.message }); }
+  const out = [];
+  for (const o of orders.slice(0, 8)) {
+    const shipId = o.shipping?.id;
+    let ship = null;
+    if (shipId) {
+      try {
+        const r = await fetch(`https://api.mercadolibre.com/shipments/${shipId}`, { headers: { ...H, "x-format-new": "true" } });
+        let j; try { j = await r.json(); } catch(_) { j = { raw: await r.text() }; }
+        ship = {
+          status: r.status,
+          logistic_type: j.logistic_type, mode: j.mode, ship_status: j.status,
+          base_cost: j.base_cost,
+          option_cost: j.shipping_option?.cost, option_list_cost: j.shipping_option?.list_cost,
+          cost_components: j.cost_components, sender_cost: j.sender_cost,
+        };
+      } catch (e) { ship = { error: e.message }; }
+    }
+    out.push({ order_id:o.id, total:o.total_amount, date:o.date_created, shipId, tags:o.tags, ship });
+  }
+  return res.json({ ok:true, userId: tok.userId, count: out.length, orders: out });
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
@@ -502,6 +539,7 @@ export default async function handler(req, res) {
       if (action === "disconnect" && req.method === "POST") return mercadolibreDisconnect(req, res, db);
       if (action === "mp_probe" && req.method === "GET") return mpProbe(req, res, db);
       if (action === "mlads_probe" && req.method === "GET") return mlAdsProbe(req, res, db);
+      if (action === "mlship_probe" && req.method === "GET") return mlShipProbe(req, res, db);
     }
 
     return res.status(501).json({
