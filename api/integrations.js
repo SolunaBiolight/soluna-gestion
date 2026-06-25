@@ -488,25 +488,27 @@ async function mlShipProbe(req, res, db) {
     orders = j.results || [];
   } catch (e) { return res.json({ ok:false, step:"orders", error:e.message }); }
   const out = [];
-  for (const o of orders.slice(0, 8)) {
+  let fullSample = null;
+  for (const o of orders.slice(0, 6)) {
     const shipId = o.shipping?.id;
     let ship = null;
     if (shipId) {
+      // Sin x-format-new: formato clásico que sí trae logistic_type/costos.
       try {
-        const r = await fetch(`https://api.mercadolibre.com/shipments/${shipId}`, { headers: { ...H, "x-format-new": "true" } });
+        const r = await fetch(`https://api.mercadolibre.com/shipments/${shipId}`, { headers: H });
         let j; try { j = await r.json(); } catch(_) { j = { raw: await r.text() }; }
         ship = {
-          status: r.status,
+          status: r.status, keys: Object.keys(j||{}),
           logistic_type: j.logistic_type, mode: j.mode, ship_status: j.status,
-          base_cost: j.base_cost,
-          option_cost: j.shipping_option?.cost, option_list_cost: j.shipping_option?.list_cost,
-          cost_components: j.cost_components, sender_cost: j.sender_cost,
+          base_cost: j.base_cost, declared_cost: j.declared_value,
+          shipping_option: j.shipping_option, costs: j.costs, logistic: j.logistic,
         };
+        if (!fullSample) fullSample = j; // primer shipment completo para inspeccionar
       } catch (e) { ship = { error: e.message }; }
     }
-    out.push({ order_id:o.id, total:o.total_amount, date:o.date_created, shipId, tags:o.tags, ship });
+    out.push({ order_id:o.id, total:o.total_amount, shipId, tags:o.tags, ship });
   }
-  return res.json({ ok:true, userId: tok.userId, count: out.length, orders: out });
+  return res.json({ ok:true, userId: tok.userId, count: out.length, orders: out, fullSample });
 }
 
 export default async function handler(req, res) {
