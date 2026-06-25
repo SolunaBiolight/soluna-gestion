@@ -23373,6 +23373,7 @@ function AppRendimiento({T, user, onHome}) {
           </div>
 
           {/* Hero KPIs */}
+          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📊</span>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span></div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:12}}>
             {[
               {label:"Revenue",     val:tot.revenue,    prev:prevTot.revenue,    color:"#3b82f6", icon:"💰", desc:"Ingreso bruto",     spk:dailyRows.map(r=>r.Revenue)},
@@ -23429,6 +23430,44 @@ function AppRendimiento({T, user, onHome}) {
               </div>
             ))}
           </div>
+
+          {/* Tableros por canal — Tienda y Mercado Libre (estilo Escalafy) */}
+          {rendData.byChannel && (()=>{
+            const bc = rendData.byChannel;
+            const board = (titulo, icon, accent, c) => (
+              <div style={{marginBottom:18}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                  <span style={{fontSize:16}}>{icon}</span>
+                  <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</span>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8}}>
+                  {[
+                    {l:"Órdenes",          v:fmtInt(c.orders)},
+                    {l:"Facturación",      v:fmtM(c.revenue),     color:accent},
+                    {l:"Facturación Neta", v:fmtM(c.netRevenue)},
+                    {l:"AOV",              v:fmtM(c.aov)},
+                    {l:"Ganancia",         v:fmtM(c.profit),      color:(c.profit||0)>=0?T.green:T.red},
+                    {l:"Margen",           v:fmtPct(c.margin)},
+                    {l:"Costos Productos", v:fmtM(c.costoProductos)},
+                    {l:"Impuestos",        v:fmtM(c.impuestos)},
+                    {l:"Comisiones",       v:fmtM(c.comisiones)},
+                  ].map(k=>(
+                    <div key={k.l} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
+                      <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.3,marginBottom:4}}>{k.l}</div>
+                      <div style={{fontSize:15,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5}}>{k.v}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+            const esShop = bc.platform==="shopify";
+            return (
+              <>
+                {board(esShop?"Shopify":"Tienda Nube", esShop?"🛍️":"🏪", esShop?"#96BF48":"#2D8DF2", bc.tienda||{})}
+                {bc.hasMl && board("Mercado Libre", "🛒", "#FFE600", bc.ml||{})}
+              </>
+            );
+          })()}
 
           {/* Area Chart */}
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"18px 20px",marginBottom:16}}>
@@ -23537,7 +23576,7 @@ function AppRendimiento({T, user, onHome}) {
           {/* Insights */}
           {/* Nav tabs — justo arriba de la sección que controlan */}
           <div style={{display:"flex",gap:3,background:T.surface,borderRadius:10,padding:3,width:"fit-content",marginBottom:14,marginTop:8,flexWrap:"wrap"}}>
-            {[["overview","💡 Insights"],["tabla","📋 Tabla"],["dow","📅 Por semana"]].map(([id,l])=>(
+            {[["overview","💡 Insights"],["tabla","📋 Costos por venta"],["dow","📅 Por semana"]].map(([id,l])=>(
               <button key={id} onClick={()=>setViewTab(id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:viewTab===id?T.card:"transparent",color:viewTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>{l}</button>
             ))}
           </div>
