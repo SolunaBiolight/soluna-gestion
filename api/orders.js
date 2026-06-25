@@ -192,9 +192,9 @@ export default async function handler(req, res) {
       async function fetchMPCommission(sinceYmd, untilYmd) {
         try {
           const tok = await getValidMLToken(db, uid);
-          if (!tok?.accessToken) return 0;
+          if (!tok?.accessToken) return { fee:0, rev:0 };
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
-          let total = 0, offset = 0;
+          let fee = 0, rev = 0, offset = 0;
           for (let i=0; i<25; i++) {
             const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(end)}&limit=100&offset=${offset}`;
             const r = await fetch(url, { headers: { Authorization: `Bearer ${tok.accessToken}` } });
@@ -204,14 +204,15 @@ export default async function handler(req, res) {
             for (const p of results) {
               const ref = String(p.external_reference || "");
               if (p.status==="approved" && p.operation_type==="regular_payment" && /[a-zA-Z]/.test(ref) && !/^cashback|^INSTORE/i.test(ref)) {
-                total += (p.fee_details||[]).reduce((s,f)=>s+(parseFloat(f.amount)||0),0);
+                fee += (p.fee_details||[]).reduce((s,f)=>s+(parseFloat(f.amount)||0),0);
+                rev += parseFloat(p.transaction_amount)||0; // revenue cobrado por MP (para no doble-contar el % en estas ventas)
               }
             }
             offset += results.length;
             if (results.length < 100 || offset >= (j.paging?.total||0)) break;
           }
-          return total;
-        } catch(_) { return 0; }
+          return { fee, rev };
+        } catch(_) { return { fee:0, rev:0 }; }
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
@@ -282,7 +283,7 @@ export default async function handler(req, res) {
       const pctPago   = metPcts.length ? (metPcts.reduce((a,b)=>a+b,0)/metPcts.length)/100 : 0;
       const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
 
-      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio) {
+      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mpRev) {
         // COGS = unidades vendidas × costo cargado por producto/variante.
         let cogs = 0;
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
@@ -299,7 +300,11 @@ export default async function handler(req, res) {
         // REAL de Mercado Libre (sale_fee de cada orden, ya incluye el pago de MP).
         const comML     = parseFloat(raw?.ml_data?.ml_commission)||0;
         const comPlat   = storeRev * pctPlat + comML;
-        const comPago   = storeRev * pctPago + (parseFloat(mpComm)||0); // % configurado + comisión REAL de MP (Shopify)
+        // Comisión de pago = comisión REAL de MP (sus ventas) + % configurado SOLO
+        // sobre las ventas que NO pasaron por MP (transferencia, etc.). Antes el %
+        // se aplicaba a TODO el revenue y encima se sumaba MP → doble-conteo.
+        const noMpRev   = Math.max(0, storeRev - (parseFloat(mpRev)||0));
+        const comPago   = (parseFloat(mpComm)||0) + noMpRev * pctPago;
         // Envío = órdenes de tienda (TN/Shopify) × promedio + envío de las órdenes
         // ML que son Flex (el resto de ML es Mercado Envíos: lo cubre ML, no se cuenta).
         const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
@@ -358,13 +363,13 @@ export default async function handler(req, res) {
       const mlEnvioDe  = o => (mlLogi[o?.shippingId] === "self_service") ? envioProm : 0;
       const mlEnvioTot = raw => (raw?.ml_data?.ml_orders_detail||[]).reduce((s,o)=>s+mlEnvioDe(o),0);
 
-      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr, mlEnvioTot(curr.raw));
-      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, mpCommPrev, mlEnvioTot(prev.raw));
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr.fee, mlEnvioTot(curr.raw), mpCommCurr.rev);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, mpCommPrev.fee, mlEnvioTot(prev.raw), mpCommPrev.rev);
 
       // ── Desglose por canal (Tienda vs Mercado Libre) para los tableros ──
       // adSpend: Tienda = Meta Ads (toda la pauta de Meta empuja la tienda);
       // ML = publicidad de Mercado Ads (pendiente de integrar; por ahora 0).
-      function canal(raw, isMl, mpComm, adSpend, mlEnv) {
+      function canal(raw, isMl, mpComm, adSpend, mlEnv, mpRev) {
         const dr = isMl ? (raw?.ml_data?.daily_revenue||{}) : (raw?.daily_revenue||{});
         const dord = isMl ? (raw?.ml_data?.daily_orders||{}) : (raw?.daily_orders||{});
         const rev = Object.values(dr).reduce((a,b)=>a+b,0);
@@ -373,7 +378,7 @@ export default async function handler(req, res) {
         if (isMl) { for (const m of (raw?.ml_data?.ml_products||[])) { const c=parseFloat(cogsMap["ml:"+m.id]); if(c>0) cogs+=c*(m.units||0); } }
         else { for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const c=parseFloat(cogsMap[v.sku||String(v.id)]); if(c>0) cogs+=c*(v.units_sold||0); } }
         const impuestos = rev*pctImp;
-        const comis = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : (rev*pctPlat + (parseFloat(mpComm)||0));
+        const comis = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : (rev*pctPlat + (parseFloat(mpComm)||0) + Math.max(0, rev-(parseFloat(mpRev)||0))*pctPago);
         const envio = isMl ? (parseFloat(mlEnv)||0) : ord*envioProm;
         const ads = parseFloat(adSpend)||0;
         const netRev = rev - impuestos - comis;
@@ -384,10 +389,10 @@ export default async function handler(req, res) {
           aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
       }
       const byChannel = {
-        tienda: canal(curr.raw, false, mpCommCurr, totals.adSpendMeta, 0),
-        ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw)),
-        tiendaPrev: canal(prev.raw, false, mpCommPrev, prevTotals.adSpendMeta, 0),
-        mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw)),
+        tienda: canal(curr.raw, false, mpCommCurr.fee, totals.adSpendMeta, 0, mpCommCurr.rev),
+        ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw), 0),
+        tiendaPrev: canal(prev.raw, false, mpCommPrev.fee, prevTotals.adSpendMeta, 0, mpCommPrev.rev),
+        mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw), 0),
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
       };
