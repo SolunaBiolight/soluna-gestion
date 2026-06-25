@@ -252,7 +252,26 @@ export default async function handler(req, res) {
       const comCfg    = userData.margenesComisionesCfg || {};
       const metodos   = comCfg.metodos && typeof comCfg.metodos==="object" ? comCfg.metodos : {};
       const envioProm = parseFloat(userData.margenesEnvioProm) || 0;
-      const mlAdsMensual = parseFloat(userData.margenesMlAdsManual) || 0; // gasto mensual Mercado Ads (carga manual)
+      // Gasto de Mercado Ads cargado por períodos: [{desde, hasta, monto}].
+      // Cada período se promedia por día (monto / días) y se toma el solape con
+      // el rango del dashboard. Ej: 10/06–19/06 $1.000.000 = $100.000/día.
+      const mlAdsList = Array.isArray(userData.margenesMlAds) ? userData.margenesMlAds : [];
+      function mlAdsPeriodo(sinceR, untilR) {
+        let total = 0;
+        for (const e of mlAdsList) {
+          const d = e.desde, h = e.hasta, m = parseFloat(e.monto) || 0;
+          if (!d || !h || m <= 0 || h < d) continue;
+          const entryDays = Math.round((new Date(h) - new Date(d)) / 86400000) + 1;
+          if (entryDays <= 0) continue;
+          const lo = d > sinceR ? d : sinceR;
+          const hi = h < untilR ? h : untilR;
+          if (lo <= hi) {
+            const overlap = Math.round((new Date(hi) - new Date(lo)) / 86400000) + 1;
+            total += (m / entryDays) * overlap;
+          }
+        }
+        return total;
+      }
       const fijos     = Array.isArray(userData.margenesCostosFijos) ? userData.margenesCostosFijos : [];
       const dolarCfg  = userData.margenesDolar || {};
       const factExt   = Array.isArray(userData.margenesFactExterna) ? userData.margenesFactExterna : [];
@@ -288,7 +307,7 @@ export default async function handler(req, res) {
         const costosAdic= dias>0 ? (fijosMensual/30)*dias : 0;
         // Ad Spend general = Meta (con fee del dólar) + Mercado Ads manual prorrateado.
         const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
-        const adSpendMl   = dias>0 ? (mlAdsMensual/30)*dias : 0;
+        const adSpendMl   = mlAdsPeriodo(sinceR, untilR);
         const adSpendEf = adSpendMeta + adSpendMl;
         const netRevenue= revenue - impuestos - comPlat - comPago;
         const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;

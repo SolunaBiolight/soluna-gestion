@@ -20897,7 +20897,7 @@ function ComisionesPanel({ T, uid }) {
 // ningún sistema sabe cuánto te cuesta el producto).
 function CostosPanel({ T, uid }) {
   const [envio, setEnvio] = React.useState("");
-  const [mlAds, setMlAds] = React.useState("");
+  const [mlAdsList, setMlAdsList] = React.useState([]);
   const [products, setProducts] = React.useState([]);
   const [mlItems, setMlItems] = React.useState([]);
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
@@ -20914,7 +20914,7 @@ function CostosPanel({ T, uid }) {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data() : {};
         setEnvio(d.margenesEnvioProm ?? "");
-        setMlAds(d.margenesMlAdsManual ?? "");
+        setMlAdsList(Array.isArray(d.margenesMlAds) ? d.margenesMlAds : []);
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
       } catch (_) {}
@@ -20933,7 +20933,8 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesMlAdsManual: parseFloat(mlAds)||0, margenesCogs: costos, margenesCostosFijos: fijos }, { merge: true });
+      const mlAdsClean = mlAdsList.filter(e=>e.desde&&e.hasta&&(parseFloat(e.monto)||0)>0).map(e=>({desde:e.desde,hasta:e.hasta,monto:parseFloat(e.monto)||0}));
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesMlAds: mlAdsClean, margenesCogs: costos, margenesCostosFijos: fijos }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -20978,16 +20979,30 @@ function CostosPanel({ T, uid }) {
         </div>
       </div>
 
-      {/* Gasto de Mercado Ads (carga manual, hasta integrar la API) */}
+      {/* Gasto de Mercado Ads por períodos (carga manual hasta integrar la API) */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text}}>🛒 Gasto de Mercado Ads (mensual)</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Tu inversión publicitaria en Mercado Libre por mes. Se prorratea al período y se suma al Ad Spend de ML y al general. (Carga manual hasta habilitar la API de Mercado Ads.)</div>
-          </div>
-          <span style={{fontSize:13,color:T.textSm}}>$</span>
-          <input type="number" min="0" value={mlAds} onChange={e=>setMlAds(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>🛒 Gasto de Mercado Ads (por período)</div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá cuánto gastaste en publicidad de ML en cada rango de fechas. Se promedia por día y el dashboard toma el promedio diario según los días que se solapen. Ej: 10/06–19/06 $1.000.000 = $100.000/día.</div>
         </div>
+        {(()=>{ const today=new Date().toISOString().slice(0,10);
+        const upd=(i,k,v)=>setMlAdsList(l=>l.map((e,j)=>j===i?{...e,[k]:v}:e));
+        const dias=e=>{ if(!e.desde||!e.hasta||e.hasta<e.desde) return 0; return Math.round((new Date(e.hasta)-new Date(e.desde))/86400000)+1; };
+        return (<>
+          {mlAdsList.length===0 && <div style={{fontSize:12,color:T.textSm,padding:"6px 0"}}>Sin períodos cargados. Agregá uno abajo.</div>}
+          {mlAdsList.map((e,i)=>{ const d=dias(e), prom=d>0?(parseFloat(e.monto)||0)/d:0; return (
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 0",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
+              <input type="date" max={today} value={e.desde||""} onChange={ev=>upd(i,"desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+              <span style={{fontSize:12,color:T.textSm}}>→</span>
+              <input type="date" max={today} value={e.hasta||""} onChange={ev=>upd(i,"hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+              <span style={{fontSize:13,color:T.textSm}}>$</span>
+              <input type="number" min="0" value={e.monto??""} onChange={ev=>upd(i,"monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
+              <span style={{fontSize:11,color:prom>0?T.accent:T.textSm,fontWeight:600,minWidth:120}}>{prom>0?`≈ $${Math.round(prom).toLocaleString("es-AR")}/día`:`${d} día(s)`}</span>
+              <button onClick={()=>setMlAdsList(l=>l.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red}}>✕</button>
+            </div>
+          );})}
+          <button onClick={()=>setMlAdsList(l=>[...l,{desde:"",hasta:"",monto:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:8}}>+ Agregar período</button>
+        </>); })()}
       </div>
 
       {/* Costo por producto — mapeo de productos reales */}
