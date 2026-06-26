@@ -9862,7 +9862,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const checklist = t.checklist||[];
     const activity = t.activity||[];
     return (
-      <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,background:T.bg,padding:16}}>
+      <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,background:T.card,padding:16}}>
         {/* Número + meta */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
           {t.tareaNumStr&&<span style={{fontSize:11,fontWeight:700,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px"}}>#{t.tareaNumStr}</span>}
@@ -11272,16 +11272,23 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
 
       {/* MODAL Kanban — detalle tarea */}
       {kanbanSelected&&(
-        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setKanbanSelected(null);}}>
-          <div key={kanbanSelected?._id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}>
-            <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:T.card,zIndex:1}}>
-              <div>
-                <div style={{fontWeight:700,fontSize:15,color:T.text}}>{kanbanSelected.titulo}</div>
-                {(kanbanSelected.correcciones||0)>0&&<div style={{fontSize:11,color:T.red}}>{kanbanSelected.correcciones}ª corrección</div>}
+        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:200,display:"flex",justifyContent:"flex-end"}} onClick={e=>{if(e.target===e.currentTarget)setKanbanSelected(null);}}>
+          <div key={kanbanSelected?._id} style={{background:T.card,width:"100%",maxWidth:560,height:"100%",display:"flex",flexDirection:"column",boxShadow:"-4px 0 32px rgba(0,0,0,0.25)",animation:"slideInRight 0.22s cubic-bezier(0.22,1,0.36,1) both"}}>
+            {/* Header fijo */}
+            <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexShrink:0,background:T.card}}>
+              <div style={{flex:1,minWidth:0,paddingRight:12}}>
+                <div style={{fontWeight:700,fontSize:16,color:T.text,lineHeight:1.3,marginBottom:2}}>{kanbanSelected.titulo}</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+                  {kanbanSelected.asignadoNombre&&<span style={{fontSize:11,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
+                  {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"1px 7px"}}>🔁 {kanbanSelected.correcciones}ª corrección</span>}
+                </div>
               </div>
-              <button onClick={()=>setKanbanSelected(null)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
+              <button onClick={()=>setKanbanSelected(null)} style={{flexShrink:0,background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 10px",cursor:"pointer",color:T.textMd,fontSize:18,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
             </div>
-            {renderDetalle(kanbanSelected)}
+            {/* Contenido scrolleable */}
+            <div style={{flex:1,overflowY:"auto",background:T.card}}>
+              {renderDetalle(kanbanSelected)}
+            </div>
           </div>
         </div>
       )}
