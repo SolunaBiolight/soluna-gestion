@@ -1476,7 +1476,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     /* ── Keyframes: transición de página ── */
     @keyframes growith-pageEnter {
       from { opacity:0; transform:translateY(5px) scale(0.999); }
-      to   { opacity:1; transform:translateY(0) scale(1); }
+      to   { opacity:1; transform:none; }
     }
 
     /* ══════════════════════════════════════
