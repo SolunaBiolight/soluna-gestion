@@ -381,6 +381,136 @@ export async function getValidMLToken(db, uid) {
 
 const PLATFORMS = ["shopify", "tiendanube", "mercadolibre"];
 
+// ── Sondeo: ¿el token de ML sirve para leer pagos de Mercado Pago? ──
+// Diagnóstico para decidir cómo calcular la comisión real de MP en ventas
+// que NO son de ML (Shopify/TN vía MP Checkout). Devuelve una muestra.
+async function mpProbe(req, res, db) {
+  const { uid, from, to } = req.query;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  let tok;
+  try { tok = await getValidMLToken(db, uid); } catch (e) { return res.json({ ok:false, step:"token", error:e.message }); }
+  if (!tok?.accessToken) return res.json({ ok:false, step:"token", error:"Sin token ML/MP — conectá Mercado Libre" });
+  const since = from || new Date(Date.now()-14*86400000).toISOString();
+  const until = to || new Date().toISOString();
+  const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(since)}&end_date=${encodeURIComponent(until)}&limit=30`;
+  let r, body;
+  try { r = await fetch(url, { headers: { Authorization: `Bearer ${tok.accessToken}` } }); } catch (e) { return res.json({ ok:false, step:"fetch", error:e.message }); }
+  try { body = await r.json(); } catch (_) { body = { raw: await r.text() }; }
+  if (r.status !== 200) return res.json({ ok:false, step:"mp_api", status:r.status, body });
+  const sample = (body.results||[]).map(p => ({
+    id: p.id, operation_type: p.operation_type, status: p.status,
+    amount: p.transaction_amount,
+    fee: (p.fee_details||[]).reduce((s,f)=>s+(f.amount||0),0),
+    fee_types: (p.fee_details||[]).map(f=>f.type),
+    external_reference: p.external_reference, order_id: p.order?.id,
+    pay_method: p.payment_method_id, marketplace: p.marketplace,
+    date: p.date_created,
+  }));
+
+  // Además: traer unas órdenes de Shopify con sus transacciones, para ver qué
+  // campo linkea cada orden con su pago de MP (id de pago / external_reference).
+  let shopifyOrders = [];
+  try {
+    const userSnap = await db.collection("users").doc(uid).get();
+    const sh = (userSnap.data()?.stores||[]).find(s => s.type === "shopify");
+    if (sh?.shop && sh?.accessToken) {
+      const oRes = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?limit=5&status=any&fields=id,name,order_number,checkout_token,cart_token,note_attributes,payment_gateway_names,total_price,created_at`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+      const oj = await oRes.json();
+      for (const o of (oj.orders||[]).slice(0,5)) {
+        let txs = [];
+        try {
+          const tRes = await fetch(`https://${sh.shop}/admin/api/2024-10/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+          const tj = await tRes.json();
+          txs = (tj.transactions||[]).map(t => ({ gateway:t.gateway, authorization:t.authorization, receipt_id:t.receipt?.id||t.receipt?.payment_id, amount:t.amount, kind:t.kind, status:t.status }));
+        } catch(_) {}
+        shopifyOrders.push({ id:o.id, name:o.name, order_number:o.order_number, checkout_token:o.checkout_token, gateways:o.payment_gateway_names, note_attributes:o.note_attributes, total:o.total_price, transactions:txs });
+      }
+    }
+  } catch (e) { shopifyOrders = [{ error: e.message }]; }
+
+  return res.json({ ok:true, status:r.status, total: body.paging?.total, count: sample.length, sample, shopifyOrders });
+}
+
+// Sondeo de Mercado Ads (publicidad de ML) para descubrir la estructura de la
+// API y el gasto: Product Ads (PADS), Brand Ads (BADS), Display, Mercado Shops.
+async function mlAdsProbe(req, res, db) {
+  const { uid, from, to } = req.query;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  let tok;
+  try { tok = await getValidMLToken(db, uid); } catch (e) { return res.json({ ok:false, step:"token", error:e.message }); }
+  if (!tok?.accessToken) return res.json({ ok:false, step:"token", error:"Sin token ML — conectá Mercado Libre" });
+  const headers = { Authorization: `Bearer ${tok.accessToken}`, "Api-Version": "1" };
+  const date_to = to || new Date().toISOString().slice(0,10);
+  const date_from = from || new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+  const out = { ok:true, userId: tok.userId, date_from, date_to, steps: {} };
+
+  // 1) Advertisers por producto publicitario
+  for (const product of ["PADS","BADS","DISPLAY","MSHOPS"]) {
+    try {
+      const r = await fetch(`https://api.mercadolibre.com/advertising/advertisers?product_id=${product}`, { headers });
+      let body; try { body = await r.json(); } catch(_) { body = { raw: await r.text() }; }
+      out.steps[`advertisers_${product}`] = { status: r.status, body };
+    } catch(e) { out.steps[`advertisers_${product}`] = { error: e.message }; }
+  }
+
+  // 2) Si hay advertiser de Product Ads, traer campañas con métricas (cost = gasto)
+  const padsAdv = out.steps.advertisers_PADS?.body?.advertisers?.[0]?.advertiser_id;
+  if (padsAdv) {
+    out.padsAdvertiserId = padsAdv;
+    for (const path of [
+      `https://api.mercadolibre.com/advertising/product_ads/campaigns?advertiser_id=${padsAdv}&date_from=${date_from}&date_to=${date_to}&metrics=clicks,prints,cost,acos&limit=20`,
+      `https://api.mercadolibre.com/advertising/advertisers/${padsAdv}/product_ads/campaigns?date_from=${date_from}&date_to=${date_to}&limit=20`,
+    ]) {
+      try {
+        const r = await fetch(path, { headers });
+        let body; try { body = await r.json(); } catch(_) { body = { raw: await r.text() }; }
+        out.steps[`campaigns_try_${Object.keys(out.steps).length}`] = { url: path, status: r.status, body };
+        if (r.status === 200) break;
+      } catch(e) { out.steps[`campaigns_err`] = { error: e.message }; }
+    }
+  }
+  return res.json(out);
+}
+
+// Sondeo de envíos de ML: trae las últimas órdenes con el logistic_type y el
+// costo real del shipment, para saber qué marcar como Flex y cuánto de envío.
+async function mlShipProbe(req, res, db) {
+  const { uid } = req.query;
+  if (!uid) return res.status(400).json({ error: "Falta uid" });
+  let tok;
+  try { tok = await getValidMLToken(db, uid); } catch (e) { return res.json({ ok:false, step:"token", error:e.message }); }
+  if (!tok?.accessToken) return res.json({ ok:false, error:"Sin token ML — conectá Mercado Libre" });
+  const H = { Authorization: `Bearer ${tok.accessToken}` };
+  let orders = [];
+  try {
+    const r = await fetch(`https://api.mercadolibre.com/orders/search?seller=${tok.userId}&sort=date_desc&limit=8`, { headers: H });
+    const j = await r.json();
+    orders = j.results || [];
+  } catch (e) { return res.json({ ok:false, step:"orders", error:e.message }); }
+  const out = [];
+  let fullSample = null;
+  for (const o of orders.slice(0, 6)) {
+    const shipId = o.shipping?.id;
+    let ship = null;
+    if (shipId) {
+      // Sin x-format-new: formato clásico que sí trae logistic_type/costos.
+      try {
+        const r = await fetch(`https://api.mercadolibre.com/shipments/${shipId}`, { headers: H });
+        let j; try { j = await r.json(); } catch(_) { j = { raw: await r.text() }; }
+        ship = {
+          status: r.status, keys: Object.keys(j||{}),
+          logistic_type: j.logistic_type, mode: j.mode, ship_status: j.status,
+          base_cost: j.base_cost, declared_cost: j.declared_value,
+          shipping_option: j.shipping_option, costs: j.costs, logistic: j.logistic,
+        };
+        if (!fullSample) fullSample = j; // primer shipment completo para inspeccionar
+      } catch (e) { ship = { error: e.message }; }
+    }
+    out.push({ order_id:o.id, total:o.total_amount, shipId, tags:o.tags, ship });
+  }
+  return res.json({ ok:true, userId: tok.userId, count: out.length, orders: out, fullSample });
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
@@ -409,6 +539,9 @@ export default async function handler(req, res) {
       if (action === "oauth_start" && req.method === "POST") return mercadolibreOauthStart(req, res, db);
       if (action === "callback" && req.method === "GET") return mercadolibreOauthCallback(req, res, db);
       if (action === "disconnect" && req.method === "POST") return mercadolibreDisconnect(req, res, db);
+      if (action === "mp_probe" && req.method === "GET") return mpProbe(req, res, db);
+      if (action === "mlads_probe" && req.method === "GET") return mlAdsProbe(req, res, db);
+      if (action === "mlship_probe" && req.method === "GET") return mlShipProbe(req, res, db);
     }
 
     return res.status(501).json({

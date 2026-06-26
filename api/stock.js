@@ -195,7 +195,7 @@ function processTN(orders) {
 // ── Procesar órdenes Shopify ──────────────────────────────────────────
 function processSH(orders) {
   const map={}, daily={}, dailyRevenue={}, byProv={}, byHour={}, byPayment={}, byVariant={};
-  const dailyOrders={};
+  const dailyOrders={}; const ordersDetail=[];
   for(const o of orders){
     const dt=o.created_at||"";
     const day=dt.slice(0,10);
@@ -217,6 +217,7 @@ function processSH(orders) {
     }, 0);
     const orderRevenue = Math.max(0, (parseFloat(o.total_price) || 0) - refundedAmount);
 
+    const detItems=[];
     for(const item of o.line_items||[]){
       const vid=String(item.variant_id||item.product_id);
       const qty=parseInt(item.quantity)||0;
@@ -227,19 +228,23 @@ function processSH(orders) {
       orderUnits+=qty;
       const vname=item.variant_title||item.title||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
+      detItems.push({ key: item.sku || vid, qty });
     }
     if(day)  { daily[day]=(daily[day]||0)+orderUnits; dailyRevenue[day]=(dailyRevenue[day]||0)+orderRevenue; }
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
+    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.order_number||o.name||o.id}`, fecha:dt, platform:"shopify", revenue:orderRevenue, items:detItems, pay });
   }
-  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant};
+  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail};
 }
 
 // ── Procesar órdenes ML ───────────────────────────────────────────────
 function processML(orders) {
-  const map={}, daily={}, dailyRevenue={}, dailyOrders={}, byProv={}, byHour={}, byPayment={}, byVariant={}, byVariantRev={};
+  const map={}, daily={}, dailyRevenue={}, dailyOrders={}, byProv={}, byHour={}, byPayment={}, byVariant={}, byVariantRev={}, comisionMLDaily={};
+  let comisionML=0; const ordersDetail=[];
   for(const o of orders){
+    let orderFee=0; const detItems=[];
     const dt=o.date_created||"";
     const day=dt.slice(0,10);
     const hour=dt.slice(11,13);
@@ -267,17 +272,22 @@ function processML(orders) {
       const vname=item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
       byVariantRev[vname]=(byVariantRev[vname]||0)+rev;
+      orderFee += parseFloat(item.sale_fee||0); // comisión real que ML cobró por esta venta
+      detItems.push({ key: "ml:"+String(item.item?.id||"ml"), qty });
     }
     if(day){
       daily[day]  =(daily[day]  ||0)+orderUnits;
       dailyRevenue[day]=(dailyRevenue[day]||0)+orderRev;
       dailyOrders[day]=(dailyOrders[day]||0)+1;
+      comisionMLDaily[day]=(comisionMLDaily[day]||0)+orderFee;
     }
+    comisionML += orderFee;
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
+    if(orderRev>0) ordersDetail.push({ id:String(o.id), nombre:`ML #${o.id}`, fecha:(o.date_closed||o.date_created||""), platform:"mercadolibre", revenue:orderRev, items:detItems, saleFee:orderFee, shippingId:o.shipping?.id||null });
   }
-  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,byVariantRev};
+  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,byVariantRev,comisionML,comisionMLDaily,ordersDetail};
 }
 
 function daysLeft(stock, units, days) {
@@ -329,6 +339,7 @@ function buildResponse(platform, products, analytics, days) {
     daily_series:   analytics.daily,      // unidades por día
     daily_revenue:  analytics.dailyRevenue||{}, // revenue por día
     daily_orders:   analytics.dailyOrders||{}, // órdenes por día
+    orders_detail:  analytics.ordersDetail||[], // detalle por orden (para tabla venta-por-venta)
     by_province:    analytics.byProv,
     by_hour:        analytics.byHour,
     by_payment:     analytics.byPayment,
@@ -438,6 +449,9 @@ export default async function handler(req, res) {
           by_variant:    mlAnalytics.byVariant,     // unidades por variante
           by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante (bruto)
           ml_products:   Object.entries(mlAnalytics.map||{}).map(([id,v])=>({id, nombre:v.nombre||id, units:v.units})), // publicaciones ML (no variantes)
+          ml_commission: mlAnalytics.comisionML || 0,           // comisión REAL de ML (sale_fee, incluye MP)
+          ml_commission_daily: mlAnalytics.comisionMLDaily || {},
+          ml_orders_detail: mlAnalytics.ordersDetail || [],     // detalle por orden ML
           by_province:   mlAnalytics.byProv,
           by_hour:       mlAnalytics.byHour,
           by_payment:    mlAnalytics.byPayment,
@@ -464,6 +478,9 @@ export default async function handler(req, res) {
           by_variant:    mlAnalytics.byVariant,     // unidades por variante
           by_variant_rev: mlAnalytics.byVariantRev, // revenue por variante (bruto)
           ml_products:   Object.entries(mlAnalytics.map||{}).map(([id,v])=>({id, nombre:v.nombre||id, units:v.units})), // publicaciones ML (no variantes)
+          ml_commission: mlAnalytics.comisionML || 0,           // comisión REAL de ML (sale_fee, incluye MP)
+          ml_commission_daily: mlAnalytics.comisionMLDaily || {},
+          ml_orders_detail: mlAnalytics.ordersDetail || [],     // detalle por orden ML
           by_province:   mlAnalytics.byProv,
           by_hour:       mlAnalytics.byHour,
           by_payment:    mlAnalytics.byPayment,

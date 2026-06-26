@@ -28,7 +28,7 @@ async function metaGet(path, params, token) {
   return j;
 }
 
-async function fetchMetaDailySpend(cfg, since, until) {
+async function fetchMetaDailySpend(cfg, since, until, errRef) {
   if (!cfg?.access_token || !cfg.ad_account_id) return {};
   try {
     const res = await metaGet(`${cfg.ad_account_id}/insights`, {
@@ -51,7 +51,11 @@ async function fetchMetaDailySpend(cfg, since, until) {
       };
     }
     return byDate;
-  } catch(e) { console.error("Meta daily spend error:", e.message); return {}; }
+  } catch(e) {
+    console.error("Meta daily spend error:", e.message);
+    if (errRef && /expired|invalid.*token|oauth|session|\b190\b|access token/i.test(e.message||"")) errRef.expired = true;
+    return {};
+  }
 }
 
 function buildRendRows(since, until, dailyRevenue, dailyOrders, metaDailySpend, commission) {
@@ -177,23 +181,254 @@ export default async function handler(req, res) {
           const mlOrd = j.ml_data?.daily_orders  || {};
           for (const [day,v] of Object.entries(mlRev)) dailyRevenue[day] = (dailyRevenue[day]||0) + (v||0);
           for (const [day,v] of Object.entries(mlOrd)) dailyOrders[day]  = (dailyOrders[day]||0)  + (v||0);
-          return { dailyRevenue, dailyOrders };
-        } catch(_) { return { dailyRevenue:{}, dailyOrders:{} }; }
+          return { dailyRevenue, dailyOrders, raw: j };
+        } catch(_) { return { dailyRevenue:{}, dailyOrders:{}, raw:{} }; }
+      }
+      // Comisión REAL de Mercado Pago en ventas que NO son ML (Shopify/TN vía MP
+      // Checkout). Con el token de ML se consultan los pagos de MP y se suma el
+      // fee_details de los pagos de tienda (external_reference alfanumérico tipo
+      // rXXX = receipt_id de la transacción Shopify). Se excluyen: ML (ref
+      // numérica, ya contada en sale_fee), cashback, INSTORE, y no aprobados.
+      async function fetchMPCommission(sinceYmd, untilYmd) {
+        try {
+          const tok = await getValidMLToken(db, uid);
+          if (!tok?.accessToken) return { fee:0, rev:0 };
+          const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
+          let fee = 0, rev = 0, offset = 0;
+          for (let i=0; i<25; i++) {
+            const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(end)}&limit=100&offset=${offset}`;
+            const r = await fetch(url, { headers: { Authorization: `Bearer ${tok.accessToken}` } });
+            if (!r.ok) break;
+            const j = await r.json();
+            const results = j.results || [];
+            for (const p of results) {
+              const ref = String(p.external_reference || "");
+              if (p.status==="approved" && p.operation_type==="regular_payment" && /[a-zA-Z]/.test(ref) && !/^cashback|^INSTORE/i.test(ref)) {
+                fee += (p.fee_details||[]).reduce((s,f)=>s+(parseFloat(f.amount)||0),0);
+                rev += parseFloat(p.transaction_amount)||0; // revenue cobrado por MP (para no doble-contar el % en estas ventas)
+              }
+            }
+            offset += results.length;
+            if (results.length < 100 || offset >= (j.paging?.total||0)) break;
+          }
+          return { fee, rev };
+        } catch(_) { return { fee:0, rev:0 }; }
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
-      const metaCfg = metaAccounts[0] || null;
-      const [curr, prev, metaCurr, metaPrev] = await Promise.all([
+      const metaErr = {};
+      // Suma el gasto de TODAS las cuentas publicitarias que el token puede ver
+      // (CP5, CP7, etc.) — las descubre con /me/adaccounts, así no hay que
+      // agregar cada CP a mano en la app. Antes usaba solo metaAccounts[0], por
+      // eso daba Ad Spend $0 al cambiar de CP.
+      async function fetchMetaAll(s, u, eRef) {
+        if (!metaAccounts.length) return {};
+        const token = metaAccounts[0].access_token;
+        let accountIds = [];
+        try {
+          const acc = await metaGet("me/adaccounts", { fields: "account_id,name", limit: "100" }, token);
+          accountIds = (acc.data||[]).map(a => "act_" + a.account_id);
+        } catch(e) { console.error("Meta adaccounts list error:", e.message); }
+        if (!accountIds.length) accountIds = metaAccounts.map(a => a.ad_account_id).filter(Boolean);
+        const arr = await Promise.all(accountIds.map(id => fetchMetaDailySpend({ access_token: token, ad_account_id: id }, s, u, eRef)));
+        const merged = {};
+        for (const bd of arr) for (const [d,v] of Object.entries(bd)) {
+          const m = merged[d] || (merged[d] = { spend:0, impressions:0, clicks:0, reach:0, purchases:0, purchaseVal:0 });
+          m.spend+=v.spend||0; m.impressions+=v.impressions||0; m.clicks+=v.clicks||0; m.reach+=v.reach||0; m.purchases+=v.purchases||0; m.purchaseVal+=v.purchaseVal||0;
+        }
+        return merged;
+      }
+      const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev] = await Promise.all([
         fetchStock(since, until), fetchStock(prevSince, prevUntil),
-        metaCfg ? fetchMetaDailySpend(metaCfg, since, until) : Promise.resolve({}),
-        metaCfg ? fetchMetaDailySpend(metaCfg, prevSince, prevUntil) : Promise.resolve({}),
+        fetchMetaAll(since, until, metaErr), fetchMetaAll(prevSince, prevUntil),
+        fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
       ]);
       const rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
       const prevRows = buildRendRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
-      const totals = computeRendTotals(rows); const prevTotals = computeRendTotals(prevRows);
+      let totals = computeRendTotals(rows); let prevTotals = computeRendTotals(prevRows);
       const byDow = computeRendDow(rows);
-      return res.json({ rows, prevRows, totals, prevTotals, byDow, since, until, prevSince, prevUntil,
-        meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length } });
+
+      // ── Capas de costo configuradas en Márgenes → margen real estilo Escalafy ──
+      const cogsMap   = userData.margenesCogs && typeof userData.margenesCogs==="object" && !Array.isArray(userData.margenesCogs) ? userData.margenesCogs : {};
+      const comCfg    = userData.margenesComisionesCfg || {};
+      const metodos   = comCfg.metodos && typeof comCfg.metodos==="object" ? comCfg.metodos : {};
+      const envioProm = parseFloat(userData.margenesEnvioProm) || 0;
+      // Gasto de Mercado Ads cargado por períodos: [{desde, hasta, monto}].
+      // Cada período se promedia por día (monto / días) y se toma el solape con
+      // el rango del dashboard. Ej: 10/06–19/06 $1.000.000 = $100.000/día.
+      const mlAdsList = Array.isArray(userData.margenesMlAds) ? userData.margenesMlAds : [];
+      function mlAdsPeriodo(sinceR, untilR) {
+        let total = 0;
+        for (const e of mlAdsList) {
+          const d = e.desde, h = e.hasta, m = parseFloat(e.monto) || 0;
+          if (!d || !h || m <= 0 || h < d) continue;
+          const entryDays = Math.round((new Date(h) - new Date(d)) / 86400000) + 1;
+          if (entryDays <= 0) continue;
+          const lo = d > sinceR ? d : sinceR;
+          const hi = h < untilR ? h : untilR;
+          if (lo <= hi) {
+            const overlap = Math.round((new Date(hi) - new Date(lo)) / 86400000) + 1;
+            total += (m / entryDays) * overlap;
+          }
+        }
+        return total;
+      }
+      const fijos     = Array.isArray(userData.margenesCostosFijos) ? userData.margenesCostosFijos : [];
+      const dolarCfg  = userData.margenesDolar || {};
+      const factExt   = Array.isArray(userData.margenesFactExterna) ? userData.margenesFactExterna : [];
+      const fijosMensual = fijos.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
+      const pctImp    = (parseFloat(comCfg.impuestos)||0)/100;
+      const pctPlat   = (parseFloat(comCfg.shopify)||0)/100;
+      const metPcts   = Object.values(metodos).map(m=>parseFloat(m.pct)||0).filter(x=>x>0);
+      const pctPago   = metPcts.length ? (metPcts.reduce((a,b)=>a+b,0)/metPcts.length)/100 : 0;
+      const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
+
+      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mpRev) {
+        // COGS = unidades vendidas × costo cargado por producto/variante.
+        let cogs = 0;
+        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
+          const c = parseFloat(cogsMap[v.sku || String(v.id)]); if (c>0) cogs += c*(v.units_sold||0);
+        }
+        for (const m of (raw?.ml_data?.ml_products||[])) {
+          const c = parseFloat(cogsMap["ml:"+m.id]); if (c>0) cogs += c*(m.units||0);
+        }
+        const storeRev = Object.values(raw?.daily_revenue||{}).reduce((a,b)=>a+b,0);
+        const factExtTot = factExt.filter(r => r.fecha && r.fecha>=sinceR && r.fecha<=untilR).reduce((s,r)=>s+(parseFloat(r.monto)||0),0);
+        const revenue   = (tot.revenue||0) + factExtTot;
+        const impuestos = revenue * pctImp;
+        // Comisión de plataforma = % configurado del store (Shopify/TN) + comisión
+        // REAL de Mercado Libre (sale_fee de cada orden, ya incluye el pago de MP).
+        const comML     = parseFloat(raw?.ml_data?.ml_commission)||0;
+        const comPlat   = storeRev * pctPlat + comML;
+        // Comisión de pago = comisión REAL de MP (sus ventas) + % configurado SOLO
+        // sobre las ventas que NO pasaron por MP (transferencia, etc.). Antes el %
+        // se aplicaba a TODO el revenue y encima se sumaba MP → doble-conteo.
+        const noMpRev   = Math.max(0, storeRev - (parseFloat(mpRev)||0));
+        const comPago   = (parseFloat(mpComm)||0) + noMpRev * pctPago;
+        // Envío = órdenes de tienda (TN/Shopify) × promedio + envío de las órdenes
+        // ML que son Flex (el resto de ML es Mercado Envíos: lo cubre ML, no se cuenta).
+        const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
+        const envio     = storeOrders * envioProm + (parseFloat(mlEnvio)||0);
+        const costosAdic= dias>0 ? (fijosMensual/30)*dias : 0;
+        // Ad Spend general = Meta (con fee del dólar) + Mercado Ads manual prorrateado.
+        const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
+        const adSpendMl   = mlAdsPeriodo(sinceR, untilR);
+        const adSpendEf = adSpendMeta + adSpendMl;
+        const netRevenue= revenue - impuestos - comPlat - comPago;
+        const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;
+        return { ...tot,
+          revenue, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
+          costoProductos: +cogs.toFixed(2), impuestos: +impuestos.toFixed(2),
+          comisionPlataforma: +comPlat.toFixed(2), comisionPago: +comPago.toFixed(2),
+          costoEnvio: +envio.toFixed(2), costosAdicionales: +costosAdic.toFixed(2),
+          facturacionExterna: +factExtTot.toFixed(2),
+          profitMargin: revenue>0 ? profit/revenue : 0,
+          roas: adSpendEf>0 ? revenue/adSpendEf : 0,
+          trueRoas: adSpendEf>0 ? netRevenue/adSpendEf : 0,
+          cpa: (tot.orders||0)>0 ? adSpendEf/tot.orders : 0,
+          mer: revenue>0 ? adSpendEf/revenue : 0,
+          // Break even REAL: a qué ROAS el profit llega a 0 contando TODOS los
+          // costos (COGS, envío, comisiones, impuestos, fijos). Contribución antes
+          // de pauta = profit + adSpend. CPA break even = esa contribución / orden.
+          breakEvenRoas: (profit + adSpendEf)>0 ? revenue/(profit + adSpendEf) : 0,
+          cpaBreakEven: (tot.orders||0)>0 ? (profit + adSpendEf)/tot.orders : 0,
+        };
+      }
+      // ── Envío de ML: Flex (el vendedor paga) vs Mercado Envíos (lo cubre ML) ──
+      // Solo consultamos el tipo de envío de cada orden si hay envío promedio
+      // cargado (gated, para no recargar de gusto). logistic_type "self_service" = Flex.
+      const mlLogi = {};
+      if (envioProm > 0) {
+        try {
+          const tokML = await getValidMLToken(db, uid);
+          if (tokML?.accessToken) {
+            const ids = [...new Set([
+              ...(curr.raw?.ml_data?.ml_orders_detail||[]),
+              ...(prev.raw?.ml_data?.ml_orders_detail||[]),
+            ].map(o=>o.shippingId).filter(Boolean))].slice(0, 400);
+            for (let i=0; i<ids.length; i+=20) {
+              const rs = await Promise.all(ids.slice(i,i+20).map(async id => {
+                try {
+                  // SIN x-format-new: el formato clásico es el que trae logistic_type.
+                  const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
+                  if (!r.ok) return [id, null];
+                  const j = await r.json();
+                  return [id, j.logistic_type || null];
+                } catch(_) { return [id, null]; }
+              }));
+              for (const [id,lt] of rs) mlLogi[id] = lt;
+            }
+          }
+        } catch(_) {}
+      }
+      const mlEnvioDe  = o => (mlLogi[o?.shippingId] === "self_service") ? envioProm : 0;
+      const mlEnvioTot = raw => (raw?.ml_data?.ml_orders_detail||[]).reduce((s,o)=>s+mlEnvioDe(o),0);
+
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr.fee, mlEnvioTot(curr.raw), mpCommCurr.rev);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, mpCommPrev.fee, mlEnvioTot(prev.raw), mpCommPrev.rev);
+
+      // ── Desglose por canal (Tienda vs Mercado Libre) para los tableros ──
+      // adSpend: Tienda = Meta Ads (toda la pauta de Meta empuja la tienda);
+      // ML = publicidad de Mercado Ads (pendiente de integrar; por ahora 0).
+      function canal(raw, isMl, mpComm, adSpend, mlEnv, mpRev) {
+        const dr = isMl ? (raw?.ml_data?.daily_revenue||{}) : (raw?.daily_revenue||{});
+        const dord = isMl ? (raw?.ml_data?.daily_orders||{}) : (raw?.daily_orders||{});
+        const rev = Object.values(dr).reduce((a,b)=>a+b,0);
+        const ord = Object.values(dord).reduce((a,b)=>a+b,0);
+        let cogs = 0;
+        if (isMl) { for (const m of (raw?.ml_data?.ml_products||[])) { const c=parseFloat(cogsMap["ml:"+m.id]); if(c>0) cogs+=c*(m.units||0); } }
+        else { for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const c=parseFloat(cogsMap[v.sku||String(v.id)]); if(c>0) cogs+=c*(v.units_sold||0); } }
+        const impuestos = rev*pctImp;
+        // Comisión separada como en el general: Plataforma vs Pago.
+        const comPlat = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : rev*pctPlat;
+        const comPago = isMl ? 0 : ((parseFloat(mpComm)||0) + Math.max(0, rev-(parseFloat(mpRev)||0))*pctPago);
+        const comis = comPlat + comPago;
+        const envio = isMl ? (parseFloat(mlEnv)||0) : ord*envioProm;
+        const ads = parseFloat(adSpend)||0;
+        const netRev = rev - impuestos - comis;
+        const profit = rev - cogs - impuestos - comis - envio - ads;
+        return { orders:ord, revenue:+rev.toFixed(2), netRevenue:+netRev.toFixed(2), adSpend:+ads.toFixed(2),
+          costoProductos:+cogs.toFixed(2), impuestos:+impuestos.toFixed(2),
+          comisiones:+comis.toFixed(2), comisionPlataforma:+comPlat.toFixed(2), comisionPago:+comPago.toFixed(2),
+          costoEnvio:+envio.toFixed(2), costosAdicionales:0,
+          profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
+          roas: ads>0?rev/ads:0, trueRoas: ads>0?netRev/ads:0,
+          cpa: ord>0?ads/ord:0, cpaBreakEven: ord>0?(profit+ads)/ord:0,
+          mer: rev>0?ads/rev:0, breakEvenRoas: (profit+ads)>0?rev/(profit+ads):0,
+          aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
+      }
+      const byChannel = {
+        tienda: canal(curr.raw, false, mpCommCurr.fee, totals.adSpendMeta, 0, mpCommCurr.rev),
+        ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw), 0),
+        tiendaPrev: canal(prev.raw, false, mpCommPrev.fee, prevTotals.adSpendMeta, 0, mpCommPrev.rev),
+        mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw), 0),
+        platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
+        hasMl: !!(curr.raw?.ml_data),
+      };
+
+      // ── Venta por venta: cada orden con sus costos reales ──
+      function buildSales(raw) {
+        const list = [];
+        const cogsDe = items => (items||[]).reduce((s,it)=>s+(parseFloat(cogsMap[it.key])||0)*(it.qty||0),0);
+        for (const o of (raw?.orders_detail||[])) {
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=rev*(pctPlat+pctPago), env=envioProm;
+          const profit=rev-cogs-imp-comis-env;
+          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
+        }
+        for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o);
+          const profit=rev-cogs-imp-comis-env;
+          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
+        }
+        list.sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")));
+        return list.slice(0, 600);
+      }
+      const sales = buildSales(curr.raw);
+
+      return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, sales, since, until, prevSince, prevUntil,
+        meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
+          metaTokenExpired: !!metaErr.expired,
+          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, fijosMensual, feeAd: feeAd*100 } } });
     } catch(e) { console.error("Dashboard error:", e); return res.status(500).json({ error: e.message }); }
   }
 
