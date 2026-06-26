@@ -10109,52 +10109,52 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             })}
           </div>
         )}
-        {/* Botón entregar para colab en tareas sin slots */}
-        {colabMode&&!(t.slots||[]).length&&t.estado!=="aprobado"&&(
-          <div style={{marginBottom:14,padding:"12px 14px",background:T.accentSolid+"10",border:`1px solid ${T.accentSolid}30`,borderRadius:DS.r.lg}}>
-            <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8}}>Subir entrega</div>
-            <input value={colabEntregaNombre[t._id]||""} onChange={e=>setColabEntregaNombre(p=>({...p,[t._id]:e.target.value}))}
-              placeholder="Nombre de la entrega (ej: Fotos look invierno, Reel batch 2)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
-            <input value={colabEntregaLink[t._id]||""} onChange={e=>setColabEntregaLink(p=>({...p,[t._id]:e.target.value}))}
-              placeholder="Link de Drive, Dropbox, etc." style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
-            <input value={colabEntregaNota[t._id]||""} onChange={e=>setColabEntregaNota(p=>({...p,[t._id]:e.target.value}))}
-              placeholder="Nota opcional" style={{...iS,fontSize:12,width:"100%",marginBottom:8}}/>
-            <div style={{display:"flex",gap:8}}>
-              <AsyncButton onClick={async()=>{
-                const link=(colabEntregaLink[t._id]||"").trim();
-                if(!link) return toast("Pegá un link primero","error");
-                const label=(colabEntregaNombre[t._id]||"").trim();
-                const nota=(colabEntregaNota[t._id]||"").trim();
-                try{
-                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label,nota,esFinal:false})});
-                  toast("📦 Entrega parcial registrada","success");
-                  setColabEntregaLink(p=>({...p,[t._id]:""}));
-                  setColabEntregaNombre(p=>({...p,[t._id]:""}));
-                  setColabEntregaNota(p=>({...p,[t._id]:""}));
-                  loadData(true);
-                }catch(e){toast("Error: "+e.message,"error");}
-              }} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"1.5px solid #f9731660",background:"#f9731618",color:"#f97316",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                📦 Entrega parcial
-              </AsyncButton>
-              <AsyncButton onClick={async()=>{
-                const link=(colabEntregaLink[t._id]||"").trim();
-                if(!link) return toast("Pegá un link primero","error");
-                const label=(colabEntregaNombre[t._id]||"").trim();
-                const nota=(colabEntregaNota[t._id]||"").trim();
-                try{
-                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label,nota,esFinal:true})});
-                  toast("✅ Entrega final enviada","success");
-                  setColabEntregaLink(p=>({...p,[t._id]:""}));
-                  setColabEntregaNombre(p=>({...p,[t._id]:""}));
-                  setColabEntregaNota(p=>({...p,[t._id]:""}));
-                  loadData(true);
-                }catch(e){toast("Error: "+e.message,"error");}
-              }} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"none",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                ✅ Entrega final
+        {/* Entrega para colab en tareas sin slots */}
+        {colabMode&&!(t.slots||[]).length&&t.estado!=="aprobado"&&(()=>{
+          const hasFinal=(t.deliverables||[]).some(d=>!d.parcial);
+          async function submitColabEntrega(){
+            const link=(colabEntregaLink[t._id]||"").trim();
+            if(!link) return toast("Pegá un link primero","error");
+            const label=(colabEntregaNombre[t._id]||"").trim();
+            const nota=(colabEntregaNota[t._id]||"").trim();
+            try{
+              await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label,nota,esFinal:true})});
+              toast(hasFinal?"📎 Documento agregado ✓":"✅ Entrega enviada","success");
+              setColabEntregaLink(p=>({...p,[t._id]:""}));
+              setColabEntregaNombre(p=>({...p,[t._id]:""}));
+              setColabEntregaNota(p=>({...p,[t._id]:""}));
+              loadData(true);
+            }catch(e){toast("Error: "+e.message,"error");}
+          }
+          if(!hasFinal) return (
+            <div style={{marginBottom:14,padding:"12px 14px",background:"#22c55e12",border:"1.5px solid #22c55e40",borderRadius:DS.r.lg}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:8}}>📤 Subir entrega</div>
+              <input value={colabEntregaNombre[t._id]||""} onChange={e=>setColabEntregaNombre(p=>({...p,[t._id]:e.target.value}))}
+                placeholder="Nombre (ej: Fotos look invierno, Reel batch 2)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
+              <input value={colabEntregaLink[t._id]||""} onChange={e=>setColabEntregaLink(p=>({...p,[t._id]:e.target.value}))}
+                placeholder="Link de Drive, Dropbox, Figma, etc." style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
+              <input value={colabEntregaNota[t._id]||""} onChange={e=>setColabEntregaNota(p=>({...p,[t._id]:e.target.value}))}
+                placeholder="Nota para el equipo (opcional)" style={{...iS,fontSize:12,width:"100%",marginBottom:10}}/>
+              <AsyncButton onClick={submitColabEntrega} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px",borderRadius:DS.r.lg,border:"none",background:"#22c55e",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                ✅ Entregar
               </AsyncButton>
             </div>
-          </div>
-        )}
+          );
+          return (
+            <div style={{marginBottom:14,padding:"10px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.textMd,marginBottom:8}}>📎 Agregar documento a tu entrega</div>
+              <input value={colabEntregaNombre[t._id]||""} onChange={e=>setColabEntregaNombre(p=>({...p,[t._id]:e.target.value}))}
+                placeholder="Nombre del documento (ej: Fotos adicionales, Archivo final corregido)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
+              <input value={colabEntregaLink[t._id]||""} onChange={e=>setColabEntregaLink(p=>({...p,[t._id]:e.target.value}))}
+                placeholder="Link del documento" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
+              <input value={colabEntregaNota[t._id]||""} onChange={e=>setColabEntregaNota(p=>({...p,[t._id]:e.target.value}))}
+                placeholder="Nota (opcional)" style={{...iS,fontSize:12,width:"100%",marginBottom:10}}/>
+              <AsyncButton onClick={submitColabEntrega} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"1.5px solid #6366f150",background:"#6366f112",color:"#6366f1",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                📎 Agregar documento
+              </AsyncButton>
+            </div>
+          );
+        })()}
         {/* Estoy bloqueada — solo colabMode */}
         {colabMode&&t.estado!=="aprobado"&&(
           <div style={{marginBottom:14}}>

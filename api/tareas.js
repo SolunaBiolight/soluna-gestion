@@ -133,6 +133,24 @@ function emailEntregaRecibida({ colab, tarea, entrega, link }) {
 </div>`;
 }
 
+function emailEntregaActualizada({ colab, tarea, entrega, link }) {
+  return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#818cf8);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
+    <div style="font-size:28px;margin-bottom:8px">📎</div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Entrega actualizada</div>
+  </div>
+  <p style="font-size:15px;color:#374151"><strong>${colab.nombre}</strong> agregó un documento a su entrega:</p>
+  <div style="background:#f9fafb;border-radius:10px;padding:16px 20px;margin:16px 0;border-left:4px solid #6366f1">
+    <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:6px">${tarea.titulo}</div>
+    ${entrega.label ? `<div style="font-size:12px;color:#6b7280">${entrega.label}</div>` : ""}
+    ${entrega.nota ? `<div style="font-size:13px;color:#374151;margin-top:6px">${entrega.nota}</div>` : ""}
+    <a href="${entrega.link}" style="display:inline-block;margin-top:10px;font-size:13px;color:#6366f1;font-weight:600">Ver documento →</a>
+  </div>
+  <a href="${link}" style="display:block;text-align:center;background:#6366f1;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver entrega completa →</a>
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
+</div>`;
+}
+
 function emailTareaAprobada({ colab, tarea, link }) {
   return `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
   <div style="background:linear-gradient(135deg,#22c55e,#4ade80);padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
@@ -525,21 +543,25 @@ export default async function handler(req, res) {
       if (!emailsAssign.includes(colab.email)) return res.status(403).json({ error: "No autorizado" });
       const prevDels = t.data().deliverables || [];
       const version = prevDels.length + 1;
-      const entrega = { link, nota: nota||"", label: label||`v${version}`, version, fecha: now, parcial: !esFinal };
-      const act = { tipo:"entrega", autor:colab.nombre, fecha:now, detalle: esFinal ? `Entregó versión ${version} (final)` : `Subió entrega parcial v${version}` };
+      const hasFinalDelivery = prevDels.some(d => !d.parcial);
+      const entrega = { link, nota: nota||"", label: label||`v${version}`, version, fecha: now, parcial: false };
+      const act = { tipo:"entrega", autor:colab.nombre, fecha:now, detalle: hasFinalDelivery ? `Agregó documento a entrega: ${entrega.label}` : `Entrega final` };
       const upd = {
         deliverables:[...prevDels, entrega],
         feedbackActual:null,
         updatedAt:now,
         activity:[...(t.data().activity||[]), act],
       };
-      // Tanto parcial como final pasan a "entregado" para que el admin las vea en "para revisar"
       upd.estado = "entregado";
       await ref.update(upd);
-      // Email al manager(s)
+      // Email al manager(s): "Entrega actualizada" si ya había entrega, "Nueva entrega" si es la primera
       notifyManagers(db, t.data().uid, t.data().managerEmail,
-        esFinal ? `📦 Entrega final de ${colab.nombre} — ${t.data().titulo}` : `📦 Entrega parcial de ${colab.nombre} — ${t.data().titulo}`,
-        emailEntregaRecibida({ colab, tarea:t.data(), entrega, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }));
+        hasFinalDelivery
+          ? `📎 Entrega actualizada — ${colab.nombre} agregó un documento en "${t.data().titulo}"`
+          : `📦 Entrega de ${colab.nombre} — ${t.data().titulo}`,
+        hasFinalDelivery
+          ? emailEntregaActualizada({ colab, tarea:t.data(), entrega, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` })
+          : emailEntregaRecibida({ colab, tarea:t.data(), entrega, link:`${origin||"https://soluna-gestion.vercel.app"}/#/tareas` }));
       return res.json({ ok: true, entrega });
     }
 
