@@ -9413,6 +9413,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [ntColabTitulo, setNtColabTitulo] = useState("");
   const [ntColabDesc, setNtColabDesc] = useState("");
   const [ntColabLink, setNtColabLink] = useState("");
+  // Form de entrega del colaborador (colabMode) — controlado por React para evitar bugs con DOM
+  const [colabEntregaLink, setColabEntregaLink] = useState({});   // {tareaId: ""}
+  const [colabEntregaNombre, setColabEntregaNombre] = useState({}); // {tareaId: ""}
+  const [colabEntregaNota, setColabEntregaNota] = useState({});   // {tareaId: ""}
   const [notifEmails, setNotifEmails] = useState([]);
   const [newNotifEmail, setNewNotifEmail] = useState("");
   const [showHistorial, setShowHistorial] = useState(false);
@@ -10109,33 +10113,40 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {colabMode&&!(t.slots||[]).length&&t.estado!=="aprobado"&&(
           <div style={{marginBottom:14,padding:"12px 14px",background:T.accentSolid+"10",border:`1px solid ${T.accentSolid}30`,borderRadius:DS.r.lg}}>
             <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8}}>Subir entrega</div>
-            <input id={`entrega-nombre-${t._id}`} placeholder="Nombre de la entrega (ej: Fotos look invierno, Reel batch 2)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
-            <input id={`entrega-link-${t._id}`} placeholder="Link de Drive, Dropbox, etc." style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
-            <input id={`entrega-nota-${t._id}`} placeholder="Nota opcional" style={{...iS,fontSize:12,width:"100%",marginBottom:8}}/>
+            <input value={colabEntregaNombre[t._id]||""} onChange={e=>setColabEntregaNombre(p=>({...p,[t._id]:e.target.value}))}
+              placeholder="Nombre de la entrega (ej: Fotos look invierno, Reel batch 2)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
+            <input value={colabEntregaLink[t._id]||""} onChange={e=>setColabEntregaLink(p=>({...p,[t._id]:e.target.value}))}
+              placeholder="Link de Drive, Dropbox, etc." style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
+            <input value={colabEntregaNota[t._id]||""} onChange={e=>setColabEntregaNota(p=>({...p,[t._id]:e.target.value}))}
+              placeholder="Nota opcional" style={{...iS,fontSize:12,width:"100%",marginBottom:8}}/>
             <div style={{display:"flex",gap:8}}>
               <AsyncButton onClick={async()=>{
-                const link=document.getElementById(`entrega-link-${t._id}`)?.value?.trim();
+                const link=(colabEntregaLink[t._id]||"").trim();
                 if(!link) return toast("Pegá un link primero","error");
-                const nombre=document.getElementById(`entrega-nombre-${t._id}`)?.value?.trim()||"";
-                const nota=document.getElementById(`entrega-nota-${t._id}`)?.value?.trim()||"";
+                const label=(colabEntregaNombre[t._id]||"").trim();
+                const nota=(colabEntregaNota[t._id]||"").trim();
                 try{
-                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label:nombre,nota,esFinal:false})});
+                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label,nota,esFinal:false})});
                   toast("📦 Entrega parcial registrada","success");
-                  ["entrega-nombre-","entrega-link-","entrega-nota-"].forEach(p=>{const el=document.getElementById(p+t._id);if(el)el.value="";});
+                  setColabEntregaLink(p=>({...p,[t._id]:""}));
+                  setColabEntregaNombre(p=>({...p,[t._id]:""}));
+                  setColabEntregaNota(p=>({...p,[t._id]:""}));
                   loadData(true);
                 }catch(e){toast("Error: "+e.message,"error");}
               }} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"1.5px solid #f9731660",background:"#f9731618",color:"#f97316",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 📦 Entrega parcial
               </AsyncButton>
               <AsyncButton onClick={async()=>{
-                const link=document.getElementById(`entrega-link-${t._id}`)?.value?.trim();
+                const link=(colabEntregaLink[t._id]||"").trim();
                 if(!link) return toast("Pegá un link primero","error");
-                const nombre=document.getElementById(`entrega-nombre-${t._id}`)?.value?.trim()||"";
-                const nota=document.getElementById(`entrega-nota-${t._id}`)?.value?.trim()||"";
+                const label=(colabEntregaNombre[t._id]||"").trim();
+                const nota=(colabEntregaNota[t._id]||"").trim();
                 try{
-                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label:nombre,nota,esFinal:true})});
+                  await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label,nota,esFinal:true})});
                   toast("✅ Entrega final enviada","success");
-                  ["entrega-nombre-","entrega-link-","entrega-nota-"].forEach(p=>{const el=document.getElementById(p+t._id);if(el)el.value="";});
+                  setColabEntregaLink(p=>({...p,[t._id]:""}));
+                  setColabEntregaNombre(p=>({...p,[t._id]:""}));
+                  setColabEntregaNota(p=>({...p,[t._id]:""}));
                   loadData(true);
                 }catch(e){toast("Error: "+e.message,"error");}
               }} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"none",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
