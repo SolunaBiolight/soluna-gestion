@@ -2531,7 +2531,9 @@ export default async function handler(req, res) {
         // más VIEJAS primero y, con el tope de páginas, nunca llegaban las ventas
         // recientes → "no tomaba las ventas nuevas". El orden se preserva en el cursor.
         let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
-        for (let i = 0; i < 8; i++) {
+        // Paginación COMPLETA (como Márgenes): seguimos el cursor hasta que no haya
+        // más páginas. El tope de 60 es solo un seguro anti-loop (60×250 = 15k).
+        for (let i = 0; i < 60; i++) {
           if (!pageInfoUrl) break;
           const shRes = await fetch(pageInfoUrl, {
             headers: { "X-Shopify-Access-Token": shStore.accessToken },
