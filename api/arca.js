@@ -491,7 +491,7 @@ function condicionIvaReceptor(tipoCbte, docTipoClas) {
   return 5;
 }
 
-async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCbte, wsfeUrl, monotributo = false, fechaImputacion = null) {
+async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCbte, wsfeUrl, monotributo = false, fechaImputacion = null, exento = false) {
   const total = orden.total;
   const fecha = fechaImputacion || new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
@@ -504,16 +504,19 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
     nroDoc = orden.doc_nro || orden.dni || 0;
     neto = total; iva = 0;
   } else {
-    neto = Math.round((total / 1.21) * 100) / 100;
-    iva = Math.round((total - neto) * 100) / 100;
+    // Exento (ebooks/digitales, punto de venta exento): TODO el monto va como
+    // operación exenta (ImpOpEx), sin neto gravado ni IVA. El resto (físicos) → 21%.
+    if (exento) { neto = 0; iva = 0; }
+    else { neto = Math.round((total / 1.21) * 100) / 100; iva = Math.round((total - neto) * 100) / 100; }
     if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = orden.doc_nro || orden.dni; }
     else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = orden.doc_nro || orden.dni; }
     else { tipoDoc = 99; nroDoc = 0; }
   }
 
   const condIva = condicionIvaReceptor(tipoCbte, docTipoClas);
+  const impOpEx = (!monotributo && exento) ? total : 0; // monto exento (sin IVA)
 
-  const ivaXml = (!monotributo && iva > 0) ? `
+  const ivaXml = (!monotributo && !exento && iva > 0) ? `
     <ar:Iva>
       <ar:AlicIva>
         <ar:Id>5</ar:Id>
@@ -540,7 +543,7 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
           <ar:ImpTotal>${total}</ar:ImpTotal>
           <ar:ImpTotConc>0</ar:ImpTotConc>
           <ar:ImpNeto>${neto}</ar:ImpNeto>
-          <ar:ImpOpEx>0</ar:ImpOpEx>
+          <ar:ImpOpEx>${impOpEx}</ar:ImpOpEx>
           <ar:ImpTrib>0</ar:ImpTrib>
           <ar:ImpIVA>${iva}</ar:ImpIVA>
           <ar:MonId>PES</ar:MonId>
@@ -1018,8 +1021,9 @@ async function generarPDF(factData, config) {
   const isMonotributo = condicion_fiscal === "MONOTRIBUTO";
   const letra = factData.letra;
   const total = factData.total;
-  const neto = isMonotributo ? total : Math.round((total / 1.21) * 100) / 100;
-  const iva21 = isMonotributo ? 0 : Math.round((total - neto) * 100) / 100;
+  const exento = !!factData.exento; // factura sin IVA (digitales/ebooks)
+  const neto = (isMonotributo || exento) ? (exento ? 0 : total) : Math.round((total / 1.21) * 100) / 100;
+  const iva21 = (isMonotributo || exento) ? 0 : Math.round((total - neto) * 100) / 100;
 
   // Generar QR una vez (mismo para las 3 copias)
   let qrImage = null;
@@ -1262,8 +1266,13 @@ async function generarPDF(factData, config) {
     const valX = MX + UW - 12;
     let ty2 = totY + 14;
     if (showIVA) {
-      // Discriminación IVA por alícuota (todos en 0 menos 21% que tiene el monto).
-      const rows = [
+      // Discriminación IVA por alícuota. Si es exento, el monto va en "Op. Exentas".
+      const rows = exento ? [
+        ["Importe Neto Gravado:", "$ 0,00"],
+        ["Importe Op. Exentas:", "$ " + fmtAR(total)],
+        ["IVA 21%:", "$ 0,00"],
+        ["Importe Otros Tributos:", "$ 0,00"],
+      ] : [
         ["Importe Neto Gravado:", "$ " + fmtAR(neto)],
         ["IVA 0%:", "$ 0,00"],
         ["IVA 10,5%:", "$ 0,00"],
@@ -1450,6 +1459,17 @@ export default async function handler(req, res) {
         punto_venta: parseInt(data.punto_venta) || existing.punto_venta || 1,
         arca_prod: data.arca_prod === "true" || data.arca_prod === true || existing.arca_prod || false,
       };
+      // Puntos de venta múltiples con su régimen de IVA: [{numero, exento, nombre}].
+      // Ej: PV físicos (21%) + PV digitales/ebooks (exento). Si no se manda, se
+      // mantiene lo existente.
+      if (data.puntos_venta !== undefined) {
+        try {
+          const arr = typeof data.puntos_venta === "string" ? JSON.parse(data.puntos_venta) : data.puntos_venta;
+          updated.puntos_venta = (Array.isArray(arr) ? arr : [])
+            .map(p => ({ numero: parseInt(p.numero) || 0, exento: !!p.exento, nombre: String(p.nombre || "").slice(0, 40) }))
+            .filter(p => p.numero > 0);
+        } catch(_) {}
+      }
       if (data.cert_pem) updated.cert_pem = data.cert_pem;
       if (data.key_pem) updated.key_pem = data.key_pem;
       // Banner opcional para PDF (data URL "data:image/png;base64,...")
@@ -1883,8 +1903,9 @@ export default async function handler(req, res) {
 
     if (action === "emit" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const { cuit: cuitEmit, ordenes, product_map, fecha_factura } = body;
+      const { cuit: cuitEmit, ordenes, product_map, fecha_factura, punto_venta: pvSel, exento: exentoReq } = body;
       if (!cuitEmit || !ordenes) return res.status(400).json({ error: "Faltan cuit u ordenes" });
+      const exento = exentoReq === true || exentoReq === "true"; // factura exenta (digitales/ebooks)
 
       console.log(`[arca/emit] uid=${uid} cuit=${cuitEmit} n=${Object.keys(ordenes||{}).length} fecha_factura=${JSON.stringify(fecha_factura)}`);
 
@@ -1915,9 +1936,10 @@ export default async function handler(req, res) {
       const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
       const { token, sign } = await loginWSAA(cms, wsaa);
 
-      // Numeradores
+      // Numeradores — usa el punto de venta elegido (ej: PV físicos vs PV digitales
+      // exento). Si el front no manda uno, cae al punto_venta por defecto del CUIT.
       const cuitNum = parseInt(cfg.cuit);
-      const pv = cfg.punto_venta;
+      const pv = parseInt(pvSel) || cfg.punto_venta;
       let cbteA = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 1, wsfe)) + 1;
       let cbteB = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 6, wsfe)) + 1;
       let cbteC = isMonotributo ? (await getUltimoCbte(token, sign, cuitNum, pv, 11, wsfe)) + 1 : 0;
@@ -1936,20 +1958,20 @@ export default async function handler(req, res) {
         let result, letra, tipoCbte, cbteNro;
 
         if (isMonotributo) {
-          result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion);
+          result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento);
           letra = "C"; tipoCbte = 11; cbteNro = cbteC;
         } else {
           const tieneCuit = orden.doc_tipo === "CUIT";
           if (tieneCuit) {
-            result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion);
+            result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento);
             if (result.cae) { letra = "A"; tipoCbte = 1; cbteNro = cbteA; }
             else {
               // Fallback a B
-              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion);
+              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
               letra = "B"; tipoCbte = 6; cbteNro = cbteB;
             }
           } else {
-            result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion);
+            result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
             letra = "B"; tipoCbte = 6; cbteNro = cbteB;
           }
         }
@@ -1970,7 +1992,7 @@ export default async function handler(req, res) {
             doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || orden.dni || "",
             letra, tipo_cbte: tipoCbte,
             domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
-            total: orden.total, items: orden.items,
+            total: orden.total, items: orden.items, exento,
           };
           const pdfBytes = await generarPDF(factData, cfg);
           const nombreCliente = (orden.nombre || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
