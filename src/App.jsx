@@ -13934,6 +13934,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     ...((Array.isArray(cuitActivo.puntos_venta)?cuitActivo.puntos_venta:[]).map(p=>({ numero:parseInt(p.numero)||0, exento:!!p.exento, nombre:p.nombre||`PV ${p.numero}` })).filter(p=>p.numero>0)),
   ] : [];
   const pvElegido = pvEmit || pvsDisponibles[0] || { numero:undefined, exento:false, nombre:"Físicos (21%)" };
+  // Plataformas conectadas — para no mostrar TN a quien usa Shopify ni viceversa.
+  const platConectadas = (tnData?.connections||[]).filter(c=>c.connected).map(c=>c.platform);
+  const tienePlat = (p) => platConectadas.length===0 || platConectadas.includes(p);
+  const buscarPlats = (platConectadas.length ? platConectadas : ["shopify","tiendanube","mercadolibre"])
+    .map(p => p==="tiendanube"?"TN":p==="shopify"?"Shopify":p==="mercadolibre"?"ML":p).join("/");
   const iS = {width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",outline:"none"};
   const labelS = {fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6,display:"block"};
   // Mes navegado en el dashboard (default = mes actual ARG)
@@ -14933,10 +14938,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {/* Pills de canal — multi-selección */}
                     {(()=>{
                       const canales=[
-                        {id:"tiendanube", label:"TiendaNube", color:"#2D8DF2"},
+                        {id:"tiendanube", label:"Tienda Nube", color:"#2D8DF2"},
                         {id:"shopify", label:"Shopify", color:"#96BF48"},
                         {id:"mercadolibre", label:"Mercado Libre", color:"#FFE600", textColor:"#1a1a1a"},
-                      ];
+                      ].filter(c => tienePlat(c.id));
                       const allOff = canalesSel.length===0;
                       const toggle=(id)=>{
                         if(canalesSel.includes(id)) setCanalesSel(canalesSel.filter(c=>c!==id));
@@ -14980,7 +14985,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
                     <input
                       type="text"
-                      placeholder="🔍 Buscar por nombre o número de orden (Shopify/TN/ML)…"
+                      placeholder={`🔍 Buscar por nombre o número de orden (${buscarPlats})…`}
                       value={busquedaPend}
                       onChange={e=>setBusquedaPend(e.target.value)}
                       style={{...iS,flex:1,padding:"7px 12px",fontSize:12}}
