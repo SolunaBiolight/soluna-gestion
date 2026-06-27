@@ -329,11 +329,13 @@ export default async function handler(req, res) {
           trueRoas: adSpendEf>0 ? netRevenue/adSpendEf : 0,
           cpa: (tot.orders||0)>0 ? adSpendEf/tot.orders : 0,
           mer: revenue>0 ? adSpendEf/revenue : 0,
-          // Break even REAL: a qué ROAS el profit llega a 0 contando TODOS los
-          // costos (COGS, envío, comisiones, impuestos, fijos). Contribución antes
-          // de pauta = profit + adSpend. CPA break even = esa contribución / orden.
-          breakEvenRoas: (profit + adSpendEf)>0 ? revenue/(profit + adSpendEf) : 0,
-          cpaBreakEven: (tot.orders||0)>0 ? (profit + adSpendEf)/tot.orders : 0,
+          // Break even / CPA break even sobre la CONTRIBUCIÓN: revenue − costos
+          // variables (COGS, comisiones, impuestos, envío). NO se restan los costos
+          // fijos (son overhead, no por-adquisición) ni la pauta. Así el CPA break
+          // even es el margen por orden = lo máximo que podés pagar por venta.
+          // contribucion = profit + adSpend + costosAdicionales.
+          breakEvenRoas: (profit + adSpendEf + costosAdic)>0 ? revenue/(profit + adSpendEf + costosAdic) : 0,
+          cpaBreakEven: ((tot.orders||0)>0 && (profit + adSpendEf + costosAdic)>0) ? (profit + adSpendEf + costosAdic)/tot.orders : 0,
         };
       }
       // ── Envío de ML: Flex (el vendedor paga) vs Mercado Envíos (lo cubre ML) ──
