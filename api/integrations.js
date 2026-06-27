@@ -515,6 +515,12 @@ async function mlShipProbe(req, res, db) {
         unit_price: it.unit_price, full_unit_price: it.full_unit_price,
         sale_fee: it.sale_fee,
       })),
+      // Pagos: para ver el monto REAL que pagó el cliente (post precio-por-cantidad).
+      payments: (o.payments||[]).map(p => ({
+        status: p.status, transaction_amount: p.transaction_amount,
+        total_paid_amount: p.total_paid_amount, shipping_cost: p.shipping_cost,
+        coupon_amount: p.coupon_amount, taxes_amount: p.taxes_amount,
+      })),
     });
   }
   return res.json({ ok:true, userId: tok.userId, count: out.length, orders: out, fullSample });
