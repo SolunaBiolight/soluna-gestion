@@ -986,7 +986,7 @@ async function generarQrArca(factData, config) {
     ver: 1,
     fecha,
     cuit: cuitNum,
-    ptoVta: parseInt(config.punto_venta) || 1,
+    ptoVta: parseInt(factData.punto_venta || config.punto_venta) || 1, // PV REAL de la factura (no el default del CUIT)
     tipoCmp: factData.tipo_cbte,
     nroCmp: factData.comprobante,
     importe: parseFloat(factData.total),
@@ -1017,7 +1017,8 @@ async function generarPDF(factData, config) {
   const fontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-  const { cuit, razon_social, nombre_fantasia, domicilio, punto_venta, condicion_fiscal, ingresos_brutos } = config;
+  const { cuit, razon_social, nombre_fantasia, domicilio, condicion_fiscal, ingresos_brutos } = config;
+  const punto_venta = factData.punto_venta || config.punto_venta; // PV REAL de la factura
   const isMonotributo = condicion_fiscal === "MONOTRIBUTO";
   const letra = factData.letra;
   const total = factData.total;
@@ -1221,7 +1222,9 @@ async function generarPDF(factData, config) {
     for (let idx = 0; idx < items.length; idx++) {
       const item = items[idx];
       const precioBruto = item.precio || 0;
-      const precioUnit = isMonotributo ? precioBruto : Math.round((precioBruto / 1.21) * 100) / 100;
+      // Exento y Monotributo: el precio del ítem NO se divide por 1.21 (no hay IVA
+      // que extraer). Solo RI gravado muestra el neto (precio / 1.21).
+      const precioUnit = (isMonotributo || exento) ? precioBruto : Math.round((precioBruto / 1.21) * 100) / 100;
       const subtotal = Math.round(item.cantidad * precioUnit * 100) / 100;
       const bonif = item.descuento_item > 0 ? Math.round((item.descuento_item / (item.cantidad * item.precio)) * 10000) / 100 : 0;
       const nombreItem = (item.nombre || "Producto").length > 60 ? (item.nombre || "Producto").slice(0, 60) + "..." : (item.nombre || "Producto");
@@ -1232,7 +1235,7 @@ async function generarPDF(factData, config) {
         fmtAR(precioUnit),
         bonif > 0 ? fmtAR(bonif) : "0,00",
         fmtAR(subtotal),
-        ...(showIVA ? ["21,00%"] : []),
+        ...(showIVA ? [exento ? "Exento" : "21,00%"] : []),
       ];
 
       const rowH = 13;
@@ -1992,7 +1995,7 @@ export default async function handler(req, res) {
             doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || orden.dni || "",
             letra, tipo_cbte: tipoCbte,
             domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
-            total: orden.total, items: orden.items, exento,
+            total: orden.total, items: orden.items, exento, punto_venta: pv,
           };
           const pdfBytes = await generarPDF(factData, cfg);
           const nombreCliente = (orden.nombre || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
@@ -2083,8 +2086,8 @@ export default async function handler(req, res) {
 
           // Persistir comprobante en Firestore para el dashboard
           try {
-            const neto = isMonotributo ? orden.total : Math.round((orden.total / 1.21) * 100) / 100;
-            const iva = isMonotributo ? 0 : Math.round((orden.total - neto) * 100) / 100;
+            const neto = (isMonotributo || exento) ? (exento ? 0 : orden.total) : Math.round((orden.total / 1.21) * 100) / 100;
+            const iva = (isMonotributo || exento) ? 0 : Math.round((orden.total - neto) * 100) / 100;
             await db.collection("users").doc(uid).collection("arca_comprobantes")
               .doc(`${cuitEmit}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`).set({
                 cuit_emisor: cuitEmit,
@@ -2092,6 +2095,7 @@ export default async function handler(req, res) {
                 letra,
                 nro: cbteNro,
                 punto_venta: pv,
+                exento,
                 fecha_str: factData.fecha,
                 emitido_at: new Date().toISOString(),
                 cae: result.cae,
@@ -2197,7 +2201,7 @@ export default async function handler(req, res) {
             doc_tipo: c.doc_tipo, doc_nro: c.doc_nro || "",
             letra: c.letra, tipo_cbte: c.tipo_cbte,
             domicilio: c.domicilio || "",
-            total: c.total,
+            total: c.total, punto_venta: c.punto_venta, exento: !!c.exento,
             items: (Array.isArray(c.items) && c.items.length > 0)
               ? c.items
               : [{ nombre: "(Detalle no disponible)", cantidad: 1, precio: c.total, descuento_item: 0 }],
@@ -2367,7 +2371,7 @@ export default async function handler(req, res) {
           letra: c.letra,
           tipo_cbte: c.tipo_cbte,
           domicilio: c.domicilio || "",
-          total: c.total,
+          total: c.total, punto_venta: c.punto_venta, exento: !!c.exento,
           // Items reales si fueron persistidos al emitir, sino fallback (facturas viejas)
           items: (Array.isArray(c.items) && c.items.length > 0)
             ? c.items
