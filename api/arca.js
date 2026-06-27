@@ -2526,9 +2526,12 @@ export default async function handler(req, res) {
       if (shStore?.accessToken && shStore?.shop) {
         connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
         const allSH = [];
-        // Shopify usa cursor pagination con Link header — para simplificar usamos page_info implícito vía date filters
-        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
-        for (let i = 0; i < 4; i++) {
+        // Shopify usa cursor pagination con Link header. IMPORTANTE: ordenamos
+        // por created_at DESC (más nuevas primero). Sin esto, Shopify devuelve las
+        // más VIEJAS primero y, con el tope de páginas, nunca llegaban las ventas
+        // recientes → "no tomaba las ventas nuevas". El orden se preserva en el cursor.
+        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
+        for (let i = 0; i < 8; i++) {
           if (!pageInfoUrl) break;
           const shRes = await fetch(pageInfoUrl, {
             headers: { "X-Shopify-Access-Token": shStore.accessToken },
