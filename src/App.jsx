@@ -21076,9 +21076,10 @@ function CostosPanel({ T, uid }) {
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{marginBottom:10}}>
           <div style={{fontSize:13,fontWeight:700,color:T.text}}>🛒 Gasto de Mercado Ads (por período)</div>
-          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá cuánto gastaste en publicidad de ML en cada rango de fechas. Se promedia por día y el dashboard toma el promedio diario según los días que se solapen. Ej: 10/06–19/06 $1.000.000 = $100.000/día.</div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá lo que gastaste (o vas a gastar) en publicidad de ML en cada rango — podés poner fechas a futuro. Se promedia por día y el dashboard descuenta el promedio diario según los días que se solapen, así el gasto fijo se va imputando solo día a día. Ej: del 01/06 al 30/06 $3.000.000 = $100.000/día.</div>
         </div>
         {(()=>{ const today=new Date().toISOString().slice(0,10);
+        const maxFut=new Date(Date.now()+730*86400000).toISOString().slice(0,10); // permite cargar a futuro (hasta ~2 años)
         const fmtF=f=>{ try { return new Date(f+"T00:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}); } catch(_) { return f; } };
         const dias=(a,b)=>{ if(!a||!b||b<a) return 0; return Math.round((new Date(b)-new Date(a))/86400000)+1; };
         const dr=mlAdsDraft, dD=dias(dr.desde,dr.hasta), dProm=dD>0?(parseFloat(dr.monto)||0)/dD:0;
@@ -21097,9 +21098,9 @@ function CostosPanel({ T, uid }) {
           </div>}
           {/* Form para agregar un período nuevo */}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:mlAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:mlAdsList.length>0?12:0}}>
-            <input type="date" min="2023-01-01" max={dr.hasta||today} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <input type="date" min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:12,color:T.textSm}}>→</span>
-            <input type="date" min={dr.desde||"2023-01-01"} max={today} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <input type="date" min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:13,color:T.textSm}}>$</span>
             <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
             {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
