@@ -2742,9 +2742,11 @@ export default async function handler(req, res) {
                 nombre: customerName,
                 email: buyer.email || "",
                 dni: docRaw, ...clas,
-                total: parseFloat(o.total_amount) || 0,
-                subtotal: parseFloat(o.total_amount) || 0,
-                descuento: 0,
+                // Facturar lo que REALMENTE paga el cliente: total_amount NO resta
+                // el cupón/descuento (el comprador paga total_amount − coupon.amount).
+                total: Math.max(0, (parseFloat(o.total_amount) || 0) - (parseFloat(o.coupon?.amount) || 0)),
+                subtotal: Math.max(0, (parseFloat(o.total_amount) || 0) - (parseFloat(o.coupon?.amount) || 0)),
+                descuento: parseFloat(o.coupon?.amount) || 0,
                 envio: parseFloat(o.shipping?.cost) || 0,
                 estado_pago: "paid",
                 fecha: o.date_closed || o.date_created || "",
