@@ -273,7 +273,7 @@ function processML(orders) {
       const vname=item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
       byVariantRev[vname]=(byVariantRev[vname]||0)+rev;
-      orderFee += parseFloat(item.sale_fee||0); // comisión real que ML cobró por esta venta
+      orderFee += (parseFloat(item.sale_fee||0)) * qty; // comisión real de ML — sale_fee es POR UNIDAD (igual que unit_price), hay que × cantidad
       detItems.push({ key: "ml:"+String(item.item?.id||"ml"), qty });
     }
     if(day){
