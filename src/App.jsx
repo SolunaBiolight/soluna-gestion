@@ -13923,9 +13923,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   });
   const [resultados, setResultados] = useState(null);
   const [pdfs, setPdfs] = useState([]);
+  const [pvEmit, setPvEmit] = useState(null); // PV elegido al facturar: {numero,exento,nombre} | null = físico
+  useEffect(()=>{ setPvEmit(null); }, [cuitSel]); // reset al cambiar de CUIT
 
   const uid = user?.uid;
   const cuitActivo = cuits.find(c => c.cuit === cuitSel);
+  // Puntos de venta disponibles: el físico (por defecto) + los adicionales cargados.
+  const pvsDisponibles = cuitActivo ? [
+    { numero: parseInt(cuitActivo.punto_venta)||1, exento:false, nombre:"Físicos (21%)" },
+    ...((Array.isArray(cuitActivo.puntos_venta)?cuitActivo.puntos_venta:[]).map(p=>({ numero:parseInt(p.numero)||0, exento:!!p.exento, nombre:p.nombre||`PV ${p.numero}` })).filter(p=>p.numero>0)),
+  ] : [];
+  const pvElegido = pvEmit || pvsDisponibles[0] || { numero:undefined, exento:false, nombre:"Físicos (21%)" };
   const iS = {width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",outline:"none"};
   const labelS = {fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6,display:"block"};
   // Mes navegado en el dashboard (default = mes actual ARG)
@@ -14156,6 +14164,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     fd.append("fecha_inicio", editCuit.fecha_inicio||"");
     fd.append("condicion_fiscal", editCuit.condicion_fiscal||"RESPONSABLE_INSCRIPTO");
     fd.append("punto_venta", String(editCuit.punto_venta||1));
+    fd.append("puntos_venta", JSON.stringify(Array.isArray(editCuit.puntos_venta)?editCuit.puntos_venta:[]));
     fd.append("arca_prod", String(editCuit.arca_prod||false));
     fd.append("ingresos_brutos", editCuit.ingresos_brutos||"");
     // Banner: si está vacío "" = quitar, si tiene contenido = guardar, si es undefined = no tocar
@@ -14476,7 +14485,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     };
 
     setEmittingManual(true); setManualResult(null);
-    const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}});
+    const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}, punto_venta: pvElegido?.numero, exento: !!pvElegido?.exento});
     if(d.error){toast(d.error,"error");setEmittingManual(false);return;}
     const r = (d.resultados||[])[0];
     const pdf = (d.pdfs||[])[0];
@@ -14525,6 +14534,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       ordenes,
       product_map: productMap,
       fecha_factura: fechaYYYYMMDD,
+      punto_venta: pvElegido?.numero,
+      exento: !!pvElegido?.exento,
     });
     clearInterval(simInterval);
     if(d.error){
@@ -15350,15 +15361,15 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
 
                         {/* Totals */}
-                        <div style={{display:"grid",gridTemplateColumns:esRI?"1fr 1fr 1fr":"1fr",gap:10,padding:"14px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                          {esRI ? (
+                        <div style={{display:"grid",gridTemplateColumns:(esRI && !pvElegido?.exento)?"1fr 1fr 1fr":"1fr",gap:10,padding:"14px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                          {(esRI && !pvElegido?.exento) ? (
                             <>
                               <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Subtotal neto</div><div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {netoTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
                               <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:14}}><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>IVA 21%</div><div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {ivaTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
                               <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:14}}><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total</div><div style={{fontSize:16,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
                             </>
                           ) : (
-                            <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total a facturar (Factura C)</div><div style={{fontSize:18,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
+                            <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>{pvElegido?.exento?"Total a facturar (exento · sin IVA)":"Total a facturar (Factura C)"}</div><div style={{fontSize:18,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
                           )}
                         </div>
 
@@ -15374,6 +15385,20 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             Podés elegir cualquier día de los últimos 10 corridos (límite ARCA).{diasAtras>0?` Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
                           </div>
                         </div>
+
+                        {/* Punto de venta / régimen IVA (físicos vs digitales exento) */}
+                        {pvsDisponibles.length>1 && (
+                          <div style={{padding:"12px 16px",background:T.bg,border:`1px solid ${pvElegido?.exento?(T.yellow||"#eab308")+"66":T.borderL}`,borderRadius:10}}>
+                            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                              <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>🧾 Punto de venta</span>
+                              <select value={pvElegido?.numero||""} onChange={e=>{const n=parseInt(e.target.value); setPvEmit(pvsDisponibles.find(p=>p.numero===n)||null);}}
+                                style={{background:T.card,border:`1px solid ${T.borderL}`,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                {pvsDisponibles.map(p=>(<option key={p.numero} value={p.numero}>{p.nombre} · PV {String(p.numero).padStart(5,"0")}{p.exento?" · EXENTO":""}</option>))}
+                              </select>
+                            </div>
+                            {pvElegido?.exento && <div style={{fontSize:11,color:(T.yellow||"#eab308"),marginTop:6,fontWeight:600}}>⚠ Estas facturas saldrán SIN IVA (operación exenta). Usalo solo para productos digitales/exentos.</div>}
+                          </div>
+                        )}
 
                         {/* Duplicate warning */}
                         {duplicatesInModal&&duplicatesInModal.length>0&&(
@@ -16019,9 +16044,25 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </select>
                 </div>
                 <div>
-                  <label style={labelS}>Punto de venta</label>
+                  <label style={labelS}>Punto de venta (físicos · 21%)</label>
                   <input value={editCuit.punto_venta||"1"} onChange={e=>setEditCuit({...editCuit,punto_venta:e.target.value.replace(/\D/g,"")})} style={iS}/>
                 </div>
+              </div>
+              <div style={{border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",background:T.surface}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:3}}>🧾 Puntos de venta adicionales</div>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Si tenés otro punto de venta (ej: para digitales/ebooks con <strong>IVA exento</strong>), cargalo acá. Al facturar vas a poder elegir cuál usar. El de arriba es el de físicos (21%).</div>
+                {(editCuit.puntos_venta||[]).map((p,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                    <input value={p.nombre||""} placeholder="Nombre (ej: Digitales)" onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],nombre:e.target.value};setEditCuit({...editCuit,puntos_venta:arr});}} style={{...iS,flex:1,minWidth:120}}/>
+                    <input value={p.numero||""} placeholder="N° PV" onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],numero:e.target.value.replace(/\D/g,"")};setEditCuit({...editCuit,puntos_venta:arr});}} style={{...iS,width:90}}/>
+                    <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer",whiteSpace:"nowrap"}}>
+                      <input type="checkbox" checked={!!p.exento} onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],exento:e.target.checked};setEditCuit({...editCuit,puntos_venta:arr});}}/>
+                      IVA exento
+                    </label>
+                    <button onClick={()=>{const arr=(editCuit.puntos_venta||[]).filter((_,j)=>j!==i);setEditCuit({...editCuit,puntos_venta:arr});}} style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red}}>✕</button>
+                  </div>
+                ))}
+                <button onClick={()=>setEditCuit({...editCuit,puntos_venta:[...(editCuit.puntos_venta||[]),{numero:"",exento:true,nombre:""}]})} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Agregar punto de venta</button>
               </div>
               <div>
                 <label style={labelS}>Domicilio</label>
