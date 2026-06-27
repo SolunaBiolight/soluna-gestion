@@ -252,14 +252,15 @@ function processML(orders) {
     const pay=o.payments?.map(p=>p.payment_type).join(",")||"Mercado Pago";
     let orderUnits=0;
 
-    // Revenue de la orden = total_amount (el monto que el vendedor cobra,
-    // después de descuentos pero antes de comisiones MP). Equivale al
-    // "subtotal_price - tax" de Shopify procesado en processSH. Si no viene
-    // total_amount (raro), fallback al sum de unit_price.
+    // Revenue de la orden = total_amount MENOS el descuento al comprador.
+    // OJO: total_amount/paid_amount NO restan el cupón (verificado: total_amount
+    // 68900, coupon 3445, lo que el vendedor cobra = 65455). El descuento que el
+    // vendedor absorbe está en coupon.amount (tag "order_has_discount").
     let orderRev = parseFloat(o.total_amount);
     if (!isFinite(orderRev) || orderRev <= 0) {
       orderRev = (o.order_items||[]).reduce((s, it) => s + parseFloat(it.unit_price||0) * (parseInt(it.quantity)||0), 0);
     }
+    orderRev -= parseFloat(o.coupon?.amount) || 0; // restar descuento/cupón al comprador
 
     for(const item of o.order_items||[]){
       const vid=String(item.item?.id||"ml");
