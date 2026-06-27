@@ -194,7 +194,7 @@ export default async function handler(req, res) {
           const tok = await getValidMLToken(db, uid);
           if (!tok?.accessToken) return { fee:0, rev:0 };
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
-          let fee = 0, rev = 0, offset = 0;
+          let fee = 0, rev = 0, offset = 0; const feeByRef = {};
           for (let i=0; i<25; i++) {
             const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(end)}&limit=100&offset=${offset}`;
             const r = await fetch(url, { headers: { Authorization: `Bearer ${tok.accessToken}` } });
@@ -204,15 +204,17 @@ export default async function handler(req, res) {
             for (const p of results) {
               const ref = String(p.external_reference || "");
               if (p.status==="approved" && p.operation_type==="regular_payment" && /[a-zA-Z]/.test(ref) && !/^cashback|^INSTORE/i.test(ref)) {
-                fee += (p.fee_details||[]).reduce((s,f)=>s+(parseFloat(f.amount)||0),0);
+                const f = (p.fee_details||[]).reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
+                fee += f;
                 rev += parseFloat(p.transaction_amount)||0; // revenue cobrado por MP (para no doble-contar el % en estas ventas)
+                feeByRef[ref] = (feeByRef[ref]||0) + f; // comisión real de MP por receipt_id (= external_reference)
               }
             }
             offset += results.length;
             if (results.length < 100 || offset >= (j.paging?.total||0)) break;
           }
-          return { fee, rev };
-        } catch(_) { return { fee:0, rev:0 }; }
+          return { fee, rev, feeByRef };
+        } catch(_) { return { fee:0, rev:0, feeByRef:{} }; }
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
@@ -406,12 +408,48 @@ export default async function handler(req, res) {
         hasMl: !!(curr.raw?.ml_data),
       };
 
+      // ── Comisión REAL de MP por venta (Shopify) ──
+      // Resuelve el receipt_id de cada orden (vía sus transacciones) y lo matchea
+      // con la comisión real de MP (feeByRef). Se cachea en Firestore: cada orden
+      // se consulta UNA sola vez; se completa de a tandas (las más recientes
+      // primero) para respetar el rate limit de Shopify.
+      const feeByRef = mpCommCurr.feeByRef || {};
+      const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
+      const shStore = (userData.stores||[]).find(s => s.type==="shopify");
+      if (shStore?.shop && shStore?.accessToken) {
+        const pend = (curr.raw?.orders_detail||[])
+          .filter(o => /mercado\s*pago/i.test(o.pay||"") && !mpRefCache[o.id])
+          .sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")))
+          .slice(0, 40);
+        let changed = false;
+        for (let i=0; i<pend.length; i+=8) {
+          const rs = await Promise.all(pend.slice(i,i+8).map(async o => {
+            try {
+              const r = await fetch(`https://${shStore.shop}/admin/api/2024-10/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": shStore.accessToken } });
+              if (!r.ok) return [o.id, null];
+              const j = await r.json();
+              const ok = (j.transactions||[]).filter(t => t.kind==="sale" && t.status==="success");
+              const t = ok[ok.length-1];
+              const ref = t?.receipt?.id || t?.receipt?.payment_id || null;
+              return [o.id, ref ? String(ref) : null];
+            } catch(_) { return [o.id, null]; }
+          }));
+          for (const [id,ref] of rs) { if (ref) { mpRefCache[id] = ref; changed = true; } }
+        }
+        if (changed) { try { await db.collection("users").doc(uid).set({ margenesMpRefs: mpRefCache }, { merge:true }); } catch(_) {} }
+      }
+
       // ── Venta por venta: cada orden con sus costos reales ──
       function buildSales(raw) {
         const list = [];
         const cogsDe = items => (items||[]).reduce((s,it)=>s+(parseFloat(cogsMap[it.key])||0)*(it.qty||0),0);
         for (const o of (raw?.orders_detail||[])) {
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=rev*(pctPlat+pctPago), env=envioProm;
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, env=envioProm;
+          // Comisión = % plataforma + comisión de pago: si tenemos la real de MP
+          // de esta venta (vía receipt_id) la usamos; si no, caemos al % configurado.
+          const ref = mpRefCache[o.id];
+          const realMp = (ref && feeByRef[ref]!=null) ? feeByRef[ref] : null;
+          const comis = (realMp!=null) ? (rev*pctPlat + realMp) : (rev*(pctPlat+pctPago));
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
