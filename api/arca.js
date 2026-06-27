@@ -1219,20 +1219,21 @@ async function generarPDF(factData, config) {
     // Filas de items — zebra striping
     let iy = TY + headRowH;
     const items = factData.items || [];
-    // Escala los precios de los ítems para que SUMEN EXACTO el total de la factura.
-    // Cubre promos/bundles y descuentos: ej 3 unidades cuyo precio de lista suma
-    // \$179.970 pero la venta real fue \$85.490 → cada unidad se ajusta. Aplica a
-    // TODO tipo de factura (gravada, exenta, monotributo).
-    const sumLista = items.reduce((s, it) => s + (parseFloat(it.precio)||0) * (parseInt(it.cantidad)||1), 0);
-    const escala = sumLista > 0 ? total / sumLista : 1;
+    // Cada ítem refleja SU PROPIO descuento (precio × cant − su descuento), así un
+    // producto con promo no le "contagia" el descuento a otro sin promo. El residual
+    // (descuento a nivel orden / redondeo) se prorratea para que el detalle sume
+    // EXACTO el total. Es solo display: el total a ARCA siempre es orden.total.
+    const netoItem = it => Math.max(0, (parseFloat(it.precio)||0)*(parseInt(it.cantidad)||1) - (parseFloat(it.descuento_item)||0));
+    const sumNet = items.reduce((s, it) => s + netoItem(it), 0);
+    const escala = sumNet > 0 ? total / sumNet : 1;
     for (let idx = 0; idx < items.length; idx++) {
       const item = items[idx];
-      const precioBruto = (parseFloat(item.precio) || 0) * escala; // precio real (ajustado al total cobrado)
-      // Exento y Monotributo: el precio del ítem NO se divide por 1.21 (no hay IVA
-      // que extraer). Solo RI gravado muestra el neto (precio / 1.21).
-      const precioUnit = (isMonotributo || exento) ? precioBruto : Math.round((precioBruto / 1.21) * 100) / 100;
-      const subtotal = Math.round((parseInt(item.cantidad)||1) * precioUnit * 100) / 100;
-      const bonif = item.descuento_item > 0 ? Math.round((item.descuento_item / (item.cantidad * item.precio)) * 10000) / 100 : 0;
+      const cant = parseInt(item.cantidad) || 1;
+      const lineReal = netoItem(item) * escala; // monto real de esta línea (su descuento + prorrateo)
+      // Exento/Monotributo: no se divide por 1.21. RI gravado muestra el neto.
+      const subtotal = (isMonotributo || exento) ? Math.round(lineReal*100)/100 : Math.round((lineReal/1.21)*100)/100;
+      const precioUnit = Math.round((subtotal / cant) * 100) / 100;
+      const bonif = 0; // el descuento ya está aplicado en el precio mostrado
       const nombreItem = (item.nombre || "Producto").length > 60 ? (item.nombre || "Producto").slice(0, 60) + "..." : (item.nombre || "Producto");
       const cellData = [
         nombreItem,
@@ -2628,7 +2629,9 @@ export default async function handler(req, res) {
               nombre_original: li.title || "Producto",
               cantidad: parseInt(li.quantity) || 1,
               precio: parseFloat(li.price) || 0,
-              descuento_item: 0,
+              // Descuento REAL asignado a esta línea (Shopify ya reparte los
+              // descuentos de orden/bundle por producto en discount_allocations).
+              descuento_item: (li.discount_allocations||[]).reduce((s,da)=>s+(parseFloat(da.amount)||0),0) || parseFloat(li.total_discount) || 0,
             })),
           };
         }
