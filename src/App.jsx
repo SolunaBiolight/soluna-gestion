@@ -1666,7 +1666,9 @@ function ToastContainer({T}){
             borderLeft:`3px solid ${cfg.color}`,
             borderRadius:14,
             padding:"12px 20px 12px 14px",
-            fontSize:13,fontWeight:600,color:T.text,
+            fontSize:13,fontWeight:500,color:T.text,
+            fontFamily:"'Inter',system-ui,sans-serif",
+            letterSpacing:"-0.01em",
             boxShadow:`0 8px 32px rgba(0,0,0,0.28), 0 0 0 1px ${cfg.color}18`,
             whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:12,
             animation:"growith-toast-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both",
@@ -1675,7 +1677,7 @@ function ToastContainer({T}){
             <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${cfg.bg},${cfg.bg}cc)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:`0 4px 12px ${cfg.color}55`}}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">{cfg.icon}</svg>
             </div>
-            {t.msg}
+            {t.msg.replace(/\s*[✓✔]\s*$/, '')}
           </div>
         );
       })}
