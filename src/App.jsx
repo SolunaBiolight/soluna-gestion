@@ -9290,7 +9290,7 @@ function RefCard({T, refData, colabMode, onEdit, onDelete}) {
 // ===========================================
 // APP TAREAS — Delegación a colaboradores externos
 // ===========================================
-function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, colabMode=null}) {
+function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, colabMode=null, pendingOpenTaskId=null, onPendingOpenTaskConsumed=null}) {
   const iS = InputStyle(T);
   const [datos, setDatos] = useState({colaboradores:[],tareas:[]});
   const [loading, setLoading] = useState(true);
@@ -9506,6 +9506,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     if(sidebarTab==="equipo") setActiveView("equipo");
     else if(sidebarTab==="trabajo"||sidebarTab) setActiveView("todo");
   },[sidebarTab]);
+  useEffect(()=>{
+    if(!pendingOpenTaskId) return;
+    const tarea=(datos.tareas||[]).find(t=>t._id===pendingOpenTaskId);
+    if(tarea){ setKanbanSelected(tarea); onPendingOpenTaskConsumed?.(); }
+  },[pendingOpenTaskId, datos.tareas]);
 
   function fmtDate(val) {
     if(!val) return "—";
@@ -24314,6 +24319,7 @@ export default function App() {
   const [andreaniAlertCount,setAndreaniAlertCount]=useState(0);
   const [tareasForReview,setTareasForReview]=useState(0);
   const [tareasParaRevisarList,setTareasParaRevisarList]=useState([]);
+  const [pendingOpenTaskId,setPendingOpenTaskId]=useState(null);
   const [bellPanelOpen,setBellPanelOpen]=useState(false);
   const [expiryDismissed, setExpiryDismissed]=useState(false);
   const [connectedStores,setConnectedStores]=useState({tn:false,shopify:false,ml:false,meta:false});
@@ -24838,7 +24844,7 @@ export default function App() {
   else if(page==="stock") pageContent = adminGate("stock") || planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
   else if(page==="ml") pageContent = adminGate("ml") || planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
   else if(page==="meta") pageContent = adminGate("meta") || planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
-  else if(page==="tareas") pageContent = adminGate("tareas") || planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab}/></PageView>;
+  else if(page==="tareas") pageContent = adminGate("tareas") || planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
   else if(page==="reclamos") pageContent = adminGate("reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = adminGate("canjes") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
   else if(page==="envios") pageContent = adminGate("envios") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
@@ -24891,7 +24897,7 @@ export default function App() {
                       </div>
                       <div style={{maxHeight:260,overflowY:"auto"}}>
                         {tareasParaRevisarList.map(t=>(
-                          <div key={t.id} onClick={()=>{setBellPanelOpen(false);setPage("tareas");}} style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}
+                          <div key={t.id} onClick={()=>{setBellPanelOpen(false);setPendingOpenTaskId(t.id);setPage("tareas");}} style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}
                             onMouseEnter={e=>e.currentTarget.style.background=T.surface} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                             <div style={{width:32,height:32,borderRadius:"50%",background:T.orange+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.orange,flexShrink:0}}>
                               {(t.asignadoNombre?.[0]||"?").toUpperCase()}
