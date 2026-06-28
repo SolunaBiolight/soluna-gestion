@@ -9426,8 +9426,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [colabEntregaNota, setColabEntregaNota] = useState({});   // {tareaId: ""}
   const [notifEmails, setNotifEmails] = useState([]);
   const [newNotifEmail, setNewNotifEmail] = useState("");
-  const [showHistorial, setShowHistorial] = useState(false);
-
   async function tareasApi(body) {
     const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})});
     const d = await r.json();
@@ -10904,7 +10902,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               else if(sortTareas==="deadline") arr=[...arr].sort((a,b)=>(dLeft(a.deadline)??9999)-(dLeft(b.deadline)??9999));
               return arr;
             })();
-            const proximasItems=tareas.filter(t=>t.deadline&&t.estado!=="aprobado").map(t=>({nombre:t.asignadoNombre||"?",titulo:t.titulo,days:dLeft(t.deadline),id:t._id})).sort((a,b)=>(a.days??999)-(b.days??999)).slice(0,8);
             const CEST2={idea:{l:"Idea",c:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue},"en-produccion":{l:"En prod.",c:T.orange||"#f97316"},entregado:{l:"Entregado",c:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green}};
             return(<>
               {/* Banner bienvenida colabMode */}
@@ -10940,18 +10937,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 )}
               </div>}
-              {proximasItems.length>0&&(
-                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 14px",marginBottom:14,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                  <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",flexShrink:0}}>📅 Próximas</span>
-                  {proximasItems.map((p,i)=>{const d=p.days;const hot=d!==null&&d<=1;const warm=d!==null&&d<=3;
-                    return(<span key={i} onClick={()=>setExpandedTarea(p.id)}
-                      style={{fontSize:11,padding:"3px 10px",borderRadius:20,background:hot?T.red+"18":warm?(T.yellow||"#d97706")+"18":T.card,color:hot?T.red:warm?(T.yellow||"#d97706"):T.textMd,border:`1px solid ${hot?T.red:warm?(T.yellow||"#d97706"):T.border}33`,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
-                      {p.nombre} → {p.titulo.length>20?p.titulo.slice(0,20)+"…":p.titulo}
-                      <span style={{fontWeight:400,opacity:0.75,marginLeft:4}}>{d===null?"sin fecha":d<0?`${Math.abs(d)}d venc.`:d===0?"hoy":`${d}d`}</span>
-                    </span>);
-                  })}
-                </div>
-              )}
               {/* ── CALENDARIO ── */}
               {calendarView&&(()=>{
                 const MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -11269,34 +11254,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   <button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13}}>+ Nueva tarea</button>
                 </div>
               )}
-              {/* Historial de tareas aprobadas */}
-              {(()=>{
-                const aprobadas=tareas.filter(t=>t.estado==="aprobado").sort((a,b)=>(b.updatedAt?._seconds||0)-(a.updatedAt?._seconds||0));
-                if(!aprobadas.length) return null;
-                return(
-                  <div style={{marginTop:12}}>
-                    <button onClick={()=>setShowHistorial(s=>!s)}
-                      style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,padding:0,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:showHistorial?10:0}}>
-                      <span style={{fontSize:11,color:T.textSm,fontWeight:500}}>{showHistorial?"▲":"▾"} Historial · {aprobadas.length} tarea{aprobadas.length!==1?"s":""} completada{aprobadas.length!==1?"s":""}</span>
-                    </button>
-                    {showHistorial&&(
-                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                        {aprobadas.map(t=>(
-                          <div key={t._id} onClick={()=>setKanbanSelected(t)}
-                            style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:DS.r.lg,background:T.surface,border:`1px solid ${T.border}`,cursor:"pointer",transition:"border-color 0.15s"}}
-                            onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
-                            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                            <span style={{fontSize:9,fontWeight:700,color:T.textSm,background:T.card,borderRadius:4,padding:"2px 6px",border:`1px solid ${T.border}`,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>{t.tareaNumStr?"#"+t.tareaNumStr:"—"}</span>
-                            <span style={{fontSize:12,fontWeight:600,color:T.textMd,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.titulo}</span>
-                            <span style={{fontSize:11,color:T.textSm,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>{t.asignadoNombre||"?"}</span>
-                            <span style={{fontSize:9,fontWeight:700,color:T.green,background:T.greenBg,borderRadius:20,padding:"2px 8px",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✅ Aprobado</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
             </>);
           })()}
 
