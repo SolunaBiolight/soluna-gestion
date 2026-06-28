@@ -246,9 +246,12 @@ function processSH(orders) {
 async function mlCouponFees(token, beginISO, endISO) {
   const map = {};
   try {
+    // Mismo formato EXACTO que la consulta de comisiones que funciona (con .000).
+    const begin = String(beginISO).slice(0, 10) + "T00:00:00.000-03:00";
+    const end   = String(endISO).slice(0, 10) + "T23:59:59.999-03:00";
     let offset = 0;
     for (let i = 0; i < 20; i++) {
-      const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(beginISO)}&end_date=${encodeURIComponent(endISO)}&limit=100&offset=${offset}`;
+      const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(end)}&limit=100&offset=${offset}`;
       const r = await fetchT(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!r.ok) break;
       const j = await r.json();
