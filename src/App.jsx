@@ -9333,7 +9333,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [draggedTarea, setDraggedTarea] = useState(null);   // {id, fromColabKey}
   const [dragOverColab, setDragOverColab] = useState(null); // _key del card destino
   const [filterColab, setFilterColab] = useState(""); // email | "" = todos
-  // Modal editar tarea
+  // Edición inline del detalle
+  const [editModeDetalle, setEditModeDetalle] = useState(false);
+  // Modal editar tarea (legacy — se mantiene pero ya no se usa como modal)
   const [editTarea, setEditTarea] = useState(null);
   const [etTitulo, setEtTitulo] = useState("");
   const [etDesc, setEtDesc] = useState("");
@@ -9611,9 +9613,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const colab = colaboradores.find(c=>c.email===etAsignado);
     const linksArr = etLinks.filter(l=>l.url.trim());
     const checkArr = etChecklist.filter(i=>i.text.trim());
-    await tareasApi({action:"updateTarea",tareaId:editTarea._id,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===editTarea._id?{...t,titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""}:t)}));
+    const tareaId = editTarea._id;
+    await tareasApi({action:"updateTarea",tareaId,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
+    const upd={titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""};
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
+    if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
     setEditTarea(null);
+    setEditModeDetalle(false);
     toast("Tarea actualizada ✓","success");
   }
 
@@ -10267,6 +10273,30 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             </div>
           );
         })()}
+        {/* Fila editable: asignado / prioridad / deadline */}
+        {!colabMode&&editModeDetalle&&(
+          <div style={{display:"flex",gap:10,marginBottom:24,flexWrap:"wrap"}}>
+            <div style={{flex:2,minWidth:160}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Asignado a</div>
+              <select value={etAsignado} onChange={e=>setEtAsignado(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <option value="">Sin asignar</option>
+                {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre}{c.rol?` (${c.rol})`:""}</option>)}
+              </select>
+            </div>
+            <div style={{flex:1,minWidth:110}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Prioridad</div>
+              <select value={etPrioridad} onChange={e=>setEtPrioridad(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <option value="urgente">Urgente</option>
+                <option value="normal">Normal</option>
+                <option value="baja">Baja</option>
+              </select>
+            </div>
+            <div style={{flex:1,minWidth:130}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Fecha límite</div>
+              <input type="date" value={etDeadline} onChange={e=>setEtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+            </div>
+          </div>
+        )}
         {/* Recordatorio + WA */}
         {!colabMode&&colab&&t.estado!=="aprobado"&&(
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:24}}>
@@ -10283,61 +10313,119 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             </a>}
           </div>
         )}
-        {t.descripcion&&(
+        {(t.descripcion||editModeDetalle)&&(
           <div style={{marginBottom:24}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Descripción</div>
-            <div style={{fontSize:13,color:T.text,lineHeight:1.6,background:T.surface,borderRadius:DS.r.lg,padding:"12px 14px",border:`1px solid ${T.border}`}}>{t.descripcion}</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Descripción</div>
+            {editModeDetalle
+              ? <textarea value={etDesc} onChange={e=>setEtDesc(e.target.value)} rows={2}
+                  placeholder="Descripción breve..."
+                  style={{...iS,fontSize:13,width:"100%",minHeight:52,resize:"vertical",lineHeight:1.5,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              : <div style={{fontSize:13,color:T.text,lineHeight:1.6,background:T.surface,borderRadius:DS.r.lg,padding:"12px 14px",border:`1px solid ${T.border}`}}>{t.descripcion}</div>
+            }
           </div>
         )}
-        {t.brief&&(()=>{
-          const driveLinks=[...(t.brief.matchAll(/https?:\/\/(?:drive\.google\.com|docs\.google\.com)[^\s)]+/g))].map(m=>m[0]);
-          return(
-            <div style={{marginBottom:24}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief / Instrucciones</div>
-                {driveLinks.length>0&&<a href={driveLinks[0]} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",textDecoration:"none"}}>📂 Abrir Drive</a>}
-              </div>
-              <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap",background:T.surface,borderRadius:DS.r.lg,padding:"12px 14px",border:`1px solid ${T.border}`}}>{t.brief}</div>
-            </div>
-          );
-        })()}
-        {linksNorm.length>0&&(
+        {(t.brief||editModeDetalle)&&(
           <div style={{marginBottom:24}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Archivos</div>
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {linksNorm.map((l,i)=>(
-                <a key={i} href={l.url} target="_blank" rel="noreferrer"
-                  style={{display:"flex",alignItems:"center",gap:12,color:T.text,textDecoration:"none",padding:"12px 14px",background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${T.border}`}}>
-                  <div style={{width:34,height:34,borderRadius:DS.r.md,background:T.accent+"18",border:`1px solid ${T.accent}30`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:1}}>{l.name||"Abrir archivo"}</div>
-                    <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.url}</div>
-                  </div>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                </a>
-              ))}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief / Instrucciones</div>
+              {!editModeDetalle&&(()=>{const dl=[...(t.brief?.matchAll(/https?:\/\/(?:drive\.google\.com|docs\.google\.com)[^\s)]+/g)||[])].map(m=>m[0]);return dl.length>0?<a href={dl[0]} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",textDecoration:"none"}}>📂 Abrir Drive</a>:null;})()}
             </div>
+            {editModeDetalle
+              ? <textarea value={etBrief} onChange={e=>setEtBrief(e.target.value)}
+                  placeholder="Instrucciones, contexto, pasos a seguir..."
+                  style={{...iS,fontSize:13,width:"100%",minHeight:120,resize:"vertical",lineHeight:1.6,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              : <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap",background:T.surface,borderRadius:DS.r.lg,padding:"12px 14px",border:`1px solid ${T.border}`}}>{t.brief}</div>
+            }
+          </div>
+        )}
+        {/* Links / Archivos */}
+        {(linksNorm.length>0||editModeDetalle)&&(
+          <div style={{marginBottom:24}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Links y archivos</div>
+            {editModeDetalle?(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {etLinks.map((l,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.surface,borderRadius:DS.r.md,border:`1px solid ${T.border}`}}>
+                    <div style={{width:28,height:28,borderRadius:DS.r.sm,background:T.accent+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <input value={l.name} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
+                        placeholder="Nombre del link" style={{...iS,fontSize:12,fontWeight:500,width:"100%",marginBottom:3,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                      <input value={l.url} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
+                        placeholder="https://..." style={{...iS,fontSize:11,color:T.textSm,width:"100%",padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    </div>
+                    {l.url&&<a href={l.url} target="_blank" rel="noreferrer" style={{color:T.accent,flexShrink:0,display:"flex",alignItems:"center"}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    </a>}
+                    <button onClick={()=>setEtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",color:T.red,padding:2,flexShrink:0,display:"flex",alignItems:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input placeholder="Pegar URL y presionar Enter..."
+                    style={{...iS,fontSize:12,flex:1,borderStyle:"dashed",fontFamily:"'Inter',system-ui,sans-serif"}}
+                    onKeyDown={e=>{if(e.key==="Enter"&&e.target.value.trim()){const url=e.target.value.trim();let name="";try{name=new URL(url).hostname.replace("www.","");}catch(err){name="";}setEtLinks(prev=>[...prev,{name,url}]);e.target.value="";}}}
+                    onPaste={e=>{const p=e.clipboardData.getData("text").trim();if(p.startsWith("http")){e.preventDefault();let name="";try{name=new URL(p).hostname.replace("www.","");}catch(err){name="";}setEtLinks(prev=>[...prev,{name,url:p}]);}}}
+                  />
+                  <button onClick={()=>setEtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"6px 10px",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Manual</button>
+                </div>
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {linksNorm.map((l,i)=>(
+                  <a key={i} href={l.url} target="_blank" rel="noreferrer"
+                    style={{display:"flex",alignItems:"center",gap:12,color:T.text,textDecoration:"none",padding:"12px 14px",background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${T.border}`}}>
+                    <div style={{width:34,height:34,borderRadius:DS.r.md,background:T.accent+"18",border:`1px solid ${T.accent}30`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:1}}>{l.name||"Abrir archivo"}</div>
+                      <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.url}</div>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {/* Checklist */}
-        {checklist.length>0&&(
+        {(checklist.length>0||editModeDetalle)&&(
           <div style={{marginBottom:24}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Checklist</div>
-              <span style={{fontSize:11,color:T.textSm}}>{checklist.filter(i=>i.done).length}/{checklist.length}</span>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Checklist</div>
+                {!editModeDetalle&&checklist.length>0&&<span style={{fontSize:11,color:T.textSm}}>{checklist.filter(i=>i.done).length}/{checklist.length}</span>}
+              </div>
+              {editModeDetalle&&<button onClick={()=>setEtChecklist(prev=>[...prev,{id:mkId(),text:"",done:false}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Agregar</button>}
             </div>
-            <div style={{background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,overflow:"hidden"}}>
-              {checklist.map((item,i)=>(
-                <div key={item.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:i<checklist.length-1?`1px solid ${T.border}`:"none"}}>
-                  <div style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${item.done?T.green:T.border}`,background:item.done?T.green:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    {item.done&&<span style={{fontSize:9,color:"#fff",fontWeight:700}}>✓</span>}
+            {editModeDetalle?(
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                {etChecklist.map((item,i)=>(
+                  <div key={item.id} style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <div style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${T.border}`,flexShrink:0}}/>
+                    <input value={item.text} onChange={e=>setEtChecklist(prev=>prev.map((x,j)=>j===i?{...x,text:e.target.value}:x))}
+                      placeholder={`Paso ${i+1}`} style={{...iS,fontSize:12,flex:1,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <button onClick={()=>setEtChecklist(prev=>prev.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",color:T.red,padding:2,flexShrink:0,display:"flex",alignItems:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
                   </div>
-                  <span style={{fontSize:13,color:item.done?T.textSm:T.text,textDecoration:item.done?"line-through":"none",lineHeight:1.4}}>{item.text}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ):(
+              <div style={{background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+                {checklist.map((item,i)=>(
+                  <div key={item.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:i<checklist.length-1?`1px solid ${T.border}`:"none"}}>
+                    <div style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${item.done?T.green:T.border}`,background:item.done?T.green:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      {item.done&&<span style={{fontSize:9,color:"#fff",fontWeight:700}}>✓</span>}
+                    </div>
+                    <span style={{fontSize:13,color:item.done?T.textSm:T.text,textDecoration:item.done?"line-through":"none",lineHeight:1.4}}>{item.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {/* ── Slots de campaña ── */}
@@ -10746,18 +10834,39 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       {/* DETALLE TAREA — pantalla completa, sin modal */}
       {kanbanSelected&&(
         <div key={kanbanSelected._id} style={{padding:"20px 24px",animation:"growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both"}}>
-          {/* Botón volver solo */}
-          <button onClick={()=>setKanbanSelected(null)} style={{display:"inline-flex",alignItems:"center",gap:6,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"6px 14px",cursor:"pointer",fontSize:12,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,marginBottom:20}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            Volver
-          </button>
+          {/* Barra superior: Volver + acciones */}
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,maxWidth:680,margin:"0 auto 20px"}}>
+            <button onClick={()=>{setKanbanSelected(null);setEditModeDetalle(false);}} style={{display:"inline-flex",alignItems:"center",gap:6,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"6px 14px",cursor:"pointer",fontSize:12,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,flexShrink:0}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              Volver
+            </button>
+            <div style={{flex:1}}/>
+            {!colabMode&&(editModeDetalle?(
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>{setEditModeDetalle(false);}} style={{...BtnSecondary(T),fontSize:12,padding:"5px 14px",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+                <AsyncButton onClick={guardarEdicion} style={{...BtnPrimary(T),fontSize:12,padding:"5px 16px",fontFamily:"'Inter',system-ui,sans-serif"}}>Guardar</AsyncButton>
+              </div>
+            ):(
+              <button onClick={()=>{openEditModal(kanbanSelected);setEditModeDetalle(true);}} style={{display:"inline-flex",alignItems:"center",gap:6,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"5px 14px",cursor:"pointer",fontSize:12,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Editar
+              </button>
+            ))}
+          </div>
           {/* Título de la tarea */}
-          <div style={{marginBottom:24,maxWidth:680,margin:"0 auto 24px"}}>
-            <div style={{fontWeight:700,fontSize:22,color:T.text,lineHeight:1.25,marginBottom:6}}>{kanbanSelected.titulo}</div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              {kanbanSelected.asignadoNombre&&<span style={{fontSize:12,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
-              {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"2px 8px"}}>🔁 {kanbanSelected.correcciones}ª corrección</span>}
-            </div>
+          <div style={{maxWidth:680,margin:"0 auto 20px"}}>
+            {editModeDetalle?(
+              <input value={etTitulo} onChange={e=>setEtTitulo(e.target.value)}
+                style={{...iS,fontSize:20,fontWeight:700,width:"100%",lineHeight:1.25,padding:"6px 10px",fontFamily:"'Inter',system-ui,sans-serif"}} autoFocus/>
+            ):(
+              <div style={{fontWeight:700,fontSize:22,color:T.text,lineHeight:1.25,marginBottom:6}}>{kanbanSelected.titulo}</div>
+            )}
+            {!editModeDetalle&&(
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
+                {kanbanSelected.asignadoNombre&&<span style={{fontSize:12,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
+                {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"2px 8px"}}>🔁 {kanbanSelected.correcciones}ª corrección</span>}
+              </div>
+            )}
           </div>
           {/* Detalle */}
           {renderDetalle(kanbanSelected)}
