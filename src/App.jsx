@@ -9329,13 +9329,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [assigneeSelectKey, setAssigneeSelectKey] = useState(0); // fuerza reset del select al agregar
   function setNtAsignado(email){ setNtAsignados(email?[email]:[]); }
   const [ntDeadline, setNtDeadline] = useState("");
-  const [ntPrioridad, setNtPrioridad] = useState("normal");
   const [draggedTarea, setDraggedTarea] = useState(null);   // {id, fromColabKey}
   const [dragOverColab, setDragOverColab] = useState(null); // _key del card destino
   const [filterColab, setFilterColab] = useState(""); // email | "" = todos
   const [filterCompletadas, setFilterCompletadas] = useState(false);
-  const [sortTareas, setSortTareas] = useState(""); // "" | "prioridad" | "deadline"
-  const [showSortMenu, setShowSortMenu] = useState(false);
+  const [sortTareas, setSortTareas] = useState(false);
   // Edición inline del detalle
   const [editModeDetalle, setEditModeDetalle] = useState(false);
   // Modal editar tarea (legacy — se mantiene pero ya no se usa como modal)
@@ -9346,7 +9344,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [etLinks, setEtLinks] = useState([]);
   const [etChecklist, setEtChecklist] = useState([]);
   const [etDeadline, setEtDeadline] = useState("");
-  const [etPrioridad, setEtPrioridad] = useState("normal");
   const [etAsignado, setEtAsignado] = useState("");
   const [calendarView, setCalendarView] = useState(false);
   const [calMonth, setCalMonth] = useState({y:new Date().getFullYear(),m:new Date().getMonth()});
@@ -9537,7 +9534,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   }
   function whatsappLink(t, colab) {
     if(!colab?.token) return null;
-    const msg = `Hola ${colab.nombre.split(" ")[0]} 👋, te asigné una tarea en Growith:\n\n*${t.titulo}*${t.deadline?`\n📅 Entrega: ${fmtDate(t.deadline)}`:""}${t.prioridad==="urgente"?"\n🔴 URGENTE":""}\n\nPodés verla acá:\n${colabLink(colab.token)}`;
+    const msg = `Hola ${colab.nombre.split(" ")[0]} 👋, te asigné una tarea en Growith:\n\n*${t.titulo}*${t.deadline?`\n📅 Entrega: ${fmtDate(t.deadline)}`:""}${(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?"\n🔴 URGENTE":"";})()} \n\nPodés verla acá:\n${colabLink(colab.token)}`;
     return `https://wa.me/?text=${encodeURIComponent(msg)}`;
   }
 
@@ -9591,9 +9588,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const colab = primerColab;
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,prioridad:ntPrioridad,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtPrioridad("normal"); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
     // Mostrar resultado de emails
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
@@ -9611,7 +9608,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     setEtLinks(normalizeLinksArr(t.links));
     setEtChecklist((t.checklist||[]).map(i=>({...i})));
     setEtDeadline(t.deadline?._seconds?new Date(t.deadline._seconds*1000).toISOString().slice(0,10):"");
-    setEtPrioridad(t.prioridad||"normal");
     setEtAsignado(t.asignadoEmail||"");
     setEtLabels(t.labels||[]);
   }
@@ -9620,8 +9616,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const linksArr = etLinks.filter(l=>l.url.trim());
     const checkArr = etChecklist.filter(i=>i.text.trim());
     const tareaId = editTarea._id;
-    await tareasApi({action:"updateTarea",tareaId,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
-    const upd={titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,prioridad:etPrioridad,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""};
+    await tareasApi({action:"updateTarea",tareaId,titulo:etTitulo.trim(),descripcion:etDesc.trim(),brief:etBrief.trim(),links:linksArr,checklist:checkArr,deadline:etDeadline||null,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""});
+    const upd={titulo:etTitulo,descripcion:etDesc,brief:etBrief,links:linksArr,checklist:checkArr,asignadoEmail:etAsignado,asignadoNombre:colab?.nombre||""};
     setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
     if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
     setEditTarea(null);
@@ -9726,7 +9722,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         const dl=tarea.deadline._seconds?new Date(tarea.deadline._seconds*1000):new Date(tarea.deadline);
         const dias=tarea.frecuenciaRecurrente==="quincenal"?14:tarea.frecuenciaRecurrente==="mensual"?30:7;
         dl.setDate(dl.getDate()+dias);
-        await tareasApi({action:"createTarea",titulo:tarea.titulo,descripcion:tarea.descripcion||"",brief:tarea.brief||"",links:tarea.links||[],checklist:[],asignadoEmail:tarea.asignadoEmail,asignadoNombre:tarea.asignadoNombre||"",deadline:dl.toISOString().slice(0,10),prioridad:tarea.prioridad||"normal",managerEmail:user?.email||"",recurrente:true,frecuenciaRecurrente:tarea.frecuenciaRecurrente});
+        await tareasApi({action:"createTarea",titulo:tarea.titulo,descripcion:tarea.descripcion||"",brief:tarea.brief||"",links:tarea.links||[],checklist:[],asignadoEmail:tarea.asignadoEmail,asignadoNombre:tarea.asignadoNombre||"",deadline:dl.toISOString().slice(0,10),managerEmail:user?.email||"",recurrente:true,frecuenciaRecurrente:tarea.frecuenciaRecurrente});
         await loadData();
         toast(`Tarea recurrente creada automáticamente (${tarea.frecuenciaRecurrente}) ✓`,"success");
       }catch(e){console.error("Error creando recurrente:",e);}
@@ -9747,7 +9743,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   }
   async function guardarTemplate() {
     if(!saveTemplateName.trim()) return;
-    const tmpl={id:mkProdId(),nombre:saveTemplateName.trim(),titulo:ntTitulo,brief:ntBrief,prioridad:ntPrioridad};
+    const tmpl={id:mkProdId(),nombre:saveTemplateName.trim(),titulo:ntTitulo,brief:ntBrief};
     await saveProd({...produccion,taskTemplates:[...(produccion.taskTemplates||[]),tmpl]});
     setShowSaveTemplate(false); setSaveTemplateName(""); toast("Plantilla guardada ✓","success");
   }
@@ -10279,7 +10275,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             </div>
           );
         })()}
-        {/* Fila editable: asignado / prioridad / deadline */}
+        {/* Fila editable: asignado / deadline */}
         {!colabMode&&editModeDetalle&&(
           <div style={{display:"flex",gap:10,marginBottom:24,flexWrap:"wrap"}}>
             <div style={{flex:2,minWidth:160}}>
@@ -10287,14 +10283,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <select value={etAsignado} onChange={e=>setEtAsignado(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <option value="">Sin asignar</option>
                 {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre}{c.rol?` (${c.rol})`:""}</option>)}
-              </select>
-            </div>
-            <div style={{flex:1,minWidth:110}}>
-              <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Prioridad</div>
-              <select value={etPrioridad} onChange={e=>setEtPrioridad(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <option value="urgente">Urgente</option>
-                <option value="normal">Normal</option>
-                <option value="baja">Baja</option>
               </select>
             </div>
             <div style={{flex:1,minWidth:130}}>
@@ -10891,15 +10879,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           {!prodLoading&&safeProdTab==="todo"&&(()=>{
             const hoy=new Date();
             function dLeft(val){if(!val)return null;const d=val._seconds?new Date(val._seconds*1000):new Date(val);return Math.ceil((d-hoy)/86400000);}
+            function calcPrioridad(deadline){const d=dLeft(deadline);if(d===null)return "baja";if(d<=1)return "urgente";if(d<=3)return "normal";return "baja";}
             const creativosActivos=produccion.creativos.filter(c=>!["publicado","archivado"].includes(c.estado));
-            const PRIO_ORDER={urgente:0,normal:1,baja:2};
             const tareasActivas=(()=>{
               let arr=tareas
                 .filter(t=>filterCompletadas?t.estado==="aprobado":t.estado!=="aprobado")
                 .filter(t=>!filterColab||(t.asignadoEmail===filterColab||(t.asignadosEmails||[]).includes(filterColab)))
                 .filter(t=>!colabMode||(t.asignadosEmails||[t.asignadoEmail]).includes(colabMode.email));
-              if(sortTareas==="prioridad") arr=[...arr].sort((a,b)=>(PRIO_ORDER[a.prioridad]??1)-(PRIO_ORDER[b.prioridad]??1));
-              else if(sortTareas==="deadline") arr=[...arr].sort((a,b)=>(dLeft(a.deadline)??9999)-(dLeft(b.deadline)??9999));
+              if(sortTareas) arr=[...arr].sort((a,b)=>(dLeft(a.deadline)??9999)-(dLeft(b.deadline)??9999));
               return arr;
             })();
             const CEST2={idea:{l:"Idea",c:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue},"en-produccion":{l:"En prod.",c:T.orange||"#f97316"},entregado:{l:"Entregado",c:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green}};
@@ -11093,33 +11080,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </button>
                 {/* Separador */}
                 <div style={{flex:1}}/>
-                {/* Ordenar por — visible para todos */}
-                <div style={{position:"relative"}}>
-                  <button onClick={()=>setShowSortMenu(p=>!p)}
-                    style={{padding:"5px 12px",fontSize:12,fontWeight:sortTareas?600:500,borderRadius:99,border:`1.5px solid ${sortTareas?T.accentSolid:T.border}`,background:sortTareas?T.accentSolid+"14":"transparent",color:sortTareas?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="9" y1="18" x2="15" y2="18"/></svg>
-                    {sortTareas==="prioridad"?"Prioridad":sortTareas==="deadline"?"Fecha límite":"Ordenar por"}
-                    {sortTareas&&<button onClick={e=>{e.stopPropagation();setSortTareas("");setShowSortMenu(false);}} style={{background:"none",border:"none",cursor:"pointer",color:T.accent,padding:"0 0 0 2px",fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>×</button>}
-                  </button>
-                  {showSortMenu&&(
-                    <>
-                    <div onClick={()=>setShowSortMenu(false)} style={{position:"fixed",inset:0,zIndex:199}}/>
-                    <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:200,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,minWidth:170,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      {[
-                        {key:"prioridad",label:"Prioridad",icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>},
-                        {key:"deadline",label:"Fecha límite",icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>},
-                      ].map(opt=>(
-                        <button key={opt.key} onClick={()=>{setSortTareas(opt.key);setShowSortMenu(false);}}
-                          style={{width:"100%",padding:"10px 14px",background:sortTareas===opt.key?T.accent+"12":"transparent",border:"none",textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:sortTareas===opt.key?700:500,color:sortTareas===opt.key?T.accent:T.text,display:"flex",alignItems:"center",gap:8,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                          <span style={{color:sortTareas===opt.key?T.accent:T.textSm}}>{opt.icon}</span>
-                          {opt.label}
-                          {sortTareas===opt.key&&<svg style={{marginLeft:"auto"}} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
-                        </button>
-                      ))}
-                    </div>
-                    </>
-                  )}
-                </div>
+                {/* Ordenar por prioridad — visible para todos */}
+                <button onClick={()=>setSortTareas(p=>!p)}
+                  style={{padding:"5px 12px",fontSize:12,fontWeight:sortTareas?600:500,borderRadius:99,border:`1.5px solid ${sortTareas?T.accentSolid:T.border}`,background:sortTareas?T.accentSolid+"14":"transparent",color:sortTareas?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="9" y1="18" x2="15" y2="18"/></svg>
+                  Por prioridad
+                </button>
               </div>
 
               {/* ── GRID DE TAREAS — una card por tarea ── */}
@@ -11138,7 +11104,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       const est=EST_CARD[t.estado]||EST_CARD.pendiente;
                       const days=dLeft(t.deadline);
                       const asignados=getAsignados(t);
-                      const isUrgente=t.prioridad==="urgente";
+                      const isUrgente=calcPrioridad(t.deadline)==="urgente";
                       const correcciones=t.correcciones||0;
                       const brief=(t.brief||t.descripcion||"").trim();
                       const hasSlots=(t.slots||[]).length>0;
@@ -12017,20 +11983,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     </div>
                 }
               </div>}
-              {/* Prioridad + Deadline */}
-              <div style={{display:"flex",gap:10}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Prioridad</div>
-                  <select value={ntPrioridad} onChange={e=>setNtPrioridad(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
-                    <option value="urgente">🔴 Urgente</option>
-                    <option value="normal">🟡 Normal</option>
-                    <option value="baja">⬇️ Baja</option>
-                  </select>
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
-                  <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
-                </div>
+              {/* Deadline */}
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
+                <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
               </div>
               {/* Brief — campo principal */}
               <div>
@@ -12073,7 +12029,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{fontSize:11,color:T.textSm,marginBottom:5}}>Cargar plantilla</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {(produccion.taskTemplates||[]).map(tmpl=>(
-                    <button key={tmpl.id} onClick={()=>{setNtTitulo(tmpl.titulo||"");setNtBrief(tmpl.brief||"");setNtPrioridad(tmpl.prioridad||"normal");}}
+                    <button key={tmpl.id} onClick={()=>{setNtTitulo(tmpl.titulo||"");setNtBrief(tmpl.brief||"");}}
                       style={{...BtnSecondary(T),fontSize:11,padding:"3px 10px"}}>{tmpl.nombre}</button>
                   ))}
                 </div>
@@ -12132,20 +12088,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Título</div>
                 <input value={etTitulo} onChange={e=>setEtTitulo(e.target.value)} style={{...iS,fontSize:14,fontWeight:500,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}/>
               </div>
-              {/* Fila: Asignado + Prioridad + Deadline */}
+              {/* Fila: Asignado + Deadline */}
               <div style={{display:"flex",gap:10}}>
                 <div style={{flex:2}}>
                   <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Asignado a</div>
                   <select value={etAsignado} onChange={e=>setEtAsignado(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre}{c.rol?` (${c.rol})`:""}</option>)}
-                  </select>
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Prioridad</div>
-                  <select value={etPrioridad} onChange={e=>setEtPrioridad(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    <option value="urgente">Urgente</option>
-                    <option value="normal">Normal</option>
-                    <option value="baja">Baja</option>
                   </select>
                 </div>
                 <div style={{flex:1}}>
@@ -12674,7 +12622,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           </div>
           {notifPanel.colab?.telefono&&(
             <a
-              href={`https://wa.me/${(notifPanel.colab.telefono||"").replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${notifPanel.colab.nombre.split(" ")[0]} 👋, te asigné una tarea en Growith:\n\n*${notifPanel.tarea?.titulo||""}*${notifPanel.tarea?.prioridad==="urgente"?"\n🔴 URGENTE":""}\n\nPodés verla acá:\n${colabLink(notifPanel.colab.token)}`)}`}
+              href={`https://wa.me/${(notifPanel.colab.telefono||"").replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${notifPanel.colab.nombre.split(" ")[0]} 👋, te asigné una tarea en Growith:\n\n*${notifPanel.tarea?.titulo||""}*${(()=>{const dl=notifPanel.tarea?.deadline;const d=dl?._seconds?new Date(dl._seconds*1000):dl?new Date(dl):null;return d&&Math.ceil((d-new Date())/86400000)<=1?"\n🔴 URGENTE":"";})()} \n\nPodés verla acá:\n${colabLink(notifPanel.colab.token)}`)}`}
               target="_blank" rel="noreferrer"
               onClick={()=>setNotifPanel(null)}
               style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%",padding:"8px 0",borderRadius:8,background:"#22c55e20",border:"1px solid #22c55e44",color:"#22c55e",fontWeight:600,fontSize:12,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
@@ -13141,7 +13089,7 @@ function ColaboradorPublicView({T, token}) {
     const order={revision:0,pendiente:1,en_proceso:2,bloqueada:2,entregado:3};
     const oa=order[a.estado]??5, ob=order[b.estado]??5;
     if(oa!==ob) return oa-ob;
-    const pa=a.prioridad==="urgente"?0:1, pb=b.prioridad==="urgente"?0:1;
+    const pa=daysUntil(a.deadline)??9999, pb=daysUntil(b.deadline)??9999;
     return pa-pb;
   });
   const historialTareas = [...aprobadas].sort((a,b)=>(b.updatedAt?._seconds||b.createdAt?._seconds||0)-(a.updatedAt?._seconds||a.createdAt?._seconds||0));
@@ -13297,7 +13245,7 @@ function ColaboradorPublicView({T, token}) {
           const expanded = expandedTarea===t._id;
           const isAprobado = t.estado==="aprobado";
           const isRevision = t.estado==="revision";
-          const isUrgente = t.prioridad==="urgente";
+          const isUrgente = t.deadline&&daysUntil(t.deadline)!==null&&daysUntil(t.deadline)<=1;
           const hasDels = (t.deliverables||[]).length>0;
           const checklist = t.checklist||[];
           const briefPreview = t.brief?t.brief.slice(0,130)+(t.brief.length>130?"…":""):null;
@@ -13802,7 +13750,7 @@ function ColaboradorPublicView({T, token}) {
                             </div>}
                           </div>
                           <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${col}18`,color:col,border:`1px solid ${col}44`,flexShrink:0,whiteSpace:"nowrap"}}>{lbl}</span>
-                          {t.prioridad==="urgente"&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",flexShrink:0}}>🔴</span>}
+                          {t.deadline&&daysUntil(t.deadline)!==null&&daysUntil(t.deadline)<=1&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",flexShrink:0}}>🔴</span>}
                           {(t.correcciones||0)>0&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444418",borderRadius:4,padding:"1px 4px",flexShrink:0}}>{t.correcciones}ª corr.</span>}
                         </div>
                       );
@@ -14080,8 +14028,9 @@ function ColaboradorBoardView({T, boardToken}) {
         <div style={{display:"flex",gap:10,minWidth:900,alignItems:"flex-start"}}>
           {KANBAN.map(col=>{
             const colTareas=activasTareas.filter(t=>t.estado===col.id).sort((a,b)=>{
-              if(a.prioridad==="urgente"&&b.prioridad!=="urgente") return -1;
-              if(b.prioridad==="urgente"&&a.prioridad!=="urgente") return 1;
+              const ua=a.deadline?._seconds?new Date(a.deadline._seconds*1000):a.deadline?new Date(a.deadline):null;
+              const ub=b.deadline?._seconds?new Date(b.deadline._seconds*1000):b.deadline?new Date(b.deadline):null;
+              if(ua&&ub) return ua-ub;
               const da=a.deadline?._seconds||0;const db2=b.deadline?._seconds||0;
               if(da&&db2) return da-db2;
               return(b.createdAt?._seconds||0)-(a.createdAt?._seconds||0);
@@ -14102,7 +14051,7 @@ function ColaboradorBoardView({T, boardToken}) {
                       <div key={t._id} onClick={()=>{setSelectedTask(t);setCommentText("");setEntregaLink("");setEntregaLabel("");setEntregaNota("");setShowEntregaForm(false);}}
                         style={{background:T.card,border:`1.5px solid ${mine?T.accent+"60":T.border}`,borderRadius:10,padding:"10px 11px",cursor:"pointer",transition:"box-shadow 0.12s",position:"relative"}}>
                         {mine&&<div style={{position:"absolute",top:0,left:0,width:3,bottom:0,borderRadius:"10px 0 0 10px",background:T.accent}}/>}
-                        {t.prioridad==="urgente"&&<div style={{display:"inline-flex",alignItems:"center",gap:3,background:"#ef444420",color:"#ef4444",borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginBottom:5}}>🔴 URGENTE</div>}
+                        {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{display:"inline-flex",alignItems:"center",gap:3,background:"#ef444420",color:"#ef4444",borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginBottom:5}}>🔴 URGENTE</div>):null;})()}
                         <div style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.4,marginBottom:7,paddingLeft:mine?6:0}}>{t.titulo}</div>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4,paddingLeft:mine?6:0}}>
                           <div style={{display:"flex"}}>
@@ -14229,7 +14178,7 @@ function ColaboradorBoardView({T, boardToken}) {
                     </div>
                   ))}
                   {dl&&<div style={{padding:"4px 10px",background:dl.color+"20",borderRadius:20,fontSize:12,fontWeight:600,color:dl.color}}>📅 {dl.label}</div>}
-                  {t.prioridad==="urgente"&&<div style={{padding:"4px 10px",background:"#ef444420",borderRadius:20,fontSize:12,fontWeight:700,color:"#ef4444"}}>🔴 URGENTE</div>}
+                  {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{padding:"4px 10px",background:"#ef444420",borderRadius:20,fontSize:12,fontWeight:700,color:"#ef4444"}}>🔴 URGENTE</div>):null;})()}
                   {t.tareaNumStr&&<div style={{padding:"4px 10px",background:T.surface,borderRadius:20,fontSize:11,color:T.textSm}}>#{t.tareaNumStr}</div>}
                 </div>
 
