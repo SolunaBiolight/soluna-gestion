@@ -9333,7 +9333,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [dragOverColab, setDragOverColab] = useState(null); // _key del card destino
   const [filterColab, setFilterColab] = useState(""); // email | "" = todos
   const [filterCompletadas, setFilterCompletadas] = useState(false);
+  const [filterEstado, setFilterEstado] = useState(""); // "" | "entregado" | "bloqueada"
   const [sortTareas, setSortTareas] = useState(false);
+  const [showParaRevisar, setShowParaRevisar] = useState(true);
   // Edición inline del detalle
   const [editModeDetalle, setEditModeDetalle] = useState(false);
   // Modal editar tarea (legacy — se mantiene pero ya no se usa como modal)
@@ -10883,7 +10885,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             const creativosActivos=produccion.creativos.filter(c=>!["publicado","archivado"].includes(c.estado));
             const tareasActivas=(()=>{
               let arr=tareas
-                .filter(t=>filterCompletadas?t.estado==="aprobado":t.estado!=="aprobado")
+                .filter(t=>{
+                  if(filterCompletadas) return t.estado==="aprobado";
+                  if(filterEstado) return t.estado===filterEstado;
+                  return t.estado!=="aprobado";
+                })
                 .filter(t=>!filterColab||(t.asignadoEmail===filterColab||(t.asignadosEmails||[]).includes(filterColab)))
                 .filter(t=>!colabMode||(t.asignadosEmails||[t.asignadoEmail]).includes(colabMode.email));
               if(sortTareas) arr=[...arr].sort((a,b)=>(dLeft(a.deadline)??9999)-(dLeft(b.deadline)??9999));
@@ -11006,30 +11012,43 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               })()}
 
               {/* Métricas */}
-              {!calendarView&&<div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-                {[
-                  {l:"Activas",       v:tareasActivas.length,                                    c:T.blue},
-                  {l:"Para revisar",  v:paraRevisar.length,                                      c:T.orange},
-                  {l:"Bloqueadas",    v:tareas.filter(t=>t.estado==="bloqueada").length,          c:T.textMd},
-                  {l:"Completadas",   v:tareas.filter(t=>t.estado==="aprobado").length,           c:T.green},
-                ].map(s=>(
-                  <div key={s.l} style={{flex:"1 1 100px",background:T.card,border:`1px solid ${s.c}28`,borderRadius:DS.r.xl,padding:"14px 16px"}}>
-                    <div style={{fontSize:26,fontWeight:800,color:s.c,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.v}</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:5}}>{s.l}</div>
+              {!calendarView&&(()=>{
+                const METRICS=[
+                  {l:"Activas",      v:tareas.filter(t=>t.estado!=="aprobado"&&t.estado!=="bloqueada").length, c:T.blue,   action:()=>{setFilterCompletadas(false);setFilterEstado("");setFilterColab("");}},
+                  {l:"Para revisar", v:paraRevisar.length,                                                      c:T.orange, action:()=>{setFilterCompletadas(false);setFilterEstado("entregado");setFilterColab("");}},
+                  {l:"Bloqueadas",   v:tareas.filter(t=>t.estado==="bloqueada").length,                        c:T.textMd, action:()=>{setFilterCompletadas(false);setFilterEstado("bloqueada");setFilterColab("");}},
+                  {l:"Completadas",  v:tareas.filter(t=>t.estado==="aprobado").length,                         c:T.green,  action:()=>{setFilterCompletadas(true);setFilterEstado("");setFilterColab("");}},
+                ];
+                return(
+                  <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+                    {METRICS.map(s=>{
+                      const isActive=(s.l==="Activas"&&!filterCompletadas&&!filterEstado&&!filterColab)||(s.l==="Para revisar"&&filterEstado==="entregado"&&!filterCompletadas)||(s.l==="Bloqueadas"&&filterEstado==="bloqueada"&&!filterCompletadas)||(s.l==="Completadas"&&filterCompletadas);
+                      return(
+                        <div key={s.l} onClick={isActive?()=>{setFilterCompletadas(false);setFilterEstado("");setFilterColab("");}:s.action}
+                          style={{flex:"1 1 100px",background:isActive?s.c+"18":T.card,border:`1.5px solid ${isActive?s.c:s.c+"28"}`,borderRadius:DS.r.xl,padding:"14px 16px",cursor:"pointer",transition:"all 0.15s",userSelect:"none"}}
+                          onMouseEnter={e=>{if(!isActive){e.currentTarget.style.borderColor=s.c+"70";e.currentTarget.style.background=s.c+"08";}}}
+                          onMouseLeave={e=>{if(!isActive){e.currentTarget.style.borderColor=s.c+"28";e.currentTarget.style.background=T.card;}}}>
+                          <div style={{fontSize:26,fontWeight:800,color:s.c,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.v}</div>
+                          <div style={{fontSize:12,color:isActive?s.c:T.textSm,fontWeight:isActive?600:400,marginTop:5,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.l}</div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>}
+                );
+              })()}
               {!colabMode&&paraRevisar.length>0&&(
                 <div style={{marginBottom:20}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showParaRevisar?10:0,cursor:"pointer"}} onClick={()=>setShowParaRevisar(p=>!p)}>
                     <div style={{width:7,height:7,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
                     <span style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>Entregas para revisar</span>
                     <span style={{fontSize:11,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 9px",fontFamily:"'Inter',system-ui,sans-serif"}}>{paraRevisar.length}</span>
+                    <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{transform:showParaRevisar?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s"}}><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
                   </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {showParaRevisar&&<div style={{display:"flex",flexDirection:"column",gap:6}}>
                     {paraRevisar.map(t=>{
                       const initials=(t.asignadoNombre||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
-                      const lastDeliverable=(t.deliverables||[]).filter(d=>!d.parcial).slice(-1)[0];
                       return(
                         <div key={t._id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:T.card,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,borderLeft:`3px solid ${T.orange}`}}>
                           <div style={{width:34,height:34,borderRadius:"50%",background:T.orange+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.orange,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>{initials}</div>
@@ -11044,15 +11063,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         </div>
                       );
                     })}
-                  </div>
+                  </div>}
                 </div>
               )}
               {/* ── Barra de filtros ── */}
               <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
                 {/* Todos — solo admin (con colab no tiene sentido) */}
                 {!colabMode&&(
-                  <button onClick={()=>{setFilterColab("");setFilterCompletadas(false);}}
-                    style={{padding:"5px 14px",fontSize:12,fontWeight:!filterColab&&!filterCompletadas?700:500,borderRadius:99,border:`1.5px solid ${!filterColab&&!filterCompletadas?T.accentSolid:T.border}`,background:!filterColab&&!filterCompletadas?T.accentSolid:"transparent",color:!filterColab&&!filterCompletadas?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
+                  <button onClick={()=>{setFilterColab("");setFilterCompletadas(false);setFilterEstado("");}}
+                    style={{padding:"5px 14px",fontSize:12,fontWeight:!filterColab&&!filterCompletadas&&!filterEstado?700:500,borderRadius:99,border:`1.5px solid ${!filterColab&&!filterCompletadas&&!filterEstado?T.accentSolid:T.border}`,background:!filterColab&&!filterCompletadas&&!filterEstado?T.accentSolid:"transparent",color:!filterColab&&!filterCompletadas&&!filterEstado?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
                     Todos
                   </button>
                 )}
@@ -11062,7 +11081,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   const count=tareas.filter(t=>t.estado!=="aprobado"&&(t.asignadoEmail===c.email||(t.asignadosEmails||[]).includes(c.email))).length;
                   if(!count&&!active) return null;
                   return (
-                    <button key={c._id} onClick={()=>{setFilterColab(active?"":c.email);setFilterCompletadas(false);}}
+                    <button key={c._id} onClick={()=>{setFilterColab(active?"":c.email);setFilterCompletadas(false);setFilterEstado("");}}
                       style={{padding:"5px 14px",fontSize:12,fontWeight:active?700:500,borderRadius:99,border:`1.5px solid ${active?T.accentSolid:T.border}`,background:active?T.accentSolid+"18":"transparent",color:active?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6}}>
                       <span style={{width:18,height:18,borderRadius:"50%",background:active?T.accentSolid:T.surface,border:`1px solid ${active?T.accentSolid:T.border}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:active?"#fff":T.textMd,flexShrink:0}}>
                         {(c.nombre[0]||"?").toUpperCase()}
@@ -11073,7 +11092,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   );
                 })}
                 {/* Completadas — visible para todos */}
-                <button onClick={()=>{setFilterCompletadas(p=>!p);setFilterColab("");}}
+                <button onClick={()=>{setFilterCompletadas(p=>!p);setFilterColab("");setFilterEstado("");}}
                   style={{padding:"5px 14px",fontSize:12,fontWeight:filterCompletadas?700:500,borderRadius:99,border:`1.5px solid ${filterCompletadas?T.green:T.border}`,background:filterCompletadas?T.green+"18":"transparent",color:filterCompletadas?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   Completadas
