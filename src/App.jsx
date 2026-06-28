@@ -17878,6 +17878,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     if (studioMode !== "shared") return;
     const dest = sharedDest || {};
     if (!dest.adset_id || !dest.link) return;
+    if (!creative.copy?.trim()) return; // copy manual: no publicar sin copy del usuario
     if (creative._processing || creative._uploading || creative._error || creative.video_error) return;
     if (autoPubFiredRef.current.has(creative.id)) return;
     autoPubFiredRef.current.add(creative.id);
@@ -18001,9 +18002,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       if(tempId) setCreatives(prev=>prev.map(c=>c.id===tempId?{...c,_uploading:false,_error:msg,ia_status:"error"}:c));
     };
     try {
-      // Copy en paralelo con el upload: no depende del video subido, así que
-      // arranca ya y suele estar listo antes de que termine la subida.
-      const copyPromise = generateCopyTextOnly();
+      // Copy manual: el usuario lo pega en la card (no se genera con IA).
       const creds = preFetchedCreds || await metaApi("upload_creds","GET",null,{acc_id:activeAccId});
       if(creds.error){ failTemp("Error: "+creds.error); return; }
       const accIdStr = creds.ad_account_id.startsWith("act_") ? creds.ad_account_id : `act_${creds.ad_account_id}`;
@@ -18106,24 +18105,18 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         ...(isVideo && localPreviewUrl ? { _localPreview: localPreviewUrl } : {}),
       };
 
-      // El copy ya venía generándose en paralelo: lo esperamos (suele estar listo)
-      // y lo pegamos al creative. Como se generó sin cid, lo persistimos ahora.
-      const copyRes = await copyPromise;
-      if (copyRes && (copyRes.copy || copyRes.title || copyRes.description)) {
-        cWithMeta.copy = copyRes.copy;
-        cWithMeta.title = copyRes.title;
-        cWithMeta.description = copyRes.description;
-        cWithMeta.ia_status = "ok";
-      }
-      if (tempId) setCreatives(prev => prev.map(c => c.id === tempId ? cWithMeta : c));
+      // Copy manual: preservamos lo que el usuario ya haya tipeado en el card
+      // temporal mientras se subía el archivo (sino se perdería al hacer el swap),
+      // y lo persistimos en el backend con el id real.
+      if (tempId) setCreatives(prev => prev.map(c => {
+        if (c.id !== tempId) return c;
+        const keepCopy = c.copy || "", keepTitle = c.title || "", keepDesc = c.description || "";
+        if (keepCopy || keepTitle || keepDesc) {
+          metaApi("patch_creative","PATCH",{copy:keepCopy,title:keepTitle,description:keepDesc},{cid:cWithMeta.id}).catch(()=>{});
+        }
+        return { ...cWithMeta, copy: keepCopy, title: keepTitle, description: keepDesc };
+      }));
       else setCreatives(prev => [cWithMeta, ...prev]);
-
-      if (cWithMeta.ia_status === "ok") {
-        metaApi("patch_creative","PATCH",{copy:cWithMeta.copy,title:cWithMeta.title,description:cWithMeta.description,ia_status:"ok"},{cid:cWithMeta.id}).catch(()=>{});
-      } else {
-        // El copy paralelo no salió — reintento silencioso en background
-        handleAnalyzeCreative(cWithMeta, { skip_vision: true });
-      }
 
       // Para video: arrancar polling en background del status de procesamiento
       // en Meta. Apenas Meta termina (5-30s tipicamente) marcamos el creative
@@ -18216,6 +18209,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
 
   async function handlePatch(c,updates) {
+    // Durante la subida el creative tiene id temporal (aún no existe en backend);
+    // el copy queda en estado local y se persiste al completar la subida.
+    if(!c?.id || String(c.id).startsWith("_temp")) return;
     const params=new URLSearchParams({action:"patch_creative",uid,cid:c.id});
     const d=await fetch(`/api/meta?${params}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(updates)}).then(r=>r.json());
     if(d.error){toast(d.error,"error");return;}
@@ -18447,9 +18443,16 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       if (!sharedDest.adset_id) return toast("Elegí o creá un AdSet","warning");
       if (!sharedDest.link?.trim()) return toast("Falta URL destino","warning");
     }
-    const queue = creatives.filter(c => c.copy?.trim() && (studioMode === "perAd" ? c.adset_id : true));
-    if (queue.length === 0) return toast("No hay creativos con copy listos para publicar","warning");
-    if (!await appConfirm(`Publicar ${queue.length} ad${queue.length===1?"":"s"} en Meta ${publishActiveByDefault?"ACTIVE":"PAUSED"}?`,{okLabel:"🚀 Publicar"})) return;
+    const withCopy = creatives.filter(c => c.copy?.trim() && (studioMode === "perAd" ? c.adset_id : true));
+    if (withCopy.length === 0) return toast("No hay creativos con copy listos para publicar","warning");
+    // Separamos los que ya terminaron de subir (publicables ya) de los que todavía
+    // se están subiendo a Meta (esos se auto-publican al terminar — el usuario puede irse).
+    const queue = withCopy.filter(c => !c._uploading && !c._processing && !String(c.id).startsWith("_temp"));
+    const stillUploading = withCopy.length - queue.length;
+    if (!await appConfirm(`Publicar ${withCopy.length} ad${withCopy.length===1?"":"s"} en Meta ${publishActiveByDefault?"ACTIVE":"PAUSED"}?${stillUploading>0?`\n\n${stillUploading} todavía se está${stillUploading===1?"":"n"} subiendo — se publicará${stillUploading===1?"":"n"} solo al terminar. Dejá la app abierta unos minutos.`:""}`,{okLabel:"🚀 Publicar"})) return;
+    // Los que aún suben se auto-publican al terminar (ya tienen copy + destino).
+    if (stillUploading > 0) setAutoPublishEnabled(true);
+    if (queue.length === 0) { toast(`${stillUploading} ad${stillUploading===1?"":"s"} se publicará${stillUploading===1?"":"n"} solo al terminar de subir — dejá la app abierta 💤`); return; }
     setBulkPublishing(true);
     setBulkProgress({done:0,total:queue.length,errors:[]});
     const errs = [];
@@ -19479,7 +19482,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               Si ya tenés una app creada en <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" style={{color:T.accent,textDecoration:"none",fontWeight:600}}>Meta for Developers</a>, andá a <strong>tu app → Configuración → Casos de uso / Activos → Cuentas publicitarias → Añadir</strong> y sumá ahí <strong>todas</strong> las ad_accounts que vayas a usar en Growith (la primera y todas las que sumes después). Si no, el System User Token genera bien pero las llamadas a esa cuenta devuelven <code style={{background:T.bg,padding:"1px 5px",borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:10}}>(#200) does not have permission</code> y Análisis/Biblioteca van a tirar vacío.
             </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"start"}}>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,640px)",gap:20,alignItems:"start"}}>
             <div>
               {/* Cuentas conectadas */}
               <div style={Card}>
@@ -19554,17 +19557,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               )}
             </div>
 
-            {/* Brand context */}
-            <div style={Card}>
-              <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6}}>Contexto de marca</div>
-              <div style={{fontSize:12,color:T.textSm,marginBottom:12,lineHeight:1.5}}>La IA usa esta info para generar el copy. Productos, beneficios, target, precio, URL de destino.</div>
-              <textarea value={brand} onChange={e=>setBrand(e.target.value)}
-                placeholder="Ej: Describí tu marca y producto/s — qué vendés, beneficios principales, target (edad, género, ocupación), precio, USP, link de destino. Cuanto más detalle, mejor copy genera la IA."
-                style={{...iS,minHeight:200,resize:"vertical",lineHeight:1.6,marginBottom:12}}/>
-              <button onClick={handleSaveBrand} disabled={brandSaving} style={{...BtnSec,width:"100%",justifyContent:"center"}}>
-                {brandSaving?<><Spinner size={12} color={T.textMd}/>Guardando...</>:"Guardar brand context"}
-              </button>
-            </div>
           </div>
           </>
         )}
@@ -19735,298 +19727,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 );
               })()}
 
-              {/* ── Sección 2: MARCA Y PRODUCTOS ─────────────── */}
+              {/* ── Sección 2: PUBLICAR ADS ──────────────────── */}
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
-                <SectionHeader n="2" title="Marca y productos"/>
-
-                {/* Disclosure con la plantilla recomendada para darle al copy creator
-                    la máxima cantidad de data útil. Inspirado en sistemas Agora-style:
-                    avatar + offer brief + necessary beliefs + copies por ángulo. */}
-                <div style={{marginBottom:14}}>
-                  <button onClick={()=>setShowBrandTemplate(s=>!s)}
-                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.text,fontSize:12,fontWeight:600}}>
-                    <span style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{fontSize:14}}>📋</span>
-                      Prompt recomendado — pegalo en ChatGPT, Claude o Gemini con los datos de tu producto, y pegá acá abajo el texto que te devuelva la IA
-                    </span>
-                    <span style={{fontSize:10,color:T.textSm,transform:showBrandTemplate?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>
-                  </button>
-                  {showBrandTemplate && (() => {
-                    const BRAND_TEMPLATE = `# PROMPT PARA CREAR SISTEMA COMPLETO DE COPY FUNDACIONAL
-## Instrucciones: Completá los campos marcados con [PRODUCTO] con los datos de UN producto específico. Repetí este proceso por cada producto de tu tienda. Pegá todo en Claude y dejalo trabajar.
-
----
-
-Sos mi copywriter experto en respuesta directa estilo Agora. Necesito que crees un SISTEMA COMPLETO DE COPY FUNDACIONAL para UN producto específico de mi tienda. Este sistema incluye 3 documentos fundacionales + copies nativos listos para usar. Todo en UN SOLO documento.
-
-IMPORTANTE: Este sistema es POR PRODUCTO. Si tengo 3 productos, hago este proceso 3 veces, uno por cada producto. Cada producto tiene su propio avatar, su propio argumento, sus propias creencias y sus propios copies.
-
-## DATOS DEL PRODUCTO:
-
-- **Nombre del producto:** [PRODUCTO - nombre completo tal como aparece en tu tienda]
-- **Marca:** [PRODUCTO - nombre de la marca que lo vende]
-- **URL de la página de producto:** [PRODUCTO - link directo a la página de venta]
-- **Precio:** [PRODUCTO - precio principal + precios de bundles si los hay]
-- **Qué es físicamente:** [PRODUCTO - formato: cápsulas, gomitas, crema, polvo, líquido, dispositivo, curso, etc.]
-- **Ingredientes o componentes clave:** [PRODUCTO - fórmula, ingredientes activos, dosis, certificaciones. Sé específico]
-- **Los 2-3 problemas principales que resuelve:** [PRODUCTO - dolor articular, insomnio, caída de pelo, acné, sobrepeso, ansiedad, etc.]
-- **Cómo funciona (mecanismo de acción):** [PRODUCTO - explicá cómo actúa el producto a nivel técnico/científico. Si no sabés, poné lo que dice tu proveedor o la etiqueta]
-- **Qué lo hace diferente a la competencia:** [PRODUCTO - ingrediente único, formato, origen, pureza, historia, tecnología, lo que sea]
-- **Historia del producto o ingrediente principal:** [PRODUCTO - si tiene alguna historia interesante: quién lo descubrió, desde cuándo se usa, algún dato curioso. Si no tiene, poné "No tiene historia particular"]
-
-## DATOS DEL CLIENTE DE ESTE PRODUCTO:
-
-- **Edad del comprador típico:** [PRODUCTO - rango de edad de quien compra ESTE producto específico]
-- **Género predominante:** [PRODUCTO - % aproximado hombre/mujer]
-- **País y región:** [PRODUCTO - de dónde son tus compradores. Si vendés en varios países, poné el principal]
-- **Nivel socioeconómico:** [PRODUCTO - clase baja, media, media-alta, alta. Qué capacidad de gasto tienen]
-- **Qué soluciones ya probaron antes de llegar a tu producto:** [PRODUCTO - listá todo lo que ya usaron: otros suplementos, medicamentos, tratamientos, profesionales, remedios caseros]
-- **Qué les gustó de esas soluciones:** [PRODUCTO - qué rescatan de lo que ya probaron]
-- **Qué odian de esas soluciones:** [PRODUCTO - efectos secundarios, precio, que no funcionó, que tardó mucho, etc.]
-- **Cuánto gastan actualmente en esas alternativas:** [PRODUCTO - en pesos/dólares por mes aproximado]
-
-## TESTIMONIOS REALES DE ESTE PRODUCTO:
-
-[PRODUCTO - Pegá acá al menos 5-10 de tus mejores testimonios/reseñas TEXTUALES. Con nombre (o iniciales), edad si la tenés, y lo que dijeron tal cual. Cuanto más específicos y emocionales, mejor. Si tenés 20, pegá 20. Más es mejor. Estos son la materia prima más importante de todo el sistema.]
-
-Ejemplo de formato:
-- "Nombre, edad: lo que dijo la persona textual"
-- "Nombre, edad: lo que dijo la persona textual"
-
-## DATOS COMERCIALES:
-
-- **Garantía:** [PRODUCTO - política de devolución. Ej: "30 días, devolvemos el dinero sin preguntas"]
-- **Métodos de pago:** [PRODUCTO - tarjeta, PayPal, Mercado Pago, cuotas, transferencia, etc.]
-- **Envío:** [PRODUCTO - cómo llega, qué empresa, cuánto tarda, si tiene seguimiento]
-- **Soporte al cliente:** [PRODUCTO - email, WhatsApp, teléfono, chat]
-
-## IDIOMA Y TONO:
-
-- **Idioma del copy:** [PRODUCTO - español Argentina, español México, español España, inglés USA, portugués Brasil, etc.]
-- **Tono:** [PRODUCTO - cercano/informal, profesional, científico, emocional. Ej: "Cercano, como si le hablara a mi tío de 60 años"]
-
----
-
-## LO QUE NECESITO QUE CREES:
-
-Creá un documento único con las siguientes 4 partes PARA ESTE PRODUCTO ESPECÍFICO. Cada parte debe ser completa y detallada, no superficial. El documento completo debe tener al menos 4.000 palabras.
-
----
-
-### PARTE 1: AVATAR SHEET (de quién compra ESTE producto)
-
-Creá un perfil psicográfico completo del cliente ideal DE ESTE PRODUCTO basándote en los datos que te di. Incluí:
-
-1. **Información demográfica:** edad, género, ubicación, nivel socioeconómico, ocupación, identidades típicas. Sé específico al segmento que compra ESTE producto, no al mercado general.
-
-2. **Desafíos y puntos de dolor (al menos 3 categorías con 4-5 bullets cada una):** NO escribas dolores genéricos. Escribí dolores ESPECÍFICOS y cotidianos que una persona real describiría. No "quiere estar sano" sino "no puede agacharse a atarle los cordones a su nieto." Usá el lenguaje que aparece en los testimonios que te pasé.
-
-3. **Metas y aspiraciones:** divididas en corto plazo (primeras 2-4 semanas con el producto) y largo plazo (2-6 meses). Específicas y cotidianas, no abstractas.
-
-4. **Drivers emocionales:** las emociones dominantes ANTES de encontrar el producto (frustración, miedo, vergüenza, resignación) y DESPUÉS de encontrar la solución (asombro, orgullo, gratitud). Incluí un "insight psicológico central" que capture la emoción más poderosa del mercado de ESTE producto.
-
-5. **Citas del mercado:** usando los testimonios que te di + lenguaje típico, organizá citas textuales por tema: sobre el problema, sobre soluciones fallidas, sobre el alivio.
-
-6. **Retrato del avatar:** un párrafo completo que resuma quién es esta persona.
-
----
-
-### PARTE 2: OFFER BRIEF (cómo posicionar ESTE producto)
-
-Creá el brief estratégico completo. Incluí:
-
-1. **Product Name Ideas:** el nombre real + 3-4 variaciones para copy.
-2. **Level of Awareness (Eugene Schwartz):** ¿el mercado de ESTE producto es Unaware, Problem-Aware, Solution-Aware, Product-Aware, o Most Aware? Explicá por qué y qué implica para el copy.
-3. **Stage of Sophistication (Eugene Schwartz):** ¿en qué Stage está el mercado de ESTE producto (1-5)? ¿Qué necesita: una promesa simple, una promesa más grande, un mecanismo, un mecanismo único, o conexión con identidad?
-4. **Big Idea:** el concepto central que ancla toda la comunicación de ESTE producto. Una versión principal y una de curiosidad.
-5. **Metáforas (2):** que traduzcan el mecanismo técnico de ESTE producto a lenguaje que el avatar entienda instantáneamente.
-6. **UMP (Mecanismo Único del Problema):** ¿por qué el avatar tiene este problema específico y por qué nada le funcionó hasta ahora? Debe reframear toda su experiencia pasada con soluciones fallidas.
-7. **UMS (Mecanismo Único de la Solución):** ¿cómo funciona ESTE producto específicamente y por qué es diferente a todo lo demás?
-8. **Guru:** la figura de autoridad detrás de ESTE producto.
-9. **Discovery Story:** 2 versiones de la narrativa de origen.
-10. **Headlines (8-10):** organizados por nivel de awareness.
-11. **Objeciones y respuestas (5-7):** las objeciones específicas que tiene el comprador de ESTE producto con las respuestas exactas.
-12. **Funnel Architecture:** cómo se conectan las piezas para ESTE producto: ad → precalentamiento → página de producto → post-compra.
-
----
-
-### PARTE 3: NECESSARY BELIEFS (las creencias que venden ESTE producto)
-
-Identificá las creencias absolutamente necesarias que el prospecto DEBE tener antes de comprar ESTE PRODUCTO ESPECÍFICO. NO MÁS DE 6 CREENCIAS. Estructuradas como "Yo creo que..."
-
-Para cada creencia incluí:
-- El statement "Yo creo que..."
-- La creencia ACTUAL del prospecto (qué piensa ANTES)
-- Cómo instalar la creencia en el copy
-- Su función en el argumento total
-
-Al final:
-- El argumento completo en 6 pasos
-- Mapeo de qué creencias van en cada parte del funnel
-
----
-
-### PARTE 4: COPIES NATIVOS PARA ESTE PRODUCTO (mínimo 2 ángulos)
-
-Escribí al menos 2 copies nativos de +500 palabras cada uno. Cada uno con un ángulo diferente — un problema o síntoma distinto que ESTE producto resuelve.
-
-Estructura de cada copy:
-1. Hook de dolor (historia de una persona real, basada en los testimonios)
-2. Empatía y conexión → Creencia #1
-3. Metáfora que explica la causa raíz → Creencia #2
-4. Por qué nada funcionó antes → Creencia #3
-5. Discovery Story del producto → Creencia #4
-6. Testimonios reales → Creencia #5
-7. Garantía + precio + pago → Creencia #6
-8. CTA orientado a beneficio
-
-REGLAS:
-- Escribí como ARGUMENTO, no como lista de power words. Cada párrafo avanza el argumento. Si sacás uno y la lógica no se rompe, sobra.
-- Usá el lenguaje REAL del mercado sacado de los testimonios.
-- Usá el dialecto local indicado en "Idioma del copy."
-- Prosa narrativa, no listas ni emojis.
-- Testimonios integrados en el flujo, no como bloques separados.
-- CTA con texto de beneficio, no "Comprar ahora."
-
----
-
-## FILOSOFÍA DE COPY:
-
-Este sistema se basa en una premisa: el marketing no se trata de palabras poderosas, se trata de argumentos poderosos.
-
-NO estamos escribiendo copy. Estamos CONSTRUYENDO ARGUMENTOS. Un argumento lógico y emocional irrefutable que lleva al prospecto a una sola conclusión: "necesito esto."
-
-Cada pieza existe para llevar al prospecto por un viaje de creencias. Desde "mi problema no tiene solución" hasta "tengo que probar esto y no tengo nada que perder."
-
-No busques la palabra perfecta. Buscá el argumento perfecto. Después pulís las palabras.
-
----
-
-Generá todo el sistema en un documento único para ESTE PRODUCTO. Empezá ahora.`;
-                    return (
-                      <div style={{marginTop:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-                        <div style={{padding:"10px 14px",background:T.bg,borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
-                          <div style={{fontSize:11,color:T.textMd,lineHeight:1.55,flex:1,minWidth:280}}>
-                            Copiá este prompt, completá los campos marcados con <code style={{background:T.card,padding:"1px 5px",borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:10,color:T.accent}}>[PRODUCTO]</code> con tus datos reales y pegalo en <strong>ChatGPT, Claude o Gemini</strong>. El texto que te devuelva la IA es lo que va en el campo de abajo. Si tenés varios productos, hacé un set por cada uno. Cuanto más data, mejor copy.
-                          </div>
-                          <button onClick={async()=>{
-                            try { await navigator.clipboard.writeText(BRAND_TEMPLATE); setBrandTemplateCopied(true); setTimeout(()=>setBrandTemplateCopied(false),2000); }
-                            catch(_) { /* fallback: select-all manual */ }
-                          }} style={{padding:"6px 12px",fontSize:11,fontWeight:700,border:"none",borderRadius:8,background:brandTemplateCopied?T.green:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
-                            {brandTemplateCopied ? "✓ Copiado" : "📋 Copiar plantilla"}
-                          </button>
-                        </div>
-                        <pre style={{margin:0,padding:"14px 16px",maxHeight:380,overflow:"auto",fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:11,color:T.textMd,lineHeight:1.55,whiteSpace:"pre-wrap",wordBreak:"break-word",background:T.bg}}>{BRAND_TEMPLATE}</pre>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {!showBrandEdit ? (
-                  brand?.trim() ? (
-                    <div style={{background:T.surface,border:`1px solid ${T.green}33`,borderRadius:10,padding:"14px 16px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                        <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,letterSpacing:0.5}}>✓ CONFIGURADO</span>
-                        <span style={{fontSize:11,color:T.textSm}}>{(new Blob([brand]).size/1024).toFixed(1)} KB</span>
-                      </div>
-                      <div style={{fontSize:12,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",color:T.textMd,lineHeight:1.55,maxHeight:60,overflow:"hidden",position:"relative"}}>
-                        {brand.slice(0,260)}{brand.length>260?" …":""}
-                      </div>
-                      <div style={{textAlign:"right",marginTop:10}}>
-                        <button onClick={()=>setShowBrandEdit(true)} style={BtnSec}>✏️ Editar</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{textAlign:"center",padding:30,border:`1px dashed ${T.border}`,borderRadius:10}}>
-                      <div style={{fontSize:13,color:T.textMd,marginBottom:12,lineHeight:1.6}}>Todavía no cargaste el contexto de marca. Gemini necesita saber qué vendés para escribir el copy.</div>
-                      <button onClick={()=>setShowBrandEdit(true)} style={BtnPri}>+ Configurar marca</button>
-                    </div>
-                  )
-                ) : (
-                  <div>
-                    <textarea value={brand} onChange={e=>setBrand(e.target.value)} placeholder="Producto, beneficios principales, target, precio, USP, link, etc."
-                      style={{...iS,minHeight:200,resize:"vertical",lineHeight:1.6,marginBottom:10,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:12}}/>
-                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                      <button onClick={()=>setShowBrandEdit(false)} style={BtnSec}>Cancelar</button>
-                      <button onClick={async()=>{await handleSaveBrand(); setShowBrandEdit(false);}} disabled={brandSaving} style={BtnPri}>
-                        {brandSaving?<><Spinner size={12} color="#fff"/>Guardando...</>:"💾 Guardar"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Sección 3: ESTILO DEL COPY (instrucciones del agente) ── */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
-                <SectionHeader n="3" title="Estilo del copy"/>
-                <div style={{fontSize:12,color:T.textMd,marginBottom:12,lineHeight:1.6}}>Definí cómo tiene que escribir el agente. Estas instrucciones se inyectan con prioridad máxima en cada copy generado — sobreescriben los defaults.</div>
-                {!showCopyAgentEdit ? (
-                  copyAgent?.trim() ? (
-                    <div style={{background:T.surface,border:`1px solid ${T.green}33`,borderRadius:10,padding:"14px 16px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                        <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,letterSpacing:0.5}}>✓ CONFIGURADO</span>
-                        <span style={{fontSize:11,color:T.textSm}}>{(new Blob([copyAgent]).size/1024).toFixed(1)} KB</span>
-                      </div>
-                      <div style={{fontSize:12,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",color:T.textMd,lineHeight:1.55,maxHeight:80,overflow:"hidden",whiteSpace:"pre-wrap"}}>
-                        {copyAgent.slice(0,320)}{copyAgent.length>320?" …":""}
-                      </div>
-                      <div style={{textAlign:"right",marginTop:10}}>
-                        <button onClick={()=>setShowCopyAgentEdit(true)} style={BtnSec}>✏️ Editar estilo</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{textAlign:"center",padding:30,border:`1px dashed ${T.border}`,borderRadius:10}}>
-                      <div style={{fontSize:13,color:T.textMd,marginBottom:12,lineHeight:1.6}}>Sin estilo definido. El agente va a usar el default (rioplatense, hook fuerte, 400+ palabras).</div>
-                      <button onClick={()=>setShowCopyAgentEdit(true)} style={BtnPri}>+ Definir estilo del agente</button>
-                    </div>
-                  )
-                ) : (
-                  <div>
-                    <textarea value={copyAgent} onChange={e=>setCopyAgent(e.target.value)}
-                      placeholder={`Ejemplo:
-
-PERSONALIDAD
-- Amable, cercana, como hablás con un amigo
-- Usar emojis sutiles: ✨ 💪 ❤️ (máximo 4 por copy)
-- Voseo argentino siempre (vos / tenés / podés)
-- Primera persona o "vos" — nunca "usted"
-
-CTA preferidos
-- "Pedilo ahora"
-- "Conocelo acá"
-- "Probalo 30 días sin riesgo"
-
-QUE SI DECIR
-- Beneficios concretos con números cuando se pueda
-- Storytelling: dolor → entendimiento → solución
-- Cerrar con una pregunta o invitación
-
-QUE NO DECIR
-- "Garantía 100%" (legal)
-- "Cura", "elimina por completo", "milagroso"
-- Nada de comparativas con productos de la competencia
-- Sin promesas médicas no respaldadas
-- Evitar "¿Sabías que…?" como apertura
-
-LONGITUD Y FORMATO
-- Entre 300 y 500 palabras
-- Párrafos cortos, mucho espacio en blanco
-- Hook scroll-stopper en la primera línea`}
-                      style={{...iS,minHeight:340,resize:"vertical",lineHeight:1.6,marginBottom:10,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:12,whiteSpace:"pre-wrap"}}/>
-                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                      <button onClick={()=>setShowCopyAgentEdit(false)} style={BtnSec}>Cancelar</button>
-                      <button onClick={async()=>{await handleSaveCopyAgent(); setShowCopyAgentEdit(false);}} disabled={copyAgentSaving} style={BtnPri}>
-                        {copyAgentSaving?<><Spinner size={12} color="#fff"/>Guardando...</>:"💾 Guardar"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Sección 4: PUBLICAR ADS ──────────────────── */}
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
-                <SectionHeader n="4" title="Publicar ads"/>
-                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos. Gemini escribe el copy de cada uno usando el contexto de tu marca y el estilo del agente que definiste arriba.</div>
+                <SectionHeader n="2" title="Publicar ads"/>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos, elegí campaña/AdSet y pegá tu copy en cada uno. Cuando le des publicar, se suben a Meta y se crean los anuncios — podés dejar la app abierta unos minutos y se hace solo en segundo plano.</div>
 
                 {/* Mode toggle */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
@@ -20189,30 +19893,15 @@ LONGITUD Y FORMATO
                           </div>
                         )}
 
-                        {/* Notas */}
-                        <input value={c.notes||""} onChange={e=>{const u={...c,notes:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{notes:e.target.value})} placeholder="Notas extra opcionales (ángulo, oferta, detalle del producto…)" style={{...iS,marginBottom:10,fontSize:12}}/>
-
-                        {/* Regenerar copy + explicación */}
-                        <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-                          <button onClick={()=>handleGenerateCopy(c)} disabled={generatingCopy===c.id} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:`linear-gradient(135deg, ${T.accent}, ${T.purple||"#a855f7"})`,color:"#fff",cursor:generatingCopy===c.id?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
-                            {generatingCopy===c.id?<><Spinner size={12} color="#fff"/>Generando...</>:"♻ Regenerar copy"}
-                          </button>
-                          <div style={{fontSize:11,color:T.textSm,lineHeight:1.55,flex:1}}>Gemini escribe el copy en base al contexto de tu marca, el estilo del agente y las notas que pongas arriba. Cada vez que tocás "Regenerar" te da una variante distinta.</div>
+                        {/* Copy: lo pegás vos (traído de afuera). Sin IA. */}
+                        <div style={{marginTop:4}}>
+                          <div style={{fontSize:11,fontWeight:700,color:c.copy?.trim()?T.green:T.textSm,letterSpacing:0.4,marginBottom:6,textTransform:"uppercase"}}>📝 Tu copy {c.copy?.trim()?`· ${c.copy.split(/\s+/).filter(Boolean).length} palabras`:"· pegá el texto del anuncio"}</div>
+                          <textarea value={c.copy||""} onChange={e=>{const u={...c,copy:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{copy:e.target.value})} placeholder="Pegá acá el texto del anuncio que ya escribiste afuera…" style={{...iS,minHeight:110,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap"}}/>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
+                            <input value={c.title||""} onChange={e=>{const u={...c,title:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{title:e.target.value})} placeholder="Titular (opcional, ≤40)" style={iS}/>
+                            <input value={c.description||""} onChange={e=>{const u={...c,description:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{description:e.target.value})} placeholder="Descripción (opcional, ≤30)" style={iS}/>
+                          </div>
                         </div>
-
-                        {/* Copy preview (si hay) */}
-                        {c.copy?.trim() && (
-                          <details style={{marginTop:12,background:T.card,border:`1px solid ${T.green}33`,borderRadius:8}} open>
-                            <summary style={{cursor:"pointer",padding:"8px 12px",fontSize:11,color:T.green,fontWeight:700,letterSpacing:0.4}}>📝 COPY GENERADO ({c.copy.split(/\s+/).filter(Boolean).length} palabras) — click para editar</summary>
-                            <div style={{padding:"10px 12px",borderTop:`1px solid ${T.green}22`}}>
-                              <textarea value={c.copy} onChange={e=>{const u={...c,copy:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{copy:e.target.value})} style={{...iS,minHeight:120,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap"}}/>
-                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
-                                <input value={c.title||""} onChange={e=>{const u={...c,title:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{title:e.target.value})} placeholder="Titular (≤40 chars)" style={iS}/>
-                                <input value={c.description||""} onChange={e=>{const u={...c,description:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{description:e.target.value})} placeholder="Descripción (≤30 chars)" style={iS}/>
-                              </div>
-                            </div>
-                          </details>
-                        )}
                       </div>
                     ))}
                   </>
@@ -20260,6 +19949,17 @@ LONGITUD Y FORMATO
                   );
                 })()}
               </div>
+
+              {/* Barra fija "SUBIENDO ANUNCIOS" — queda abajo mientras se sube a
+                  Meta / se publica en background. El usuario puede dejar la app
+                  abierta unos minutos e irse; se hace solo. */}
+              {(bulkPublishing || creatives.some(c=>c._uploading || c._autoPubStatus==="publishing")) && (
+                <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:80,background:`linear-gradient(135deg, ${T.accent}, ${T.purple||"#a855f7"})`,color:"#fff",padding:"13px 20px",display:"flex",alignItems:"center",justifyContent:"center",gap:12,flexWrap:"wrap",boxShadow:"0 -4px 22px rgba(0,0,0,0.35)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <Spinner size={16} color="#fff"/>
+                  <span style={{fontSize:13,fontWeight:800,letterSpacing:0.6}}>SUBIENDO ANUNCIOS{bulkProgress.total>0?` (${bulkProgress.done}/${bulkProgress.total})`:""}</span>
+                  <span style={{fontSize:12,opacity:0.92}}>— dejá la app abierta unos minutos, se sube y publica solo. Podés irte. 💤</span>
+                </div>
+              )}
 
               {/* ── Historial de batches publicados ──────────────── */}
               {publishBatches.length > 0 && (
