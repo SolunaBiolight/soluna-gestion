@@ -10851,23 +10851,32 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 ))}
               </div>}
               {!colabMode&&paraRevisar.length>0&&(
-                <div style={{background:T.card,border:`1px solid ${T.orange}`,borderRadius:DS.r.xl,overflow:"hidden",marginBottom:16}}>
-                  <div style={{background:T.orange,padding:"10px 16px"}}>
-                    <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>📦 {paraRevisar.length} entrega{paraRevisar.length!==1?"s":""} esperando revisión</span>
+                <div style={{marginBottom:20}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                    <div style={{width:7,height:7,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
+                    <span style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>Entregas para revisar</span>
+                    <span style={{fontSize:11,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 9px",fontFamily:"'Inter',system-ui,sans-serif"}}>{paraRevisar.length}</span>
                   </div>
-                  <div style={{padding:"10px 14px",display:"flex",flexDirection:"column",gap:8}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
                     {paraRevisar.map(t=>{
                       const initials=(t.asignadoNombre||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+                      const lastDeliverable=(t.deliverables||[]).filter(d=>!d.parcial).slice(-1)[0];
                       return(
-                        <div key={t._id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
-                          <div style={{width:36,height:36,borderRadius:"50%",background:T.orange+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:T.orange,flexShrink:0}}>{initials}</div>
+                        <div key={t._id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:T.card,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,borderLeft:`3px solid ${T.orange}`}}>
+                          <div style={{width:34,height:34,borderRadius:"50%",background:T.orange+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.orange,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>{initials}</div>
                           <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
-                            <div style={{fontSize:12,color:T.textSm,marginTop:2}}>{t.asignadoNombre}</div>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.titulo}</div>
+                            <div style={{fontSize:11,color:T.textSm,marginTop:2,fontFamily:"'Inter',system-ui,sans-serif"}}>{t.asignadoNombre}</div>
                           </div>
-                          <div style={{display:"flex",gap:8,flexShrink:0}}>
-                            <button onClick={()=>setKanbanSelected(t)} style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>Ver</button>
-                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:13,padding:"7px 14px",borderRadius:8,border:"1.5px solid #16a34a55",background:"#22c55e",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
+                          {lastDeliverable?.link&&(
+                            <a href={lastDeliverable.link} target="_blank" rel="noreferrer"
+                              style={{fontSize:11,color:T.accent,fontWeight:500,textDecoration:"none",padding:"4px 10px",borderRadius:6,border:`1px solid ${T.accent}30`,background:T.accent+"0a",whiteSpace:"nowrap",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                              Ver entrega ↗
+                            </a>
+                          )}
+                          <div style={{display:"flex",gap:6,flexShrink:0}}>
+                            <button onClick={()=>setKanbanSelected(t)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Ver</button>
+                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:12,padding:"6px 14px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
                           </div>
                         </div>
                       );
@@ -10903,93 +10912,107 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               {/* ── GRID DE TAREAS — una card por tarea ── */}
               {tareasActivas.length>0&&(()=>{
                 const EST_CARD={
-                  pendiente: {l:"Pendiente",c:T.textSm,  bg:T.textSm+"18",  dot:T.textSm},
-                  en_proceso:{l:"En proceso",c:T.blue,    bg:T.blue+"18",    dot:T.blue},
-                  entregado: {l:"Entregado", c:T.orange,  bg:T.orange+"18",  dot:T.orange},
-                  revision:  {l:"Corrección",c:T.red,     bg:T.red+"18",     dot:T.red},
-                  bloqueada: {l:"Bloqueada", c:T.textMd,  bg:T.textMd+"18",  dot:T.textMd},
+                  pendiente: {l:"Pendiente",  c:"#9ca3af", dot:"#9ca3af"},
+                  en_proceso:{l:"En proceso", c:"#3b82f6", dot:"#3b82f6"},
+                  entregado: {l:"Entregado",  c:"#f97316", dot:"#f97316"},
+                  revision:  {l:"A corregir", c:"#ef4444", dot:"#ef4444"},
+                  bloqueada: {l:"Bloqueada",  c:"#6b7280", dot:"#6b7280"},
+                  aprobado:  {l:"Aprobado",   c:"#22c55e", dot:"#22c55e"},
                 };
                 return(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12,marginBottom:16}}>
                     {tareasActivas.map(t=>{
                       const est=EST_CARD[t.estado]||EST_CARD.pendiente;
                       const days=dLeft(t.deadline);
                       const asignados=getAsignados(t);
-                      const isEntregado=t.estado==="entregado";
                       const isUrgente=t.prioridad==="urgente";
-                      const borderColor=isEntregado?T.orange:isUrgente?T.red+"55":T.border;
+                      const correcciones=t.correcciones||0;
                       const brief=(t.brief||t.descripcion||"").trim();
+                      const hasSlots=(t.slots||[]).length>0;
                       return(
                         <div key={t._id} onClick={()=>setKanbanSelected(t)}
-                          style={{background:T.card,border:`1px solid ${borderColor}`,borderLeft:isUrgente?`3px solid ${T.red}`:`1px solid ${borderColor}`,borderRadius:DS.r.xl,padding:"14px 14px 12px",cursor:"pointer",display:"flex",flexDirection:"column",gap:10,transition:"border-color 0.15s, box-shadow 0.15s"}}
-                          onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.boxShadow=DS.shadow.md;}}
-                          onMouseLeave={e=>{e.currentTarget.style.borderColor=borderColor;e.currentTarget.style.boxShadow="none";}}>
-                          {/* Top: número + estado */}
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                            <span style={{fontSize:10,fontWeight:700,color:T.textSm,background:T.surface,borderRadius:6,padding:"3px 8px",border:`1px solid ${T.border}`}}>
-                              {t.tareaNumStr?"#"+t.tareaNumStr:"—"}
-                            </span>
-                            <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                              {isUrgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:4,padding:"2px 6px"}}>URGENTE</span>}
-                              <span style={{fontSize:10,fontWeight:600,color:est.c,background:est.bg,borderRadius:20,padding:"3px 9px"}}>{est.l}</span>
+                          style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${est.dot}`,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"pointer",display:"flex",flexDirection:"column",minHeight:140,transition:"box-shadow 0.15s, background 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}
+                          onMouseEnter={e=>{e.currentTarget.style.boxShadow=DS.shadow.lg;e.currentTarget.style.background=T.surface;}}
+                          onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.background=T.card;}}>
+
+                          {/* Top: estado + badges */}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                            <div style={{display:"flex",alignItems:"center",gap:5}}>
+                              <div style={{width:6,height:6,borderRadius:"50%",background:est.dot,flexShrink:0}}/>
+                              <span style={{fontSize:11,fontWeight:600,color:est.c}}>{est.l}</span>
+                            </div>
+                            <div style={{display:"flex",alignItems:"center",gap:5}}>
+                              {isUrgente&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
+                              {correcciones>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"2px 7px"}}>🔁 {correcciones}</span>}
+                              {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:500}}>#{t.tareaNumStr}</span>}
                             </div>
                           </div>
+
                           {/* Título */}
-                          <div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.4,marginBottom:8,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
                             {t.titulo}
                           </div>
-                          {t.propuestaPor&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:T.accentSolid+"18",color:T.accent,fontWeight:700,alignSelf:"flex-start",border:`1px solid ${T.accentSolid}30`}}>⬆ Propuesta por {t.propuestaPor}</span>}
-                          {(t.deliverables||[]).some(d=>d.parcial)&&t.estado!=="entregado"&&t.estado!=="aprobado"&&(
-                            <span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:T.orange+"18",color:T.orange,fontWeight:700,alignSelf:"flex-start",border:`1px solid ${T.orange}30`}}>📦 Entrega parcial</span>
-                          )}
+
                           {/* Slots progress si es campaña */}
-                          {(t.slots||[]).length>0&&(()=>{
+                          {hasSlots&&(()=>{
                             const total=(t.slots||[]).length;
                             const completados=(t.deliverables||[]).filter(d=>!d.parcial&&d.slotId).reduce((acc,d)=>{const seen=acc.slotIds||new Set();if(!seen.has(d.slotId)){seen.add(d.slotId);return{count:acc.count+1,slotIds:seen};}return acc;},{count:0,slotIds:new Set()}).count;
-                            return(<>
-                              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                                <span style={{fontSize:10,color:T.textSm}}>Entregas</span>
-                                <span style={{fontSize:10,fontWeight:600,color:completados===total?T.green:T.accent}}>{completados}/{total}</span>
+                            return(
+                              <div style={{marginBottom:10}}>
+                                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                                  <span style={{fontSize:10,color:T.textSm}}>Slots</span>
+                                  <span style={{fontSize:10,fontWeight:600,color:completados===total?T.green:T.accent}}>{completados}/{total}</span>
+                                </div>
+                                <div style={{height:3,borderRadius:2,background:T.borderL||T.border,overflow:"hidden"}}>
+                                  <div style={{height:"100%",background:completados===total?T.green:T.accentSolid,width:`${total>0?(completados/total*100):0}%`,borderRadius:2,transition:"width 0.3s"}}/>
+                                </div>
                               </div>
-                              <div style={{height:3,borderRadius:2,background:T.border,overflow:"hidden"}}>
-                                <div style={{height:"100%",background:completados===total?T.green:T.accentSolid,width:`${total>0?(completados/total*100):0}%`,borderRadius:2}}/>
-                              </div>
-                              <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                                {(t.slots||[]).slice(0,2).map(slot=>{
-                                  const slotDone=(t.deliverables||[]).some(d=>d.slotId===slot.id&&!d.parcial);
-                                  return(<div key={slot.id} style={{display:"flex",alignItems:"center",gap:5,fontSize:10}}>
-                                    <div style={{width:5,height:5,borderRadius:"50%",background:slotDone?T.green:T.textSm,flexShrink:0}}/>
-                                    <span style={{color:T.textSm,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{slot.descripcion||slot.tipo}</span>
-                                    <span style={{color:T.textSm,flexShrink:0}}>{slot.asignadoNombre?.split(" ")[0]||"?"}</span>
-                                  </div>);
-                                })}
-                                {(t.slots||[]).length>2&&<span style={{fontSize:10,color:T.textSm}}>+{(t.slots||[]).length-2} más</span>}
-                              </div>
-                            </>);
+                            );
                           })()}
-                          {/* Brief preview */}
-                          {!(t.slots||[]).length&&brief&&(
-                            <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",flex:1}}>
+
+                          {/* Brief preview (1 línea, solo si no hay slots) */}
+                          {!hasSlots&&brief&&(
+                            <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:8}}>
                               {brief}
                             </div>
                           )}
-                          {!(t.slots||[]).length&&!brief&&<div style={{flex:1}}/>}
-                          {/* Footer: avatares con nombre + deadline */}
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:2}}>
-                            <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}>
-                              {asignados.slice(0,2).map((a,i)=>(
-                                <div key={a.email} style={{display:"flex",alignItems:"center",gap:5}}>
-                                  <div style={{width:24,height:24,borderRadius:"50%",background:T.accentSolid+"22",border:`2px solid ${T.card}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:T.accent,flexShrink:0}}>
-                                    {(a.nombre[0]||"?").toUpperCase()}
-                                  </div>
-                                  {asignados.length===1&&<span style={{fontSize:11,color:T.textMd,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:80}}>{a.nombre.split(" ")[0]}</span>}
+
+                          {/* Spacer */}
+                          <div style={{flex:1}}/>
+
+                          {/* Badge propuesta */}
+                          {t.propuestaPor&&(
+                            <div style={{marginBottom:8}}>
+                              <span style={{fontSize:9,padding:"2px 8px",borderRadius:20,background:T.accent+"12",color:T.accent,fontWeight:600,border:`1px solid ${T.accent}25`}}>
+                                Propuesta · {t.propuestaPor}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Footer */}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                            {/* Asignados */}
+                            <div style={{display:"flex",alignItems:"center",gap:0,minWidth:0}}>
+                              {asignados.length===0&&<span style={{fontSize:11,color:T.textSm}}>Sin asignar</span>}
+                              {asignados.slice(0,3).map((a,i)=>(
+                                <div key={a.email} title={a.nombre}
+                                  style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid+"22",border:`2px solid ${T.card}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.accent,flexShrink:0,marginLeft:i>0?-6:0}}>
+                                  {(a.nombre[0]||"?").toUpperCase()}
                                 </div>
                               ))}
-                              {asignados.length>2&&<span style={{fontSize:10,color:T.textSm,marginLeft:2}}>+{asignados.length-2}</span>}
+                              {asignados.length===1&&<span style={{fontSize:11,color:T.textMd,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:80,marginLeft:6}}>{asignados[0].nombre.split(" ")[0]}</span>}
+                              {asignados.length>3&&<span style={{fontSize:10,color:T.textSm,marginLeft:4}}>+{asignados.length-3}</span>}
                             </div>
+
+                            {/* Deadline */}
                             {days!==null&&(
-                              <span style={{fontSize:11,fontWeight:days<=2?700:500,color:days<0?T.red:days<=2?T.red:days<=4?T.orange:T.textSm,flexShrink:0}}>
-                                📅 {days<0?`${Math.abs(days)}d venc.`:days===0?"hoy":`${days}d`}
+                              <span style={{
+                                fontSize:11,fontWeight:600,flexShrink:0,
+                                color:days<0?"#ef4444":days<=2?"#ef4444":days<=5?"#f97316":T.textSm,
+                                background:days<0?"#ef444410":days<=2?"#ef444410":days<=5?"#f9731610":"transparent",
+                                borderRadius:5,padding:days<=5?"2px 7px":"0",
+                              }}>
+                                {days<0?`${Math.abs(days)}d vencida`:days===0?"Hoy":`${days}d`}
                               </span>
                             )}
                           </div>
