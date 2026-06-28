@@ -11171,32 +11171,42 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           )}
 
                           {/* Footer */}
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
-                            {/* Asignados */}
-                            <div style={{display:"flex",alignItems:"center",gap:0,minWidth:0}}>
-                              {asignados.length===0&&<span style={{fontSize:11,color:T.textSm}}>Sin asignar</span>}
-                              {asignados.slice(0,3).map((a,i)=>(
-                                <div key={a.email} title={a.nombre}
-                                  style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid+"22",border:`2px solid ${T.card}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.accent,flexShrink:0,marginLeft:i>0?-6:0}}>
-                                  {(a.nombre[0]||"?").toUpperCase()}
+                          {(()=>{
+                            const hasDelivery=(t.deliverables||[]).some(d=>!d.parcial);
+                            const MESES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+                            const deadlineDate=t.deadline?(t.deadline._seconds?new Date(t.deadline._seconds*1000):new Date(t.deadline)):null;
+                            const deadlineLabel=deadlineDate?`${deadlineDate.getDate()} ${MESES[deadlineDate.getMonth()]}`:null;
+                            const dlColor=days===null?T.textSm:days<0?"#ef4444":days<=1?"#ef4444":days<=3?"#f97316":T.textSm;
+                            const dlBg=days===null?"transparent":days<0?"#ef444412":days<=1?"#ef444412":days<=3?"#f9731612":"transparent";
+                            const dlPad=days!==null&&days<=3?"2px 7px":"0";
+                            return(
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                                {/* Asignados */}
+                                <div style={{display:"flex",alignItems:"center",gap:0,minWidth:0}}>
+                                  {asignados.length===0&&<span style={{fontSize:11,color:T.textSm}}>Sin asignar</span>}
+                                  {asignados.slice(0,3).map((a,i)=>(
+                                    <div key={a.email} title={a.nombre}
+                                      style={{width:22,height:22,borderRadius:"50%",background:T.accentSolid+"22",border:`2px solid ${T.card}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.accent,flexShrink:0,marginLeft:i>0?-6:0}}>
+                                      {(a.nombre[0]||"?").toUpperCase()}
+                                    </div>
+                                  ))}
+                                  {asignados.length===1&&<span style={{fontSize:11,color:T.textMd,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:80,marginLeft:6}}>{asignados[0].nombre.split(" ")[0]}</span>}
+                                  {asignados.length>3&&<span style={{fontSize:10,color:T.textSm,marginLeft:4}}>+{asignados.length-3}</span>}
                                 </div>
-                              ))}
-                              {asignados.length===1&&<span style={{fontSize:11,color:T.textMd,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:80,marginLeft:6}}>{asignados[0].nombre.split(" ")[0]}</span>}
-                              {asignados.length>3&&<span style={{fontSize:10,color:T.textSm,marginLeft:4}}>+{asignados.length-3}</span>}
-                            </div>
-
-                            {/* Deadline */}
-                            {days!==null&&(
-                              <span style={{
-                                fontSize:11,fontWeight:600,flexShrink:0,
-                                color:days<0?"#ef4444":days<=2?"#ef4444":days<=5?"#f97316":T.textSm,
-                                background:days<0?"#ef444410":days<=2?"#ef444410":days<=5?"#f9731610":"transparent",
-                                borderRadius:5,padding:days<=5?"2px 7px":"0",
-                              }}>
-                                {days<0?`${Math.abs(days)}d vencida`:days===0?"Hoy":`${days}d`}
-                              </span>
-                            )}
-                          </div>
+                                {/* Derecha: entregó + deadline */}
+                                <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                                  {hasDelivery&&t.estado!=="aprobado"&&(
+                                    <span style={{fontSize:9,fontWeight:700,color:"#22c55e",background:"#22c55e12",borderRadius:4,padding:"2px 7px",border:"1px solid #22c55e30",letterSpacing:"0.02em"}}>✓ Entregó</span>
+                                  )}
+                                  {deadlineLabel&&(
+                                    <span style={{fontSize:11,fontWeight:600,color:dlColor,background:dlBg,borderRadius:5,padding:dlPad}}>
+                                      {days<0?`${MESES[deadlineDate.getMonth()]} ${deadlineDate.getDate()} ✕`:deadlineLabel}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
