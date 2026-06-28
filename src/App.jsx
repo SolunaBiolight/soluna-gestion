@@ -707,9 +707,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
-      subs:[{id:"analisis",label:"Análisis"},{id:"productos",label:"Productos"},{id:"facturacion",label:"Facturación"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
+      subs:[{id:"analisis",label:"Análisis"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
-      subs:[{id:"gestion",label:"Gestión"},{id:"analytics",label:"Analytics"}]},
+      subs:[{id:"gestion",label:"Gestión"}]},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
@@ -7757,7 +7757,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
             },
             {
-              key:"ml", label:"Mercado Libre", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "No conectado",
+              key:"ml", label:"Mercado Libre / Mercado Pago", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "Incluye Mercado Pago — comisiones, cupones y envíos",
               connected:!!mlStore, disabled:false, brand:"#FFE600", iconBg:"#FFE600",
               icon:<span style={{fontSize:20,lineHeight:1}}>🛒</span>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
@@ -13923,9 +13923,22 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   });
   const [resultados, setResultados] = useState(null);
   const [pdfs, setPdfs] = useState([]);
+  const [pvEmit, setPvEmit] = useState(null); // PV elegido al facturar: {numero,exento,nombre} | null = físico
+  useEffect(()=>{ setPvEmit(null); }, [cuitSel]); // reset al cambiar de CUIT
 
   const uid = user?.uid;
   const cuitActivo = cuits.find(c => c.cuit === cuitSel);
+  // Puntos de venta disponibles: el físico (por defecto) + los adicionales cargados.
+  const pvsDisponibles = cuitActivo ? [
+    { numero: parseInt(cuitActivo.punto_venta)||1, exento:false, nombre:"Físicos (21%)" },
+    ...((Array.isArray(cuitActivo.puntos_venta)?cuitActivo.puntos_venta:[]).map(p=>({ numero:parseInt(p.numero)||0, exento:!!p.exento, nombre:p.nombre||`PV ${p.numero}` })).filter(p=>p.numero>0)),
+  ] : [];
+  const pvElegido = pvEmit || pvsDisponibles[0] || { numero:undefined, exento:false, nombre:"Físicos (21%)" };
+  // Plataformas conectadas — para no mostrar TN a quien usa Shopify ni viceversa.
+  const platConectadas = (tnData?.connections||[]).filter(c=>c.connected).map(c=>c.platform);
+  const tienePlat = (p) => platConectadas.length===0 || platConectadas.includes(p);
+  const buscarPlats = (platConectadas.length ? platConectadas : ["shopify","tiendanube","mercadolibre"])
+    .map(p => p==="tiendanube"?"TN":p==="shopify"?"Shopify":p==="mercadolibre"?"ML":p).join("/");
   const iS = {width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",outline:"none"};
   const labelS = {fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6,display:"block"};
   // Mes navegado en el dashboard (default = mes actual ARG)
@@ -14156,6 +14169,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     fd.append("fecha_inicio", editCuit.fecha_inicio||"");
     fd.append("condicion_fiscal", editCuit.condicion_fiscal||"RESPONSABLE_INSCRIPTO");
     fd.append("punto_venta", String(editCuit.punto_venta||1));
+    fd.append("puntos_venta", JSON.stringify(Array.isArray(editCuit.puntos_venta)?editCuit.puntos_venta:[]));
     fd.append("arca_prod", String(editCuit.arca_prod||false));
     fd.append("ingresos_brutos", editCuit.ingresos_brutos||"");
     // Banner: si está vacío "" = quitar, si tiene contenido = guardar, si es undefined = no tocar
@@ -14476,7 +14490,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     };
 
     setEmittingManual(true); setManualResult(null);
-    const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}});
+    const d = await api("emit","POST",{cuit:cuitSel, ordenes:{[orderId]:orden}, product_map:{}, punto_venta: pvElegido?.numero, exento: !!pvElegido?.exento});
     if(d.error){toast(d.error,"error");setEmittingManual(false);return;}
     const r = (d.resultados||[])[0];
     const pdf = (d.pdfs||[])[0];
@@ -14525,6 +14539,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       ordenes,
       product_map: productMap,
       fecha_factura: fechaYYYYMMDD,
+      punto_venta: pvElegido?.numero,
+      exento: !!pvElegido?.exento,
     });
     clearInterval(simInterval);
     if(d.error){
@@ -14922,10 +14938,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {/* Pills de canal — multi-selección */}
                     {(()=>{
                       const canales=[
-                        {id:"tiendanube", label:"TiendaNube", color:"#2D8DF2"},
+                        {id:"tiendanube", label:"Tienda Nube", color:"#2D8DF2"},
                         {id:"shopify", label:"Shopify", color:"#96BF48"},
                         {id:"mercadolibre", label:"Mercado Libre", color:"#FFE600", textColor:"#1a1a1a"},
-                      ];
+                      ].filter(c => tienePlat(c.id));
                       const allOff = canalesSel.length===0;
                       const toggle=(id)=>{
                         if(canalesSel.includes(id)) setCanalesSel(canalesSel.filter(c=>c!==id));
@@ -14969,7 +14985,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
                     <input
                       type="text"
-                      placeholder="🔍 Buscar por nombre o número de orden (Shopify/TN/ML)…"
+                      placeholder={`🔍 Buscar por nombre o número de orden (${buscarPlats})…`}
                       value={busquedaPend}
                       onChange={e=>setBusquedaPend(e.target.value)}
                       style={{...iS,flex:1,padding:"7px 12px",fontSize:12}}
@@ -15350,15 +15366,15 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
 
                         {/* Totals */}
-                        <div style={{display:"grid",gridTemplateColumns:esRI?"1fr 1fr 1fr":"1fr",gap:10,padding:"14px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                          {esRI ? (
+                        <div style={{display:"grid",gridTemplateColumns:(esRI && !pvElegido?.exento)?"1fr 1fr 1fr":"1fr",gap:10,padding:"14px 16px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
+                          {(esRI && !pvElegido?.exento) ? (
                             <>
                               <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Subtotal neto</div><div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {netoTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
                               <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:14}}><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>IVA 21%</div><div style={{fontSize:15,fontWeight:700,color:T.text}}>$ {ivaTotal.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
                               <div style={{borderLeft:`1px solid ${T.borderL}`,paddingLeft:14}}><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total</div><div style={{fontSize:16,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
                             </>
                           ) : (
-                            <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>Total a facturar (Factura C)</div><div style={{fontSize:18,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
+                            <div><div style={{fontSize:10,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:3}}>{pvElegido?.exento?"Total a facturar (exento · sin IVA)":"Total a facturar (Factura C)"}</div><div style={{fontSize:18,fontWeight:800,color:T.accent,letterSpacing:-0.3}}>$ {totalGeneral.toLocaleString("es-AR",{minimumFractionDigits:2})}</div></div>
                           )}
                         </div>
 
@@ -15374,6 +15390,20 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             Podés elegir cualquier día de los últimos 10 corridos (límite ARCA).{diasAtras>0?` Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
                           </div>
                         </div>
+
+                        {/* Punto de venta / régimen IVA (físicos vs digitales exento) */}
+                        {pvsDisponibles.length>1 && (
+                          <div style={{padding:"12px 16px",background:T.bg,border:`1px solid ${pvElegido?.exento?(T.yellow||"#eab308")+"66":T.borderL}`,borderRadius:10}}>
+                            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                              <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>🧾 Punto de venta</span>
+                              <select value={pvElegido?.numero||""} onChange={e=>{const n=parseInt(e.target.value); setPvEmit(pvsDisponibles.find(p=>p.numero===n)||null);}}
+                                style={{background:T.card,border:`1px solid ${T.borderL}`,color:T.text,borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                {pvsDisponibles.map(p=>(<option key={p.numero} value={p.numero}>{p.nombre} · PV {String(p.numero).padStart(5,"0")}{p.exento?" · EXENTO":""}</option>))}
+                              </select>
+                            </div>
+                            {pvElegido?.exento && <div style={{fontSize:11,color:(T.yellow||"#eab308"),marginTop:6,fontWeight:600}}>⚠ Estas facturas saldrán SIN IVA (operación exenta). Usalo solo para productos digitales/exentos.</div>}
+                          </div>
+                        )}
 
                         {/* Duplicate warning */}
                         {duplicatesInModal&&duplicatesInModal.length>0&&(
@@ -16019,9 +16049,25 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </select>
                 </div>
                 <div>
-                  <label style={labelS}>Punto de venta</label>
+                  <label style={labelS}>Punto de venta (físicos · 21%)</label>
                   <input value={editCuit.punto_venta||"1"} onChange={e=>setEditCuit({...editCuit,punto_venta:e.target.value.replace(/\D/g,"")})} style={iS}/>
                 </div>
+              </div>
+              <div style={{border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",background:T.surface}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:3}}>🧾 Puntos de venta adicionales</div>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Si tenés otro punto de venta (ej: para digitales/ebooks con <strong>IVA exento</strong>), cargalo acá. Al facturar vas a poder elegir cuál usar. El de arriba es el de físicos (21%).</div>
+                {(editCuit.puntos_venta||[]).map((p,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                    <input value={p.nombre||""} placeholder="Nombre (ej: Digitales)" onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],nombre:e.target.value};setEditCuit({...editCuit,puntos_venta:arr});}} style={{...iS,flex:1,minWidth:120}}/>
+                    <input value={p.numero||""} placeholder="N° PV" onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],numero:e.target.value.replace(/\D/g,"")};setEditCuit({...editCuit,puntos_venta:arr});}} style={{...iS,width:90}}/>
+                    <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer",whiteSpace:"nowrap"}}>
+                      <input type="checkbox" checked={!!p.exento} onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],exento:e.target.checked};setEditCuit({...editCuit,puntos_venta:arr});}}/>
+                      IVA exento
+                    </label>
+                    <button onClick={()=>{const arr=(editCuit.puntos_venta||[]).filter((_,j)=>j!==i);setEditCuit({...editCuit,puntos_venta:arr});}} style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red}}>✕</button>
+                  </div>
+                ))}
+                <button onClick={()=>setEditCuit({...editCuit,puntos_venta:[...(editCuit.puntos_venta||[]),{numero:"",exento:true,nombre:""}]})} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>+ Agregar punto de venta</button>
               </div>
               <div>
                 <label style={labelS}>Domicilio</label>
@@ -20929,6 +20975,7 @@ function CostosPanel({ T, uid }) {
   const [mlItems, setMlItems] = React.useState([]);
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
   const [fijos, setFijos] = React.useState([]);
+  const [varios, setVarios] = React.useState([]); // costos variables: % de la facturación
   const [loaded, setLoaded] = React.useState(false);
   const [loadingProds, setLoadingProds] = React.useState(true);
   const [busqProd, setBusqProd] = React.useState("");
@@ -20944,6 +20991,7 @@ function CostosPanel({ T, uid }) {
         setMlAdsList(Array.isArray(d.margenesMlAds) ? d.margenesMlAds : []);
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
+        setVarios(Array.isArray(d.margenesCostosVar) ? d.margenesCostosVar : []);
       } catch (_) {}
       setLoaded(true);
       try {
@@ -20960,7 +21008,8 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos }, { merge: true });
+      const variosClean = varios.filter(v=>(parseFloat(v.pct)||0)>0).map(v=>({id:v.id||margId(),nombre:v.nombre||"",pct:parseFloat(v.pct)||0}));
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos, margenesCostosVar: variosClean }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -21030,9 +21079,10 @@ function CostosPanel({ T, uid }) {
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{marginBottom:10}}>
           <div style={{fontSize:13,fontWeight:700,color:T.text}}>🛒 Gasto de Mercado Ads (por período)</div>
-          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá cuánto gastaste en publicidad de ML en cada rango de fechas. Se promedia por día y el dashboard toma el promedio diario según los días que se solapen. Ej: 10/06–19/06 $1.000.000 = $100.000/día.</div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá lo que gastaste (o vas a gastar) en publicidad de ML en cada rango — podés poner fechas a futuro. Se promedia por día y el dashboard descuenta el promedio diario según los días que se solapen, así el gasto fijo se va imputando solo día a día. Ej: del 01/06 al 30/06 $3.000.000 = $100.000/día.</div>
         </div>
         {(()=>{ const today=new Date().toISOString().slice(0,10);
+        const maxFut=new Date(Date.now()+730*86400000).toISOString().slice(0,10); // permite cargar a futuro (hasta ~2 años)
         const fmtF=f=>{ try { return new Date(f+"T00:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}); } catch(_) { return f; } };
         const dias=(a,b)=>{ if(!a||!b||b<a) return 0; return Math.round((new Date(b)-new Date(a))/86400000)+1; };
         const dr=mlAdsDraft, dD=dias(dr.desde,dr.hasta), dProm=dD>0?(parseFloat(dr.monto)||0)/dD:0;
@@ -21051,9 +21101,9 @@ function CostosPanel({ T, uid }) {
           </div>}
           {/* Form para agregar un período nuevo */}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:mlAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:mlAdsList.length>0?12:0}}>
-            <input type="date" min="2023-01-01" max={dr.hasta||today} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <input type="date" min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:12,color:T.textSm}}>→</span>
-            <input type="date" min={dr.desde||"2023-01-01"} max={today} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <input type="date" min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
             <span style={{fontSize:13,color:T.textSm}}>$</span>
             <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
             {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
@@ -21115,6 +21165,24 @@ function CostosPanel({ T, uid }) {
           </div>
         ))}
         <button onClick={()=>setFijos(fs=>[...fs,{id:margId(),nombre:"",monto:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar costo fijo</button>
+      </div>
+
+      {/* Costos variables — % de la facturación (ej: 2% a un growth partner) */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>📊 Costos variables (% de facturación)</div>
+          <span style={{fontSize:12,fontWeight:700,color:T.accent}}>{(varios.reduce((s,v)=>s+(parseFloat(v.pct)||0),0)).toLocaleString("es-AR")}%</span>
+        </div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Un % que escala con tus ventas (ej: 2% de la facturación a un growth partner). Se calcula sobre el revenue del período y se suma a los costos del día.</div>
+        {varios.map(r=>(
+          <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <input value={r.nombre} onChange={e=>setVarios(vs=>vs.map(x=>x.id===r.id?{...x,nombre:e.target.value}:x))} placeholder="Ej: Growth partner, Comisión equipo" style={{...InputStyle(T),flex:1,fontSize:13}}/>
+            <input type="number" min="0" step="0.1" value={r.pct} onChange={e=>setVarios(vs=>vs.map(x=>x.id===r.id?{...x,pct:e.target.value}:x))} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
+            <span style={{fontSize:12,color:T.textSm}}>%</span>
+            <button onClick={()=>setVarios(vs=>vs.filter(x=>x.id!==r.id))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
+          </div>
+        ))}
+        <button onClick={()=>setVarios(vs=>[...vs,{id:margId(),nombre:"",pct:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar costo variable</button>
       </div>
       <div style={{fontSize:11,color:T.textSm}}>⚙ Quedan guardados. La resta automática en el margen del Dashboard se conecta en la próxima iteración del cálculo.</div>
     </div>
@@ -21842,11 +21910,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const mlRevenue = ml?.total_revenue || 0;
   const totalUnits  = allProducts.reduce((a,p)=>a+p.units_sold,0) + mlUnits;
   const totalOrders = (data?.total_orders||0) + mlOrders;
-  const totalStock  = allProducts.reduce((a,p)=>a+p.stock_total,0);
+  // Clampeamos el stock a ≥0: un stock negativo (sobrevendido o sin cargar en
+  // depósitos) se trata como SIN stock disponible, no como número negativo. Así
+  // no aparecen "-8.963 stock" ni "-500 días" cuando todavía no cargaste depósitos.
+  const stockOf     = p => Math.max(0, p.stock_total||0);
+  const totalStock  = allProducts.reduce((a,p)=>a+stockOf(p),0);
   const totalRev    = (data?.total_revenue || 0) + mlRevenue;
   const avgRate     = days>0?(totalUnits/days):0;
-  const avgDays     = (()=>{const v=allProducts.filter(p=>rate(p)>0).map(p=>dLeft(p.stock_total,rate(p))).filter(d=>d!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;})();
-  const kpiEmpty    = allProducts.filter(p=>p.stock_total===0).length;
+  const avgDays     = (()=>{const v=allProducts.filter(p=>rate(p)>0).map(p=>dLeft(stockOf(p),rate(p))).filter(d=>d!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;})();
+  const kpiEmpty    = allProducts.filter(p=>stockOf(p)===0).length;
   const kpiCritical = allProducts.filter(p=>{const d=dLeft(p.stock_total,rate(p));return p.stock_total>0&&d!==null&&d<=7;}).length;
   const kpiLow      = allProducts.filter(p=>{const d=dLeft(p.stock_total,rate(p));return p.stock_total>0&&d!==null&&d>7&&d<=globalThreshold;}).length;
   const kpiDead     = allProducts.filter(p=>p.units_sold===0).length;
@@ -23476,7 +23548,7 @@ function AppRendimiento({T, user, onHome}) {
 
           {/* Hero KPIs */}
           <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📊</span>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span></div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
             {[
               {label:"Revenue",     val:tot.revenue,    prev:prevTot.revenue,    color:"#3b82f6", icon:"💰", desc:"Ingreso bruto",     spk:dailyRows.map(r=>r.Revenue)},
               {label:"Net Revenue", val:tot.netRevenue, prev:prevTot.netRevenue, color:"#6366f1", icon:"💵", desc:"Tras comisiones",    spk:dailyRows.map(r=>r["Net Revenue"])},
@@ -23544,7 +23616,7 @@ function AppRendimiento({T, user, onHome}) {
                   <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</span>
                 </div>
                 {/* Hero del canal */}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:12}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
                   {[
                     {label:"Revenue",     val:c.revenue,    prev:cp?.revenue,    color:"#3b82f6", icon:"💰", desc:"Ingreso bruto"},
                     {label:"Net Revenue", val:c.netRevenue, prev:cp?.netRevenue, color:"#6366f1", icon:"💵", desc:"Tras comisiones"},
@@ -23997,6 +24069,8 @@ export default function App() {
       }
       input,button,select,textarea{font-family:inherit;}
       .mobile-only{display:none!important;}
+      .no-scrollbar::-webkit-scrollbar{display:none;}
+      .no-scrollbar{scrollbar-width:none;-ms-overflow-style:none;}
       @media(max-width:768px){
         .hide-mobile{display:none!important;}
         .mobile-only{display:flex!important;}
@@ -24364,23 +24438,27 @@ export default function App() {
 
   // Mobile bottom nav
   const MobileBottomNav = () => (
-    <div className="mobile-only" style={{
+    <div className="mobile-only no-scrollbar" style={{
       display:"none",
       position:"fixed", bottom:0, left:0, right:0, zIndex:90,
       background:T.surface+"f5", backdropFilter:"blur(16px)",
       borderTop:`1px solid ${T.border}`,
-      padding:"6px 4px 8px",
+      padding:"6px 4px 8px", overflowX:"auto", whiteSpace:"nowrap",
     }}>
       {[
         {id:"home",label:"Inicio",icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
-        {id:"envios",label:"Envíos",icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
+        {id:"margenes",label:"Márgenes",icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
+        {id:"arca",label:"Facturador",icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6M9 9h1"},
+        {id:"meta",label:"Meta Ads",icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
         {id:"stock",label:"Stock",icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"},
+        {id:"envios",label:"Envíos",icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
         {id:"reclamos",label:"Reclamos",icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
         {id:"canjes",label:"Canjes",icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
+        {id:"tareas",label:"Tareas",icon:"M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"},
       ].map(it=>(
         <button key={it.id} onClick={()=>setPage(it.id)} style={{
-          flex:1, background:"transparent", border:"none", cursor:"pointer",
-          display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"6px 4px",
+          display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer",
+          flexDirection:"column", alignItems:"center", gap:2, padding:"6px 6px",
           color: page===it.id?T.accent:T.textMd, fontFamily:"'Inter',system-ui,sans-serif",
         }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={page===it.id?"2.2":"1.7"} strokeLinecap="round" strokeLinejoin="round"><path d={it.icon}/></svg>

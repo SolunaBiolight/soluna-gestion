@@ -491,7 +491,7 @@ function condicionIvaReceptor(tipoCbte, docTipoClas) {
   return 5;
 }
 
-async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCbte, wsfeUrl, monotributo = false, fechaImputacion = null) {
+async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCbte, wsfeUrl, monotributo = false, fechaImputacion = null, exento = false) {
   const total = orden.total;
   const fecha = fechaImputacion || new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
@@ -504,16 +504,19 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
     nroDoc = orden.doc_nro || orden.dni || 0;
     neto = total; iva = 0;
   } else {
-    neto = Math.round((total / 1.21) * 100) / 100;
-    iva = Math.round((total - neto) * 100) / 100;
+    // Exento (ebooks/digitales, punto de venta exento): TODO el monto va como
+    // operación exenta (ImpOpEx), sin neto gravado ni IVA. El resto (físicos) → 21%.
+    if (exento) { neto = 0; iva = 0; }
+    else { neto = Math.round((total / 1.21) * 100) / 100; iva = Math.round((total - neto) * 100) / 100; }
     if (docTipoClas === "CUIT") { tipoDoc = 80; nroDoc = orden.doc_nro || orden.dni; }
     else if (docTipoClas === "DNI") { tipoDoc = 96; nroDoc = orden.doc_nro || orden.dni; }
     else { tipoDoc = 99; nroDoc = 0; }
   }
 
   const condIva = condicionIvaReceptor(tipoCbte, docTipoClas);
+  const impOpEx = (!monotributo && exento) ? total : 0; // monto exento (sin IVA)
 
-  const ivaXml = (!monotributo && iva > 0) ? `
+  const ivaXml = (!monotributo && !exento && iva > 0) ? `
     <ar:Iva>
       <ar:AlicIva>
         <ar:Id>5</ar:Id>
@@ -540,7 +543,7 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
           <ar:ImpTotal>${total}</ar:ImpTotal>
           <ar:ImpTotConc>0</ar:ImpTotConc>
           <ar:ImpNeto>${neto}</ar:ImpNeto>
-          <ar:ImpOpEx>0</ar:ImpOpEx>
+          <ar:ImpOpEx>${impOpEx}</ar:ImpOpEx>
           <ar:ImpTrib>0</ar:ImpTrib>
           <ar:ImpIVA>${iva}</ar:ImpIVA>
           <ar:MonId>PES</ar:MonId>
@@ -983,7 +986,7 @@ async function generarQrArca(factData, config) {
     ver: 1,
     fecha,
     cuit: cuitNum,
-    ptoVta: parseInt(config.punto_venta) || 1,
+    ptoVta: parseInt(factData.punto_venta || config.punto_venta) || 1, // PV REAL de la factura (no el default del CUIT)
     tipoCmp: factData.tipo_cbte,
     nroCmp: factData.comprobante,
     importe: parseFloat(factData.total),
@@ -1014,12 +1017,14 @@ async function generarPDF(factData, config) {
   const fontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-  const { cuit, razon_social, nombre_fantasia, domicilio, punto_venta, condicion_fiscal, ingresos_brutos } = config;
+  const { cuit, razon_social, nombre_fantasia, domicilio, condicion_fiscal, ingresos_brutos } = config;
+  const punto_venta = factData.punto_venta || config.punto_venta; // PV REAL de la factura
   const isMonotributo = condicion_fiscal === "MONOTRIBUTO";
   const letra = factData.letra;
   const total = factData.total;
-  const neto = isMonotributo ? total : Math.round((total / 1.21) * 100) / 100;
-  const iva21 = isMonotributo ? 0 : Math.round((total - neto) * 100) / 100;
+  const exento = !!factData.exento; // factura sin IVA (digitales/ebooks)
+  const neto = (isMonotributo || exento) ? (exento ? 0 : total) : Math.round((total / 1.21) * 100) / 100;
+  const iva21 = (isMonotributo || exento) ? 0 : Math.round((total - neto) * 100) / 100;
 
   // Generar QR una vez (mismo para las 3 copias)
   let qrImage = null;
@@ -1214,12 +1219,21 @@ async function generarPDF(factData, config) {
     // Filas de items — zebra striping
     let iy = TY + headRowH;
     const items = factData.items || [];
+    // Cada ítem refleja SU PROPIO descuento (precio × cant − su descuento), así un
+    // producto con promo no le "contagia" el descuento a otro sin promo. El residual
+    // (descuento a nivel orden / redondeo) se prorratea para que el detalle sume
+    // EXACTO el total. Es solo display: el total a ARCA siempre es orden.total.
+    const netoItem = it => Math.max(0, (parseFloat(it.precio)||0)*(parseInt(it.cantidad)||1) - (parseFloat(it.descuento_item)||0));
+    const sumNet = items.reduce((s, it) => s + netoItem(it), 0);
+    const escala = sumNet > 0 ? total / sumNet : 1;
     for (let idx = 0; idx < items.length; idx++) {
       const item = items[idx];
-      const precioBruto = item.precio || 0;
-      const precioUnit = isMonotributo ? precioBruto : Math.round((precioBruto / 1.21) * 100) / 100;
-      const subtotal = Math.round(item.cantidad * precioUnit * 100) / 100;
-      const bonif = item.descuento_item > 0 ? Math.round((item.descuento_item / (item.cantidad * item.precio)) * 10000) / 100 : 0;
+      const cant = parseInt(item.cantidad) || 1;
+      const lineReal = netoItem(item) * escala; // monto real de esta línea (su descuento + prorrateo)
+      // Exento/Monotributo: no se divide por 1.21. RI gravado muestra el neto.
+      const subtotal = (isMonotributo || exento) ? Math.round(lineReal*100)/100 : Math.round((lineReal/1.21)*100)/100;
+      const precioUnit = Math.round((subtotal / cant) * 100) / 100;
+      const bonif = 0; // el descuento ya está aplicado en el precio mostrado
       const nombreItem = (item.nombre || "Producto").length > 60 ? (item.nombre || "Producto").slice(0, 60) + "..." : (item.nombre || "Producto");
       const cellData = [
         nombreItem,
@@ -1228,7 +1242,7 @@ async function generarPDF(factData, config) {
         fmtAR(precioUnit),
         bonif > 0 ? fmtAR(bonif) : "0,00",
         fmtAR(subtotal),
-        ...(showIVA ? ["21,00%"] : []),
+        ...(showIVA ? [exento ? "Exento" : "21,00%"] : []),
       ];
 
       const rowH = 13;
@@ -1262,8 +1276,13 @@ async function generarPDF(factData, config) {
     const valX = MX + UW - 12;
     let ty2 = totY + 14;
     if (showIVA) {
-      // Discriminación IVA por alícuota (todos en 0 menos 21% que tiene el monto).
-      const rows = [
+      // Discriminación IVA por alícuota. Si es exento, el monto va en "Op. Exentas".
+      const rows = exento ? [
+        ["Importe Neto Gravado:", "$ 0,00"],
+        ["Importe Op. Exentas:", "$ " + fmtAR(total)],
+        ["IVA 21%:", "$ 0,00"],
+        ["Importe Otros Tributos:", "$ 0,00"],
+      ] : [
         ["Importe Neto Gravado:", "$ " + fmtAR(neto)],
         ["IVA 0%:", "$ 0,00"],
         ["IVA 10,5%:", "$ 0,00"],
@@ -1450,6 +1469,17 @@ export default async function handler(req, res) {
         punto_venta: parseInt(data.punto_venta) || existing.punto_venta || 1,
         arca_prod: data.arca_prod === "true" || data.arca_prod === true || existing.arca_prod || false,
       };
+      // Puntos de venta múltiples con su régimen de IVA: [{numero, exento, nombre}].
+      // Ej: PV físicos (21%) + PV digitales/ebooks (exento). Si no se manda, se
+      // mantiene lo existente.
+      if (data.puntos_venta !== undefined) {
+        try {
+          const arr = typeof data.puntos_venta === "string" ? JSON.parse(data.puntos_venta) : data.puntos_venta;
+          updated.puntos_venta = (Array.isArray(arr) ? arr : [])
+            .map(p => ({ numero: parseInt(p.numero) || 0, exento: !!p.exento, nombre: String(p.nombre || "").slice(0, 40) }))
+            .filter(p => p.numero > 0);
+        } catch(_) {}
+      }
       if (data.cert_pem) updated.cert_pem = data.cert_pem;
       if (data.key_pem) updated.key_pem = data.key_pem;
       // Banner opcional para PDF (data URL "data:image/png;base64,...")
@@ -1883,8 +1913,9 @@ export default async function handler(req, res) {
 
     if (action === "emit" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const { cuit: cuitEmit, ordenes, product_map, fecha_factura } = body;
+      const { cuit: cuitEmit, ordenes, product_map, fecha_factura, punto_venta: pvSel, exento: exentoReq } = body;
       if (!cuitEmit || !ordenes) return res.status(400).json({ error: "Faltan cuit u ordenes" });
+      const exento = exentoReq === true || exentoReq === "true"; // factura exenta (digitales/ebooks)
 
       console.log(`[arca/emit] uid=${uid} cuit=${cuitEmit} n=${Object.keys(ordenes||{}).length} fecha_factura=${JSON.stringify(fecha_factura)}`);
 
@@ -1915,9 +1946,10 @@ export default async function handler(req, res) {
       const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, cfg.arca_prod);
       const { token, sign } = await loginWSAA(cms, wsaa);
 
-      // Numeradores
+      // Numeradores — usa el punto de venta elegido (ej: PV físicos vs PV digitales
+      // exento). Si el front no manda uno, cae al punto_venta por defecto del CUIT.
       const cuitNum = parseInt(cfg.cuit);
-      const pv = cfg.punto_venta;
+      const pv = parseInt(pvSel) || cfg.punto_venta;
       let cbteA = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 1, wsfe)) + 1;
       let cbteB = isMonotributo ? 0 : (await getUltimoCbte(token, sign, cuitNum, pv, 6, wsfe)) + 1;
       let cbteC = isMonotributo ? (await getUltimoCbte(token, sign, cuitNum, pv, 11, wsfe)) + 1 : 0;
@@ -1936,20 +1968,20 @@ export default async function handler(req, res) {
         let result, letra, tipoCbte, cbteNro;
 
         if (isMonotributo) {
-          result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion);
+          result = await facturar(token, sign, cuitNum, pv, cbteC, orden, 11, wsfe, true, fechaImputacion, exento);
           letra = "C"; tipoCbte = 11; cbteNro = cbteC;
         } else {
           const tieneCuit = orden.doc_tipo === "CUIT";
           if (tieneCuit) {
-            result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion);
+            result = await facturar(token, sign, cuitNum, pv, cbteA, orden, 1, wsfe, false, fechaImputacion, exento);
             if (result.cae) { letra = "A"; tipoCbte = 1; cbteNro = cbteA; }
             else {
               // Fallback a B
-              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion);
+              result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
               letra = "B"; tipoCbte = 6; cbteNro = cbteB;
             }
           } else {
-            result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion);
+            result = await facturar(token, sign, cuitNum, pv, cbteB, orden, 6, wsfe, false, fechaImputacion, exento);
             letra = "B"; tipoCbte = 6; cbteNro = cbteB;
           }
         }
@@ -1970,7 +2002,7 @@ export default async function handler(req, res) {
             doc_tipo: orden.doc_tipo, doc_nro: orden.doc_nro || orden.dni || "",
             letra, tipo_cbte: tipoCbte,
             domicilio: cleanAddr([orden.direccion, orden.ciudad, orden.provincia]),
-            total: orden.total, items: orden.items,
+            total: orden.total, items: orden.items, exento, punto_venta: pv,
           };
           const pdfBytes = await generarPDF(factData, cfg);
           const nombreCliente = (orden.nombre || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
@@ -2061,8 +2093,8 @@ export default async function handler(req, res) {
 
           // Persistir comprobante en Firestore para el dashboard
           try {
-            const neto = isMonotributo ? orden.total : Math.round((orden.total / 1.21) * 100) / 100;
-            const iva = isMonotributo ? 0 : Math.round((orden.total - neto) * 100) / 100;
+            const neto = (isMonotributo || exento) ? (exento ? 0 : orden.total) : Math.round((orden.total / 1.21) * 100) / 100;
+            const iva = (isMonotributo || exento) ? 0 : Math.round((orden.total - neto) * 100) / 100;
             await db.collection("users").doc(uid).collection("arca_comprobantes")
               .doc(`${cuitEmit}_${tipoCbte}_${String(cbteNro).padStart(8, "0")}`).set({
                 cuit_emisor: cuitEmit,
@@ -2070,6 +2102,7 @@ export default async function handler(req, res) {
                 letra,
                 nro: cbteNro,
                 punto_venta: pv,
+                exento,
                 fecha_str: factData.fecha,
                 emitido_at: new Date().toISOString(),
                 cae: result.cae,
@@ -2175,7 +2208,7 @@ export default async function handler(req, res) {
             doc_tipo: c.doc_tipo, doc_nro: c.doc_nro || "",
             letra: c.letra, tipo_cbte: c.tipo_cbte,
             domicilio: c.domicilio || "",
-            total: c.total,
+            total: c.total, punto_venta: c.punto_venta, exento: !!c.exento,
             items: (Array.isArray(c.items) && c.items.length > 0)
               ? c.items
               : [{ nombre: "(Detalle no disponible)", cantidad: 1, precio: c.total, descuento_item: 0 }],
@@ -2345,7 +2378,7 @@ export default async function handler(req, res) {
           letra: c.letra,
           tipo_cbte: c.tipo_cbte,
           domicilio: c.domicilio || "",
-          total: c.total,
+          total: c.total, punto_venta: c.punto_venta, exento: !!c.exento,
           // Items reales si fueron persistidos al emitir, sino fallback (facturas viejas)
           items: (Array.isArray(c.items) && c.items.length > 0)
             ? c.items
@@ -2504,9 +2537,14 @@ export default async function handler(req, res) {
       if (shStore?.accessToken && shStore?.shop) {
         connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
         const allSH = [];
-        // Shopify usa cursor pagination con Link header — para simplificar usamos page_info implícito vía date filters
-        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
-        for (let i = 0; i < 4; i++) {
+        // Shopify usa cursor pagination con Link header. IMPORTANTE: ordenamos
+        // por created_at DESC (más nuevas primero). Sin esto, Shopify devuelve las
+        // más VIEJAS primero y, con el tope de páginas, nunca llegaban las ventas
+        // recientes → "no tomaba las ventas nuevas". El orden se preserva en el cursor.
+        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
+        // Paginación COMPLETA (como Márgenes): seguimos el cursor hasta que no haya
+        // más páginas. El tope de 60 es solo un seguro anti-loop (60×250 = 15k).
+        for (let i = 0; i < 60; i++) {
           if (!pageInfoUrl) break;
           const shRes = await fetch(pageInfoUrl, {
             headers: { "X-Shopify-Access-Token": shStore.accessToken },
@@ -2591,7 +2629,9 @@ export default async function handler(req, res) {
               nombre_original: li.title || "Producto",
               cantidad: parseInt(li.quantity) || 1,
               precio: parseFloat(li.price) || 0,
-              descuento_item: 0,
+              // Descuento REAL asignado a esta línea (Shopify ya reparte los
+              // descuentos de orden/bundle por producto en discount_allocations).
+              descuento_item: (li.discount_allocations||[]).reduce((s,da)=>s+(parseFloat(da.amount)||0),0) || parseFloat(li.total_discount) || 0,
             })),
           };
         }
@@ -2702,9 +2742,11 @@ export default async function handler(req, res) {
                 nombre: customerName,
                 email: buyer.email || "",
                 dni: docRaw, ...clas,
-                total: parseFloat(o.total_amount) || 0,
-                subtotal: parseFloat(o.total_amount) || 0,
-                descuento: 0,
+                // Facturar lo que REALMENTE paga el cliente: total_amount NO resta
+                // el cupón/descuento (el comprador paga total_amount − coupon.amount).
+                total: Math.max(0, (parseFloat(o.total_amount) || 0) - (parseFloat(o.coupon?.amount) || 0)),
+                subtotal: Math.max(0, (parseFloat(o.total_amount) || 0) - (parseFloat(o.coupon?.amount) || 0)),
+                descuento: parseFloat(o.coupon?.amount) || 0,
                 envio: parseFloat(o.shipping?.cost) || 0,
                 estado_pago: "paid",
                 fecha: o.date_closed || o.date_created || "",

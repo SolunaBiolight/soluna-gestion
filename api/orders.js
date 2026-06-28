@@ -194,7 +194,7 @@ export default async function handler(req, res) {
           const tok = await getValidMLToken(db, uid);
           if (!tok?.accessToken) return { fee:0, rev:0 };
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
-          let fee = 0, rev = 0, offset = 0;
+          let fee = 0, rev = 0, offset = 0; const feeByRef = {};
           for (let i=0; i<25; i++) {
             const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(end)}&limit=100&offset=${offset}`;
             const r = await fetch(url, { headers: { Authorization: `Bearer ${tok.accessToken}` } });
@@ -204,15 +204,17 @@ export default async function handler(req, res) {
             for (const p of results) {
               const ref = String(p.external_reference || "");
               if (p.status==="approved" && p.operation_type==="regular_payment" && /[a-zA-Z]/.test(ref) && !/^cashback|^INSTORE/i.test(ref)) {
-                fee += (p.fee_details||[]).reduce((s,f)=>s+(parseFloat(f.amount)||0),0);
+                const f = (p.fee_details||[]).reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
+                fee += f;
                 rev += parseFloat(p.transaction_amount)||0; // revenue cobrado por MP (para no doble-contar el % en estas ventas)
+                feeByRef[ref] = (feeByRef[ref]||0) + f; // comisión real de MP por receipt_id (= external_reference)
               }
             }
             offset += results.length;
             if (results.length < 100 || offset >= (j.paging?.total||0)) break;
           }
-          return { fee, rev };
-        } catch(_) { return { fee:0, rev:0 }; }
+          return { fee, rev, feeByRef };
+        } catch(_) { return { fee:0, rev:0, feeByRef:{} }; }
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
@@ -277,6 +279,9 @@ export default async function handler(req, res) {
       const dolarCfg  = userData.margenesDolar || {};
       const factExt   = Array.isArray(userData.margenesFactExterna) ? userData.margenesFactExterna : [];
       const fijosMensual = fijos.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
+      // Costos variables = % de la facturación (ej: 2% a un growth partner).
+      const costosVar = Array.isArray(userData.margenesCostosVar) ? userData.margenesCostosVar : [];
+      const pctVar = costosVar.reduce((s,v)=>s+(parseFloat(v.pct)||0),0)/100;
       const pctImp    = (parseFloat(comCfg.impuestos)||0)/100;
       const pctPlat   = (parseFloat(comCfg.shopify)||0)/100;
       const metPcts   = Object.values(metodos).map(m=>parseFloat(m.pct)||0).filter(x=>x>0);
@@ -309,7 +314,7 @@ export default async function handler(req, res) {
         // ML que son Flex (el resto de ML es Mercado Envíos: lo cubre ML, no se cuenta).
         const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
         const envio     = storeOrders * envioProm + (parseFloat(mlEnvio)||0);
-        const costosAdic= dias>0 ? (fijosMensual/30)*dias : 0;
+        const costosAdic= (dias>0 ? (fijosMensual/30)*dias : 0) + revenue*pctVar; // fijos prorrateados + variables (% facturación)
         // Ad Spend general = Meta (con fee del dólar) + Mercado Ads manual prorrateado.
         const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
         const adSpendMl   = mlAdsPeriodo(sinceR, untilR);
@@ -327,41 +332,45 @@ export default async function handler(req, res) {
           trueRoas: adSpendEf>0 ? netRevenue/adSpendEf : 0,
           cpa: (tot.orders||0)>0 ? adSpendEf/tot.orders : 0,
           mer: revenue>0 ? adSpendEf/revenue : 0,
-          // Break even REAL: a qué ROAS el profit llega a 0 contando TODOS los
-          // costos (COGS, envío, comisiones, impuestos, fijos). Contribución antes
-          // de pauta = profit + adSpend. CPA break even = esa contribución / orden.
+          // Break even REAL contando TODOS los costos (incluidos los fijos): es la
+          // contribución antes de pauta = profit + adSpend. Si da negativo, el CPA
+          // break even queda negativo a propósito: significa que perdés incluso con
+          // CPA $0 (los costos ya superan al revenue) — es una señal válida.
           breakEvenRoas: (profit + adSpendEf)>0 ? revenue/(profit + adSpendEf) : 0,
           cpaBreakEven: (tot.orders||0)>0 ? (profit + adSpendEf)/tot.orders : 0,
         };
       }
-      // ── Envío de ML: Flex (el vendedor paga) vs Mercado Envíos (lo cubre ML) ──
-      // Solo consultamos el tipo de envío de cada orden si hay envío promedio
-      // cargado (gated, para no recargar de gusto). logistic_type "self_service" = Flex.
+      // ── Envío de ML: el COSTO REAL que ML le cobra al vendedor ──
+      // ML cobra el envío también en Mercado Envíos (el "Cargo por envío" del
+      // detalle de MP = shipping_option.list_cost del shipment). Antes lo poníamos
+      // en $0 y inflaba el margen. Ahora: Mercado Envíos → list_cost real; Flex
+      // (self_service, el vendedor lo paga al correo) → promedio configurado.
       const mlLogi = {};
-      if (envioProm > 0) {
-        try {
-          const tokML = await getValidMLToken(db, uid);
-          if (tokML?.accessToken) {
-            const ids = [...new Set([
-              ...(curr.raw?.ml_data?.ml_orders_detail||[]),
-              ...(prev.raw?.ml_data?.ml_orders_detail||[]),
-            ].map(o=>o.shippingId).filter(Boolean))].slice(0, 400);
-            for (let i=0; i<ids.length; i+=20) {
-              const rs = await Promise.all(ids.slice(i,i+20).map(async id => {
-                try {
-                  // SIN x-format-new: el formato clásico es el que trae logistic_type.
-                  const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
-                  if (!r.ok) return [id, null];
-                  const j = await r.json();
-                  return [id, j.logistic_type || null];
-                } catch(_) { return [id, null]; }
-              }));
-              for (const [id,lt] of rs) mlLogi[id] = lt;
-            }
+      try {
+        const tokML = await getValidMLToken(db, uid);
+        if (tokML?.accessToken) {
+          const ids = [...new Set([
+            ...(curr.raw?.ml_data?.ml_orders_detail||[]),
+            ...(prev.raw?.ml_data?.ml_orders_detail||[]),
+          ].map(o=>o.shippingId).filter(Boolean))].slice(0, 400);
+          for (let i=0; i<ids.length; i+=20) {
+            const rs = await Promise.all(ids.slice(i,i+20).map(async id => {
+              try {
+                const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
+                if (!r.ok) return [id, null];
+                const j = await r.json();
+                return [id, { lt: j.logistic_type || null, cost: parseFloat(j.shipping_option?.list_cost) || 0 }];
+              } catch(_) { return [id, null]; }
+            }));
+            for (const [id,v] of rs) if (v) mlLogi[id] = v;
           }
-        } catch(_) {}
-      }
-      const mlEnvioDe  = o => (mlLogi[o?.shippingId] === "self_service") ? envioProm : 0;
+        }
+      } catch(_) {}
+      const mlEnvioDe  = o => {
+        const s = mlLogi[o?.shippingId];
+        if (!s) return 0;
+        return s.lt === "self_service" ? envioProm : (s.cost || 0); // Flex: promedio · Mercado Envíos: costo real
+      };
       const mlEnvioTot = raw => (raw?.ml_data?.ml_orders_detail||[]).reduce((s,o)=>s+mlEnvioDe(o),0);
 
       totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr.fee, mlEnvioTot(curr.raw), mpCommCurr.rev);
@@ -406,19 +415,55 @@ export default async function handler(req, res) {
         hasMl: !!(curr.raw?.ml_data),
       };
 
+      // ── Comisión REAL de MP por venta (Shopify) ──
+      // Resuelve el receipt_id de cada orden (vía sus transacciones) y lo matchea
+      // con la comisión real de MP (feeByRef). Se cachea en Firestore: cada orden
+      // se consulta UNA sola vez; se completa de a tandas (las más recientes
+      // primero) para respetar el rate limit de Shopify.
+      const feeByRef = mpCommCurr.feeByRef || {};
+      const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
+      const shStore = (userData.stores||[]).find(s => s.type==="shopify");
+      if (shStore?.shop && shStore?.accessToken) {
+        const pend = (curr.raw?.orders_detail||[])
+          .filter(o => /mercado\s*pago/i.test(o.pay||"") && !mpRefCache[o.id])
+          .sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")))
+          .slice(0, 40);
+        let changed = false;
+        for (let i=0; i<pend.length; i+=8) {
+          const rs = await Promise.all(pend.slice(i,i+8).map(async o => {
+            try {
+              const r = await fetch(`https://${shStore.shop}/admin/api/2024-10/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": shStore.accessToken } });
+              if (!r.ok) return [o.id, null];
+              const j = await r.json();
+              const ok = (j.transactions||[]).filter(t => t.kind==="sale" && t.status==="success");
+              const t = ok[ok.length-1];
+              const ref = t?.receipt?.id || t?.receipt?.payment_id || null;
+              return [o.id, ref ? String(ref) : null];
+            } catch(_) { return [o.id, null]; }
+          }));
+          for (const [id,ref] of rs) { if (ref) { mpRefCache[id] = ref; changed = true; } }
+        }
+        if (changed) { try { await db.collection("users").doc(uid).set({ margenesMpRefs: mpRefCache }, { merge:true }); } catch(_) {} }
+      }
+
       // ── Venta por venta: cada orden con sus costos reales ──
       function buildSales(raw) {
         const list = [];
         const cogsDe = items => (items||[]).reduce((s,it)=>s+(parseFloat(cogsMap[it.key])||0)*(it.qty||0),0);
         for (const o of (raw?.orders_detail||[])) {
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=rev*(pctPlat+pctPago), env=envioProm;
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, env=envioProm;
+          // Comisión = % plataforma + comisión de pago: si tenemos la real de MP
+          // de esta venta (vía receipt_id) la usamos; si no, caemos al % configurado.
+          const ref = mpRefCache[o.id];
+          const realMp = (ref && feeByRef[ref]!=null) ? feeByRef[ref] : null;
+          const comis = (realMp!=null) ? (rev*pctPlat + realMp) : (rev*(pctPlat+pctPago));
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o);
           const profit=rev-cogs-imp-comis-env;
-          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
+          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
         list.sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")));
         return list.slice(0, 600);

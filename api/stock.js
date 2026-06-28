@@ -240,7 +240,38 @@ function processSH(orders) {
 }
 
 // ── Procesar órdenes ML ───────────────────────────────────────────────
-function processML(orders) {
+// Descuentos de ML por orden = coupon_fee del pago de MP. Capta cupón Y
+// precio×cantidad (este último ML no lo expone en la orden). El token de ML
+// sirve contra la API de MP. Devuelve { order_id → coupon_fee }.
+async function mlCouponFees(token, beginISO, endISO) {
+  const map = {};
+  try {
+    // Mismo formato EXACTO que la consulta de comisiones que funciona (con .000).
+    const begin = String(beginISO).slice(0, 10) + "T00:00:00.000-03:00";
+    const end   = String(endISO).slice(0, 10) + "T23:59:59.999-03:00";
+    let offset = 0;
+    for (let i = 0; i < 20; i++) {
+      const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(end)}&limit=100&offset=${offset}`;
+      const r = await fetchT(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) break;
+      const j = await r.json();
+      const results = j.results || [];
+      for (const p of results) {
+        const ref = String(p.external_reference || "");
+        // Pagos de ML: external_reference = id numérico de la orden ("2000...").
+        if (p.status === "approved" && p.operation_type === "regular_payment" && /^\d+$/.test(ref)) {
+          const cf = (p.fee_details || []).filter(f => f.type === "coupon_fee").reduce((s, f) => s + (parseFloat(f.amount) || 0), 0);
+          if (cf > 0) map[ref] = (map[ref] || 0) + cf;
+        }
+      }
+      offset += results.length;
+      if (results.length < 100 || offset >= (j.paging?.total || 0)) break;
+    }
+  } catch (_) {}
+  return map;
+}
+
+function processML(orders, couponMap = {}) {
   const map={}, daily={}, dailyRevenue={}, dailyOrders={}, byProv={}, byHour={}, byPayment={}, byVariant={}, byVariantRev={}, comisionMLDaily={};
   let comisionML=0; const ordersDetail=[];
   for(const o of orders){
@@ -252,14 +283,19 @@ function processML(orders) {
     const pay=o.payments?.map(p=>p.payment_type).join(",")||"Mercado Pago";
     let orderUnits=0;
 
-    // Revenue de la orden = total_amount (el monto que el vendedor cobra,
-    // después de descuentos pero antes de comisiones MP). Equivale al
-    // "subtotal_price - tax" de Shopify procesado en processSH. Si no viene
-    // total_amount (raro), fallback al sum de unit_price.
+    // Revenue de la orden = total_amount MENOS el descuento al comprador.
+    // OJO: total_amount/paid_amount NO restan el cupón (verificado: total_amount
+    // 68900, coupon 3445, lo que el vendedor cobra = 65455). El descuento que el
+    // vendedor absorbe está en coupon.amount (tag "order_has_discount").
     let orderRev = parseFloat(o.total_amount);
     if (!isFinite(orderRev) || orderRev <= 0) {
       orderRev = (o.order_items||[]).reduce((s, it) => s + parseFloat(it.unit_price||0) * (parseInt(it.quantity)||0), 0);
     }
+    // Descuento REAL = coupon_fee del pago de MP — capta TODOS los descuentos de ML
+    // (cupón Y precio×cantidad). La orden solo expone los cupones (coupon.amount);
+    // el de precio×cantidad solo aparece en el pago. Fallback a coupon.amount.
+    const cfMp = couponMap[String(o.id)];
+    orderRev -= (cfMp != null ? cfMp : (parseFloat(o.coupon?.amount) || 0));
 
     for(const item of o.order_items||[]){
       const vid=String(item.item?.id||"ml");
@@ -272,7 +308,7 @@ function processML(orders) {
       const vname=item.item?.variation_attributes?.[0]?.value_name||item.item?.title||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
       byVariantRev[vname]=(byVariantRev[vname]||0)+rev;
-      orderFee += parseFloat(item.sale_fee||0); // comisión real que ML cobró por esta venta
+      orderFee += (parseFloat(item.sale_fee||0)) * qty; // comisión real de ML — sale_fee es POR UNIDAD (igual que unit_price), hay que × cantidad
       detItems.push({ key: "ml:"+String(item.item?.id||"ml"), qty });
     }
     if(day){
@@ -429,8 +465,11 @@ export default async function handler(req, res) {
         try {
           // Pasar el MISMO rango exacto que usamos para Shopify/TN, así
           // las series diarias y los totales matchean perfecto entre canales.
-          const mlOrd = await mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate);
-          return processML(mlOrd);
+          const [mlOrd, coupons] = await Promise.all([
+            mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate),
+            mlCouponFees(mlToken, sinceDate, untilDate),
+          ]);
+          return processML(mlOrd, coupons);
         } catch (e) { return null; }
       };
       if(platform==="shopify"){

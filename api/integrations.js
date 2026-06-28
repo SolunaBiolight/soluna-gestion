@@ -506,7 +506,22 @@ async function mlShipProbe(req, res, db) {
         if (!fullSample) fullSample = j; // primer shipment completo para inspeccionar
       } catch (e) { ship = { error: e.message }; }
     }
-    out.push({ order_id:o.id, total:o.total_amount, shipId, tags:o.tags, ship });
+    out.push({
+      order_id: o.id, shipId, tags: o.tags, ship,
+      // Importes para entender el revenue real (con descuentos/cupones).
+      total_amount: o.total_amount, paid_amount: o.paid_amount, coupon: o.coupon,
+      items: (o.order_items||[]).map(it => ({
+        title: it.item?.title, quantity: it.quantity,
+        unit_price: it.unit_price, full_unit_price: it.full_unit_price,
+        sale_fee: it.sale_fee,
+      })),
+      // Pagos: para ver el monto REAL que pagó el cliente (post precio-por-cantidad).
+      payments: (o.payments||[]).map(p => ({
+        status: p.status, transaction_amount: p.transaction_amount,
+        total_paid_amount: p.total_paid_amount, shipping_cost: p.shipping_cost,
+        coupon_amount: p.coupon_amount, taxes_amount: p.taxes_amount,
+      })),
+    });
   }
   return res.json({ ok:true, userId: tok.userId, count: out.length, orders: out, fullSample });
 }
