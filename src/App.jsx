@@ -12001,78 +12001,134 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       {/* MODAL Editar Tarea */}
       {editTarea&&(
         <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"24px 16px"}}>
-          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:16,color:T.text}}>✏️ Editar tarea</div>
-              <button onClick={()=>setEditTarea(null)} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:16}}>✕</button>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:580,display:"flex",flexDirection:"column",maxHeight:"90vh"}}>
+            {/* Header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
+              <div style={{fontWeight:700,fontSize:15,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>Editar tarea</div>
+              <ModalCloseBtn T={T} onClick={()=>setEditTarea(null)}/>
             </div>
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {/* Body */}
+            <div style={{padding:"20px",overflowY:"auto",display:"flex",flexDirection:"column",gap:16,flex:1}}>
+              {/* Título */}
               <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Título</div>
-                <input value={etTitulo} onChange={e=>setEtTitulo(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Título</div>
+                <input value={etTitulo} onChange={e=>setEtTitulo(e.target.value)} style={{...iS,fontSize:14,fontWeight:500,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}/>
               </div>
-              <div style={{display:"flex",gap:12}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Asignado a</div>
-                  <select value={etAsignado} onChange={e=>setEtAsignado(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
+              {/* Fila: Asignado + Prioridad + Deadline */}
+              <div style={{display:"flex",gap:10}}>
+                <div style={{flex:2}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Asignado a</div>
+                  <select value={etAsignado} onChange={e=>setEtAsignado(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     {colaboradores.map(c=><option key={c._id} value={c.email}>{c.nombre}{c.rol?` (${c.rol})`:""}</option>)}
                   </select>
                 </div>
-                <div style={{minWidth:130}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Prioridad</div>
-                  <select value={etPrioridad} onChange={e=>setEtPrioridad(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}>
-                    <option value="urgente">🔴 Urgente</option>
-                    <option value="normal">🟡 Normal</option>
-                    <option value="baja">⬇️ Baja</option>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Prioridad</div>
+                  <select value={etPrioridad} onChange={e=>setEtPrioridad(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <option value="urgente">Urgente</option>
+                    <option value="normal">Normal</option>
+                    <option value="baja">Baja</option>
                   </select>
                 </div>
-              </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Descripción</div>
-                <input value={etDesc} onChange={e=>setEtDesc(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
-              </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Brief / Instrucciones</div>
-                <textarea value={etBrief} onChange={e=>setEtBrief(e.target.value)} style={{...iS,fontSize:12,width:"100%",minHeight:100,resize:"vertical",lineHeight:1.5}}/>
-              </div>
-              <div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links de referencia</div>
-                  <button onClick={()=>setEtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Fecha límite</div>
+                  <input type="date" value={etDeadline} onChange={e=>setEtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}/>
                 </div>
-                {etLinks.map((l,i)=>(
-                  <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
-                    <input value={l.name} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
-                      placeholder="Nombre" style={{...iS,fontSize:12,width:110,flexShrink:0}}/>
-                    <input value={l.url} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
-                      placeholder="https://drive.google.com/..." style={{...iS,fontSize:12,flex:1}}/>
-                    <DriveOpenBtn T={T} url={l.url}/>
-                    <button onClick={()=>setEtLinks(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
-                  </div>
-                ))}
               </div>
+              {/* Descripción */}
               <div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Checklist</div>
-                  <button onClick={()=>setEtChecklist(prev=>[...prev,{id:mkId(),text:"",done:false}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px"}}>+ Agregar</button>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Descripción breve</div>
+                <textarea value={etDesc} onChange={e=>setEtDesc(e.target.value)} rows={2}
+                  style={{...iS,fontSize:13,width:"100%",minHeight:48,resize:"vertical",lineHeight:1.5,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              </div>
+              {/* Separador */}
+              <div style={{borderTop:`1px solid ${T.border}`}}/>
+              {/* Brief */}
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief / Instrucciones</div>
+                <textarea value={etBrief} onChange={e=>setEtBrief(e.target.value)}
+                  placeholder="Descripción detallada, pasos a seguir, contexto..."
+                  style={{...iS,fontSize:13,width:"100%",minHeight:110,resize:"vertical",lineHeight:1.6,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              </div>
+              {/* Links y archivos */}
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>Links y archivos</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {etLinks.map((l,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.surface,borderRadius:DS.r.md,border:`1px solid ${T.border}`}}>
+                      <div style={{width:28,height:28,borderRadius:DS.r.sm,background:T.accent+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <input value={l.name} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,name:e.target.value}:x))}
+                          placeholder="Nombre del link o archivo"
+                          style={{...iS,fontSize:12,fontWeight:500,width:"100%",marginBottom:3,padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                        <input value={l.url} onChange={e=>setEtLinks(prev=>prev.map((x,j)=>j===i?{...x,url:e.target.value}:x))}
+                          placeholder="https://..."
+                          style={{...iS,fontSize:11,color:T.textSm,width:"100%",padding:"2px 6px",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                      </div>
+                      {l.url&&(
+                        <a href={l.url} target="_blank" rel="noreferrer" style={{color:T.accent,flexShrink:0,display:"flex",alignItems:"center"}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        </a>
+                      )}
+                      <button onClick={()=>setEtLinks(prev=>prev.filter((_,j)=>j!==i))}
+                        style={{background:"none",border:"none",cursor:"pointer",color:T.red,padding:2,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </div>
+                  ))}
+                  {/* Quick-add por paste o manual */}
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <input
+                      placeholder="Pegar URL y presionar Enter para agregar..."
+                      style={{...iS,fontSize:12,flex:1,borderStyle:"dashed",fontFamily:"'Inter',system-ui,sans-serif"}}
+                      onKeyDown={e=>{
+                        if(e.key==="Enter"&&e.target.value.trim()){
+                          const url=e.target.value.trim();
+                          let name="";
+                          try{name=new URL(url).hostname.replace("www.","");}catch(err){name="";}
+                          setEtLinks(prev=>[...prev,{name,url}]);
+                          e.target.value="";
+                        }
+                      }}
+                      onPaste={e=>{
+                        const pasted=e.clipboardData.getData("text").trim();
+                        if(pasted.startsWith("http")){
+                          e.preventDefault();
+                          let name="";
+                          try{name=new URL(pasted).hostname.replace("www.","");}catch(err){name="";}
+                          setEtLinks(prev=>[...prev,{name,url:pasted}]);
+                        }
+                      }}
+                    />
+                    <button onClick={()=>setEtLinks(prev=>[...prev,{name:"",url:""}])} style={{...BtnSecondary(T),fontSize:11,padding:"6px 10px",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Manual</button>
+                  </div>
+                </div>
+              </div>
+              {/* Checklist */}
+              <div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Checklist</div>
+                  <button onClick={()=>setEtChecklist(prev=>[...prev,{id:mkId(),text:"",done:false}])} style={{...BtnSecondary(T),fontSize:11,padding:"2px 8px",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Agregar</button>
                 </div>
                 {etChecklist.map((item,i)=>(
-                  <div key={item.id} style={{display:"flex",gap:6,marginBottom:5,alignItems:"center"}}>
+                  <div key={item.id} style={{display:"flex",gap:8,marginBottom:5,alignItems:"center"}}>
                     <div style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${T.border}`,flexShrink:0}}/>
                     <input value={item.text} onChange={e=>setEtChecklist(prev=>prev.map((x,j)=>j===i?{...x,text:e.target.value}:x))}
-                      placeholder={`Paso ${i+1}`} style={{...iS,fontSize:12,flex:1}}/>
-                    <button onClick={()=>setEtChecklist(prev=>prev.filter((_,j)=>j!==i))} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:13,color:T.red,flexShrink:0}}>×</button>
+                      placeholder={`Paso ${i+1}`} style={{...iS,fontSize:12,flex:1,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <button onClick={()=>setEtChecklist(prev=>prev.filter((_,j)=>j!==i))}
+                      style={{background:"none",border:"none",cursor:"pointer",color:T.red,padding:2,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
                   </div>
                 ))}
               </div>
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
-                <input type="date" value={etDeadline} onChange={e=>setEtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
-              </div>
             </div>
-            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
-              <button onClick={()=>setEditTarea(null)} style={BtnSecondary(T)}>Cancelar</button>
-              <AsyncButton onClick={guardarEdicion} style={BtnPrimary(T)}>Guardar cambios</AsyncButton>
+            {/* Footer */}
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",padding:"14px 20px",borderTop:`1px solid ${T.border}`,background:T.card,flexShrink:0,borderRadius:"0 0 16px 16px"}}>
+              <button onClick={()=>setEditTarea(null)} style={{...BtnSecondary(T),fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
+              <AsyncButton onClick={guardarEdicion} style={{...BtnPrimary(T),fontFamily:"'Inter',system-ui,sans-serif"}}>Guardar cambios</AsyncButton>
             </div>
           </div>
         </div>
