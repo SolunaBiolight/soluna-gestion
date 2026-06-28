@@ -9892,7 +9892,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         }catch(e){toast("Error: "+e.message,"error");}
       }
       return (
-        <div style={{padding:"4px 0",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div style={{padding:"4px 0",fontFamily:"'Inter',system-ui,sans-serif",maxWidth:680,margin:"0 auto"}}>
 
           {/* ── Stepper de estado ── */}
           <div style={{marginBottom:20}}>
@@ -9988,13 +9988,18 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           {linksNorm.length>0&&(
             <div style={{marginBottom:16}}>
               <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Archivos</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 {linksNorm.map((l,i)=>(
                   <a key={i} href={l.url} target="_blank" rel="noreferrer"
-                    style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.text,textDecoration:"none",padding:"6px 10px",background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,fontWeight:500}}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                    {l.name||"Abrir"}
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    style={{display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.text,textDecoration:"none",padding:"12px 14px",background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,fontWeight:500,transition:"border-color 0.15s"}}>
+                    <div style={{width:34,height:34,borderRadius:DS.r.md,background:T.accent+"18",border:`1px solid ${T.accent}30`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:1}}>{l.name||"Abrir archivo"}</div>
+                      <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.url}</div>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   </a>
                 ))}
               </div>
@@ -10119,12 +10124,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             </div>
           )}
 
-          {/* ── Reportar bloqueo ── */}
+          {/* ── Estoy bloqueada ── */}
           {t.estado!=="aprobado"&&!isBlocked&&(
             <div style={{marginBottom:16}}>
               <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:!p[t._id]}))}
-                style={{fontSize:11,padding:"4px 12px",borderRadius:6,border:"1px solid #ef444428",background:"transparent",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:0.8}}>
-                Reportar bloqueo
+                style={{width:"100%",fontSize:12,padding:"8px 0",borderRadius:DS.r.lg,border:"1px solid #ef444430",background:"#ef44440a",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box"}}>
+                🚫 Estoy bloqueada
               </button>
               {showBloqueoColab[t._id]&&(
                 <div style={{marginTop:8,background:"#ef444410",borderRadius:DS.r.lg,padding:"12px",border:"1px solid #ef444435"}}>
