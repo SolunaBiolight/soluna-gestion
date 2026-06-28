@@ -11128,12 +11128,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       const correcciones=t.correcciones||0;
                       const brief=(t.brief||t.descripcion||"").trim();
                       const hasSlots=(t.slots||[]).length>0;
-                      const cardBorder=isUrgente?`1.5px solid ${T.red}`:t.estado==="pendiente"||t.estado==="bloqueada"?`1px solid ${T.border}`:`1px solid ${est.border}`;
+                      const isEntregado=t.estado==="entregado";
+                      const isAprobado=t.estado==="aprobado";
+                      const cardBorder=isUrgente?`1.5px solid ${T.red}`:isEntregado?`1.5px dashed #22c55e`:isAprobado?`1.5px solid #22c55e`:t.estado==="pendiente"||t.estado==="bloqueada"?`1px solid ${T.border}`:`1px solid ${est.border}`;
+                      const cardBg=isEntregado?"#22c55e08":isAprobado?"#22c55e08":T.card;
                       return(
                         <div key={t._id} onClick={()=>setKanbanSelected(t)}
-                          style={{background:T.card,border:cardBorder,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"pointer",display:"flex",flexDirection:"column",minHeight:140,transition:"box-shadow 0.15s, background 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}
+                          style={{background:cardBg,border:cardBorder,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"pointer",display:"flex",flexDirection:"column",minHeight:140,transition:"box-shadow 0.15s, background 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}
                           onMouseEnter={e=>{e.currentTarget.style.boxShadow=DS.shadow.lg;e.currentTarget.style.background=T.surface;}}
-                          onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.background=T.card;}}>
+                          onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.background=cardBg;}}>
 
                           {/* Top: estado + badges */}
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
