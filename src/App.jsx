@@ -19352,7 +19352,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {/* Estado del auto-eval — ya no hay setup externo, corre en la nube via la integracion Meta */}
                 <div style={{marginTop:14,padding:"10px 14px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:10,fontSize:11,color:T.textMd,display:"flex",alignItems:"center",gap:8}}>
                   <span style={{color:T.green,fontWeight:700}}>✓</span>
-                  Las reglas activas se evalúan <strong style={{color:T.green}}>automáticamente cada 30 minutos</strong> en la nube usando la integración con Meta. No hace falta tener Growith abierto.
+                  Las reglas activas se evalúan <strong style={{color:T.green}}>cada 30 minutos mientras tengas Growith abierto</strong>, y <strong style={{color:T.green}}>1 vez por día en la nube</strong> aunque esté cerrado. Para evaluación en la nube cada 30 min hace falta el plan Pro de Vercel.
                 </div>
 
                 {/* Editor de regla (modal) */}
