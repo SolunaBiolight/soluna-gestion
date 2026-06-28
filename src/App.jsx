@@ -16670,7 +16670,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 // ===========================================
 // META ADS · Ad Account Picker (cuando falta ad_account_id)
 // ===========================================
-function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked}) {
+function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked, compact}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [adAccounts, setAdAccounts] = useState([]);
@@ -16689,7 +16689,8 @@ function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked}) {
         const pgs = d.pages || [];
         setAdAccounts(aas);
         setPages(pgs);
-        if (aas.length > 0) setSelAdAcc(aas[0].id);
+        // Default a la cuenta YA activa (para poder cambiarla), sino la primera.
+        if (aas.length > 0) setSelAdAcc(aas.some(a=>a.id===activeAcc?.ad_account_id) ? activeAcc.ad_account_id : aas[0].id);
         if (pgs.length > 0) setSelPage(pgs[0].id);
       })
       .catch(e => setError(e.message || "Error de red"))
@@ -16712,6 +16713,35 @@ function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked}) {
     setSaving(false);
     if (d.error) { appAlert("Error: " + d.error); return; }
     onPicked?.();
+  }
+
+  // Cambio rápido de cuenta (modo compacto) — preserva página/IG ya configurados.
+  async function switchAdAccount(id) {
+    const aa = adAccounts.find(a => a.id === id);
+    if (!aa || saving) return;
+    setSelAdAcc(id);
+    setSaving(true);
+    const d = await metaApi("set_ad_account", "POST", { ad_account_id: id, ad_account_name: aa.name || "", currency: aa.currency || "", timezone_name: aa.timezone_name || "" }, {acc_id: accId});
+    setSaving(false);
+    if (d.error) { appAlert("Error: " + d.error); return; }
+    onPicked?.();
+  }
+
+  // Modo compacto: barra para cambiar entre cuentas (CP5/CP7) cuando ya hay una
+  // seleccionada. Solo aparece si el token accede a 2+ cuentas publicitarias.
+  if (compact) {
+    if (loading || error || adAccounts.length <= 1) return null;
+    return (
+      <div style={{maxWidth:1280,margin:"12px auto 0",padding:"0 24px",width:"100%"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px"}}>
+          <span style={{fontSize:12,color:T.textSm,fontWeight:600}}>📊 Cuenta publicitaria:</span>
+          <select value={selAdAcc} onChange={e=>switchAdAccount(e.target.value)} disabled={saving} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,minWidth:200}}>
+            {adAccounts.map(a => <option key={a.id} value={a.id}>{a.name || a.id} ({a.currency || "—"})</option>)}
+          </select>
+          <span style={{fontSize:11,color:T.textSm}}>{adAccounts.length} cuentas en este token{saving?" · cambiando…":""}</span>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -18554,6 +18584,12 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       {/* Banner si la cuenta esta conectada pero falta seleccionar ad_account_id */}
       {activeAcc && !activeAcc.ad_account_id && (
         <AdAccountPicker T={T} accId={activeAccId} activeAcc={activeAcc} metaApi={metaApi} onPicked={()=>{
+          metaApi("accounts").then(d=>{ if(d.accounts) setAccounts(d.accounts); });
+        }}/>
+      )}
+      {/* Selector compacto para cambiar entre cuentas (CP5/CP7) del mismo token */}
+      {activeAcc && activeAcc.ad_account_id && (
+        <AdAccountPicker T={T} accId={activeAccId} activeAcc={activeAcc} metaApi={metaApi} compact onPicked={()=>{
           metaApi("accounts").then(d=>{ if(d.accounts) setAccounts(d.accounts); });
         }}/>
       )}
