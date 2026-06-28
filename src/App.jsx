@@ -7757,7 +7757,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
             },
             {
-              key:"ml", label:"Mercado Libre", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "No conectado",
+              key:"ml", label:"Mercado Libre / Mercado Pago", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "Incluye Mercado Pago — comisiones, cupones y envíos",
               connected:!!mlStore, disabled:false, brand:"#FFE600", iconBg:"#FFE600",
               icon:<span style={{fontSize:20,lineHeight:1}}>🛒</span>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
