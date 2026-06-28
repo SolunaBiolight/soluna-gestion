@@ -11168,7 +11168,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                               {correcciones>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"2px 7px"}}>🔁 {correcciones}</span>}
                               {t.publicado&&<span style={{fontSize:9,fontWeight:700,color:"#06b6d4",background:"#06b6d412",borderRadius:4,padding:"2px 7px"}}>📤 Publicado</span>}
                               {!t.publicado&&t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:"#8b5cf6",background:"#8b5cf612",borderRadius:4,padding:"2px 7px"}}>💰 Pauta</span>}
-                              {!t.publicado&&t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:"#22c55e",background:"#22c55e12",borderRadius:4,padding:"2px 7px"}}>🌿 Orgánico</span>}
+                              {!t.publicado&&t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:"#22c55e",background:"#22c55e12",borderRadius:4,padding:"2px 7px"}}>📱 Redes</span>}
                               {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:500}}>#{t.tareaNumStr}</span>}
                             </div>
                           </div>
@@ -12037,7 +12037,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{flex:1}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo de contenido</div>
                   <div style={{display:"flex",borderRadius:DS.r.md,overflow:"hidden",border:`1px solid ${T.border}`}}>
-                    {[{v:"",emoji:"—",bg:T.surface,fg:T.text},{v:"organico",emoji:"🌿 Orgánico",bg:"#22c55e",fg:"#fff"},{v:"pauta",emoji:"💰 Pauta",bg:"#8b5cf6",fg:"#fff"}].map((opt,i)=>{
+                    {[{v:"",emoji:"—",bg:T.surface,fg:T.text},{v:"organico",emoji:"📱 Redes",bg:"#22c55e",fg:"#fff"},{v:"pauta",emoji:"💰 Pauta",bg:"#8b5cf6",fg:"#fff"}].map((opt,i)=>{
                       const sel=ntTipoContenido===opt.v;
                       return(
                         <button key={opt.v} onClick={()=>setNtTipoContenido(opt.v)}
@@ -12096,25 +12096,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </div>
               </div>
             )}
-            {/* Slots de campaña */}
-            {/* Recurrente */}
-            <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`}}>
-              <button onClick={()=>setNtRecurrente(p=>!p)}
-                style={{width:36,height:20,borderRadius:10,border:"none",cursor:"pointer",background:ntRecurrente?T.green:"#6b7280",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
-                <div style={{position:"absolute",top:2,left:ntRecurrente?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
-              </button>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,fontWeight:500,color:T.text}}>Tarea recurrente</div>
-                <div style={{fontSize:11,color:T.textSm}}>Se recrea automáticamente al aprobarla</div>
-              </div>
-              {ntRecurrente&&(
-                <select value={ntFrecuencia} onChange={e=>setNtFrecuencia(e.target.value)} style={{...iS,fontSize:12,padding:"4px 8px",width:"auto"}}>
-                  <option value="semanal">Semanal</option>
-                  <option value="quincenal">Quincenal</option>
-                  <option value="mensual">Mensual</option>
-                </select>
-              )}
-            </div>
             <div style={{display:"flex",gap:10,justifyContent:"space-between",marginTop:20,alignItems:"center"}}>
               <button onClick={()=>setShowSaveTemplate(true)} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>💾 Guardar plantilla</button>
               <div style={{display:"flex",gap:10}}>
