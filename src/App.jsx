@@ -10674,18 +10674,17 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       {/* DETALLE TAREA — pantalla completa, sin modal */}
       {kanbanSelected&&(
         <div key={kanbanSelected._id} style={{padding:"20px 24px",animation:"growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both"}}>
-          {/* Header de vuelta */}
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
-            <button onClick={()=>setKanbanSelected(null)} style={{display:"inline-flex",alignItems:"center",gap:6,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"7px 14px",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-              Volver
-            </button>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:700,fontSize:16,color:T.text,lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kanbanSelected.titulo}</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:3}}>
-                {kanbanSelected.asignadoNombre&&<span style={{fontSize:11,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
-                {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"1px 7px"}}>🔁 {kanbanSelected.correcciones}ª corrección</span>}
-              </div>
+          {/* Botón volver solo */}
+          <button onClick={()=>setKanbanSelected(null)} style={{display:"inline-flex",alignItems:"center",gap:6,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"6px 14px",cursor:"pointer",fontSize:12,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,marginBottom:20}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Volver
+          </button>
+          {/* Título de la tarea */}
+          <div style={{marginBottom:24,maxWidth:680,margin:"0 auto 24px"}}>
+            <div style={{fontWeight:700,fontSize:22,color:T.text,lineHeight:1.25,marginBottom:6}}>{kanbanSelected.titulo}</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              {kanbanSelected.asignadoNombre&&<span style={{fontSize:12,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
+              {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"2px 8px"}}>🔁 {kanbanSelected.correcciones}ª corrección</span>}
             </div>
           </div>
           {/* Detalle */}
