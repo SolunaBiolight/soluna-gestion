@@ -23544,7 +23544,7 @@ function AppRendimiento({T, user, onHome}) {
 
           {/* Hero KPIs */}
           <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📊</span>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span></div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
             {[
               {label:"Revenue",     val:tot.revenue,    prev:prevTot.revenue,    color:"#3b82f6", icon:"💰", desc:"Ingreso bruto",     spk:dailyRows.map(r=>r.Revenue)},
               {label:"Net Revenue", val:tot.netRevenue, prev:prevTot.netRevenue, color:"#6366f1", icon:"💵", desc:"Tras comisiones",    spk:dailyRows.map(r=>r["Net Revenue"])},
@@ -23612,7 +23612,7 @@ function AppRendimiento({T, user, onHome}) {
                   <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</span>
                 </div>
                 {/* Hero del canal */}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:12}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
                   {[
                     {label:"Revenue",     val:c.revenue,    prev:cp?.revenue,    color:"#3b82f6", icon:"💰", desc:"Ingreso bruto"},
                     {label:"Net Revenue", val:c.netRevenue, prev:cp?.netRevenue, color:"#6366f1", icon:"💵", desc:"Tras comisiones"},
@@ -24065,6 +24065,8 @@ export default function App() {
       }
       input,button,select,textarea{font-family:inherit;}
       .mobile-only{display:none!important;}
+      .no-scrollbar::-webkit-scrollbar{display:none;}
+      .no-scrollbar{scrollbar-width:none;-ms-overflow-style:none;}
       @media(max-width:768px){
         .hide-mobile{display:none!important;}
         .mobile-only{display:flex!important;}
@@ -24432,23 +24434,27 @@ export default function App() {
 
   // Mobile bottom nav
   const MobileBottomNav = () => (
-    <div className="mobile-only" style={{
+    <div className="mobile-only no-scrollbar" style={{
       display:"none",
       position:"fixed", bottom:0, left:0, right:0, zIndex:90,
       background:T.surface+"f5", backdropFilter:"blur(16px)",
       borderTop:`1px solid ${T.border}`,
-      padding:"6px 4px 8px",
+      padding:"6px 4px 8px", overflowX:"auto", whiteSpace:"nowrap",
     }}>
       {[
         {id:"home",label:"Inicio",icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
-        {id:"envios",label:"Envíos",icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
+        {id:"margenes",label:"Márgenes",icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
+        {id:"arca",label:"Facturador",icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6M9 9h1"},
+        {id:"meta",label:"Meta Ads",icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
         {id:"stock",label:"Stock",icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"},
+        {id:"envios",label:"Envíos",icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
         {id:"reclamos",label:"Reclamos",icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
         {id:"canjes",label:"Canjes",icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
+        {id:"tareas",label:"Tareas",icon:"M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"},
       ].map(it=>(
         <button key={it.id} onClick={()=>setPage(it.id)} style={{
-          flex:1, background:"transparent", border:"none", cursor:"pointer",
-          display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"6px 4px",
+          display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer",
+          flexDirection:"column", alignItems:"center", gap:2, padding:"6px 6px",
           color: page===it.id?T.accent:T.textMd, fontFamily:"'Inter',system-ui,sans-serif",
         }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={page===it.id?"2.2":"1.7"} strokeLinecap="round" strokeLinejoin="round"><path d={it.icon}/></svg>
