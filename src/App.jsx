@@ -11054,12 +11054,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.titulo}</div>
                             <div style={{fontSize:11,color:T.textSm,marginTop:2,fontFamily:"'Inter',system-ui,sans-serif"}}>{t.asignadoNombre}</div>
                           </div>
-                          {lastDeliverable?.link&&(
-                            <a href={lastDeliverable.link} target="_blank" rel="noreferrer"
-                              style={{fontSize:11,color:T.accent,fontWeight:500,textDecoration:"none",padding:"4px 10px",borderRadius:6,border:`1px solid ${T.accent}30`,background:T.accent+"0a",whiteSpace:"nowrap",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                              Ver entrega ↗
-                            </a>
-                          )}
                           <div style={{display:"flex",gap:6,flexShrink:0}}>
                             <button onClick={()=>setKanbanSelected(t)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Ver</button>
                             <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:12,padding:"6px 14px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
