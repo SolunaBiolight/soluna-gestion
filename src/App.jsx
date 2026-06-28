@@ -9863,6 +9863,320 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const linksNorm = normalizeLinksArr(t.links);
     const checklist = t.checklist||[];
     const activity = t.activity||[];
+
+    // ── VISTA COLABORADOR — layout rediseñado ──────────────────────────────────
+    if(colabMode) {
+      const STEPS=[
+        {key:"pendiente",  label:"Pendiente",   color:"#d97706"},
+        {key:"en_proceso", label:"En proceso",  color:"#3b82f6"},
+        {key:"entregado",  label:"Entregado",   color:"#f97316"},
+        {key:"aprobado",   label:"Aprobado",    color:"#22c55e"},
+      ];
+      const stepIdx={pendiente:0,en_proceso:1,bloqueada:1,entregado:2,revision:2,aprobado:3};
+      const curStep=stepIdx[t.estado]??0;
+      const isBlocked=t.estado==="bloqueada";
+      const isRevision=t.estado==="revision";
+      const hasFinal=(t.deliverables||[]).some(d=>!d.parcial);
+      async function submitEntrega(){
+        const link=(colabEntregaLink[t._id]||"").trim();
+        if(!link) return toast("Pegá el link de tu entrega primero","error");
+        const label=(colabEntregaNombre[t._id]||"").trim();
+        const nota=(colabEntregaNota[t._id]||"").trim();
+        try{
+          await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label,nota,esFinal:true})});
+          toast(hasFinal?"Documento agregado":"Entrega enviada","success");
+          setColabEntregaLink(p=>({...p,[t._id]:""}));
+          setColabEntregaNombre(p=>({...p,[t._id]:""}));
+          setColabEntregaNota(p=>({...p,[t._id]:""}));
+          loadData(true);
+        }catch(e){toast("Error: "+e.message,"error");}
+      }
+      return (
+        <div style={{padding:"4px 0",fontFamily:"'Inter',system-ui,sans-serif"}}>
+
+          {/* ── Stepper de estado ── */}
+          <div style={{marginBottom:20}}>
+            <div style={{display:"flex",alignItems:"center"}}>
+              {STEPS.map((step,i)=>{
+                const isDone=curStep>i;
+                const isCur=curStep===i&&!isBlocked&&!isRevision;
+                const dotColor=isDone?"#22c55e":isCur?step.color:T.border;
+                return (
+                  <React.Fragment key={step.key}>
+                    {i>0&&<div style={{flex:1,height:2,background:isDone?"#22c55e":T.border,margin:"0 2px",marginBottom:18}}/>}
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+                      <div style={{width:26,height:26,borderRadius:"50%",border:`2px solid ${dotColor}`,background:isDone?"#22c55e":isCur?`${step.color}18`:T.surface,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}}>
+                        {isDone?(
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        ):isCur?(
+                          <div style={{width:8,height:8,borderRadius:"50%",background:step.color}}/>
+                        ):null}
+                      </div>
+                      <span style={{fontSize:10,fontWeight:isCur?700:400,color:isDone?"#22c55e":isCur?step.color:T.textSm,whiteSpace:"nowrap"}}>{step.label}</span>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+
+            {/* Alerta estado especial */}
+            {(isBlocked||isRevision)&&(
+              <div style={{marginTop:10,display:"flex",alignItems:"flex-start",gap:10,padding:"10px 14px",background:"#ef444410",border:"1px solid #ef444435",borderLeft:"3px solid #ef4444",borderRadius:DS.r.lg}}>
+                <span style={{fontSize:16,flexShrink:0}}>{isBlocked?"🚫":"🔁"}</span>
+                <div>
+                  <div style={{fontSize:12,fontWeight:600,color:"#ef4444",marginBottom:isRevision&&t.feedbackActual?4:0}}>
+                    {isBlocked?"Bloqueada — el equipo fue notificado":"El equipo revisó tu entrega y pidió cambios"}
+                  </div>
+                  {isRevision&&t.feedbackActual&&(
+                    <div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{t.feedbackActual}</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── CTAs de acción principal ── */}
+          {t.estado==="pendiente"&&(
+            <AsyncButton onClick={async()=>{
+              await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"en_proceso",progresoLabel:"En proceso"})});
+              toast("Tarea iniciada","success");loadData(true);
+            }} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",borderRadius:DS.r.lg,border:"1.5px solid #3b82f640",background:"#3b82f612",color:"#3b82f6",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:16,boxSizing:"border-box"}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="#3b82f6"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Iniciar tarea
+            </AsyncButton>
+          )}
+          {isBlocked&&(
+            <AsyncButton onClick={async()=>{
+              await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"en_proceso",progresoLabel:"En proceso"})});
+              loadData(true);
+            }} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px",borderRadius:DS.r.lg,border:"1.5px solid #3b82f640",background:"#3b82f612",color:"#3b82f6",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:16,boxSizing:"border-box"}}>
+              Retomar trabajo
+            </AsyncButton>
+          )}
+
+          <div style={{height:1,background:T.border,marginBottom:20}}/>
+
+          {/* ── Descripción ── */}
+          {t.descripcion&&(
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Descripción</div>
+              <div style={{fontSize:13,color:T.text,lineHeight:1.6}}>{t.descripcion}</div>
+            </div>
+          )}
+
+          {/* ── Brief / Instrucciones ── */}
+          {t.brief&&(()=>{
+            const driveLinks=[...(t.brief.matchAll(/https?:\/\/(?:drive\.google\.com|docs\.google\.com)[^\s)]+/g))].map(m=>m[0]);
+            return(
+              <div style={{marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Instrucciones</div>
+                  {driveLinks.length>0&&(
+                    <a href={driveLinks[0]} target="_blank" rel="noreferrer"
+                      style={{fontSize:11,padding:"4px 10px",borderRadius:6,background:T.accent+"15",color:T.accent,border:`1px solid ${T.accent}30`,textDecoration:"none",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                      Abrir Drive
+                    </a>
+                  )}
+                </div>
+                <div style={{fontSize:13,color:T.text,lineHeight:1.65,whiteSpace:"pre-wrap",background:T.surface,borderRadius:DS.r.lg,padding:"12px 14px",border:`1px solid ${T.borderL}`}}>{t.brief}</div>
+              </div>
+            );
+          })()}
+
+          {/* ── Archivos / Links ── */}
+          {linksNorm.length>0&&(
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Archivos</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {linksNorm.map((l,i)=>(
+                  <a key={i} href={l.url} target="_blank" rel="noreferrer"
+                    style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.text,textDecoration:"none",padding:"6px 10px",background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,fontWeight:500}}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    {l.name||"Abrir"}
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Checklist ── */}
+          {checklist.length>0&&(
+            <div style={{marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Checklist</div>
+                <span style={{fontSize:11,color:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"1px 7px"}}>{checklist.filter(ci=>ci.done).length}/{checklist.length}</span>
+              </div>
+              <div style={{background:T.surface,borderRadius:DS.r.lg,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+                {checklist.map((item,i)=>(
+                  <div key={item.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:i<checklist.length-1?`1px solid ${T.borderL}`:"none"}}>
+                    <div style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${item.done?T.green:T.border}`,background:item.done?T.green:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      {item.done&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none"><polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    </div>
+                    <span style={{fontSize:13,color:item.done?T.textSm:T.text,textDecoration:item.done?"line-through":"none"}}>{item.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Slots de campaña (solo del colaborador) ── */}
+          {(t.slots||[]).filter(s=>s.asignadoEmail===colabMode.email).length>0&&(()=>{
+            const mySlots=(t.slots||[]).filter(s=>s.asignadoEmail===colabMode.email);
+            const done=mySlots.filter(s=>(t.deliverables||[]).some(d=>d.slotId===s.id&&!d.parcial)).length;
+            return(
+              <div style={{marginBottom:16}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Entregas de campaña</div>
+                  <span style={{fontSize:11,color:done===mySlots.length?T.green:T.textSm,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"1px 7px"}}>{done}/{mySlots.length}</span>
+                </div>
+                {mySlots.map(slot=>{
+                  const slotDels=(t.deliverables||[]).filter(d=>d.slotId===slot.id);
+                  const final=slotDels.find(d=>!d.parcial);
+                  return(
+                    <div key={slot.id} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 12px",marginBottom:8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:final?6:0}}>
+                        <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:20,background:T.accent+"18",color:T.accent,textTransform:"uppercase"}}>{slot.tipo}</span>
+                        <span style={{fontSize:12,fontWeight:600,color:T.text,flex:1}}>{slot.descripcion||"Sin descripción"}</span>
+                        {final?<span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.green+"18",color:T.green}}>Entregado</span>
+                          :<span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.border+"50",color:T.textSm}}>Pendiente</span>}
+                      </div>
+                      {slotDels.map((del,di)=>(
+                        <a key={di} href={del.link} target="_blank" rel="noreferrer"
+                          style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.accent,textDecoration:"none",padding:"5px 8px",background:T.card,borderRadius:6,marginBottom:4,border:`1px solid ${T.border}`}}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                          {del.label||`v${di+1}`}
+                        </a>
+                      ))}
+                      {!final&&(
+                        <button onClick={()=>{
+                          const link=window.prompt("Link de entrega:");
+                          if(!link?.trim()) return;
+                          const nota=window.prompt("Nota opcional:")||"";
+                          tareasApi({action:"addSlotEntrega",tareaId:t._id,slotId:slot.id,link:link.trim(),nota,esFinal:true})
+                            .then(()=>{toast("Entrega enviada","success");loadData(true);})
+                            .catch(e=>toast("Error: "+e.message,"error"));
+                        }} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px",marginTop:8,display:"inline-flex"}}>Entregar</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* ── Entregas enviadas ── */}
+          {hasDels&&(
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Mis entregas</div>
+              {(t.deliverables||[]).map((del,i)=>(
+                <div key={i} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,padding:"10px 12px",marginBottom:6}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:13,color:T.accent,fontWeight:600,textDecoration:"none",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{del.label||`Entrega ${i+1}`}</a>
+                    <span style={{fontSize:10,color:T.textSm,flexShrink:0}}>{fmtDate(del.fecha)}</span>
+                  </div>
+                  {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{del.nota}</div>}
+                  {del.feedbackRecibido&&(
+                    <div style={{marginTop:6,padding:"7px 10px",background:"#ef444410",borderLeft:"2px solid #ef4444",borderRadius:4}}>
+                      <div style={{fontSize:10,color:"#ef4444",fontWeight:600,marginBottom:2}}>Feedback del equipo:</div>
+                      <div style={{fontSize:12,color:T.text,lineHeight:1.45}}>{del.feedbackRecibido}</div>
+                    </div>
+                  )}
+                  {i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&(
+                    <AsyncButton onClick={async()=>{
+                      if(!await appConfirm("¿Eliminar tu última entrega?",{danger:true,okLabel:"Eliminar"})) return;
+                      try{
+                        const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicDeleteLastDeliverable",token:colabMode.token,tareaId:t._id})});
+                        const d=await r.json();
+                        if(!r.ok||d.error) throw new Error(d.error||"Error");
+                        toast("Entrega eliminada","warning");loadData(true);
+                      }catch(e){toast("Error: "+e.message,"error");}
+                    }} style={{marginTop:8,fontSize:11,padding:"3px 10px",borderRadius:6,background:"transparent",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>
+                      Eliminar entrega
+                    </AsyncButton>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Subir entrega / Agregar documento ── */}
+          {!(t.slots||[]).length&&t.estado!=="aprobado"&&(
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>{hasFinal?"Agregar documento":"Subir entrega"}</div>
+              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"14px 16px",display:"flex",flexDirection:"column",gap:8}}>
+                <input value={colabEntregaNombre[t._id]||""} onChange={e=>setColabEntregaNombre(p=>({...p,[t._id]:e.target.value}))}
+                  placeholder="Nombre (ej: Fotos look invierno, Reel batch 2)" style={{...iS,fontSize:13}}/>
+                <input value={colabEntregaLink[t._id]||""} onChange={e=>setColabEntregaLink(p=>({...p,[t._id]:e.target.value}))}
+                  placeholder="Link de Drive, Dropbox, Figma, etc." style={{...iS,fontSize:13}}/>
+                <input value={colabEntregaNota[t._id]||""} onChange={e=>setColabEntregaNota(p=>({...p,[t._id]:e.target.value}))}
+                  placeholder="Nota para el equipo (opcional)" style={{...iS,fontSize:13}}/>
+                <AsyncButton onClick={submitEntrega} style={{...BtnPrimary(T),width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px",fontSize:13,boxSizing:"border-box"}}>
+                  {hasFinal?"Agregar documento":"Enviar entrega"}
+                </AsyncButton>
+              </div>
+            </div>
+          )}
+
+          {/* ── Reportar bloqueo ── */}
+          {t.estado!=="aprobado"&&!isBlocked&&(
+            <div style={{marginBottom:16}}>
+              <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:!p[t._id]}))}
+                style={{fontSize:11,padding:"4px 12px",borderRadius:6,border:"1px solid #ef444428",background:"transparent",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:0.8}}>
+                Reportar bloqueo
+              </button>
+              {showBloqueoColab[t._id]&&(
+                <div style={{marginTop:8,background:"#ef444410",borderRadius:DS.r.lg,padding:"12px",border:"1px solid #ef444435"}}>
+                  <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:.7}}>(el equipo lo va a ver)</span></div>
+                  <textarea value={bloqueoMotivoColab[t._id]||""} onChange={e=>setBloqueoMotivoColab(p=>({...p,[t._id]:e.target.value}))}
+                    placeholder="Ej: No tengo acceso al Drive, falta el logo en alta resolución..."
+                    style={{...iS,fontSize:12,width:"100%",minHeight:55,resize:"none",marginBottom:8,borderColor:"#ef444440"}}/>
+                  <div style={{display:"flex",gap:7}}>
+                    <AsyncButton onClick={async()=>{
+                      const motivo=(bloqueoMotivoColab[t._id]||"").trim();
+                      if(!motivo) return toast("Describí qué te está frenando","error");
+                      await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"bloqueada",progresoLabel:"",motivo})});
+                      toast("Equipo notificado","success");
+                      setShowBloqueoColab(p=>({...p,[t._id]:false}));
+                      loadData(true);
+                    }} style={{...BtnDanger(T),fontSize:12,padding:"6px 14px"}}>Avisar al equipo</AsyncButton>
+                    <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:false}))}
+                      style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Cancelar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Comentarios ── */}
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Comentarios</div>
+            {(t.comments||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin comentarios aún.</div>}
+            {(t.comments||[]).map((c,i)=>(
+              <div key={i} style={{marginBottom:6,display:"flex",gap:8,alignItems:"flex-start"}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:c.autor==="manager"?T.accent+"22":T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:c.autor==="manager"?T.accent:T.green,flexShrink:0}}>
+                  {c.autor==="manager"?"G":(c.autor[0]||"?").toUpperCase()}
+                </div>
+                <div style={{flex:1,background:T.surface,borderRadius:DS.r.lg,padding:"8px 10px",border:`1px solid ${T.borderL}`}}>
+                  <div style={{fontSize:10,color:T.textSm,marginBottom:2}}>{c.autor==="manager"?"Growith":c.autor} · {fmtDate(c.fecha)}</div>
+                  <div style={{fontSize:12,color:T.text,lineHeight:1.45}}>{c.texto}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <input value={commentText[t._id]||""} onChange={e=>setCommentText(p=>({...p,[t._id]:e.target.value}))}
+                onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();addComment(t._id);}}}
+                placeholder="Escribir comentario..." style={{...iS,flex:1,fontSize:13}}/>
+              <AsyncButton onClick={()=>addComment(t._id)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>Enviar</AsyncButton>
+            </div>
+          </div>
+
+        </div>
+      );
+    }
+    // ── FIN VISTA COLABORADOR ─────────────────────────────────────────────────
+
     return (
       <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,background:T.card,padding:16}}>
         {/* Número + meta */}
