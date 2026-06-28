@@ -279,6 +279,9 @@ export default async function handler(req, res) {
       const dolarCfg  = userData.margenesDolar || {};
       const factExt   = Array.isArray(userData.margenesFactExterna) ? userData.margenesFactExterna : [];
       const fijosMensual = fijos.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
+      // Costos variables = % de la facturación (ej: 2% a un growth partner).
+      const costosVar = Array.isArray(userData.margenesCostosVar) ? userData.margenesCostosVar : [];
+      const pctVar = costosVar.reduce((s,v)=>s+(parseFloat(v.pct)||0),0)/100;
       const pctImp    = (parseFloat(comCfg.impuestos)||0)/100;
       const pctPlat   = (parseFloat(comCfg.shopify)||0)/100;
       const metPcts   = Object.values(metodos).map(m=>parseFloat(m.pct)||0).filter(x=>x>0);
@@ -311,7 +314,7 @@ export default async function handler(req, res) {
         // ML que son Flex (el resto de ML es Mercado Envíos: lo cubre ML, no se cuenta).
         const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
         const envio     = storeOrders * envioProm + (parseFloat(mlEnvio)||0);
-        const costosAdic= dias>0 ? (fijosMensual/30)*dias : 0;
+        const costosAdic= (dias>0 ? (fijosMensual/30)*dias : 0) + revenue*pctVar; // fijos prorrateados + variables (% facturación)
         // Ad Spend general = Meta (con fee del dólar) + Mercado Ads manual prorrateado.
         const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
         const adSpendMl   = mlAdsPeriodo(sinceR, untilR);

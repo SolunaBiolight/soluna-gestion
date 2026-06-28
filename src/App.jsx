@@ -707,9 +707,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
-      subs:[{id:"analisis",label:"Análisis"},{id:"productos",label:"Productos"},{id:"facturacion",label:"Facturación"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"},{id:"alertas",label:"Alertas"}]},
+      subs:[{id:"analisis",label:"Análisis"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
-      subs:[{id:"gestion",label:"Gestión"},{id:"analytics",label:"Analytics"}]},
+      subs:[{id:"gestion",label:"Gestión"}]},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", count:alerts.envios,
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"}]},
@@ -20975,6 +20975,7 @@ function CostosPanel({ T, uid }) {
   const [mlItems, setMlItems] = React.useState([]);
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
   const [fijos, setFijos] = React.useState([]);
+  const [varios, setVarios] = React.useState([]); // costos variables: % de la facturación
   const [loaded, setLoaded] = React.useState(false);
   const [loadingProds, setLoadingProds] = React.useState(true);
   const [busqProd, setBusqProd] = React.useState("");
@@ -20990,6 +20991,7 @@ function CostosPanel({ T, uid }) {
         setMlAdsList(Array.isArray(d.margenesMlAds) ? d.margenesMlAds : []);
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
+        setVarios(Array.isArray(d.margenesCostosVar) ? d.margenesCostosVar : []);
       } catch (_) {}
       setLoaded(true);
       try {
@@ -21006,7 +21008,8 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos }, { merge: true });
+      const variosClean = varios.filter(v=>(parseFloat(v.pct)||0)>0).map(v=>({id:v.id||margId(),nombre:v.nombre||"",pct:parseFloat(v.pct)||0}));
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos, margenesCostosVar: variosClean }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -21162,6 +21165,24 @@ function CostosPanel({ T, uid }) {
           </div>
         ))}
         <button onClick={()=>setFijos(fs=>[...fs,{id:margId(),nombre:"",monto:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar costo fijo</button>
+      </div>
+
+      {/* Costos variables — % de la facturación (ej: 2% a un growth partner) */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>📊 Costos variables (% de facturación)</div>
+          <span style={{fontSize:12,fontWeight:700,color:T.accent}}>{(varios.reduce((s,v)=>s+(parseFloat(v.pct)||0),0)).toLocaleString("es-AR")}%</span>
+        </div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Un % que escala con tus ventas (ej: 2% de la facturación a un growth partner). Se calcula sobre el revenue del período y se suma a los costos del día.</div>
+        {varios.map(r=>(
+          <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <input value={r.nombre} onChange={e=>setVarios(vs=>vs.map(x=>x.id===r.id?{...x,nombre:e.target.value}:x))} placeholder="Ej: Growth partner, Comisión equipo" style={{...InputStyle(T),flex:1,fontSize:13}}/>
+            <input type="number" min="0" step="0.1" value={r.pct} onChange={e=>setVarios(vs=>vs.map(x=>x.id===r.id?{...x,pct:e.target.value}:x))} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
+            <span style={{fontSize:12,color:T.textSm}}>%</span>
+            <button onClick={()=>setVarios(vs=>vs.filter(x=>x.id!==r.id))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
+          </div>
+        ))}
+        <button onClick={()=>setVarios(vs=>[...vs,{id:margId(),nombre:"",pct:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar costo variable</button>
       </div>
       <div style={{fontSize:11,color:T.textSm}}>⚙ Quedan guardados. La resta automática en el margen del Dashboard se conecta en la próxima iteración del cálculo.</div>
     </div>
