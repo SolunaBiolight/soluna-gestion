@@ -9591,7 +9591,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const colab = primerColab;
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,tipoContenido:ntTipoContenido||null,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
+    const creadoPor=colabMode?{email:colabMode.email,nombre:colabMode.nombre}:{email:user?.email||"",nombre:"Soluna"};
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,tipoContenido:ntTipoContenido||null,creadoPor,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
     setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtTipoContenido(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
     // Mostrar resultado de emails
@@ -9733,6 +9734,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     setShowFeedback(prev=>({...prev,[tareaId]:false}));
     setFeedbackText(prev=>({...prev,[tareaId]:""}));
     toast("Estado actualizado","success");
+  }
+  async function togglePublicado(tareaId, publicado) {
+    await tareasApi({action:"updateTarea",tareaId,publicado});
+    const upd={publicado};
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
+    if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
+    toast(publicado?"📤 Marcado como publicado ✓":"Quitado de publicados","success");
   }
   async function crearEvento() {
     if(!nEventoData.nombre.trim()||!nEventoData.fecha) return appAlert("Completá nombre y fecha");
@@ -10292,6 +10300,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Fecha límite</div>
               <input type="date" value={etDeadline} onChange={e=>setEtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%",fontFamily:"'Inter',system-ui,sans-serif"}}/>
             </div>
+          </div>
+        )}
+        {/* Publicado — solo para pauta/orgánico aprobadas */}
+        {!colabMode&&t.estado==="aprobado"&&(t.tipoContenido==="pauta"||t.tipoContenido==="organico")&&(
+          <div style={{marginBottom:20}}>
+            <button onClick={()=>togglePublicado(t._id,!t.publicado)}
+              style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",borderRadius:8,border:`1.5px solid ${t.publicado?"#06b6d4":"#06b6d440"}`,background:t.publicado?"#06b6d415":"transparent",color:t.publicado?"#06b6d4":T.textMd,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              {t.publicado?"✓ Publicado":"Marcar como publicado"}
+            </button>
           </div>
         )}
         {/* Recordatorio + WA */}
@@ -10861,6 +10879,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             {!editModeDetalle&&(
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
                 {kanbanSelected.asignadoNombre&&<span style={{fontSize:12,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
+                {kanbanSelected.creadoPor?.nombre&&kanbanSelected.creadoPor.nombre!=="Soluna"&&<span style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 7px",border:`1px solid ${T.border}`}}>Asignada por {kanbanSelected.creadoPor.nombre}</span>}
                 {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"2px 8px"}}>🔁 {kanbanSelected.correcciones}ª corrección</span>}
               </div>
             )}
@@ -10892,7 +10911,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   return t.estado!=="aprobado";
                 })
                 .filter(t=>!filterColab||(t.asignadoEmail===filterColab||(t.asignadosEmails||[]).includes(filterColab)))
-                .filter(t=>!colabMode||(t.asignadosEmails||[t.asignadoEmail]).includes(colabMode.email));
+                .filter(t=>!colabMode||colabMode.permisos?.verTareas||(t.asignadosEmails||[t.asignadoEmail]).includes(colabMode.email));
               if(sortTareas) arr=[...arr].sort((a,b)=>(dLeft(a.deadline)??9999)-(dLeft(b.deadline)??9999));
               return arr;
             })();
@@ -11147,8 +11166,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             <div style={{display:"flex",alignItems:"center",gap:5}}>
                               {isUrgente&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                               {correcciones>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"2px 7px"}}>🔁 {correcciones}</span>}
-                              {t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:"#8b5cf6",background:"#8b5cf612",borderRadius:4,padding:"2px 7px"}}>💰 Pauta</span>}
-                              {t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:"#22c55e",background:"#22c55e12",borderRadius:4,padding:"2px 7px"}}>🌿 Orgánico</span>}
+                              {t.publicado&&<span style={{fontSize:9,fontWeight:700,color:"#06b6d4",background:"#06b6d412",borderRadius:4,padding:"2px 7px"}}>📤 Publicado</span>}
+                              {!t.publicado&&t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:"#8b5cf6",background:"#8b5cf612",borderRadius:4,padding:"2px 7px"}}>💰 Pauta</span>}
+                              {!t.publicado&&t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:"#22c55e",background:"#22c55e12",borderRadius:4,padding:"2px 7px"}}>🌿 Orgánico</span>}
                               {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:500}}>#{t.tareaNumStr}</span>}
                             </div>
                           </div>
