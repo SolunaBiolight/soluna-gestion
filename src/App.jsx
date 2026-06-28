@@ -10350,7 +10350,29 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         </div>
       </div>
 
-      <div style={{padding:"20px 24px"}}>
+      {/* DETALLE TAREA — pantalla completa, sin modal */}
+      {kanbanSelected&&(
+        <div key={kanbanSelected._id} style={{padding:"20px 24px",animation:"growith-fadeInFast 0.18s cubic-bezier(0.22,1,0.36,1) both"}}>
+          {/* Header de vuelta */}
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+            <button onClick={()=>setKanbanSelected(null)} style={{display:"inline-flex",alignItems:"center",gap:6,background:"transparent",border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"7px 14px",cursor:"pointer",fontSize:13,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              Volver
+            </button>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:16,color:T.text,lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kanbanSelected.titulo}</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:3}}>
+                {kanbanSelected.asignadoNombre&&<span style={{fontSize:11,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
+                {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"1px 7px"}}>🔁 {kanbanSelected.correcciones}ª corrección</span>}
+              </div>
+            </div>
+          </div>
+          {/* Detalle */}
+          {renderDetalle(kanbanSelected)}
+        </div>
+      )}
+
+      <div style={{display:kanbanSelected?"none":"block",padding:"20px 24px"}}>
         {loading&&<div style={{textAlign:"center",padding:60}}><Spinner size={32} color={T.accent}/></div>}
 
         {/* ── TAB TRABAJO ── */}
@@ -11270,28 +11292,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
 
       </div>{/* cierre: div padding 20px 24px */}
 
-      {/* MODAL Kanban — detalle tarea */}
-      {kanbanSelected&&(
-        <div className="gh-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:200,display:"flex",justifyContent:"flex-end"}} onClick={e=>{if(e.target===e.currentTarget)setKanbanSelected(null);}}>
-          <div key={kanbanSelected?._id} style={{background:T.card,width:"100%",maxWidth:560,height:"100%",display:"flex",flexDirection:"column",boxShadow:"-4px 0 32px rgba(0,0,0,0.25)",animation:"slideInRight 0.22s cubic-bezier(0.22,1,0.36,1) both"}}>
-            {/* Header fijo */}
-            <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexShrink:0,background:T.card}}>
-              <div style={{flex:1,minWidth:0,paddingRight:12}}>
-                <div style={{fontWeight:700,fontSize:16,color:T.text,lineHeight:1.3,marginBottom:2}}>{kanbanSelected.titulo}</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
-                  {kanbanSelected.asignadoNombre&&<span style={{fontSize:11,color:T.textSm}}>{kanbanSelected.asignadoNombre}</span>}
-                  {(kanbanSelected.correcciones||0)>0&&<span style={{fontSize:11,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:5,padding:"1px 7px"}}>🔁 {kanbanSelected.correcciones}ª corrección</span>}
-                </div>
-              </div>
-              <button onClick={()=>setKanbanSelected(null)} style={{flexShrink:0,background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 10px",cursor:"pointer",color:T.textMd,fontSize:18,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
-            </div>
-            {/* Contenido scrolleable */}
-            <div style={{flex:1,overflowY:"auto",background:T.card}}>
-              {renderDetalle(kanbanSelected)}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MODAL Detalle Creativo */}
       {creativoDetail&&(()=>{
