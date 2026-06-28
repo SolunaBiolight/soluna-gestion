@@ -337,34 +337,37 @@ export default async function handler(req, res) {
           cpaBreakEven: (tot.orders||0)>0 ? (profit + adSpendEf)/tot.orders : 0,
         };
       }
-      // ── Envío de ML: Flex (el vendedor paga) vs Mercado Envíos (lo cubre ML) ──
-      // Solo consultamos el tipo de envío de cada orden si hay envío promedio
-      // cargado (gated, para no recargar de gusto). logistic_type "self_service" = Flex.
+      // ── Envío de ML: el COSTO REAL que ML le cobra al vendedor ──
+      // ML cobra el envío también en Mercado Envíos (el "Cargo por envío" del
+      // detalle de MP = shipping_option.list_cost del shipment). Antes lo poníamos
+      // en $0 y inflaba el margen. Ahora: Mercado Envíos → list_cost real; Flex
+      // (self_service, el vendedor lo paga al correo) → promedio configurado.
       const mlLogi = {};
-      if (envioProm > 0) {
-        try {
-          const tokML = await getValidMLToken(db, uid);
-          if (tokML?.accessToken) {
-            const ids = [...new Set([
-              ...(curr.raw?.ml_data?.ml_orders_detail||[]),
-              ...(prev.raw?.ml_data?.ml_orders_detail||[]),
-            ].map(o=>o.shippingId).filter(Boolean))].slice(0, 400);
-            for (let i=0; i<ids.length; i+=20) {
-              const rs = await Promise.all(ids.slice(i,i+20).map(async id => {
-                try {
-                  // SIN x-format-new: el formato clásico es el que trae logistic_type.
-                  const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
-                  if (!r.ok) return [id, null];
-                  const j = await r.json();
-                  return [id, j.logistic_type || null];
-                } catch(_) { return [id, null]; }
-              }));
-              for (const [id,lt] of rs) mlLogi[id] = lt;
-            }
+      try {
+        const tokML = await getValidMLToken(db, uid);
+        if (tokML?.accessToken) {
+          const ids = [...new Set([
+            ...(curr.raw?.ml_data?.ml_orders_detail||[]),
+            ...(prev.raw?.ml_data?.ml_orders_detail||[]),
+          ].map(o=>o.shippingId).filter(Boolean))].slice(0, 400);
+          for (let i=0; i<ids.length; i+=20) {
+            const rs = await Promise.all(ids.slice(i,i+20).map(async id => {
+              try {
+                const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
+                if (!r.ok) return [id, null];
+                const j = await r.json();
+                return [id, { lt: j.logistic_type || null, cost: parseFloat(j.shipping_option?.list_cost) || 0 }];
+              } catch(_) { return [id, null]; }
+            }));
+            for (const [id,v] of rs) if (v) mlLogi[id] = v;
           }
-        } catch(_) {}
-      }
-      const mlEnvioDe  = o => (mlLogi[o?.shippingId] === "self_service") ? envioProm : 0;
+        }
+      } catch(_) {}
+      const mlEnvioDe  = o => {
+        const s = mlLogi[o?.shippingId];
+        if (!s) return 0;
+        return s.lt === "self_service" ? envioProm : (s.cost || 0); // Flex: promedio · Mercado Envíos: costo real
+      };
       const mlEnvioTot = raw => (raw?.ml_data?.ml_orders_detail||[]).reduce((s,o)=>s+mlEnvioDe(o),0);
 
       totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr.fee, mlEnvioTot(curr.raw), mpCommCurr.rev);
@@ -457,7 +460,7 @@ export default async function handler(req, res) {
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o);
           const profit=rev-cogs-imp-comis-env;
-          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
+          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
         list.sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")));
         return list.slice(0, 600);
