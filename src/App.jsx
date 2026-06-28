@@ -21910,11 +21910,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const mlRevenue = ml?.total_revenue || 0;
   const totalUnits  = allProducts.reduce((a,p)=>a+p.units_sold,0) + mlUnits;
   const totalOrders = (data?.total_orders||0) + mlOrders;
-  const totalStock  = allProducts.reduce((a,p)=>a+p.stock_total,0);
+  // Clampeamos el stock a ≥0: un stock negativo (sobrevendido o sin cargar en
+  // depósitos) se trata como SIN stock disponible, no como número negativo. Así
+  // no aparecen "-8.963 stock" ni "-500 días" cuando todavía no cargaste depósitos.
+  const stockOf     = p => Math.max(0, p.stock_total||0);
+  const totalStock  = allProducts.reduce((a,p)=>a+stockOf(p),0);
   const totalRev    = (data?.total_revenue || 0) + mlRevenue;
   const avgRate     = days>0?(totalUnits/days):0;
-  const avgDays     = (()=>{const v=allProducts.filter(p=>rate(p)>0).map(p=>dLeft(p.stock_total,rate(p))).filter(d=>d!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;})();
-  const kpiEmpty    = allProducts.filter(p=>p.stock_total===0).length;
+  const avgDays     = (()=>{const v=allProducts.filter(p=>rate(p)>0).map(p=>dLeft(stockOf(p),rate(p))).filter(d=>d!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;})();
+  const kpiEmpty    = allProducts.filter(p=>stockOf(p)===0).length;
   const kpiCritical = allProducts.filter(p=>{const d=dLeft(p.stock_total,rate(p));return p.stock_total>0&&d!==null&&d<=7;}).length;
   const kpiLow      = allProducts.filter(p=>{const d=dLeft(p.stock_total,rate(p));return p.stock_total>0&&d!==null&&d>7&&d<=globalThreshold;}).length;
   const kpiDead     = allProducts.filter(p=>p.units_sold===0).length;
