@@ -10193,41 +10193,85 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           {t.tiempoEntregaDias&&t.estado==="aprobado"&&<span style={{fontSize:11,color:T.blue,background:T.blue+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.blue}30`}}>⏱ {t.tiempoEntregaDias}d</span>}
         </div>
         {/* Estados */}
-        {!colabMode&&<div style={{marginBottom:24}}>
-          <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Estado</div>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {Object.entries(ESTADOS).filter(([k])=>k!=="revision").map(([key,val])=>(
-              <AsyncButton key={key} onClick={()=>updateEstado(t._id,key)}
-                style={{padding:"4px 10px",borderRadius:20,fontSize:11,border:`1px solid ${t.estado===key?val.color:T.border}`,background:t.estado===key?val.bg:"transparent",color:t.estado===key?val.color:T.textMd,cursor:"pointer",fontWeight:t.estado===key?700:400,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                {val.label}
-              </AsyncButton>
-            ))}
-            {!showFeedback[t._id]
-              ? <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))}
-                  style={{padding:"4px 10px",borderRadius:20,fontSize:11,border:`1px solid ${t.estado==="revision"?T.red:T.border}`,background:t.estado==="revision"?ESTADOS.revision.bg:"transparent",color:t.estado==="revision"?T.red:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:t.estado==="revision"?700:400}}>
-                  {ESTADOS.revision.label}
-                </button>
-              : <div style={{width:"100%",marginTop:8,background:T.surface,borderRadius:10,padding:10,border:`1px solid ${T.red}44`}}>
-                  <div style={{fontSize:11,fontWeight:600,color:T.red,marginBottom:6}}>¿Qué debe corregir? <span style={{fontWeight:700,color:T.red}}>*</span> <span style={{fontWeight:400,color:T.textSm}}>— el colaborador ve este texto</span></div>
-                  <textarea value={feedbackText[t._id]||""} onChange={e=>setFeedbackText(p=>({...p,[t._id]:e.target.value}))}
-                    placeholder="Describí exactamente qué cambiar (este mensaje le llega al colaborador por email y WA)..."
-                    style={{...iS,fontSize:12,width:"100%",minHeight:72,resize:"vertical",marginBottom:8,borderColor:(feedbackText[t._id]||"").trim()?"":T.red+"66"}}/>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                    <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador — es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:11,padding:"5px 12px"}}>🔁 Pedir cambios</AsyncButton>
-                    {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
-                      <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
-                        target="_blank" rel="noreferrer"
-                        style={{fontSize:11,padding:"5px 12px",borderRadius:8,background:"#22c55e20",color:"#22c55e",border:"1px solid #22c55e44",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                        WA con feedback
-                      </a>
-                    )}
-                    <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px"}}>Cancelar</button>
-                  </div>
-                </div>
-            }
-          </div>
-        </div>}
+        {!colabMode&&(()=>{
+          const ADMIN_STEPS=[
+            {key:"pendiente",  label:"Pendiente",  color:"#d97706"},
+            {key:"en_proceso", label:"En proceso", color:"#3b82f6"},
+            {key:"entregado",  label:"Entregado",  color:"#f97316"},
+            {key:"aprobado",   label:"Aprobado",   color:"#22c55e"},
+          ];
+          const stepOrder={pendiente:0,en_proceso:1,bloqueada:1,revision:2,entregado:2,aprobado:3};
+          const curOrder=stepOrder[t.estado]??0;
+          const stepToOrder={pendiente:0,en_proceso:1,entregado:2,aprobado:3};
+          return(
+            <div style={{marginBottom:24}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:16}}>Estado</div>
+              {/* Stepper clickeable */}
+              <div style={{display:"flex",alignItems:"flex-start",marginBottom:14}}>
+                {ADMIN_STEPS.map((step,idx)=>{
+                  const thisOrder=stepToOrder[step.key];
+                  const isActive=t.estado===step.key||(step.key==="en_proceso"&&(t.estado==="bloqueada"))||(step.key==="entregado"&&t.estado==="revision");
+                  const isPast=thisOrder<curOrder&&!isActive;
+                  const isFuture=thisOrder>curOrder;
+                  const dotColor=isActive?step.color:isPast?step.color:T.border;
+                  return(
+                    <React.Fragment key={step.key}>
+                      <AsyncButton onClick={()=>updateEstado(t._id,step.key)}
+                        style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7,cursor:"pointer",background:"transparent",border:"none",padding:0,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <div style={{
+                          width:28,height:28,borderRadius:"50%",
+                          background:isActive||isPast?dotColor:"transparent",
+                          border:`2px solid ${dotColor}`,
+                          display:"flex",alignItems:"center",justifyContent:"center",
+                          transition:"all 0.2s",
+                        }}>
+                          {(isActive||isPast)&&<div style={{width:8,height:8,borderRadius:"50%",background:"#fff"}}/>}
+                        </div>
+                        <span style={{fontSize:10,fontWeight:isActive?700:500,color:isActive?step.color:isFuture?T.textSm:T.textMd,whiteSpace:"nowrap"}}>
+                          {step.label}
+                        </span>
+                      </AsyncButton>
+                      {idx<ADMIN_STEPS.length-1&&(
+                        <div style={{flex:1,height:2,marginTop:13,background:isPast?step.color:T.border,borderRadius:1,transition:"background 0.3s",marginLeft:0,marginRight:0}}/>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+              {/* Estados especiales: Bloqueada + A revisar */}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <AsyncButton onClick={()=>updateEstado(t._id,"bloqueada")}
+                  style={{padding:"5px 12px",borderRadius:20,fontSize:11,border:`1px solid ${t.estado==="bloqueada"?"#6b7280":T.border}`,background:t.estado==="bloqueada"?"#6b728018":"transparent",color:t.estado==="bloqueada"?"#6b7280":T.textMd,cursor:"pointer",fontWeight:t.estado==="bloqueada"?700:500,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  Bloqueada
+                </AsyncButton>
+                {!showFeedback[t._id]
+                  ? <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))}
+                      style={{padding:"5px 12px",borderRadius:20,fontSize:11,border:`1px solid ${t.estado==="revision"?T.red:T.border}`,background:t.estado==="revision"?ESTADOS.revision.bg:"transparent",color:t.estado==="revision"?T.red:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:t.estado==="revision"?700:500}}>
+                      {ESTADOS.revision.label}
+                    </button>
+                  : <div style={{width:"100%",marginTop:8,background:T.surface,borderRadius:DS.r.lg,padding:"14px",border:`1px solid ${T.red}40`}}>
+                      <div style={{fontSize:12,fontWeight:600,color:T.red,marginBottom:8}}>¿Qué debe corregir? <span style={{fontWeight:700}}>*</span> <span style={{fontWeight:400,color:T.textSm}}>— el colaborador ve este texto</span></div>
+                      <textarea value={feedbackText[t._id]||""} onChange={e=>setFeedbackText(p=>({...p,[t._id]:e.target.value}))}
+                        placeholder="Describí exactamente qué cambiar (este mensaje le llega al colaborador por email y WA)..."
+                        style={{...iS,fontSize:12,width:"100%",minHeight:72,resize:"vertical",marginBottom:10,borderColor:(feedbackText[t._id]||"").trim()?"":T.red+"66",boxSizing:"border-box"}}/>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                        <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador — es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>🔁 Pedir cambios</AsyncButton>
+                        {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
+                          <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
+                            target="_blank" rel="noreferrer"
+                            style={{fontSize:12,padding:"7px 14px",borderRadius:8,background:"#22c55e12",color:"#22c55e",border:"1px solid #22c55e44",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                            WA con feedback
+                          </a>
+                        )}
+                        <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Cancelar</button>
+                      </div>
+                    </div>
+                }
+              </div>
+            </div>
+          );
+        })()}
         {/* Recordatorio + WA */}
         {!colabMode&&colab&&t.estado!=="aprobado"&&(
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:24}}>
