@@ -10415,8 +10415,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                       </div>
                       <div style={{flex:1,minWidth:0}}>
-                        <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:14,color:T.accent,fontWeight:700,textDecoration:"none",display:"block",marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{del.label||`Entrega ${i+1}`}</a>
-                        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                        <a href={del.link} target="_blank" rel="noreferrer" style={{fontSize:14,color:T.accent,fontWeight:700,textDecoration:"none",display:"block",marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{del.label||`Entrega ${i+1}`}</a>
+                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                          {(del.autorNombre||t.asignadoNombre)&&(
+                            <div style={{display:"flex",alignItems:"center",gap:5}}>
+                              <div style={{width:16,height:16,borderRadius:"50%",background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:T.accent,flexShrink:0}}>
+                                {((del.autorNombre||t.asignadoNombre||"?")[0]).toUpperCase()}
+                              </div>
+                              <span style={{fontSize:11,color:T.textMd,fontWeight:500}}>{del.autorNombre||t.asignadoNombre}</span>
+                            </div>
+                          )}
                           {del.parcial&&<span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:5,background:T.orange+"18",color:T.orange,border:`1px solid ${T.orange}30`}}>PARCIAL</span>}
                           <span style={{fontSize:11,color:T.textSm}}>{fmtDate(del.fecha)}{del.editedAt?" · editado":""}</span>
                         </div>
@@ -10436,7 +10444,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
                       </>}
                       {!colabMode&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
-                      {!colabMode&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>}
+                      {!colabMode&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
                       {colabMode&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<AsyncButton onClick={async()=>{
                         if(!await appConfirm(`¿Eliminar tu entrega "${del.label||`v${i+1}`}"?`,{danger:true,okLabel:"Eliminar"})) return;
                         try{
@@ -10446,7 +10454,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           toast("Entrega eliminada","warning");
                           loadData(true);
                         }catch(e){toast("Error: "+e.message,"error");}
-                      }} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>🗑️ Eliminar</AsyncButton>}
+                      }} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
                     </div>
                   </>
                 )}
@@ -13248,7 +13256,7 @@ function ColaboradorPublicView({T, token}) {
                                       setEntregaEnviada(prev=>({...prev,[t._id]:null}));
                                       toast("Entrega eliminada ↩","warning");
                                     }} style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                      🗑️ Eliminar
+                                      Eliminar
                                     </AsyncButton>
                                   </div>
                                 )}
