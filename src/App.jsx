@@ -11088,15 +11088,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               )}
               {/* ── Barra de filtros ── */}
               <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
-                {/* Todos — solo admin (con colab no tiene sentido) */}
-                {!colabMode&&(
+                {/* Todos — admin o colab con verTareas */}
+                {(!colabMode||colabMode.permisos?.verTareas)&&(
                   <button onClick={()=>{setFilterColab("");setFilterCompletadas(false);setFilterEstado("");}}
                     style={{padding:"5px 14px",fontSize:12,fontWeight:!filterColab&&!filterCompletadas&&!filterEstado?700:500,borderRadius:99,border:`1.5px solid ${!filterColab&&!filterCompletadas&&!filterEstado?T.accentSolid:T.border}`,background:!filterColab&&!filterCompletadas&&!filterEstado?T.accentSolid:"transparent",color:!filterColab&&!filterCompletadas&&!filterEstado?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
                     Todos
                   </button>
                 )}
-                {/* Pills por colaborador — solo admin */}
-                {!colabMode&&colaboradores.map(c=>{
+                {/* Pills por colaborador — admin o colab con verTareas */}
+                {(!colabMode||colabMode.permisos?.verTareas)&&colaboradores.map(c=>{
                   const active=filterColab===c.email&&!filterCompletadas;
                   const count=tareas.filter(t=>t.estado!=="aprobado"&&(t.asignadoEmail===c.email||(t.asignadosEmails||[]).includes(c.email))).length;
                   if(!count&&!active) return null;
