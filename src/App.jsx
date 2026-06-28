@@ -11075,67 +11075,67 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 </div>
               )}
-              {/* ── Barra de filtros (solo admin) ── */}
-              {!colabMode&&(
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
-                  {/* Todos */}
+              {/* ── Barra de filtros ── */}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+                {/* Todos — solo admin (con colab no tiene sentido) */}
+                {!colabMode&&(
                   <button onClick={()=>{setFilterColab("");setFilterCompletadas(false);}}
                     style={{padding:"5px 14px",fontSize:12,fontWeight:!filterColab&&!filterCompletadas?700:500,borderRadius:99,border:`1.5px solid ${!filterColab&&!filterCompletadas?T.accentSolid:T.border}`,background:!filterColab&&!filterCompletadas?T.accentSolid:"transparent",color:!filterColab&&!filterCompletadas?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
                     Todos
                   </button>
-                  {/* Pills por colaborador */}
-                  {colaboradores.map(c=>{
-                    const active=filterColab===c.email&&!filterCompletadas;
-                    const count=tareas.filter(t=>t.estado!=="aprobado"&&(t.asignadoEmail===c.email||(t.asignadosEmails||[]).includes(c.email))).length;
-                    if(!count&&!active) return null;
-                    return (
-                      <button key={c._id} onClick={()=>{setFilterColab(active?"":c.email);setFilterCompletadas(false);}}
-                        style={{padding:"5px 14px",fontSize:12,fontWeight:active?700:500,borderRadius:99,border:`1.5px solid ${active?T.accentSolid:T.border}`,background:active?T.accentSolid+"18":"transparent",color:active?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6}}>
-                        <span style={{width:18,height:18,borderRadius:"50%",background:active?T.accentSolid:T.surface,border:`1px solid ${active?T.accentSolid:T.border}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:active?"#fff":T.textMd,flexShrink:0}}>
-                          {(c.nombre[0]||"?").toUpperCase()}
-                        </span>
-                        {c.nombre.split(" ")[0]}
-                        <span style={{fontSize:10,background:active?T.accentSolid+"30":T.surface,color:active?T.accent:T.textSm,borderRadius:99,padding:"0px 5px",fontWeight:700}}>{count}</span>
-                      </button>
-                    );
-                  })}
-                  {/* Completadas */}
-                  <button onClick={()=>{setFilterCompletadas(p=>!p);setFilterColab("");}}
-                    style={{padding:"5px 14px",fontSize:12,fontWeight:filterCompletadas?700:500,borderRadius:99,border:`1.5px solid ${filterCompletadas?T.green:T.border}`,background:filterCompletadas?T.green+"18":"transparent",color:filterCompletadas?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                    Completadas
-                  </button>
-                  {/* Separador */}
-                  <div style={{flex:1}}/>
-                  {/* Ordenar por */}
-                  <div style={{position:"relative"}}>
-                    <button onClick={()=>setShowSortMenu(p=>!p)}
-                      style={{padding:"5px 12px",fontSize:12,fontWeight:sortTareas?600:500,borderRadius:99,border:`1.5px solid ${sortTareas?T.accentSolid:T.border}`,background:sortTareas?T.accentSolid+"14":"transparent",color:sortTareas?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="9" y1="18" x2="15" y2="18"/></svg>
-                      {sortTareas==="prioridad"?"Prioridad":sortTareas==="deadline"?"Fecha límite":"Ordenar por"}
-                      {sortTareas&&<button onClick={e=>{e.stopPropagation();setSortTareas("");setShowSortMenu(false);}} style={{background:"none",border:"none",cursor:"pointer",color:T.accent,padding:"0 0 0 2px",fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>×</button>}
+                )}
+                {/* Pills por colaborador — solo admin */}
+                {!colabMode&&colaboradores.map(c=>{
+                  const active=filterColab===c.email&&!filterCompletadas;
+                  const count=tareas.filter(t=>t.estado!=="aprobado"&&(t.asignadoEmail===c.email||(t.asignadosEmails||[]).includes(c.email))).length;
+                  if(!count&&!active) return null;
+                  return (
+                    <button key={c._id} onClick={()=>{setFilterColab(active?"":c.email);setFilterCompletadas(false);}}
+                      style={{padding:"5px 14px",fontSize:12,fontWeight:active?700:500,borderRadius:99,border:`1.5px solid ${active?T.accentSolid:T.border}`,background:active?T.accentSolid+"18":"transparent",color:active?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:6}}>
+                      <span style={{width:18,height:18,borderRadius:"50%",background:active?T.accentSolid:T.surface,border:`1px solid ${active?T.accentSolid:T.border}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:active?"#fff":T.textMd,flexShrink:0}}>
+                        {(c.nombre[0]||"?").toUpperCase()}
+                      </span>
+                      {c.nombre.split(" ")[0]}
+                      <span style={{fontSize:10,background:active?T.accentSolid+"30":T.surface,color:active?T.accent:T.textSm,borderRadius:99,padding:"0px 5px",fontWeight:700}}>{count}</span>
                     </button>
-                    {showSortMenu&&(
-                      <>
-                      <div onClick={()=>setShowSortMenu(false)} style={{position:"fixed",inset:0,zIndex:199}}/>
-                      <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:200,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,minWidth:170,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        {[
-                          {key:"prioridad",label:"Prioridad",icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>},
-                          {key:"deadline",label:"Fecha límite",icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>},
-                        ].map(opt=>(
-                          <button key={opt.key} onClick={()=>{setSortTareas(opt.key);setShowSortMenu(false);}}
-                            style={{width:"100%",padding:"10px 14px",background:sortTareas===opt.key?T.accent+"12":"transparent",border:"none",textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:sortTareas===opt.key?700:500,color:sortTareas===opt.key?T.accent:T.text,display:"flex",alignItems:"center",gap:8,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                            <span style={{color:sortTareas===opt.key?T.accent:T.textSm}}>{opt.icon}</span>
-                            {opt.label}
-                            {sortTareas===opt.key&&<svg style={{marginLeft:"auto"}} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
-                          </button>
-                        ))}
-                      </div>
-                      </>
-                    )}
-                  </div>
+                  );
+                })}
+                {/* Completadas — visible para todos */}
+                <button onClick={()=>{setFilterCompletadas(p=>!p);setFilterColab("");}}
+                  style={{padding:"5px 14px",fontSize:12,fontWeight:filterCompletadas?700:500,borderRadius:99,border:`1.5px solid ${filterCompletadas?T.green:T.border}`,background:filterCompletadas?T.green+"18":"transparent",color:filterCompletadas?T.green:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  Completadas
+                </button>
+                {/* Separador */}
+                <div style={{flex:1}}/>
+                {/* Ordenar por — visible para todos */}
+                <div style={{position:"relative"}}>
+                  <button onClick={()=>setShowSortMenu(p=>!p)}
+                    style={{padding:"5px 12px",fontSize:12,fontWeight:sortTareas?600:500,borderRadius:99,border:`1.5px solid ${sortTareas?T.accentSolid:T.border}`,background:sortTareas?T.accentSolid+"14":"transparent",color:sortTareas?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="9" y1="18" x2="15" y2="18"/></svg>
+                    {sortTareas==="prioridad"?"Prioridad":sortTareas==="deadline"?"Fecha límite":"Ordenar por"}
+                    {sortTareas&&<button onClick={e=>{e.stopPropagation();setSortTareas("");setShowSortMenu(false);}} style={{background:"none",border:"none",cursor:"pointer",color:T.accent,padding:"0 0 0 2px",fontSize:13,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>×</button>}
+                  </button>
+                  {showSortMenu&&(
+                    <>
+                    <div onClick={()=>setShowSortMenu(false)} style={{position:"fixed",inset:0,zIndex:199}}/>
+                    <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:200,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:DS.shadow.lg,minWidth:170,overflow:"hidden",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      {[
+                        {key:"prioridad",label:"Prioridad",icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>},
+                        {key:"deadline",label:"Fecha límite",icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>},
+                      ].map(opt=>(
+                        <button key={opt.key} onClick={()=>{setSortTareas(opt.key);setShowSortMenu(false);}}
+                          style={{width:"100%",padding:"10px 14px",background:sortTareas===opt.key?T.accent+"12":"transparent",border:"none",textAlign:"left",cursor:"pointer",fontSize:12,fontWeight:sortTareas===opt.key?700:500,color:sortTareas===opt.key?T.accent:T.text,display:"flex",alignItems:"center",gap:8,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                          <span style={{color:sortTareas===opt.key?T.accent:T.textSm}}>{opt.icon}</span>
+                          {opt.label}
+                          {sortTareas===opt.key&&<svg style={{marginLeft:"auto"}} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </button>
+                      ))}
+                    </div>
+                    </>
+                  )}
                 </div>
-              )}
+              </div>
 
               {/* ── GRID DE TAREAS — una card por tarea ── */}
               {tareasActivas.length>0&&(()=>{
