@@ -10912,12 +10912,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               {/* ── GRID DE TAREAS — una card por tarea ── */}
               {tareasActivas.length>0&&(()=>{
                 const EST_CARD={
-                  pendiente: {l:"Pendiente",  c:"#9ca3af", dot:"#9ca3af"},
-                  en_proceso:{l:"En proceso", c:"#3b82f6", dot:"#3b82f6"},
-                  entregado: {l:"Entregado",  c:"#f97316", dot:"#f97316"},
-                  revision:  {l:"A corregir", c:"#ef4444", dot:"#ef4444"},
-                  bloqueada: {l:"Bloqueada",  c:"#6b7280", dot:"#6b7280"},
-                  aprobado:  {l:"Aprobado",   c:"#22c55e", dot:"#22c55e"},
+                  pendiente: {l:"Pendiente",  c:"#9ca3af", dot:"#9ca3af", border:T.border},
+                  en_proceso:{l:"En proceso", c:"#3b82f6", dot:"#3b82f6", border:"#3b82f6"},
+                  entregado: {l:"Entregado",  c:"#f97316", dot:"#f97316", border:"#f97316"},
+                  revision:  {l:"A corregir", c:"#ef4444", dot:"#ef4444", border:"#ef4444"},
+                  bloqueada: {l:"Bloqueada",  c:"#6b7280", dot:"#6b7280", border:T.border},
+                  aprobado:  {l:"Aprobado",   c:"#22c55e", dot:"#22c55e", border:"#22c55e"},
                 };
                 return(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12,marginBottom:16}}>
@@ -10929,9 +10929,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       const correcciones=t.correcciones||0;
                       const brief=(t.brief||t.descripcion||"").trim();
                       const hasSlots=(t.slots||[]).length>0;
+                      const cardBorder=isUrgente?`1.5px solid ${T.red}`:t.estado==="pendiente"||t.estado==="bloqueada"?`1px solid ${T.border}`:`1px solid ${est.border}`;
                       return(
                         <div key={t._id} onClick={()=>setKanbanSelected(t)}
-                          style={{background:T.card,border:`1px solid ${T.border}`,borderLeft:`3px solid ${est.dot}`,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"pointer",display:"flex",flexDirection:"column",minHeight:140,transition:"box-shadow 0.15s, background 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}
+                          style={{background:T.card,border:cardBorder,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"pointer",display:"flex",flexDirection:"column",minHeight:140,transition:"box-shadow 0.15s, background 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}
                           onMouseEnter={e=>{e.currentTarget.style.boxShadow=DS.shadow.lg;e.currentTarget.style.background=T.surface;}}
                           onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.background=T.card;}}>
 
