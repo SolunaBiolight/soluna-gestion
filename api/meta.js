@@ -1137,6 +1137,27 @@ export default async function handler(req, res) {
       return res.json({ ok: true, account: safeAccount(updated) });
     }
 
+    // Cambiar SOLO la cuenta publicitaria activa de un token, preservando
+    // página/IG/pixel ya configurados (a diferencia de "select" que los pisa).
+    if (action === "set_ad_account" && req.method === "POST") {
+      if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, acc_id);
+      if (!cfg) return res.status(404).json({ error: "Cuenta no encontrada" });
+      const { ad_account_id, ad_account_name, currency, timezone_name } = req.body || {};
+      if (!ad_account_id) return res.status(400).json({ error: "Falta ad_account_id" });
+      let resolvedCurrency = currency, resolvedTz = timezone_name;
+      if (!resolvedCurrency || !resolvedTz) {
+        try {
+          const info = await metaGet(ad_account_id, { fields: "currency,timezone_name" }, cfg.access_token);
+          if (!resolvedCurrency) resolvedCurrency = info.currency || "USD";
+          if (!resolvedTz) resolvedTz = info.timezone_name || null;
+        } catch (_) { if (!resolvedCurrency) resolvedCurrency = "USD"; }
+      }
+      const updated = { ...cfg, ad_account_id, ad_account_name: ad_account_name || cfg.ad_account_name, currency: resolvedCurrency || cfg.currency || "USD", timezone_name: resolvedTz || cfg.timezone_name || null };
+      await saveMetaAccount(db, uid, acc_id, updated);
+      return res.json({ ok: true, account: safeAccount(updated) });
+    }
+
     if (action === "set_active" && req.method === "POST") {
       const { id } = req.body || {};
       await db.collection("users").doc(uid).set({ meta_active_account: id }, { merge: true });
