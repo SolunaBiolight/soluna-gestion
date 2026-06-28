@@ -10215,7 +10215,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           {t.tiempoEntregaDias&&t.estado==="aprobado"&&<span style={{fontSize:11,color:T.blue,background:T.blue+"12",borderRadius:6,padding:"3px 10px",border:`1px solid ${T.blue}30`}}>⏱ {t.tiempoEntregaDias}d</span>}
         </div>
         {/* Estados */}
-        {!colabMode&&(()=>{
+        {(!colabMode||colabMode.permisos?.verTareas)&&(()=>{
           const ADMIN_STEPS=[
             {key:"pendiente",  label:"Pendiente",  color:"#d97706"},
             {key:"en_proceso", label:"En proceso", color:"#3b82f6"},
@@ -10287,7 +10287,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           );
         })()}
         {/* Fila editable: asignado / deadline */}
-        {!colabMode&&editModeDetalle&&(
+        {(!colabMode||colabMode.permisos?.verTareas)&&editModeDetalle&&(
           <div style={{display:"flex",gap:10,marginBottom:24,flexWrap:"wrap"}}>
             <div style={{flex:2,minWidth:160}}>
               <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Asignado a</div>
@@ -10303,7 +10303,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           </div>
         )}
         {/* Publicado — solo para pauta/orgánico aprobadas */}
-        {!colabMode&&t.estado==="aprobado"&&(t.tipoContenido==="pauta"||t.tipoContenido==="organico")&&(
+        {(!colabMode||colabMode.permisos?.verTareas)&&t.estado==="aprobado"&&(t.tipoContenido==="pauta"||t.tipoContenido==="organico")&&(
           <div style={{marginBottom:20}}>
             <button onClick={()=>togglePublicado(t._id,!t.publicado)}
               style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",borderRadius:8,border:`1.5px solid ${t.publicado?"#06b6d4":"#06b6d440"}`,background:t.publicado?"#06b6d415":"transparent",color:t.publicado?"#06b6d4":T.textMd,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
@@ -10313,7 +10313,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           </div>
         )}
         {/* Recordatorio + WA */}
-        {!colabMode&&colab&&t.estado!=="aprobado"&&(
+        {(!colabMode||colabMode.permisos?.verTareas)&&colab&&t.estado!=="aprobado"&&(
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:24}}>
             <AsyncButton onClick={async()=>{
               await tareasApi({action:"sendRecordatorio",tareaId:t._id});
@@ -10502,7 +10502,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 );
               })}
-              {!colabMode&&(
+              {(!colabMode||colabMode.permisos?.verTareas)&&(
                 <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8,padding:"10px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:12,fontWeight:500,color:T.text}}>{todosCompletos?"¡Todas las entregas completadas!":"Esperando entregas restantes…"}</div>
@@ -10580,13 +10580,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       </div>
                     )}
                     <div style={{display:"flex",gap:6,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`,flexWrap:"wrap",alignItems:"center"}}>
-                      {!colabMode&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
+                      {(!colabMode||colabMode.permisos?.verTareas)&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
                         <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#22c55e",color:"#fff",border:"1.5px solid #16a34a55",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>✓ Aprobar</AsyncButton>
                         <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>🔁 Pedir cambios</button>
                         {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
                       </>}
-                      {!colabMode&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
-                      {!colabMode&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
+                      {(!colabMode||colabMode.permisos?.verTareas)&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
+                      {(!colabMode||colabMode.permisos?.verTareas)&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
                       {colabMode&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<AsyncButton onClick={async()=>{
                         if(!await appConfirm(`¿Eliminar tu entrega "${del.label||`v${i+1}`}"?`,{danger:true,okLabel:"Eliminar"})) return;
                         try{
@@ -10788,7 +10788,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           );
         })()}
         {/* Acciones admin */}
-        {!colabMode&&(
+        {(!colabMode||colabMode.permisos?.verTareas)&&(
           <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"space-between",paddingTop:16,borderTop:`1px solid ${T.border}`}}>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               {colab&&<button onClick={()=>copyLink(colab.token)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>📋 Link colaborador</button>}
@@ -10820,18 +10820,18 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <button onClick={()=>setCalendarView(true)} style={{padding:"5px 12px",fontSize:12,fontWeight:calendarView?600:400,background:calendarView?T.accentSolid:"transparent",color:calendarView?"#fff":T.textMd,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>Calendario</button>
           </div>
         )}
-        {view==="todo"&&!calendarView&&!colabMode&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
+        {view==="todo"&&!calendarView&&(!colabMode||colabMode.permisos?.verTareas)&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Tarea</button>}
         {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
         {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Tablero compartido</button>}
         {view==="referencias"&&!colabMode&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Marca</button>}
-        {view==="todo"&&colabMode&&<button onClick={()=>setShowNTColab(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>+ Proponer tarea</button>}
+        {view==="todo"&&colabMode&&!colabMode.permisos?.verTareas&&<button onClick={()=>setShowNTColab(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>+ Proponer tarea</button>}
       </AppTopbar>
 
       {/* Barra de tabs — 2 tabs principales */}
       <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:colabMode?52:100,zIndex:29}}>
         <div style={{display:"flex",paddingLeft:24}}>
           {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>{
-            if(!colabMode) return true;
+            if(!colabMode||colabMode.permisos?.verTareas) return true;
             if(id==="equipo") return !!colabMode.permisos?.verEquipo;
             return true;
           }).map(([id,label])=>{
@@ -10856,7 +10856,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               Volver
             </button>
             <div style={{flex:1}}/>
-            {!colabMode&&(editModeDetalle?(
+            {(!colabMode||colabMode.permisos?.verTareas)&&(editModeDetalle?(
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>{setEditModeDetalle(false);}} style={{...BtnSecondary(T),fontSize:12,padding:"5px 14px",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
                 <AsyncButton onClick={guardarEdicion} style={{...BtnPrimary(T),fontSize:12,padding:"5px 16px",fontFamily:"'Inter',system-ui,sans-serif"}}>Guardar</AsyncButton>
@@ -10928,7 +10928,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </div>
               )}
               {/* GUÍA ¿Cómo funciona? */}
-              {!colabMode&&<div style={{marginBottom:16}}>
+              {(!colabMode||colabMode.permisos?.verTareas)&&<div style={{marginBottom:16}}>
                 <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
                 </button>
@@ -11056,7 +11056,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 );
               })()}
-              {!colabMode&&paraRevisar.length>0&&(
+              {(!colabMode||colabMode.permisos?.verTareas)&&paraRevisar.length>0&&(
                 <div style={{marginBottom:20}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showParaRevisar?10:0,cursor:"pointer"}} onClick={()=>setShowParaRevisar(p=>!p)}>
                     <div style={{width:7,height:7,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
