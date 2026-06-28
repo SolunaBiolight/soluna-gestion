@@ -9329,6 +9329,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [assigneeSelectKey, setAssigneeSelectKey] = useState(0); // fuerza reset del select al agregar
   function setNtAsignado(email){ setNtAsignados(email?[email]:[]); }
   const [ntDeadline, setNtDeadline] = useState("");
+  const [ntTipoContenido, setNtTipoContenido] = useState(""); // "" | "pauta" | "organico"
   const [draggedTarea, setDraggedTarea] = useState(null);   // {id, fromColabKey}
   const [dragOverColab, setDragOverColab] = useState(null); // _key del card destino
   const [filterColab, setFilterColab] = useState(""); // email | "" = todos
@@ -9590,9 +9591,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const colab = primerColab;
     const linksArr = ntLinks.filter(l=>l.url.trim());
     const checkArr = ntChecklist.filter(i=>i.text.trim());
-    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
+    const d = await tareasApi({action:"createTarea",titulo:ntTitulo.trim(),descripcion:ntDesc.trim(),brief:ntBrief.trim(),links:linksArr,checklist:checkArr,asignadoEmail:primerAsignado,asignadoNombre:primerColab?.nombre||"",asignadosEmails:todosAsignados,deadline:ntDeadline||null,tipoContenido:ntTipoContenido||null,managerEmail:user?.email||"",recurrente:ntRecurrente,frecuenciaRecurrente:ntRecurrente?ntFrecuencia:null,esCampaña:ntEsCampaña,slots:slotsLimpios});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
+    setShowNT(false); setNtTitulo(""); setNtDesc(""); setNtBrief(""); setNtLinks([{name:"",url:"",asignadoEmail:""}]); setNtChecklist([]); setNtAsignados([]); setNtDeadline(""); setNtTipoContenido(""); setNtRecurrente(false); setNtFrecuencia("semanal"); setNtEsCampaña(false); setNtSlots([]);
     // Mostrar resultado de emails
     const emailResults = d._emailResults||[];
     const sent = emailResults.filter(r=>r.ok);
@@ -11143,6 +11144,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             <div style={{display:"flex",alignItems:"center",gap:5}}>
                               {isUrgente&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                               {correcciones>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"2px 7px"}}>🔁 {correcciones}</span>}
+                              {t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:"#8b5cf6",background:"#8b5cf612",borderRadius:4,padding:"2px 7px"}}>💰 Pauta</span>}
+                              {t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:"#22c55e",background:"#22c55e12",borderRadius:4,padding:"2px 7px"}}>🌿 Orgánico</span>}
                               {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:500}}>#{t.tareaNumStr}</span>}
                             </div>
                           </div>
@@ -12002,10 +12005,26 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     </div>
                 }
               </div>}
-              {/* Deadline */}
-              <div>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
-                <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
+              {/* Deadline + Tipo contenido */}
+              <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Fecha límite</div>
+                  <input type="date" value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)} style={{...iS,fontSize:13,width:"100%"}}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo de contenido</div>
+                  <div style={{display:"flex",borderRadius:DS.r.md,overflow:"hidden",border:`1px solid ${T.border}`}}>
+                    {[{v:"",emoji:"—",bg:T.surface,fg:T.text},{v:"organico",emoji:"🌿 Orgánico",bg:"#22c55e",fg:"#fff"},{v:"pauta",emoji:"💰 Pauta",bg:"#8b5cf6",fg:"#fff"}].map((opt,i)=>{
+                      const sel=ntTipoContenido===opt.v;
+                      return(
+                        <button key={opt.v} onClick={()=>setNtTipoContenido(opt.v)}
+                          style={{flex:1,padding:"7px 4px",fontSize:11,fontWeight:sel?700:400,background:sel?opt.bg:T.card,color:sel?opt.fg:T.textSm,border:"none",borderLeft:i>0?`1px solid ${T.border}`:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",whiteSpace:"nowrap"}}>
+                          {opt.emoji}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
               {/* Brief — campo principal */}
               <div>
