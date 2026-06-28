@@ -9705,7 +9705,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       tiempoEntregaDias=Math.max(1,Math.ceil((new Date()-created)/86400000));
     }
     await tareasApi({action:"updateEstado",tareaId,estado,feedback,tiempoEntregaDias});
-    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,estado,feedbackActual:estado==="revision"?feedback||null:null,correcciones:estado==="revision"?(t.correcciones||0)+1:t.correcciones,tiempoEntregaDias:tiempoEntregaDias||t.tiempoEntregaDias}:t)}));
+    const upd={estado,feedbackActual:estado==="revision"?feedback||null:null,tiempoEntregaDias:tiempoEntregaDias||tarea?.tiempoEntregaDias};
+    if(estado==="revision") upd.correcciones=(tarea?.correcciones||0)+1;
+    setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
+    if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
     if(estado==="aprobado"&&tarea?.recurrente&&tarea?.deadline){
       try{
         const dl=tarea.deadline._seconds?new Date(tarea.deadline._seconds*1000):new Date(tarea.deadline);
@@ -10198,77 +10201,69 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             {key:"pendiente",  label:"Pendiente",  color:"#d97706"},
             {key:"en_proceso", label:"En proceso", color:"#3b82f6"},
             {key:"entregado",  label:"Entregado",  color:"#f97316"},
+            {key:"revision",   label:"En revisión",color:"#ef4444"},
             {key:"aprobado",   label:"Aprobado",   color:"#22c55e"},
           ];
-          const stepOrder={pendiente:0,en_proceso:1,bloqueada:1,revision:2,entregado:2,aprobado:3};
+          const stepOrder={pendiente:0,en_proceso:1,bloqueada:1,entregado:2,revision:3,aprobado:4};
           const curOrder=stepOrder[t.estado]??0;
-          const stepToOrder={pendiente:0,en_proceso:1,entregado:2,aprobado:3};
           return(
             <div style={{marginBottom:24}}>
-              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:16}}>Estado</div>
-              {/* Stepper clickeable */}
-              <div style={{display:"flex",alignItems:"flex-start",marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:14}}>Estado</div>
+              {/* Stepper */}
+              <div style={{display:"flex",alignItems:"flex-start",marginBottom:12}}>
                 {ADMIN_STEPS.map((step,idx)=>{
-                  const thisOrder=stepToOrder[step.key];
-                  const isActive=t.estado===step.key||(step.key==="en_proceso"&&(t.estado==="bloqueada"))||(step.key==="entregado"&&t.estado==="revision");
+                  const thisOrder=stepOrder[step.key];
+                  const isActive=t.estado===step.key||(step.key==="en_proceso"&&t.estado==="bloqueada");
                   const isPast=thisOrder<curOrder&&!isActive;
                   const isFuture=thisOrder>curOrder;
                   const dotColor=isActive?step.color:isPast?step.color:T.border;
                   return(
                     <React.Fragment key={step.key}>
-                      <AsyncButton onClick={()=>updateEstado(t._id,step.key)}
-                        style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7,cursor:"pointer",background:"transparent",border:"none",padding:0,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        <div style={{
-                          width:28,height:28,borderRadius:"50%",
-                          background:isActive||isPast?dotColor:"transparent",
-                          border:`2px solid ${dotColor}`,
-                          display:"flex",alignItems:"center",justifyContent:"center",
-                          transition:"all 0.2s",
-                        }}>
-                          {(isActive||isPast)&&<div style={{width:8,height:8,borderRadius:"50%",background:"#fff"}}/>}
+                      <button
+                        onClick={()=>step.key==="revision"?setShowFeedback(p=>({...p,[t._id]:!p[t._id]})):updateEstado(t._id,step.key)}
+                        style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer",background:"transparent",border:"none",padding:0,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif",minWidth:0}}>
+                        <div style={{width:26,height:26,borderRadius:"50%",background:isActive||isPast?dotColor:"transparent",border:`2px solid ${dotColor}`,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0}}>
+                          {isPast&&<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5"><polyline points="20,6 9,17 4,12"/></svg>}
+                          {isActive&&<div style={{width:7,height:7,borderRadius:"50%",background:"#fff"}}/>}
                         </div>
-                        <span style={{fontSize:10,fontWeight:isActive?700:500,color:isActive?step.color:isFuture?T.textSm:T.textMd,whiteSpace:"nowrap"}}>
+                        <span style={{fontSize:9,fontWeight:isActive?700:500,color:isActive?step.color:isFuture?T.textSm:T.textMd,whiteSpace:"nowrap",textAlign:"center",lineHeight:1.2}}>
                           {step.label}
                         </span>
-                      </AsyncButton>
+                      </button>
                       {idx<ADMIN_STEPS.length-1&&(
-                        <div style={{flex:1,height:2,marginTop:13,background:isPast?step.color:T.border,borderRadius:1,transition:"background 0.3s",marginLeft:0,marginRight:0}}/>
+                        <div style={{flex:1,height:2,marginTop:11,background:isPast?step.color:T.border,borderRadius:1,transition:"background 0.3s"}}/>
                       )}
                     </React.Fragment>
                   );
                 })}
               </div>
-              {/* Estados especiales: Bloqueada + A revisar */}
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {/* Bloqueada + form feedback En revisión */}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                 <AsyncButton onClick={()=>updateEstado(t._id,"bloqueada")}
-                  style={{padding:"5px 12px",borderRadius:20,fontSize:11,border:`1px solid ${t.estado==="bloqueada"?"#6b7280":T.border}`,background:t.estado==="bloqueada"?"#6b728018":"transparent",color:t.estado==="bloqueada"?"#6b7280":T.textMd,cursor:"pointer",fontWeight:t.estado==="bloqueada"?700:500,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  style={{padding:"4px 11px",borderRadius:20,fontSize:11,border:`1px solid ${t.estado==="bloqueada"?"#6b7280":T.border}`,background:t.estado==="bloqueada"?"#6b728018":"transparent",color:t.estado==="bloqueada"?"#6b7280":T.textMd,cursor:"pointer",fontWeight:t.estado==="bloqueada"?700:500,fontFamily:"'Inter',system-ui,sans-serif"}}>
                   Bloqueada
                 </AsyncButton>
-                {!showFeedback[t._id]
-                  ? <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))}
-                      style={{padding:"5px 12px",borderRadius:20,fontSize:11,border:`1px solid ${t.estado==="revision"?T.red:T.border}`,background:t.estado==="revision"?ESTADOS.revision.bg:"transparent",color:t.estado==="revision"?T.red:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:t.estado==="revision"?700:500}}>
-                      {ESTADOS.revision.label}
-                    </button>
-                  : <div style={{width:"100%",marginTop:8,background:T.surface,borderRadius:DS.r.lg,padding:"14px",border:`1px solid ${T.red}40`}}>
-                      <div style={{fontSize:12,fontWeight:600,color:T.red,marginBottom:8}}>¿Qué debe corregir? <span style={{fontWeight:700}}>*</span> <span style={{fontWeight:400,color:T.textSm}}>— el colaborador ve este texto</span></div>
-                      <textarea value={feedbackText[t._id]||""} onChange={e=>setFeedbackText(p=>({...p,[t._id]:e.target.value}))}
-                        placeholder="Describí exactamente qué cambiar (este mensaje le llega al colaborador por email y WA)..."
-                        style={{...iS,fontSize:12,width:"100%",minHeight:72,resize:"vertical",marginBottom:10,borderColor:(feedbackText[t._id]||"").trim()?"":T.red+"66",boxSizing:"border-box"}}/>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                        <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador — es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>🔁 Pedir cambios</AsyncButton>
-                        {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
-                          <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
-                            target="_blank" rel="noreferrer"
-                            style={{fontSize:12,padding:"7px 14px",borderRadius:8,background:"#22c55e12",color:"#22c55e",border:"1px solid #22c55e44",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                            WA con feedback
-                          </a>
-                        )}
-                        <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Cancelar</button>
-                      </div>
-                    </div>
-                }
               </div>
+              {showFeedback[t._id]&&(
+                <div style={{marginTop:10,background:T.surface,borderRadius:DS.r.lg,padding:"14px",border:`1px solid ${T.red}40`}}>
+                  <div style={{fontSize:12,fontWeight:600,color:T.red,marginBottom:8}}>¿Qué debe corregir? <span style={{fontWeight:700}}>*</span> <span style={{fontWeight:400,color:T.textSm}}>— el colaborador ve este texto</span></div>
+                  <textarea value={feedbackText[t._id]||""} onChange={e=>setFeedbackText(p=>({...p,[t._id]:e.target.value}))}
+                    placeholder="Describí exactamente qué cambiar (este mensaje le llega al colaborador por email y WA)..."
+                    style={{...iS,fontSize:12,width:"100%",minHeight:72,resize:"vertical",marginBottom:10,borderColor:(feedbackText[t._id]||"").trim()?"":T.red+"66",boxSizing:"border-box"}}/>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                    <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador — es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>Pedir cambios</AsyncButton>
+                    {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
+                      <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
+                        target="_blank" rel="noreferrer"
+                        style={{fontSize:12,padding:"7px 14px",borderRadius:8,background:"#22c55e12",color:"#22c55e",border:"1px solid #22c55e44",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                        WA con feedback
+                      </a>
+                    )}
+                    <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Cancelar</button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}
