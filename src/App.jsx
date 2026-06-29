@@ -9887,7 +9887,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const activity = t.activity||[];
 
     // ── VISTA COLABORADOR — layout rediseñado ──────────────────────────────────
-    if(colabMode) {
+    if(colabMode&&!colabMode.permisos?.verTareas) {
       const STEPS=[
         {key:"pendiente",  label:"Pendiente",   color:"#d97706"},
         {key:"en_proceso", label:"En proceso",  color:"#3b82f6"},
