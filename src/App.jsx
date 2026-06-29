@@ -11675,6 +11675,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           <span style={{fontSize:14,fontWeight:600,color:T.text}}>{nombre}</span>
                           {c?.rol&&<span style={{fontSize:10,fontWeight:600,color:T.accent,background:T.accentSolid+"18",borderRadius:20,padding:"1px 8px"}}>{c.rol}</span>}
                           {!c&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:20,padding:"1px 8px",border:`1px solid ${T.border}`}}>Sin email</span>}
+                          {c?.permisos?.verTareas&&<span style={{fontSize:10,fontWeight:700,background:"#8b5cf622",color:"#8b5cf6",borderRadius:20,padding:"1px 8px"}}>CM</span>}
+                          {!c?.permisos?.verTareas&&c?.permisos?.editorProduccion&&<span style={{fontSize:10,fontWeight:700,background:T.accentSolid+"18",color:T.accent,borderRadius:20,padding:"1px 8px"}}>Editor</span>}
                           {entregado>0&&<span style={{fontSize:10,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 8px"}}>📦 {entregado} para revisar</span>}
                         </div>
                         <div style={{fontSize:12,color:T.textSm,display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -11692,8 +11694,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>📋 Copiar link</button>}
                         {waHref&&<a href={waHref} target="_blank" rel="noreferrer"
                           style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>💬 WhatsApp</a>}
-                        {c&&<button onClick={()=>setPermisosModal({colabId:c._id,nombre:c.nombre})}
-                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>Permisos</button>}
                         <span onClick={e=>{e.stopPropagation();setExpandedEquipo(expanded?null:_key);setEditingMember(null);}}
                           style={{fontSize:11,color:T.textSm,marginLeft:2,cursor:"pointer",padding:"4px 6px"}}>{expanded?"▲":"▼"}</span>
                       </div>
@@ -11809,6 +11809,32 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                               <button onClick={()=>setEditingMember(null)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>Cancelar</button>
                               {c&&<AsyncButton onClick={()=>updateColabData(c._id)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>Guardar</AsyncButton>}
                             </div>
+                          </div>
+                        )}
+
+                        {/* Permisos inline */}
+                        {!editing&&c&&(
+                          <div style={{paddingTop:12,borderTop:`1px solid ${T.border}`,marginTop:8}}>
+                            <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Acceso al portal</div>
+                            {[
+                              {key:"verTareas",label:"Gestión de tareas",desc:"Crear, aprobar, pedir cambios y ver todo el kanban",badge:"CM"},
+                              {key:"editorProduccion",label:"Editor de producción",desc:"Puede recibir creativos asignados"},
+                              {key:"verCreativos",label:"Board de creativos",desc:"Ve el tablero de producción de creativos"},
+                            ].map(({key,label,desc,badge})=>{
+                              const active=!!(c.permisos?.[key]);
+                              return(
+                                <div key={key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}33`}}>
+                                  <div style={{flex:1,marginRight:12}}>
+                                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                      <span style={{fontSize:13,fontWeight:500,color:T.text}}>{label}</span>
+                                      {badge&&active&&<span style={{fontSize:10,fontWeight:700,background:"#8b5cf622",color:"#8b5cf6",borderRadius:4,padding:"1px 6px"}}>{badge}</span>}
+                                    </div>
+                                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{desc}</div>
+                                  </div>
+                                  <DSToggle T={T} active={active} onToggle={async()=>await updateColabPermisos(c._id,key,!active)}/>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
 
