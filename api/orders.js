@@ -286,6 +286,29 @@ export default async function handler(req, res) {
       const pctPlat   = (parseFloat(comCfg.shopify)||0)/100;
       const metPcts   = Object.values(metodos).map(m=>parseFloat(m.pct)||0).filter(x=>x>0);
       const pctPago   = metPcts.length ? (metPcts.reduce((a,b)=>a+b,0)/metPcts.length)/100 : 0;
+      // Comisión de pago POR MÉTODO: cada venta usa la tasa de SU método real
+      // (ej: transferencia 1,21%), no el promedio. metodos está keyed por nombre
+      // de gateway (= o.pay). Match exacto y, si no, normalizado/parcial.
+      const normPay = s => String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+      const metodosNorm = {};
+      for (const [k,v] of Object.entries(metodos)) { const p = parseFloat(v?.pct); if (isFinite(p) && p>0) metodosNorm[normPay(k)] = p/100; }
+      function pctPagoFor(payStr) {
+        const np = normPay(payStr);
+        if (!np) return pctPago;
+        if (metodosNorm[np] != null) return metodosNorm[np];
+        for (const [k,v] of Object.entries(metodosNorm)) { if (k && (k.includes(np) || np.includes(k))) return v; }
+        return pctPago;
+      }
+      // Comisión de pago de las ventas que NO pasaron por MP, cada una con la tasa
+      // de su método (las de MP usan la comisión real, ya sumada en mpComm).
+      function noMpPayComm(raw) {
+        let s = 0;
+        for (const o of (raw?.orders_detail||[])) {
+          if (/mercado\s*pago/i.test(o.pay||"")) continue;
+          s += (parseFloat(o.revenue)||0) * pctPagoFor(o.pay);
+        }
+        return s;
+      }
       const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
 
       function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mpRev) {
@@ -308,8 +331,7 @@ export default async function handler(req, res) {
         // Comisión de pago = comisión REAL de MP (sus ventas) + % configurado SOLO
         // sobre las ventas que NO pasaron por MP (transferencia, etc.). Antes el %
         // se aplicaba a TODO el revenue y encima se sumaba MP → doble-conteo.
-        const noMpRev   = Math.max(0, storeRev - (parseFloat(mpRev)||0));
-        const comPago   = (parseFloat(mpComm)||0) + noMpRev * pctPago;
+        const comPago   = (parseFloat(mpComm)||0) + noMpPayComm(raw);
         // Envío = órdenes de tienda (TN/Shopify) × promedio + envío de las órdenes
         // ML que son Flex (el resto de ML es Mercado Envíos: lo cubre ML, no se cuenta).
         const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
@@ -390,7 +412,7 @@ export default async function handler(req, res) {
         const impuestos = rev*pctImp;
         // Comisión separada como en el general: Plataforma vs Pago.
         const comPlat = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : rev*pctPlat;
-        const comPago = isMl ? 0 : ((parseFloat(mpComm)||0) + Math.max(0, rev-(parseFloat(mpRev)||0))*pctPago);
+        const comPago = isMl ? 0 : ((parseFloat(mpComm)||0) + noMpPayComm(raw));
         const comis = comPlat + comPago;
         const envio = isMl ? (parseFloat(mlEnv)||0) : ord*envioProm;
         const ads = parseFloat(adSpend)||0;
@@ -456,7 +478,7 @@ export default async function handler(req, res) {
           // de esta venta (vía receipt_id) la usamos; si no, caemos al % configurado.
           const ref = mpRefCache[o.id];
           const realMp = (ref && feeByRef[ref]!=null) ? feeByRef[ref] : null;
-          const comis = (realMp!=null) ? (rev*pctPlat + realMp) : (rev*(pctPlat+pctPago));
+          const comis = (realMp!=null) ? (rev*pctPlat + realMp) : (rev*(pctPlat+pctPagoFor(o.pay)));
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
