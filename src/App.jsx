@@ -10812,9 +10812,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       <AppTopbar T={T} section="Trabajo" onHome={onHome} top={colabMode?0:48}>
         {enRevision.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>🔁 {enRevision.length} en corrección</span>}
         {view==="todo"&&(
-          <div style={{display:"flex",borderRadius:8,border:`1px solid ${T.border}`,overflow:"hidden",flexShrink:0}}>
-            <button onClick={()=>setCalendarView(false)} style={{padding:"5px 12px",fontSize:12,fontWeight:calendarView?400:600,background:calendarView?"transparent":T.accentSolid,color:calendarView?T.textMd:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>Lista</button>
-            <button onClick={()=>setCalendarView(true)} style={{padding:"5px 12px",fontSize:12,fontWeight:calendarView?600:400,background:calendarView?T.accentSolid:"transparent",color:calendarView?"#fff":T.textMd,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>Calendario</button>
+          <div style={{display:"flex",borderRadius:10,border:`1.5px solid ${T.border}`,overflow:"hidden",flexShrink:0,background:T.surface}}>
+            <button onClick={()=>setCalendarView(false)} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",fontSize:12,fontWeight:calendarView?400:700,background:calendarView?"transparent":T.accentSolid,color:calendarView?T.textMd:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              Lista
+            </button>
+            <button onClick={()=>setCalendarView(true)} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",fontSize:12,fontWeight:calendarView?700:400,background:calendarView?T.accentSolid:"transparent",color:calendarView?"#fff":T.textMd,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              Calendario
+            </button>
           </div>
         )}
         {view==="todo"&&!calendarView&&(!colabMode||colabMode.permisos?.verTareas)&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13,padding:"8px 18px",fontWeight:700,letterSpacing:"0.01em"}}>+ Tarea</button>}
