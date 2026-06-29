@@ -10235,7 +10235,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   const isActive=t.estado===step.key||(step.key==="en_proceso"&&t.estado==="bloqueada");
                   const isPast=thisOrder<curOrder&&!isActive;
                   const isFuture=thisOrder>curOrder;
-                  const dotColor=isActive?step.color:isPast?step.color:T.border;
+                  const dotColor=isActive?step.color:isPast?"#22c55e":T.border;
                   return(
                     <React.Fragment key={step.key}>
                       <button
@@ -10250,7 +10250,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         </span>
                       </button>
                       {idx<ADMIN_STEPS.length-1&&(
-                        <div style={{flex:1,height:2,marginTop:11,background:isPast?step.color:T.border,borderRadius:1,transition:"background 0.3s"}}/>
+                        <div style={{flex:1,height:2,marginTop:11,background:isPast?"#22c55e":T.border,borderRadius:1,transition:"background 0.3s"}}/>
                       )}
                     </React.Fragment>
                   );
