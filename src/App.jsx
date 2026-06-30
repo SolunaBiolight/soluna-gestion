@@ -11678,8 +11678,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           <span style={{fontSize:14,fontWeight:600,color:T.text}}>{nombre}</span>
                           {c?.rol&&<span style={{fontSize:10,fontWeight:600,color:T.accent,background:T.accentSolid+"18",borderRadius:20,padding:"1px 8px"}}>{c.rol}</span>}
                           {!c&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:20,padding:"1px 8px",border:`1px solid ${T.border}`}}>Sin email</span>}
-                          {c?.permisos?.verTareas&&<span style={{fontSize:10,fontWeight:700,background:"#8b5cf622",color:"#8b5cf6",borderRadius:20,padding:"1px 8px"}}>CM</span>}
-                          {!c?.permisos?.verTareas&&c?.permisos?.editorProduccion&&<span style={{fontSize:10,fontWeight:700,background:T.accentSolid+"18",color:T.accent,borderRadius:20,padding:"1px 8px"}}>Editor</span>}
+                          {c?.permisos?.verTareas&&!(c?.rol||"").toLowerCase().includes("cm")&&<span style={{fontSize:10,fontWeight:700,background:"#8b5cf622",color:"#8b5cf6",borderRadius:20,padding:"1px 8px"}}>CM</span>}
                           {entregado>0&&<span style={{fontSize:10,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 8px"}}>📦 {entregado} para revisar</span>}
                         </div>
                         <div style={{fontSize:12,color:T.textSm,display:"flex",gap:10,flexWrap:"wrap"}}>
