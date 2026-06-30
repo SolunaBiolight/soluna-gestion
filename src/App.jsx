@@ -23678,7 +23678,7 @@ function AppRendimiento({T, user, onHome}) {
   const [rendData, setRendData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [viewTab, setViewTab] = useState("overview");
+  const [viewTab, setViewTab] = useState("tabla");
   const [sortCol, setSortCol] = useState("Fecha"); const [sortDir, setSortDir] = useState("desc");
   const [days, setDays] = useState(30);
   const [useCustom, setUseCustom] = useState(false);
@@ -24035,13 +24035,7 @@ function AppRendimiento({T, user, onHome}) {
           <div style={{borderTop:`1px solid ${T.border}`,marginBottom:18,paddingTop:2}}/>
 
 
-          {/* Insights */}
-          {/* Nav tabs — justo arriba de la sección que controlan */}
-          <div style={{display:"flex",gap:3,background:T.surface,borderRadius:10,padding:3,width:"fit-content",marginBottom:14,marginTop:8,flexWrap:"wrap"}}>
-            {[["overview","💡 Insights"],["tabla","📋 Costos por venta"],["dow","📅 Por semana"]].map(([id,l])=>(
-              <button key={id} onClick={()=>setViewTab(id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:viewTab===id?T.card:"transparent",color:viewTab===id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>{l}</button>
-            ))}
-          </div>
+          {/* Solo la vista de Costos por venta (Insights y Por semana removidos) */}
 
           {viewTab==="overview"&&(()=>{
             const ins=[];
