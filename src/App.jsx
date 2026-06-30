@@ -10796,7 +10796,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               {t.estado!=="pendiente"&&<AsyncButton onClick={()=>revertEstadoAdmin(t._id)} style={{fontSize:12,padding:"7px 12px",borderRadius:8,background:"#f59e0b0a",color:"#d97706",border:"1px solid #f59e0b30",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>↩ Revertir</AsyncButton>}
             </div>
             <div style={{display:"flex",gap:6}}>
-              <button onClick={()=>openEditModal(t)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>✏️ Editar</button>
               <AsyncButton onClick={()=>deleteTarea(t._id)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>Eliminar</AsyncButton>
             </div>
           </div>
