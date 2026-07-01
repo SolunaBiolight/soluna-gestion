@@ -865,7 +865,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
             }
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
-              <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"?"Pro":userPlan==="full"?"Scale":isInTrial?"✨ Prueba gratis":"Plan Free"}</div>
+              <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"||userPlan==="full"?"⚡ Pro":isInTrial?"✨ Prueba gratis":"🔒 Trial vencido"}</div>
             </div>
           </div>
         )}
@@ -7220,10 +7220,10 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
             style={{marginTop:DS.sp.lg,padding:"11px 14px",background:`linear-gradient(135deg,${T.accentSolid}10,transparent)`,border:`1px solid ${T.accentSolid}33`,borderRadius:DS.r.md,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,display:"flex",alignItems:"center",gap:10}}
             onMouseEnter={e=>e.currentTarget.style.borderColor=T.accentSolid+"66"}
             onMouseLeave={e=>e.currentTarget.style.borderColor=T.accentSolid+"33"}>
-            <span style={{fontSize:14}}>💎</span>
+            <span style={{fontSize:14}}>⚡</span>
             <div style={{flex:1}}>
-              <div style={{fontSize:DS.font.xs,color:T.accent,fontWeight:DS.w.bold}}>Plan Free activo</div>
-              <div style={{fontSize:DS.font.xs,color:T.textSm}}>Desbloqueá todas las funciones →</div>
+              <div style={{fontSize:DS.font.xs,color:T.accent,fontWeight:DS.w.bold}}>Prueba gratuita activa</div>
+              <div style={{fontSize:DS.font.xs,color:T.textSm}}>Suscribite al plan Pro para continuar →</div>
             </div>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
           </div>
@@ -7292,7 +7292,7 @@ function AuthScreen({T, darkMode, onToggleDark}) {
     const ref = doc(db, "users", user.uid);
     const snap = await getDoc(ref);
     if(!snap.exists()) {
-      const trialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       await setDoc(ref, {
         uid: user.uid,
         email: user.email,
@@ -8073,10 +8073,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 // ===========================================
 // APP PLANES - Página de suscripción
 // ===========================================
-function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAGO, ALIAS_PAGO, TITULAR_PAGO, SUPPORT_EMAIL}) {
+function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAGO, ALIAS_PAGO, TITULAR_PAGO, SUPPORT_EMAIL, isTrialExpired=false}) {
   const iS=InputStyle(T);
   const [step,setStep]=useState("planes");
-  const [planSel,setPlanSel]=useState(null);
   const [metodo,setMetodo]=useState(null);
   const [txHash,setTxHash]=useState("");
   const [transferRef,setTransferRef]=useState("");
@@ -8084,74 +8083,36 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
   const [anual,setAnual]=useState(false);
   const [faqOpen,setFaqOpen]=useState(null);
 
-  // ids Firestore: free / plus / full  (NO cambiar — compatibilidad con datos existentes)
-  const PLANES=[
-    {
-      id:"free", nombre:"Free", color:"#6b7280", icon:"🌱",
-      desc:"Para explorar la plataforma",
-      precio_usdt:0, precio_ars:0,
-      precio_usdt_anual:0, precio_ars_anual:0,
-      features:[
-        {ok:true,  text:"Dashboard básico (últimos 30 días)"},
-        {ok:true,  text:"Hasta 50 envíos por mes"},
-        {ok:true,  text:"10 reclamos activos"},
-        {ok:true,  text:"5 canjes activos"},
-        {ok:true,  text:"1 tienda conectada"},
-        {ok:false, text:"Etiquetas PDF con SKU"},
-        {ok:false, text:"Stock multi-canal"},
-        {ok:false, text:"Facturación ARCA / AFIP"},
-        {ok:false, text:"Meta Ads"},
-        {ok:false, text:"Equipo y tareas"},
-      ],
-    },
-    {
-      id:"plus", nombre:"Pro", color:"#6366f1", icon:"⚡",
-      desc:"Para tiendas que escalan",
-      popular:true,
-      precio_usdt:49, precio_ars:49000,
-      precio_usdt_anual:39, precio_ars_anual:39000,
-      ahorro_usdt:120, ahorro_ars:120000,
-      features:[
-        {ok:true,  text:"Dashboard completo sin límites"},
-        {ok:true,  text:"Envíos ilimitados + etiquetas PDF + SKU"},
-        {ok:true,  text:"Reclamos ilimitados + auto-tracking Andreani"},
-        {ok:true,  text:"Canjes ilimitados"},
-        {ok:true,  text:"Stock multi-canal (TN + Shopify + ML)"},
-        {ok:true,  text:"Facturación ARCA / AFIP"},
-        {ok:true,  text:"Meta Ads (Facebook + Instagram)"},
-        {ok:true,  text:"Equipo: hasta 5 personas + tareas"},
-        {ok:true,  text:"Audio Studio (TTS Gemini)"},
-        {ok:true,  text:"Hasta 3 tiendas conectadas"},
-      ],
-    },
-    {
-      id:"full", nombre:"Scale", color:"#a855f7", icon:"💎",
-      desc:"Sin techo, sin restricciones",
-      precio_usdt:89, precio_ars:89000,
-      precio_usdt_anual:71, precio_ars_anual:71000,
-      ahorro_usdt:216, ahorro_ars:216000,
-      features:[
-        {ok:true,  text:"Todo Pro, sin restricciones"},
-        {ok:true,  text:"Tiendas ilimitadas"},
-        {ok:true,  text:"Equipo ilimitado"},
-        {ok:true,  text:"Soporte prioritario WhatsApp 24/7"},
-        {ok:true,  text:"Onboarding personalizado"},
-        {ok:true,  text:"API access (próximamente)"},
-        {ok:true,  text:"Reglas automáticas (próximamente)"},
-        {ok:true,  text:"White label (próximamente)"},
-      ],
-    },
-  ];
+  // Plan único — Pro (id Firestore: "plus", NO cambiar)
+  const PLAN={
+    id:"plus", nombre:"Pro", color:"#6366f1", icon:"⚡",
+    precio_usdt:59, precio_ars:59000,
+    precio_usdt_anual:49, precio_ars_anual:49000,
+    precio_normal:120,
+    features:[
+      "Envíos ilimitados + etiquetas PDF con SKU",
+      "Auto-tracking Andreani y reclamos ilimitados",
+      "Facturación ARCA / AFIP integrada",
+      "Márgenes, profit y costos por venta en tiempo real",
+      "Stock cruzado TN + Mercado Libre + Shopify",
+      "Meta Ads — campañas y métricas",
+      "Gestión de equipo + tareas ilimitadas",
+      "Canjes e influencers ilimitados",
+      "Audio Studio (TTS Gemini)",
+      "Tiendas ilimitadas",
+    ],
+  };
 
   const FAQS=[
-    {q:"¿Hay renovación automática?", a:"No. Pagás mes a mes manualmente, sin débito automático. Te avisamos por mail antes de que venza."},
+    {q:"¿Hay renovación automática?", a:"No. Pagás mes a mes manualmente, sin débito automático. Te avisamos antes de que venza."},
     {q:"¿En cuánto tiempo se activa?", a:"En menos de 24 horas hábiles después de confirmar el pago. Generalmente mucho antes."},
-    {q:"¿Puedo cambiar de plan en cualquier momento?", a:"Sí. Podés subir o bajar de plan cuando quieras. El cambio se aplica en el siguiente ciclo."},
-    {q:"¿Qué pasa si cancelo?", a:"Tu cuenta vuelve al plan Free al vencer el período. No perdés ningún dato histórico."},
+    {q:"¿Puedo cancelar cuando quiero?", a:"Sí. No hay contrato ni penalidad. Tu cuenta sigue activa hasta fin del período pagado."},
+    {q:"¿Qué pasa con mis datos si no renuevo?", a:"Todos tus datos quedan guardados. Si volvés a suscribirte, todo sigue igual donde lo dejaste."},
   ];
 
-  const planActual=PLANES.find(p=>p.id===userPlan)||PLANES[0];
-  const planSelecc=PLANES.find(p=>p.id===planSel);
+  const precioU=anual?PLAN.precio_usdt_anual:PLAN.precio_usdt;
+  const precioARS=anual?PLAN.precio_ars_anual:PLAN.precio_ars;
+  const isPago=userPlan==="plus"||userPlan==="full";
 
   async function enviarPago() {
     if(metodo==="cripto"&&!txHash.trim()) return appAlert("Pegá el hash de transacción (TxID)");
@@ -8160,10 +8121,10 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
       await addDoc(collection(db,"pagos"),{
         uid: user.uid,
         email: user.email,
-        plan: planSel,
+        plan: PLAN.id,
         method: metodo,
         currency: metodo==="cripto"?"USDT":"ARS",
-        amount: metodo==="cripto"?planSelecc.precio_usdt:planSelecc.precio_ars,
+        amount: metodo==="cripto"?precioU:precioARS,
         txHash: metodo==="cripto"?txHash.trim():"",
         transferRef: metodo==="transfer"?transferRef.trim():"",
         nota: nota.trim(),
@@ -8182,7 +8143,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
         <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>¡Pago enviado!</div>
         <div style={{fontSize:14,color:T.textMd,marginBottom:8,lineHeight:1.6}}>
           {metodo==="cripto"?"Verificaremos tu transacción y activaremos tu plan ":"Confirmaremos tu transferencia y activaremos tu plan "}
-          <strong>{planSelecc?.nombre}</strong> en las próximas horas.
+          <strong>{PLAN.nombre}</strong> en las próximas horas.
         </div>
         <div style={{fontSize:13,color:T.textSm,marginBottom:24}}>Te notificamos a <strong>{user?.email}</strong>.</div>
         <button onClick={onBack} style={{...BtnPrimary(T),justifyContent:"center",width:"100%"}}>Volver al inicio</button>
@@ -8198,13 +8159,13 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pago con USDT (TRC20)</span>
       </div>
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
-        <div style={{background:T.card,border:`0.5px solid ${planSelecc?.color}44`,borderLeft:`3px solid ${planSelecc?.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
+        <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
           <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
-          <div style={{fontSize:17,fontWeight:700,color:planSelecc?.color}}>{planSelecc?.icon} {planSelecc?.nombre}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${planSelecc?.precio_usdt} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USDT/mes</span></div>
+          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.icon} {PLAN.nombre}</div>
+          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${precioU} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USDT/mes</span></div>
         </div>
         <div style={{marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${planSelecc?.precio_usdt} USDT (TRC20) a:</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${precioU} USDT (TRC20) a:</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
             <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"monospace"}}>{USDT_ADDRESS}</code>
             <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);toast("Dirección copiada","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>📋</button>
@@ -8238,10 +8199,10 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pago por transferencia bancaria</span>
       </div>
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
-        <div style={{background:T.card,border:`0.5px solid ${planSelecc?.color}44`,borderLeft:`3px solid ${planSelecc?.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
+        <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
           <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
-          <div style={{fontSize:17,fontWeight:700,color:planSelecc?.color}}>{planSelecc?.icon} {planSelecc?.nombre}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${planSelecc?.precio_ars.toLocaleString("es-AR")} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>ARS/mes</span></div>
+          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.icon} {PLAN.nombre}</div>
+          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${precioARS.toLocaleString("es-AR")} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>ARS/mes</span></div>
         </div>
         <div style={{marginBottom:20}}>
           <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Datos para transferir</div>
@@ -8250,7 +8211,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
               {label:"Titular", value:TITULAR_PAGO},
               {label:"Alias",   value:ALIAS_PAGO},
               {label:"CVU",     value:CVU_PAGO},
-              {label:"Monto",   value:`$${planSelecc?.precio_ars.toLocaleString("es-AR")} ARS`},
+              {label:"Monto",   value:`$${precioARS.toLocaleString("es-AR")} ARS`},
             ].map((row,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<3?`1px solid ${T.borderL}`:"none"}}>
                 <span style={{fontSize:12,color:T.textSm,width:65,flexShrink:0}}>{row.label}</span>
@@ -8282,7 +8243,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
         <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
-        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Plan {planSelecc?.nombre} — ¿Cómo pagás?</span>
+        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Plan {PLAN.nombre} — ¿Cómo pagás?</span>
       </div>
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -8302,7 +8263,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
             <div style={{fontSize:36,flexShrink:0,lineHeight:1}}>🏦</div>
             <div>
               <div style={{fontSize:16,fontWeight:700,color:T.text}}>Transferencia bancaria (ARS)</div>
-              <div style={{fontSize:13,color:T.textMd,marginTop:2}}>${planSelecc?.precio_ars.toLocaleString("es-AR")} ARS/mes</div>
+              <div style={{fontSize:13,color:T.textMd,marginTop:2}}>${precioARS.toLocaleString("es-AR")} ARS/mes</div>
               <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Confirmación manual en menos de 4hs hábiles.</div>
             </div>
           </div>
@@ -8311,196 +8272,127 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
     </div>
   );
 
-  /* ── Pantalla principal: listado de planes ── */
+  /* ── Pantalla principal ── */
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",paddingBottom:80}}>
       {/* Topbar */}
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:56,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
-        <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>
-        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Planes</span>
+        {!isTrialExpired&&<button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>}
+        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Suscripción</span>
       </div>
 
-      {/* Hero */}
-      <div style={{textAlign:"center",padding:"52px 20px 40px",background:`linear-gradient(180deg,${T.surface} 0%,${T.bg} 100%)`}}>
-        <div style={{display:"inline-block",background:"linear-gradient(135deg,#6366f120,#a855f720)",border:"1px solid #6366f130",borderRadius:20,padding:"4px 14px",fontSize:11,fontWeight:700,color:"#6366f1",letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:16}}>
-          Precios para el mercado argentino
-        </div>
-        <h1 style={{fontSize:36,fontWeight:900,color:T.text,letterSpacing:-1,margin:"0 0 12px",lineHeight:1.15}}>
-          La mitad del precio.<br/>
-          <span style={{background:"linear-gradient(135deg,#6366f1,#a855f7)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>El doble de funciones.</span>
-        </h1>
-        <p style={{fontSize:15,color:T.textMd,margin:"0 0 28px",maxWidth:520,marginLeft:"auto",marginRight:"auto",lineHeight:1.6}}>
-          Stock, envíos, reclamos, AFIP, Meta Ads, equipo y más — todo en una sola plataforma.
-          Sin renovación automática, sin letra chica.
-        </p>
+      <div style={{maxWidth:560,margin:"0 auto",padding:"40px 20px 0"}}>
 
-        {/* Toggle anual/mensual */}
-        <div style={{display:"inline-flex",alignItems:"center",gap:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:30,padding:"5px 6px",marginBottom:8}}>
-          <button onClick={()=>setAnual(false)} style={{padding:"6px 16px",borderRadius:24,fontSize:13,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:!anual?"#6366f1":T.surface,color:!anual?"#fff":T.textMd,transition:"all 0.15s"}}>
-            Mensual
-          </button>
-          <button onClick={()=>setAnual(true)} style={{padding:"6px 16px",borderRadius:24,fontSize:13,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:anual?"#6366f1":T.surface,color:anual?"#fff":T.textMd,transition:"all 0.15s",display:"flex",alignItems:"center",gap:7}}>
-            Anual
-            <span style={{background:"#22c55e",color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"1px 7px"}}>-20%</span>
-          </button>
-        </div>
-        {anual&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>🎉 2 meses gratis al pagar anualmente</div>}
-      </div>
+        {/* Banner trial vencido o hero normal */}
+        {isTrialExpired?(
+          <div style={{background:"#ef444412",border:"1px solid #ef444440",borderRadius:14,padding:"18px 22px",marginBottom:32,textAlign:"center"}}>
+            <div style={{fontSize:28,marginBottom:8}}>⏰</div>
+            <div style={{fontSize:18,fontWeight:800,color:"#ef4444",marginBottom:6}}>Tu prueba gratuita terminó</div>
+            <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Suscribite para seguir usando Growith y no perder tus datos.</div>
+          </div>
+        ):(
+          <div style={{textAlign:"center",marginBottom:32}}>
+            <div style={{display:"inline-block",background:"#6366f118",border:"1px solid #6366f130",borderRadius:20,padding:"4px 14px",fontSize:11,fontWeight:700,color:"#6366f1",letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:14}}>
+              🚀 Precio de lanzamiento
+            </div>
+            <h1 style={{fontSize:28,fontWeight:900,color:T.text,letterSpacing:-0.5,margin:"0 0 10px",lineHeight:1.2}}>
+              Todo lo que tu tienda necesita,<br/>
+              <span style={{background:"linear-gradient(135deg,#6366f1,#818cf8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>en un solo lugar.</span>
+            </h1>
+            <p style={{fontSize:14,color:T.textMd,margin:0,lineHeight:1.6}}>
+              Sin renovación automática · Sin letra chica
+            </p>
+          </div>
+        )}
 
-      {/* Plan actual activo */}
-      {userPlan!=="free"&&(
-        <div style={{maxWidth:960,margin:"0 auto 20px",padding:"0 20px"}}>
-          <div style={{background:`${planActual.color}10`,border:`1px solid ${planActual.color}40`,borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-            <span style={{fontSize:18}}>{planActual.icon}</span>
+        {/* Plan activo */}
+        {isPago&&(
+          <div style={{background:"#6366f110",border:"1px solid #6366f140",borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+            <span style={{fontSize:16}}>⚡</span>
             <div style={{flex:1}}>
-              <span style={{fontSize:13,fontWeight:700,color:planActual.color}}>Plan {planActual.nombre} activo</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#6366f1"}}>Plan Pro activo</span>
               {planExpiry&&<span style={{fontSize:12,color:T.textSm,marginLeft:10}}>· Vence: {planExpiry.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}</span>}
             </div>
-            <span style={{fontSize:12,color:T.textSm}}>Para renovar o cambiar, seleccioná un plan abajo →</span>
+            <span style={{fontSize:12,color:T.textSm}}>Para renovar, completá el pago abajo →</span>
+          </div>
+        )}
+
+        {/* Toggle mensual/anual */}
+        <div style={{display:"flex",justifyContent:"center",marginBottom:24}}>
+          <div style={{display:"inline-flex",background:T.surface,border:`1px solid ${T.border}`,borderRadius:30,padding:"4px 5px"}}>
+            <button onClick={()=>setAnual(false)} style={{padding:"6px 20px",borderRadius:24,fontSize:13,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:!anual?"#6366f1":T.surface,color:!anual?"#fff":T.textMd,transition:"all 0.15s"}}>
+              Mensual
+            </button>
+            <button onClick={()=>setAnual(true)} style={{padding:"6px 20px",borderRadius:24,fontSize:13,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:anual?"#6366f1":T.surface,color:anual?"#fff":T.textMd,transition:"all 0.15s",display:"flex",alignItems:"center",gap:7}}>
+              Anual
+              <span style={{background:"#22c55e",color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"1px 7px"}}>-17%</span>
+            </button>
           </div>
         </div>
-      )}
 
-      {/* Cards de planes */}
-      <div style={{maxWidth:960,margin:"0 auto",padding:"0 20px 48px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,alignItems:"stretch"}}>
-          {PLANES.map(p=>{
-            const esFree=p.id==="free";
-            const esPlanActual=p.id===userPlan;
-            const seleccionado=planSel===p.id;
-            const precioU=anual?p.precio_usdt_anual:p.precio_usdt;
-            const precioARS=anual?p.precio_ars_anual:p.precio_ars;
-            return (
-              <div key={p.id}
-                onClick={()=>!esFree&&setPlanSel(seleccionado?null:p.id)}
-                style={{
-                  background:p.popular?`linear-gradient(160deg,${p.color}0d,${T.card})`:T.card,
-                  border:`2px solid ${seleccionado?p.color:p.popular?p.color+"60":T.border}`,
-                  borderRadius:16,padding:"28px 22px",position:"relative",
-                  cursor:esFree?"default":"pointer",
-                  transition:"border-color 0.15s,box-shadow 0.15s",
-                  boxShadow:seleccionado?`0 0 0 4px ${p.color}25,0 8px 32px ${p.color}15`:p.popular?"0 4px 24px rgba(99,102,241,0.12)":"none",
-                  display:"flex",flexDirection:"column",
-                }}>
-                {p.popular&&<div style={{position:"absolute",top:-13,left:"50%",transform:"translateX(-50%)",background:"linear-gradient(135deg,#6366f1,#818cf8)",color:"#fff",fontSize:11,fontWeight:800,padding:"4px 16px",borderRadius:20,whiteSpace:"nowrap",letterSpacing:"0.04em",boxShadow:"0 2px 8px #6366f140"}}>⭐ MÁS POPULAR</div>}
-                {esPlanActual&&<div style={{position:"absolute",top:14,right:14,background:p.color+"18",color:p.color,fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:20,border:`1px solid ${p.color}30`}}>ACTIVO</div>}
+        {/* Card plan único */}
+        <div style={{background:T.card,border:`2px solid #6366f1`,borderRadius:20,padding:"28px 28px 24px",boxShadow:"0 8px 32px #6366f118",position:"relative",marginBottom:28}}>
+          <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:"linear-gradient(135deg,#6366f1,#818cf8)",color:"#fff",fontSize:10,fontWeight:800,padding:"3px 16px",borderRadius:20,whiteSpace:"nowrap",letterSpacing:"0.05em"}}>
+            ⚡ PLAN PRO
+          </div>
 
-                {/* Header */}
-                <div style={{marginBottom:20}}>
-                  <div style={{fontSize:26,marginBottom:8}}>{p.icon}</div>
-                  <div style={{fontSize:20,fontWeight:800,color:esFree?T.textMd:p.color,marginBottom:4}}>{p.nombre}</div>
-                  <div style={{fontSize:12,color:T.textSm}}>{p.desc}</div>
-                </div>
+          {/* Precio */}
+          <div style={{textAlign:"center",marginBottom:22,marginTop:8}}>
+            {!anual&&<div style={{fontSize:12,color:T.textSm,textDecoration:"line-through",marginBottom:2}}>Precio normal: ${PLAN.precio_normal} USD/mes</div>}
+            <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:4}}>
+              <span style={{fontSize:52,fontWeight:900,color:T.text,lineHeight:1}}>${precioU}</span>
+              <span style={{fontSize:15,color:T.textSm,marginBottom:10}}>USD/mes</span>
+            </div>
+            <div style={{fontSize:13,color:T.textSm}}>${precioARS.toLocaleString("es-AR")} ARS / mes</div>
+            {anual&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600,marginTop:4}}>🎉 Ahorrás ${(PLAN.precio_usdt-PLAN.precio_usdt_anual)*12} USD al año (2 meses gratis)</div>}
+            {!anual&&<div style={{fontSize:11,color:"#6366f1",fontWeight:600,marginTop:6}}>o ${PLAN.precio_usdt_anual} USD/mes pagando anual</div>}
+          </div>
 
-                {/* Precio */}
-                {esFree?(
-                  <div style={{marginBottom:22}}>
-                    <div style={{fontSize:38,fontWeight:900,color:T.text,lineHeight:1}}>$0</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Para siempre</div>
-                  </div>
-                ):(
-                  <div style={{marginBottom:22}}>
-                    <div style={{display:"flex",alignItems:"flex-end",gap:4}}>
-                      <span style={{fontSize:38,fontWeight:900,color:T.text,lineHeight:1}}>${precioU}</span>
-                      <span style={{fontSize:13,color:T.textSm,marginBottom:6}}>USD/mes</span>
-                    </div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:3}}>${precioARS.toLocaleString("es-AR")} ARS / mes</div>
-                    {anual&&p.ahorro_usdt&&<div style={{fontSize:11,color:"#22c55e",fontWeight:600,marginTop:4}}>Ahorrás ${p.ahorro_usdt} USD al año</div>}
-                    {!anual&&p.precio_usdt_anual>0&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>o ${p.precio_usdt_anual} USD/mes pagando anual</div>}
-                  </div>
-                )}
+          {/* CTA */}
+          <button onClick={()=>setStep("metodo")}
+            style={{width:"100%",padding:"14px",borderRadius:12,fontSize:15,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:"linear-gradient(135deg,#6366f1,#818cf8)",color:"#fff",marginBottom:24,transition:"opacity 0.15s",letterSpacing:"0.01em"}}
+            onMouseEnter={e=>e.currentTarget.style.opacity="0.88"}
+            onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+            {isPago?"Renovar suscripción →":"Suscribirme →"}
+          </button>
 
-                {/* CTA */}
-                {!esFree&&(
-                  <button onClick={e=>{e.stopPropagation();setPlanSel(seleccionado?null:p.id);if(!seleccionado)setStep("metodo");}}
-                    style={{width:"100%",padding:"11px",borderRadius:10,fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:esPlanActual?T.surface:p.popular?p.color:"transparent",color:esPlanActual?T.textMd:p.popular?"#fff":p.color,border:esPlanActual?"none":`2px solid ${p.color}`,transition:"all 0.15s",marginBottom:20}}>
-                    {esPlanActual?"Plan actual":"Elegir "+p.nombre+" →"}
-                  </button>
-                )}
-                {esFree&&userPlan==="free"&&<div style={{padding:"11px",textAlign:"center",fontSize:13,color:T.textSm,fontWeight:600,marginBottom:20}}>Plan actual</div>}
-
-                {/* Separator */}
-                <div className="gh-accordion" style={{borderTop:`1px solid ${T.borderL}`,marginBottom:16,marginTop:"auto"}}/>
-
-                {/* Features */}
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {p.features.map((f,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:9,fontSize:12,color:f.ok?T.textMd:T.textSm,opacity:f.ok?1:0.45}}>
-                      <span style={{flexShrink:0,marginTop:0.5,fontSize:13,color:f.ok?p.id==="free"?"#6b7280":p.color:"#6b7280"}}>{f.ok?"✓":"✕"}</span>
-                      {f.text}
-                    </div>
-                  ))}
-                </div>
+          {/* Features */}
+          <div style={{borderTop:`1px solid ${T.borderL}`,paddingTop:20,display:"flex",flexDirection:"column",gap:10}}>
+            {PLAN.features.map((f,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.textMd}}>
+                <span style={{color:"#6366f1",fontWeight:700,flexShrink:0}}>✓</span>
+                {f}
               </div>
-            );
-          })}
-        </div>
-
-        {/* Comparación vs competencia */}
-        <div style={{marginTop:56,background:`linear-gradient(135deg,#6366f108,#a855f708)`,border:`1px solid #6366f125`,borderRadius:16,padding:"28px 32px"}}>
-          <div style={{textAlign:"center",marginBottom:24}}>
-            <div style={{fontSize:13,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>¿Por qué Growith?</div>
-            <div style={{fontSize:22,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Más funciones. Menos precio.</div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:0,borderRadius:12,overflow:"hidden",border:`1px solid ${T.border}`}}>
-            {/* Header */}
-            <div style={{background:T.surface,padding:"12px 18px",borderBottom:`1px solid ${T.border}`,borderRight:`1px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.04em"}}>Función</div>
-            <div style={{background:"linear-gradient(135deg,#6366f1,#818cf8)",padding:"12px 18px",borderBottom:`1px solid ${T.border}`,borderRight:`1px solid ${T.border}`,fontSize:13,fontWeight:800,color:"#fff",textAlign:"center"}}>Growith Pro<br/><span style={{fontSize:18}}>$49 USD</span></div>
-            <div style={{background:T.surface,padding:"12px 18px",borderBottom:`1px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.textSm,textAlign:"center"}}>Competencia<br/><span style={{color:T.textSm,fontSize:12,fontWeight:400}}>desde $99 USD</span></div>
-            {[
-              ["Gestión de envíos + Andreani","✅","✅"],
-              ["Stock multi-canal (TN + Shopify + ML)","✅","✅"],
-              ["Facturación AFIP / ARCA","✅","❌"],
-              ["Pipeline de reclamos (Kanban)","✅","❌"],
-              ["Gestión de influencers / canjes","✅","❌"],
-              ["Meta Ads integrado","✅","✅"],
-              ["Sistema de equipo y tareas","✅","❌"],
-              ["Audio Studio (TTS)","✅","❌"],
-              ["Precio mensual","$49 USD","$99 USD"],
-            ].map(([f,g,c],i)=>(
-              <React.Fragment key={i}>
-                <div style={{background:i%2===0?T.card:T.surface,padding:"11px 18px",borderBottom:`1px solid ${T.borderL}`,borderRight:`1px solid ${T.border}`,fontSize:13,color:T.text}}>{f}</div>
-                <div style={{background:i%2===0?`${T.card}`:`${T.surface}`,padding:"11px 18px",borderBottom:`1px solid ${T.borderL}`,borderRight:`1px solid ${T.border}`,textAlign:"center",fontSize:13,fontWeight:700,color:g.startsWith("$")?"#6366f1":g==="✅"?"#22c55e":"#ef4444"}}>{g}</div>
-                <div style={{background:i%2===0?T.card:T.surface,padding:"11px 18px",borderBottom:`1px solid ${T.borderL}`,textAlign:"center",fontSize:13,fontWeight:c.startsWith("$")?700:400,color:c.startsWith("$")?"#ef4444":c==="✅"?"#22c55e":"#ef4444"}}>{c}</div>
-              </React.Fragment>
             ))}
           </div>
         </div>
 
         {/* Trust pills */}
-        <div style={{display:"flex",justifyContent:"center",gap:16,flexWrap:"wrap",marginTop:36}}>
-          {[
-            {icon:"🔒","text":"Sin renovación automática"},
-            {icon:"⚡","text":"Activación en menos de 24hs"},
-            {icon:"💬","text":"Soporte por WhatsApp"},
-            {icon:"📊","text":"Datos en tu cuenta siempre"},
-          ].map((p,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:7,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:20,padding:"7px 14px",fontSize:12,color:T.textMd}}>
-              <span>{p.icon}</span> {p.text}
-            </div>
+        <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap",marginBottom:36}}>
+          {["🔒 Sin renovación automática","⚡ Activación en menos de 24hs","💬 Soporte por WhatsApp"].map((t,i)=>(
+            <div key={i} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 14px",fontSize:11,color:T.textMd}}>{t}</div>
           ))}
         </div>
 
         {/* FAQ */}
-        <div style={{marginTop:52}}>
-          <div style={{textAlign:"center",marginBottom:24,fontSize:22,fontWeight:800,color:T.text,letterSpacing:-0.5}}>Preguntas frecuentes</div>
-          <div style={{maxWidth:660,margin:"0 auto",display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{marginBottom:36}}>
+          <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:14,textAlign:"center"}}>Preguntas frecuentes</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {FAQS.map((faq,i)=>(
-              <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div key={i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
                 <button onClick={()=>setFaqOpen(faqOpen===i?null:i)}
-                  style={{width:"100%",textAlign:"left",padding:"16px 18px",background:"transparent",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  <span style={{fontSize:14,fontWeight:600,color:T.text}}>{faq.q}</span>
-                  <span style={{fontSize:18,color:T.textSm,flexShrink:0,transition:"transform 0.15s",transform:faqOpen===i?"rotate(45deg)":"none"}}>+</span>
+                  style={{width:"100%",textAlign:"left",padding:"13px 16px",background:"transparent",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <span style={{fontSize:13,fontWeight:600,color:T.text}}>{faq.q}</span>
+                  <span style={{fontSize:16,color:T.textSm,flexShrink:0,transition:"transform 0.15s",transform:faqOpen===i?"rotate(45deg)":"none",display:"inline-block"}}>+</span>
                 </button>
-                {faqOpen===i&&<div style={{padding:"0 18px 16px",fontSize:13,color:T.textMd,lineHeight:1.6,borderTop:`1px solid ${T.borderL}`}}><br/>{faq.a}</div>}
+                {faqOpen===i&&<div style={{padding:"0 16px 14px",fontSize:12,color:T.textMd,lineHeight:1.6,borderTop:`1px solid ${T.borderL}`}}><br/>{faq.a}</div>}
               </div>
             ))}
           </div>
         </div>
 
-        {/* Footer */}
-        <div style={{textAlign:"center",marginTop:36,fontSize:12,color:T.textSm}}>
-          ¿Dudas o necesitás una demo? →{" "}
+        <div style={{textAlign:"center",fontSize:12,color:T.textSm,paddingBottom:20}}>
+          ¿Preguntas? →{" "}
           <a href={`mailto:${SUPPORT_EMAIL}`} style={{color:"#6366f1",fontWeight:600}}>{SUPPORT_EMAIL}</a>
         </div>
       </div>
@@ -24579,7 +24471,13 @@ export default function App() {
       // Sincronizar plan y trial en tiempo real (cubre race condition en primer login)
       setUserPlan(d.plan||"free");
       setPlanExpiry(d.planExpiry?.toDate?.()||null);
-      setTrialEnd(d.trialEnd instanceof Date ? d.trialEnd : d.trialEnd?.toDate?.()??null);
+      if(!d.trialEnd&&(d.plan==="free"||!d.plan)){
+        const te=new Date(Date.now()+14*24*60*60*1000);
+        updateDoc(doc(db,"users",user.uid),{trialEnd:te}).catch(()=>{});
+        setTrialEnd(te);
+      } else {
+        setTrialEnd(d.trialEnd instanceof Date?d.trialEnd:d.trialEnd?.toDate?.()??null);
+      }
       const tn=d.stores?.find(s=>s.type==="tiendanube");
       const shopify=d.stores?.find(s=>s.type==="shopify");
       const ml=d.stores?.find(s=>s.type==="meli");
@@ -24855,8 +24753,11 @@ export default function App() {
     return null;
   };
 
+  // Paywall: trial vencido sin plan pago
+  if(trialExpired&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>);
+
   let pageContent = null;
-  if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
+  if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} isTrialExpired={false} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
   else if(page==="rendimiento") pageContent = adminGate("rendimiento") || <PageView T={T} pageKey="rendimiento"><AppRendimiento T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
