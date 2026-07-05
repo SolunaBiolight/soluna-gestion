@@ -7398,6 +7398,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [metaToken,setMetaToken]=useState("");
   const [adminWaPhone,setAdminWaPhone]=useState("");
   const [waPhoneSaved,setWaPhoneSaved]=useState(false);
+  const [editProfile,setEditProfile]=useState(false);
+  const [pNombre,setPNombre]=useState("");
+  const [pEmail,setPEmail]=useState("");
+  const [pSaving,setPSaving]=useState(false);
 
   // Detectar callback OAuth (Shopify / ML) al volver
   useEffect(()=>{
@@ -7531,6 +7535,28 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
   async function handleSignOut() {
     await signOut(auth);
+  }
+
+  function startEditProfile() {
+    setPNombre(userDoc?.nombre || user?.displayName || "");
+    setPEmail(userDoc?.email || user?.email || "");
+    setEditProfile(true);
+  }
+  async function saveProfile() {
+    setPSaving(true);
+    try {
+      const nombre = pNombre.trim();
+      const email = pEmail.trim();
+      // Guardamos en Firestore (lo que ven los desarrolladores en el panel admin).
+      await updateDoc(doc(db,"users",user.uid), { nombre, email });
+      setUserDoc(d => ({ ...(d||{}), nombre, email }));
+      // Actualizamos también el displayName de Firebase Auth (lo que muestra la
+      // barra lateral). El email de LOGIN no se toca (seguís entrando con el mismo).
+      try { if (nombre && auth.currentUser) await updateProfile(auth.currentUser, { displayName: nombre }); } catch(_) {}
+      setEditProfile(false);
+      toast("Datos actualizados ✓","success");
+    } catch(e){ toast("Error: "+(e.message||"no se pudo guardar"),"error"); }
+    setPSaving(false);
   }
 
   async function saveAdminWaPhone() {
@@ -7688,15 +7714,41 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
         {/* Perfil */}
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuenta</div>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:16,flexWrap:"wrap"}}>
             {user?.photoURL?<img src={user.photoURL} style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${T.border}`,flexShrink:0}} alt=""/>:<div style={{width:44,height:44,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>👤</div>}
-            <div style={{minWidth:0}}>
-              <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||userDoc?.nombre||"Usuario"}</div>
-              <div style={{fontSize:12,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.email}</div>
-              <div style={{fontSize:11,color:T.accent,marginTop:3,fontWeight:500}}>Plan {userDoc?.plan||"free"}</div>
+            <div style={{minWidth:0,flex:1}}>
+              {editProfile ? (
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  <div>
+                    <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:3,textTransform:"uppercase",letterSpacing:0.4}}>Nombre</div>
+                    <input value={pNombre} onChange={e=>setPNombre(e.target.value)} placeholder="Tu nombre" style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:340}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:3,textTransform:"uppercase",letterSpacing:0.4}}>Email de contacto</div>
+                    <input value={pEmail} onChange={e=>setPEmail(e.target.value)} placeholder="tu@email.com" style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:340}}/>
+                    <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.5}}>Este nombre y email son los que ven los desarrolladores. Tu email de <strong style={{color:T.text}}>inicio de sesión</strong> no cambia (seguís entrando con el mismo).</div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{fontSize:15,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.nombre||user?.displayName||"Usuario"}</div>
+                  <div style={{fontSize:12,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userDoc?.email||user?.email}</div>
+                  <div style={{fontSize:11,color:T.accent,marginTop:3,fontWeight:500}}>Plan {userDoc?.plan||"free"}</div>
+                </>
+              )}
             </div>
           </div>
-          <button onClick={handleSignOut} style={{...BtnSecondary(T),fontSize:12,color:T.red,border:`1px solid ${T.red}33`,justifyContent:"center",width:"100%"}}>Cerrar sesión</button>
+          {editProfile ? (
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={saveProfile} disabled={pSaving} style={{...BtnPrimary(T),fontSize:12,justifyContent:"center",flex:1}}>{pSaving?"Guardando...":"Guardar"}</button>
+              <button onClick={()=>setEditProfile(false)} disabled={pSaving} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1}}>Cancelar</button>
+            </div>
+          ) : (
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={startEditProfile} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1,minWidth:140}}>✎ Editar nombre y mail</button>
+              <button onClick={handleSignOut} style={{...BtnSecondary(T),fontSize:12,color:T.red,border:`1px solid ${T.red}33`,justifyContent:"center",flex:1,minWidth:140}}>Cerrar sesión</button>
+            </div>
+          )}
         </div>
 
         {/* Notificaciones de equipo */}
