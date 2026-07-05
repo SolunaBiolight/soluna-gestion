@@ -7896,7 +7896,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                     : <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{p.sub}</div>}
                 </div>
                 {p.connected
-                  ? <button onClick={p.onDisconnect} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Desvincular</button>
+                  ? <div style={{display:"flex",gap:6,flexShrink:0}}>
+                      {p.key==="ml" && <button onClick={p.onConnect} disabled={saving} title="Conectar otra cuenta de Mercado Libre" style={{fontSize:12,padding:"7px 12px",borderRadius:8,border:`1.5px solid ${p.brand}88`,background:`${p.brand}18`,color:"#1a1a1a",fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Otra cuenta</button>}
+                      <button onClick={p.onDisconnect} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>Desvincular</button>
+                    </div>
                   : <button onClick={p.onConnect} disabled={p.disabled} style={{fontSize:12,padding:"7px 14px",borderRadius:8,border:`1.5px solid ${p.brand}88`,background:`${p.brand}18`,color:p.brand==="FFE600"?"#1a1a1a":p.brand,fontWeight:600,cursor:p.disabled?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s ease",boxShadow:`0 0 0 1px ${p.brand}18, 0 4px 14px ${p.brand}22`,flexShrink:0}}>Conectar</button>
                 }
               </div>
@@ -21331,6 +21334,9 @@ function CostosPanel({ T, uid }) {
   const [fijos, setFijos] = React.useState([]);
   const [varios, setVarios] = React.useState([]); // costos variables: % de la facturación
   const [metaAdAccount, setMetaAdAccount] = React.useState(""); // cuenta de Meta para el margen (multi-tienda)
+  const [mlAccounts, setMlAccounts] = React.useState([]); // cuentas de ML conectadas
+  const [mlMp, setMlMp] = React.useState("");             // ML usado para comisiones de MP
+  const [mlVentas, setMlVentas] = React.useState("");     // ML usado para ventas de ML
   const [metaAdAccts, setMetaAdAccts] = React.useState([]);     // cuentas de Meta accesibles
   const [loaded, setLoaded] = React.useState(false);
   const [loadingProds, setLoadingProds] = React.useState(true);
@@ -21349,6 +21355,9 @@ function CostosPanel({ T, uid }) {
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
         setVarios(Array.isArray(d.margenesCostosVar) ? d.margenesCostosVar : []);
         setMetaAdAccount(String(d.margenesMetaAdAccount || ""));
+        setMlAccounts((Array.isArray(d.stores)?d.stores:[]).filter(s=>s.type==="mercadolibre"||s.type==="meli").map(s=>({userId:String(s.userId||""),nombre:s.nickname||s.email||("ML #"+(s.userId||""))})).filter(s=>s.userId));
+        setMlMp(String(d.margenesMlMp || ""));
+        setMlVentas(String(d.margenesMlVentas || ""));
       } catch (_) {}
       setLoaded(true);
       // Cuentas de Meta accesibles con el token (CP5, CP7, etc.) — para elegir
@@ -21377,7 +21386,7 @@ function CostosPanel({ T, uid }) {
     setSaving(true);
     try {
       const variosClean = varios.filter(v=>(parseFloat(v.pct)||0)>0).map(v=>({id:v.id||margId(),nombre:v.nombre||"",pct:parseFloat(v.pct)||0}));
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos, margenesCostosVar: variosClean, margenesMetaAdAccount: String(metaAdAccount||"") }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos, margenesCostosVar: variosClean, margenesMetaAdAccount: String(metaAdAccount||""), margenesMlMp: String(mlMp||""), margenesMlVentas: String(mlVentas||"") }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -21490,6 +21499,32 @@ function CostosPanel({ T, uid }) {
             <option value="">Todas las cuentas (suma todo)</option>
             {metaAdAccts.map(a => { const id = String(a.account_id || (a.id||"").replace(/^act_/,"")); return <option key={a.id||id} value={id}>{(a.name||a.id)} ({a.currency||"—"})</option>; })}
           </select>
+        </div>
+      )}
+
+      {/* Multi-ML: elegir qué cuenta de ML se usa para las ventas de ML y cuál
+          para leer los pagos de MP (comisiones de Shopify). Solo si hay 2+ ML. */}
+      {mlAccounts.length > 1 && (
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>🛒 Cuentas de Mercado Libre ({mlAccounts.length})</div>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Tenés varias cuentas de ML conectadas. Elegí cuál usa Growith para cada cosa (así dos tiendas que comparten el MP de Shopify no se toman las ventas entre sí).</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:T.text,marginBottom:4}}>Ventas de Mercado Libre — importar de:</div>
+              <select value={mlVentas} onChange={e=>setMlVentas(e.target.value)} style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:420}}>
+                <option value="">Primera cuenta (default)</option>
+                {mlAccounts.map(a => <option key={a.userId} value={a.userId}>{a.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:T.text,marginBottom:4}}>Comisiones de MP (Shopify) — leer de:</div>
+              <select value={mlMp} onChange={e=>setMlMp(e.target.value)} style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:420}}>
+                <option value="">Primera cuenta (default)</option>
+                {mlAccounts.map(a => <option key={a.userId} value={a.userId}>{a.nombre}</option>)}
+              </select>
+              <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Es la cuenta de ML cuyo MP recibe los pagos de tu Shopify (el MP compartido).</div>
+            </div>
+          </div>
         </div>
       )}
 
