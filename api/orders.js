@@ -345,7 +345,7 @@ export default async function handler(req, res) {
         // Comisión de pago = comisión REAL de MP (sus ventas) + % configurado SOLO
         // sobre las ventas que NO pasaron por MP (transferencia, etc.). Antes el %
         // se aplicaba a TODO el revenue y encima se sumaba MP → doble-conteo.
-        const comPago   = (parseFloat(mpComm)||0) + noMpPayComm(raw);
+        const comPago   = parseFloat(mpComm)||0; // ya viene como shopifyPayComm (solo esta tienda)
         // Envío = órdenes de tienda (TN/Shopify) × promedio + envío de las órdenes
         // ML que son Flex (el resto de ML es Mercado Envíos: lo cubre ML, no se cuenta).
         const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
@@ -409,8 +409,52 @@ export default async function handler(req, res) {
       };
       const mlEnvioTot = raw => (raw?.ml_data?.ml_orders_detail||[]).reduce((s,o)=>s+mlEnvioDe(o),0);
 
-      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, mpCommCurr.fee, mlEnvioTot(curr.raw), mpCommCurr.rev);
-      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, mpCommPrev.fee, mlEnvioTot(prev.raw), mpCommPrev.rev);
+      // ── Comisión REAL de MP por venta (Shopify) — matcheo por receipt_id ──
+      // Se resuelve ANTES de los totales para que el agregado sume SOLO las ventas
+      // de ESTA tienda (no el total del MP, que con MP compartido entre tiendas/ML
+      // incluye pagos ajenos). Se cachea en Firestore; cada orden se consulta 1 vez.
+      const feeByRef = mpCommCurr.feeByRef || {};
+      const feeByRefPrev = mpCommPrev.feeByRef || {};
+      const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
+      const shStoreRef = (userData.stores||[]).find(s => s.type==="shopify");
+      if (shStoreRef?.shop && shStoreRef?.accessToken) {
+        const pend = [...(curr.raw?.orders_detail||[]), ...(prev.raw?.orders_detail||[])]
+          .filter(o => /mercado\s*pago/i.test(o.pay||"") && !mpRefCache[o.id])
+          .sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")))
+          .slice(0, 40);
+        let changed = false;
+        for (let i=0; i<pend.length; i+=8) {
+          const rs = await Promise.all(pend.slice(i,i+8).map(async o => {
+            try {
+              const r = await fetch(`https://${shStoreRef.shop}/admin/api/2024-10/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": shStoreRef.accessToken } });
+              if (!r.ok) return [o.id, null];
+              const j = await r.json();
+              const ok = (j.transactions||[]).filter(t => t.kind==="sale" && t.status==="success");
+              const t = ok[ok.length-1];
+              const ref = t?.receipt?.id || t?.receipt?.payment_id || null;
+              return [o.id, ref ? String(ref) : null];
+            } catch(_) { return [o.id, null]; }
+          }));
+          for (const [id,ref] of rs) { if (ref) { mpRefCache[id] = ref; changed = true; } }
+        }
+        if (changed) { try { await db.collection("users").doc(uid).set({ margenesMpRefs: mpRefCache }, { merge:true }); } catch(_) {} }
+      }
+      // Comisión de pago de Shopify: por orden, si matcheó su pago de MP real (por
+      // receipt_id) usamos ESE fee; sino el % configurado del método. Suma SOLO las
+      // órdenes de esta tienda → nunca arrastra otras tiendas/ML del MP compartido.
+      function shopifyPayComm(raw, feeMap) {
+        let s = 0;
+        for (const o of (raw?.orders_detail||[])) {
+          const rev = parseFloat(o.revenue)||0;
+          const ref = mpRefCache[o.id];
+          const realMp = (ref && (feeMap||{})[ref]!=null) ? (parseFloat(feeMap[ref])||0) : null;
+          s += (realMp!=null) ? realMp : rev * pctPagoFor(o.pay);
+        }
+        return s;
+      }
+
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mpCommCurr.rev);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mpCommPrev.rev);
 
       // ── Desglose por canal (Tienda vs Mercado Libre) para los tableros ──
       // adSpend: Tienda = Meta Ads (toda la pauta de Meta empuja la tienda);
@@ -426,7 +470,7 @@ export default async function handler(req, res) {
         const impuestos = rev*pctImp;
         // Comisión separada como en el general: Plataforma vs Pago.
         const comPlat = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : rev*pctPlat;
-        const comPago = isMl ? 0 : ((parseFloat(mpComm)||0) + noMpPayComm(raw));
+        const comPago = isMl ? 0 : (parseFloat(mpComm)||0); // mpComm ya = shopifyPayComm de esta tienda
         const comis = comPlat + comPago;
         const envio = isMl ? (parseFloat(mlEnv)||0) : ord*envioProm;
         const ads = parseFloat(adSpend)||0;
@@ -443,44 +487,14 @@ export default async function handler(req, res) {
           aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
       }
       const byChannel = {
-        tienda: canal(curr.raw, false, mpCommCurr.fee, totals.adSpendMeta, 0, mpCommCurr.rev),
+        tienda: canal(curr.raw, false, shopifyPayComm(curr.raw, feeByRef), totals.adSpendMeta, 0, mpCommCurr.rev),
         ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw), 0),
-        tiendaPrev: canal(prev.raw, false, mpCommPrev.fee, prevTotals.adSpendMeta, 0, mpCommPrev.rev),
+        tiendaPrev: canal(prev.raw, false, shopifyPayComm(prev.raw, feeByRefPrev), prevTotals.adSpendMeta, 0, mpCommPrev.rev),
         mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw), 0),
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
       };
 
-      // ── Comisión REAL de MP por venta (Shopify) ──
-      // Resuelve el receipt_id de cada orden (vía sus transacciones) y lo matchea
-      // con la comisión real de MP (feeByRef). Se cachea en Firestore: cada orden
-      // se consulta UNA sola vez; se completa de a tandas (las más recientes
-      // primero) para respetar el rate limit de Shopify.
-      const feeByRef = mpCommCurr.feeByRef || {};
-      const mpRefCache = (userData.margenesMpRefs && typeof userData.margenesMpRefs==="object" && !Array.isArray(userData.margenesMpRefs)) ? { ...userData.margenesMpRefs } : {};
-      const shStore = (userData.stores||[]).find(s => s.type==="shopify");
-      if (shStore?.shop && shStore?.accessToken) {
-        const pend = (curr.raw?.orders_detail||[])
-          .filter(o => /mercado\s*pago/i.test(o.pay||"") && !mpRefCache[o.id])
-          .sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")))
-          .slice(0, 40);
-        let changed = false;
-        for (let i=0; i<pend.length; i+=8) {
-          const rs = await Promise.all(pend.slice(i,i+8).map(async o => {
-            try {
-              const r = await fetch(`https://${shStore.shop}/admin/api/2024-10/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": shStore.accessToken } });
-              if (!r.ok) return [o.id, null];
-              const j = await r.json();
-              const ok = (j.transactions||[]).filter(t => t.kind==="sale" && t.status==="success");
-              const t = ok[ok.length-1];
-              const ref = t?.receipt?.id || t?.receipt?.payment_id || null;
-              return [o.id, ref ? String(ref) : null];
-            } catch(_) { return [o.id, null]; }
-          }));
-          for (const [id,ref] of rs) { if (ref) { mpRefCache[id] = ref; changed = true; } }
-        }
-        if (changed) { try { await db.collection("users").doc(uid).set({ margenesMpRefs: mpRefCache }, { merge:true }); } catch(_) {} }
-      }
 
       // ── Venta por venta: cada orden con sus costos reales ──
       function buildSales(raw) {
