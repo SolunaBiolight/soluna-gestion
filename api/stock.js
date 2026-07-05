@@ -443,11 +443,12 @@ export default async function handler(req, res) {
       else if(tn?.accessToken&&tn?.storeId){ platform="tiendanube"; storeId=tn.storeId; accessToken=tn.accessToken; }
       // ML: el OAuth guarda userId (no sellerId). Usar getValidMLToken para refrescar
       // tokens vencidos automáticamente (TTL 6h).
-      if(ml){
+      // Rol de la cuenta ML: si es "solo Shopify/TN" (margenesMlVentas="__none__"),
+      // NO importamos ventas de ML (solo se usa el token para comisiones de MP).
+      const mlVentasCfg = String(snap.data().margenesMlVentas || "");
+      if(ml && mlVentasCfg !== "__none__"){
         try{
-          // Con varios ML conectados, usamos la cuenta elegida para VENTAS de ML
-          // (margenesMlVentas) — así la Tienda 2 no importa las ventas de la Tienda 1.
-          const tok=await getValidMLToken(dbRef, uid, String(snap.data().margenesMlVentas || "") || null);
+          const tok=await getValidMLToken(dbRef, uid, mlVentasCfg || null);
           if(tok?.accessToken && tok?.userId){ mlSellerId=tok.userId; mlToken=tok.accessToken; }
         }catch(_){ /* ML token roto, no abortamos — seguimos sin ML */ }
       }

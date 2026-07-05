@@ -7909,13 +7909,16 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           const mlAccts = (userDoc?.stores||[]).filter(s=>s.type==="mercadolibre"||s.type==="meli").map(s=>({userId:String(s.userId||""),nombre:s.nickname||s.email||("ML #"+(s.userId||""))})).filter(s=>s.userId);
           const mlMp = String(userDoc?.margenesMlMp||"");
           const mlVentas = String(userDoc?.margenesMlVentas||"");
+          // "__none__" = ese rol no lo cubre ninguna cuenta (ej: solo Shopify/TN → NO importar ventas ML).
           const roleOf = (u) => { u=String(u); if(!mlMp&&!mlVentas) return mlAccts[0]?.userId===u?"both":"none"; const isMp=mlMp===u,isMl=mlVentas===u; if(isMp&&isMl)return"both"; if(isMp)return"mp"; if(isMl)return"ml"; return"none"; };
           const anyBoth = mlAccts.some(a=>roleOf(a.userId)==="both");
           const setRole = async (u, role) => {
-            u=String(u); let mp=mlMp, ventas=mlVentas;
-            if(!mp&&!ventas&&mlAccts[0]){ mp=mlAccts[0].userId; ventas=mlAccts[0].userId; }
-            if(mp===u)mp=""; if(ventas===u)ventas="";
-            if(role==="mp")mp=u; else if(role==="ml")ventas=u; else if(role==="both"){mp=u;ventas=u;}
+            u=String(u);
+            const others = mlAccts.filter(a=>a.userId!==u);
+            let mp, ventas;
+            if(role==="both"){ mp=u; ventas=u; }
+            else if(role==="mp"){ mp=u; const oml=others.find(a=>["ml","both"].includes(roleOf(a.userId))); ventas=oml?oml.userId:"__none__"; }
+            else { ventas=u; const omp=others.find(a=>["mp","both"].includes(roleOf(a.userId))); mp=omp?omp.userId:"__none__"; }
             try{ await updateDoc(doc(db,"users",user.uid),{margenesMlMp:mp,margenesMlVentas:ventas}); toast("Guardado ✓","success"); }catch(e){ toast("Error: "+e.message,"error"); }
           };
           const OPTS = [{k:"mp",lbl:"Shopify/TN",ico:"🛍️"},{k:"ml",lbl:"Mercado Libre",ico:"🛒"},{k:"both",lbl:"Ambos",ico:"⚡"}];

@@ -196,6 +196,7 @@ export default async function handler(req, res) {
       // numérica, ya contada en sale_fee), cashback, INSTORE, y no aprobados.
       async function fetchMPCommission(sinceYmd, untilYmd) {
         try {
+          if (mlMpAcc === "__none__") return { fee:0, rev:0, feeByRef:{} }; // ninguna cuenta lee MP
           const tok = await getValidMLToken(db, uid, mlMpAcc); // cuenta de MP (Shopify)
           if (!tok?.accessToken) return { fee:0, rev:0 };
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
@@ -382,7 +383,7 @@ export default async function handler(req, res) {
       // (self_service, el vendedor lo paga al correo) → promedio configurado.
       const mlLogi = {};
       try {
-        const tokML = await getValidMLToken(db, uid, mlVentasAcc); // cuenta de ventas ML
+        const tokML = mlVentasAcc === "__none__" ? null : await getValidMLToken(db, uid, mlVentasAcc); // cuenta de ventas ML
         if (tokML?.accessToken) {
           const ids = [...new Set([
             ...(curr.raw?.ml_data?.ml_orders_detail||[]),
@@ -546,9 +547,10 @@ export default async function handler(req, res) {
         accessToken = tnStore.accessToken;
       }
       // ML (en paralelo a la plataforma primaria, para que stats sume todo)
-      if (mlStore) {
+      const mlVentasStats = String(userSnap.data().margenesMlVentas || "");
+      if (mlStore && mlVentasStats !== "__none__") {
         try {
-          const tok = await getValidMLToken(dbRef, uid, String(userSnap.data().margenesMlVentas || "") || null); // cuenta de ventas ML
+          const tok = await getValidMLToken(dbRef, uid, mlVentasStats || null); // cuenta de ventas ML
           if (tok?.accessToken && tok?.userId) { mlUserId = tok.userId; mlToken = tok.accessToken; }
         } catch (_) {}
       }
