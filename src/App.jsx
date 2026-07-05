@@ -24391,9 +24391,18 @@ export default function App() {
             setUserPlan(d.plan||"free");
             setPlanExpiry(d.planExpiry?.toDate?.()||null);
             setTrialEnd(d.trialEnd instanceof Date ? d.trialEnd : d.trialEnd?.toDate?.()??null);
+            setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid) || d?.isAdmin===true);
+          } else {
+            // El doc del usuario no existe (registro donde ensureUserDoc no corrió,
+            // o sesión persistida sin re-login). Lo creamos acá para que las
+            // integraciones OAuth (Shopify/ML/TN/Meta) no fallen con
+            // "Tu usuario no se encontró en Firestore".
+            const trialEnd = new Date(Date.now() + 7*24*60*60*1000);
+            try { await setDoc(userRef, { uid:u.uid, email:u.email||"", nombre:u.displayName||u.email?.split("@")[0]||"", createdAt: serverTimestamp(), plan:"free", trialEnd, stores:[] }, { merge:true }); } catch(_){}
+            setUserPlan("free");
+            setTrialEnd(trialEnd);
+            setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid));
           }
-          // Check admin
-          setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid) || d?.isAdmin===true);
         } catch(e){}
         // Load sections config (available for all users)
         try {
