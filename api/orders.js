@@ -162,6 +162,11 @@ export default async function handler(req, res) {
       const userSnap = await db.collection("users").doc(uid).get();
       const userData = userSnap.data() || {};
       const stores = userData.stores || [];
+      // Con varios ML conectados: qué cuenta se usa para leer los pagos de MP
+      // (comisiones de Shopify) y cuál para importar las ventas de ML. Vacío =
+      // primera cuenta (comportamiento de siempre con 1 solo ML).
+      const mlMpAcc     = String(userData.margenesMlMp || "") || null;
+      const mlVentasAcc = String(userData.margenesMlVentas || "") || null;
       const hasML = stores.some(s => s.type === "meli");
       const commission = parseFloat(userData.rendimientoCommission) || (hasML ? 0.10 : 0.03);
       async function fetchStock(from, to) {
@@ -191,7 +196,7 @@ export default async function handler(req, res) {
       // numérica, ya contada en sale_fee), cashback, INSTORE, y no aprobados.
       async function fetchMPCommission(sinceYmd, untilYmd) {
         try {
-          const tok = await getValidMLToken(db, uid);
+          const tok = await getValidMLToken(db, uid, mlMpAcc); // cuenta de MP (Shopify)
           if (!tok?.accessToken) return { fee:0, rev:0 };
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
           let fee = 0, rev = 0, offset = 0; const feeByRef = {};
@@ -377,7 +382,7 @@ export default async function handler(req, res) {
       // (self_service, el vendedor lo paga al correo) → promedio configurado.
       const mlLogi = {};
       try {
-        const tokML = await getValidMLToken(db, uid);
+        const tokML = await getValidMLToken(db, uid, mlVentasAcc); // cuenta de ventas ML
         if (tokML?.accessToken) {
           const ids = [...new Set([
             ...(curr.raw?.ml_data?.ml_orders_detail||[]),
@@ -543,7 +548,7 @@ export default async function handler(req, res) {
       // ML (en paralelo a la plataforma primaria, para que stats sume todo)
       if (mlStore) {
         try {
-          const tok = await getValidMLToken(dbRef, uid);
+          const tok = await getValidMLToken(dbRef, uid, String(userSnap.data().margenesMlVentas || "") || null); // cuenta de ventas ML
           if (tok?.accessToken && tok?.userId) { mlUserId = tok.userId; mlToken = tok.accessToken; }
         } catch (_) {}
       }

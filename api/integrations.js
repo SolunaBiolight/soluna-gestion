@@ -301,7 +301,10 @@ async function mercadolibreOauthCallback(req, res, db) {
     // defaults para no fallar con user_not_found. set+merge = crea si falta, sino
     // actualiza (no pisa nada de lo existente).
     const currentStores = (snap.exists ? snap.data().stores : null) || [];
-    const stores = currentStores.filter(s => s.type !== "mercadolibre");
+    // Permitimos VARIAS cuentas de ML conectadas: solo reemplazamos si es la MISMA
+    // (mismo userId de ML), sino conservamos las otras. Así podés tener el ML de una
+    // tienda para ventas y el de otra para leer los pagos de MP.
+    const stores = currentStores.filter(s => !(s.type === "mercadolibre" && String(s.userId) === String(user_id)));
     stores.push({
       type: "mercadolibre",
       userId: user_id,
@@ -341,12 +344,17 @@ async function mercadolibreDisconnect(req, res, db) {
 // Helper para refrescar token de ML — exportable para api/arca.js u otros consumidores.
 // Usa clientId/clientSecret guardados en el store del usuario (vinieron del modal de conexión).
 // Devuelve { accessToken, userId } o null si no hay store ML.
-export async function getValidMLToken(db, uid) {
+// targetUserId (opcional): con varios ML conectados, elige cuál usar (por su
+// userId de ML). Sin él, usa el primero (comportamiento anterior, 1 solo ML).
+export async function getValidMLToken(db, uid, targetUserId = null) {
   const userRef = db.collection("users").doc(uid);
   const snap = await userRef.get();
   if (!snap.exists) return null;
   const stores = snap.data().stores || [];
-  const ml = stores.find(s => s.type === "mercadolibre");
+  const mls = stores.filter(s => s.type === "mercadolibre");
+  const ml = targetUserId
+    ? (mls.find(s => String(s.userId) === String(targetUserId)) || mls[0])
+    : mls[0];
   if (!ml) return null;
 
   if (ml.expiresAt && Date.now() < ml.expiresAt) {
@@ -378,7 +386,7 @@ export async function getValidMLToken(db, uid) {
     // Preservar userId original si ML no devuelve uno nuevo en el refresh
     userId: t.user_id || ml.userId,
   };
-  const newStores = stores.map(s => s.type === "mercadolibre" ? newStore : s);
+  const newStores = stores.map(s => (s.type === "mercadolibre" && String(s.userId) === String(ml.userId)) ? newStore : s);
   await userRef.update({ stores: newStores });
   return { accessToken: newStore.accessToken, userId: newStore.userId || ml.userId };
 }

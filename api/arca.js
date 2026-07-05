@@ -10,6 +10,13 @@ import { getFirestore } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
 import { getValidMLToken } from "./integrations.js";
 
+// Con varios ML conectados, la facturación usa la cuenta elegida para VENTAS de
+// ML (margenesMlVentas). Vacío = primera cuenta (1 solo ML, como siempre).
+async function mlVentasAcc(db, uid) {
+  try { const s = await db.collection("users").doc(uid).get(); return String(s.data()?.margenesMlVentas || "") || null; }
+  catch(_) { return null; }
+}
+
 // Filtra valores basura ("?", "-", "—", "S/N", "N/A", "null", undefined) y arma una dirección legible.
 function cleanAddr(parts) {
   // Sólo descartamos placeholders puros — "S/N" puede ser un número de calle real.
@@ -575,7 +582,7 @@ async function facturar(token, sign, cuitNum, puntoVenta, cbteNro, orden, tipoCb
 // Si ninguno responde con docs, devolvemos { ok: false, reason }.
 async function desadjuntarFacturaML(db, uid, orderIdFull) {
   try {
-    const ml = await getValidMLToken(db, uid);
+    const ml = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
     if (!ml?.accessToken) return { ok: false, reason: "ml_no_token" };
     const orderIdNum = String(orderIdFull).replace("ML-", "");
 
@@ -2014,7 +2021,7 @@ export default async function handler(req, res) {
           let ml_uploaded = false, ml_upload_error = null;
           if (orderId.startsWith("ML-")) {
             try {
-              const ml = await getValidMLToken(db, uid);
+              const ml = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
               if (!ml?.accessToken) throw new Error("Sin access_token de ML");
               const orderIdRaw = orderId.replace(/^ML-/, "");
 
@@ -2181,7 +2188,7 @@ export default async function handler(req, res) {
       const cfg = await loadCuitConfig(db, uid, cuitParam);
       if (!cfg) return res.status(404).json({ error: "CUIT no encontrado" });
 
-      const ml = await getValidMLToken(db, uid);
+      const ml = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
       if (!ml?.accessToken) return res.status(400).json({ error: "No hay cuenta ML conectada o el token expiró" });
 
       const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
@@ -2642,7 +2649,7 @@ export default async function handler(req, res) {
       if (mlStore?.userId) {
         connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
         try {
-          const { accessToken, userId } = await getValidMLToken(db, uid) || {};
+          const { accessToken, userId } = await getValidMLToken(db, uid, await mlVentasAcc(db, uid)) || {};
           if (accessToken) {
             const allML = [];
             for (let offset = 0; offset < 500; offset += 50) {

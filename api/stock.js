@@ -445,7 +445,9 @@ export default async function handler(req, res) {
       // tokens vencidos automáticamente (TTL 6h).
       if(ml){
         try{
-          const tok=await getValidMLToken(dbRef, uid);
+          // Con varios ML conectados, usamos la cuenta elegida para VENTAS de ML
+          // (margenesMlVentas) — así la Tienda 2 no importa las ventas de la Tienda 1.
+          const tok=await getValidMLToken(dbRef, uid, String(snap.data().margenesMlVentas || "") || null);
           if(tok?.accessToken && tok?.userId){ mlSellerId=tok.userId; mlToken=tok.accessToken; }
         }catch(_){ /* ML token roto, no abortamos — seguimos sin ML */ }
       }
