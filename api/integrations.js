@@ -153,9 +153,9 @@ async function shopifyOauthCallback(req, res, db) {
   try {
     const userRef = db.collection("users").doc(uid);
     const snap = await userRef.get();
-    if (!snap.exists) return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=user_not_found`);
-
-    const currentStores = snap.data().stores || [];
+    // Si el doc no existe (usuario nuevo), lo creamos con set+merge (no falla con
+    // user_not_found ni pisa nada de lo existente).
+    const currentStores = (snap.exists ? snap.data().stores : null) || [];
     if (currentStores.find(s => s.type === "tiendanube")) {
       return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=tn_already_connected`);
     }
@@ -170,7 +170,8 @@ async function shopifyOauthCallback(req, res, db) {
       storeEmail: shopEmail,
       connectedAt: new Date().toISOString(),
     });
-    await userRef.update({ stores });
+    const extra = snap.exists ? {} : { uid, email: shopEmail || "", nombre: shopName || "", createdAt: new Date().toISOString(), plan: "free", trialEnd: new Date(Date.now() + 7 * 864e5).toISOString() };
+    await userRef.set({ ...extra, stores }, { merge: true });
   } catch (e) {
     console.error("[shopify-callback] save error:", e.message);
     return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=save_failed`);
@@ -296,9 +297,10 @@ async function mercadolibreOauthCallback(req, res, db) {
   try {
     const userRef = db.collection("users").doc(uid);
     const snap = await userRef.get();
-    if (!snap.exists) return res.redirect(`${SHOPIFY_APP_URL}?ml_error=user_not_found`);
-
-    const currentStores = snap.data().stores || [];
+    // Si el doc del usuario no existe todavía (usuario nuevo), lo creamos acá con
+    // defaults para no fallar con user_not_found. set+merge = crea si falta, sino
+    // actualiza (no pisa nada de lo existente).
+    const currentStores = (snap.exists ? snap.data().stores : null) || [];
     const stores = currentStores.filter(s => s.type !== "mercadolibre");
     stores.push({
       type: "mercadolibre",
@@ -312,7 +314,8 @@ async function mercadolibreOauthCallback(req, res, db) {
       email,
       connectedAt: new Date().toISOString(),
     });
-    await userRef.update({ stores });
+    const extra = snap.exists ? {} : { uid, email: email || "", nombre: nickname || (email || "").split("@")[0] || "", createdAt: new Date().toISOString(), plan: "free", trialEnd: new Date(Date.now() + 7 * 864e5).toISOString() };
+    await userRef.set({ ...extra, stores }, { merge: true });
   } catch (e) {
     console.error("[ml-callback] save error:", e.message);
     return res.redirect(`${SHOPIFY_APP_URL}?ml_error=save_failed`);
