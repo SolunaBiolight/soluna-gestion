@@ -90,8 +90,15 @@ async function getNotifEmails(db, uid) {
   } catch(e) { return []; }
 }
 async function notifyManagers(db, uid, managerEmail, subject, html) {
-  const extras = await getNotifEmails(db, uid);
-  const recipients = [...new Set([managerEmail, ...extras])].filter(Boolean);
+  // Usamos el email ACTUAL del usuario (userDoc.email, editable en Config) — así
+  // si lo cambiás, las notificaciones van al nuevo, no al que quedó guardado en la
+  // tarea. Fallback al managerEmail de la tarea si no hay userDoc.email.
+  let ownerEmail = managerEmail, extras = [];
+  try {
+    const s = await db.collection("users").doc(uid).get();
+    if (s.exists) { const d = s.data(); extras = d.notifEmails || []; if (d.email) ownerEmail = d.email; }
+  } catch(_) {}
+  const recipients = [...new Set([ownerEmail, ...extras])].filter(Boolean);
   await Promise.all(recipients.map(to => sendEmail({ to, subject, html })));
 }
 

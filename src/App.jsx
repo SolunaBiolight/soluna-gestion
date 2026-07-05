@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react"; // v2
 import ReactDOM from "react-dom";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs, orderBy } from "firebase/firestore";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "firebase/auth";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider, reauthenticateWithPopup } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDT-cAeF1lm-xhIDtv0FZam88yhvLIcbMo",
@@ -7402,6 +7402,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [pNombre,setPNombre]=useState("");
   const [pEmail,setPEmail]=useState("");
   const [pSaving,setPSaving]=useState(false);
+  const [showLoginEmail,setShowLoginEmail]=useState(false);
+  const [newLoginEmail,setNewLoginEmail]=useState("");
+  const [loginPassword,setLoginPassword]=useState("");
+  const [loginEmailChanging,setLoginEmailChanging]=useState(false);
 
   // Detectar callback OAuth (Shopify / ML) al volver
   useEffect(()=>{
@@ -7557,6 +7561,41 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
       toast("Datos actualizados ✓","success");
     } catch(e){ toast("Error: "+(e.message||"no se pudo guardar"),"error"); }
     setPSaving(false);
+  }
+
+  // Cambiar el email de INICIO DE SESIÓN (Firebase Auth). Flujo seguro: manda un
+  // link de verificación al email nuevo; el cambio recién se aplica cuando lo
+  // clickeás (hasta entonces seguís entrando con el viejo — sin riesgo de lockout).
+  async function changeLoginEmail() {
+    const nuevo = newLoginEmail.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(nuevo)) { toast("Email inválido","error"); return; }
+    const u = auth.currentUser;
+    if (!u) { toast("Sesión no encontrada, recargá","error"); return; }
+    setLoginEmailChanging(true);
+    try {
+      const isGoogle = u.providerData.some(p=>p.providerId==="google.com");
+      const hasPassword = u.providerData.some(p=>p.providerId==="password");
+      // Re-autenticar (Firebase lo exige para cambiar el email).
+      if (hasPassword) {
+        if (!loginPassword) { toast("Ingresá tu contraseña actual","warning"); setLoginEmailChanging(false); return; }
+        await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, loginPassword));
+      } else if (isGoogle) {
+        await reauthenticateWithPopup(u, new GoogleAuthProvider());
+      }
+      await verifyBeforeUpdateEmail(u, nuevo);
+      // Reflejamos el email nuevo en contacto/notificaciones (userDoc) de una.
+      try { await updateDoc(doc(db,"users",u.uid), { email: nuevo }); setUserDoc(d=>({...(d||{}),email:nuevo})); } catch(_) {}
+      toast(`Te mandamos un link a ${nuevo}. Confirmá ahí para terminar el cambio de login.`,"success");
+      setShowLoginEmail(false); setLoginPassword(""); setNewLoginEmail("");
+    } catch(e) {
+      const msg = e.code==="auth/requires-recent-login" ? "Por seguridad cerrá sesión, volvé a entrar y probá de nuevo." :
+                  e.code==="auth/wrong-password" || e.code==="auth/invalid-credential" ? "Contraseña incorrecta." :
+                  e.code==="auth/email-already-in-use" ? "Ese email ya está en uso en otra cuenta." :
+                  e.code==="auth/operation-not-allowed" ? "Verificá tu email actual primero (revisá tu casilla)." :
+                  (e.message||"No se pudo cambiar");
+      toast("Error: "+msg,"error");
+    }
+    setLoginEmailChanging(false);
   }
 
   async function saveAdminWaPhone() {
@@ -7749,6 +7788,28 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               <button onClick={handleSignOut} style={{...BtnSecondary(T),fontSize:12,color:T.red,border:`1px solid ${T.red}33`,justifyContent:"center",flex:1,minWidth:140}}>Cerrar sesión</button>
             </div>
           )}
+
+          {/* Cambiar email de INICIO DE SESIÓN (Firebase Auth) */}
+          <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+            {!showLoginEmail ? (
+              <button onClick={()=>{setNewLoginEmail("");setLoginPassword("");setShowLoginEmail(true);}} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%"}}>🔑 Cambiar email de inicio de sesión</button>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Login actual: <strong style={{color:T.text}}>{user?.email}</strong>. Te vamos a mandar un link al email nuevo — el cambio se aplica recién cuando lo confirmás ahí (hasta entonces seguís entrando con el actual).</div>
+                <input value={newLoginEmail} onChange={e=>setNewLoginEmail(e.target.value)} placeholder="Nuevo email de login" style={{...InputStyle(T),fontSize:13}}/>
+                {user?.providerData?.some(p=>p.providerId==="password") && (
+                  <input type="password" value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} placeholder="Tu contraseña actual (para confirmar)" style={{...InputStyle(T),fontSize:13}}/>
+                )}
+                {user?.providerData?.some(p=>p.providerId==="google.com") && !user?.providerData?.some(p=>p.providerId==="password") && (
+                  <div style={{fontSize:10,color:T.textSm}}>Entraste con Google — te va a pedir confirmar con tu cuenta de Google.</div>
+                )}
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={changeLoginEmail} disabled={loginEmailChanging} style={{...BtnPrimary(T),fontSize:12,justifyContent:"center",flex:1}}>{loginEmailChanging?"Enviando...":"Enviar link de cambio"}</button>
+                  <button onClick={()=>setShowLoginEmail(false)} disabled={loginEmailChanging} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1}}>Cancelar</button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Notificaciones de equipo */}
@@ -7763,7 +7824,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8}}>📧 Sistema de emails</div>
             <div style={{fontSize:11,color:T.textSm,lineHeight:1.8,marginBottom:10}}>
               <div><strong style={{color:T.text}}>Desde:</strong> notificaciones@growith.app</div>
-              <div><strong style={{color:T.text}}>Vos recibís:</strong> entregas, consultas y actualizaciones → en <strong style={{color:T.accent}}>{user?.email}</strong></div>
+              <div><strong style={{color:T.text}}>Vos recibís:</strong> entregas, consultas y actualizaciones → en <strong style={{color:T.accent}}>{userDoc?.email||user?.email}</strong></div>
               <div><strong style={{color:T.text}}>Colaborador recibe:</strong> asignación, aprobación, correcciones y comentarios → en su email</div>
             </div>
             <AsyncButton onClick={async()=>{
@@ -7776,7 +7837,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 toast("📧 Email de prueba enviado a "+user.email+" (id: "+d.id+")","success");
               }
             }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>
-              📧 Enviar email de prueba a {user?.email}
+              📧 Enviar email de prueba a {userDoc?.email||user?.email}
             </AsyncButton>
           </div>
 
