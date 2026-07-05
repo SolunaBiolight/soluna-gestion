@@ -7864,7 +7864,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                     <div style={{fontSize:9,color:T.textSm,marginTop:3}}><strong>read_products</strong> es indispensable para Stock y Análisis. Si tu app vieja no lo tenía, creá una versión nueva ahora y publicala.</div>
                   </li>
                   <li>⚠ En esa misma versión, agregá esta <strong style={{color:T.text}}>URL de redireccionamiento</strong>:
-                    <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=shopify&action=callback`}</div>
+                    <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=shopify`}</div>
                   </li>
                   <li>Publicar la versión</li>
                   <li>"Configuración" → copiá el <strong style={{color:T.text}}>ID de cliente</strong> y el <strong style={{color:T.text}}>Secreto</strong> (tocá el ojito) → pegalos abajo</li>

@@ -35,7 +35,10 @@ async function readBody(req) {
 
 const SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products";
 const SHOPIFY_APP_URL = "https://www.growithapp.com";
-const SHOPIFY_REDIRECT_URI = `${SHOPIFY_APP_URL}/api/integrations?platform=shopify&action=callback`;
+// Shopify NO permite el query param reservado "action" en la redirect URL, así
+// que la dejamos sin él. El callback llega con "platform=shopify" + el "code" que
+// Shopify appendea; lo detectamos por ahí (ver dispatch en el handler).
+const SHOPIFY_REDIRECT_URI = `${SHOPIFY_APP_URL}/api/integrations?platform=shopify`;
 
 function normalizeShop(shopRaw) {
   let shop = String(shopRaw || "").trim().toLowerCase()
@@ -546,7 +549,9 @@ export default async function handler(req, res) {
   try {
     if (platform === "shopify") {
       if (action === "oauth_start" && req.method === "POST") return shopifyOauthStart(req, res, db);
-      if (action === "callback" && req.method === "GET") return shopifyOauthCallback(req, res, db);
+      // El callback llega SIN action (Shopify lo prohíbe) pero CON code. Lo
+      // detectamos por el code así no depende del param reservado "action".
+      if (req.method === "GET" && (action === "callback" || req.query.code)) return shopifyOauthCallback(req, res, db);
       if (action === "disconnect" && req.method === "POST") return shopifyDisconnect(req, res, db);
     }
 
