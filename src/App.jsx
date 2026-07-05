@@ -14874,6 +14874,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     // Normalizar para mantener compat: connections es array, agregamos flag connected si hay al menos 1
     d.connected = (d.connections||[]).some(c => c.connected);
     setTnData(d);
+    // Auto-seleccionar la primera plataforma conectada si el usuario no eligió ninguna todavía.
+    // Impide que se muestre el mix de todos los canales, que causaba errores de conteo.
+    setCanalSel(prev => {
+      if(prev !== "todos") return prev; // ya tiene selección manual, no pisar
+      const first = (d.connections||[]).find(c => c.connected);
+      return first ? first.platform : prev;
+    });
     // Mantener selecciones previas si las órdenes siguen ahí; las nuevas quedan deseleccionadas
     // por default. Si una orden ya fue facturada (_billed), forzar deselección — así no
     // aparece tildada cuando el usuario quiera facturar otra distinta.
@@ -15617,13 +15624,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {id:"mercadolibre", label:"Mercado Libre", color:"#FFE600", textColor:"#1a1a1a"},
                       ].filter(c => tienePlat(c.id));
                       return (<>
-                        <button onClick={()=>setCanalSel("todos")} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:`1.5px solid ${canalSel==="todos"?T.accentSolid:T.border}`,background:canalSel==="todos"?T.accentSolid:"transparent",color:canalSel==="todos"?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
-                          Todos
-                        </button>
                         {canales.map(c=>{
                           const active=canalSel===c.id;
                           return (
-                            <button key={c.id} onClick={()=>setCanalSel(active?"todos":c.id)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:`1.5px solid ${active?c.color:T.border}`,background:active?c.color:"transparent",color:active?(c.textColor||"#fff"):T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s",display:"inline-flex",alignItems:"center",gap:5}}>
+                            <button key={c.id} onClick={()=>setCanalSel(c.id)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:`1.5px solid ${active?c.color:T.border}`,background:active?c.color:"transparent",color:active?(c.textColor||"#fff"):T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s",display:"inline-flex",alignItems:"center",gap:5}}>
                               <span style={{width:6,height:6,borderRadius:"50%",background:active?(c.textColor||"#fff"):c.color,flexShrink:0}}/>
                               {c.label}
                             </button>
@@ -15641,8 +15645,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <span style={{fontSize:11,color:T.textSm}}>–</span>
                       <input type="number" placeholder="sin límite" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:90,padding:"6px 8px",fontSize:12}}/>
                     </div>
-                    {(canalSel!=="todos"||metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
-                      <button onClick={()=>{setCanalSel("todos");setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
+                    {(metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
+                      <button onClick={()=>{setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
                         ✕ Limpiar filtros
                       </button>
                     )}
