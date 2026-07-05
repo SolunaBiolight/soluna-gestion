@@ -14907,7 +14907,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     if (maxN !== null && !isNaN(maxN) && (o.total||0) > maxN) return false;
     const busqTokens = busquedaPend.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (busqTokens.length > 0) {
-      const hay = [id, o.numero, o.order_number, o.pack_id, o.nombre, o.email, o.dni, o.doc_nro]
+      const hay = [id, o._order_number, o.numero, o.order_number, o.pack_id, o.nombre, o.email, o.dni, o.doc_nro]
         .filter(Boolean).map(v => String(v).toLowerCase()).join(" ");
       for (const t of busqTokens) if (!hay.includes(t)) return false;
     }
@@ -15593,10 +15593,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Ventas pendientes de facturar</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>
-                        {tnData?._tn_debug
-                          ? <>TN devolvió <strong style={{color:T.text}}>{tnData._tn_debug.total_raw}</strong> ventas pagas en el período · mostrando <strong style={{color:T.text}}>{Object.keys(tnData.ordenes||{}).length}</strong> en total</>
-                          : "Seleccioná las que querés facturar y tocá \"Facturar\""
-                        }
+                        {(()=>{
+                          const totalPlat = Object.values(tnData?.ordenes||{}).filter(o=>canalSel==="todos"||o._platform===canalSel).length;
+                          const pendPlat  = Object.values(tnData?.ordenes||{}).filter(o=>(canalSel==="todos"||o._platform===canalSel)&&!o._billed).length;
+                          const canalLabel = canalSel==="tiendanube"?"TN":canalSel==="mercadolibre"?"ML":canalSel==="shopify"?"Shopify":"Todos";
+                          return tnData?._tn_debug
+                            ? <>{canalLabel}: <strong style={{color:T.text}}>{totalPlat}</strong> en el período · <strong style={{color:T.accent}}>{pendPlat}</strong> pendientes de facturar</>
+                            : "Seleccioná las que querés facturar y tocá \"Facturar\"";
+                        })()}
                       </div>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
