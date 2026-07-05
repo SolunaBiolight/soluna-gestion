@@ -14509,8 +14509,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // día, dejando entrar/faltar ventas en los bordes del rango.
   const [fechaDesde, setFechaDesde] = useState(new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(Date.now()-7*86400000)));
   const [fechaHasta, setFechaHasta] = useState(new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date()));
-  const [canalesSel, setCanalesSel] = useState([]); // [] = todos, o array de plataformas activas
-  const canalSel = canalesSel.length===0?"todos":canalesSel[0]; // compat legado
+  const [canalSel, setCanalSel] = useState("todos"); // "todos" | "tiendanube" | "shopify" | "mercadolibre"
   const [metodoPagoSel, setMetodoPagoSel] = useState("todos"); // "todos" | string literal
   const [montoMin, setMontoMin] = useState("");
   const [montoMax, setMontoMax] = useState("");
@@ -14893,7 +14892,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // órdenes ocultas por el filtro y facturar de más (bug 41→87).
   function ordenPasaFiltros(id, o) {
     if (descartadas.has(String(id))) return false;
-    if (canalesSel.length>0 && !canalesSel.includes(o._platform)) return false;
+    if (canalSel !== "todos" && o._platform !== canalSel) return false;
     if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
     const minN = montoMin === "" ? null : parseFloat(montoMin);
     const maxN = montoMax === "" ? null : parseFloat(montoMax);
@@ -15272,6 +15271,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     }
 
     refreshDashboard();
+    // Refetch con delay para dar tiempo a Firestore a propagar los nuevos arca_comprobantes.
+    // El update local (setTnData arriba) mantiene la UI correcta mientras tanto.
+    if(ok > 0) setTimeout(() => loadPendingOrders(), 1500);
   }
 
   function downloadPDF(pdf) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+pdf.bytes; a.download=pdf.nombre; a.click(); }
@@ -15605,34 +15607,28 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </button>
                     </div>
                   </div>
-                  {/* Fila 2: Canal (pills) + Pago + Monto */}
+                  {/* Fila 2: Canal (radio-pills) + Sin doc + Pago + Monto */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
-                    {/* Pills de canal — multi-selección */}
+                    {/* Pills de canal — selección exclusiva (un canal a la vez) */}
                     {(()=>{
                       const canales=[
                         {id:"tiendanube", label:"Tienda Nube", color:"#2D8DF2"},
                         {id:"shopify", label:"Shopify", color:"#96BF48"},
                         {id:"mercadolibre", label:"Mercado Libre", color:"#FFE600", textColor:"#1a1a1a"},
                       ].filter(c => tienePlat(c.id));
-                      const allOff = canalesSel.length===0;
-                      const toggle=(id)=>{
-                        if(canalesSel.includes(id)) setCanalesSel(canalesSel.filter(c=>c!==id));
-                        else setCanalesSel([...canalesSel,id]);
-                      };
                       return (<>
-                        <button onClick={()=>setCanalesSel([])} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:`1.5px solid ${allOff?T.accentSolid:T.border}`,background:allOff?T.accentSolid:"transparent",color:allOff?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
+                        <button onClick={()=>setCanalSel("todos")} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:`1.5px solid ${canalSel==="todos"?T.accentSolid:T.border}`,background:canalSel==="todos"?T.accentSolid:"transparent",color:canalSel==="todos"?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
                           Todos
                         </button>
                         {canales.map(c=>{
-                          const active=canalesSel.includes(c.id);
+                          const active=canalSel===c.id;
                           return (
-                            <button key={c.id} onClick={()=>toggle(c.id)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:`1.5px solid ${active?c.color:T.border}`,background:active?c.color:"transparent",color:active?(c.textColor||"#fff"):T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s",display:"inline-flex",alignItems:"center",gap:5}}>
+                            <button key={c.id} onClick={()=>setCanalSel(active?"todos":c.id)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:`1.5px solid ${active?c.color:T.border}`,background:active?c.color:"transparent",color:active?(c.textColor||"#fff"):T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s",display:"inline-flex",alignItems:"center",gap:5}}>
                               <span style={{width:6,height:6,borderRadius:"50%",background:active?(c.textColor||"#fff"):c.color,flexShrink:0}}/>
                               {c.label}
                             </button>
                           );
                         })}
-                        {canalesSel.length>1&&<span style={{fontSize:10,color:T.textSm}}>({canalesSel.length} canales)</span>}
                       </>);
                     })()}
                     <select value={metodoPagoSel} onChange={e=>setMetodoPagoSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
@@ -15645,8 +15641,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <span style={{fontSize:11,color:T.textSm}}>–</span>
                       <input type="number" placeholder="sin límite" value={montoMax} onChange={e=>setMontoMax(e.target.value)} style={{...iS,width:90,padding:"6px 8px",fontSize:12}}/>
                     </div>
-                    {(canalesSel.length>0||metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
-                      <button onClick={()=>{setCanalesSel([]);setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
+                    {(canalSel!=="todos"||metodoPagoSel!=="todos"||montoMin||montoMax||busquedaPend)&&(
+                      <button onClick={()=>{setCanalSel("todos");setMetodoPagoSel("todos");setMontoMin("");setMontoMax("");setBusquedaPend("");}} style={{...BtnSecondary(T),padding:"5px 10px",fontSize:11,color:T.red}}>
                         ✕ Limpiar filtros
                       </button>
                     )}

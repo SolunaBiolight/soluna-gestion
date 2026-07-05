@@ -2653,7 +2653,8 @@ export default async function handler(req, res) {
           if (accessToken) {
             const allML = [];
             for (let offset = 0; offset < 500; offset += 50) {
-              const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&order.status=paid&order.date_created.from=${sinceDate}T00:00:00.000-03:00&order.date_created.to=${untilDate}T23:59:59.999-03:00&limit=50&offset=${offset}&sort=date_desc`;
+              // date_closed = cuando la orden pasó a estado "paid" (más preciso que date_created para facturar)
+              const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&order.status=paid&order.date_closed.from=${sinceDate}T00:00:00.000-03:00&order.date_closed.to=${untilDate}T23:59:59.999-03:00&limit=50&offset=${offset}&sort=date_desc`;
               const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
               if (!r.ok) {
                 console.error("[ml] orders search failed", r.status, await r.text().catch(()=>""));
@@ -2915,19 +2916,13 @@ export default async function handler(req, res) {
       const body = JSON.parse((await readBody(req)).toString());
       const { cuit: cuitParam, order_ids } = body;
       if (!cuitParam || !Array.isArray(order_ids)) return res.status(400).json({ error: "Faltan cuit u order_ids" });
-      // Inicio del mes en hora Argentina
-      const argFmtD = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit" });
-      const partsD = argFmtD.formatToParts(new Date());
-      const argYearD = partsD.find(p => p.type === "year").value;
-      const argMonthD = partsD.find(p => p.type === "month").value;
-      const monthStart = `${argYearD}-${argMonthD}-01T03:00:00.000Z`;
-      // Firestore "where in" limita a 30 valores — batchea si es necesario
+      // Firestore "where in" limita a 30 valores — batchea si es necesario.
+      // Sin filtro de fecha: detecta duplicados aunque la factura original sea de otro mes.
       const dup = [];
       for (let i = 0; i < order_ids.length; i += 30) {
         const chunk = order_ids.slice(i, i + 30);
         const snap = await db.collection("users").doc(uid).collection("arca_comprobantes")
           .where("cuit_emisor", "==", cuitParam)
-          .where("emitido_at", ">=", monthStart)
           .where("orden_id", "in", chunk)
           .get();
         snap.docs.forEach(d => dup.push({
