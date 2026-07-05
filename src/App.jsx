@@ -21217,6 +21217,8 @@ function CostosPanel({ T, uid }) {
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
   const [fijos, setFijos] = React.useState([]);
   const [varios, setVarios] = React.useState([]); // costos variables: % de la facturación
+  const [metaAdAccount, setMetaAdAccount] = React.useState(""); // cuenta de Meta para el margen (multi-tienda)
+  const [metaAdAccts, setMetaAdAccts] = React.useState([]);     // cuentas de Meta accesibles
   const [loaded, setLoaded] = React.useState(false);
   const [loadingProds, setLoadingProds] = React.useState(true);
   const [busqProd, setBusqProd] = React.useState("");
@@ -21233,8 +21235,20 @@ function CostosPanel({ T, uid }) {
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
         setVarios(Array.isArray(d.margenesCostosVar) ? d.margenesCostosVar : []);
+        setMetaAdAccount(String(d.margenesMetaAdAccount || ""));
       } catch (_) {}
       setLoaded(true);
+      // Cuentas de Meta accesibles con el token (CP5, CP7, etc.) — para elegir
+      // cuál es la de ESTA tienda cuando tenés varias en la misma app.
+      try {
+        const accRes = await fetch(`/api/meta?action=accounts&uid=${uid}`).then(r=>r.json());
+        const accs = accRes.accounts || [];
+        if (accs.length) {
+          const accId = (accs.find(a=>a.ad_account_id)||accs[0]).id;
+          const aaRes = await fetch(`/api/meta?action=available_ad_accounts&uid=${uid}&acc_id=${accId}`).then(r=>r.json());
+          setMetaAdAccts(Array.isArray(aaRes.ad_accounts) ? aaRes.ad_accounts : []);
+        }
+      } catch (_) {}
       try {
         // Mapeo de productos reales (como el mapeo de items de Stock)
         const r = await fetch(`/api/stock?action=products&uid=${uid}&days=90`);
@@ -21250,7 +21264,7 @@ function CostosPanel({ T, uid }) {
     setSaving(true);
     try {
       const variosClean = varios.filter(v=>(parseFloat(v.pct)||0)>0).map(v=>({id:v.id||margId(),nombre:v.nombre||"",pct:parseFloat(v.pct)||0}));
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos, margenesCostosVar: variosClean }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos, margenesCostosVar: variosClean, margenesMetaAdAccount: String(metaAdAccount||"") }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -21352,6 +21366,19 @@ function CostosPanel({ T, uid }) {
           </div>
         </>); })()}
       </div>
+
+      {/* Cuenta de Meta Ads para el margen — clave si tenés VARIAS tiendas en la
+          misma app (sino el ad spend de todas las cuentas se te mezcla). */}
+      {metaAdAccts.length > 0 && (
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>📘 Cuenta de Meta Ads para el margen</div>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Si tenés varias tiendas en la misma app, elegí la cuenta publicitaria de <strong style={{color:T.text}}>esta</strong> tienda. El Ad Spend del margen va a tomar SOLO esa cuenta. Si dejás "Todas", suma el gasto de todas las cuentas del token (se mezcla entre tiendas).</div>
+          <select value={metaAdAccount} onChange={e=>setMetaAdAccount(e.target.value)} style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:420}}>
+            <option value="">Todas las cuentas (suma todo)</option>
+            {metaAdAccts.map(a => { const id = String(a.account_id || (a.id||"").replace(/^act_/,"")); return <option key={a.id||id} value={id}>{(a.name||a.id)} ({a.currency||"—"})</option>; })}
+          </select>
+        </div>
+      )}
 
       {/* Costo por producto — mapeo de productos reales */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
