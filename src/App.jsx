@@ -15,6 +15,12 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
+// ── Multi-cuenta: recordar cuentas usadas (email/nombre, NO contraseñas) para
+// cambio rápido. El switch desloguea y deja un flag para pre-cargar el login. ──
+function ghReadAccounts(){ try { return JSON.parse(localStorage.getItem("growith_accounts")||"[]"); } catch(_){ return []; } }
+function ghRememberAccount(u){ if(!u?.email) return; try { const a=ghReadAccounts(); const prov=u.providerData?.[0]?.providerId||"password"; const e={email:u.email,nombre:u.displayName||u.email.split("@")[0],photoURL:u.photoURL||"",provider:prov,lastUsed:Date.now()}; const i=a.findIndex(x=>x.email===u.email); if(i>=0)a[i]={...a[i],...e}; else a.push(e); localStorage.setItem("growith_accounts",JSON.stringify(a)); } catch(_){} }
+function ghForgetAccount(email){ try { localStorage.setItem("growith_accounts",JSON.stringify(ghReadAccounts().filter(x=>x.email!==email))); } catch(_){} }
+function ghSwitchAccount(email,provider){ try{ localStorage.setItem("growith_switch_to",JSON.stringify({email:email||"",provider:provider||""})); }catch(_){} signOut(auth); }
 const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
 
@@ -720,6 +726,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
   ];
   const [closedSubs, setClosedSubs] = React.useState(new Set());
   const initial = (user?.displayName||user?.email||"?").charAt(0).toUpperCase();
+  const [acctOpen, setAcctOpen] = React.useState(false);
+  const otherAccounts = ghReadAccounts().filter(a=>a.email!==user?.email);
   const W = collapsed ? 64 : 224;
 
   const NavBtn = ({item}) => {
@@ -858,15 +866,33 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
       {/* User Section */}
       <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:DS.sp.sm,marginTop:DS.sp.sm}}>
         {!collapsed&&(
-          <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:DS.sp.sm,marginBottom:DS.sp.xs}}>
-            {user?.photoURL
-              ?<img src={user.photoURL} alt="" style={{width:28,height:28,borderRadius:DS.r.full,border:`1px solid ${T.border}`,flexShrink:0}}/>
-              :<div style={{width:28,height:28,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:DS.font.md,flexShrink:0}}>{initial}</div>
-            }
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
-              <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"||userPlan==="full"?"⚡ Pro":isInTrial?"✨ Prueba gratis":"🔒 Trial vencido"}</div>
-            </div>
+          <div style={{position:"relative",marginBottom:DS.sp.xs}}>
+            <button onClick={()=>setAcctOpen(o=>!o)} title="Cambiar de cuenta" style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:DS.sp.sm,width:"100%",background:"transparent",border:"none",cursor:"pointer",borderRadius:DS.r.md,fontFamily:"'Inter',system-ui,sans-serif"}}>
+              {user?.photoURL
+                ?<img src={user.photoURL} alt="" style={{width:28,height:28,borderRadius:DS.r.full,border:`1px solid ${T.border}`,flexShrink:0}}/>
+                :<div style={{width:28,height:28,borderRadius:DS.r.full,background:T.accentSolid+"33",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:DS.w.bold,fontSize:DS.font.md,flexShrink:0}}>{initial}</div>
+              }
+              <div style={{flex:1,minWidth:0,textAlign:"left"}}>
+                <div style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
+                <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"||userPlan==="full"?"⚡ Pro":isInTrial?"✨ Prueba gratis":"🔒 Trial vencido"}</div>
+              </div>
+              <span style={{color:T.textSm,fontSize:11,flexShrink:0}}>{acctOpen?"▾":"⇅"}</span>
+            </button>
+            {acctOpen && (
+              <div style={{position:"absolute",bottom:"calc(100% + 4px)",left:0,right:0,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.md,boxShadow:"0 8px 24px rgba(0,0,0,0.4)",padding:4,zIndex:70}}>
+                {otherAccounts.length===0 && <div style={{fontSize:11,color:T.textSm,padding:"8px 10px"}}>No hay otras cuentas guardadas.</div>}
+                {otherAccounts.map(a=>(
+                  <button key={a.email} onClick={()=>ghSwitchAccount(a.email,a.provider)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderRadius:DS.r.sm,cursor:"pointer",color:T.text,textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <div style={{width:22,height:22,borderRadius:"50%",background:T.accent+"22",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>{(a.nombre||a.email||"?")[0].toUpperCase()}</div>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre||a.email}</div>
+                      <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.email}</div>
+                    </div>
+                  </button>
+                ))}
+                <button onClick={()=>ghSwitchAccount("","")} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderTop:`1px solid ${T.border}`,marginTop:2,borderRadius:DS.r.sm,cursor:"pointer",color:T.accent,fontWeight:600,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>➕ Agregar / entrar a otra cuenta</button>
+              </div>
+            )}
           </div>
         )}
         <div style={{display:"flex",flexDirection:collapsed?"column":"row",gap:4}}>
@@ -7240,7 +7266,13 @@ function AuthScreen({T, darkMode, onToggleDark}) {
   const [nombre,setNombre]=useState("");
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
+  const [switchingTo,setSwitchingTo]=useState(null);
   const iS=InputStyle(T);
+
+  // Cambio rápido de cuenta: si venimos de "switch", pre-cargamos el email.
+  useEffect(()=>{
+    try { const raw=localStorage.getItem("growith_switch_to"); if(raw){ const s=JSON.parse(raw); if(s?.email){ setEmail(s.email); setSwitchingTo(s); } localStorage.removeItem("growith_switch_to"); } } catch(_){}
+  },[]);
 
   const errMsg=(code)=>{
     const map={
@@ -7316,6 +7348,11 @@ function AuthScreen({T, darkMode, onToggleDark}) {
             <div style={{fontSize:32,fontWeight:800,color:T.text,letterSpacing:-1,lineHeight:1}}>Growith</div>
           </div>
           <div style={{fontSize:13,color:T.textSm,marginTop:4}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
+          {switchingTo?.email && (
+            <div style={{marginTop:10,padding:"8px 12px",background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,fontSize:12,color:T.text}}>
+              🔄 Cambiando a <strong>{switchingTo.email}</strong>{switchingTo.provider==="google.com"?" — entrá con Google":" — poné tu contraseña"}
+            </div>
+          )}
           {mode==="register"&&(
             <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:10,background:"linear-gradient(135deg,#22c55e18,#22c55e08)",border:"1.5px solid #22c55e55",borderRadius:20,padding:"6px 14px"}}>
               <span style={{fontSize:15}}>🎁</span>
@@ -7402,6 +7439,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   const [pNombre,setPNombre]=useState("");
   const [pEmail,setPEmail]=useState("");
   const [pSaving,setPSaving]=useState(false);
+  const [acctBump,setAcctBump]=useState(0);
   const [showLoginEmail,setShowLoginEmail]=useState(false);
   const [newLoginEmail,setNewLoginEmail]=useState("");
   const [loginPassword,setLoginPassword]=useState("");
@@ -7810,6 +7848,27 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               </div>
             )}
           </div>
+
+          {/* Cambio rápido de cuenta */}
+          {(()=>{ const _b=acctBump; const accts = ghReadAccounts().filter(a=>a.email!==user?.email); return (
+            <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+              <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cambiar de cuenta</div>
+              {accts.map(a=>(
+                <div key={a.email} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <button onClick={()=>ghSwitchAccount(a.email,a.provider)} style={{flex:1,display:"flex",alignItems:"center",gap:8,textAlign:"left",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",color:T.text}}>
+                    <div style={{width:26,height:26,borderRadius:"50%",background:T.accent+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.accent,flexShrink:0}}>{(a.nombre||a.email||"?")[0].toUpperCase()}</div>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre||a.email}</div>
+                      <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.email}</div>
+                    </div>
+                    <span style={{fontSize:11,color:T.accent,fontWeight:600,flexShrink:0}}>Entrar →</span>
+                  </button>
+                  <button onClick={()=>{ghForgetAccount(a.email); setAcctBump(x=>x+1);}} title="Quitar de la lista" style={{background:"transparent",border:"none",color:T.textSm,fontSize:16,cursor:"pointer",padding:"0 4px"}}>×</button>
+                </div>
+              ))}
+              <button onClick={()=>ghSwitchAccount("","")} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",marginTop:4}}>➕ Agregar / entrar a otra cuenta</button>
+            </div>
+          ); })()}
         </div>
 
         {/* Notificaciones de equipo */}
@@ -24575,6 +24634,7 @@ export default function App() {
     const unsub=onAuthStateChanged(auth, async (u)=>{
       setUser(u);
       if(u) {
+        ghRememberAccount(u); // recordar para el cambio rápido de cuentas
         // Detectar usuario nuevo
         try{
           const k=`growith_onb_done_${u.uid}`;
