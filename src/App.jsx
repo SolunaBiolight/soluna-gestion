@@ -15601,28 +15601,39 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </div>
 
                   {/* Panel de progreso de facturación del período — solo cuando terminó de cargar */}
-                  {!tnLoading && mesTotal > 0 && (
-                    <div style={{padding:"10px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,display:"flex",gap:16,flexWrap:"wrap"}}>
-                      <div style={{flex:1,minWidth:130}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
-                          <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Ventas facturadas</span>
-                          <span style={{fontSize:11,color:T.text,fontWeight:700}}>{itemsBilled.length}<span style={{color:T.textSm,fontWeight:400}}>/{mesTotal}</span> <span style={{color:pctOrdenes>=80?T.green:pctOrdenes>=50?"#f59e0b":T.textMd,fontWeight:700}}>{pctOrdenes}%</span></span>
+                  {!tnLoading && tnData && (()=>{
+                    const _all = Object.entries(tnData.ordenes||{});
+                    const _plat = canalSel==="todos" ? _all : _all.filter(([,o])=>o._platform===canalSel);
+                    const _billed = _plat.filter(([,o])=>o._billed);
+                    const _mesTotal = _plat.length;
+                    const _mesMonto = _plat.reduce((s,[,o])=>s+(o.total||0),0);
+                    const _billedMonto = _billed.reduce((s,[,o])=>s+(o.total||0),0);
+                    const _pctOrd = _mesTotal>0?Math.round(_billed.length/_mesTotal*100):0;
+                    const _pctMonto = _mesMonto>0?Math.round(_billedMonto/_mesMonto*100):0;
+                    if (_mesTotal===0) return null;
+                    return (
+                      <div style={{padding:"10px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,display:"flex",gap:16,flexWrap:"wrap"}}>
+                        <div style={{flex:1,minWidth:130}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
+                            <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Ventas facturadas</span>
+                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>{_billed.length}<span style={{color:T.textSm,fontWeight:400}}>/{_mesTotal}</span> <span style={{color:_pctOrd>=80?T.green:_pctOrd>=50?"#f59e0b":T.textMd,fontWeight:700}}>{_pctOrd}%</span></span>
+                          </div>
+                          <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${_pctOrd}%`,background:_pctOrd>=80?T.green:_pctOrd>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
+                          </div>
                         </div>
-                        <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                          <div style={{height:"100%",width:`${pctOrdenes}%`,background:pctOrdenes>=80?T.green:pctOrdenes>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
+                        <div style={{flex:2,minWidth:200}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
+                            <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Monto facturado</span>
+                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>$ {_billedMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}<span style={{color:T.textSm,fontWeight:400}}> / $ {_mesMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span> <span style={{color:_pctMonto>=80?T.green:_pctMonto>=50?"#f59e0b":T.textMd,fontWeight:700}}>{_pctMonto}%</span></span>
+                          </div>
+                          <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${_pctMonto}%`,background:_pctMonto>=80?T.green:_pctMonto>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
+                          </div>
                         </div>
                       </div>
-                      <div style={{flex:2,minWidth:200}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
-                          <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Monto facturado</span>
-                          <span style={{fontSize:11,color:T.text,fontWeight:700}}>$ {billedMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}<span style={{color:T.textSm,fontWeight:400}}> / $ {mesMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span> <span style={{color:pctMonto>=80?T.green:pctMonto>=50?"#f59e0b":T.textMd,fontWeight:700}}>{pctMonto}%</span></span>
-                        </div>
-                        <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                          <div style={{height:"100%",width:`${pctMonto}%`,background:pctMonto>=80?T.green:pctMonto>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Fila 2: Canal (radio-pills) + Sin doc + Pago + Monto */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
