@@ -8221,11 +8221,11 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   <li style={{padding:"8px 10px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>
                     <strong style={{color:T.text}}>Permisos a marcar en el dropdown</strong> (buscá cada uno con el cuadro de búsqueda):
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}}>
-                      {["ads_management","ads_read","business_management","pages_show_list","pages_read_engagement","read_insights","instagram_basic"].map(p=>(
+                      {["ads_management","ads_read","business_management","pages_show_list","pages_read_engagement"].map(p=>(
                         <code key={p} style={{background:T.surface,padding:"2px 7px",borderRadius:4,fontSize:10,color:T.accent,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{p}</code>
                       ))}
                     </div>
-                    <div style={{marginTop:6,fontSize:10,color:T.textSm}}>Los primeros 3 son <strong style={{color:T.text}}>obligatorios</strong>. El resto suma funcionalidad. <strong style={{color:T.text}}>NO marques</strong> permisos de threads, messaging o paid_marketing — no los usamos.</div>
+                    <div style={{marginTop:6,fontSize:10,color:T.textSm}}>Los 3 primeros son <strong style={{color:T.text}}>obligatorios</strong>. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>read_insights</code> e <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>instagram_basic</code> ya no aparecen en tokens de sistema (Meta los eliminó de este flujo) — están cubiertos por <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_read</code> y <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>pages_read_engagement</code>. <strong style={{color:T.text}}>NO marques</strong> catalog_management, pages_manage_ads, threads ni messaging.</div>
                   </li>
                   <li>Click en <strong style={{color:T.text}}>"Generar token"</strong> → copialo (empieza con <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>EAA...</code>) → pegalo abajo</li>
                 </ol>
