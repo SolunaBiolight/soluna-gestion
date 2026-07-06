@@ -637,23 +637,16 @@ export default async function handler(req, res) {
   });
 
   try {
-    // Búsqueda directa por número (solo TN — Shopify devuelve vacío)
-    if (q) {
+    // BULK LOOKUP: trae una página de órdenes recientes para matchear SKUs localmente.
+    // TN no soporta búsqueda por número de orden — hay que paginar y filtrar local.
+    if (tab === 'bulk_lookup') {
       if (platform === 'shopify') return res.status(200).json([]);
       const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
-      const qEnc = encodeURIComponent(q);
-      // Primera búsqueda: órdenes abiertas (default TN)
-      const r1 = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${qEnc}&per_page=20`, { headers: tnHeaders });
-      const d1 = r1.ok ? await r1.json() : [];
-      const hit1 = Array.isArray(d1) ? d1.filter(o => String(o.number) === String(q)) : [];
-      if (hit1.length > 0) return res.status(200).json(hit1);
-      // Segunda búsqueda: órdenes cerradas/enviadas (TN excluye closed por defecto)
-      const r2 = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${qEnc}&per_page=20&status=closed`, { headers: tnHeaders });
-      const d2 = r2.ok ? await r2.json() : [];
-      const hit2 = Array.isArray(d2) ? d2.filter(o => String(o.number) === String(q)) : [];
-      if (hit2.length > 0) return res.status(200).json(hit2);
-      // Fallback: cualquier resultado de la primera búsqueda sin filtrar por número
-      return res.status(200).json(Array.isArray(d1) && d1.length > 0 ? d1 : (Array.isArray(d2) ? d2 : []));
+      const page = parseInt(req.query.page) || 1;
+      const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?per_page=200&page=${page}`, { headers: tnHeaders });
+      if (!r.ok) return res.status(200).json([]);
+      const data = await r.json();
+      return res.status(200).json(Array.isArray(data) ? data : []);
     }
 
     // STATS: facturado + count período actual vs anterior (para Home KPIs)

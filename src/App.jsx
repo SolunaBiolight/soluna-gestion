@@ -5690,23 +5690,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             .map(p=>p.pedidoNum)
         )];
 
-        // Fetch en lotes de 5 para no saturar la API de TN (rate limit)
+        // Traer órdenes recientes en bulk (TN no busca por número con q=)
+        // Una sola llamada de 200 órdenes cubre los últimos ~200 pedidos.
+        // Si quedan faltantes, busca en la página 2 (y 3 si es necesario).
         const fetchedMap={};
-        const BATCH=5;
-        for(let i=0;i<missingNums.length;i+=BATCH){
-          await Promise.all(missingNums.slice(i,i+BATCH).map(async num=>{
-            try {
-              const r=await fetch(`/api/orders?uid=${user?.uid||""}&q=${encodeURIComponent(num)}`);
-              if(r.ok){
-                const data=await r.json();
-                if(Array.isArray(data)&&data.length>0){
-                  const built=buildOrdersFromAPI(data);
-                  const found=built.find(o=>o.numero===num)||null;
-                  if(found) fetchedMap[num]=found;
-                }
-              }
-            } catch(_){}
-          }));
+        if(missingNums.length>0){
+          const missingSet=new Set(missingNums);
+          for(let page=1; page<=4 && missingSet.size>0; page++){
+            try{
+              const r=await fetch(`/api/orders?uid=${user?.uid||""}&tab=bulk_lookup&page=${page}`);
+              if(!r.ok) break;
+              const data=await r.json();
+              if(!Array.isArray(data)||data.length===0) break;
+              buildOrdersFromAPI(data).forEach(o=>{
+                if(missingSet.has(o.numero)){ fetchedMap[o.numero]=o; missingSet.delete(o.numero); }
+              });
+              if(data.length<200) break; // última página
+            }catch(_){ break; }
+          }
         }
 
         // 3ª pasada: construir resultados con los datos ya cargados
