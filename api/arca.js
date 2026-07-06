@@ -1552,7 +1552,16 @@ export default async function handler(req, res) {
       const porLetra = { A: 0, B: 0, C: 0 };
       for (const d of snap.docs) {
         const data = d.data();
-        if (!data.emitido_at || data.emitido_at < monthStart || data.emitido_at >= monthEnd) continue;
+        // fecha_cbte = "YYYY-MM-DD" (fecha real del comprobante en AFIP).
+        // emitido_at = timestamp del servidor (puede ser un mes distinto si se backdateó).
+        // Siempre priorizamos fecha_cbte; emitido_at solo como fallback para registros viejos.
+        let inMonth;
+        if (data.fecha_cbte) {
+          inMonth = data.fecha_cbte >= `${argYear}-${argMonth}-01` && data.fecha_cbte < `${nextYear}-${nextMonth}-01`;
+        } else {
+          inMonth = !!data.emitido_at && data.emitido_at >= monthStart && data.emitido_at < monthEnd;
+        }
+        if (!inMonth) continue;
         facturas_emitidas++;
         iva_debito += data.iva || 0;
         total_facturado += data.total || 0;
@@ -2111,6 +2120,7 @@ export default async function handler(req, res) {
                 punto_venta: pv,
                 exento,
                 fecha_str: factData.fecha,
+                fecha_cbte: factData.fecha_iso,
                 emitido_at: new Date().toISOString(),
                 cae: result.cae,
                 cae_vto: result.cae_vto,
