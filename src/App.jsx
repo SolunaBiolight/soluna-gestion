@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react"; // v2
+﻿import React, { useState, useEffect, useMemo, useRef } from "react"; // v2
 import ReactDOM from "react-dom";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, getDoc, query, where, getDocs, orderBy } from "firebase/firestore";
@@ -14651,7 +14651,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const buscarPlats = (platConectadas.length ? platConectadas : ["shopify","tiendanube","mercadolibre"])
     .map(p => p==="tiendanube"?"TN":p==="shopify"?"Shopify":p==="mercadolibre"?"ML":p).join("/");
   const iS = {width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"10px 13px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box",outline:"none"};
-  const labelS = {fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:6,display:"block"};
+  const labelS = {fontSize:11,color:T.textSm,fontWeight:600,marginBottom:6,display:"block"};
   // Mes navegado en el dashboard (default = mes actual ARG)
   const _now = new Date();
   const [dashMonth, setDashMonth] = useState(_now.getMonth()+1); // 1-12
@@ -15447,7 +15447,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             {/* ══ CON CUITs → PANEL PRINCIPAL ══ */}
 
             {/* Guía colapsable — vive en Métricas (primera del sidenav, default landing) */}
-            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:24,display:sidebarTab==="metricas"?"block":"none"}}>
+            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:24,display:(sidebarTab==="metricas"||sidebarTab==="pendientes"||!sidebarTab)?"block":"none"}}>
               <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"16px 20px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:18}}>📖</span>
@@ -15510,48 +15510,29 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:24}}>
                 {/* KPIs fila 1 */}
                 <div style={{display:"grid",gridTemplateColumns:esRI?"repeat(4,1fr)":"repeat(3,1fr)",gap:12}}>
-                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
-                    <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>💰 Facturado · {mesActual}</div>
-                    <div style={{fontSize:22,fontWeight:800,color:T.green,letterSpacing:-0.5,lineHeight:1}}>
-                      {dashboardStats ? "$ "+dashboardStats.total_facturado.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}) : "$ 0"}
-                    </div>
-                    <div style={{fontSize:10,color:T.textSm,marginTop:5}}>IVA incluido</div>
-                  </div>
+                  <KPI T={T} icon="💰" label={`Facturado · ${mesActual}`} color={T.green}
+                    value={dashboardStats?"$ "+dashboardStats.total_facturado.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
+                    sub="IVA incluido"/>
                   {esRI&&(
-                    <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
-                      <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>📊 IVA débito · {mesActual}</div>
-                      <div style={{fontSize:22,fontWeight:800,color:T.blue||"#3b82f6",letterSpacing:-0.5,lineHeight:1}}>
-                        {dashboardStats ? "$ "+dashboardStats.iva_debito.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}) : "$ 0"}
-                      </div>
-                      <div style={{fontSize:10,color:T.textSm,marginTop:5}}>Facturas A y B</div>
-                    </div>
+                    <KPI T={T} icon="📊" label={`IVA débito · ${mesActual}`} color={T.blue||"#3b82f6"}
+                      value={dashboardStats?"$ "+dashboardStats.iva_debito.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
+                      sub="Facturas A y B"/>
                   )}
-                  <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"16px 18px"}}>
-                    <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>🧾 Emitidas · {mesActual}</div>
-                    <div style={{fontSize:22,fontWeight:800,color:T.text,letterSpacing:-0.5,lineHeight:1}}>
-                      {dashboardStats ? dashboardStats.facturas_emitidas : 0}
-                    </div>
-                    <div style={{fontSize:10,color:T.textSm,marginTop:5}}>
-                      {dashboardStats&&(dashboardStats.por_letra.A+dashboardStats.por_letra.B+dashboardStats.por_letra.C)>0
-                        ?<span>A: <strong style={{color:T.text}}>{dashboardStats.por_letra.A}</strong> · B: <strong style={{color:T.text}}>{dashboardStats.por_letra.B}</strong> · C: <strong style={{color:T.text}}>{dashboardStats.por_letra.C}</strong></span>
-                        :"Sin facturas este mes"}
-                    </div>
-                  </div>
-                  {/* KPI pendientes — acceso directo */}
+                  <KPI T={T} icon="🧾" label={`Emitidas · ${mesActual}`} color={T.text}
+                    value={dashboardStats?String(dashboardStats.facturas_emitidas):"0"}
+                    sub={dashboardStats&&(dashboardStats.por_letra.A+dashboardStats.por_letra.B+dashboardStats.por_letra.C)>0
+                      ?`A: ${dashboardStats.por_letra.A} · B: ${dashboardStats.por_letra.B} · C: ${dashboardStats.por_letra.C}`
+                      :"Sin facturas este mes"}/>
                   {(()=>{
-                    const pendCount = tnData ? Object.values(tnData.ordenes||{}).filter(o=>!o.facturada).length : null;
-                    const pendTotal = tnData ? Object.values(tnData.ordenes||{}).filter(o=>!o.facturada).reduce((a,o)=>a+(o.total||0),0) : null;
+                    const pendCount=tnData?Object.values(tnData.ordenes||{}).filter(o=>!o.facturada).length:null;
+                    const pendTotal=tnData?Object.values(tnData.ordenes||{}).filter(o=>!o.facturada).reduce((a,o)=>a+(o.total||0),0):null;
                     return (
-                      <div onClick={()=>setSidebarTab&&setSidebarTab("pendientes")} style={{background:pendCount>0?T.yellowBg:T.card,border:`1px solid ${pendCount>0?(T.yellow||"#eab308")+"55":T.border}`,borderRadius:12,padding:"16px 18px",cursor:pendCount>0?"pointer":"default",transition:"all 0.15s"}}>
-                        <div style={{fontSize:9,textTransform:"uppercase",color:pendCount>0?(T.yellow||"#eab308"):T.textSm,fontWeight:700,letterSpacing:0.6,marginBottom:8}}>⏳ Sin facturar ahora</div>
-                        <div style={{fontSize:22,fontWeight:800,color:pendCount>0?(T.yellow||"#eab308"):T.textSm,letterSpacing:-0.5,lineHeight:1}}>
-                          {tnData?pendCount:"—"}
-                        </div>
-                        <div style={{fontSize:10,color:T.textSm,marginTop:5}}>
-                          {pendTotal!=null&&pendTotal>0?`$ ${pendTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} pendientes`:"Cargá Pendientes para ver"}
-                        </div>
-                        {pendCount>0&&<div style={{fontSize:9,color:T.yellow||"#eab308",marginTop:4,fontWeight:600}}>Tocá para facturar →</div>}
-                      </div>
+                      <KPI T={T} icon="⏳" label="Sin facturar ahora"
+                        color={pendCount>0?(T.yellow||"#eab308"):T.textSm}
+                        accent={pendCount>0}
+                        value={tnData?String(pendCount):"—"}
+                        sub={pendTotal!=null&&pendTotal>0?`$ ${pendTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} · Tocá para facturar`:"Cargá Pendientes para ver"}
+                        onClick={pendCount>0?()=>setSidebarTab&&setSidebarTab("pendientes"):undefined}/>
                     );
                   })()}
                 </div>
@@ -15619,6 +15600,31 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </button>
                     </div>
                   </div>
+
+                  {/* Panel de progreso de facturación del período — solo cuando terminó de cargar */}
+                  {!tnLoading && mesTotal > 0 && (
+                    <div style={{padding:"10px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,display:"flex",gap:16,flexWrap:"wrap"}}>
+                      <div style={{flex:1,minWidth:130}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
+                          <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Ventas facturadas</span>
+                          <span style={{fontSize:11,color:T.text,fontWeight:700}}>{itemsBilled.length}<span style={{color:T.textSm,fontWeight:400}}>/{mesTotal}</span> <span style={{color:pctOrdenes>=80?T.green:pctOrdenes>=50?"#f59e0b":T.textMd,fontWeight:700}}>{pctOrdenes}%</span></span>
+                        </div>
+                        <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${pctOrdenes}%`,background:pctOrdenes>=80?T.green:pctOrdenes>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
+                        </div>
+                      </div>
+                      <div style={{flex:2,minWidth:200}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
+                          <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Monto facturado</span>
+                          <span style={{fontSize:11,color:T.text,fontWeight:700}}>$ {billedMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}<span style={{color:T.textSm,fontWeight:400}}> / $ {mesMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span> <span style={{color:pctMonto>=80?T.green:pctMonto>=50?"#f59e0b":T.textMd,fontWeight:700}}>{pctMonto}%</span></span>
+                        </div>
+                        <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${pctMonto}%`,background:pctMonto>=80?T.green:pctMonto>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Fila 2: Canal (radio-pills) + Sin doc + Pago + Monto */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
                     {/* Pills de canal — selección exclusiva (un canal a la vez) */}
@@ -15786,8 +15792,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     function seleccionarPorcentaje(pct) {
                       const pendientes = itemsSelectables.map(([id])=>id);
                       const count = Math.ceil(pendientes.length * pct / 100);
+                      const shuffled = [...pendientes].sort(()=>Math.random()-0.5);
+                      const selSet = new Set(shuffled.slice(0, count));
                       const ns = {...tnSelected};
-                      pendientes.forEach((id,i)=>{ ns[id] = i < count; });
+                      pendientes.forEach(id=>{ ns[id] = selSet.has(id); });
                       setTnSelected(ns);
                     }
                     const allSel = itemsSelectables.length > 0 && itemsSelectables.every(([id])=>tnSelected[id]);
@@ -15842,7 +15850,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           {/* Selector de porcentaje a seleccionar */}
                           <select onChange={e=>{const p=parseInt(e.target.value);if(p)seleccionarPorcentaje(p);e.target.value="";}} title="Seleccionar automáticamente un % de las órdenes pendientes" style={{...iS,padding:"4px 8px",fontSize:11,width:"auto",cursor:"pointer",fontWeight:600,flexShrink:0}}>
                             <option value="">% auto</option>
-                            {[50,60,70,80,90,100].map(p=><option key={p} value={p}>{p}%</option>)}
+                            {[10,20,30,40,50,60,70,80,90,100].map(p=><option key={p} value={p}>{p}%</option>)}
                           </select>
 
                           {/* Totales del período seleccionado */}
@@ -15867,7 +15875,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             const bg = billed ? T.green+"18" : wasAnulada ? T.textSm+"15" : sel ? T.accentSolid+"10" : "transparent";
                             const bord = billed ? "1px solid "+T.green+"33" : wasAnulada ? "1px solid "+T.textSm+"33" : "1px solid "+T.borderL;
                             return (
-                              <div key={id} onClick={()=>{ if(!billed) setTnSelected(prev=>({...prev,[id]:!prev[id]})); }} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,cursor:billed?"default":"pointer",background:bg,borderBottom:bord,opacity:billed?0.85:1}}>
+                              <div key={id} onClick={()=>{ if(!billed) setTnSelected(prev=>({...prev,[id]:!prev[id]})); }} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderRadius:8,cursor:billed?"default":"pointer",background:bg,borderBottom:bord,opacity:billed?0.85:1}}>
                                 {billed
                                   ? <span title="Ya facturada" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
                                   : <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
@@ -15914,30 +15922,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </details>
                         )}
 
-
-                        {/* Panel de progreso de facturación del período — solo cuando terminó de cargar */}
-                        {!tnLoading && mesTotal > 0 && (
-                          <div style={{padding:"10px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,display:"flex",gap:16,flexWrap:"wrap"}}>
-                            <div style={{flex:1,minWidth:130}}>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
-                                <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Ventas facturadas</span>
-                                <span style={{fontSize:11,color:T.text,fontWeight:700}}>{itemsBilled.length}<span style={{color:T.textSm,fontWeight:400}}>/{mesTotal}</span> <span style={{color:pctOrdenes>=80?T.green:pctOrdenes>=50?"#f59e0b":T.textMd,fontWeight:700}}>{pctOrdenes}%</span></span>
-                              </div>
-                              <div style={{height:5,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                                <div style={{height:"100%",width:`${pctOrdenes}%`,background:pctOrdenes>=80?T.green:pctOrdenes>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
-                              </div>
-                            </div>
-                            <div style={{flex:2,minWidth:200}}>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
-                                <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Monto facturado</span>
-                                <span style={{fontSize:11,color:T.text,fontWeight:700}}>$ {billedMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}<span style={{color:T.textSm,fontWeight:400}}> / $ {mesMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span> <span style={{color:pctMonto>=80?T.green:pctMonto>=50?"#f59e0b":T.textMd,fontWeight:700}}>{pctMonto}%</span></span>
-                              </div>
-                              <div style={{height:5,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                                <div style={{height:"100%",width:`${pctMonto}%`,background:pctMonto>=80?T.green:pctMonto>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
-                              </div>
-                            </div>
-                          </div>
-                        )}
 
                         {/* Footer con total y botón Facturar */}
                         <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14,paddingTop:14,borderTop:"1px solid "+T.borderL,opacity:tnLoading?0.4:1,transition:"opacity 0.2s"}}>
@@ -16175,7 +16159,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 {!manualResult ? (
                   <>
                     {/* Cliente */}
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8}}>Cliente</div>
+                    <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+T.borderL}}>Cliente</div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}>
                       <div>
                         <label style={labelS}>Nombre / Razón social</label>
@@ -16198,7 +16182,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     )}
 
                     {/* Items */}
-                    <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:8,marginTop:6}}>Ítems</div>
+                    <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:10,marginTop:18,paddingBottom:8,borderBottom:"1px solid "+T.borderL}}>Ítems</div>
                     <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8}}>
                       {manualItems.map((it,i)=>{
                         const suggestions = it.nombre.trim() ? getConceptos().filter(c=>c.toLowerCase().includes(it.nombre.trim().toLowerCase())&&c!==it.nombre.trim()) : getConceptos().slice(0,5);
@@ -16238,7 +16222,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
 
                     <div style={{display:"flex",justifyContent:"flex-end"}}>
-                      <button onClick={handleEmitManual} disabled={emittingManual||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"11px 26px",fontSize:14,fontWeight:700,cursor:emittingManual?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:(!cuitSel||emittingManual)?0.5:1}}>
+                      <button onClick={handleEmitManual} disabled={emittingManual||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:emittingManual?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:(!cuitSel||emittingManual)?0.5:1}}>
                         {emittingManual?<><Spinner size={13} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir factura"}
                       </button>
                     </div>
@@ -16265,7 +16249,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           ⬇ Descargar PDF
                         </button>
                       )}
-                      <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                         Emitir otra
                       </button>
                     </div>
