@@ -14588,7 +14588,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try { return new Set(JSON.parse(localStorage.getItem(descartadasKey)||"[]")); } catch(_){ return new Set(); }
   });
   const [showDescartadas, setShowDescartadas] = useState(false); // colapsado por defecto — desplegable para no hacer la lista interminable
-  const [autoDescartar, setAutoDescartar] = useState(true); // al facturar, descartar automáticamente las no-seleccionadas
   function saveDescartadas(set) {
     setDescartadas(set);
     try { if(descartadasKey) localStorage.setItem(descartadasKey, JSON.stringify([...set])); } catch(_){}
@@ -14957,6 +14956,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // TODO tnData.ordenes ignorando el filtro de plataforma → podía emitir
   // órdenes ocultas por el filtro y facturar de más (bug 41→87).
   function ordenPasaFiltros(id, o) {
+    if (o._billed) return false; // las facturadas van a la sección colapsada, no a la lista principal
     if (descartadas.has(String(id))) return false;
     if (canalSel !== "todos" && o._platform !== canalSel) return false;
     if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
@@ -14976,11 +14976,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   function facturarSeleccionadas() {
     if(!tnData?.ordenes) return;
     const filtered = {};
-    const noSeleccionadasIds = [];
     Object.entries(tnData.ordenes).forEach(([id,o])=>{
-      // Solo se factura lo seleccionado Y visible con el filtro actual.
       if(tnSelected[id] && !o._billed && ordenPasaFiltros(id,o)) filtered[id] = o;
-      else if(!tnSelected[id] && !o._billed && !descartadas.has(String(id))) noSeleccionadasIds.push(id);
     });
     if(Object.keys(filtered).length === 0) return toast("Tildá al menos una venta","warning");
     setOrdenes(filtered);
@@ -15317,23 +15314,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         for(const id of billedOk.keys()) next[id] = false;
         return next;
       });
-    }
-
-    // Auto-descartar las no-seleccionadas DESPUÉS de emitir exitosamente
-    // (solo si al menos 1 factura salió OK y el toggle está activo)
-    if(autoDescartar && ok > 0 && tnData?.ordenes) {
-      const idsEmitidos = new Set(res.filter(r=>r.ok).map(r=>r.orden_id));
-      const s = new Set(descartadas);
-      Object.keys(tnData.ordenes).forEach(id => {
-        if(!idsEmitidos.has(id) && !tnData.ordenes[id]?._billed) {
-          s.add(String(id));
-        }
-      });
-      saveDescartadas(s);
-      if(s.size > descartadas.size) {
-        const nuevasDescartadas = s.size - descartadas.size;
-        toast(`${ok} facturadas · ${nuevasDescartadas} descartadas automáticamente`, "success");
-      }
     }
 
     refreshDashboard();
@@ -15799,26 +15779,54 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   ) : (() => {
                     // El backend ya manda ordenado por fecha desc. Filtros locales: canal y rango de monto.
                     const all = Object.entries(tnData.ordenes);
-                    // Mismo predicado que usa facturarSeleccionadas → la lista
-                    // visible y lo que se factura son siempre el mismo conjunto.
+                    // items: pendientes (no facturadas, no descartadas, pasan filtros de canal/monto/búsqueda)
                     const items = all.filter(([id, o]) => ordenPasaFiltros(id, o));
-                    // Órdenes descartadas (para mostrar en panel separado)
+                    // itemsBilled: ya facturadas en el período para la sección colapsada
+                    const itemsBilled = all.filter(([id, o]) => o._billed && (canalSel === "todos" || o._platform === canalSel));
+                    // itemsDescartados: ignoradas manualmente este mes
                     const itemsDescartados = all.filter(([id, o]) => descartadas.has(String(id)) && !o._billed);
                     if (items.length === 0) {
                       return (
-                        <div style={{padding:"30px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
-                          <div style={{fontSize:22,marginBottom:6}}>🔍</div>
-                          <div style={{fontSize:12,color:T.textSm}}>No hay ventas que coincidan con los filtros aplicados.</div>
+                        <div style={{padding:"24px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
+                          {itemsBilled.length > 0 ? (
+                            <>
+                              <div style={{fontSize:28,marginBottom:8}}>✅</div>
+                              <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>Todo facturado en el período</div>
+                              <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>{itemsBilled.length} {itemsBilled.length===1?"venta facturada":"ventas facturadas"} · cambiá el período para ver más</div>
+                              <details style={{textAlign:"left"}}>
+                                <summary style={{cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,padding:"8px 12px",background:T.card,borderRadius:8,border:`1px solid ${T.border}`,listStyle:"none",display:"inline-flex",alignItems:"center",gap:6}}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                                  Ver {itemsBilled.length} ya facturadas
+                                </summary>
+                                <div style={{marginTop:8,borderRadius:10,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+                                  {itemsBilled.map(([id,o])=>(
+                                    <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,background:T.green+"08"}}>
+                                      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
+                                      <div style={{flex:1,minWidth:0}}>
+                                        <div style={{fontSize:12,fontWeight:600,color:T.green,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{id} · {o.nombre||"sin nombre"}</div>
+                                        <div style={{fontSize:10,color:T.textSm}}>Factura {o._billed_info?.letra} N°{String(o._billed_info?.nro||"").padStart(8,"0")}</div>
+                                      </div>
+                                      <div style={{fontSize:12,fontWeight:700,color:T.green,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{fontSize:22,marginBottom:6}}>🔍</div>
+                              <div style={{fontSize:12,color:T.textSm}}>No hay ventas que coincidan con los filtros aplicados.</div>
+                            </>
+                          )}
                         </div>
                       );
                     }
-                    // Solo se pueden seleccionar/contar las NO facturadas
-                    const itemsSelectables = items.filter(([, o]) => !o._billed);
+                    // items ya excluye facturadas (por ordenPasaFiltros) → itemsSelectables = items
+                    const itemsSelectables = items;
                     const allSel = itemsSelectables.length > 0 && itemsSelectables.every(([id])=>tnSelected[id]);
                     const someSel = itemsSelectables.some(([id])=>tnSelected[id]);
                     const selectedCount = itemsSelectables.filter(([id])=>tnSelected[id]).length;
                     const selectedTotal = itemsSelectables.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
-                    // % sobre el mes corriente (independiente del filtro de calendario)
                     const mesTotal  = mesStats?.totalOrdenes || 0;
                     const mesMonto  = mesStats?.totalMonto   || 0;
                     const montoDescartado = itemsDescartados.reduce((s,[,o])=>s+(o.total||0),0);
@@ -15835,20 +15843,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       const hh = String(d.getHours()).padStart(2,"0");
                       const mm = String(d.getMinutes()).padStart(2,"0");
                       return `${dia}/${mes} ${hh}:${mm}`;
-                    };
-                    const seleccionarPorcentaje = (pct, yDescartar=false) => {
-                      const shuffled = [...itemsSelectables].sort(()=>Math.random()-0.5);
-                      const n = Math.round(itemsSelectables.length * pct / 100);
-                      const selIds = new Set(shuffled.slice(0,n).map(([id])=>id));
-                      const ns = {...tnSelected};
-                      itemsSelectables.forEach(([id])=>ns[id]=selIds.has(id));
-                      setTnSelected(ns);
-                      if(yDescartar) {
-                        const s = new Set(descartadas);
-                        itemsSelectables.forEach(([id])=>{ if(!selIds.has(id)) s.add(String(id)); });
-                        saveDescartadas(s);
-                        toast(`${n} seleccionadas · ${itemsSelectables.length-n} descartadas este mes`,"success");
-                      }
                     };
                     return (
                       <div style={{position:"relative"}}>
@@ -15869,29 +15863,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <span style={{fontSize:12,fontWeight:600,color:T.text}}>Todas ({itemsSelectables.length})</span>
                           </div>
 
-                          <div style={{width:1,height:18,background:T.border,flexShrink:0}}/>
-
-                          {/* Selector de % con opción de descartar */}
-                          <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
-                            <select onChange={e=>{const v=parseInt(e.target.value);if(v){seleccionarPorcentaje(v,false);}e.target.value="";}} value="" style={{...iS,width:"auto",padding:"4px 8px",fontSize:11,cursor:"pointer"}}>
-                              <option value="">Elegir % a facturar</option>
-                              {[10,20,25,30,40,50,60,70,75,80,90].map(p=><option key={p} value={p}>{p}% ({Math.round(itemsSelectables.length*p/100)} órdenes)</option>)}
-                            </select>
-                            {/* Toggle auto-descartar */}
-                            <div onClick={()=>setAutoDescartar(v=>!v)} title={autoDescartar?"Al facturar, las no-seleccionadas se descartan automáticamente":"Las no-seleccionadas quedan pendientes para la próxima vez"} style={{display:"flex",alignItems:"center",gap:7,cursor:"pointer",padding:"4px 10px",borderRadius:6,border:`1px solid ${autoDescartar?(T.orange||"#f97316")+"66":T.border}`,background:autoDescartar?(T.orange||"#f97316")+"12":"transparent",transition:"all 0.15s",userSelect:"none",flexShrink:0}}>
-                              <div style={{width:28,height:16,borderRadius:99,background:autoDescartar?(T.orange||"#f97316"):T.border,transition:"background 0.2s",position:"relative",flexShrink:0}}>
-                                <div style={{position:"absolute",top:2,left:autoDescartar?14:2,width:12,height:12,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
-                              </div>
-                              <span style={{fontSize:11,fontWeight:600,color:autoDescartar?(T.orange||"#f97316"):T.textSm,whiteSpace:"nowrap"}}>Auto-descartar restantes</span>
-                            </div>
-                          </div>
 
                           {/* Descartadas badge con % del mes */}
                           {itemsDescartados.length>0&&(
-                            <button onClick={()=>setShowDescartadas(s=>!s)} style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,gap:5,color:T.textSm,marginLeft:0}}>
+                            <button onClick={()=>setShowDescartadas(s=>!s)} title="Órdenes que marcaste para no facturar este mes. Se limpian el 1° del mes siguiente." style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,gap:5,color:T.textSm,marginLeft:0}}>
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-                              {itemsDescartados.length} descartadas
-                              {mesStats&&<span style={{background:"rgba(249,115,22,0.13)",border:"1px solid rgba(249,115,22,0.4)",borderRadius:4,padding:"1px 6px",fontWeight:700,color:"#fb923c"}}>{pctDescartadasN}% órd · {pctDescartadasM}% $</span>}
+                              {itemsDescartados.length} ignoradas este mes
                               <span style={{fontSize:10,transition:"transform 0.15s",transform:showDescartadas?"rotate(180deg)":"none"}}>▾</span>
                             </button>
                           )}
@@ -15938,9 +15915,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 </div>
                                 <div style={{fontSize:13,fontWeight:700,color:billed?T.green:T.text,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
                                 {!billed&&(
-                                  <button onClick={e=>{e.stopPropagation();descartarOrden(id);}} title="No facturar esta orden este mes" style={{background:"transparent",border:"none",cursor:"pointer",padding:"4px",color:T.textSm,display:"flex",alignItems:"center",borderRadius:5,flexShrink:0,opacity:0.5}}
+                                  <button onClick={e=>{e.stopPropagation();descartarOrden(id);}} title="Ignorar este mes — la podés restaurar desde 'ignoradas'" style={{background:"transparent",border:"none",cursor:"pointer",padding:"4px",color:T.textSm,display:"flex",alignItems:"center",borderRadius:5,flexShrink:0,opacity:0.4}}
                                     onMouseEnter={e=>{e.currentTarget.style.opacity="1";e.currentTarget.style.color=T.red;}}
-                                    onMouseLeave={e=>{e.currentTarget.style.opacity="0.5";e.currentTarget.style.color=T.textSm;}}>
+                                    onMouseLeave={e=>{e.currentTarget.style.opacity="0.4";e.currentTarget.style.color=T.textSm;}}>
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
                                   </button>
                                 )}
@@ -15948,6 +15925,30 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             );
                           })}
                         </div>
+                        {/* Sección colapsada: órdenes ya facturadas en el período */}
+                        {itemsBilled.length>0&&(
+                          <details style={{marginTop:8}}>
+                            <summary style={{cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:T.green+"0d",border:`1px solid ${T.green}33`,borderRadius:8,listStyle:"none",fontSize:12,fontWeight:600,color:T.green,userSelect:"none"}}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                              {itemsBilled.length} ya facturadas en el período
+                              <span style={{marginLeft:"auto",fontSize:11,fontWeight:400,color:T.textSm}}>$ {itemsBilled.reduce((s,[,o])=>s+(o.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span>
+                            </summary>
+                            <div style={{borderRadius:"0 0 8px 8px",border:`1px solid ${T.border}`,borderTop:"none",overflow:"hidden",maxHeight:280,overflowY:"auto"}}>
+                              {itemsBilled.map(([id,o])=>(
+                                <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderBottom:`1px solid ${T.borderL}`,background:T.green+"06",opacity:0.85}}>
+                                  <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
+                                  <span style={{fontSize:10,color:T.textSm,minWidth:64}}>{fmtFechaHora(o.fecha)}</span>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:12,fontWeight:600,color:T.green,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{id} · {o.nombre||"sin nombre"}</div>
+                                    <div style={{fontSize:10,color:T.textSm}}>F{o._billed_info?.letra} N°{String(o._billed_info?.nro||"").padStart(8,"0")}</div>
+                                  </div>
+                                  <div style={{fontSize:12,fontWeight:700,color:T.green,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+
                         {/* Panel descartadas */}
                         {itemsDescartados.length>0&&showDescartadas&&(
                           <div style={{marginTop:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
@@ -15989,12 +15990,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               </>
                             ) : "Ninguna seleccionada"}
                           </div>
-                          {autoDescartar&&selectedCount>0&&!allSel&&(
-                            <span style={{fontSize:11,color:T.orange||"#f97316",display:"flex",alignItems:"center",gap:5}}>
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-                              {itemsSelectables.length-selectedCount} se van a descartar cuando se emitan las facturas
-                            </span>
-                          )}
                           <button onClick={facturarSeleccionadas} disabled={selectedCount===0} style={{background:"linear-gradient(135deg,#16a34a,#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:selectedCount===0?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:selectedCount===0?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:selectedCount>0?"0 4px 14px #16a34a40":"none",transition:"all 0.15s"}}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
                             Facturar {selectedCount>0?selectedCount:""} {selectedCount>0?"→":""}
