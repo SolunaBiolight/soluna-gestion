@@ -15891,7 +15891,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
 
                           {/* Selector de porcentaje a seleccionar */}
-                          <select onChange={e=>{const p=parseInt(e.target.value);if(p)seleccionarPorcentaje(p);e.target.value="";}} title="Seleccionar automáticamente un % de las órdenes pendientes" style={{...iS(T),padding:"4px 8px",fontSize:11,width:"auto",cursor:"pointer",fontWeight:600,flexShrink:0}}>
+                          <select onChange={e=>{const p=parseInt(e.target.value);if(p)seleccionarPorcentaje(p);e.target.value="";}} title="Seleccionar automáticamente un % de las órdenes pendientes" style={{...iS,padding:"4px 8px",fontSize:11,width:"auto",cursor:"pointer",fontWeight:600,flexShrink:0}}>
                             <option value="">% auto</option>
                             {[50,60,70,80,90,100].map(p=><option key={p} value={p}>{p}%</option>)}
                           </select>
