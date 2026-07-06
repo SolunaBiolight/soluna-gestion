@@ -2522,7 +2522,7 @@ export default async function handler(req, res) {
             descuento: parseFloat(o.discount) || 0,
             envio: parseFloat(o.shipping_cost_customer) || 0,
             estado_pago: pStatus,
-            fecha: o.paid_at || o.updated_at || o.created_at || "",
+            fecha: o.paid_at || o.created_at || "",
             ciudad: o.shipping_address?.city || o.billing_city || "",
             provincia: o.shipping_address?.province || o.billing_province || "",
             // TN tiene address (calle), number, floor, locality. Combinamos todo.
