@@ -640,11 +640,20 @@ export default async function handler(req, res) {
     // Búsqueda directa por número (solo TN — Shopify devuelve vacío)
     if (q) {
       if (platform === 'shopify') return res.status(200).json([]);
-      const headers = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
-      const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${encodeURIComponent(q)}&per_page=20`, { headers });
-      if (!r.ok) throw new Error(`TN search error ${r.status}`);
-      const data = await r.json();
-      return res.status(200).json(Array.isArray(data) ? data : []);
+      const tnHeaders = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)' };
+      const qEnc = encodeURIComponent(q);
+      // Primera búsqueda: órdenes abiertas (default TN)
+      const r1 = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${qEnc}&per_page=20`, { headers: tnHeaders });
+      const d1 = r1.ok ? await r1.json() : [];
+      const hit1 = Array.isArray(d1) ? d1.filter(o => String(o.number) === String(q)) : [];
+      if (hit1.length > 0) return res.status(200).json(hit1);
+      // Segunda búsqueda: órdenes cerradas/enviadas (TN excluye closed por defecto)
+      const r2 = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders?q=${qEnc}&per_page=20&status=closed`, { headers: tnHeaders });
+      const d2 = r2.ok ? await r2.json() : [];
+      const hit2 = Array.isArray(d2) ? d2.filter(o => String(o.number) === String(q)) : [];
+      if (hit2.length > 0) return res.status(200).json(hit2);
+      // Fallback: cualquier resultado de la primera búsqueda sin filtrar por número
+      return res.status(200).json(Array.isArray(d1) && d1.length > 0 ? d1 : (Array.isArray(d2) ? d2 : []));
     }
 
     // STATS: facturado + count período actual vs anterior (para Home KPIs)

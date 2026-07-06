@@ -5690,21 +5690,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             .map(p=>p.pedidoNum)
         )];
 
-        // Fetch en paralelo de todos los pedidos faltantes
+        // Fetch en lotes de 5 para no saturar la API de TN (rate limit)
         const fetchedMap={};
-        await Promise.all(missingNums.map(async num=>{
-          try {
-            const r=await fetch(`/api/orders?uid=${user?.uid||""}&q=${encodeURIComponent(num)}&tab=total`);
-            if(r.ok){
-              const data=await r.json();
-              if(Array.isArray(data)&&data.length>0){
-                const built=buildOrdersFromAPI(data);
-                const found=built.find(o=>o.numero===num)||built[0]||null;
-                if(found) fetchedMap[num]=found;
+        const BATCH=5;
+        for(let i=0;i<missingNums.length;i+=BATCH){
+          await Promise.all(missingNums.slice(i,i+BATCH).map(async num=>{
+            try {
+              const r=await fetch(`/api/orders?uid=${user?.uid||""}&q=${encodeURIComponent(num)}`);
+              if(r.ok){
+                const data=await r.json();
+                if(Array.isArray(data)&&data.length>0){
+                  const built=buildOrdersFromAPI(data);
+                  const found=built.find(o=>o.numero===num)||null;
+                  if(found) fetchedMap[num]=found;
+                }
               }
-            }
-          } catch(_){}
-        }));
+            } catch(_){}
+          }));
+        }
 
         // 3ª pasada: construir resultados con los datos ya cargados
         const results=pageData.map(p=>{
