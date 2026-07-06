@@ -15392,7 +15392,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         const bg = isExpired ? T.redBg : daysLeft <= 7 ? T.redBg : (T.yellowBg||T.yellow+"18");
         return (
           <div style={{background:bg,borderBottom:`1px solid ${color}44`,padding:"10px 24px",display:"flex",alignItems:"center",gap:10,fontFamily:"'Inter',system-ui,sans-serif"}}>
-            <span style={{fontSize:16}}>{isExpired?"⛔":"⚠️"}</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             <div style={{flex:1}}>
               <span style={{fontSize:12,fontWeight:700,color}}>{isExpired?"Certificado AFIP vencido":"Certificado AFIP próximo a vencer"}</span>
               <span style={{fontSize:12,color,marginLeft:8}}>{isExpired?`Venció el ${exp.toLocaleDateString("es-AR")} — renovalo en ARCA para seguir emitiendo.`:`Vence el ${exp.toLocaleDateString("es-AR")} (${daysLeft}d restantes) — renovalo pronto.`}</span>
@@ -15436,7 +15436,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 ))}
               </div>
               <div style={{marginTop:20,padding:16,background:T.purpleBg,border:"1px solid "+T.purple+"33",borderRadius:10}}>
-                <div style={{fontSize:12,fontWeight:600,color:T.purple,marginBottom:6}}>💡 ¿Qué tipo de factura emite Growith?</div>
+                <div style={{fontSize:12,fontWeight:600,color:T.purple,marginBottom:6,display:"flex",alignItems:"center",gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>¿Qué tipo de factura emite Growith?</div>
                 <div style={{fontSize:12,color:T.textMd,lineHeight:1.7}}>
                   <strong style={{color:T.text}}>Si sos Responsable Inscripto:</strong> Growith emite Factura A cuando el cliente tiene CUIT y también es RI. Si ARCA rechaza la Factura A (porque ese CUIT no es RI), automáticamente reintenta como Factura B sin que hagas nada. Para clientes con DNI o sin datos fiscales, emite Factura B directamente.<br/><br/>
                   <strong style={{color:T.text}}>Si sos Monotributista:</strong> Siempre se emite Factura C, sin importar quién sea el cliente. Los monotributistas no discriminan IVA en sus comprobantes.
@@ -15753,12 +15753,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{fontSize:12,color:T.textSm,marginTop:12}}>Trayendo tus ventas...</div>
                     </div>
                   ) : !tnData?.connected ? (
-                    <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:8}}>
-                      ⚠ No tenés ninguna integración conectada todavía. Andá a la configuración de la app para conectar Tienda Nube, Shopify o Mercado Libre (o usá subir archivo manual abajo).
+                    <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:8,display:"flex",alignItems:"flex-start",gap:10}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.yellow||"#eab308"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      No tenés ninguna integración conectada todavía. Andá a la configuración de la app para conectar Tienda Nube, Shopify o Mercado Libre (o usá subir archivo manual abajo).
                     </div>
                   ) : Object.keys(tnData.ordenes||{}).length === 0 ? (
                     <div style={{padding:"30px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
-                      <div style={{fontSize:28,marginBottom:8}}>✨</div>
+                      <div style={{width:40,height:40,borderRadius:10,background:T.green+"18",border:"1px solid "+T.green+"33",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px"}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                       <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>No hay ventas pendientes</div>
                       <div style={{fontSize:11,color:T.textSm}}>No encontramos ventas pagas sin facturar en el período seleccionado.</div>
                     </div>
@@ -15980,7 +15981,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{width:"100%",height:8,background:T.bg,borderRadius:99,overflow:"hidden"}}>
                             <div style={{height:"100%",background:"#16a34a",borderRadius:99,transition:"width 0.3s ease",width:`${Math.round((emitProgress.current/emitProgress.total)*100)}%`}}/>
                           </div>
-                          {(emitProgress.ok>0||emitProgress.fail>0)&&<div style={{fontSize:12,color:T.textSm}}>✅ {emitProgress.ok} ok · 🔴 {emitProgress.fail} errores</div>}
+                          {(emitProgress.ok>0||emitProgress.fail>0)&&<div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:6}}><span style={{color:T.green,fontWeight:700}}>{emitProgress.ok} ok</span><span style={{color:T.textSm}}>·</span><span style={{color:T.red,fontWeight:700}}>{emitProgress.fail} errores</span></div>}
                         </>
                       )}
                       <div style={{fontSize:11,color:T.textSm}}>No cierres esta ventana hasta que finalice.</div>
@@ -15997,16 +15998,19 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{maxHeight:320,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
                         {resultados.map((r,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                            <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{r.ok?"✅":"🔴"}</span>
+                            {r.ok
+                              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                            }
                             <div style={{flex:1,minWidth:0}}>
                               <div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.orden_id}</div>
                               {r.ok
                                 ? <div style={{fontSize:11,color:T.textSm}}>F-{r.letra} Nro {String(r.comprobante).padStart(8,"0")} · CAE {r.cae} · Vto {r.cae_vto}</div>
                                 : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>}
                               {r.ok&&r.orden_id?.startsWith("ML-")&&(r.ml_uploaded
-                                ? <div style={{fontSize:10,color:T.green,marginTop:3}}>🟢 Factura adjuntada en Mercado Libre ✓</div>
+                                ? <div style={{fontSize:10,color:T.green,marginTop:3,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill={T.green} stroke="none"><circle cx="12" cy="12" r="10"/></svg>Factura adjuntada en Mercado Libre</div>
                                 : r.ml_upload_error
-                                  ? <div style={{fontSize:10,color:T.orange,marginTop:3}}>⚠ No se adjuntó en ML: {r.ml_upload_error}</div>
+                                  ? <div style={{fontSize:10,color:T.orange,marginTop:3,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>No se adjuntó en ML: {r.ml_upload_error}</div>
                                   : null)}
                             </div>
                             <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>${r.total?.toLocaleString("es-AR",{minimumFractionDigits:2})}</div>
@@ -16383,10 +16387,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:4,paddingRight:isActive?60:0}}>{c.nombre_fantasia || c.razon_social}</div>
                         <div style={{fontSize:11,color:T.textSm,fontFamily:"monospace",marginBottom:10}}>{formatCuit(c.cuit)}</div>
                         <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:11,color:T.textMd,marginBottom:12}}>
-                          <div>📋 {c.condicion_fiscal === "MONOTRIBUTO" ? "Responsable Monotributo" : "Responsable Inscripto"}</div>
-                          <div>🏪 Punto de Venta {String(c.punto_venta || 1).padStart(5,"0")}</div>
-                          <div>{c.arca_prod ? "🟢 Producción" : "🟡 Homologación"}</div>
-                          {c.domicilio && <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📍 {c.domicilio}</div>}
+                          <div style={{display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>{c.condicion_fiscal === "MONOTRIBUTO" ? "Responsable Monotributo" : "Responsable Inscripto"}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Punto de Venta {String(c.punto_venta || 1).padStart(5,"0")}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:"50%",background:c.arca_prod?T.green:"#eab308",flexShrink:0,display:"inline-block"}}/>{c.arca_prod ? "Producción" : "Homologación"}</div>
+                          {c.domicilio && <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>{c.domicilio}</div>}
                         </div>
                         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                           {!isActive && <button onClick={()=>setCuitSel(c.cuit)} style={{flex:1,minWidth:90,background:"transparent",border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Activar</button>}
@@ -16394,8 +16398,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <button onClick={async()=>{
                             const prev = cuitSel; setCuitSel(c.cuit);
                             setTimeout(async()=>{ await handleTestConnection(); if (prev !== c.cuit) setCuitSel(prev); }, 50);
-                          }} disabled={testingConn} style={{flex:1,minWidth:100,background:"transparent",border:`1px solid ${T.green}55`,color:T.green,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:testingConn?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{testingConn&&cuitSel===c.cuit?"...":"🔌 Probar"}</button>
-                          <button onClick={()=>handleDeleteCuit(c.cuit)} style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🗑</button>
+                          }} disabled={testingConn} style={{flex:1,minWidth:100,background:"transparent",border:`1px solid ${T.green}55`,color:T.green,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:testingConn?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>{testingConn&&cuitSel===c.cuit?<Spinner size={10} color={T.green}/>:<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>}{testingConn&&cuitSel===c.cuit?"Probando...":"Probar"}</button>
+                          <button onClick={()=>handleDeleteCuit(c.cuit)} style={{background:"transparent",border:`1px solid ${T.red}55`,color:T.red,borderRadius:7,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
                         </div>
                       </div>
                     );
