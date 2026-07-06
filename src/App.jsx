@@ -1252,11 +1252,10 @@ function DateRangePicker({ T, since, until, onChange, presets }) {
     setOpen(false);
   }
   function clickDay(dateStr) {
-    // UX: el primer click selecciona el día como inicio AND fin (single-day view).
-    // El segundo click extiende el rango. Esto permite ver "1 solo día" con un solo click.
+    // Primer click: marca inicio. No llama onChange todavía para evitar una API call
+    // con rango de 1 día que muestra datos incorrectos mientras el usuario elige el fin.
     if (!tmpStart) {
       setTmpStart(dateStr);
-      onChange(dateStr, dateStr); // aplica inmediatamente como rango de 1 día
       return;
     }
     let s = tmpStart, u = dateStr;
@@ -15844,10 +15843,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const someSel = itemsSelectables.some(([id])=>tnSelected[id]);
                     const selectedCount = itemsSelectables.filter(([id])=>tnSelected[id]).length;
                     const selectedTotal = itemsSelectables.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
-                    // mesTotal/mesMonto derivados de tnData para que coincidan exactamente
-                    // con los órdenes visibles — evita la inconsistencia del fetch separado de mesStats
-                    const mesTotal  = all.length;
-                    const mesMonto  = all.reduce((s,[,o])=>s+(o.total||0),0);
+                    // mesTotal/mesMonto filtrados por canalSel para coincidir con itemsBilled
+                    const platOrds  = canalSel === "todos" ? all : all.filter(([,o])=>o._platform===canalSel);
+                    const mesTotal  = platOrds.length;
+                    const mesMonto  = platOrds.reduce((s,[,o])=>s+(o.total||0),0);
                     const montoDescartado = itemsDescartados.reduce((s,[,o])=>s+(o.total||0),0);
                     const pctDescartadasN = mesTotal > 0 ? Math.round(itemsDescartados.length / mesTotal * 100) : 0;
                     const pctDescartadasM = mesMonto > 0 ? Math.round(montoDescartado / mesMonto * 100) : 0;
