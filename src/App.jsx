@@ -20,7 +20,17 @@ const auth = getAuth(fbApp);
 function ghReadAccounts(){ try { return JSON.parse(localStorage.getItem("growith_accounts")||"[]"); } catch(_){ return []; } }
 function ghRememberAccount(u){ if(!u?.email) return; try { const a=ghReadAccounts(); const prov=u.providerData?.[0]?.providerId||"password"; const e={email:u.email,nombre:u.displayName||u.email.split("@")[0],photoURL:u.photoURL||"",provider:prov,lastUsed:Date.now()}; const i=a.findIndex(x=>x.email===u.email); if(i>=0)a[i]={...a[i],...e}; else a.push(e); localStorage.setItem("growith_accounts",JSON.stringify(a)); } catch(_){} }
 function ghForgetAccount(email){ try { localStorage.setItem("growith_accounts",JSON.stringify(ghReadAccounts().filter(x=>x.email!==email))); } catch(_){} }
-function ghSwitchAccount(email,provider){ try{ localStorage.setItem("growith_switch_to",JSON.stringify({email:email||"",provider:provider||""})); }catch(_){} signOut(auth); }
+async function ghSwitchAccount(email,provider){
+  // Google: cambio directo con popup (sin desloguear ni pasar por el login) →
+  // signInWithPopup reemplaza el usuario actual por el elegido. Casi seamless.
+  if(provider==="google.com"){
+    try{ const p=new GoogleAuthProvider(); if(email) p.setCustomParameters({login_hint:email,prompt:"select_account"}); await signInWithPopup(auth,p); return; }
+    catch(_){ /* si falla, caemos al flujo de logout + login */ }
+  }
+  // Email/contraseña (o "agregar otra"): desloguea y pre-carga el login.
+  try{ localStorage.setItem("growith_switch_to",JSON.stringify({email:email||"",provider:provider||""})); }catch(_){}
+  signOut(auth);
+}
 const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
 
