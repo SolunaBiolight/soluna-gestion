@@ -14587,33 +14587,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [showManualUpload, setShowManualUpload] = useState(false);
 
   // Totales del mes corriente (fetch independiente del filtro del calendario)
-  const [mesStats, setMesStats] = useState(null); // {totalOrdenes, totalMonto, mesLabel}
-
-  // Descartadas: órdenes que el usuario decidió NO facturar en este ciclo.
-  // Se guardan en localStorage con clave mensual — se resetean solos el 1 de cada mes.
-  const descartadasKey = user?.uid ? `growith_arca_desc_${user.uid}_${new Date().toISOString().slice(0,7)}` : null;
-  const [descartadas, setDescartadas] = useState(()=>{
-    if(!descartadasKey) return new Set();
-    try { return new Set(JSON.parse(localStorage.getItem(descartadasKey)||"[]")); } catch(_){ return new Set(); }
-  });
-  const [showDescartadas, setShowDescartadas] = useState(false); // colapsado por defecto — desplegable para no hacer la lista interminable
-  function saveDescartadas(set) {
-    setDescartadas(set);
-    try { if(descartadasKey) localStorage.setItem(descartadasKey, JSON.stringify([...set])); } catch(_){}
-  }
-  function descartarOrden(id) {
-    const s = new Set(descartadas); s.add(String(id)); saveDescartadas(s);
-    setTnSelected(prev=>{ const n={...prev}; delete n[id]; return n; });
-  }
-  function restaurarOrden(id) {
-    const s = new Set(descartadas); s.delete(String(id)); saveDescartadas(s);
-  }
-  function restaurarTodas() { saveDescartadas(new Set()); }
-  function descartarNoSeleccionadas(selectables) {
-    const s = new Set(descartadas);
-    selectables.forEach(([id])=>{ if(!tnSelected[id]) s.add(String(id)); });
-    saveDescartadas(s);
-  }
 
   // Historial de batches (facturaciones recientes)
   const [batches, setBatches] = useState([]);
@@ -14719,25 +14692,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     });
   },[uid, cuitSel, dashMonth, dashYear]);
 
-  // Fetch independiente: total de órdenes del mes corriente (para calcular % descartadas)
-  useEffect(()=>{
-    if(!uid || !cuitSel) { setMesStats(null); return; }
-    const hoy = new Date();
-    const y = hoy.getFullYear();
-    const m = String(hoy.getMonth()+1).padStart(2,"0");
-    const since = `${y}-${m}-01`;
-    const until = hoy.toISOString().slice(0,10);
-    const mesLabel = hoy.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
-    api("pending_orders","GET",null,{cuit:cuitSel, since, until}).then(d=>{
-      if(d.error) return;
-      const ords = Object.values(d.ordenes||{});
-      setMesStats({
-        totalOrdenes: ords.length,
-        totalMonto: ords.reduce((s,o)=>s+(o.total||0),0),
-        mesLabel,
-      });
-    });
-  },[uid, cuitSel]);
 
   useEffect(()=>{
     if(!uid || !cuitSel) return;
@@ -14959,14 +14913,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   // Predicado de filtros visibles — MISMO criterio que la lista en pantalla
-  // (canal, método de pago, rango de monto, buscador, descartadas). Se usa
+  // (canal, método de pago, rango de monto, buscador). Se usa
   // tanto para renderizar como para facturar, de modo que "lo que ves
   // seleccionado = lo que se factura". Antes facturarSeleccionadas recorría
   // TODO tnData.ordenes ignorando el filtro de plataforma → podía emitir
   // órdenes ocultas por el filtro y facturar de más (bug 41→87).
   function ordenPasaFiltros(id, o) {
     if (o._billed) return false; // las facturadas van a la sección colapsada, no a la lista principal
-    if (descartadas.has(String(id))) return false;
     if (canalSel !== "todos" && o._platform !== canalSel) return false;
     if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
     const minN = montoMin === "" ? null : parseFloat(montoMin);
@@ -15788,12 +15741,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   ) : (() => {
                     // El backend ya manda ordenado por fecha desc. Filtros locales: canal y rango de monto.
                     const all = Object.entries(tnData.ordenes);
-                    // items: pendientes (no facturadas, no descartadas, pasan filtros de canal/monto/búsqueda)
+                    // items: pendientes (no facturadas, pasan filtros de canal/monto/búsqueda)
                     const items = all.filter(([id, o]) => ordenPasaFiltros(id, o));
                     // itemsBilled: ya facturadas en el período para la sección colapsada
                     const itemsBilled = all.filter(([id, o]) => o._billed && (canalSel === "todos" || o._platform === canalSel));
-                    // itemsDescartados: ignoradas manualmente este mes
-                    const itemsDescartados = all.filter(([id, o]) => descartadas.has(String(id)) && !o._billed);
                     if (items.length === 0) {
                       return (
                         <div style={{padding:"24px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
@@ -15847,9 +15798,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const platOrds  = canalSel === "todos" ? all : all.filter(([,o])=>o._platform===canalSel);
                     const mesTotal  = platOrds.length;
                     const mesMonto  = platOrds.reduce((s,[,o])=>s+(o.total||0),0);
-                    const montoDescartado = itemsDescartados.reduce((s,[,o])=>s+(o.total||0),0);
-                    const pctDescartadasN = mesTotal > 0 ? Math.round(itemsDescartados.length / mesTotal * 100) : 0;
-                    const pctDescartadasM = mesMonto > 0 ? Math.round(montoDescartado / mesMonto * 100) : 0;
                     const billedMonto = itemsBilled.reduce((s,[,o])=>s+(o.total||0),0);
                     const pctOrdenes  = mesTotal > 0 ? Math.round(itemsBilled.length / mesTotal * 100) : 0;
                     const pctMonto    = mesMonto > 0 ? Math.round(billedMonto / mesMonto * 100) : 0;
@@ -15897,15 +15845,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             {[50,60,70,80,90,100].map(p=><option key={p} value={p}>{p}%</option>)}
                           </select>
 
-                          {/* Descartadas badge con % del mes */}
-                          {itemsDescartados.length>0&&(
-                            <button onClick={()=>setShowDescartadas(s=>!s)} title="Órdenes que marcaste para no facturar este mes. Se limpian el 1° del mes siguiente." style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,gap:5,color:T.textSm,marginLeft:0}}>
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-                              {itemsDescartados.length} ignoradas este mes
-                              <span style={{fontSize:10,transition:"transform 0.15s",transform:showDescartadas?"rotate(180deg)":"none"}}>▾</span>
-                            </button>
-                          )}
-
                           {/* Totales del período seleccionado */}
                           <div style={{marginLeft:"auto",display:"flex",gap:12,alignItems:"center",flexShrink:0}}>
                             {selectedCount>0&&(
@@ -15913,7 +15852,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 {selectedCount} sel. · $ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}
                               </span>
                             )}
-                            {mesTotal>0&&<span style={{fontSize:11,color:T.textSm}}>{mesTotal} órd. en el período{mesStats?.mesLabel?" · "+mesStats.mesLabel:""}</span>}
+                            {mesTotal>0&&<span style={{fontSize:11,color:T.textSm}}>{mesTotal} órd. en el período</span>}
                           </div>
                         </div>
                         <div style={{maxHeight:420,overflowY:"auto",opacity:tnLoading?0.35:1,transition:"opacity 0.25s"}}>
@@ -15947,13 +15886,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                   </div>
                                 </div>
                                 <div style={{fontSize:13,fontWeight:700,color:billed?T.green:T.text,flexShrink:0}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
-                                {!billed&&(
-                                  <button onClick={e=>{e.stopPropagation();descartarOrden(id);}} title="Ignorar este mes — la podés restaurar desde 'ignoradas'" style={{background:"transparent",border:"none",cursor:"pointer",padding:"4px",color:T.textSm,display:"flex",alignItems:"center",borderRadius:5,flexShrink:0,opacity:0.4}}
-                                    onMouseEnter={e=>{e.currentTarget.style.opacity="1";e.currentTarget.style.color=T.red;}}
-                                    onMouseLeave={e=>{e.currentTarget.style.opacity="0.4";e.currentTarget.style.color=T.textSm;}}>
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-                                  </button>
-                                )}
                               </div>
                             );
                           })}
@@ -15982,33 +15914,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </details>
                         )}
 
-                        {/* Panel descartadas */}
-                        {itemsDescartados.length>0&&showDescartadas&&(
-                          <div style={{marginTop:10,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderBottom:`1px solid ${T.borderL}`}}>
-                              <span style={{fontSize:12,fontWeight:700,color:T.textSm}}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:5,verticalAlign:"middle"}}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-                                {itemsDescartados.length} descartadas este mes
-                              </span>
-                              <div style={{display:"flex",gap:8}}>
-                                <span style={{fontSize:10,color:T.textSm}}>Se limpian el 1° del mes siguiente</span>
-                                <button onClick={restaurarTodas} style={{...BtnSecondary(T),padding:"3px 10px",fontSize:11,color:T.accent}}>Restaurar todas</button>
-                              </div>
-                            </div>
-                            <div style={{maxHeight:260,overflowY:"auto"}}>
-                            {itemsDescartados.map(([id,o])=>(
-                              <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderBottom:`1px solid ${T.borderL}`,opacity:0.7}}>
-                                <span style={{fontSize:10,color:T.textSm,minWidth:68}}>{fmtFechaHora(o.fecha)}</span>
-                                <div style={{flex:1,minWidth:0}}>
-                                  <div style={{fontSize:12,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>#{id} · {o.nombre||"sin nombre"}</div>
-                                </div>
-                                <span style={{fontSize:12,fontWeight:700,color:T.textMd}}>$ {(o.total||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span>
-                                <button onClick={()=>restaurarOrden(id)} title="Volver al listado" style={{...BtnSecondary(T),padding:"3px 10px",fontSize:10,flexShrink:0}}>Restaurar</button>
-                              </div>
-                            ))}
-                            </div>
-                          </div>
-                        )}
 
                         {/* Panel de progreso de facturación del período — solo cuando terminó de cargar */}
                         {!tnLoading && mesTotal > 0 && (
@@ -16041,9 +15946,6 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <>
                                 <strong style={{color:T.text,fontSize:13}}>{selectedCount}</strong>
                                 <span>seleccionadas · <strong style={{color:T.accent}}>$ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</strong></span>
-                                {itemsDescartados.length>0&&mesStats&&(
-                                  <span style={{fontSize:11,color:T.textSm}}>· {itemsDescartados.length} descartadas = <span style={{fontWeight:700,color:"#fb923c"}}>{pctDescartadasN}% de órdenes</span> · <span style={{fontWeight:700,color:"#fb923c"}}>{pctDescartadasM}% de monto</span> del mes</span>
-                                )}
                               </>
                             ) : "Ninguna seleccionada"}
                           </div>
