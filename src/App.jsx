@@ -15833,6 +15833,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     }
                     // items ya excluye facturadas (por ordenPasaFiltros) → itemsSelectables = items
                     const itemsSelectables = items;
+                    function seleccionarPorcentaje(pct) {
+                      const pendientes = itemsSelectables.map(([id])=>id);
+                      const count = Math.ceil(pendientes.length * pct / 100);
+                      const ns = {...tnSelected};
+                      pendientes.forEach((id,i)=>{ ns[id] = i < count; });
+                      setTnSelected(ns);
+                    }
                     const allSel = itemsSelectables.length > 0 && itemsSelectables.every(([id])=>tnSelected[id]);
                     const someSel = itemsSelectables.some(([id])=>tnSelected[id]);
                     const selectedCount = itemsSelectables.filter(([id])=>tnSelected[id]).length;
@@ -15842,6 +15849,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const montoDescartado = itemsDescartados.reduce((s,[,o])=>s+(o.total||0),0);
                     const pctDescartadasN = mesTotal > 0 ? Math.round(itemsDescartados.length / mesTotal * 100) : 0;
                     const pctDescartadasM = mesMonto > 0 ? Math.round(montoDescartado / mesMonto * 100) : 0;
+                    const billedMonto = itemsBilled.reduce((s,[,o])=>s+(o.total||0),0);
+                    const pctOrdenes  = mesTotal > 0 ? Math.round(itemsBilled.length / mesTotal * 100) : 0;
+                    const pctMonto    = mesMonto > 0 ? Math.round(billedMonto / mesMonto * 100) : 0;
                     const badgeColor = (plat) => plat === "shopify" ? "#96BF48" : plat === "mercadolibre" ? "#FFE600" : T.blue;
                     const badgeTextColor = (plat) => plat === "mercadolibre" ? "#333" : "#fff";
                     const fmtFechaHora = (iso) => {
@@ -15879,6 +15889,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <span style={{fontSize:12,fontWeight:600,color:T.text}}>Todas ({itemsSelectables.length})</span>
                           </div>
 
+
+                          {/* Selector de porcentaje a seleccionar */}
+                          <select onChange={e=>{const p=parseInt(e.target.value);if(p)seleccionarPorcentaje(p);e.target.value="";}} title="Seleccionar automáticamente un % de las órdenes pendientes" style={{...iS(T),padding:"4px 8px",fontSize:11,width:"auto",cursor:"pointer",fontWeight:600,flexShrink:0}}>
+                            <option value="">% auto</option>
+                            {[50,60,70,80,90,100].map(p=><option key={p} value={p}>{p}%</option>)}
+                          </select>
 
                           {/* Descartadas badge con % del mes */}
                           {itemsDescartados.length>0&&(
@@ -15989,6 +16005,30 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <button onClick={()=>restaurarOrden(id)} title="Volver al listado" style={{...BtnSecondary(T),padding:"3px 10px",fontSize:10,flexShrink:0}}>Restaurar</button>
                               </div>
                             ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Panel de progreso de facturación del período */}
+                        {mesStats && mesTotal > 0 && (
+                          <div style={{padding:"10px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,display:"flex",gap:16,flexWrap:"wrap"}}>
+                            <div style={{flex:1,minWidth:130}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
+                                <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Ventas facturadas</span>
+                                <span style={{fontSize:11,color:T.text,fontWeight:700}}>{itemsBilled.length}<span style={{color:T.textSm,fontWeight:400}}>/{mesTotal}</span> <span style={{color:pctOrdenes>=80?T.green:pctOrdenes>=50?"#f59e0b":T.textMd,fontWeight:700}}>{pctOrdenes}%</span></span>
+                              </div>
+                              <div style={{height:5,background:T.border,borderRadius:3,overflow:"hidden"}}>
+                                <div style={{height:"100%",width:`${pctOrdenes}%`,background:pctOrdenes>=80?T.green:pctOrdenes>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
+                              </div>
+                            </div>
+                            <div style={{flex:2,minWidth:200}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
+                                <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Monto facturado</span>
+                                <span style={{fontSize:11,color:T.text,fontWeight:700}}>$ {billedMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}<span style={{color:T.textSm,fontWeight:400}}> / $ {mesMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span> <span style={{color:pctMonto>=80?T.green:pctMonto>=50?"#f59e0b":T.textMd,fontWeight:700}}>{pctMonto}%</span></span>
+                              </div>
+                              <div style={{height:5,background:T.border,borderRadius:3,overflow:"hidden"}}>
+                                <div style={{height:"100%",width:`${pctMonto}%`,background:pctMonto>=80?T.green:pctMonto>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
+                              </div>
                             </div>
                           </div>
                         )}
