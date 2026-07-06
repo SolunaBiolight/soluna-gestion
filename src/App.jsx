@@ -14622,9 +14622,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [duplicatesInModal, setDuplicatesInModal] = useState(null); // array|null
   const [emitProgress, setEmitProgress] = useState({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
   // Fecha YYYY-MM-DD con la que ARCA va a registrar la factura. Default = hoy.
-  // El merchant la puede cambiar libremente; el único límite es ARCA (10 días
-  // corridos hacia atrás). Si elige un día de mayo → factura en mayo. Si elige
-  // un día de junio → factura en junio. Punto. Sin toggles ni branches raros.
+  // Límite real WSFE: CbteFch en rango N-5/N+5 (error TN-3526 si se excede).
+  // Si elige un día de junio → factura en junio, siempre que esté dentro de los 5 días.
   const [fechaFactura, setFechaFactura] = useState(() => {
     try {
       const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
@@ -16014,7 +16013,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const nowArg = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Argentina/Buenos_Aires"}));
                     const pad = n=>String(n).padStart(2,"0");
                     const hoyIso = `${nowArg.getFullYear()}-${pad(nowArg.getMonth()+1)}-${pad(nowArg.getDate())}`;
-                    const minD = new Date(nowArg.getTime()-10*86400000);
+                    const minD = new Date(nowArg.getTime()-5*86400000);
                     const minIso = `${minD.getFullYear()}-${pad(minD.getMonth()+1)}-${pad(minD.getDate())}`;
                     const fechaLabel = fechaFactura ? new Date(fechaFactura+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}) : "";
                     const diasAtras = fechaFactura ? Math.round((new Date(hoyIso)-new Date(fechaFactura))/86400000) : 0;
@@ -16060,7 +16059,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             {fechaLabel&&<span style={{fontSize:12,color:T.text,fontWeight:500,textTransform:"capitalize"}}>{fechaLabel}</span>}
                           </div>
                           <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>
-                            Podés elegir cualquier día de los últimos 10 corridos (límite ARCA).{diasAtras>0?` Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
+                            Podés elegir cualquier día de los últimos 5 corridos — límite real del WSFE de ARCA (error TN-3526 si se excede).{diasAtras>0?` Hace ${diasAtras} día${diasAtras>1?"s":""}.`:""}
                           </div>
                         </div>
 

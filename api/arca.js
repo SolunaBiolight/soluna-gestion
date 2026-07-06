@@ -462,7 +462,8 @@ function ultimoDiaHabilMesAnterior() {
 }
 
 // Chequea si una fecha YYYYMMDD está dentro del rango válido para ARCA:
-// máximo 10 días corridos hacia atrás, no futuras.
+// WSFE exige que CbteFch esté en el rango N-5 / N+5 (siendo N la fecha del pedido).
+// Usamos 5 días corridos hacia atrás como máximo para evitar rechazo TN-3526.
 function fechaValida(yyyymmdd) {
   const y = parseInt(yyyymmdd.slice(0, 4));
   const m = parseInt(yyyymmdd.slice(4, 6));
@@ -473,7 +474,7 @@ function fechaValida(yyyymmdd) {
   today.setUTCHours(0, 0, 0, 0);
   const diffDays = (today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000);
   if (diffDays < 0) return { ok: false, msg: "No podés emitir facturas con fecha futura." };
-  if (diffDays > 10) return { ok: false, msg: `La fecha ${String(d).padStart(2,"0")}/${String(m).padStart(2,"0")}/${y} está fuera del rango ARCA (máximo 10 días corridos hacia atrás). Podés acumular facturas y emitirlas hasta 10 días después de la venta.` };
+  if (diffDays > 5) return { ok: false, msg: `La fecha ${String(d).padStart(2,"0")}/${String(m).padStart(2,"0")}/${y} está fuera del rango ARCA (máximo 5 días corridos hacia atrás). ARCA rechaza comprobantes con fecha anterior a N-5 (error TN-3526).` };
   return { ok: true };
 }
 function dentroDe10DiasCorridos(yyyymmdd) { return fechaValida(yyyymmdd).ok; }
