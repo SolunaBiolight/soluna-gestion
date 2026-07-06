@@ -1552,15 +1552,17 @@ export default async function handler(req, res) {
       const porLetra = { A: 0, B: 0, C: 0 };
       for (const d of snap.docs) {
         const data = d.data();
-        // fecha_cbte = "YYYY-MM-DD" (fecha real del comprobante en AFIP).
-        // emitido_at = timestamp del servidor (puede ser un mes distinto si se backdateó).
-        // Siempre priorizamos fecha_cbte; emitido_at solo como fallback para registros viejos.
-        let inMonth;
-        if (data.fecha_cbte) {
-          inMonth = data.fecha_cbte >= `${argYear}-${argMonth}-01` && data.fecha_cbte < `${nextYear}-${nextMonth}-01`;
-        } else {
-          inMonth = !!data.emitido_at && data.emitido_at >= monthStart && data.emitido_at < monthEnd;
+        // Prioridad: fecha_cbte (YYYY-MM-DD) > fecha_str parseado (DD/MM/YYYY) > emitido_at.
+        // fecha_cbte se guarda desde el fix de julio 2026. fecha_str existe en todos los registros.
+        // emitido_at es el timestamp del servidor — puede no coincidir con la fecha AFIP si se backdateó.
+        let dateKey = data.fecha_cbte;
+        if (!dateKey && data.fecha_str) {
+          const p = data.fecha_str.split("/");
+          if (p.length === 3) dateKey = `${p[2]}-${p[1]}-${p[0]}`;
         }
+        const inMonth = dateKey
+          ? (dateKey >= `${argYear}-${argMonth}-01` && dateKey < `${nextYear}-${nextMonth}-01`)
+          : (!!data.emitido_at && data.emitido_at >= monthStart && data.emitido_at < monthEnd);
         if (!inMonth) continue;
         facturas_emitidas++;
         iva_debito += data.iva || 0;
