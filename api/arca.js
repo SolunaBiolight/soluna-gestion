@@ -2457,11 +2457,11 @@ export default async function handler(req, res) {
         // Llamada helper: trae TODAS las páginas de TN para un payment_status dado.
         const fetchTNStatus = async (status) => {
           const out = [];
-          // updated_at en lugar de created_at: captura órdenes creadas ANTES del período
-          // pero pagadas DENTRO (ej: orden creada hace 15 días, pago confirmado hoy).
-          // sort_by=updated_at+desc: las más recientes primero → si se corta la paginación
-          // a 2000 registros, perdemos las antiguas (ya facturadas), no las nuevas.
-          const baseParams = `per_page=200&payment_status=${status}&updated_at_min=${sinceDate}T00:00:00-03:00&updated_at_max=${untilDate}T23:59:59-03:00&sort_by=updated_at&sort_direction=desc`;
+          // created_at: filtra por cuando se realizó la orden — coincide con el criterio
+          // estándar de TN y apps de referencia. En TN el pago es casi siempre inmediato
+          // al hacer el pedido, así que created_at ≈ fecha de pago en la práctica.
+          // sort_by=created_at+desc: las más recientes primero.
+          const baseParams = `per_page=200&payment_status=${status}&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&sort_by=created_at&sort_direction=desc`;
           for (let page = 1; page <= 10; page++) { // hasta 2000 órdenes por status
             const url = `https://api.tiendanube.com/v1/${tnStore.storeId}/orders?${baseParams}&page=${page}`;
             const r = await fetch(url, { headers });
