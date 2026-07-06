@@ -15856,15 +15856,21 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     };
                     return (
                       <div style={{position:"relative"}}>
-                        {/* Overlay de carga — aparece cuando cambia fecha o filtro de plataforma */}
+                        {/* Barra de progreso indeterminada — reemplaza el overlay bloqueante */}
                         {tnLoading&&(
-                          <div style={{position:"absolute",inset:0,zIndex:10,borderRadius:10,background:T.card,backdropFilter:"blur(4px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,pointerEvents:"all"}}>
-                            <Spinner size={28} color={T.accent}/>
-                            <span style={{fontSize:12,color:T.textMd,fontWeight:600}}>Actualizando ventas…</span>
-                          </div>
+                          <>
+                            <style>{`@keyframes arca-shimmer{0%{transform:translateX(-110%)}100%{transform:translateX(380%)}}`}</style>
+                            <div style={{height:3,background:T.border,borderRadius:2,overflow:"hidden",marginBottom:8,flexShrink:0}}>
+                              <div style={{height:"100%",width:"30%",background:T.accent,borderRadius:2,animation:"arca-shimmer 1.5s cubic-bezier(0.4,0,0.6,1) infinite"}}/>
+                            </div>
+                            <div style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:T.accent+"12",border:`1px solid ${T.accent}30`,borderRadius:7,marginBottom:8,fontSize:11,color:T.accent,fontWeight:600}}>
+                              <Spinner size={11} color={T.accent}/>
+                              Actualizando {canalSel==="tiendanube"?"Tienda Nube":canalSel==="mercadolibre"?"Mercado Libre":canalSel==="shopify"?"Shopify":"ventas"}…
+                            </div>
+                          </>
                         )}
                         {/* Barra de herramientas */}
-                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap",opacity:tnLoading?0.4:1,transition:"opacity 0.2s"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.bg,borderRadius:8,marginBottom:6,flexWrap:"wrap",opacity:tnLoading?0.7:1,transition:"opacity 0.2s"}}>
                           {/* Checkbox "seleccionar todas" */}
                           <div onClick={()=>{
                             const ns={...tnSelected};itemsSelectables.forEach(([id])=>ns[id]=!allSel);setTnSelected(ns);
@@ -16000,7 +16006,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               </>
                             ) : "Ninguna seleccionada"}
                           </div>
-                          <button onClick={facturarSeleccionadas} disabled={selectedCount===0} style={{background:"linear-gradient(135deg,#16a34a,#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:selectedCount===0?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:selectedCount===0?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:selectedCount>0?"0 4px 14px #16a34a40":"none",transition:"all 0.15s"}}>
+                          <button onClick={facturarSeleccionadas} disabled={selectedCount===0||tnLoading} style={{background:"linear-gradient(135deg,#16a34a,#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:(selectedCount===0||tnLoading)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(selectedCount===0||tnLoading)?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:(selectedCount>0&&!tnLoading)?"0 4px 14px #16a34a40":"none",transition:"all 0.15s"}}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
                             Facturar {selectedCount>0?selectedCount:""} {selectedCount>0?"→":""}
                           </button>
