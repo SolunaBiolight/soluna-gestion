@@ -24488,7 +24488,7 @@ export default function App() {
   // Tablero compartido: #/tablero/BOARD_TOKEN
   const _boardMatch = _initialHash.match(/^tablero\/([a-z0-9]{8,})/i);
   const [boardToken, setBoardToken] = useState(_boardMatch ? _boardMatch[1] : null);
-  const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash) ? _initialHash : "margenes");
+  const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash.split("/")[0]) ? _initialHash.split("/")[0] : "home");
   const setPage = (p) => {
     _setPage(p);
     if (typeof window !== "undefined") {
@@ -24510,7 +24510,8 @@ export default function App() {
       if (bm) { setBoardToken(bm[1]); setColabToken(null); setEditorProdToken(null); return; }
       try{sessionStorage.removeItem("growith_colab_token");}catch(e){}
       setColabToken(null); setEditorProdToken(null); setBoardToken(null);
-      if (VALID_PAGES.includes(h)) _setPage(h);
+      const hPage = h.split("/")[0];
+      if (VALID_PAGES.includes(hPage)) _setPage(hPage);
     };
     window.addEventListener("hashchange", onHash);
     return ()=>{
