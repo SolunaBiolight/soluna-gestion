@@ -15844,8 +15844,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const someSel = itemsSelectables.some(([id])=>tnSelected[id]);
                     const selectedCount = itemsSelectables.filter(([id])=>tnSelected[id]).length;
                     const selectedTotal = itemsSelectables.filter(([id])=>tnSelected[id]).reduce((s,[,o])=>s+(o.total||0),0);
-                    const mesTotal  = mesStats?.totalOrdenes || 0;
-                    const mesMonto  = mesStats?.totalMonto   || 0;
+                    // mesTotal/mesMonto derivados de tnData para que coincidan exactamente
+                    // con los órdenes visibles — evita la inconsistencia del fetch separado de mesStats
+                    const mesTotal  = all.length;
+                    const mesMonto  = all.reduce((s,[,o])=>s+(o.total||0),0);
                     const montoDescartado = itemsDescartados.reduce((s,[,o])=>s+(o.total||0),0);
                     const pctDescartadasN = mesTotal > 0 ? Math.round(itemsDescartados.length / mesTotal * 100) : 0;
                     const pctDescartadasM = mesMonto > 0 ? Math.round(montoDescartado / mesMonto * 100) : 0;
@@ -15912,7 +15914,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 {selectedCount} sel. · $ {selectedTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}
                               </span>
                             )}
-                            {mesStats&&<span style={{fontSize:11,color:T.textSm}}>{mesStats.totalOrdenes} órd. en {mesStats.mesLabel}</span>}
+                            {mesTotal>0&&<span style={{fontSize:11,color:T.textSm}}>{mesTotal} órd. en el período{mesStats?.mesLabel?" · "+mesStats.mesLabel:""}</span>}
                           </div>
                         </div>
                         <div style={{maxHeight:420,overflowY:"auto",opacity:tnLoading?0.35:1,transition:"opacity 0.25s"}}>
@@ -16009,8 +16011,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </div>
                         )}
 
-                        {/* Panel de progreso de facturación del período */}
-                        {mesStats && mesTotal > 0 && (
+                        {/* Panel de progreso de facturación del período — solo cuando terminó de cargar */}
+                        {!tnLoading && mesTotal > 0 && (
                           <div style={{padding:"10px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,display:"flex",gap:16,flexWrap:"wrap"}}>
                             <div style={{flex:1,minWidth:130}}>
                               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
