@@ -38,13 +38,15 @@ async function fetchT(url, opts={}, ms=15000) {
 async function tnProducts(sid, tok) {
   let all=[], page=1;
   while(true){
-    const r=await fetchT(`https://api.tiendanube.com/v1/${sid}/products?per_page=200&page=${page}`,{headers:TN_H(tok)});
-    if(!r.ok) break;
-    const d=await r.json();
-    if(!Array.isArray(d)||d.length===0) break;
-    all=all.concat(d);
-    if(d.length<200) break;
-    page++;
+    try{
+      const r=await fetchT(`https://api.tiendanube.com/v1/${sid}/products?per_page=200&page=${page}`,{headers:TN_H(tok)});
+      if(!r.ok) break;
+      const d=await r.json();
+      if(!Array.isArray(d)||d.length===0) break;
+      all=all.concat(d);
+      if(d.length<200) break;
+      page++;
+    }catch(_){break;}
   }
   return all;
 }
@@ -53,15 +55,17 @@ async function tnProducts(sid, tok) {
 async function tnOrders(sid, tok, days, since, until) {
   let all=[], page=1;
   while(page<=10){
-    let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=200&page=${page}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
-    if(until) url+=`&created_at_max=${until}`;
-    const r=await fetchT(url,{headers:TN_H(tok)});
-    if(!r.ok) break;
-    const d=await r.json();
-    if(!Array.isArray(d)||d.length===0) break;
-    all=all.concat(d);
-    if(d.length<200) break;
-    page++;
+    try{
+      let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=200&page=${page}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
+      if(until) url+=`&created_at_max=${until}`;
+      const r=await fetchT(url,{headers:TN_H(tok)});
+      if(!r.ok) break;
+      const d=await r.json();
+      if(!Array.isArray(d)||d.length===0) break;
+      all=all.concat(d);
+      if(d.length<200) break;
+      page++;
+    }catch(_){break;}
   }
   return all;
 }
@@ -538,7 +542,7 @@ export default async function handler(req, res) {
     }
     return res.status(400).json({error:"Acción no reconocida"});
   }catch(e){
-    console.error("[stock] error:",e.message);
-    return res.status(500).json({error:e.message});
+    console.error("[stock] error:",e.message, e.stack?.split("\n")[1]);
+    return res.status(500).json({error:`Error interno: ${e.message}`});
   }
 }
