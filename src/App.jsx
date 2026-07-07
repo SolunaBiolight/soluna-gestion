@@ -23019,7 +23019,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:2}}>
                         <div style={{fontSize:12,fontWeight:700,color:T.text}}>
-                          {isFact?"Revenue por variante":showingVentas?"Variantes más vendidas":"Unidades por variante"}
+                          {isFact?"Revenue por variante":"Unidades por variante"}
                         </div>
                         {!isFact&&(
                           <div style={{display:"flex",background:T.surface,borderRadius:7,padding:2,gap:1,flexShrink:0}}>
@@ -23033,9 +23033,9 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         )}
                       </div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>
-                        {isFact?"Distribución del revenue":showingVentas?"Órdenes por tipo de producto":"Unidades vendidas por variante"}
+                        {isFact?"Distribución del revenue":"Unidades vendidas por variante"}
                       </div>
-                      <DonutChart data={tabDonutVariante} showUnits={!isFact&&variantView==="units"} unitLabel={showingVentas?"órdenes":"uds"} centerLabel={(isFact||showingRev)?{val:fmtARS(totalRev),label:"revenue"}:showingVentas?{val:fmt(totalOrders),label:"órdenes"}:{val:fmt(totalUnits),label:"uds"}}/>
+                      <DonutChart data={tabDonutVariante} showUnits={!isFact&&variantView==="units"} unitLabel={isFact?"$":"uds"} centerLabel={(isFact||showingRev)?{val:fmtARS(totalRev),label:"revenue"}:{val:fmt(totalUnits),label:"uds"}}/>
                     </div>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
