@@ -11291,7 +11291,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       const hasSlots=(t.slots||[]).length>0;
                       const isEntregado=t.estado==="entregado";
                       const isAprobado=t.estado==="aprobado";
-                      const cardBorder=isUrgente?`1.5px solid ${T.red}`:isEntregado?`1.5px dashed #22c55e`:isAprobado?`1.5px solid #22c55e`:t.estado==="pendiente"||t.estado==="bloqueada"?`1px solid ${T.border}`:`1px solid ${est.border}`;
+                      const cardBorder=isAprobado?`1.5px solid #22c55e`:isUrgente?`1.5px solid ${T.red}`:isEntregado?`1.5px dashed #22c55e`:t.estado==="pendiente"||t.estado==="bloqueada"?`1px solid ${T.border}`:`1px solid ${est.border}`;
                       const cardBg=isEntregado?"#22c55e08":isAprobado?"#22c55e08":T.card;
                       return(
                         <div key={t._id} onClick={()=>setKanbanSelected(t)}
@@ -11306,7 +11306,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                               <span style={{fontSize:11,fontWeight:600,color:est.c}}>{est.l}</span>
                             </div>
                             <div style={{display:"flex",alignItems:"center",gap:5}}>
-                              {isUrgente&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
+                              {isUrgente&&!isAprobado&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                               {correcciones>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"2px 7px"}}>🔁 {correcciones}</span>}
                               {t.publicado&&<span style={{fontSize:9,fontWeight:700,color:"#06b6d4",background:"#06b6d412",borderRadius:4,padding:"2px 7px"}}>📤 Publicado</span>}
                               {!t.publicado&&t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:"#8b5cf6",background:"#8b5cf612",borderRadius:4,padding:"2px 7px"}}>💰 Pauta</span>}
