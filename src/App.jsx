@@ -426,7 +426,7 @@ function DriveOpenBtn({ T, url = "", size = "sm" }) {
 }
 // ─── fin Google Drive Picker ──────────────────────────────────────────────────
 
-function DSEmpty({T, icon="📭", title, subtitle, action}) {
+function DSEmpty({T, icon="", title, subtitle, action}) {
   return (
     <Card T={T} padding="xl" style={{textAlign:"center"}}>
       <div style={{fontSize:42,marginBottom:DS.sp.md,opacity:0.8}}>{icon}</div>
@@ -593,7 +593,7 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
 
         {overLimit ? (
           <div style={{padding:"18px 16px",background:`linear-gradient(135deg,${T.yellowBg||"#eab30814"},${T.yellowBg||"#eab30808"})`,border:`1.5px solid ${T.yellow||"#eab308"}44`,borderRadius:12,marginBottom:14,boxShadow:`0 0 0 1px ${T.yellow||"#eab308"}18, 0 4px 16px ${T.yellow||"#eab308"}18`}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>🔒 Llegaste al límite de tu plan</div>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>Llegaste al límite de tu plan</div>
             <div style={{fontSize:12,color:T.textMd,lineHeight:1.5}}>Tu plan permite hasta 2 organizaciones. Para tener más, pasate al plan <strong>Total</strong>.</div>
           </div>
         ) : (
@@ -671,7 +671,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
         {canDelete && (
           <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:8}}>
             {!confirmDel ? (
-              <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px",borderRadius:10}}>🗑 Borrar esta organización</button>
+              <button onClick={()=>setConfirmDel(true)} disabled={saving} style={{...BtnDanger(T),fontSize:12,padding:"8px 12px",borderRadius:10}}>Borrar esta organización</button>
             ) : (
               <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 12px ${T.red}14`}}>
                 <div style={{fontSize:12,color:T.text,fontWeight:600,marginBottom:8}}>¿Borrar "{org.name}"? Se pierden las integraciones de esa org. Esta acción no se puede deshacer.</div>
@@ -884,7 +884,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
               }
               <div style={{flex:1,minWidth:0,textAlign:"left"}}>
                 <div style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user?.displayName||user?.email?.split("@")[0]}</div>
-                <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"||userPlan==="full"?"⚡ Pro":isInTrial?"✨ Prueba gratis":"🔒 Trial vencido"}</div>
+                <div style={{fontSize:DS.font.xs,color:T.textSm}}>{userPlan==="plus"||userPlan==="full"?"Pro":isInTrial?"Prueba gratis":"Trial vencido"}</div>
               </div>
               <span style={{color:T.textSm,fontSize:11,flexShrink:0}}>{acctOpen?"▾":"⇅"}</span>
             </button>
@@ -900,7 +900,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
                     </div>
                   </button>
                 ))}
-                <button onClick={()=>ghSwitchAccount("","")} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderTop:`1px solid ${T.border}`,marginTop:2,borderRadius:DS.r.sm,cursor:"pointer",color:T.accent,fontWeight:600,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>➕ Agregar / entrar a otra cuenta</button>
+                <button onClick={()=>ghSwitchAccount("","")} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 10px",background:"transparent",border:"none",borderTop:`1px solid ${T.border}`,marginTop:2,borderRadius:DS.r.sm,cursor:"pointer",color:T.accent,fontWeight:600,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Agregar / entrar a otra cuenta</button>
               </div>
             )}
           </div>
@@ -917,7 +917,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
             }
           </button>
           {isAdmin&&(
-            <button onClick={()=>setPage("admin")} title="Admin" style={{background:"transparent",border:`1px solid ${T.yellow}44`,borderRadius:DS.r.md,color:T.yellow,cursor:"pointer",padding:"6px 9px",fontSize:DS.font.sm}}>👑</button>
+            <button onClick={()=>setPage("admin")} title="Admin" style={{background:"transparent",border:`1px solid ${T.yellow}44`,borderRadius:DS.r.md,color:T.yellow,cursor:"pointer",padding:"6px 9px",fontSize:DS.font.sm}}>Admin</button>
           )}
         </div>
       </div>
@@ -1011,7 +1011,7 @@ function OnboardingWizard({T, user, onComplete}) {
   const steps = [
     {
       n:1,
-      icon:"🛍",
+      icon:"",
       title:"Conectá tu tienda online",
       desc:"Vincula Tienda Nube o Shopify para sincronizar pedidos, productos y stock automáticamente.",
       actions: (
@@ -1022,17 +1022,17 @@ function OnboardingWizard({T, user, onComplete}) {
             const state=encodeURIComponent(user?.uid||"");
             window.location.href=`https://www.tiendanube.com/apps/${clientId}/authorize?state=${state}&redirect_uri=${redirectUri}`;
           }}>
-            🛒 Conectar Tienda Nube
+            Conectar Tienda Nube
           </Btn>
           <Btn T={T} variant="secondary" size="lg" onClick={()=>onComplete("shopify")}>
-            🛍 Conectar Shopify
+            Conectar Shopify
           </Btn>
         </div>
       ),
     },
     {
       n:2,
-      icon:"📣",
+      icon:"",
       title:"Conectá Meta Ads",
       desc:"Opcional. Conecta Facebook/Instagram Ads para ver el rendimiento de tus campañas y calcular ROAS real.",
       actions: (
@@ -1044,7 +1044,7 @@ function OnboardingWizard({T, user, onComplete}) {
     },
     {
       n:3,
-      icon:"📄",
+      icon:"",
       title:"Facturación electrónica (ARCA)",
       desc:"Opcional. Configurá tu CUIT y certificado ARCA para emitir facturas automáticas. Podés saltearlo y configurarlo después.",
       actions: (
@@ -1300,7 +1300,7 @@ function DateRangePicker({ T, since, until, onChange, presets }) {
   return (
     <div ref={wrapRef} style={{position:"relative",display:"inline-block",fontFamily:"'Inter',system-ui,sans-serif"}}>
       <button onClick={()=>setOpen(o=>!o)} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 14px",background:T.input,border:`1px solid ${open?T.accent+"66":T.inputBorder}`,borderRadius:10,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-        📅 <span>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
+        <span>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
       </button>
       {open && (
         <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:1000,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,boxShadow:"0 14px 40px rgba(0,0,0,0.45)",minWidth:340}}>
@@ -1747,7 +1747,7 @@ function PageView({children, pageKey, T}) {
 function UpgradeWall({T, requiredPlan, onNavigate}) {
   const PLAN_INFO = {
     plus: {
-      nombre:"Pro", icon:"⚡", color:"#6366f1",
+      nombre:"Pro", icon:"", color:"#6366f1",
       precio_usdt:49, precio_ars:49000,
       features:[
         "Stock multi-canal (Tienda Nube + Shopify + ML)",
@@ -1760,7 +1760,7 @@ function UpgradeWall({T, requiredPlan, onNavigate}) {
       ],
     },
     full: {
-      nombre:"Scale", icon:"💎", color:"#a855f7",
+      nombre:"Scale", icon:"", color:"#a855f7",
       precio_usdt:89, precio_ars:89000,
       features:[
         "Todo Pro sin restricciones",
@@ -2089,7 +2089,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
   return (
     <div>
       <div style={{position:"relative"}}>
-        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,fontSize:15}}>🔍</span>
+        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,lineHeight:1,display:"flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
         <input ref={inputRef} style={{...iS,paddingLeft:36}} placeholder="Nro de pedido, nombre o email..." value={q} onChange={e=>setQ(e.target.value)}/>
         {loading&&<span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></span>}
       </div>
@@ -2106,7 +2106,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
                 <span style={{fontSize:12,color:T.textSm,flexShrink:0}}>{fmtDate(o.fecha)}</span>
               </div>
               {o.productos?.length>0&&<div style={{fontSize:12,color:T.textSm,marginTop:3}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</div>}
-              {o.email&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>✉️ {o.email}</div>}
+              {o.email&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{o.email}</div>}
             </div>
           ))}
         </div>
@@ -2362,7 +2362,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 docId: r._docId, orderNum: r.orderNum,
                 tracking: r.trackingDevolucion.trim(),
                 estado: ea, nombre: r.clienteNombre,
-                tipo: "devolucion", msg: `📦 Devolución de ${r.clienteNombre||r.orderNum} lista para retirar`,
+                tipo: "devolucion", msg: `Devolución de ${r.clienteNombre||r.orderNum} lista para retirar`,
               });
             }
             // Alerta si ya fue retirado (nosotros lo fuimos a buscar)
@@ -2371,14 +2371,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 docId: r._docId, orderNum: r.orderNum,
                 tracking: r.trackingDevolucion.trim(),
                 estado: ea, nombre: r.clienteNombre,
-                tipo: "devolucion_ok", msg: `✅ Devolución de ${r.clienteNombre||r.orderNum} recibida`,
+                tipo: "devolucion_ok", msg: `Devolución de ${r.clienteNombre||r.orderNum} recibida`,
               });
             }
             const nuevo = mapAndreaniEstado(ea, "devolucion");
             if(nuevo && nuevo !== r.estado && ESTADOS_R.indexOf(nuevo) > ESTADOS_R.indexOf(r.estado)) {
               try {
                 await updateEstado(r._docId, nuevo);
-                toast(`📦 Reclamo #${r.orderNum} → "${nuevo}" (Andreani)`, "success");
+                toast(`Reclamo #${r.orderNum} → "${nuevo}" (Andreani)`, "success");
               } catch(_) {}
             }
           }
@@ -2394,14 +2394,14 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 docId: r._docId, orderNum: r.orderNum,
                 tracking: r.trackingCambio.trim(),
                 estado: ea, nombre: r.clienteNombre,
-                tipo: "cambio_sucursal", msg: `🏪 Cambio de ${r.clienteNombre||r.orderNum} listo para retirar en sucursal`,
+                tipo: "cambio_sucursal", msg: `Cambio de ${r.clienteNombre||r.orderNum} listo para retirar en sucursal`,
               });
             }
             const nuevo = mapAndreaniEstado(ea, "cambio");
             if(nuevo && nuevo !== r.estado && ESTADOS_R.indexOf(nuevo) > ESTADOS_R.indexOf(r.estado)) {
               try {
                 await updateEstado(r._docId, nuevo);
-                toast(`🔄 Reclamo #${r.orderNum} → "${nuevo}" (Andreani)`, "success");
+                toast(`Reclamo #${r.orderNum} → "${nuevo}" (Andreani)`, "success");
               } catch(_) {}
             }
           }
@@ -2424,7 +2424,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     if(!urgentes.length) return;
     const msg = urgentes.length === 1
       ? urgentes[0].msg
-      : `📦 ${urgentes.length} paquetes listos para retirar en sucursal`;
+      : `${urgentes.length} paquetes listos para retirar en sucursal`;
     if(Notification.permission === "granted") {
       new Notification("Growith - Andreani", { body: msg, icon: "/favicon.ico" });
     } else if(Notification.permission !== "denied") {
@@ -2576,9 +2576,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
           const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));a.download=`reclamos_${new Date().toISOString().slice(0,10)}.csv`;a.click();
           toast("CSV exportado ✓","success");
-        }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>⬇ CSV</button>
-        <button onClick={()=>setView("config")} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:T.textSm}} title="Configurar SLA">⚙ SLA</button>
-        <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:"⟳"}</button>
+        }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",gap:5,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>CSV</button>
+        <button onClick={()=>setView("config")} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",color:T.textSm,gap:5,display:"flex",alignItems:"center"}} title="Configurar SLA"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>SLA</button>
+        <button onClick={fetchOrders} disabled={ordersStatus==="loading"} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px",opacity:ordersStatus==="loading"?0.5:1,minWidth:32,justifyContent:"center"}}>{ordersStatus==="loading"?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}</button>
         <button onClick={()=>setReclamoForm(emptyForm())} style={{...BtnDanger(T),fontSize:13,padding:"7px 14px"}}>+ Nuevo reclamo</button>
       </AppTopbar>
 
@@ -2594,11 +2594,11 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"📋",title:"Pipeline Kanban",desc:"Los reclamos se organizan por etapa: Nuevo → En proceso → Esperando cliente → Resuelto. Mové las cards entre columnas según el avance."},
-                {n:2,icon:"➕",title:"Nuevo reclamo",desc:"Registrá el problema con el número de pedido, el cliente y qué pasó. Cuanto más detalle, más fácil resolverlo rápido."},
-                {n:3,icon:"🔄",title:"Cambios de producto",desc:"Si hay cambio o devolución, registrá qué productos entran y cuáles salen para tener el historial completo."},
-                {n:4,icon:"📦",title:"Tracking",desc:"Cargá el número de seguimiento del envío de cambio directamente en el reclamo para que todo quede en un solo lugar."},
-                {n:5,icon:"✅",title:"Historial",desc:"Todos los reclamos cerrados quedan guardados. Útil para analizar patrones, mejorar el servicio y responder disputas."},
+                {n:1,icon:"",title:"Pipeline Kanban",desc:"Los reclamos se organizan por etapa: Nuevo → En proceso → Esperando cliente → Resuelto. Mové las cards entre columnas según el avance."},
+                {n:2,icon:"",title:"Nuevo reclamo",desc:"Registrá el problema con el número de pedido, el cliente y qué pasó. Cuanto más detalle, más fácil resolverlo rápido."},
+                {n:3,icon:"",title:"Cambios de producto",desc:"Si hay cambio o devolución, registrá qué productos entran y cuáles salen para tener el historial completo."},
+                {n:4,icon:"",title:"Tracking",desc:"Cargá el número de seguimiento del envío de cambio directamente en el reclamo para que todo quede en un solo lugar."},
+                {n:5,icon:"",title:"Historial",desc:"Todos los reclamos cerrados quedan guardados. Útil para analizar patrones, mejorar el servicio y responder disputas."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -2617,7 +2617,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           <div style={{display:"flex",flexDirection:"column",gap:8,margin:"16px 0 4px"}}>
             {retiros.length>0&&(
               <div style={{background:"linear-gradient(135deg,#052e16,#0a2a1a)",border:`1.5px solid ${T.green}55`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease",boxShadow:`0 0 24px ${T.green}22`}}>
-                <div style={{fontSize:26,flexShrink:0}}>🏪</div>
+                <div style={{width:36,height:36,borderRadius:9,background:T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
                 <div style={{flex:1}}>
                   <div style={{fontWeight:700,fontSize:14,color:T.green,marginBottom:6}}>
                     {retiros.length===1?"¡Paquete listo para retirar en sucursal!":
@@ -2644,7 +2644,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             )}
             {recibidos.length>0&&(
               <div style={{background:"linear-gradient(135deg,#0a1628,#0d1f35)",border:`1.5px solid #3b82f655`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease"}}>
-                <div style={{fontSize:26,flexShrink:0}}>✅</div>
+                <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:8,background:"#3b82f622"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                 <div style={{flex:1}}>
                   <div style={{fontWeight:700,fontSize:14,color:"#3b82f6",marginBottom:6}}>
                     {recibidos.length===1?"Devolución recibida y registrada":"Devoluciones recibidas"}
@@ -2836,8 +2836,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4}}>
                                 <span style={{fontSize:10,fontWeight:600,color:tc.text,background:tc.bg,borderRadius:DS.r.sm,padding:"2px 6px"}}>{r.tipo}</span>
                                 <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                                  {hasTracking&&<span title="Tiene tracking" style={{fontSize:10,color:T.blue}}>📦</span>}
-                                  {r.notasInternas&&<span title="Tiene notas" style={{fontSize:10,color:T.yellow}}>🔒</span>}
+                                  {hasTracking&&<span title="Tiene tracking" style={{fontSize:9,fontWeight:700,color:T.blue}}>TRK</span>}
+                                  {r.notasInternas&&<span title="Tiene notas" style={{fontSize:9,fontWeight:700,color:T.yellow}}>NOTA</span>}
                                   {dias!==null&&<span style={{fontSize:10,color:urgente?T.red:T.textSm,fontWeight:urgente?700:400}}>{dias}d</span>}
                                 </div>
                               </div>
@@ -2858,9 +2858,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
 
         {view==="config"&&(
           <div style={{padding:"24px 0 48px",maxWidth:520}}>
-            <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:20,letterSpacing:-0.5}}>⚙️ Configuración</div>
+            <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:20,letterSpacing:-0.5,display:"flex",alignItems:"center",gap:8}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Configuración</div>
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"20px 22px"}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>⏱ SLA — Umbral de urgencia</div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>SLA — Umbral de urgencia</div>
               <div style={{fontSize:13,color:T.textMd,marginBottom:16}}>Un reclamo se marca como urgente cuando lleva más de este tiempo sin resolverse.</div>
               <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                 {[1,2,3,5,7,10].map(d=>(
@@ -2938,8 +2938,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                         WhatsApp
                       </a>}
-                      {activeOrder?.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",textDecoration:"none",color:T.purple}}>🔗 TN</a>}
-                      {email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4}}>✉️ {email}</span>}
+                      {activeOrder?.linkOrden&&<a href={activeOrder.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",textDecoration:"none",color:T.purple,display:"inline-flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>TN</a>}
+                      {email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:4}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>{email}</span>}
                     </div>
                   </div>
                 );
@@ -2959,7 +2959,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             {/* Detalle Cambio */}
             {activeR.tipo==="Cambio"&&(
               <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>🔄 Cambio</div>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:600,letterSpacing:0.5,marginBottom:10,display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>Cambio</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:8,alignItems:"start",marginBottom:12}}>
                   <div><div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",marginBottom:4}}>Nos devuelve</div>{(activeR.productosRecibe||[]).filter(p=>p.producto).map((item,i)=><div key={i} style={{fontSize:13,fontWeight:600,color:T.red,marginBottom:2}}>{item.cantidad>1&&<span style={{color:T.textSm,fontSize:11}}>{item.cantidad}× </span>}{item.producto}</div>)}</div>
                   <div style={{color:T.textSm,paddingTop:18,fontSize:16}}>→</div>
@@ -2968,21 +2968,21 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6}}>Tracking envío (al cliente)</div>
                 <div style={{display:"flex",gap:8,marginBottom:6}}>
                   <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px"}} value={activeR.trackingCambio||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:e.target.value,updatedAt:serverTimestamp()});}}/>
-                  {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnPurple(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0}}>📦</a>}
+                  {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnPurple(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,display:"inline-flex",alignItems:"center",gap:5}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Ver</a>}
                 </div>
-                {activeR.trackingCambio&&(<AsyncButton onClick={async()=>{const r=await fetch(`/api/update-shipping?uid=${user?.uid}&orderId=${activeR.orderNum}&tracking=${activeR.trackingCambio}`);const d=await r.json();if(r.ok)appAlert("✅ Tracking actualizado en TN");else appAlert("Error: "+(d.error||""));}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,marginBottom:8}}>↑ Subir a TN</AsyncButton>)}
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6}}>📥 Tracking devolución (cliente → nosotros)</div>
+                {activeR.trackingCambio&&(<AsyncButton onClick={async()=>{const r=await fetch(`/api/update-shipping?uid=${user?.uid}&orderId=${activeR.orderNum}&tracking=${activeR.trackingCambio}`);const d=await r.json();if(r.ok)appAlert("Tracking actualizado en TN");else appAlert("Error: "+(d.error||""));}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,marginBottom:8}}>↑ Subir a TN</AsyncButton>)}
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"/></svg>Tracking devolución (cliente → nosotros)</div>
                 <div style={{display:"flex",gap:8}}>
                   <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} value={activeR.trackingDevolucion||""} placeholder="Código Andreani del cliente..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:e.target.value,updatedAt:serverTimestamp()});}}/>
-                  {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green}}>🔍</a>}
+                  {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green,display:"inline-flex",alignItems:"center",gap:4}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ver</a>}
                 </div>
-                {!activeR.trackingDevolucion&&<div style={{fontSize:11,color:T.textSm,marginTop:4}}>📢 Te avisamos cuando llegue a sucursal</div>}
+                {!activeR.trackingDevolucion&&<div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te avisamos cuando llegue a sucursal</div>
               </div>
             )}
             {/* Devolución */}
             {activeR.tipo==="Devolución"&&(
               <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 14px",marginBottom:14}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.orange,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>↩️ Devolución</div>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.orange,fontWeight:600,letterSpacing:0.5,marginBottom:10,display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 00-4-4H4"/></svg>Devolución</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px",marginBottom:10}}>
                   <div><div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:5}}>Recepción</div>
                     <select style={{...InputStyle(T),fontSize:12}} value={activeR.estadoRecepcion||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoRecepcion:e.target.value,updatedAt:serverTimestamp()});}}><option value="">-</option><option>Esperando envío</option><option>En tránsito</option><option>Recibido</option><option>Inspeccionado</option></select>
@@ -2991,17 +2991,17 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                     <select style={{...InputStyle(T),fontSize:12}} value={activeR.estadoReembolso||""} onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{estadoReembolso:e.target.value,updatedAt:serverTimestamp()});}}><option value="">-</option><option>Pendiente</option><option>En proceso</option><option>Procesado</option></select>
                   </div>
                 </div>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6}}>📥 Tracking devolución</div>
+                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"/></svg>Tracking devolución</div>
                 <div style={{display:"flex",gap:8}}>
                   <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} value={activeR.trackingDevolucion||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:e.target.value,updatedAt:serverTimestamp()});}}/>
-                  {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green}}>🔍</a>}
+                  {activeR.trackingDevolucion&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,color:T.green,display:"inline-flex",alignItems:"center",gap:4}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Ver</a>}
                 </div>
               </div>
             )}
             {/* Notas internas */}
             <div style={{marginBottom:14}}>
               <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <span>🔒 Notas internas</span>
+                <span style={{display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Notas internas</span>
                 {notaGuardada&&<span style={{fontSize:10,color:T.green,fontWeight:500}}>✓ Guardado</span>}
               </div>
               <textarea rows={3} placeholder="Notas privadas..." value={notaInterna}
@@ -3012,7 +3012,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   await updateDoc(doc(db,"reclamos",activeR._docId),{notasInternas:notaInterna,updatedAt:serverTimestamp()});
                   setNotaGuardada(true);
                 }} style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px",marginTop:6,color:T.yellow,borderColor:T.yellow+"44"}}>
-                  💾 Guardar nota
+                  Guardar nota
                 </AsyncButton>
               )}
             </div>
@@ -3023,8 +3023,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             </div>
             {/* Acciones */}
             <div style={{display:"flex",gap:8,paddingTop:14,borderTop:`1px solid ${T.borderL}`,flexWrap:"wrap"}}>
-              <AsyncButton onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue}}>📦 Etiqueta Andreani</AsyncButton>
-              <button onClick={()=>{setReclamoForm({...activeR,productosRecibe:activeR.productosRecibe||[{producto:"",cantidad:1}],productosEnvia:activeR.productosEnvia||[{producto:"",cantidad:1}],historial:activeR.historial||[],trackingCambio:activeR.trackingCambio||"",trackingDevolucion:activeR.trackingDevolucion||"",estadoRecepcion:activeR.estadoRecepcion||"",estadoReembolso:activeR.estadoReembolso||""});}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>✏️ Editar</button>
+              <AsyncButton onClick={()=>generarEtiquetaAndreani(activeOrder)} disabled={!activeOrder} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.blue,gap:5,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Etiqueta Andreani</AsyncButton>
+              <button onClick={()=>{setReclamoForm({...activeR,productosRecibe:activeR.productosRecibe||[{producto:"",cantidad:1}],productosEnvia:activeR.productosEnvia||[{producto:"",cantidad:1}],historial:activeR.historial||[],trackingCambio:activeR.trackingCambio||"",trackingDevolucion:activeR.trackingDevolucion||"",estadoRecepcion:activeR.estadoRecepcion||"",estadoReembolso:activeR.estadoReembolso||""});}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",gap:5,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Editar</button>
               {deleteConfirm===activeR._docId?(
                 <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:12,color:T.red}}>¿Eliminar?</span><AsyncButton onClick={()=>deleteReclamo(activeR._docId)} style={{...BtnDanger(T),padding:"6px 12px",fontSize:12}}>Sí</AsyncButton><button onClick={()=>setDeleteConfirm(null)} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:12}}>No</button></div>
               ):(
@@ -3075,8 +3075,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                       </div>
                       {prods.length>0&&<div style={{fontSize:12,color:T.textSm,marginBottom:6}}>{prods.join(' · ')}</div>}
                       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                        {email&&<span style={{fontSize:12,color:T.textSm}}>✉️ {email}</span>}
-                        {tel&&<span style={{fontSize:12,color:T.green}}>💬 {tel}</span>}
+                        {email&&<span style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:3}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>{email}</span>}
+                        {tel&&<span style={{fontSize:12,color:T.green,display:"flex",alignItems:"center",gap:3}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.15 1.18 2 2 0 012.11 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>{tel}</span>}
                       </div>
                     </div>
                     {!reclamoForm._docId&&<button onClick={()=>setReclamoForm(f=>({...f,orderNum:"",clienteNombre:"",clienteEmail:"",clienteTelefono:"",clienteProductos:[],clienteTotal:""}))} style={{...BtnDanger(T),padding:"4px 8px",fontSize:11,flexShrink:0,marginLeft:8}}>Cambiar</button>}
@@ -3091,7 +3091,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               </div>
               {reclamoForm.tipo==="Cambio"&&(
                 <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:14,marginBottom:12}}>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:700,letterSpacing:0.5,marginBottom:10}}>🔄 Detalle del cambio</div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.purple,fontWeight:700,letterSpacing:0.5,marginBottom:10,display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>Detalle del cambio</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
                     {["productosRecibe","productosEnvia"].map((key,side)=>(
                       <div key={key}>
@@ -3113,28 +3113,28 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   </Field>
                   </div>
                   <div style={{marginTop:4}}>
-                  <Field T={T} label="📥 Tracking devolución (viene a nosotros)">
+                  <Field T={T} label="Tracking devolución (viene a nosotros)">
                     <div style={{position:"relative"}}>
                       <input style={{...iS, borderColor: reclamoForm.trackingDevolucion ? T.green+"88" : iS.borderColor}} value={reclamoForm.trackingDevolucion||""} onChange={e=>setReclamoForm(f=>({...f,trackingDevolucion:e.target.value}))} placeholder="Código Andreani que nos manda el cliente"/>
                       {reclamoForm.trackingDevolucion&&(
                         <a href={`https://www.andreani.com/#!/informacionEnvio/${reclamoForm.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:T.blue,textDecoration:"none",background:T.card,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.blue}33`}}>Ver →</a>
                       )}
                     </div>
-                    <div style={{fontSize:11,color:T.textSm,marginTop:4}}>📢 Te notificamos cuando llegue a sucursal</div>
+                    <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te notificamos cuando llegue a sucursal</div>
                   </Field>
                   </div>
                 </div>
               )}
               <Field T={T} label="Descripción"><textarea style={{...iS,minHeight:60,resize:"vertical"}} value={reclamoForm.descripcion} onChange={e=>setReclamoForm(f=>({...f,descripcion:e.target.value}))} placeholder="Detalle del reclamo..."/></Field>
               {reclamoForm.tipo==="Devolución"&&(
-                <Field T={T} label="📥 Tracking devolución (viene a nosotros)">
+                <Field T={T} label="Tracking devolución (viene a nosotros)">
                   <div style={{position:"relative"}}>
                     <input style={{...iS, borderColor: reclamoForm.trackingDevolucion ? T.green+"88" : iS.borderColor}} value={reclamoForm.trackingDevolucion||""} onChange={e=>setReclamoForm(f=>({...f,trackingDevolucion:e.target.value}))} placeholder="Código Andreani que nos manda el cliente"/>
                     {reclamoForm.trackingDevolucion&&(
                       <a href={`https://www.andreani.com/#!/informacionEnvio/${reclamoForm.trackingDevolucion}`} target="_blank" rel="noopener noreferrer" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:T.blue,textDecoration:"none",background:T.card,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.blue}33`}}>Ver →</a>
                     )}
                   </div>
-                  <div style={{fontSize:11,color:T.textSm,marginTop:4}}>📢 Te notificamos cuando llegue a sucursal</div>
+                  <div style={{fontSize:11,color:T.textSm,marginTop:4,display:"flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Te notificamos cuando llegue a sucursal</div>
                 </Field>
               )}
               {reclamoForm._docId&&(
@@ -3170,10 +3170,10 @@ function HistorialReclamo({T, reclamo, onAdd}) {
     setTexto("");setGuardando(false);
   }
   function getEntryStyle(accion) {
-    if(accion.startsWith("Nota:")) return {icon:"💬",color:"#60a5fa",bold:false};
-    if(accion.startsWith("Estado >")) return {icon:"🔄",color:"#a78bfa",bold:true};
-    if(accion.startsWith("Reclamo creado")) return {icon:"🟢",color:"#34d399",bold:true};
-    return {icon:"📌",color:"#94a3b8",bold:false};
+    if(accion.startsWith("Nota:")) return {icon:"·",color:"#60a5fa",bold:false};
+    if(accion.startsWith("Estado >")) return {icon:"→",color:"#a78bfa",bold:true};
+    if(accion.startsWith("Reclamo creado")) return {icon:"✓",color:"#34d399",bold:true};
+    return {icon:"·",color:"#94a3b8",bold:false};
   }
   function fmtHistFecha(fecha) {
     try{
@@ -3241,7 +3241,7 @@ function NotasRapidas({T, canje, onAdd}) {
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {historial.map((n,i)=>(
             <div key={n.id||i} style={{background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"9px 12px",display:"flex",gap:10,alignItems:"flex-start"}}>
-              <div style={{width:32,height:32,borderRadius:"50%",background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>💬</div>
+              <div style={{width:32,height:32,borderRadius:"50%",background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
               <div style={{flex:1}}>
                 <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>{n.texto}</div>
                 <div style={{fontSize:11,color:T.textSm,marginTop:3}}>{new Date(n.fecha).toLocaleDateString('es-AR')} · {new Date(n.fecha).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</div>
@@ -6044,11 +6044,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               {showGuia&&(
                 <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                   {[
-                    {n:1,icon:"🛒",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. Ves todos los que están listos para preparar y despachar."},
-                    {n:2,icon:"📦",title:"Generar etiqueta",desc:"Seleccioná un pedido y hacé click en 'Generar etiqueta Andreani'. Elegí entre domicilio o retiro en sucursal (HOP)."},
-                    {n:3,icon:"🔍",title:"Seguimiento",desc:"Una vez generada la etiqueta, el tracking se actualiza automáticamente. Ves el estado de cada envío en tiempo real."},
-                    {n:4,icon:"📄",title:"Facturar pedidos",desc:"Si tenés ARCA configurado, podés generar la factura del pedido desde el mismo panel de envíos."},
-                    {n:5,icon:"🔄",title:"Reclamos",desc:"Si un cliente tiene un problema con un envío, usá 'Generar reclamo' para pasarlo al pipeline de Reclamos y darle seguimiento."},
+                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. Ves todos los que están listos para preparar y despachar."},
+                    {n:2,icon:"",title:"Generar etiqueta",desc:"Seleccioná un pedido y hacé click en 'Generar etiqueta Andreani'. Elegí entre domicilio o retiro en sucursal (HOP)."},
+                    {n:3,icon:"",title:"Seguimiento",desc:"Una vez generada la etiqueta, el tracking se actualiza automáticamente. Ves el estado de cada envío en tiempo real."},
+                    {n:4,icon:"",title:"Facturar pedidos",desc:"Si tenés ARCA configurado, podés generar la factura del pedido desde el mismo panel de envíos."},
+                    {n:5,icon:"",title:"Reclamos",desc:"Si un cliente tiene un problema con un envío, usá 'Generar reclamo' para pasarlo al pipeline de Reclamos y darle seguimiento."},
                   ].map(s=>(
                     <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                       <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -6065,7 +6065,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 {[
                   {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
                   {id:"enviar",    label:"Por enviar",     color:T.blue},
-                  {id:"buscar",    label:"🔍 Buscar",      color:T.accent},
+                  {id:"buscar",    label:"Buscar",         color:T.accent},
                 ].map(t=>{
                   const isActive=tabEnvio===t.id;
                   return (
@@ -6089,7 +6089,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <div style={{marginBottom:16}}>
                 <div style={{display:"flex",gap:8,marginBottom:12}}>
                   <div style={{position:"relative",flex:1}}>
-                    <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:16,color:T.textSm}}>🔍</span>
+                    <svg style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,pointerEvents:"none"}} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     <input
                       autoFocus
                       placeholder="Número de pedido, nombre o email..."
@@ -6125,7 +6125,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
               {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:8,padding:2}}>
-                {[["todos","Todos"],["domicilio","🏠 Domicilio"],["sucursal","🏪 Sucursal"]].map(([v,l])=>(
+                {[["todos","Todos"],["domicilio","Domicilio"],["sucursal","Sucursal"]].map(([v,l])=>(
                   <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Set());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
                 ))}
               </div>}
@@ -6202,7 +6202,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </button>
               {/* Columnas configurables */}
               <div style={{position:"relative"}}>
-                <button onClick={e=>{e.stopPropagation();setShowColMenu(v=>!v);}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:hiddenCols.size>0?T.accent:T.textMd}}>⚙ Columnas</button>
+                <button onClick={e=>{e.stopPropagation();setShowColMenu(v=>!v);}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px",color:hiddenCols.size>0?T.accent:T.textMd,display:"flex",alignItems:"center",gap:5}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M4.93 19.07l1.41-1.41M19.07 19.07l-1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>Columnas</button>
                 {showColMenu&&(
                   <>
                     <div onClick={()=>setShowColMenu(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
@@ -6218,8 +6218,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 )}
               </div>
               {selected.size>0&&(
-                <button onClick={()=>setExportModal(true)} style={{...BtnPrimary(T),fontSize:13}}>
-                  ⬇️ Generar {selected.size} etiqueta{selected.size!==1?"s":""}
+                <button onClick={()=>setExportModal(true)} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Generar {selected.size} etiqueta{selected.size!==1?"s":""}
                 </button>
               )}
               <span style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center"}}>
@@ -6241,11 +6242,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </div>
             ):exportables.length===0?(
               <div style={{textAlign:"center",padding:"72px 20px"}}>
-                <div style={{width:60,height:60,borderRadius:14,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 18px"}}>
-                  {tabEnvio==="buscar"?"🔍":tabEnvio==="empaquetar"?"📦":"🚀"}
+                <div style={{width:60,height:60,borderRadius:14,background:T.surface,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 18px",color:T.textSm}}>
+                  {tabEnvio==="buscar"
+                    ?<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    :tabEnvio==="empaquetar"
+                      ?<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                      :<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>}
                 </div>
                 <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>
-                  {tabEnvio==="buscar"?"Buscá por número, nombre o email":tabEnvio==="empaquetar"?"Todo empaquetado 🎉":"Sin pedidos para enviar"}
+                  {tabEnvio==="buscar"?"Buscá por número, nombre o email":tabEnvio==="empaquetar"?"Todo empaquetado":"Sin pedidos para enviar"}
                 </div>
                 <div style={{fontSize:12,color:T.textSm,maxWidth:300,margin:"0 auto"}}>
                   {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar":tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados en Tienda Nube"}
@@ -6287,9 +6292,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       </div>
                       {!hiddenCols.has("estado")&&<Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>}
                       {!hiddenCols.has("envio")&&<div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
-                        <span>{o.esSucursal?"🏪":"🏠"}</span>
+                        {o.esSucursal
+                          ?<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                          :<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>}
                         <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"--"}</span>
-                        {o.esSucursal&&o.pickupDetails&&<span title="Puede requerir confirmar sucursal al exportar" style={{fontSize:10,color:T.yellow,flexShrink:0}}>⚠</span>}
+                        {o.esSucursal&&o.pickupDetails&&<svg title="Puede requerir confirmar sucursal al exportar" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
                       </div>}
                       {!hiddenCols.has("total")&&<span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>}
                     </div>
@@ -6363,7 +6370,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <input id="sku-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(false);setSkuResults([]);setSkuGenerating(false);setSkuProgress(0);setSkuBlob(null);parsePdf(f,"sku");}}}/>
               {skuFile && (skuProcessing || skuGenerating)
                 ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,opacity:0.6}}>
-                    <span style={{fontSize:28}}>📄</span>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     <div style={{textAlign:"left"}}>
                       <div style={{fontSize:14,fontWeight:600,color:T.text}}>{skuFile.name}</div>
                       <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Procesando...</div>
@@ -6371,14 +6378,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 : skuFile
                   ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12}}>
-                      <span style={{fontSize:28}}>📄</span>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                       <div style={{textAlign:"left"}}>
                         <div style={{fontSize:14,fontWeight:600,color:T.text}}>{skuFile.name}</div>
                         <div style={{fontSize:12,color:T.accent,marginTop:2}}>Click para cambiar</div>
                       </div>
                     </div>
                   : <div>
-                      <div style={{fontSize:40,marginBottom:12}}>📦</div>
+                      <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Subí el PDF de rótulos de Andreani</div>
                       <div style={{fontSize:13,color:T.textSm,marginBottom:16,lineHeight:1.6}}>Detecta el pedido, busca los SKUs en TN y escribe los productos en cada etiqueta</div>
                       <div style={{display:"inline-block",background:T.accentSolid,color:"#fff",borderRadius:8,padding:"8px 22px",fontSize:13,fontWeight:600}}>Seleccionar PDF</div>
@@ -6446,14 +6453,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 {/* Botón Generar PDF — mismo diseño que Descargar */}
                 {found.length>0&&!skuBlob&&!skuGenerating&&(
                   <div style={{background:"linear-gradient(135deg,#7c3aed18,#7c3aed08)",border:"2px solid #7c3aed66",borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
-                    <div style={{width:44,height:44,borderRadius:12,background:"#7c3aed22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>✨</div>
+                    <div style={{width:44,height:44,borderRadius:12,background:"#7c3aed22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                     <div style={{flex:1}}>
                       <div style={{fontSize:15,fontWeight:800,color:"#a78bfa",marginBottom:3}}>Resultados listos</div>
                       <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos encontrados{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
                     </div>
                     <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}}
                       style={{background:"#7c3aed",border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:"0 4px 16px #7c3aed44"}}>
-                      ✔ Generar PDF con SKUs
+                      Generar PDF con SKUs
                     </AsyncButton>
                   </div>
                 )}
@@ -6486,7 +6493,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       a.href=url;a.download=`rotulos-con-sku-${new Date().toISOString().slice(0,10)}.pdf`;a.click();
                       URL.revokeObjectURL(url);
                     }} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.green}44`}}>
-                      ⬇ Descargar PDF
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Descargar PDF
                     </button>
                   </div>
                 )}
@@ -6508,7 +6516,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
                   <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:13,fontWeight:700,color:T.text}}>Detalle por página</span>
-                    {notFound.length>0&&<span style={{marginLeft:"auto",fontSize:11,background:T.redBg,color:T.red,padding:"2px 8px",borderRadius:4,fontWeight:600}}>⚠ {notFound.length} sin match</span>}
+                    {notFound.length>0&&<span style={{marginLeft:"auto",fontSize:11,background:T.redBg,color:T.red,padding:"2px 8px",borderRadius:4,fontWeight:600,display:"inline-flex",alignItems:"center",gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>{notFound.length} sin match</span>}
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"50px 80px 1fr",gap:8,padding:"8px 18px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
                     <span>Pág.</span><span>Pedido</span><span>Productos</span>
@@ -6551,14 +6559,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                 : pdfFile
                   ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12}}>
-                      <span style={{fontSize:28}}>📄</span>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                       <div style={{textAlign:"left"}}>
                         <div style={{fontSize:14,fontWeight:600,color:T.text}}>{pdfFile.name}</div>
                         <div style={{fontSize:12,color:T.accent,marginTop:2}}>Click para cambiar</div>
                       </div>
                     </div>
                   : <div>
-                      <div style={{fontSize:40,marginBottom:12}}>📮</div>
+                      <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
                       <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Subí el PDF de rótulos Andreani</div>
                       <div style={{fontSize:13,color:T.textSm,marginBottom:16,lineHeight:1.6}}>Extrae el N° de seguimiento de cada etiqueta<br/>y lo envía automáticamente a Tienda Nube</div>
                       <div style={{display:"inline-block",background:T.accentSolid,color:"#fff",borderRadius:8,padding:"8px 22px",fontSize:13,fontWeight:600}}>Seleccionar PDF</div>
@@ -6661,12 +6669,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Sucursal confirmed toast */}
       {copiedToast&&(
         <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 16px",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",animation:"growith-fadeIn 0.15s ease",fontSize:13,color:T.text}}>
-          <span style={{fontSize:14}}>📋</span> {copiedToast}
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> {copiedToast}
         </div>
       )}
       {sucursalConfirmed&&(
         <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:T.card,border:`0.5px solid ${T.green}44`,borderLeft:`3px solid ${T.green}`,borderRadius:10,padding:"12px 20px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 8px 40px rgba(0,0,0,0.3)",animation:"fadeIn 0.2s ease",minWidth:280}}>
-          <span style={{fontSize:16}}>✅</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           <div>
             <div style={{fontSize:13,fontWeight:600,color:T.green}}>Sucursal confirmada · #{sucursalConfirmed.numero}</div>
             <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{sucursalConfirmed.nombre}</div>
@@ -6742,13 +6750,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700,marginTop:6}}><span>Total</span><span style={{color:T.text}}>{fmtMoney(o.total)}</span></div>
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}>
-                <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13}}>🔗 Ver en TN</a>
+                <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13,display:"inline-flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Ver en TN</a>
                 <button onClick={()=>{
                   setSelected(new Set([o.numero]));
                   setOrderDetail(null);
                   setExportModal(true);
-                }} style={{...BtnPrimary(T),fontSize:13}}>
-                  📦 Generar etiqueta
+                }} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                  Generar etiqueta
                 </button>
               </div>
             </div>
@@ -6766,7 +6775,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             <div>
               <div style={{background:autoMatch?T.greenBg||T.surface:T.yellowBg,border:`1px solid ${autoMatch?T.green||T.accent:T.yellow}44`,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
                 <div style={{fontSize:13,fontWeight:700,color:autoMatch?T.green||T.accent:T.yellow,marginBottom:4}}>
-                  {isSuc?(autoMatch?"✓ Sucursal sugerida — confirmá o cambiala":"⚠ No se encontró la sucursal exacta"):"⚠ No se encontró la localidad exacta"}
+                  {isSuc?(autoMatch?"Sucursal sugerida — confirmá o cambiala":"No se encontró la sucursal exacta"):"No se encontró la localidad exacta"}
                 </div>
                 <div style={{fontSize:13,color:T.text}}>Pedido <strong>#{order.numero}</strong> - {order.comprador}</div>
                 {isSuc&&order.pickupDetails&&(
@@ -6870,9 +6879,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
             <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Resumen</div>
             <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}><span style={{fontSize:15}}>🏠</span><span style={{color:T.text,fontWeight:600}}>{domCount}</span><span style={{color:T.textSm}}>domicilio{domCount!==1?"s":""}</span></div>
+              <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span style={{color:T.text,fontWeight:600}}>{domCount}</span><span style={{color:T.textSm}}>domicilio{domCount!==1?"s":""}</span></div>
               <div style={{width:1,background:T.borderL}}/>
-              <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}><span style={{fontSize:15}}>🏪</span><span style={{color:T.text,fontWeight:600}}>{sucCount}</span><span style={{color:T.textSm}}>sucursal{sucCount!==1?"es":""}</span></div>
+              <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.purple} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span style={{color:T.text,fontWeight:600}}>{sucCount}</span><span style={{color:T.textSm}}>sucursal{sucCount!==1?"es":""}</span></div>
               <div style={{width:1,background:T.borderL}}/>
               <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}><span style={{color:T.accent,fontWeight:700}}>{selOrders.length}</span><span style={{color:T.textSm}}>total</span></div>
             </div>
@@ -6882,7 +6891,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </div>
             )}
           </div>
-          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:10}}>📦 Paquete</div>
+          <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:10,display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>Paquete</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
             <Field T={T} label="Peso (g)"><input style={iS} type="number" value={exportCfg.peso} onChange={e=>setExportCfg(c=>({...c,peso:e.target.value}))} placeholder="200"/></Field>
             <Field T={T} label="Valor declarado ($)"><input style={iS} type="number" value={exportCfg.valor} onChange={e=>setExportCfg(c=>({...c,valor:e.target.value}))} placeholder="6000"/></Field>
@@ -6915,7 +6924,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         {esquinaModal&&(
           <div>
             <div style={{background:T.yellowBg||T.surface,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:6}}>⚠ Dirección en esquina detectada</div>
+              <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:6,display:"flex",alignItems:"center",gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Dirección en esquina detectada</div>
               <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>
                 Los siguientes pedidos tienen una dirección de Punto HOP en esquina (Esq.), lo que puede causar errores en la carga masiva de Andreani. <strong>No fueron incluidos en el Excel.</strong>
               </div>
@@ -7087,21 +7096,22 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 
   // Feed por categoría
   const CAT_META = {
-    reclamos: {label:"Reclamos", icon:"💬", color:T.red,    nav:"reclamos"},
-    stock:    {label:"Stock",    icon:"📊", color:T.red,    nav:"stock"},
-    canjes:   {label:"Canjes",  icon:"🤝", color:T.orange,  nav:"canjes"},
+    reclamos: {label:"Reclamos", icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>, color:T.red, nav:"reclamos"},
+    stock:    {label:"Stock",    icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, color:T.red, nav:"stock"},
+    canjes:   {label:"Canjes",  icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>, color:T.orange, nav:"canjes"},
   };
   const grouped = {
     reclamos: reclamosCount>0?[{
-      icon:"💬",titulo:`${reclamosCount} reclamo${reclamosCount!==1?"s":""} abierto${reclamosCount!==1?"s":""}`,
+      icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>,
+      titulo:`${reclamosCount} reclamo${reclamosCount!==1?"s":""} abierto${reclamosCount!==1?"s":""}`,
       sub:"Requieren seguimiento",badge:String(reclamosCount),badgeColor:T.red,accion:()=>onNavigate("reclamos"),
     }]:[],
     stock:[
-      ...stockAlertas.filter(a=>a.status==="empty").map(a=>({icon:"⛔",titulo:`Sin stock: ${a.producto}`,sub:a.variante,badge:"Sin stock",badgeColor:T.red,accion:()=>onNavigate("stock")})),
-      ...stockAlertas.filter(a=>a.status==="critical").map(a=>({icon:"🔴",titulo:`Stock crítico: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.red,accion:()=>onNavigate("stock")})),
-      ...stockAlertas.filter(a=>a.status==="low").map(a=>({icon:"⚠️",titulo:`Stock bajo: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.yellow,accion:()=>onNavigate("stock")})),
+      ...stockAlertas.filter(a=>a.status==="empty").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,titulo:`Sin stock: ${a.producto}`,sub:a.variante,badge:"Sin stock",badgeColor:T.red,accion:()=>onNavigate("stock")})),
+      ...stockAlertas.filter(a=>a.status==="critical").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,titulo:`Stock crítico: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.red,accion:()=>onNavigate("stock")})),
+      ...stockAlertas.filter(a=>a.status==="low").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.yellow||"#eab308"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,titulo:`Stock bajo: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.yellow,accion:()=>onNavigate("stock")})),
     ],
-    canjes: notificacionesCanjes.slice(0,4).map(n=>({icon:"🤝",titulo:n.canje.influencer,sub:n.msg,badge:"Pendiente",badgeColor:T.orange,accion:()=>onNavigate("canjes",n.canje._docId)})),
+    canjes: notificacionesCanjes.slice(0,4).map(n=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>,titulo:n.canje.influencer,sub:n.msg,badge:"Pendiente",badgeColor:T.orange,accion:()=>onNavigate("canjes",n.canje._docId)})),
   };
   const totalPendientes = Object.values(grouped).reduce((s,arr)=>s+arr.length,0);
   const [collapsedCats, setCollapsedCats] = React.useState({});
@@ -7130,7 +7140,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         <div>
           <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:4,fontWeight:DS.w.medium}}>{fechaCap}</div>
           <h1 style={{fontSize:DS.font["3xl"],fontWeight:DS.w.black,margin:"0 0 4px",letterSpacing:-0.5,lineHeight:1.15,color:T.text}}>
-            {saludo}, {nombre} 👋
+            {saludo}, {nombre}
           </h1>
           <p style={{margin:0,fontSize:DS.font.sm,color:T.textMd,fontWeight:DS.w.regular}}>¿Qué tenés que hacer hoy?</p>
         </div>
@@ -7162,16 +7172,16 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 
       {/* KPIs */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:DS.sp.md,marginBottom:DS.sp["2xl"]}} className="kpi-grid">
-        <KPI T={T} label="Facturado" value={fmtARS(curRevenue)} icon="💰" color={T.green}
+        <KPI T={T} label="Facturado" value={fmtARS(curRevenue)} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>} color={T.green}
           loading={orderStatsLoading}
           sub={subRevenue} onClick={()=>onNavigate("stock")}/>
-        <KPI T={T} label="Pedidos" value={fmt(curCount)} icon="📦" color={T.accentSolid}
+        <KPI T={T} label="Pedidos" value={fmt(curCount)} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>} color={T.accentSolid}
           loading={orderStatsLoading}
           sub={subCount} onClick={()=>onNavigate("envios")}/>
-        <KPI T={T} label="Reclamos abiertos" value={reclamosCount} icon="💬"
+        <KPI T={T} label="Reclamos abiertos" value={reclamosCount} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>}
           color={reclamosCount>0?T.red:T.green} accent={reclamosCount>0}
           sub={reclamosCount>0?"Requieren atención":"Todo en orden"} onClick={()=>onNavigate("reclamos")}/>
-        <KPI T={T} label="Stock crítico" value={stockAlertas.length} icon="⚠️"
+        <KPI T={T} label="Stock crítico" value={stockAlertas.length} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
           color={stockAlertas.length>0?T.red:T.green} accent={stockAlertas.length>0}
           sub={stockAlertas.length>0?"Productos en alerta":"Sin alertas"} onClick={()=>onNavigate("stock")}/>
       </div>
@@ -7259,7 +7269,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
             style={{marginTop:DS.sp.lg,padding:"11px 14px",background:`linear-gradient(135deg,${T.accentSolid}10,transparent)`,border:`1px solid ${T.accentSolid}33`,borderRadius:DS.r.md,cursor:"pointer",transition:`all 0.15s ${DS.ease}`,display:"flex",alignItems:"center",gap:10}}
             onMouseEnter={e=>e.currentTarget.style.borderColor=T.accentSolid+"66"}
             onMouseLeave={e=>e.currentTarget.style.borderColor=T.accentSolid+"33"}>
-            <span style={{fontSize:14}}>⚡</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             <div style={{flex:1}}>
               <div style={{fontSize:DS.font.xs,color:T.accent,fontWeight:DS.w.bold}}>Prueba gratuita activa</div>
               <div style={{fontSize:DS.font.xs,color:T.textSm}}>Suscribite al plan Pro para continuar →</div>
@@ -7363,12 +7373,11 @@ function AuthScreen({T, darkMode, onToggleDark}) {
           <div style={{fontSize:13,color:T.textSm,marginTop:4}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
           {switchingTo?.email && (
             <div style={{marginTop:10,padding:"8px 12px",background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,fontSize:12,color:T.text}}>
-              🔄 Cambiando a <strong>{switchingTo.email}</strong>{switchingTo.provider==="google.com"?" — entrá con Google":" — poné tu contraseña"}
+              Cambiando a <strong>{switchingTo.email}</strong>{switchingTo.provider==="google.com"?" — entrá con Google":" — poné tu contraseña"}
             </div>
           )}
           {mode==="register"&&(
             <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:10,background:"linear-gradient(135deg,#22c55e18,#22c55e08)",border:"1.5px solid #22c55e55",borderRadius:20,padding:"6px 14px"}}>
-              <span style={{fontSize:15}}>🎁</span>
               <span style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>7 días de prueba gratis</span>
               <span style={{fontSize:12,color:"#6b7280"}}>· sin tarjeta</span>
             </div>
@@ -7805,7 +7814,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:14}}>Cuenta</div>
           <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-            {user?.photoURL?<img src={user.photoURL} style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${T.border}`,flexShrink:0}} alt=""/>:<div style={{width:44,height:44,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>👤</div>}
+            {user?.photoURL?<img src={user.photoURL} style={{width:44,height:44,borderRadius:"50%",border:`2px solid ${T.border}`,flexShrink:0}} alt=""/>:<div style={{width:44,height:44,borderRadius:"50%",background:T.surface,border:`2px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.textSm}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>}
             <div style={{minWidth:0,flex:1}}>
               {editProfile ? (
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -7843,7 +7852,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           {/* Cambiar email de INICIO DE SESIÓN (Firebase Auth) */}
           <div style={{borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
             {!showLoginEmail ? (
-              <button onClick={()=>{setNewLoginEmail("");setLoginPassword("");setShowLoginEmail(true);}} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%"}}>🔑 Cambiar email de inicio de sesión</button>
+              <button onClick={()=>{setNewLoginEmail("");setLoginPassword("");setShowLoginEmail(true);}} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Cambiar email de inicio de sesión</button>
             ) : (
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Login actual: <strong style={{color:T.text}}>{user?.email}</strong>. Te vamos a mandar un link al email nuevo — el cambio se aplica recién cuando lo confirmás ahí (hasta entonces seguís entrando con el actual).</div>
@@ -7879,7 +7888,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   <button onClick={()=>{ghForgetAccount(a.email); setAcctBump(x=>x+1);}} title="Quitar de la lista" style={{background:"transparent",border:"none",color:T.textSm,fontSize:16,cursor:"pointer",padding:"0 4px"}}>×</button>
                 </div>
               ))}
-              <button onClick={()=>ghSwitchAccount("","")} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",marginTop:4}}>➕ Agregar / entrar a otra cuenta</button>
+              <button onClick={()=>ghSwitchAccount("","")} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",marginTop:4,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Agregar / entrar a otra cuenta</button>
             </div>
           ); })()}
         </div>
@@ -7893,7 +7902,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
           {/* Email info */}
           <div style={{marginBottom:16,padding:"14px",background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`}}>
-            <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8}}>📧 Sistema de emails</div>
+            <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Sistema de emails</div>
             <div style={{fontSize:11,color:T.textSm,lineHeight:1.8,marginBottom:10}}>
               <div><strong style={{color:T.text}}>Desde:</strong> notificaciones@growith.app</div>
               <div><strong style={{color:T.text}}>Vos recibís:</strong> entregas, consultas y actualizaciones → en <strong style={{color:T.accent}}>{userDoc?.email||user?.email}</strong></div>
@@ -7904,17 +7913,17 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               const r = await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"sendTestEmail",uid:user.uid,to:user.email})});
               const d = await r.json();
               if(!r.ok||d.error) {
-                appAlert(`❌ Error al enviar: ${d.error||"desconocido"}${d.detail?.status?" (HTTP "+d.detail.status+")":""}\n\nVerificá:\n• RESEND_API_KEY en Vercel\n• Dominio growith.app verificado en Resend`);
+                appAlert(`Error al enviar: ${d.error||"desconocido"}${d.detail?.status?" (HTTP "+d.detail.status+")":""}\n\nVerificá:\n• RESEND_API_KEY en Vercel\n• Dominio growith.app verificado en Resend`);
               } else {
-                toast("📧 Email de prueba enviado a "+user.email+" (id: "+d.id+")","success");
+                toast("Email de prueba enviado a "+user.email+" (id: "+d.id+")","success");
               }
             }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>
-              📧 Enviar email de prueba a {userDoc?.email||user?.email}
+              Enviar email de prueba a {userDoc?.email||user?.email}
             </AsyncButton>
           </div>
 
           {/* WhatsApp */}
-          <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:6}}>📱 Mi WhatsApp para notificaciones</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.text,marginBottom:6,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.7A2 2 0 012.18 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.16a16 16 0 006.93 6.93l1.42-1.42a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>Mi WhatsApp para notificaciones</div>
           <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Cuando un colaborador entrega trabajo, el botón "Avisar por WA" te escribe directo a este número.</div>
           <div style={{display:"flex",gap:8}}>
             <input value={adminWaPhone} onChange={e=>setAdminWaPhone(e.target.value)} placeholder="Ej: 5491112345678 (con código de país, sin +)" style={{...InputStyle(T),fontSize:13,flex:1}}/>
@@ -7934,7 +7943,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             {
               key:"tn", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : shStore ? "Desvinculá Shopify primero" : "No conectado",
               connected:!!tnStore, disabled:!!shStore && !tnStore, brand:"#00a0e3", iconBg:"#00a0e3",
-              icon:<span style={{fontSize:22,lineHeight:1}}>☁️</span>,
+              icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>,
               onConnect: connectTiendaNube, onDisconnect:()=>disconnectStore("tiendanube"),
             },
             {
@@ -7946,7 +7955,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             {
               key:"ml", label:"Mercado Libre / Mercado Pago", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "Incluye Mercado Pago — comisiones, cupones y envíos",
               connected:!!mlStore, disabled:false, brand:"#FFE600", iconBg:"#FFE600",
-              icon:<span style={{fontSize:20,lineHeight:1}}>🛒</span>,
+              icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57l1.65-7.74H6"/></svg>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
             },
             {
@@ -7993,19 +8002,19 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             else { ventas=u; const omp=others.find(a=>["mp","both"].includes(roleOf(a.userId))); mp=omp?omp.userId:"__none__"; }
             try{ await updateDoc(doc(db,"users",user.uid),{margenesMlMp:mp,margenesMlVentas:ventas}); toast("Guardado ✓","success"); }catch(e){ toast("Error: "+e.message,"error"); }
           };
-          const OPTS = [{k:"mp",lbl:"Shopify/TN",ico:"🛍️"},{k:"ml",lbl:"Mercado Libre",ico:"🛒"},{k:"both",lbl:"Ambos",ico:"⚡"}];
+          const OPTS = [{k:"mp",lbl:"Shopify/TN",ico:""},{k:"ml",lbl:"Mercado Libre",ico:""},{k:"both",lbl:"Ambos",ico:""}];
           return (
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginTop:14}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:4}}>
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6}}>Cuentas de Mercado Libre / Mercado Pago</div>
               </div>
               <details style={{marginBottom:12}}>
-                <summary style={{cursor:"pointer",fontSize:11,color:T.accent,fontWeight:600,marginBottom:6}}>ℹ️ Cómo funciona (tocá para desplegar)</summary>
+                <summary style={{cursor:"pointer",fontSize:11,color:T.accent,fontWeight:600,marginBottom:6}}>Cómo funciona (tocá para desplegar)</summary>
                 <div style={{fontSize:11,color:T.textMd,lineHeight:1.7,padding:"8px 10px",background:T.surface,borderRadius:8,marginTop:6}}>
                   Cada cuenta de ML trae DOS cosas: tus <strong style={{color:T.text}}>ventas de Mercado Libre</strong> y el <strong style={{color:T.text}}>token para leer los pagos de MP</strong> (comisiones reales de tu Shopify/TN). Elegí de dónde saca cada cosa Growith:
-                  <div style={{marginTop:6}}>• <strong style={{color:T.text}}>🛍️ Shopify/TN:</strong> se usa SOLO para leer los pagos de MP → aparece en las <strong style={{color:T.text}}>comisiones</strong> de tus ventas de Shopify/TN en Márgenes. NO importa ventas de ML.</div>
-                  <div>• <strong style={{color:T.text}}>🛒 Mercado Libre:</strong> se usa SOLO para importar tus ventas de ML → aparecen en <strong style={{color:T.text}}>Stock, Márgenes (canal ML) y el Facturador</strong>. NO toca las comisiones de Shopify.</div>
-                  <div>• <strong style={{color:T.text}}>⚡ Ambos:</strong> esta cuenta hace las dos cosas (setup de una sola tienda). Si ponés "Ambos", no podés agregar más cuentas.</div>
+                  <div style={{marginTop:6}}>• <strong style={{color:T.text}}>Shopify/TN:</strong> se usa SOLO para leer los pagos de MP → aparece en las <strong style={{color:T.text}}>comisiones</strong> de tus ventas de Shopify/TN en Márgenes. NO importa ventas de ML.</div>
+                  <div>• <strong style={{color:T.text}}>Mercado Libre:</strong> se usa SOLO para importar tus ventas de ML → aparecen en <strong style={{color:T.text}}>Stock, Márgenes (canal ML) y el Facturador</strong>. NO toca las comisiones de Shopify.</div>
+                  <div>• <strong style={{color:T.text}}>Ambos:</strong> esta cuenta hace las dos cosas (setup de una sola tienda). Si ponés "Ambos", no podés agregar más cuentas.</div>
                   <div style={{marginTop:6,color:T.textSm}}>Ejemplo 2 tiendas con MP compartido: la cuenta del MP compartido → <strong style={{color:T.text}}>Shopify/TN</strong>; el ML propio de esta tienda → <strong style={{color:T.text}}>Mercado Libre</strong>.</div>
                 </div>
               </details>
@@ -8014,10 +8023,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   const role = roleOf(a.userId);
                   return (
                     <div key={a.userId} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                      <div style={{fontSize:13,fontWeight:600,color:T.text,flex:1,minWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🛒 {a.nombre}</div>
+                      <div style={{fontSize:13,fontWeight:600,color:T.text,flex:1,minWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre}</div>
                       <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                         {OPTS.map(o=>(
-                          <button key={o.k} onClick={()=>setRole(a.userId,o.k)} style={{fontSize:11,fontWeight:role===o.k?700:500,padding:"5px 10px",borderRadius:7,border:`1.5px solid ${role===o.k?T.accent:T.border}`,background:role===o.k?T.accent+"18":"transparent",color:role===o.k?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{o.ico} {o.lbl}</button>
+                          <button key={o.k} onClick={()=>setRole(a.userId,o.k)} style={{fontSize:11,fontWeight:role===o.k?700:500,padding:"5px 10px",borderRadius:7,border:`1.5px solid ${role===o.k?T.accent:T.border}`,background:role===o.k?T.accent+"18":"transparent",color:role===o.k?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{o.lbl}</button>
                         ))}
                       </div>
                     </div>
@@ -8034,14 +8043,14 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
         {(shStore || mlStore) && (
           <details style={{background:T.card,border:`1px solid ${T.yellow||"#eab308"}55`,borderRadius:12,padding:"14px 18px",marginTop:14}}>
             <summary style={{cursor:"pointer",fontSize:13,fontWeight:700,color:T.yellow||"#eab308",listStyle:"none",display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:16}}>⚠</span> ¿Ya conectaste pero no aparecen publicaciones en Stock o Gestión ML?
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ¿Ya conectaste pero no aparecen publicaciones en Stock o Gestión ML?
             </summary>
             <div style={{marginTop:12,fontSize:12,color:T.textMd,lineHeight:1.65}}>
               Tu cuenta está vinculada pero la app que creaste necesita permisos adicionales para leer productos. Esto sucede cuando creaste la app antes que Growith soportara el módulo Stock.
 
               {shStore && (
                 <div style={{marginTop:14,padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>🛍️ Shopify — agregar scope <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>read_products</code></div>
+                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>Shopify — agregar scope <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>read_products</code></div>
                   <ol style={{margin:0,paddingLeft:18}}>
                     <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> → abrí <strong style={{color:T.text}}>tu app de Growith</strong></li>
                     <li>Andá a <strong style={{color:T.text}}>Versiones</strong> → tocá <strong style={{color:T.text}}>"Crear versión"</strong> (a partir de la última)</li>
@@ -8054,7 +8063,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
               {mlStore && (
                 <div style={{marginTop:14,padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>🛒 Mercado Libre — habilitar permiso <em>Publicación y sincronización</em></div>
+                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>Mercado Libre — habilitar permiso <em>Publicación y sincronización</em></div>
                   <ol style={{margin:0,paddingLeft:18}}>
                     <li>Entrá a <a href="https://developers.mercadolibre.com.ar/devcenter" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>developers.mercadolibre.com.ar/devcenter</a> con el mismo usuario ML</li>
                     <li><strong style={{color:T.text}}>Mis aplicaciones</strong> → abrí tu app de Growith → tocá <strong style={{color:T.text}}>Editar</strong></li>
@@ -8070,7 +8079,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               )}
 
               <div style={{marginTop:12,fontSize:11,color:T.textSm}}>
-                💡 Después de reconectar, andá a Stock → Items o a Mercado Libre y tocá <strong style={{color:T.text}}>Refrescar</strong>. Si no aparece, tocá el botón <strong style={{color:T.text}}>🔍 Diagnosticar conexión</strong> y mostrame el resultado.
+                Después de reconectar, andá a Stock → Items o a Mercado Libre y tocá <strong style={{color:T.text}}>Refrescar</strong>. Si no aparece, tocá el botón <strong style={{color:T.text}}>Diagnosticar conexión</strong> y mostrame el resultado.
               </div>
             </div>
           </details>
@@ -8089,7 +8098,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               </div>
 
               <div style={{padding:12,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:16,fontSize:11,color:T.textMd,lineHeight:1.65}}>
-                <div style={{fontWeight:700,color:T.text,marginBottom:6}}>📖 Crear tu app en Shopify (3 minutos)</div>
+                <div style={{fontWeight:700,color:T.text,marginBottom:6}}>Crear tu app en Shopify (3 minutos)</div>
                 <ol style={{margin:0,paddingLeft:18}}>
                   <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> → <strong style={{color:T.text}}>"Crear app"</strong> → nombre "Growith"</li>
                   <li>"Versiones" → <strong style={{color:T.text}}>"Crear versión"</strong> → en "Acceso" → Seleccionar alcances <strong style={{color:T.text}}>(marcá todos)</strong>:
@@ -8102,7 +8111,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                     </div>
                     <div style={{fontSize:9,color:T.textSm,marginTop:3}}><strong>read_products</strong> es indispensable para Stock y Análisis. Si tu app vieja no lo tenía, creá una versión nueva ahora y publicala.</div>
                   </li>
-                  <li>⚠ En esa misma versión, agregá esta <strong style={{color:T.text}}>URL de redireccionamiento</strong>:
+                  <li>En esa misma versión, agregá esta <strong style={{color:T.text}}>URL de redireccionamiento</strong>:
                     <div style={{marginTop:3,padding:"4px 7px",background:T.surface,borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:9,wordBreak:"break-all"}}>{`https://www.growithapp.com/api/integrations?platform=shopify`}</div>
                   </li>
                   <li>Publicar la versión</li>
@@ -8148,7 +8157,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:480,padding:"24px 28px",animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div style={{width:40,height:40,borderRadius:10,background:"#FFE600",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>🛒</div>
+                  <div style={{width:40,height:40,borderRadius:10,background:"#FFE600",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#1a1a1a"}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div>
                   <div>
                     <div style={{fontSize:16,fontWeight:700,color:T.text}}>Conectar Mercado Libre</div>
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Se abre ML para que autorices el acceso a tu cuenta</div>
@@ -8192,10 +8201,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               </div>
 
               <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:11,color:T.textMd,lineHeight:1.65,marginBottom:14}}>
-                <div style={{fontWeight:700,color:T.text,marginBottom:8}}>📋 Cómo generar tu System User Token (5-8 min)</div>
+                <div style={{fontWeight:700,color:T.text,marginBottom:8}}>Cómo generar tu System User Token (5-8 min)</div>
 
                 <div style={{marginBottom:10,padding:"8px 11px",background:T.yellowBg,border:`1.5px solid ${T.yellow||"#eab308"}44`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5,boxShadow:`0 0 0 1px ${T.yellow||"#eab308"}18, 0 4px 12px ${T.yellow||"#eab308"}14`}}>
-                  ⚡ <strong style={{color:T.text}}>Antes de empezar:</strong> necesitás <strong style={{color:T.text}}>una app en Meta for Developers</strong> (no importa cuál, sirve cualquiera). Si no tenés, mirá el desplegable de abajo — se crea en 1 minuto.
+                  <strong style={{color:T.text}}>Antes de empezar:</strong> necesitás <strong style={{color:T.text}}>una app en Meta for Developers</strong> (no importa cuál, sirve cualquiera). Si no tenés, mirá el desplegable de abajo — se crea en 1 minuto.
                 </div>
 
                 <details style={{marginBottom:12,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8}}>
@@ -8324,7 +8333,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
 
   // Plan único — Pro (id Firestore: "plus", NO cambiar)
   const PLAN={
-    id:"plus", nombre:"Pro", color:"#6366f1", icon:"⚡",
+    id:"plus", nombre:"Pro", color:"#6366f1", icon:"",
     precio_usdt:59, precio_ars:59000,
     precio_usdt_anual:49, precio_ars_anual:49000,
     precio_normal:120,
@@ -8400,17 +8409,17 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
         <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
           <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
-          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.icon} {PLAN.nombre}</div>
+          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}</div>
           <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${precioU} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USDT/mes</span></div>
         </div>
         <div style={{marginBottom:20}}>
           <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${precioU} USDT (TRC20) a:</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
             <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"monospace"}}>{USDT_ADDRESS}</code>
-            <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);toast("Dirección copiada","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0}}>📋</button>
+            <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);toast("Dirección copiada","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:T.yellowBg,border:`0.5px solid ${T.yellow}44`,borderRadius:8}}>
-            <span>⚠️</span><span style={{fontSize:12,color:T.yellow}}>Solo USDT en red TRC20. Otras redes o monedas no serán recuperadas.</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:12,color:T.yellow}}>Solo USDT en red TRC20. Otras redes o monedas no serán recuperadas.</span>
           </div>
         </div>
         <div style={{marginBottom:16}}>
@@ -8440,7 +8449,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
         <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
           <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
-          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.icon} {PLAN.nombre}</div>
+          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}</div>
           <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${precioARS.toLocaleString("es-AR")} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>ARS/mes</span></div>
         </div>
         <div style={{marginBottom:20}}>
@@ -8455,7 +8464,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
               <div key={i} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<3?`1px solid ${T.borderL}`:"none"}}>
                 <span style={{fontSize:12,color:T.textSm,width:65,flexShrink:0}}>{row.label}</span>
                 <span style={{flex:1,fontSize:13,color:T.text,fontFamily:row.label==="CVU"||row.label==="Alias"?"monospace":"inherit",wordBreak:"break-all"}}>{row.value}</span>
-                <button onClick={()=>{navigator.clipboard.writeText(row.value);toast(`${row.label} copiado`,"success");}} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:11,flexShrink:0,marginLeft:8}}>📋</button>
+                <button onClick={()=>{navigator.clipboard.writeText(row.value);toast(`${row.label} copiado`,"success");}} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:11,flexShrink:0,marginLeft:8,display:"flex",alignItems:"center"}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
               </div>
             ))}
           </div>
@@ -8499,7 +8508,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
             style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:12,padding:"22px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,transition:"border-color 0.15s"}}
             onMouseEnter={e=>e.currentTarget.style.borderColor=T.blue}
             onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-            <div style={{fontSize:36,flexShrink:0,lineHeight:1}}>🏦</div>
+            <div style={{fontSize:36,flexShrink:0,lineHeight:1,display:"flex",alignItems:"center",color:T.textSm}}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg></div>
             <div>
               <div style={{fontSize:16,fontWeight:700,color:T.text}}>Transferencia bancaria (ARS)</div>
               <div style={{fontSize:13,color:T.textMd,marginTop:2}}>${precioARS.toLocaleString("es-AR")} ARS/mes</div>
@@ -8525,14 +8534,14 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
         {/* Banner trial vencido o hero normal */}
         {isTrialExpired?(
           <div style={{background:"#ef444412",border:"1px solid #ef444440",borderRadius:14,padding:"18px 22px",marginBottom:32,textAlign:"center"}}>
-            <div style={{fontSize:28,marginBottom:8}}>⏰</div>
+            <div style={{display:"flex",justifyContent:"center",marginBottom:8}}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
             <div style={{fontSize:18,fontWeight:800,color:"#ef4444",marginBottom:6}}>Tu prueba gratuita terminó</div>
             <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Suscribite para seguir usando Growith y no perder tus datos.</div>
           </div>
         ):(
           <div style={{textAlign:"center",marginBottom:32}}>
             <div style={{display:"inline-block",background:"#6366f118",border:"1px solid #6366f130",borderRadius:20,padding:"4px 14px",fontSize:11,fontWeight:700,color:"#6366f1",letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:14}}>
-              🚀 Precio de lanzamiento
+              Precio de lanzamiento
             </div>
             <h1 style={{fontSize:28,fontWeight:900,color:T.text,letterSpacing:-0.5,margin:"0 0 10px",lineHeight:1.2}}>
               Todo lo que tu tienda necesita,<br/>
@@ -8547,7 +8556,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
         {/* Plan activo */}
         {isPago&&(
           <div style={{background:"#6366f110",border:"1px solid #6366f140",borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-            <span style={{fontSize:16}}>⚡</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             <div style={{flex:1}}>
               <span style={{fontSize:13,fontWeight:700,color:"#6366f1"}}>Plan Pro activo</span>
               {planExpiry&&<span style={{fontSize:12,color:T.textSm,marginLeft:10}}>· Vence: {planExpiry.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}</span>}
@@ -8572,7 +8581,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
         {/* Card plan único */}
         <div style={{background:T.card,border:`2px solid #6366f1`,borderRadius:20,padding:"28px 28px 24px",boxShadow:"0 8px 32px #6366f118",position:"relative",marginBottom:28}}>
           <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:"linear-gradient(135deg,#6366f1,#818cf8)",color:"#fff",fontSize:10,fontWeight:800,padding:"3px 16px",borderRadius:20,whiteSpace:"nowrap",letterSpacing:"0.05em"}}>
-            ⚡ PLAN PRO
+            PLAN PRO
           </div>
 
           {/* Precio */}
@@ -8583,7 +8592,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
               <span style={{fontSize:15,color:T.textSm,marginBottom:10}}>USD/mes</span>
             </div>
             <div style={{fontSize:13,color:T.textSm}}>${precioARS.toLocaleString("es-AR")} ARS / mes</div>
-            {anual&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600,marginTop:4}}>🎉 Ahorrás ${(PLAN.precio_usdt-PLAN.precio_usdt_anual)*12} USD al año (2 meses gratis)</div>}
+            {anual&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600,marginTop:4}}>Ahorrás ${(PLAN.precio_usdt-PLAN.precio_usdt_anual)*12} USD al año (2 meses gratis)</div>}
             {!anual&&<div style={{fontSize:11,color:"#6366f1",fontWeight:600,marginTop:6}}>o ${PLAN.precio_usdt_anual} USD/mes pagando anual</div>}
           </div>
 
@@ -8608,7 +8617,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
 
         {/* Trust pills */}
         <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap",marginBottom:36}}>
-          {["🔒 Sin renovación automática","⚡ Activación en menos de 24hs","💬 Soporte por WhatsApp"].map((t,i)=>(
+          {["Sin renovación automática","Activación en menos de 24hs","Soporte por WhatsApp"].map((t,i)=>(
             <div key={i} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"6px 14px",fontSize:11,color:T.textMd}}>{t}</div>
           ))}
         </div>
@@ -8767,7 +8776,7 @@ function AppAdmin({T, user, onBack}) {
       pagos: prev.pagos.map(x => x._id===p._id ? {...x, estado:"confirmado", mesesConfirmados:meses} : x),
       usuarios: prev.usuarios.map(u => u._id===p.uid ? {...u, plan:p.plan, planExpiry:d.expiry} : u),
     }));
-    toast(`✅ Plan ${p.plan} activado por ${meses} mes${meses>1?"es":""}`, "success");
+    toast(`Plan ${p.plan} activado por ${meses} mes${meses>1?"es":""}`, "success");
   }
 
   async function rechazarPago(pagoId) {
@@ -8798,14 +8807,14 @@ function AppAdmin({T, user, onBack}) {
     const label = `${cant} ${unidad==="dias"?`día${cant>1?"s":""}`:cant===1?"mes":"meses"} de ${plan}`;
     if (!await appConfirm(
       isTrial ? `¿Activar ${label} como PRUEBA (no cuenta como ingreso)?` : `¿Activar ${label}?`,
-      {okLabel: isTrial ? "🎁 Activar prueba" : "💳 Activar"}
+      {okLabel: isTrial ? "Activar prueba" : "Activar"}
     )) return;
     const d = await adminApi({action:"gestionarPlan", targetUid:uid, plan, cantidad:cant, unidad, isTrial});
     setDatos(prev => ({
       ...prev,
       usuarios: prev.usuarios.map(u => u._id===uid ? {...u, plan, planExpiry:d.expiry, isTrial:!!isTrial} : u),
     }));
-    toast(isTrial ? `🎁 Prueba ${label} activada` : `💳 ${label} activado`, isTrial?"warning":"success");
+    toast(isTrial ? `Prueba ${label} activada` : `${label} activado`, isTrial?"warning":"success");
   }
 
   async function ajustarDias(uid, dias) {
@@ -8844,7 +8853,7 @@ function AppAdmin({T, user, onBack}) {
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:12}}>← Inicio</button>
-          <span style={{fontWeight:700,fontSize:15,color:T.yellow}}>👑 Admin</span>
+          <span style={{fontWeight:700,fontSize:15,color:T.yellow}}>Admin</span>
           {pagosPendientes.length>0&&(
             <span style={{background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 8px"}}>
               {pagosPendientes.length} pendiente{pagosPendientes.length>1?"s":""}
@@ -8858,9 +8867,9 @@ function AppAdmin({T, user, onBack}) {
       <div style={{maxWidth:960,margin:"0 auto",padding:"16px 20px 0"}}>
         <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:0,marginBottom:20,width:"fit-content"}}>
           {[
-            ["resumen", pagosPendientes.length>0 ? `📊 Resumen  🔴${pagosPendientes.length}` : "📊 Resumen"],
-            ["usuarios", "👥 Usuarios"],
-            ["secciones", "🔐 Secciones"],
+            ["resumen", pagosPendientes.length>0 ? `Resumen  ·${pagosPendientes.length}` : "Resumen"],
+            ["usuarios", "Usuarios"],
+            ["secciones", "Secciones"],
           ].map(([id,label])=>(
             <button key={id} onClick={()=>setTab(id)} style={tabStyle(id)}>{label}</button>
           ))}
@@ -8879,10 +8888,10 @@ function AppAdmin({T, user, onBack}) {
           {/* KPIs */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
             {[
-              {icon:"💰",label:"MRR",value:stats.mrrUsdt?`$${stats.mrrUsdt} USDT`:"$0",sub:stats.mrrArs?`$${(stats.mrrArs).toLocaleString("es-AR")} ARS/mes`:"sin ingresos aún",color:stats.mrrUsdt?T.green:T.textSm},
-              {icon:"👤",label:"Suscripciones activas",value:totalPagando,sub:totalPrueba>0?`+ ${totalPrueba} prueba`:`${stats.totalUsuarios||0} usuarios totales`,color:totalPagando>0?T.blue:T.textSm},
-              {icon:pagosPendientes.length>0?"🔴":"✅",label:"Pagos pendientes",value:pagosPendientes.length,sub:pagosPendientes.length>0?"requieren tu atención":"todo al día",color:pagosPendientes.length>0?T.red:T.textSm},
-              {icon:vencenProximos.length>0?"⚠️":"📅",label:"Vencen esta semana",value:vencenProximos.length,sub:vencenProximos.length>0?"considerar extender":"sin vencimientos próximos",color:vencenProximos.length>0?T.yellow:T.textSm},
+              {icon:"$",label:"MRR",value:stats.mrrUsdt?`$${stats.mrrUsdt} USDT`:"$0",sub:stats.mrrArs?`$${(stats.mrrArs).toLocaleString("es-AR")} ARS/mes`:"sin ingresos aún",color:stats.mrrUsdt?T.green:T.textSm},
+              {icon:"u",label:"Suscripciones activas",value:totalPagando,sub:totalPrueba>0?`+ ${totalPrueba} prueba`:`${stats.totalUsuarios||0} usuarios totales`,color:totalPagando>0?T.blue:T.textSm},
+              {icon:pagosPendientes.length>0?"!":"✓",label:"Pagos pendientes",value:pagosPendientes.length,sub:pagosPendientes.length>0?"requieren tu atención":"todo al día",color:pagosPendientes.length>0?T.red:T.textSm},
+              {icon:vencenProximos.length>0?"!":"·",label:"Vencen esta semana",value:vencenProximos.length,sub:vencenProximos.length>0?"considerar extender":"sin vencimientos próximos",color:vencenProximos.length>0?T.yellow:T.textSm},
             ].map((k,i)=>(
               <div key={i} style={{background:T.card,border:`1px solid ${i===2&&pagosPendientes.length>0?T.red+"55":T.border}`,borderRadius:12,padding:"16px 18px"}}>
                 <div style={{fontSize:18,marginBottom:6}}>{k.icon}</div>
@@ -8897,7 +8906,7 @@ function AppAdmin({T, user, onBack}) {
           {pagosPendientes.length>0&&(
             <div style={{background:T.card,border:`1px solid ${T.red}44`,borderLeft:`3px solid ${T.red}`,borderRadius:12,marginBottom:20,overflow:"hidden"}}>
               <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:13,fontWeight:700,color:T.red}}>🔴 Pagos a confirmar</span>
+                <span style={{fontSize:13,fontWeight:700,color:T.red}}>Pagos a confirmar</span>
                 <span style={{fontSize:12,color:T.textSm}}>Revisá y confirmá o rechazá cada transferencia</span>
               </div>
               {pagosPendientes.map((p,i)=>{
@@ -8908,7 +8917,7 @@ function AppAdmin({T, user, onBack}) {
                       <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>{u?.email||p.email||p.uid}</div>
                       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                         <span style={{fontSize:11,padding:"2px 8px",borderRadius:5,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{p.plan}</span>
-                        {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"🏦 ARS"}</span>}
+                        {p.method&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.method==="cripto"?T.greenBg:T.blueBg,color:p.method==="cripto"?T.green:T.blue}}>{p.method==="cripto"?"₮ USDT":"ARS"}</span>}
                         {p.transferRef&&<span style={{fontSize:11,color:T.textSm}}>Ref: <strong style={{color:T.text}}>{p.transferRef}</strong></span>}
                         {p.txHash&&<span style={{fontSize:11,color:T.textSm,fontFamily:"monospace"}}>TX: {p.txHash.slice(0,16)}…</span>}
                         <span style={{fontSize:11,color:T.textSm}}>{fmtDateFull(p.createdAt)}</span>
@@ -8932,7 +8941,7 @@ function AppAdmin({T, user, onBack}) {
           {/* Vencen pronto */}
           {vencenProximos.length>0&&(
             <div style={{background:T.card,border:`1px solid ${T.yellow}44`,borderLeft:`3px solid ${T.yellow}`,borderRadius:12,marginBottom:20,overflow:"hidden"}}>
-              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:700,color:T.yellow}}>⚠️ Vencen esta semana</div>
+              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:700,color:T.yellow,display:"flex",alignItems:"center",gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Vencen esta semana</div>
               {vencenProximos.map((u,i)=>{
                 const days = daysUntil(u.planExpiry);
                 return (
@@ -8963,8 +8972,8 @@ function AppAdmin({T, user, onBack}) {
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px"}}>
               <div style={{fontSize:10,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Distribución de planes</div>
               {[
-                {plan:"full",label:"💎 Scale",paid:stats.usuariosFull||0,trial:stats.usuariosFull_trial||0,price:"$89 USDT/mes"},
-                {plan:"plus",label:"⚡ Pro",paid:stats.usuariosPlus||0,trial:stats.usuariosPlus_trial||0,price:"$49 USDT/mes"},
+                {plan:"full",label:"Scale",paid:stats.usuariosFull||0,trial:stats.usuariosFull_trial||0,price:"$89 USDT/mes"},
+                {plan:"plus",label:"Pro",paid:stats.usuariosPlus||0,trial:stats.usuariosPlus_trial||0,price:"$49 USDT/mes"},
               ].map(({plan,label,paid,trial,price})=>(
                 <div key={plan} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
                   <div>
@@ -9022,7 +9031,7 @@ function AppAdmin({T, user, onBack}) {
                   const est = p.estado;
                   return (
                     <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom:i<recent.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
-                      <span style={{fontSize:16,width:22,textAlign:"center",flexShrink:0}}>{p.isTrial?"🎁":est==="confirmado"?"✅":est==="rechazado"?"❌":"⏳"}</span>
+                      <span style={{fontSize:11,width:22,textAlign:"center",flexShrink:0,fontWeight:700,color:p.isTrial?T.yellow:est==="confirmado"?T.green:est==="rechazado"?T.red:T.textSm}}>{p.isTrial?"P":est==="confirmado"?"✓":est==="rechazado"?"✕":"·"}</span>
                       <span style={{flex:1,fontSize:12,color:T.text,minWidth:130}}>{u?.email||p.email||p.uid}</span>
                       <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{p.plan}</span>
                       {!p.isTrial&&Number(p.amount)>0&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.currency==="USDT"?T.greenBg:T.blueBg,color:p.currency==="USDT"?T.green:T.blue}}>${p.amount} {p.currency}</span>}
@@ -9050,9 +9059,9 @@ function AppAdmin({T, user, onBack}) {
           <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
             {[
               ["todos","Todos",usuarios.length],
-              ["full","💎 Scale",usuarios.filter(u=>u.plan==="full"&&!u.isTrial).length],
-              ["plus","⚡ Pro",usuarios.filter(u=>u.plan==="plus"&&!u.isTrial).length],
-              ["prueba","🎁 Prueba",usuarios.filter(u=>u.isTrial).length],
+              ["full","Scale",usuarios.filter(u=>u.plan==="full"&&!u.isTrial).length],
+              ["plus","Pro",usuarios.filter(u=>u.plan==="plus"&&!u.isTrial).length],
+              ["prueba","Prueba",usuarios.filter(u=>u.isTrial).length],
               ["free","Free",usuarios.filter(u=>(u.plan||"free")==="free"&&!u.isTrial).length],
             ].map(([id,label,count])=>(
               <button key={id} onClick={()=>setFilterPlan(id)} style={pillStyle(filterPlan===id)}>
@@ -9081,14 +9090,14 @@ function AppAdmin({T, user, onBack}) {
                     <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}</div>
                     <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                       <span style={{fontSize:11,padding:"1px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[u.plan||"free"]||T.surface,color:PLAN_C[u.plan||"free"]||T.textSm}}>{u.plan||"free"}</span>
-                      {u.isTrial&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>🎁 prueba</span>}
+                      {u.isTrial&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>prueba</span>}
                       {u.planExpiry&&u.plan!=="free"&&days!==null&&(
                         <span style={{fontSize:11,color:expiryColor}}>
                           {days<0?`vencido hace ${Math.abs(days)}d`:days===0?"vence hoy":`${days}d restantes`}
                         </span>
                       )}
-                      {u.isAdmin&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:"#7c3aed22",color:"#a78bfa"}}>🔐 admin</span>}
-                      {u.adminNote&&<span style={{fontSize:10,color:T.textSm}}>📝</span>}
+                      {u.isAdmin&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:4,fontWeight:700,background:"#7c3aed22",color:"#a78bfa"}}>admin</span>}
+                      {u.adminNote&&<span style={{fontSize:10,color:T.textSm,fontStyle:"italic"}}>nota</span>}
                     </div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
@@ -9107,9 +9116,9 @@ function AppAdmin({T, user, onBack}) {
                         <span style={{fontSize:13,color:T.textSm}}>Plan gratuito — sin suscripción activa</span>
                       ):(
                         <>
-                          <span style={{fontSize:14,fontWeight:700,color:PLAN_C[u.plan]}}>{u.plan==="plus"?"⚡ Pro":"💎 Scale"}</span>
-                          {u.isTrial&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>🎁 PRUEBA</span>}
-                          {days!==null&&<span style={{fontSize:13,fontWeight:600,color:expiryColor}}>{days<0?`⛔ Vencido hace ${Math.abs(days)}d`:days===0?"⚠️ Vence hoy":`✅ ${days}d restantes`}</span>}
+                          <span style={{fontSize:14,fontWeight:700,color:PLAN_C[u.plan]}}>{u.plan==="plus"?"Pro":"Scale"}</span>
+                          {u.isTrial&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.yellowBg,color:T.yellow}}>PRUEBA</span>}
+                          {days!==null&&<span style={{fontSize:13,fontWeight:600,color:expiryColor}}>{days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Vence hoy":`${days}d restantes`}</span>}
                           {u.planExpiry&&<span style={{fontSize:12,color:T.textSm}}>hasta {fmtDate(u.planExpiry)}</span>}
                         </>
                       )}
@@ -9121,9 +9130,9 @@ function AppAdmin({T, user, onBack}) {
                       const tot=u_?.totales||{etiquetas:0,skus:0,seguimientos:0};
                       const rows=(u_?.usage||[]).filter(r=>(r.etiquetas||0)+(r.skus||0)+(r.seguimientos||0)>0);
                       const METRICS=[
-                        {key:"etiquetas",label:"Etiquetas",icon:"📦",color:T.blue},
-                        {key:"skus",label:"SKUs",icon:"🏷️",color:T.accent},
-                        {key:"seguimientos",label:"Seguimientos",icon:"🔔",color:T.green},
+                        {key:"etiquetas",label:"Etiquetas",icon:"",color:T.blue},
+                        {key:"skus",label:"SKUs",icon:"",color:T.accent},
+                        {key:"seguimientos",label:"Seguimientos",icon:"",color:T.green},
                       ];
                       const maxDay=Math.max(1,...rows.map(r=>Math.max(r.etiquetas||0,r.skus||0,r.seguimientos||0)));
                       return (
@@ -9177,8 +9186,8 @@ function AppAdmin({T, user, onBack}) {
                       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:u.plan!=="free"?10:0}}>
                         <select value={selPlan} onChange={e=>setUPlan(prev=>({...prev,[u._id]:e.target.value}))}
                           style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}>
-                          <option value="plus">⚡ Pro</option>
-                          <option value="full">💎 Scale</option>
+                          <option value="plus">Pro</option>
+                          <option value="full">Scale</option>
                         </select>
                         <input type="number" min="1" value={uCantidad[u._id]||"1"}
                           onChange={e=>setUCantidad(prev=>({...prev,[u._id]:e.target.value}))}
@@ -9190,11 +9199,11 @@ function AppAdmin({T, user, onBack}) {
                         </select>
                         <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", false)}
                           style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",background:selPlan==="plus"?T.blue:T.purple}}>
-                          💳 Activar
+                          Activar
                         </AsyncButton>
                         <AsyncButton onClick={()=>gestionarPlan(u._id, selPlan, uCantidad[u._id]||1, uUnidad[u._id]||"meses", true)}
                           style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.yellow,border:`1px solid ${T.yellow}44`}}>
-                          🎁 Prueba
+                          Prueba
                         </AsyncButton>
                       </div>
                       {u.plan!=="free"&&(
@@ -9254,14 +9263,14 @@ function AppAdmin({T, user, onBack}) {
                     {/* Acceso Admin */}
                     <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
                       <div>
-                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>🔐 Acceso Admin</div>
+                        <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Acceso Admin</div>
                         <div style={{fontSize:11,color:T.textSm}}>Permite ver secciones exclusivas de administrador (Rendimiento, etc.)</div>
                       </div>
                       <AsyncButton onClick={async()=>{
                         const d=await adminApi({action:"toggleAdmin",targetUid:u._id});
                         if(d.ok) setDatos(prev=>({...prev,usuarios:prev.usuarios.map(x=>x._id===u._id?{...x,isAdmin:d.isAdmin}:x)}));
                       }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px",color:u.isAdmin?T.red:T.green,borderColor:u.isAdmin?T.red+"44":T.green+"44",flexShrink:0}}>
-                        {u.isAdmin?"🔴 Quitar admin":"🟢 Dar admin"}
+                        {u.isAdmin?"Quitar admin":"Dar admin"}
                       </AsyncButton>
                     </div>
 
@@ -9274,7 +9283,7 @@ function AppAdmin({T, user, onBack}) {
                           <div key={p._id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,padding:"7px 10px",background:T.surface,borderRadius:8,marginBottom:6}}>
                             <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{p.plan}</span>
                             {p.isTrial
-                              ? <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>🎁 prueba</span>
+                              ? <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>prueba</span>
                               : Number(p.amount)>0&&<span style={{color:T.textMd,fontWeight:600}}>${p.amount} {p.currency}</span>
                             }
                             <span style={{padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.estado==="confirmado"?T.greenBg:p.estado==="pendiente"?T.yellowBg:T.redBg,color:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red}}>{p.estado}</span>
@@ -9297,7 +9306,7 @@ function AppAdmin({T, user, onBack}) {
       {tab==="secciones"&&(
         <div style={{maxWidth:720,margin:"0 auto",padding:"0 20px"}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
-            <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>🔐 Control de acceso por sección</div>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Control de acceso por sección</div>
             <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>
               Las secciones marcadas como <strong style={{color:T.accent}}>solo admin</strong> se ocultan del sidebar y son inaccesibles para usuarios comunes.
               Solo vos y quienes tengan el flag de admin pueden verlas.
@@ -9327,10 +9336,10 @@ function AppAdmin({T, user, onBack}) {
                     <div style={{fontSize:11,color:T.textSm,marginTop:1}}>{s.desc}</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-                    {isAdminOnly && <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.accentSolid+"18",color:T.accentSolid}}>🔐 Solo admin</span>}
+                    {isAdminOnly && <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:T.accentSolid+"18",color:T.accentSolid}}>Solo admin</span>}
                     <button disabled={savingSections} onClick={()=>toggleSection(s.id)}
                       style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${isAdminOnly?T.red+"44":T.accentSolid+"55"}`,borderRadius:8,background:"transparent",color:isAdminOnly?T.red:T.accentSolid,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:savingSections?0.5:1,whiteSpace:"nowrap"}}>
-                      {isAdminOnly?"🔓 Hacer pública":"🔒 Solo admin"}
+                      {isAdminOnly?"Hacer pública":"Solo admin"}
                     </button>
                   </div>
                 </div>
@@ -9339,7 +9348,7 @@ function AppAdmin({T, user, onBack}) {
           </div>
 
           <div style={{marginTop:16,padding:"12px 16px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,fontSize:12,color:T.textSm,lineHeight:1.6}}>
-            💡 <strong style={{color:T.text}}>Tip:</strong> Los cambios se aplican a todos los usuarios en tiempo real. Las secciones que hagas "solo admin" desaparecen del sidebar de los usuarios comunes inmediatamente.
+            <strong style={{color:T.text}}>Tip:</strong> Los cambios se aplican a todos los usuarios en tiempo real. Las secciones que hagas "solo admin" desaparecen del sidebar de los usuarios comunes inmediatamente.
           </div>
         </div>
       )}
@@ -15576,7 +15585,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   {/* Header */}
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
                     <div>
-                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Ventas pendientes de facturar</div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Ventas</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>
                         {(()=>{
                           const totalPlat = Object.values(tnData?.ordenes||{}).filter(o=>canalSel==="todos"||o._platform===canalSel).length;
@@ -16020,7 +16029,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{display:"flex",gap:10,marginTop:4}}>
                         {pdfs.length>0&&(
                           <button onClick={downloadCurrentBatchZip} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 18px",background:"#16a34a",border:"none",color:"#fff",borderRadius:DS.r.md,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flex:1,boxShadow:"0 4px 14px rgba(22,163,74,0.3)"}}>
-                            ⬇ Descargar PDFs (.zip)
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            Descargar PDFs (.zip)
                           </button>
                         )}
                         <button onClick={closeModal} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"10px 0"}}>Cerrar</button>
@@ -16262,13 +16272,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                     ) : (
                       <div style={{padding:14,background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:10,marginBottom:14,fontSize:12,color:T.red}}>
-                        ❌ {manualResult.r?.obs || "Error desconocido"}
+                        {manualResult.r?.obs || "Error desconocido"}
                       </div>
                     )}
                     <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                       {manualResult.pdf && (
-                        <button onClick={()=>downloadPDF(manualResult.pdf)} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                          ⬇ Descargar PDF
+                        <button onClick={()=>downloadPDF(manualResult.pdf)} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          Descargar PDF
                         </button>
                       )}
                       <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -16926,7 +16937,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   </div>
                 ) : (
                   <div style={{padding:14,background:T.redBg,border:"1px solid "+T.red+"33",borderRadius:10,marginBottom:14,fontSize:12,color:T.red}}>
-                    ❌ {manualResult.r?.obs || "Error desconocido"}
+                    {manualResult.r?.obs || "Error desconocido"}
                   </div>
                 )}
                 <div style={{display:"flex",gap:10}}>
@@ -16936,7 +16947,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div style={{flex:1}}/>
                   {manualResult.pdf && (
                     <button onClick={()=>downloadPDF(manualResult.pdf)} style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
-                      ⬇ Descargar PDF
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Descargar PDF
                     </button>
                   )}
                   {manualResult.r?.ok && (
@@ -17085,7 +17097,7 @@ function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked, compact}) {
     return (
       <div style={{maxWidth:1280,margin:"12px auto 0",padding:"0 24px",width:"100%"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px"}}>
-          <span style={{fontSize:12,color:T.textSm,fontWeight:600}}>📊 Cuenta publicitaria:</span>
+          <span style={{fontSize:12,color:T.textSm,fontWeight:600}}>Cuenta publicitaria:</span>
           <select value={selAdAcc} onChange={e=>switchAdAccount(e.target.value)} disabled={saving} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,minWidth:200}}>
             {adAccounts.map(a => <option key={a.id} value={a.id}>{a.name || a.id} ({a.currency || "—"})</option>)}
           </select>
@@ -17098,7 +17110,7 @@ function AdAccountPicker({T, accId, activeAcc, metaApi, onPicked, compact}) {
   return (
     <div style={{maxWidth:1280,margin:"16px auto 0",padding:"0 24px",width:"100%"}}>
       <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"16px 18px"}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>⚠ Falta elegir tu cuenta publicitaria</div>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>Falta elegir tu cuenta publicitaria</div>
         <div style={{fontSize:11,color:T.textMd,lineHeight:1.55,marginBottom:12}}>
           Tenés Meta conectada (token OK) pero no asociaste todavía qué cuenta publicitaria querés analizar. Elegila de la lista de abajo y dale Guardar.
         </div>
@@ -17334,8 +17346,8 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {[
               {id:"pause", l:"⏸ Pausar"},
-              {id:"reduce_budget", l:"💰 Bajar presupuesto"},
-              {id:"notify", l:"📢 Solo notificar"},
+              {id:"reduce_budget", l:"Bajar presupuesto"},
+              {id:"notify", l:"Solo notificar"},
             ].map(a=>(
               <button key={a.id} onClick={()=>setAction(a.id)} style={{flex:1,minWidth:140,padding:"9px 12px",fontSize:12,fontWeight:600,border:`1px solid ${action===a.id?T.accentSolid+"88":T.border}`,borderRadius:8,background:action===a.id?T.accentSolid+"15":"transparent",color:action===a.id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{a.l}</button>
             ))}
@@ -18893,7 +18905,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Guía paso a paso para obtener System User Token
   const GuiaToken=()=>(
     <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
-      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>📋 Cómo obtener tu System User Token (5 min)</div>
+      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>Cómo obtener tu System User Token (5 min)</div>
       {[
         {n:1,txt:"Entrá a",link:"https://business.facebook.com/settings/system-users",linkTxt:"business.facebook.com → Configuración → Usuarios → Usuarios del sistema"},
         {n:2,txt:"Hacé click en + Agregar → Ponele un nombre (ej: Growith) → Rol: Administrador → Crear usuario del sistema"},
@@ -18913,7 +18925,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         ✓ El token "Nunca vence" — no vas a tener que renovarlo ni reconectar la cuenta
       </div>
       <div style={{background:T.yellowBg||(T.yellow+"15"),border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:11,color:T.textMd,lineHeight:1.55}}>
-        <div style={{fontWeight:700,color:T.text,marginBottom:4}}>💡 ¿Estás conectando una <em>nueva</em> cuenta publicitaria y ya tenés una app de Meta creada?</div>
+        <div style={{fontWeight:700,color:T.text,marginBottom:4}}>¿Estás conectando una <em>nueva</em> cuenta publicitaria y ya tenés una app de Meta creada?</div>
         Además del paso 3 (asignar la cuenta al System User), tenés que <strong>agregar la nueva ad_account como activo de tu app</strong> en <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" style={{color:T.accent,textDecoration:"none"}}>Meta for Developers</a> → tu app → <strong>Configuración → Casos de uso / Activos</strong> → Cuentas publicitarias → <strong>Añadir</strong>. Si saltás este paso, el token nuevo va a leer perfecto a tu System User pero <strong>seguirá sin acceso real a la cuenta nueva</strong> y vas a ver errores tipo <code style={{background:T.bg,padding:"1px 5px",borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:10}}>(#200) does not have permission</code> al refrescar Análisis o Biblioteca.
       </div>
     </div>
@@ -18958,15 +18970,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"🔗",title:"Conectar Meta",desc:"Necesitás un token desde Business Manager → Usuarios del sistema. Configuralo en Config → Meta Ads siguiendo las instrucciones exactas de permisos."},
-                {n:2,icon:"📊",title:"Ver campañas",desc:"Ves todas tus campañas activas con gasto, alcance, impresiones y resultados del período seleccionado."},
-                {n:3,icon:"✨",title:"Copy con IA",desc:"Subí un creativo y Growith analiza la imagen y escribe el copy automáticamente usando el contexto de tu marca y el estilo que definiste."},
-                {n:4,icon:"📅",title:"Comparar períodos",desc:"Usá el selector de fechas para ver la evolución semana a semana o comparar con el mes anterior y detectar tendencias."},
-                {n:5,icon:"⚠️",title:"Token expirado",desc:"Si ves un error de permisos, normalmente el token expiró. Regeneralo desde Business Manager y actualizalo en Config → Meta Ads."},
+                {n:1,icon:"",title:"Conectar Meta",desc:"Necesitás un token desde Business Manager → Usuarios del sistema. Configuralo en Config → Meta Ads siguiendo las instrucciones exactas de permisos."},
+                {n:2,icon:"",title:"Ver campañas",desc:"Ves todas tus campañas activas con gasto, alcance, impresiones y resultados del período seleccionado."},
+                {n:3,icon:"",title:"Copy con IA",desc:"Subí un creativo y Growith analiza la imagen y escribe el copy automáticamente usando el contexto de tu marca y el estilo que definiste."},
+                {n:4,icon:"",title:"Comparar períodos",desc:"Usá el selector de fechas para ver la evolución semana a semana o comparar con el mes anterior y detectar tendencias."},
+                {n:5,icon:"",title:"Token expirado",desc:"Si ves un error de permisos, normalmente el token expiró. Regeneralo desde Business Manager y actualizalo en Config → Meta Ads."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
                 </div>
               ))}
             </div>
@@ -18978,7 +18990,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <div>
             {!activeAccId ? (
               <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd}}>
-                ⚠ Conectá tu cuenta de Meta primero desde Config.
+                Conectá tu cuenta de Meta primero desde Config.
               </div>
             ) : (
               <>
@@ -19002,7 +19014,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                 ) : products.length === 0 ? (
                   <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
-                    <div style={{fontSize:36,marginBottom:8}}>🎯</div>
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
                     <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Todavía no clasificaste productos</div>
                     <div style={{fontSize:12,color:T.textSm,maxWidth:480,margin:"0 auto 16px",lineHeight:1.6}}>Creá un producto con sus URLs de destino (página de producto, landing, etc) y su ROAS BE. Después Growith puede colorear cada anuncio según ese BE y aplicar reglas por producto.</div>
                     <button onClick={()=>setEditingProduct("new")} style={{padding:"10px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:10,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear primer producto</button>
@@ -19050,7 +19062,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <div>
             {!activeAccId ? (
               <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd,lineHeight:1.6}}>
-                ⚠ Conectá tu cuenta de Meta primero. Andá a <strong style={{color:T.text}}>Config → Tiendas conectadas → Meta Ads</strong> y dale "Conectar".
+                Conectá tu cuenta de Meta primero. Andá a <strong style={{color:T.text}}>Config → Tiendas conectadas → Meta Ads</strong> y dale "Conectar".
               </div>
             ) : (
               <>
@@ -19088,7 +19100,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/>
                     {/* Columnas */}
                     <div style={{position:"relative"}}>
-                      <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⚙ Columnas</button>
+                      <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg> Columnas</button>
                       {aColsOpen && (
                         <div className="gh-dropdown" style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
                           {[
@@ -19113,9 +19125,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <option value="paused">Solo pausados</option>
                     </select>
                     {/* Búsqueda */}
-                    <input type="text" placeholder="🔍 Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <input type="text" placeholder="Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     <button onClick={loadInsights} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      {aLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}
+                      {aLoading?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
                     </button>
                   </div>
                 </div>
@@ -19137,7 +19149,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   }
                   return (
                     <div style={{background:T.red+"15",border:`1px solid ${T.red}33`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.red,marginBottom:6}}>⚠ No se pudieron cargar las analíticas</div>
+                      <div style={{fontSize:13,fontWeight:700,color:T.red,marginBottom:6}}>No se pudieron cargar las analíticas</div>
                       <div style={{fontSize:12,color:T.textMd,lineHeight:1.6}}>{hint}</div>
                       <div style={{fontSize:10,color:T.textSm,marginTop:8,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",background:T.surface,padding:"6px 10px",borderRadius:6,wordBreak:"break-all"}}>{aError}</div>
                     </div>
@@ -19168,7 +19180,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   if (filtered.length === 0) {
                     return (
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
-                        <div style={{fontSize:32,marginBottom:8}}>📭</div>
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
                         <div style={{fontSize:13,color:T.textSm}}>No hay {aLevel === "campaign" ? "campañas" : aLevel === "adset" ? "adsets" : "ads"} en este rango.</div>
                       </div>
                     );
@@ -19255,7 +19267,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                         const avgBe = prods.filter(p=>p.roas_be>0).reduce((s,p,_,arr)=>s+p.roas_be/arr.length,0);
                                         return <>
                                           <span style={{color:T.borderL}}>·</span>
-                                          {prods.slice(0,2).map(p => <span key={p.id} style={{padding:"1px 6px",borderRadius:4,background:T.accent+"15",color:T.accent,fontWeight:600,fontSize:9,letterSpacing:0.2}}>🎯 {p.name}</span>)}
+                                          {prods.slice(0,2).map(p => <span key={p.id} style={{padding:"1px 6px",borderRadius:4,background:T.accent+"15",color:T.accent,fontWeight:600,fontSize:9,letterSpacing:0.2}}>{p.name}</span>)}
                                           {prods.length > 2 && <span style={{color:T.textSm,fontSize:9}}>+{prods.length-2}</span>}
                                           {avgBe > 0 && <span style={{padding:"1px 6px",borderRadius:4,background:T.green+"15",color:T.green,fontWeight:700,fontSize:9,letterSpacing:0.2}}>BE {avgBe.toFixed(2)}x{prods.length>1?" (avg)":""}</span>}
                                         </>;
@@ -19299,7 +19311,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <div>
             {!activeAccId ? (
               <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd}}>
-                ⚠ Conectá tu cuenta de Meta primero desde Config.
+                Conectá tu cuenta de Meta primero desde Config.
               </div>
             ) : (
               <>
@@ -19309,13 +19321,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <div style={{fontSize:15,fontWeight:700,color:T.text}}>Biblioteca de anuncios</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Métricas reales del período. Filtrá, ordená y tocá "Analizar con IA" solo si querés desglose detallado de un anuncio.</div>
                     </div>
-                    <button onClick={()=>loadLibrary({fresh:true})} disabled={libLoading} title="Refrescar (saltea el cache)" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:"🔄"}</button>
+                    <button onClick={()=>loadLibrary({fresh:true})} disabled={libLoading} title="Refrescar (saltea el cache)" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:libLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{libLoading?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}</button>
                   </div>
                   {/* Filtros: calendario + búsqueda + sort */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                     <DateRangePicker T={T} since={libSince} until={libUntil} onChange={(s,u)=>{setLibSince(s);setLibUntil(u);}}/>
                     <span style={{flex:1}}/>
-                    <input type="text" placeholder="🔍 Buscar…" value={libQuery} onChange={e=>setLibQuery(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,minWidth:160,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    <input type="text" placeholder="Buscar…" value={libQuery} onChange={e=>setLibQuery(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,minWidth:160,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     <select value={libFilterStatus} onChange={e=>setLibFilterStatus(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
                       <option value="all">Todos los estados</option>
                       <option value="active">Solo activos</option>
@@ -19373,7 +19385,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   if (filtered.length === 0) {
                     return (
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
-                        <div style={{fontSize:32,marginBottom:8}}>📭</div>
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
                         <div style={{fontSize:13,color:T.textSm}}>No hay anuncios para mostrar.</div>
                       </div>
                     );
@@ -19427,7 +19439,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               ) : previewImage ? (
                                 <img src={previewImage} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
                               ) : (
-                                <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,color:T.textSm}}>{hasVideo?"🎬":"🖼️"}</div>
+                                <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:T.textSm}}>{hasVideo?<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>:<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}</div>
                               )}
 
                               {/* Play button overlay (click → reproducir inline).
@@ -19549,14 +19561,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <div>
             {!activeAccId ? (
               <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd}}>
-                ⚠ Conectá tu cuenta de Meta primero desde Config.
+                Conectá tu cuenta de Meta primero desde Config.
               </div>
             ) : (
               <>
                 {/* Acceso rapido: Productos vive en su propio tab arriba */}
                 {products.length === 0 && (
                   <div style={{background:T.yellow+"10",border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.textMd,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
-                    <span><span style={{color:T.yellow,fontWeight:700}}>💡</span> Las reglas pueden filtrar por producto. <button onClick={()=>setTab("productos")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",fontSize:12,padding:0}}>Andá a Productos</button> para crear el primero.</span>
+                    <span> Las reglas pueden filtrar por producto. <button onClick={()=>setTab("productos")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",fontSize:12,padding:0}}>Andá a Productos</button> para crear el primero.</span>
                   </div>
                 )}
 
@@ -19570,7 +19582,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       {evaluatingNow ? <><Spinner size={12} color={T.textMd}/>Evaluando...</> : "▶ Evaluar ahora"}
                     </button>
                     <button onClick={()=>reprocessRules(30)} disabled={evaluatingNow||rules.filter(r=>r.active).length===0} style={{padding:"8px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.accent}55`,borderRadius:8,background:T.accent+"12",color:T.accent,cursor:evaluatingNow?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}} title="Aplica todas las reglas activas usando los últimos 30 días como ventana (override). Ideal cuando recién creaste una regla para que actúe sobre data histórica.">
-                      {evaluatingNow ? <><Spinner size={12} color={T.accent}/>Reprocesando...</> : "🔄 Reprocesar 30 días"}
+                      {evaluatingNow ? <><Spinner size={12} color={T.accent}/>Reprocesando...</> : <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Reprocesar 30 días</>}
                     </button>
                     <button onClick={()=>setEditingRule("new")} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nueva regla</button>
                   </div>
@@ -19583,7 +19595,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                 ) : rules.length===0 ? (
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
-                    <div style={{fontSize:32,marginBottom:8}}>⚡</div>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                     <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:6}}>Sin reglas todavía</div>
                     <div style={{fontSize:12,color:T.textSm,maxWidth:420,margin:"0 auto"}}>Creá tu primera regla para que Growith pause automáticamente ads que cumplan ciertos criterios (gasto, ROAS, CPA, etc.).</div>
                   </div>
@@ -19593,7 +19605,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       const fmtVal = (m, v) => m==="spend"||m==="cpa"||m==="purchase_value"||m==="cpm"||m==="cpc"?`$${v}`:m==="ctr"?`${v}%`:m==="roas"?`${v}x`:v;
                       const ruleEvents = (ruleLog||[]).filter(ev => ev.rule_id === r.id);
                       const isExpanded = expandedRuleId === r.id;
-                      const actionLabel = r.action==="pause" ? "⏸ Pausar" : r.action==="reduce_budget" ? `💰 Bajar presupuesto ${r.action_pct||20}%` : "📢 Notificar";
+                      const actionLabel = r.action==="pause" ? "Pausar" : r.action==="reduce_budget" ? `Bajar presupuesto ${r.action_pct||20}%` : "Notificar";
                       return (
                         <div key={r.id} style={{background:T.card,border:`1px solid ${r.active?T.green+"44":T.border}`,borderRadius:12,padding:"14px 18px"}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
@@ -19614,7 +19626,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               {r.last_evaluated_at && <div style={{fontSize:10,color:T.textSm,marginTop:6}}>Última eval: {new Date(r.last_evaluated_at).toLocaleString("es-AR")}</div>}
                               {/* Toggle historial de ejecuciones de ESTA regla */}
                               <button onClick={()=>setExpandedRuleId(isExpanded?null:r.id)} style={{marginTop:10,padding:"6px 12px",fontSize:11,fontWeight:600,border:`1px solid ${ruleEvents.length>0?T.accent+"44":T.border}`,borderRadius:7,background:ruleEvents.length>0?T.accent+"10":"transparent",color:ruleEvents.length>0?T.accent:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                {isExpanded ? "▾ Cerrar historial" : `📋 Historial de acciones (${ruleEvents.length})`}
+                                {isExpanded ? "▾ Cerrar historial" : `Historial de acciones (${ruleEvents.length})`}
                               </button>
                             </div>
                             <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
@@ -19635,7 +19647,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     const date = new Date(ev.ts);
                                     const fechaLabel = date.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});
                                     const horaLabel = date.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-                                    const actionIcon = ev.ok ? (ev.action_taken==="pause" ? "⏸" : ev.action_taken==="reduce_budget" ? "💰" : "📢") : "❌";
+                                    const actionIcon = ev.ok ? (ev.action_taken==="pause" ? "▐▐" : ev.action_taken==="reduce_budget" ? "↓" : "→") : "✕";
                                     const actionTxt = !ev.ok ? "Falló:" : ev.action_taken==="pause" ? "Pausó" : ev.action_taken==="reduce_budget" ? "Redujo presupuesto de" : "Notificó sobre";
                                     return (
                                       <div key={ev.id} style={{padding:"10px 12px",background:ev.ok?T.bg:T.red+"08",borderRadius:8,border:`1px solid ${ev.ok?T.borderL:T.red+"33"}`}}>
@@ -19699,7 +19711,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               Aparece arriba sí o sí, no dentro de la guía colapsable, para que el
               usuario no se lo pierda cuando suma su 2ª/3ª ad_account. */}
           <div style={{background:T.yellowBg||(T.yellow+"15"),border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"14px 18px",marginBottom:18,display:"flex",gap:12,alignItems:"flex-start"}}>
-            <div style={{fontSize:20,lineHeight:1,flexShrink:0,marginTop:2}}>⚠️</div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:2}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             <div style={{flex:1,fontSize:12,color:T.textMd,lineHeight:1.6}}>
               <div style={{fontWeight:700,color:T.text,fontSize:13,marginBottom:4}}>Cada cuenta publicitaria que conectes acá tiene que estar agregada como activo en tu app de Meta</div>
               Si ya tenés una app creada en <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" style={{color:T.accent,textDecoration:"none",fontWeight:600}}>Meta for Developers</a>, andá a <strong>tu app → Configuración → Casos de uso / Activos → Cuentas publicitarias → Añadir</strong> y sumá ahí <strong>todas</strong> las ad_accounts que vayas a usar en Growith (la primera y todas las que sumes después). Si no, el System User Token genera bien pero las llamadas a esa cuenta devuelven <code style={{background:T.bg,padding:"1px 5px",borderRadius:4,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:10}}>(#200) does not have permission</code> y Análisis/Biblioteca van a tirar vacío.
@@ -19716,7 +19728,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <div key={a.id} onClick={()=>{setActiveAccId(a.id);metaApi("set_active","POST",{id:a.id});}}
                     style={{background:activeAccId===a.id?T.accentSolid+"12":T.surface,border:`1px solid ${activeAccId===a.id?T.accentSolid+"55":T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,cursor:"pointer",transition:"all 0.15s"}}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{width:32,height:32,borderRadius:8,background:T.blueBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>📘</div>
+                      <div style={{width:32,height:32,borderRadius:8,background:T.blueBg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.blue||"#3b82f6"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg></div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.user_name||"Cuenta Meta"}</div>
                         <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{a.ad_account_name||"Sin ad account"}{a.ig_username?` · @${a.ig_username}`:""}</div>
@@ -19762,7 +19774,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   {/* Botón mostrar/ocultar guía */}
                   <button onClick={()=>setShowGuide(s=>!s)} style={{...BtnSec,marginBottom:12,width:"100%",justifyContent:"center",fontSize:12}}>
-                    {showGuide?"▲ Ocultar guía":"❓ ¿Cómo obtengo el token?"}
+                    {showGuide?"▲ Ocultar guía":"¿Cómo obtengo el token?"}
                   </button>
                   {showGuide&&<GuiaToken/>}
 
@@ -19874,7 +19886,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             const cur = currencySymbol(activeAcc?.currency);
             const curCode = activeAcc?.currency || "USD";
             const queueWithCopy = creatives.filter(c => c.copy?.trim());
-            const dotFor = (status) => status === "ACTIVE" ? "🟢" : "⏸";
+            const dotFor = (status) => status === "ACTIVE" ? "●" : "⏸";
             const SectionHeader = ({n,title}) => (
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                 <div style={{width:30,height:30,borderRadius:8,background:`linear-gradient(135deg, ${T.accent}, ${T.blue||T.accentSolid})`,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:14}}>{n}</div>
@@ -19896,7 +19908,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               {/* Studio Header */}
               <div style={{marginBottom:24}}>
                 <h1 style={{fontSize:38,fontWeight:800,margin:0,letterSpacing:-1,background:`linear-gradient(90deg, ${T.text}, ${T.accent}, ${T.blue||"#3b82f6"}, #ec4899)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>Meta Ads <span style={{fontWeight:800}}>Studio</span></h1>
-                <div style={{fontSize:13,color:T.textMd,marginTop:8}}>📘 Facebook conectado: <strong style={{color:T.text}}>{activeAcc?.user_name || "—"}</strong></div>
+                <div style={{fontSize:13,color:T.textMd,marginTop:8}}>Facebook conectado: <strong style={{color:T.text}}>{activeAcc?.user_name || "—"}</strong></div>
               </div>
 
               {/* ── Sección 1: CONFIGURACIÓN ACTIVA ─────────── */}
@@ -19915,37 +19927,37 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 <div style={{background:T.card,border:`1px solid ${allReady?T.green+"44":T.yellow+"44"}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
                   <SectionHeader n="1" title="Configuración activa"/>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:14}}>
-                    <ConfigCard icon="📊" label="Cuenta publicitaria" value={hasAd?`${activeAcc?.ad_account_name||""} (${curCode})`:""} sub={activeAcc?.ad_account_id}/>
-                    <ConfigCard icon="📘" label="Página Facebook" value={activeAcc?.page_name} sub={activeAcc?.page_id}/>
-                    <ConfigCard icon="📸" label="Instagram" value={activeAcc?.ig_username ? `@${activeAcc.ig_username}` : ""} sub={activeAcc?.ig_account_id}/>
-                    <ConfigCard icon="🎯" label="Píxel" value={hasPixel ? "Conectado" : ""} sub={activeAcc?.pixel_id}/>
+                    <ConfigCard icon="" label="Cuenta publicitaria" value={hasAd?`${activeAcc?.ad_account_name||""} (${curCode})`:""} sub={activeAcc?.ad_account_id}/>
+                    <ConfigCard icon="" label="Página Facebook" value={activeAcc?.page_name} sub={activeAcc?.page_id}/>
+                    <ConfigCard icon="" label="Instagram" value={activeAcc?.ig_username ? `@${activeAcc.ig_username}` : ""} sub={activeAcc?.ig_account_id}/>
+                    <ConfigCard icon="" label="Píxel" value={hasPixel ? "Conectado" : ""} sub={activeAcc?.pixel_id}/>
                   </div>
                   {!allReady && (
                     <div style={{background:T.yellow+"10",border:`1px solid ${T.yellow}33`,borderRadius:10,padding:"12px 14px",marginBottom:12,fontSize:12,color:T.textMd,lineHeight:1.6}}>
-                      <div style={{fontWeight:700,color:T.yellow,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span>⚠</span> Te falta vincular: <span style={{color:T.text}}>{missing.join(", ")}</span></div>
+                      <div style={{fontWeight:700,color:T.yellow,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>Te falta vincular: <span style={{color:T.text}}>{missing.join(", ")}</span></div>
                       {!hasAd && (
                         <div style={{padding:"8px 10px",background:T.surface,borderRadius:7,marginBottom:6}}>
-                          <strong style={{color:T.text}}>📊 Cuenta publicitaria:</strong> tu System User Token necesita acceso a una ad account. Andá a <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Business Settings → System Users</a>, asignale tu cuenta publicitaria con permiso "Manage" y volvé a tocar "Cambiar recursos".
+                          <strong style={{color:T.text}}>Cuenta publicitaria:</strong> tu System User Token necesita acceso a una ad account. Andá a <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Business Settings → System Users</a>, asignale tu cuenta publicitaria con permiso "Manage" y volvé a tocar "Cambiar recursos".
                         </div>
                       )}
                       {!hasPage && (
                         <div style={{padding:"8px 10px",background:T.surface,borderRadius:7,marginBottom:6}}>
-                          <strong style={{color:T.text}}>📘 Página Facebook:</strong> sin página no se pueden crear ads. En <a href="https://business.facebook.com/settings/pages" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Business Settings → Pages</a>, asigná la página al System User y dale rol "Advertiser".
+                          <strong style={{color:T.text}}>Página Facebook:</strong> sin página no se pueden crear ads. En <a href="https://business.facebook.com/settings/pages" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Business Settings → Pages</a>, asigná la página al System User y dale rol "Advertiser".
                         </div>
                       )}
                       {!hasIg && (
                         <div style={{padding:"8px 10px",background:T.surface,borderRadius:7,marginBottom:6}}>
-                          <strong style={{color:T.text}}>📸 Instagram:</strong> conectá tu cuenta Profesional/Business a la página de Facebook (Configuración de la página → Vinculación con Instagram). Sin esto los ads sólo salen por Facebook.
+                          <strong style={{color:T.text}}>Instagram:</strong> conectá tu cuenta Profesional/Business a la página de Facebook (Configuración de la página → Vinculación con Instagram). Sin esto los ads sólo salen por Facebook.
                         </div>
                       )}
                       {!hasPixel && (
                         <div style={{padding:"8px 10px",background:T.surface,borderRadius:7}}>
-                          <strong style={{color:T.text}}>🎯 Píxel:</strong> sin píxel Meta no puede atribuir compras ni optimizar por conversiones. En <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Events Manager</a> creá uno (o usá el existente), instalalo en tu tienda (Shopify/TN tienen apps oficiales), y asignalo a la ad account desde <a href="https://business.facebook.com/settings/pixels" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Business Settings → Data Sources → Pixels</a>. Volvé a tocar "Cambiar recursos" para refrescar.
+                          <strong style={{color:T.text}}>Píxel:</strong> sin píxel Meta no puede atribuir compras ni optimizar por conversiones. En <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Events Manager</a> creá uno (o usá el existente), instalalo en tu tienda (Shopify/TN tienen apps oficiales), y asignalo a la ad account desde <a href="https://business.facebook.com/settings/pixels" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>Business Settings → Data Sources → Pixels</a>. Volvé a tocar "Cambiar recursos" para refrescar.
                         </div>
                       )}
                     </div>
                   )}
-                  <button onClick={openResourcesModal} style={BtnSec}>🔧 Cambiar recursos</button>
+                  <button onClick={openResourcesModal} style={BtnSec}>Cambiar recursos</button>
                 </div>
                 );
               })()}
@@ -19958,11 +19970,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {/* Mode toggle */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
                   {[
-                    {id:"shared",icon:"📌",title:"Mismo destino para todos",sub:"campaña, AdSet, link y CTA compartidos"},
-                    {id:"perAd",icon:"🎯",title:"Distinto por ad",sub:"cada ad su propia campaña y link"},
+                    {id:"shared",title:"Mismo destino para todos",sub:"campaña, AdSet, link y CTA compartidos"},
+                    {id:"perAd",title:"Distinto por ad",sub:"cada ad su propia campaña y link"},
                   ].map(m => (
                     <button key={m.id} onClick={()=>setStudioMode(m.id)} style={{textAlign:"left",padding:"14px 16px",borderRadius:10,border:`2px solid ${studioMode===m.id?T.green+"99":T.border}`,background:studioMode===m.id?T.green+"10":"transparent",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>{m.icon} {m.title}</div>
+                      <div style={{fontSize:14,fontWeight:700,color:T.text}}>{m.title}</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{m.sub}</div>
                     </button>
                   ))}
@@ -20007,7 +20019,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {/* Upload button */}
                 <div style={{display:"flex",gap:8,marginBottom:10}}>
                   <label style={{...BtnPri,padding:"8px 14px",cursor:uploadingFile?"wait":"pointer",margin:0,background:"transparent",color:T.green,border:`1px solid ${T.green}66`}}>
-                    {uploadingFile?<><Spinner size={12} color={T.green}/> Subiendo...</>:"📤 Subir nuevo"}
+                    {uploadingFile?<><Spinner size={12} color={T.green}/> Subiendo...</>:<><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",verticalAlign:"middle",marginRight:5}}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Subir nuevo</>}
                     <input type="file" accept="image/*,video/*" multiple disabled={uploadingFile} style={{display:"none"}} onChange={e=>{const fs=e.target.files; if(fs?.length){handleUploadMultiple(fs); e.target.value="";}}}/>
                   </label>
                 </div>
@@ -20020,7 +20032,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   onClick={()=>document.getElementById("growith-studio-fallback-input")?.click()}
                   style={{border:`2px dashed ${dragOver?T.green:T.borderL}`,borderRadius:12,padding:"40px 20px",textAlign:"center",cursor:"pointer",background:dragOver?T.green+"08":"transparent",transition:"all 0.15s",marginBottom:16}}>
                   <input id="growith-studio-fallback-input" type="file" accept="image/*,video/*" multiple style={{display:"none"}} onChange={e=>{const fs=e.target.files; if(fs?.length){handleUploadMultiple(fs); e.target.value="";}}}/>
-                  <div style={{fontSize:32,marginBottom:6}}>📥</div>
+                  <div style={{fontSize:32,marginBottom:6,display:"flex",justifyContent:"center"}}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
                   <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:4}}>Arrastrá tus creativos acá</div>
                   <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>o tocá para elegir desde tu Mac</div>
                   <div style={{fontSize:10,color:T.textSm,letterSpacing:0.3}}>.mp4 · .mov · .jpg · .png — sin límite, uno por ad</div>
@@ -20051,9 +20063,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               if (c._localPreview && c.kind === "video") {
                                 return <video src={c._localPreview} muted style={{width:"100%",height:"100%",objectFit:"cover"}}/>;
                               }
-                              return <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:"100%",height:"100%",fontSize:28}}>{c.kind==="video"?"🎬":"🖼️"}</div>;
+                              return <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:"100%",height:"100%"}}>{c.kind==="video"?<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>:<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}</div>;
                             })()}
-                            <span style={{position:"absolute",bottom:4,left:4,fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(0,0,0,0.7)",color:"#fff",fontWeight:700,letterSpacing:0.3}}>{c.kind==="video"?"🎬 VID":"🖼️ IMG"}</span>
+                            <span style={{position:"absolute",bottom:4,left:4,fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(0,0,0,0.7)",color:"#fff",fontWeight:700,letterSpacing:0.3}}>{c.kind==="video"?"VID":"IMG"}</span>
                             {c._uploading && (
                               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(2px)"}}>
                                 <Spinner size={22} color="#fff"/>
@@ -20086,7 +20098,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         {c.analysis && (
                           <div style={{padding:"12px 14px",background:T.card,border:`1px solid ${T.green}22`,borderRadius:10,marginBottom:10}}>
                             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                              <div style={{fontSize:11,color:T.green,fontWeight:700,letterSpacing:0.4}}>👁 Gemini vio: {c.analysis.tono_detectado||"—"} · {c.analysis.sentiment_detectado||"—"}</div>
+                              <div style={{fontSize:11,color:T.green,fontWeight:700,letterSpacing:0.4}}>Análisis: {c.analysis.tono_detectado||"—"} · {c.analysis.sentiment_detectado||"—"}</div>
                               <button onClick={()=>handleAnalyzeCreative(c)} disabled={analyzingCreative===c.id} style={{...BtnSec,fontSize:10,padding:"4px 9px"}}>{analyzingCreative===c.id?<><Spinner size={9}/> Re-analizando</>:"↻ Re-analizar"}</button>
                             </div>
                             <div style={{fontSize:12,lineHeight:1.6,color:T.textMd}}>
@@ -20118,7 +20130,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                         {/* Copy: lo pegás vos (traído de afuera). Sin IA. */}
                         <div style={{marginTop:4}}>
-                          <div style={{fontSize:11,fontWeight:700,color:c.copy?.trim()?T.green:T.textSm,letterSpacing:0.4,marginBottom:6,textTransform:"uppercase"}}>📝 Tu copy {c.copy?.trim()?`· ${c.copy.split(/\s+/).filter(Boolean).length} palabras`:"· pegá el texto del anuncio"}</div>
+                          <div style={{fontSize:11,fontWeight:700,color:c.copy?.trim()?T.green:T.textSm,letterSpacing:0.4,marginBottom:6,textTransform:"uppercase"}}>Copy {c.copy?.trim()?`· ${c.copy.split(/\s+/).filter(Boolean).length} palabras`:"· pegá el texto del anuncio"}</div>
                           <textarea value={c.copy||""} onChange={e=>{const u={...c,copy:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{copy:e.target.value})} placeholder="Pegá acá el texto del anuncio que ya escribiste afuera…" style={{...iS,minHeight:110,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap"}}/>
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
                             <input value={c.title||""} onChange={e=>{const u={...c,title:e.target.value};setCreatives(prev=>prev.map(x=>x.id===c.id?u:x));}} onBlur={e=>handlePatch(c,{title:e.target.value})} placeholder="Titular (opcional, ≤40)" style={iS}/>
@@ -20141,18 +20153,18 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{background:T.surface,border:`1px solid ${setupOk?T.border:T.red+"55"}`,borderRadius:10,padding:"14px 16px",marginTop:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
                       <div style={{fontSize:12,color:T.textSm,flex:1,minWidth:240}}>
                         {!setupOk
-                          ? <span style={{color:T.red}}>⚠ No podés publicar hasta vincular: <strong>{setupMissing.join(", ")}</strong>. Subí arriba a la sección Configuración para ver cómo.</span>
-                          : (studioMode==="shared" ? "📌 Destino compartido configurado arriba" : "🎯 Cada ad tiene su propio destino")
+                          ? <span style={{color:T.red}}>No podés publicar hasta vincular: <strong>{setupMissing.join(", ")}</strong>. Subí arriba a la sección Configuración para ver cómo.</span>
+                          : (studioMode==="shared" ? "Destino compartido configurado arriba" : "Cada ad tiene su propio destino")
                         }
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                         <label title="Cuando un ad termina de subir y procesarse en Meta, se publica solo. No esperás nada — al final ves el panel de resultados." style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:autoPublishEnabled?T.accent:T.textMd,cursor:studioMode==="shared"?"pointer":"not-allowed",fontWeight:autoPublishEnabled?700:400,opacity:studioMode==="shared"?1:0.5}}>
                           <input type="checkbox" checked={autoPublishEnabled} disabled={studioMode!=="shared"} onChange={e=>setAutoPublishEnabled(e.target.checked)} style={{width:14,height:14}}/>
-                          ⚡ Auto-publicar al toque
+                          Auto-publicar al toque
                         </label>
                         {autoPublishEnabled && (autoPubStats.ok>0 || autoPubStats.errors.length>0) && (
                           <span title={autoPubStats.errors.length>0 ? autoPubStats.errors.map(e=>`${e.filename}: ${e.error}`).join("\n") : "Todos OK"} style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:autoPubStats.errors.length>0?T.red+"22":T.green+"22",color:autoPubStats.errors.length>0?T.red:T.green,fontWeight:700,letterSpacing:0.3,cursor:autoPubStats.errors.length>0?"help":"default"}}>
-                            ⚡ {autoPubStats.ok} ✓{autoPubStats.errors.length>0?` · ${autoPubStats.errors.length} ✗`:""}
+                            {autoPubStats.ok} ✓{autoPubStats.errors.length>0?` · ${autoPubStats.errors.length} ✗`:""}
                           </span>
                         )}
                         <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer"}}>
@@ -20163,8 +20175,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           {bulkPublishing
                             ? <><Spinner size={13} color="#fff"/>Publicando {bulkProgress.done}/{bulkProgress.total}…</>
                             : !setupOk
-                              ? <>🔒 Falta setup</>
-                              : <>🚀 Publicar {queueWithCopy.length} ad{queueWithCopy.length===1?"":"s"}</>
+                              ? <>Falta setup</>
+                              : <>Publicar {queueWithCopy.length} ad{queueWithCopy.length===1?"":"s"}</>
                           }
                         </button>
                       </div>
@@ -20180,14 +20192,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:80,background:`linear-gradient(135deg, ${T.accent}, ${T.purple||"#a855f7"})`,color:"#fff",padding:"13px 20px",display:"flex",alignItems:"center",justifyContent:"center",gap:12,flexWrap:"wrap",boxShadow:"0 -4px 22px rgba(0,0,0,0.35)",fontFamily:"'Inter',system-ui,sans-serif"}}>
                   <Spinner size={16} color="#fff"/>
                   <span style={{fontSize:13,fontWeight:800,letterSpacing:0.6}}>SUBIENDO ANUNCIOS{bulkProgress.total>0?` (${bulkProgress.done}/${bulkProgress.total})`:""}</span>
-                  <span style={{fontSize:12,opacity:0.92}}>— dejá la app abierta unos minutos, se sube y publica solo. Podés irte. 💤</span>
+                  <span style={{fontSize:12,opacity:0.92}}>— dejá la app abierta unos minutos, se sube y publica solo. Podés irte.</span>
                 </div>
               )}
 
               {/* ── Historial de batches publicados ──────────────── */}
               {publishBatches.length > 0 && (
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
-                  <SectionHeader n="📜" title={`Lotes publicados (${publishBatches.length})`}/>
+                  <SectionHeader n="3" title={`Lotes publicados (${publishBatches.length})`}/>
                   <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:480,overflowY:"auto"}}>
                     {publishBatches.map(b => (
                       <div key={b.id} style={{background:T.surface,border:`1px solid ${b.ok_count===b.total?T.green+"33":T.yellow+"33"}`,borderRadius:10,padding:"12px 14px"}}>
@@ -20200,7 +20212,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           </div>
                           {b.ok_count < b.total && (
                             <button onClick={()=>handleRetryBatch(b)} disabled={retryingBatchId===b.id} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:`1px solid ${T.accent}55`,background:T.accent+"15",color:T.accent,cursor:retryingBatchId===b.id?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}>
-                              {retryingBatchId===b.id ? <><Spinner size={10} color={T.accent}/>Reintentando…</> : <>🔄 Reintentar {b.total-b.ok_count} fallado{(b.total-b.ok_count)===1?"":"s"}</>}
+                              {retryingBatchId===b.id ? <><Spinner size={10} color={T.accent}/>Reintentando…</> : <>Reintentar {b.total-b.ok_count} fallado{(b.total-b.ok_count)===1?"":"s"}</>}
                             </button>
                           )}
                         </div>
@@ -20209,7 +20221,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6,paddingLeft:6}}>
                             {(b.items||[]).map((it,i) => (
                               <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:T.textMd,padding:"4px 0"}}>
-                                <span style={{fontSize:14}}>{it.ok?(it.kind==="video"?"🎬":"🖼️"):"❌"}</span>
+                                <span style={{fontSize:12,fontWeight:700,color:it.ok?T.green:T.red}}>{it.ok?`✓ ${it.kind==="video"?"VID":"IMG"}`:"✕"}</span>
                                 <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.filename}</span>
                                 {it.ok ? (
                                   <>
@@ -20296,7 +20308,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
                       <button onClick={()=>setShowNewCampModal(false)} style={BtnSec}>Cancelar</button>
                       <button onClick={handleCreateCampaignMulti} disabled={creatingMulti} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:T.accentSolid,color:"#fff",cursor:creatingMulti?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
-                        {creatingMulti?<><Spinner size={12} color="#fff"/>Creando...</>:<>🚀 Crear todo</>}
+                        {creatingMulti?<><Spinner size={12} color="#fff"/>Creando...</>:"Crear todo"}
                       </button>
                     </div>
                   </div>
@@ -20363,7 +20375,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         {/* AD ACCOUNTS */}
                         <div>
                           <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                            <span>📊 Cuentas publicitarias ({resourcesData.ad_accounts?.length||0})</span>
+                            <span>Cuentas publicitarias ({resourcesData.ad_accounts?.length||0})</span>
                           </div>
                           {(resourcesData.ad_accounts||[]).length === 0 ? (
                             <div style={{fontSize:12,color:T.textSm,padding:"12px 14px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`}}>El token no ve ninguna cuenta publicitaria. Asignala desde Business Settings.</div>
@@ -20391,7 +20403,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         {/* PIXELES de la cuenta seleccionada */}
                         {resSel.ad_account_id && (
                           <div>
-                            <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>🎯 Píxeles de esta cuenta ({(resourcesData.pixels_by_account?.[resSel.ad_account_id]||[]).length})</div>
+                            <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>Píxeles de esta cuenta ({(resourcesData.pixels_by_account?.[resSel.ad_account_id]||[]).length})</div>
                             {(!resourcesData.pixels_by_account?.[resSel.ad_account_id] || resourcesData.pixels_by_account[resSel.ad_account_id].length === 0) ? (
                               <div style={{fontSize:11,color:T.yellow,padding:"10px 12px",background:T.yellow+"10",borderRadius:8,border:`1px solid ${T.yellow}33`}}>⚠ La cuenta no tiene píxeles asignados. Asignalo desde Events Manager.</div>
                             ) : (
@@ -20421,7 +20433,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                         {/* PAGES */}
                         <div>
-                          <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>📘 Páginas de Facebook ({resourcesData.pages?.length||0})</div>
+                          <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>Páginas de Facebook ({resourcesData.pages?.length||0})</div>
                           {(resourcesData.pages||[]).length === 0 ? (
                             <div style={{fontSize:12,color:T.textSm,padding:"12px 14px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`}}>El token no ve páginas de FB.</div>
                           ) : (
@@ -20434,7 +20446,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                                       <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
                                       <div style={{flex:1,minWidth:0}}>
-                                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{p.name||"(sin nombre)"} {ig&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"#dd2a7b22",color:"#dd2a7b",fontWeight:600,marginLeft:6}}>📸 @{ig.username}</span>}</div>
+                                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{p.name||"(sin nombre)"} {ig&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"#dd2a7b22",color:"#dd2a7b",fontWeight:600,marginLeft:6}}>@{ig.username}</span>}</div>
                                         <div style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:2}}>{p.id}{p.category?` · ${p.category}`:""}</div>
                                       </div>
                                     </div>
@@ -20448,7 +20460,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         {/* IG ACCOUNTS independiente (si hay) */}
                         {resourcesData.ig_accounts?.length > 0 && (
                           <div>
-                            <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>📸 Cuentas Instagram vinculadas ({resourcesData.ig_accounts.length})</div>
+                            <div style={{fontSize:11,fontWeight:700,color:T.textSm,letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>Cuentas Instagram vinculadas ({resourcesData.ig_accounts.length})</div>
                             <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:160,overflowY:"auto"}}>
                               {resourcesData.ig_accounts.map(i => {
                                 const sel = resSel.ig_account_id === i.id;
@@ -20474,7 +20486,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:18,paddingTop:14,borderTop:`1px solid ${T.border}`}}>
                         <button onClick={()=>setShowResourcesModal(false)} style={BtnSec}>Cancelar</button>
                         <button onClick={saveResources} disabled={resSaving || !resSel.ad_account_id} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:(!resSel.ad_account_id?T.border:T.accentSolid),color:!resSel.ad_account_id?T.textSm:"#fff",cursor:resSaving?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:!resSel.ad_account_id?0.6:1}}>
-                          {resSaving?<><Spinner size={12} color="#fff"/>Guardando…</>:"💾 Guardar selección"}
+                          {resSaving?<><Spinner size={12} color="#fff"/>Guardando…</>:"Guardar selección"}
                         </button>
                       </div>
                     )}
@@ -20914,7 +20926,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
       <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 24px 80px",width:"100%"}}>
         {tab==="analytics" ? (
           <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 30px",textAlign:"center"}}>
-            <div style={{fontSize:42,marginBottom:12}}>📈</div>
+            <div style={{marginBottom:12,display:"flex",justifyContent:"center"}}><svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
             <div style={{fontSize:18,fontWeight:700,color:T.text,marginBottom:8}}>Analytics de Mercado Libre</div>
             <div style={{fontSize:13,color:T.textSm,maxWidth:520,margin:"0 auto 18px",lineHeight:1.6}}>
               Próximamente: dashboard con ventas por publicación, top productos, health score, evolución de visitas, conversión y comparativa con el período anterior. Mientras tanto las métricas de stock y unidades vendidas por canal viven en <strong style={{color:T.text}}>Stock → Análisis</strong> (incluye ML).
@@ -20930,7 +20942,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
               <button key={s.id} onClick={()=>setStatusFilter(s.id)} style={{padding:"6px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:statusFilter===s.id?T.card:"transparent",color:statusFilter===s.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{s.l}</button>
             ))}
           </div>
-          <input type="text" placeholder="🔍 Buscar por título o ID..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1,minWidth:200,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+          <input type="text" placeholder="Buscar por título o ID..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1,minWidth:200,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
           <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
             <option value="sold">Más vendidos</option>
             <option value="stock">Mayor stock</option>
@@ -20945,11 +20957,11 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
         {selectedIds.size > 0 && (
           <div style={{background:`linear-gradient(90deg, ${T.accent}15, ${T.accentSolid}08)`,border:`1px solid ${T.accent}55`,borderRadius:14,padding:"14px 18px",marginBottom:14}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:bulkMode?12:0,flexWrap:"wrap",gap:8}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text}}>🎯 {selectedIds.size} seleccionada{selectedIds.size===1?"":"s"} — aplicar cambio bulk:</div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>{selectedIds.size} seleccionada{selectedIds.size===1?"":"s"} — aplicar cambio bulk:</div>
               <button onClick={()=>setSelectedIds(new Set())} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar selección</button>
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:bulkMode?12:0}}>
-              {[["price","💰 Precio"],["stock","📦 Stock"],["handling","⏱ Handling"],["status","🔌 Estado"]].map(([id,label])=>(
+              {[["price","Precio"],["stock","Stock"],["handling","Handling"],["status","Estado"]].map(([id,label])=>(
                 <button key={id} onClick={()=>{setBulkMode(id);setBulkValue("");setBulkPctMode(false);}} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${bulkMode===id?T.accent+"99":T.border}`,borderRadius:7,background:bulkMode===id?T.accent+"22":"transparent",color:bulkMode===id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{label}</button>
               ))}
             </div>
@@ -20990,18 +21002,18 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
           <div style={{padding:"60px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/><div style={{fontSize:12,color:T.textSm,marginTop:10}}>Trayendo publicaciones de ML...</div></div>
         ) : loadError ? (
           <div style={{background:T.card,border:`1px dashed ${T.red}55`,borderRadius:14,padding:"40px 24px",textAlign:"center"}}>
-            <div style={{fontSize:32,marginBottom:10}}>🔌</div>
+            <div style={{marginBottom:10,display:"flex",justifyContent:"center"}}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/></svg></div>
             <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>Mercado Libre no está conectado</div>
             <div style={{fontSize:12,color:T.textMd,marginBottom:14,maxWidth:520,margin:"0 auto 14px",lineHeight:1.5}}>{loadError}</div>
             <button onClick={()=>onGoConfig && onGoConfig()} style={{padding:"8px 16px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ir a Configuración → Integraciones</button>
           </div>
         ) : items.length === 0 ? (
           <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"60px 20px",textAlign:"center"}}>
-            <div style={{fontSize:32,marginBottom:8}}>📭</div>
+            <div style={{marginBottom:8,display:"flex",justifyContent:"center"}}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-6l-2 3H10l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg></div>
             <div style={{fontSize:14,color:T.textMd,marginBottom:10}}>No se encontraron publicaciones {statusFilter==="active"?"activas":statusFilter==="paused"?"pausadas":statusFilter==="closed"?"cerradas":""} en tu cuenta de ML.</div>
             {diagnostic?.reason === "api_error" && <div style={{fontSize:11,color:T.red,marginBottom:10,fontFamily:"monospace",padding:8,background:T.red+"11",borderRadius:6,maxWidth:520,margin:"0 auto 10px"}}>⚠ {diagnostic.error}</div>}
             {diagnostic?.reason === "empty" && diagnostic.total_from_ml === 0 && <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>ML respondió 0 publicaciones en estado "{statusFilter}". Probá con "Todas" arriba.</div>}
-            <button onClick={runDiagnose} disabled={diagnosing} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{diagnosing?<Spinner size={11} color={T.textMd}/>:"🔍"} Diagnosticar conexión</button>
+            <button onClick={runDiagnose} disabled={diagnosing} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{diagnosing?<Spinner size={11} color={T.textMd}/>:null} Diagnosticar conexión</button>
           </div>
         ) : (
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
@@ -21198,7 +21210,7 @@ function MargenesTab({ T, uid, days, useCustomDate, dateFrom, dateTo }) {
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
         <div>
-          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>💎 Métricas Principales</div>
+          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Métricas Principales</div>
           <div style={{fontSize:11,color:T.textSm,marginTop:4}}>
             Período: {data.since} → {data.until} · vs {data.prevSince} → {data.prevUntil}
           </div>
@@ -21384,7 +21396,7 @@ function ComisionesPanel({ T, uid }) {
       {/* Sondeo MP (beta) — para conectar la comisión real de MP en Shopify */}
       <div style={{background:T.surface,border:`1px dashed ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
-          <div style={{fontSize:11,color:T.textSm,flex:1,minWidth:200}}>🔬 <strong style={{color:T.text}}>Beta:</strong> probar si se puede leer la comisión real de Mercado Pago. Apretá y mandame captura del resultado.</div>
+          <div style={{fontSize:11,color:T.textSm,flex:1,minWidth:200}}><strong style={{color:T.text}}>Beta:</strong> probar si se puede leer la comisión real de Mercado Pago. Apretá y mandame captura del resultado.</div>
           <button onClick={runProbe} disabled={probing} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>{probing?"Probando…":"Probar MP"}</button>
           <button onClick={runMlAdsProbe} disabled={probing} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>{probing?"Probando…":"Probar ML Ads"}</button>
           <button onClick={runMlShipProbe} disabled={probing} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>{probing?"Probando…":"Probar envíos ML"}</button>
@@ -21518,7 +21530,7 @@ function CostosPanel({ T, uid }) {
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text}}>🚚 Costo promedio de envío</div>
+            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Costo promedio de envío</div>
             <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Por orden. Se usa cuando el costo real del envío no viene en la orden.</div>
           </div>
           <span style={{fontSize:13,color:T.textSm}}>$</span>
@@ -21529,7 +21541,7 @@ function CostosPanel({ T, uid }) {
       {/* Gasto de Mercado Ads por períodos (carga manual hasta integrar la API) */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>🛒 Gasto de Mercado Ads (por período)</div>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Gasto de Mercado Ads (por período)</div>
           <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá lo que gastaste (o vas a gastar) en publicidad de ML en cada rango — podés poner fechas a futuro. Se promedia por día y el dashboard descuenta el promedio diario según los días que se solapen, así el gasto fijo se va imputando solo día a día. Ej: del 01/06 al 30/06 $3.000.000 = $100.000/día.</div>
         </div>
         {(()=>{ const today=new Date().toISOString().slice(0,10);
@@ -21543,10 +21555,10 @@ function CostosPanel({ T, uid }) {
           {mlAdsList.length>0 && <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
             {mlAdsList.map((e,i)=>{ const d=dias(e.desde,e.hasta), prom=d>0?(parseFloat(e.monto)||0)/d:0; return (
               <div key={i} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
-                <span style={{fontSize:12,color:T.text,fontWeight:600}}>📅 {fmtF(e.desde)} → {fmtF(e.hasta)}</span>
+                <span style={{fontSize:12,color:T.text,fontWeight:600}}>{fmtF(e.desde)} → {fmtF(e.hasta)}</span>
                 <span style={{fontSize:12,color:T.textMd}}>${(parseFloat(e.monto)||0).toLocaleString("es-AR")}</span>
                 <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(prom).toLocaleString("es-AR")}/día · {d}d</span>
-                <button onClick={()=>delMlAdsPeriod(i)} title="Borrar período" style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red,marginLeft:"auto"}}>🗑</button>
+                <button onClick={()=>delMlAdsPeriod(i)} title="Borrar período" style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red,marginLeft:"auto"}}>×</button>
               </div>
             );})}
           </div>}
@@ -21567,7 +21579,7 @@ function CostosPanel({ T, uid }) {
           misma app (sino el ad spend de todas las cuentas se te mezcla). */}
       {metaAdAccts.length > 0 && (
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>📘 Cuenta de Meta Ads para el margen</div>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Cuenta de Meta Ads para el margen</div>
           <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Si tenés varias tiendas en la misma app, elegí la cuenta publicitaria de <strong style={{color:T.text}}>esta</strong> tienda. El Ad Spend del margen va a tomar SOLO esa cuenta. Si dejás "Todas", suma el gasto de todas las cuentas del token (se mezcla entre tiendas).</div>
           <select value={metaAdAccount} onChange={e=>setMetaAdAccount(e.target.value)} style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:420}}>
             <option value="">Todas las cuentas (suma todo)</option>
@@ -21579,7 +21591,7 @@ function CostosPanel({ T, uid }) {
       {/* Costo por producto — mapeo de productos reales */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>📦 Costo por producto (COGS)</div>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Costo por producto (COGS)</div>
           {(prodRows.length+mlItems.length)>0 && <span style={{fontSize:11,color:T.textSm}}>{conCosto}/{prodRows.length+mlItems.length} con costo cargado</span>}
         </div>
         <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Aparece cada producto de Shopify/TN y cada publicación de ML. Poné cuánto te cuesta cada uno.</div>
@@ -21590,7 +21602,7 @@ function CostosPanel({ T, uid }) {
           <div key={r.key} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
             {r.img
               ? <img src={r.img} alt="" style={{width:34,height:34,borderRadius:6,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
-              : <div style={{width:34,height:34,borderRadius:6,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>📦</div>}
+              : <div style={{width:34,height:34,borderRadius:6,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>}
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}{r.variante?` · ${r.variante}`:""}</div>
               <div style={{fontSize:10,color:T.textSm}}>{r.sku?`SKU ${r.sku} · `:""}{fmtARSm(r.price)}</div>
@@ -21599,12 +21611,12 @@ function CostosPanel({ T, uid }) {
             <input type="number" min="0" value={costos[r.key]??""} onChange={e=>setCosto(r.key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
           </div>
         ))}
-        {visMl.length>0 && <div style={{fontSize:11,fontWeight:700,color:T.textSm,margin:"12px 0 4px",textTransform:"uppercase",letterSpacing:0.4}}>🛒 Mercado Libre</div>}
+        {visMl.length>0 && <div style={{fontSize:11,fontWeight:700,color:T.textSm,margin:"12px 0 4px",textTransform:"uppercase",letterSpacing:0.4}}>Mercado Libre</div>}
         {visMl.map(p=>{
           const key = "ml:"+p.id;
           return (
             <div key={key} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
-              <div style={{width:34,height:34,borderRadius:6,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🛒</div>
+              <div style={{width:34,height:34,borderRadius:6,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57l1.65-7.74H6"/></svg></div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.nombre}>{p.nombre}</div>
               </div>
@@ -21617,7 +21629,7 @@ function CostosPanel({ T, uid }) {
 
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>🏢 Costos fijos / empleados</div>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Costos fijos / empleados</div>
           <span style={{fontSize:12,fontWeight:700,color:T.accent}}>Total: {fmtARSm(totalFijos)}/mes</span>
         </div>
         {fijos.map(r=>(
@@ -21634,7 +21646,7 @@ function CostosPanel({ T, uid }) {
       {/* Costos variables — % de la facturación (ej: 2% a un growth partner) */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>📊 Costos variables (% de facturación)</div>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Costos variables (% de facturación)</div>
           <span style={{fontSize:12,fontWeight:700,color:T.accent}}>{(varios.reduce((s,v)=>s+(parseFloat(v.pct)||0),0)).toLocaleString("es-AR")}%</span>
         </div>
         <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Un % que escala con tus ventas (ej: 2% de la facturación a un growth partner). Se calcula sobre el revenue del período y se suma a los costos del día.</div>
@@ -21750,7 +21762,7 @@ function DolarPanel({ T, uid }) {
 
       {/* Fee del dólar para Ad Spend */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>💳 Fee del dólar para Meta Ads</div>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Fee del dólar para Meta Ads</div>
         <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Meta cobra la publicidad en USD. Lo que te cuesta <strong style={{color:T.text}}>de más</strong> comprar esos dólares (recargo de la tarjeta, fee de la agencia, % de tu app de pago, etc.) <strong style={{color:T.text}}>se suma al Ad Spend</strong> porque es parte de lo que te cuesta pautar.</div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:13,color:T.textSm,flex:1}}>% que se suma al Ad Spend</span>
@@ -22567,7 +22579,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <div/><div/>
         </div>
         {filtered.length===0?(
-          <div style={{padding:"40px 20px",textAlign:"center"}}><div style={{fontSize:28,marginBottom:8}}>📭</div><div style={{fontSize:13,color:T.textSm}}>Sin resultados</div></div>
+          <div style={{padding:"40px 20px",textAlign:"center"}}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg><div style={{fontSize:13,color:T.textSm}}>Sin resultados</div></div>
         ):filtered.map(p=>{
           const r2=rate(p), dl=dLeft(p.stock_total,r2), sc=stColor(dl), exp=expandedId===p.id;
           const pct=totalUnits>0?(p.units_sold/totalUnits*100).toFixed(1):0;
@@ -22579,7 +22591,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",padding:"11px 16px",alignItems:"center",cursor:"pointer",background:exp?T.surface+"99":"transparent",transition:"background 0.1s"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                   {p.imagen?<img src={p.imagen} alt="" style={{width:32,height:32,borderRadius:7,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
-                    :<div style={{width:32,height:32,borderRadius:7,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,border:`1px solid ${T.border}`}}>📦</div>}
+                    :<div style={{width:32,height:32,borderRadius:7,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",border:`1px solid ${T.border}`}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></div>}
                   <div style={{minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
                     <div style={{fontSize:10,color:T.textSm,display:"flex",alignItems:"center",gap:6}}>
@@ -22606,7 +22618,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 <div style={{background:T.surface,borderTop:`1px solid ${T.borderL}`}}>
                   {/* Config alerta por producto */}
                   <div style={{padding:"10px 16px 10px 58px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                    <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>⚙ Alerta para este producto:</span>
+                    <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>Alerta para este producto:</span>
                     <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.text,cursor:"pointer"}}>
                       <input type="checkbox" checked={cfg.enabled!==false} onChange={e=>{const nc={...alertConfig,[p.id]:{...cfg,enabled:e.target.checked}};saveAlertConfig(nc);}} style={{cursor:"pointer"}}/>
                       Activa
@@ -22624,7 +22636,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                   {/* Lead time configurable */}
                   <div style={{padding:"8px 16px 8px 58px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,background:T.bg+"44"}}>
-                    <span style={{fontSize:11,color:T.textSm}}>🚛 Tiempo de entrega del proveedor:</span>
+                    <span style={{fontSize:11,color:T.textSm}}>Tiempo de entrega del proveedor:</span>
                     <select value={leadTime[p.id]||""} onChange={e=>{const v=e.target.value?parseInt(e.target.value):undefined;if(v) saveLeadTime(p.id,v); else {const n={...leadTime};delete n[p.id];setLeadTime(n);try{localStorage.setItem(`growith_lead_time_${uid}`,JSON.stringify(n));}catch(err){}};}}
                       style={{...iS,width:"auto",padding:"3px 8px",fontSize:11}}>
                       <option value="">Sin configurar</option>
@@ -22633,7 +22645,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {leadTime[p.id]&&r2>0&&(()=>{
                       const orderIn=Math.max(0,(dl??0)-leadTime[p.id]);
                       return <span style={{fontSize:11,fontWeight:600,color:orderIn<=3?T.red:orderIn<=7?(T.yellow||"#eab308"):T.green}}>
-                        {orderIn<=0?"⚠ Pedí ahora":`Pedido en ${orderIn}d`}
+                        {orderIn<=0?"Pedí ahora":`Pedido en ${orderIn}d`}
                       </span>;
                     })()}
                   </div>
@@ -22679,13 +22691,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
 
   const TABS=[
-    {id:"analisis",label:"📊 Análisis"},
-    {id:"productos",label:"📦 Productos"},
-    {id:"facturacion",label:"💰 Facturación"},
-    {id:"items",label:"📋 Items"},
-    {id:"depositos",label:"🏬 Depósitos"},
-    {id:"historial",label:"📜 Historial"},
-    {id:"alertas",label:`🚨 Alertas${alertas.length>0?` (${alertas.length})`:""}`},
+    {id:"analisis",label:"Análisis"},
+    {id:"productos",label:"Productos"},
+    {id:"facturacion",label:"Facturación"},
+    {id:"items",label:"Items"},
+    {id:"depositos",label:"Depósitos"},
+    {id:"historial",label:"Historial"},
+    {id:"alertas",label:`Alertas${alertas.length>0?` (${alertas.length})`:""}`},
   ];
 
   return (
@@ -22703,12 +22715,12 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           {data?.ml_data && <span style={{fontSize:11,background:"#FFE60022",border:"1px solid #FFE60088",borderRadius:6,padding:"3px 8px",fontWeight:600,color:"#FFE600"}}>Mercado Libre</span>}
           <button onClick={exportCSV} disabled={!data}
             style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
-            ⬇ CSV
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> CSV
           </button>
           <button onClick={syncSales} disabled={syncingSales}
             title="Re-sincroniza ventas de los últimos 30 días desde TN/Shopify/ML"
             style={{background:T.card,border:`1px solid ${T.accent}55`,color:T.accent,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:syncingSales?"wait":"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:600}}>
-            {syncingSales?<><Spinner size={11} color={T.accent}/> Reprocesando...</>:"🔄 Reprocesar 30 días"}
+            {syncingSales?<><Spinner size={11} color={T.accent}/> Reprocesando...</>:<><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Reprocesar 30 días</>}
           </button>
           <button onClick={()=>loadStock(days, useCustomDate?dateFrom:"", useCustomDate?dateTo:"")} disabled={loading}
             style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"5px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
@@ -22727,15 +22739,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"🔗",title:"Conectar tienda",desc:"Para ver el stock real, primero conectá Tienda Nube o Shopify desde Config → Integraciones. Una vez conectado, los datos se sincronizan solos."},
-                {n:2,icon:"⚠️",title:"Alertas de stock",desc:"Configurá un umbral por producto para recibir alertas cuando el stock baje de ese número. Cada SKU puede tener su propio límite."},
-                {n:3,icon:"⏱",title:"Lead time",desc:"Ingresá cuántos días tardás en reponer cada producto. Las alertas te avisan con suficiente anticipación para no quedarte sin stock."},
-                {n:4,icon:"📊",title:"Análisis de ventas",desc:"Ves ventas por período, rotación por SKU y comparativas entre plataformas (Tienda Nube vs Mercado Libre)."},
-                {n:5,icon:"🔄",title:"Historial de agotados",desc:"Registra automáticamente cuándo y por cuánto tiempo estuviste sin stock de cada producto. Útil para planificar mejor los pedidos."},
+                {n:1,icon:"",title:"Conectar tienda",desc:"Para ver el stock real, primero conectá Tienda Nube o Shopify desde Config → Integraciones. Una vez conectado, los datos se sincronizan solos."},
+                {n:2,icon:"",title:"Alertas de stock",desc:"Configurá un umbral por producto para recibir alertas cuando el stock baje de ese número. Cada SKU puede tener su propio límite."},
+                {n:3,icon:"",title:"Lead time",desc:"Ingresá cuántos días tardás en reponer cada producto. Las alertas te avisan con suficiente anticipación para no quedarte sin stock."},
+                {n:4,icon:"",title:"Análisis de ventas",desc:"Ves ventas por período, rotación por SKU y comparativas entre plataformas (Tienda Nube vs Mercado Libre)."},
+                {n:5,icon:"",title:"Historial de agotados",desc:"Registra automáticamente cuándo y por cuánto tiempo estuviste sin stock de cada producto. Útil para planificar mejor los pedidos."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.icon} {s.title}</span> — {s.desc}</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
                 </div>
               ))}
             </div>
@@ -22776,7 +22788,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             const up=diffU!==null&&parseFloat(diffU)>=0;
             return (
               <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,background:up?T.greenBg:T.redBg,border:`1px solid ${up?T.green+"44":T.red+"44"}`,borderRadius:8,padding:"5px 12px"}}>
-                <span style={{fontSize:14}}>{up?"📈":"📉"}</span>
+                <span style={{color:up?T.green:T.red,fontWeight:700,fontSize:12}}>{up?"↑":"↓"}</span>
                 <div style={{fontSize:11,fontWeight:600,color:up?T.green:T.red}}>
                   {diffU!==null&&<span>{up?"+":""}{diffU}% uds</span>}
                   {diffR!==null&&<span style={{marginLeft:8}}>{parseFloat(diffR)>=0?"+":""}{diffR}% rev.</span>}
@@ -22806,18 +22818,18 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 const deltaO=prevO>0?((totalOrders-prevO)/prevO*100):null;
                 const unidadesPorVenta = totalOrders>0 ? (totalUnits/totalOrders).toFixed(1) : "—";
                 return [
-                  {label:"Unidades vendidas",val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"📦",delta:deltaU},
-                  {label:"Órdenes",val:fmt(totalOrders),sub:`${days}d`,color:T.blue||"#3b82f6",icon:"🛒",delta:deltaO},
-                  {label:"Productos por venta",val:unidadesPorVenta,sub:"unidades/orden",color:T.purple||"#c084fc",icon:"🧮",delta:null},
-                  {label:"Facturación",val:fmtARS(totalRev),sub:`${fmtARS(totalOrders>0?totalRev/totalOrders:0)}/orden`,color:T.green,icon:"💰",delta:deltaR},
-                  {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||"#3b82f6",icon:"🔢",delta:null},
-                  {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||"#eab308"):T.green,icon:"⏳",delta:null},
-                  {label:"Sin stock",val:kpiEmpty,sub:"agotados",color:T.red,icon:"⛔",delta:null},
-                  {label:"Stock crítico",val:kpiCritical,sub:"<7 días",color:T.red+"cc",icon:"🔴",delta:null},
+                  {label:"Unidades vendidas",val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"",delta:deltaU},
+                  {label:"Órdenes",val:fmt(totalOrders),sub:`${days}d`,color:T.blue||"#3b82f6",icon:"",delta:deltaO},
+                  {label:"Productos por venta",val:unidadesPorVenta,sub:"unidades/orden",color:T.purple||"#c084fc",icon:"",delta:null},
+                  {label:"Facturación",val:fmtARS(totalRev),sub:`${fmtARS(totalOrders>0?totalRev/totalOrders:0)}/orden`,color:T.green,icon:"",delta:deltaR},
+                  {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||"#3b82f6",icon:"",delta:null},
+                  {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||"#eab308"):T.green,icon:"",delta:null},
+                  {label:"Sin stock",val:kpiEmpty,sub:"agotados",color:T.red,icon:"",delta:null},
+                  {label:"Stock crítico",val:kpiCritical,sub:"<7 días",color:T.red+"cc",icon:"",delta:null},
                 ];
               })().map(k=>(
                 <div key={k.label} style={{background:T.card,border:`1px solid ${((k.label==="Sin stock"||k.label==="Stock crítico")&&k.val>0)?T.red+"55":T.border}`,borderRadius:12,padding:"13px 14px"}}>
-                  <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:5}}>{k.icon} {k.label}</div>
+                  <div style={{fontSize:9,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:5}}>{k.label}</div>
                   <div style={{fontSize:k.label==="Facturación"?14:20,fontWeight:800,color:k.color,letterSpacing:-0.5,lineHeight:1}}>{k.val}</div>
                   <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.sub}</div>
                   {k.delta!==null&&<div style={{fontSize:9,fontWeight:700,color:k.delta>=0?T.green:T.red,marginTop:4}}>{k.delta>=0?"+":""}{k.delta.toFixed(1)}% vs anterior</div>}
@@ -22831,7 +22843,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {/* ── FORECAST DE DEMANDA (solo en tab análisis) ── */}
             {tab==="analisis"&&data&&avgRate>0&&(
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:6}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>📈 Proyección de demanda</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Proyección de demanda</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
                   {[{d:7,l:"Próximos 7 días"},{d:14,l:"Próximos 14 días"},{d:30,l:"Próximos 30 días"}].map(p=>{
                     const proj=Math.round(avgRate*p.d);
@@ -22842,7 +22854,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{p.l}</div>
                         <div style={{fontSize:22,fontWeight:800,color:T.accentSolid,letterSpacing:-1,lineHeight:1}}>{fmt(proj)}</div>
                         <div style={{fontSize:10,color:T.textSm,marginTop:2}}>unidades · {fmtARS(projRev)}</div>
-                        {willRun.length>0&&<div style={{fontSize:10,color:T.red,marginTop:6,fontWeight:600}}>⚠ {willRun.length} prod. se agotan antes</div>}
+                        {willRun.length>0&&<div style={{fontSize:10,color:T.red,marginTop:6,fontWeight:600}}>{willRun.length} prod. se agotan antes</div>}
                       </div>
                     );
                   })}
@@ -22949,7 +22961,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const maxV=top5[0]?.[1]||1;
                         return (
                           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-                            <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>🏆 Mejores días</div>
+                            <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>Mejores días</div>
                             {top5.map(([date,val],i)=>(
                               <div key={date} style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
                                 <span style={{fontSize:10,fontWeight:700,color:T.textSm,width:14,flexShrink:0}}>{i+1}</span>
@@ -23013,11 +23025,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   {(tab==="productos"||tab==="facturacion")&&(
                     <div style={{display:"flex",flexDirection:"column",gap:12}}>
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                        <input type="text" placeholder="🔍 Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
+                        <input type="text" placeholder="Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
                           style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
                         {tab==="productos"&&(
                           <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
-                            {[{v:"tabla",l:"☰ Tabla"},{v:"kanban",l:"⬛ Kanban"}].map(o=>(
+                            {[{v:"tabla",l:"Tabla"},{v:"kanban",l:"Kanban"}].map(o=>(
                               <button key={o.v} onClick={()=>setViewMode(o.v)}
                                 style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:viewMode===o.v?T.card:"transparent",color:viewMode===o.v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewMode===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>
                                 {o.l}
@@ -23034,7 +23046,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                             const vr=v.units_sold/Math.max(1,days);
                             const vd=vr>0?Math.round(v.stock/vr):null;
                             const sc=v.stock===0?T.red:vd===null?T.textSm:vd<=7?T.red:vd<=globalThreshold?(T.yellow||"#eab308"):T.green;
-                            const sl=v.stock===0?"⛔ Sin stock":vd===null?"💤 Sin ventas":vd<=7?"🔴 Crítico":vd<=globalThreshold?"⚠️ Reponer":"✅ OK";
+                            const sl=v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
                             const lt=leadTime[p.id];
                             const daysToOrder=lt&&vd!==null?vd-lt:null;
                             return (
@@ -23051,7 +23063,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 </div>
                                 <div style={{fontSize:10,fontWeight:600,color:sc,textAlign:"center",background:sc+"18",borderRadius:5,padding:"2px 0"}}>{sl}</div>
                                 {vr>0&&<div style={{fontSize:9,color:T.textSm,textAlign:"center"}}>{vr.toFixed(1)} uds/día</div>}
-                                {daysToOrder!==null&&daysToOrder<=7&&<div style={{fontSize:9,color:T.accent,fontWeight:700,textAlign:"center",background:T.accentSolid+"18",borderRadius:4,padding:"2px 4px"}}>🚛 Pedir en {Math.max(0,daysToOrder)}d</div>}
+                                {daysToOrder!==null&&daysToOrder<=7&&<div style={{fontSize:9,color:T.accent,fontWeight:700,textAlign:"center",background:T.accentSolid+"18",borderRadius:4,padding:"2px 4px"}}>Pedir en {Math.max(0,daysToOrder)}d</div>}
                               </div>
                             );
                           }))}
@@ -23062,8 +23074,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       {tab==="productos"&&viewMode==="tabla"&&kpiDead>0&&(
                         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
                           <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
-                            <span>💤</span>
-                            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Sin ventas en el período</div>
+                              <div style={{fontSize:13,fontWeight:700,color:T.text}}>Sin ventas en el período</div>
                             <span style={{fontSize:11,color:T.textSm,marginLeft:"auto"}}>{kpiDead} productos inactivos</span>
                           </div>
                           <ProductTable products={allProducts} showDead/>
@@ -23106,7 +23117,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {/* Header */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
-                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>🏬 Depósitos</div>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>Depósitos</div>
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Gestioná los depósitos donde tenés stock. El stock total de cada item es la suma de los depósitos.</div>
                   </div>
                   <button onClick={openNewWarehouse} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Nuevo depósito</button>
@@ -23254,12 +23265,12 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
                     <div>
-                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>📋 Items de inventario</div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Items de inventario</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Un item es la entidad central de tu stock. Vinculá las publicaciones de Shopify/TN/ML que correspondan a un mismo producto físico (con cantidades para packs).</div>
                     </div>
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      <button onClick={syncSales} disabled={syncingSales} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{syncingSales?<><Spinner size={11} color={T.textMd}/> Sincronizando</>:"🔄 Sincronizar ventas"}</button>
-                      <button onClick={importAllPubs} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>📥 Importar items</button>
+                      <button onClick={syncSales} disabled={syncingSales} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{syncingSales?<><Spinner size={11} color={T.textMd}/> Sincronizando</>:"Sincronizar ventas"}</button>
+                      <button onClick={importAllPubs} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Importar items</button>
                       <button onClick={openNewItem} style={{padding:"7px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear Item</button>
                     </div>
                   </div>
@@ -23280,7 +23291,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                 {/* Buscador */}
                 <div style={{display:"flex",gap:8}}>
-                  <input type="text" placeholder="🔍 Buscar item por nombre o SKU..." value={invSearch} onChange={e=>setInvSearch(e.target.value)} style={{flex:1,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                  <input type="text" placeholder="Buscar item por nombre o SKU..." value={invSearch} onChange={e=>setInvSearch(e.target.value)} style={{flex:1,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                 </div>
 
                 {/* Tabla */}
@@ -23288,11 +23299,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <div style={{padding:"40px 0",textAlign:"center"}}><Spinner size={20} color={T.accent}/></div>
                 ) : invItems.length === 0 ? (
                   <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
-                    <div style={{fontSize:32,marginBottom:8}}>📦</div>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
                     <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>Todavía no tenés items</div>
                     <div style={{fontSize:12,color:T.textMd,marginBottom:14,maxWidth:480,margin:"0 auto 14px"}}>Importá automáticamente desde tus canales conectados (Shopify, Tienda Nube, ML) o creá uno manual.</div>
                     <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
-                      <button onClick={importAllPubs} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>📥 Importar de canales</button>
+                      <button onClick={importAllPubs} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Importar de canales</button>
                       <button onClick={openNewItem} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear item manual</button>
                     </div>
                   </div>
@@ -23352,7 +23363,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <td style={{padding:"10px 12px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:it.costo_unitario?T.textMd:T.textSm}}>{it.costo_unitario?(()=>{const v=(it.stock_total||0)*it.costo_unitario;return "$"+Math.round(v).toLocaleString("es-AR");})():"—"}</td>
                                 <td style={{padding:"10px 12px",textAlign:"right",whiteSpace:"nowrap"}}>
                                   <button onClick={()=>openEditItem(it)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.accent,cursor:"pointer",marginRight:6,fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
-                                  <button onClick={()=>deleteInvItem(it)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>🗑</button>
+                                  <button onClick={()=>deleteInvItem(it)} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center"}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button>
                                 </td>
                               </tr>
                             );
@@ -23397,7 +23408,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
-                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>📜 Historial de movimientos</div>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>Historial de movimientos</div>
                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Mostrando los últimos <strong>200 movimientos</strong>. Las ventas descuentan, los ajustes manuales se ven con el origen "manual".</div>
                   </div>
                   <div style={{display:"flex",gap:6}}>
@@ -23414,25 +23425,25 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));
                       a.download=`movimientos_stock_${new Date().toISOString().slice(0,10)}.csv`;
                       a.click();
-                    }} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⬇ Exportar CSV</button>
+                    }} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar CSV</button>
                   </div>
                 </div>
                 {/* Filtros */}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                  <input type="text" placeholder="🔍 Buscar por producto, evento u orden..." value={movFilterSearch} onChange={e=>setMovFilterSearch(e.target.value)} style={{flex:1,minWidth:220,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                  <input type="text" placeholder="Buscar por producto, evento u orden..." value={movFilterSearch} onChange={e=>setMovFilterSearch(e.target.value)} style={{flex:1,minWidth:220,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                   <select value={movFilterOrigen} onChange={e=>setMovFilterOrigen(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    <option value="all">🌐 Todos los orígenes</option>
+                    <option value="all">Todos los orígenes</option>
                     <option value="shopify">Shopify</option>
                     <option value="tiendanube">Tienda Nube</option>
                     <option value="mercadolibre">Mercado Libre</option>
                     <option value="manual">Manual (User)</option>
                   </select>
                   <select value={movFilterDeposito} onChange={e=>setMovFilterDeposito(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    <option value="all">🏬 Todos los depósitos</option>
+                    <option value="all">Todos los depósitos</option>
                     {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
                   <select value={movFilterEvento} onChange={e=>setMovFilterEvento(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"7px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    <option value="all">📋 Todos los eventos</option>
+                    <option value="all">Todos los eventos</option>
                     <option value="venta">Ventas / Órdenes</option>
                     <option value="manual">Ajustes manuales</option>
                     <option value="creacion">Creación</option>
@@ -23509,7 +23520,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                   {/* Tabs */}
                   <div style={{display:"flex",gap:4,padding:"10px 20px",borderBottom:`1px solid ${T.borderL}`}}>
-                    {[["stock","📦 Stock"],["mapeo","🔗 Mapeo de productos"]].map(([id,l])=>(
+                    {[["stock","Stock"],["mapeo","Mapeo de productos"]].map(([id,l])=>(
                       <button key={id} onClick={()=>setItemEditTab(id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:itemEditTab===id?T.accent+"22":"transparent",color:itemEditTab===id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
                     ))}
                   </div>
@@ -23583,7 +23594,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         </div>
                         {platformErrors.length>0 && (
                           <div style={{padding:"8px 10px",background:T.red+"15",border:`1px solid ${T.red}33`,borderRadius:7,fontSize:10,color:T.red,marginBottom:8}}>
-                            {platformErrors.map((e,i)=><div key={i}>⚠ {e.platform}: {e.error}</div>)}
+                            {platformErrors.map((e,i)=><div key={i}>{e.platform}: {e.error}</div>)}
                           </div>
                         )}
                         <div style={{maxHeight:260,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:8}}>
@@ -23636,7 +23647,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {/* Config global */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:8}}>
-                    <span style={{fontSize:12,fontWeight:600,color:T.text}}>⚙ Configuración global de alertas:</span>
+                    <span style={{fontSize:12,fontWeight:600,color:T.text}}>Configuración global de alertas:</span>
                     <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.text}}>
                       Avisar cuando queden menos de
                       <select value={globalThreshold} onChange={e=>saveGlobalThreshold(parseInt(e.target.value))}
@@ -23647,13 +23658,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </label>
                   </div>
                   <div style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:6,padding:"6px 10px",lineHeight:1.6}}>
-                    💡 <strong>3d</strong> = emergencia · <strong>7d</strong> = urgente · <strong>14d</strong> = reponer pronto (recomendado) · <strong>30d</strong> = prevención anticipada · <strong>60d</strong> = stock de alta rotación
+                    <strong>3d</strong> = emergencia · <strong>7d</strong> = urgente · <strong>14d</strong> = reponer pronto (recomendado) · <strong>30d</strong> = prevención anticipada · <strong>60d</strong> = stock de alta rotación
                     {(()=>{const customCount=Object.keys(alertConfig||{}).length;return customCount>0?<> · <span style={{color:T.accent,fontWeight:600}}>{customCount} producto{customCount!==1?"s":""} con config personalizada</span></>:null;})()}
                   </div>
                 </div>
                 {/* Config notificaciones */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>🔔 Notificaciones de stock crítico</div>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Notificaciones de stock crítico</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
                     <div>
                       <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Email</label>
@@ -23666,15 +23677,15 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                   {alertas.length>0&&(
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {alertNotif.whatsapp&&<a href={`https://wa.me/${alertNotif.whatsapp.replace(/\D/g,"")}?text=${encodeURIComponent(`⚠️ Alerta de stock crítico — Growith\n${alertas.slice(0,5).map(a=>`• ${a.producto} ${a.variante}: ${a.stock} uds (${a.daysLeft??0}d)`).join("\n")}`)}`} target="_blank" rel="noopener" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.green,borderColor:T.green+"55"}}>📲 Enviar alerta por WhatsApp</a>}
-                      <button onClick={()=>{if("Notification"in window){Notification.requestPermission().then(p=>{if(p==="granted"){new Notification("⚠️ Stock crítico — Growith",{body:alertas.slice(0,3).map(a=>`${a.producto}: ${a.stock} uds`).join("\n"),icon:"/favicon.ico"});}});}}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>🔔 Notificación browser</button>
+                      {alertNotif.whatsapp&&<a href={`https://wa.me/${alertNotif.whatsapp.replace(/\D/g,"")}?text=${encodeURIComponent(`Alerta de stock crítico — Growith\n${alertas.slice(0,5).map(a=>`• ${a.producto} ${a.variante}: ${a.stock} uds (${a.daysLeft??0}d)`).join("\n")}`)}`} target="_blank" rel="noopener" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.green,borderColor:T.green+"55"}}>Enviar alerta por WhatsApp</a>}
+                      <button onClick={()=>{if("Notification"in window){Notification.requestPermission().then(p=>{if(p==="granted"){new Notification("Stock crítico — Growith",{body:alertas.slice(0,3).map(a=>`${a.producto}: ${a.stock} uds`).join("\n"),icon:"/favicon.ico"});}});}}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Notificación browser</button>
                     </div>
                   )}
                 </div>
                 {/* Calculadora punto de reorden */}
                 {alertas.length>0&&(
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>📦 ¿Cuándo pedir? — Calculadora de punto de reorden</div>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>¿Cuándo pedir? — Calculadora de punto de reorden</div>
                     <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Basado en tu tasa de venta y el lead time configurado por producto</div>
                     <div style={{display:"flex",flexDirection:"column",gap:8}}>
                       {alertas.filter(a=>a.rate>0).slice(0,8).map((a,i)=>{
@@ -23690,7 +23701,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               <div style={{fontSize:10,color:T.textSm,marginTop:2}}>Stock: {a.stock} · Tasa: {a.rate.toFixed(1)}/día{lt>0?` · Lead time: ${lt}d`:""}</div>
                             </div>
                             <div style={{textAlign:"right",flexShrink:0}}>
-                              {orderNow&&<div style={{fontSize:11,fontWeight:700,color:T.red,marginBottom:2}}>🔴 PEDIR YA</div>}
+                              {orderNow&&<div style={{fontSize:11,fontWeight:700,color:T.red,marginBottom:2}}>PEDIR YA</div>}
                               {daysToOrder!==null&&daysToOrder>3&&<div style={{fontSize:11,color:T.yellow,marginBottom:2}}>Pedir en {daysToOrder}d</div>}
                               <div style={{fontSize:10,color:T.textSm}}>Sugerir: <strong style={{color:T.text}}>{suggested30} uds</strong> (30d)</div>
                               {orderPoint&&<div style={{fontSize:9,color:T.textSm}}>Punto de reorden: {orderPoint} uds</div>}
@@ -23717,11 +23728,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                     {alertas.map((a,i)=>{
                       const c=a.status==="empty"?T.red:a.status==="critical"?T.red+"cc":(T.yellow||"#eab308");
-                      const icon=a.status==="empty"?"⛔":a.status==="critical"?"🔴":"⚠️";
+                      const icon=a.status==="empty"?"·":a.status==="critical"?"·":"·";
                       return (
                         <div key={i} style={{background:T.card,border:`1.5px solid ${c}44`,borderRadius:12,padding:"16px 18px",display:"flex",alignItems:"center",gap:14}}>
                           {a.imagen?<img src={a.imagen} alt="" style={{width:48,height:48,borderRadius:10,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
-                            :<div style={{width:48,height:48,borderRadius:10,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>📦</div>}
+                            :<div style={{width:48,height:48,borderRadius:10,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></div>}
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.producto}</div>
                             <div style={{fontSize:12,color:T.textMd,marginTop:2}}>{a.variante}{a.sku?` · SKU: ${a.sku}`:""}</div>
@@ -23737,7 +23748,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                             </div>
                             <div style={{fontSize:10,color:T.textSm,marginBottom:6}}>días restantes</div>
                             <span style={{fontSize:10,padding:"3px 10px",borderRadius:5,background:c+"22",color:c,fontWeight:700}}>
-                              {icon} {a.status==="empty"?"Sin stock":a.status==="critical"?"Crítico":"Reponer pronto"}
+                              {a.status==="empty"?"Sin stock":a.status==="critical"?"Crítico":"Reponer pronto"}
                             </span>
                           </div>
                         </div>
@@ -23752,11 +23763,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   if(!hist.length) return null;
                   return (
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px"}}>
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>📋 Historial de agotados</div>
+                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>Historial de agotados</div>
                       <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
                         {hist.map((h,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
-                            <span style={{color:T.red,flexShrink:0}}>⛔</span>
+                            <span style={{color:T.red,flexShrink:0,fontSize:10,fontWeight:700}}>×</span>
                             <span style={{flex:1,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.producto} · {h.variante}</span>
                             <span style={{color:T.textSm,flexShrink:0,fontSize:11}}>{h.fecha}</span>
                           </div>
@@ -23772,7 +23783,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           </>
         ):(
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"60px 20px",textAlign:"center"}}>
-            <div style={{fontSize:32,marginBottom:12}}>🔌</div>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:12,display:"block",margin:"0 auto 12px"}}><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>
             <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Conectá tu tienda</div>
             <div style={{fontSize:13,color:T.textSm}}>Conectá Tienda Nube o Shopify desde Configuración para ver tu stock y estadísticas.</div>
           </div>
