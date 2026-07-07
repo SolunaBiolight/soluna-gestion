@@ -21895,6 +21895,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const uid = user?.uid;
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
+  const [stockError, setStockError] = useState(null);
   const [data, setData] = useState(null);
   const [dataPrev, setDataPrev] = useState(null);
   const [tabLocal, setTabLocal] = useState("analisis");
@@ -21999,7 +22000,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   async function loadStock(d=days, from="", to="") {
     if(!uid) return;
-    setLoading(true); setData(null); setDataPrev(null);
+    setLoading(true); setData(null); setDataPrev(null); setStockError(null);
     try {
       let params = `action=products&uid=${uid}`;
       let prevParams = `action=products&uid=${uid}`;
@@ -22047,7 +22048,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         homeStatsP,
       ]);
       const [json, jsonPrev] = await Promise.all([r.json(), rPrev.json()]);
-      if(json.error){toast(json.error,"error");setLoading(false);return;}
+      if(json.error){setStockError(json.error);toast(json.error,"error");setLoading(false);return;}
       if(json.products) {
         // Override total_orders, total_revenue Y total_units con los del Home
         // (fuente confiable que cuenta bien por timezone AR y matchea Escalafy).
@@ -22065,7 +22066,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         setData(json);
       }
       if(jsonPrev?.products) setDataPrev(jsonPrev);
-    } catch(e){toast(e.message,"error");}
+    } catch(e){setStockError(e.message);toast(e.message,"error");}
     setLoading(false);
   }
 
@@ -23814,9 +23815,26 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               </div>
             )}
           </>
+        ):stockError?(
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"60px 20px",textAlign:"center"}}>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{display:"block",margin:"0 auto 14px"}}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>
+              {stockError==="Tienda no conectada"?"Conectá tu tienda":"Error al cargar datos"}
+            </div>
+            <div style={{fontSize:13,color:T.textSm,marginBottom:18,maxWidth:360,margin:"0 auto 18px"}}>
+              {stockError==="Tienda no conectada"
+                ?"Conectá Tienda Nube o Shopify desde Configuración para ver tu stock y estadísticas."
+                :stockError}
+            </div>
+            {stockError!=="Tienda no conectada"&&(
+              <button onClick={()=>loadStock(days, useCustomDate?dateFrom:"", useCustomDate?dateTo:"")} style={{fontSize:13,fontWeight:600,padding:"8px 18px",borderRadius:8,background:T.accent,color:"#fff",border:"none",cursor:"pointer"}}>
+                Reintentar
+              </button>
+            )}
+          </div>
         ):(
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"60px 20px",textAlign:"center"}}>
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:12,display:"block",margin:"0 auto 12px"}}><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{display:"block",margin:"0 auto 12px"}}><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>
             <div style={{fontSize:15,fontWeight:700,color:T.text,marginBottom:6}}>Conectá tu tienda</div>
             <div style={{fontSize:13,color:T.textSm}}>Conectá Tienda Nube o Shopify desde Configuración para ver tu stock y estadísticas.</div>
           </div>

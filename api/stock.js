@@ -336,7 +336,8 @@ function normTN(p, salesMap, days) {
     const vid=String(v.id);
     const s=salesMap[vid]||{units:0,revenue:0};
     const stock=parseInt(v.stock)||0;
-    return {id:vid,sku:v.sku||"",nombre:Object.values(v.values?.[0]||{}).join(" / ")||"Default",stock,units_sold:s.units,revenue:s.revenue,days_left:daysLeft(stock,s.units,days),price:parseFloat(v.price)||0};
+    const varNombre=(v.values||[]).map(val=>val.es||val.en||Object.values(val||{})[0]||"").filter(Boolean).join(" / ")||v.sku||"Default";
+    return {id:vid,sku:v.sku||"",nombre:varNombre,stock,units_sold:s.units,revenue:s.revenue,days_left:daysLeft(stock,s.units,days),price:parseFloat(v.price)||0};
   });
   const tS=variants.reduce((a,v)=>a+v.stock,0);
   const tU=variants.reduce((a,v)=>a+v.units_sold,0);
