@@ -2828,20 +2828,30 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                               draggable
                               onDragStart={e=>{e.dataTransfer.setData("reclamoId",r._docId);e.dataTransfer.effectAllowed="move";}}
                               onClick={(e)=>{if(e.shiftKey||e.metaKey||e.ctrlKey){const ns=new Set(bulkSelected);ns.has(r._docId)?ns.delete(r._docId):ns.add(r._docId);setBulkSelected(ns);}else{setActiveReclamo(isActive?null:r._docId);}}}
-                              style={{background:isBulk?T.accentSolid+"28":isActive?T.accentSolid+"18":T.bg,border:`1px solid ${isBulk?T.accentSolid:isActive?T.accentSolid:urgente?T.red+"55":T.borderL}`,borderLeft:`3px solid ${isBulk?T.accentSolid:urgente?T.red:sc.dot}`,borderRadius:DS.r.md,padding:"10px 12px",cursor:"grab",transition:`all 0.12s ${DS.ease}`,userSelect:"none"}}
-                              onMouseEnter={e=>{if(!isActive&&!isBulk)e.currentTarget.style.background=T.surface;}}
-                              onMouseLeave={e=>{if(!isActive&&!isBulk)e.currentTarget.style.background=T.bg;}}>
-                              {nombre&&<div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
-                              <div style={{fontSize:11,color:T.accent,marginBottom:5}}>#{r.orderNum}</div>
-                              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4}}>
-                                <span style={{fontSize:10,fontWeight:600,color:tc.text,background:tc.bg,borderRadius:DS.r.sm,padding:"2px 6px"}}>{r.tipo}</span>
+                              style={{background:isBulk?T.accentSolid+"28":isActive?T.accentSolid+"18":T.card,border:`1.5px solid ${isBulk?T.accentSolid:isActive?T.accentSolid:urgente?T.red:T.border}`,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"grab",transition:"box-shadow 0.15s, background 0.12s",userSelect:"none",display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif"}}
+                              onMouseEnter={e=>{e.currentTarget.style.boxShadow=DS.shadow.lg;if(!isActive&&!isBulk)e.currentTarget.style.background=T.surface;}}
+                              onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.background=isBulk?T.accentSolid+"28":isActive?T.accentSolid+"18":T.card;}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                                <div style={{display:"flex",alignItems:"center",gap:5}}>
+                                  <div style={{width:6,height:6,borderRadius:"50%",background:urgente?T.red:sc.dot,flexShrink:0}}/>
+                                  <span style={{fontSize:11,fontWeight:600,color:urgente?T.red:sc.text}}>{estado}</span>
+                                </div>
                                 <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                                  {hasTracking&&<span title="Tiene tracking" style={{fontSize:9,fontWeight:700,color:T.blue}}>TRK</span>}
-                                  {r.notasInternas&&<span title="Tiene notas" style={{fontSize:9,fontWeight:700,color:T.yellow}}>NOTA</span>}
-                                  {dias!==null&&<span style={{fontSize:10,color:urgente?T.red:T.textSm,fontWeight:urgente?700:400}}>{dias}d</span>}
+                                  {urgente&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
+                                  {hasTracking&&<span title="Tiene tracking" style={{fontSize:9,fontWeight:700,color:T.blue,background:T.blue+"15",borderRadius:4,padding:"2px 7px"}}>TRK</span>}
+                                  {r.notasInternas&&<span title="Tiene notas" style={{fontSize:9,fontWeight:700,color:T.yellow,background:T.yellow+"15",borderRadius:4,padding:"2px 7px"}}>NOTA</span>}
                                 </div>
                               </div>
-                              {r.motivo&&<div style={{fontSize:10,color:T.textSm,marginTop:5,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{r.motivo}</div>}
+                              {nombre&&<div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.4,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
+                              {r.motivo&&<div style={{fontSize:11,color:T.textSm,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",marginBottom:8}}>{r.motivo}</div>}
+                              <div style={{flex:1}}/>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  <span style={{fontSize:10,fontWeight:600,color:tc.text,background:tc.bg,borderRadius:DS.r.sm,padding:"2px 6px"}}>{r.tipo}</span>
+                                  <span style={{fontSize:11,color:T.accent,fontWeight:500}}>#{r.orderNum}</span>
+                                </div>
+                                {dias!==null&&<span style={{fontSize:11,fontWeight:600,color:urgente?T.red:T.textSm}}>{dias}d</span>}
+                              </div>
                             </div>
                           );
                         })}
@@ -4095,29 +4105,38 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                             onDragStart={e=>{e.dataTransfer.setData("canjeId",c._docId);e.dataTransfer.effectAllowed="move";}}
                             onDragEnd={()=>setDragOverEstado(null)}
                             onClick={()=>setDetail(c._docId)}
-                            style={{background:T.bg,border:`1px solid ${urgente?T.red+"55":T.borderL}`,borderLeft:`3px solid ${urgente?T.red:sc.dot}`,borderRadius:10,padding:"10px 11px",cursor:"grab",transition:`all 0.12s`,userSelect:"none",position:"relative"}}
-                            onMouseEnter={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.boxShadow=`0 2px 8px rgba(0,0,0,0.12)`;}}
-                            onMouseLeave={e=>{e.currentTarget.style.background=T.bg;e.currentTarget.style.boxShadow="none";}}>
+                            style={{background:T.card,border:`1.5px solid ${urgente?T.red:T.border}`,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"grab",transition:"box-shadow 0.15s, background 0.12s",userSelect:"none",display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif"}}
+                            onMouseEnter={e=>{e.currentTarget.style.boxShadow=DS.shadow.lg;e.currentTarget.style.background=T.surface;}}
+                            onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.background=T.card;}}>
 
-                            {/* Badge días envío */}
-                            {diasEnvio!==null&&(c.estado==="Enviado"||c.estado==="Contenido pendiente")&&(
-                              <div style={{position:"absolute",top:8,right:8,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:99,background:diasEnvio>=15?T.redBg:diasEnvio>=7?T.orangeBg:T.greenBg,color:diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green,border:`1px solid ${diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green}33`}}>
-                                {diasEnvio}d
+                            {/* Top: estado + badges */}
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                              <div style={{display:"flex",alignItems:"center",gap:5}}>
+                                <div style={{width:6,height:6,borderRadius:"50%",background:urgente?T.red:sc.dot,flexShrink:0}}/>
+                                <span style={{fontSize:11,fontWeight:600,color:urgente?T.red:sc.text}}>{estado}</span>
                               </div>
-                            )}
+                              <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                                {urgente&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
+                                {diasEnvio!==null&&(c.estado==="Enviado"||c.estado==="Contenido pendiente")&&(
+                                  <span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:4,background:diasEnvio>=15?T.redBg:diasEnvio>=7?T.orangeBg:T.greenBg,color:diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green,border:`1px solid ${diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green}33`}}>
+                                    {diasEnvio}d
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
                             {/* Influencer */}
-                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
-                              <Avatar src={c.foto} name={c.influencer} size={30} radius={8} T={T}/>
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                              <Avatar src={c.foto} name={c.influencer} size={28} radius={8} T={T}/>
                               <div style={{minWidth:0,flex:1}}>
-                                <div style={{fontSize:12,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:28}}>{c.influencer||"Sin nombre"}</div>
+                                <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.influencer||"Sin nombre"}</div>
                                 {c.usuario&&<div style={{fontSize:10,color:T.accent}}>@{c.usuario}</div>}
                               </div>
                             </div>
 
-                            {/* Chips info — solo lo útil */}
+                            {/* Chips info */}
                             {(c.nicho||prods.length>0)&&(
-                              <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:pctContenido!==null?7:4}}>
+                              <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>
                                 {c.nicho&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.purpleBg,color:T.purple,fontWeight:600}}>{c.nicho}</span>}
                                 {prods.map((p,i)=>(
                                   <span key={i} style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>
@@ -4127,15 +4146,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                               </div>
                             )}
 
-                            {/* Barra de progreso contenido */}
+                            <div style={{flex:1}}/>
+
+                            {/* Footer: barra de progreso contenido */}
                             {pctContenido!==null&&(
-                              <div>
-                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                                  <span style={{fontSize:9,color:T.textSm}}>Contenido</span>
-                                  <span style={{fontSize:9,fontWeight:700,color:pctContenido===100?T.green:urgente?T.red:T.textMd}}>{totalEntregado}/{totalAcordado}</span>
+                              <div style={{paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                                  <span style={{fontSize:10,color:T.textSm}}>Contenido</span>
+                                  <span style={{fontSize:10,fontWeight:700,color:pctContenido===100?T.green:urgente?T.red:T.textMd}}>{totalEntregado}/{totalAcordado}</span>
                                 </div>
-                                <div style={{height:4,background:T.borderL,borderRadius:99,overflow:"hidden"}}>
-                                  <div style={{height:"100%",width:`${pctContenido}%`,background:pctContenido===100?T.green:urgente?T.red:T.orange,borderRadius:99,transition:"width 0.3s"}}/>
+                                <div style={{height:3,borderRadius:2,background:T.borderL,overflow:"hidden"}}>
+                                  <div style={{height:"100%",width:`${pctContenido}%`,background:pctContenido===100?T.green:urgente?T.red:T.orange,borderRadius:2,transition:"width 0.3s"}}/>
                                 </div>
                               </div>
                             )}
