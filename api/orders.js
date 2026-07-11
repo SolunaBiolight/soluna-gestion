@@ -810,12 +810,18 @@ export default async function handler(req, res) {
         if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
-      // shipping_status="unpacked" en TN = todas las no-enviadas (incluso las preparadas)
-      // La diferencia está en fulfillments[].status: PACKED = preparada y lista para enviar
-      const allUnpacked = await fetchAllPages(storeId, accessToken, "payment_status=paid&shipping_status=unpacked");
-      const porEnviar = allUnpacked.filter(o =>
-        o.fulfillments?.some(f => (f.status||'').toUpperCase() === 'PACKED')
-      );
+      // Intentar shipping_status=packed (formato TN para órdenes preparadas)
+      let porEnviar;
+      try {
+        porEnviar = await fetchAllPages(storeId, accessToken, "payment_status=paid&shipping_status=packed");
+        console.log('[enviar] shipping_status=packed count:', porEnviar.length);
+      } catch(e) {
+        // packed no soportado — fallback a unpacked + filtro fulfillment
+        console.log('[enviar] packed filter failed:', e.message, '— usando fallback fulfillment');
+        const allUnpacked = await fetchAllPages(storeId, accessToken, "payment_status=paid&shipping_status=unpacked");
+        porEnviar = allUnpacked.filter(o => o.fulfillments?.some(f => (f.status||'').toUpperCase() === 'PACKED'));
+        console.log('[enviar] fallback porEnviar:', porEnviar.length);
+      }
       if (countOnly === 'true') return res.status(200).json(Array.from({length: porEnviar.length}, (_,i) => ({id:i})));
       return res.status(200).json(porEnviar);
     }
