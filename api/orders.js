@@ -810,17 +810,17 @@ export default async function handler(req, res) {
         if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
-      // Intentar shipping_status=packed (formato TN para órdenes preparadas)
-      let porEnviar;
-      try {
-        porEnviar = await fetchAllPages(storeId, accessToken, "payment_status=paid&shipping_status=packed");
-        console.log('[enviar] shipping_status=packed count:', porEnviar.length);
-      } catch(e) {
-        // packed no soportado — fallback a unpacked + filtro fulfillment
-        console.log('[enviar] packed filter failed:', e.message, '— usando fallback fulfillment');
-        const allUnpacked = await fetchAllPages(storeId, accessToken, "payment_status=paid&shipping_status=unpacked");
-        porEnviar = allUnpacked.filter(o => o.fulfillments?.some(f => (f.status||'').toUpperCase() === 'PACKED'));
-        console.log('[enviar] fallback porEnviar:', porEnviar.length);
+      // El código original filtraba solo page=1. Ahora los pedidos están 400 atrás (páginas 2-3).
+      // fetchAllPages hace requests paralelas que TN rate-limita → páginas vacías.
+      // Solución: paginación secuencial hasta encontrar todos los PACKED.
+      const porEnviar = [];
+      for (let p = 1; p <= 15; p++) {
+        let batch;
+        try { batch = await fetchPage(storeId, accessToken, "payment_status=paid&status=open", p); }
+        catch(e) { break; }
+        if (!batch.length) break;
+        batch.forEach(o => { if (o.fulfillments?.some(f => f.status === 'PACKED')) porEnviar.push(o); });
+        if (batch.length < 200) break;
       }
       if (countOnly === 'true') return res.status(200).json(Array.from({length: porEnviar.length}, (_,i) => ({id:i})));
       return res.status(200).json(porEnviar);
