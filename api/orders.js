@@ -810,18 +810,12 @@ export default async function handler(req, res) {
         if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
-      // shipping_status es "unpacked" en TODAS las órdenes de TN — la diferencia está en fulfillments
+      // shipping_status="unpacked" en TN = todas las no-enviadas (incluso las preparadas)
+      // La diferencia está en fulfillments[].status: PACKED = preparada y lista para enviar
       const allUnpacked = await fetchAllPages(storeId, accessToken, "payment_status=paid&shipping_status=unpacked");
-      const fStatuses = {};
-      let withFulfillment = 0;
-      allUnpacked.forEach(o => {
-        if (o.fulfillments?.length > 0) { withFulfillment++; }
-        (o.fulfillments || []).forEach(f => { const fs = f.status||'null'; fStatuses[fs]=(fStatuses[fs]||0)+1; });
-      });
-      console.log('[enviar] total:', allUnpacked.length, 'withFulfillment:', withFulfillment, 'fStatuses:', JSON.stringify(fStatuses));
-      // Por enviar = tienen un fulfillment creado (orden preparada en TN)
-      const porEnviar = allUnpacked.filter(o => o.fulfillments?.length > 0);
-      console.log('[enviar] porEnviar por fulfillment:', porEnviar.length);
+      const porEnviar = allUnpacked.filter(o =>
+        o.fulfillments?.some(f => (f.status||'').toUpperCase() === 'PACKED')
+      );
       if (countOnly === 'true') return res.status(200).json(Array.from({length: porEnviar.length}, (_,i) => ({id:i})));
       return res.status(200).json(porEnviar);
     }
