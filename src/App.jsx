@@ -2736,7 +2736,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {ESTADOS_R.map(estado=>{
                   const sc=getEstadoRC(T,estado);
-                  const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo));
+                  const sq=search.toLowerCase();
+                  const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
                   if(!items.length) return null;
                   return (
                     <div key={estado}>
@@ -2791,7 +2792,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
             <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16}}>
                 {ESTADOS_R.map(estado=>{
                   const sc=getEstadoRC(T,estado);
-                  const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo));
+                  const sq=search.toLowerCase();
+                  const items=reclamos.filter(r=>r.estado===estado&&(kanbanTipo==="Todos"||r.tipo===kanbanTipo)&&(!search||r.orderNum?.toLowerCase().includes(sq)||r.clienteNombre?.toLowerCase().includes(sq)||r.clienteEmail?.toLowerCase().includes(sq)));
                   const isDragOver=dragOverEstado===estado;
                   return(
                     <div key={estado}
@@ -5525,7 +5527,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // Fetch local tab orders - independiente del estado global de orders
   async function fetchTabOrders(tab) {
     if(!user?.uid) return;
-    if(tabCacheRef.current[tab]) {
+    if(tabCacheRef.current[tab] !== undefined) {
       setTabOrders(tabCacheRef.current[tab]);
       return;
     }
@@ -5549,7 +5551,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       fetchTabCounts(user.uid);
       fetchTabOrders("empaquetar");
     }
-  },[]);
+  },[user?.uid]);
 
   function isSucursalOrder(o) {
     return !!o.esSucursal;
