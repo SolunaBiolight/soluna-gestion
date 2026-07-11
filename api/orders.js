@@ -810,9 +810,10 @@ export default async function handler(req, res) {
         if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
-      // TN no acepta ready_to_ship como filtro — traemos pagados+abiertos y filtramos por campo
-      const allPaid = await fetchAllPages(storeId, accessToken, "payment_status=paid&status=open");
-      const porEnviar = allPaid.filter(o => {
+      // TN "unpacked" devuelve todas las no-enviadas (unpacked + ready_to_ship)
+      // Filtramos por campo shipping_status para separar las que están listas para enviar
+      const allUnpacked = await fetchAllPages(storeId, accessToken, "payment_status=paid&shipping_status=unpacked&status=open");
+      const porEnviar = allUnpacked.filter(o => {
         const ss = o.shipping_status;
         return ss === 'ready_to_ship' || ss === 'packed' || ss === 'partially_shipped';
       });
