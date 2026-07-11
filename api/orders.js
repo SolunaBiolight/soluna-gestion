@@ -850,6 +850,31 @@ export default async function handler(req, res) {
     }
     // ── fin Coupons ───────────────────────────────────────────────────────
 
+    // Búsqueda: si q es un número busca por número de orden (rápido); si es texto devuelve recientes
+    if (q) {
+      const qTrim = q.trim();
+      if (platform === 'shopify') {
+        const orders = await shopifyFetchOrders("financial_status=paid");
+        const sq = qTrim.toLowerCase();
+        const filtered = orders.filter(o => !o.cancelled_at && (
+          String(o.order_number||o.name||"").toLowerCase().includes(sq) ||
+          (o.customer?.first_name||"").toLowerCase().includes(sq) ||
+          (o.customer?.last_name||"").toLowerCase().includes(sq) ||
+          (o.email||"").toLowerCase().includes(sq)
+        )).slice(0, 30).map(shopifyToTNFormat);
+        return res.status(200).json(filtered);
+      }
+      const isNum = /^\d+$/.test(qTrim);
+      if (isNum) {
+        // Búsqueda por número de orden — TN soporta filtro nativo, ultra rápido
+        const orders = await fetchPage(storeId, accessToken, `number=${qTrim}`, 1, 10);
+        return res.status(200).json(orders);
+      }
+      // Búsqueda por texto: últimos 200 pedidos, el cliente filtra
+      const orders = await fetchPage(storeId, accessToken, "payment_status=paid", 1, 200);
+      return res.status(200).json(orders);
+    }
+
     // Fallback: últimos pedidos pagados
     if (platform === 'shopify') {
       const orders = await shopifyFetchOrders("financial_status=paid");

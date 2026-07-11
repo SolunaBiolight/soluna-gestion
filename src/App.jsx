@@ -2455,9 +2455,16 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     return searchApiResults.filter(o=>!reclamos.some(r=>r.orderNum===o.numero)).slice(0,5);
   },[search,searchApiResults,reclamos]);
 
-  // Buscar en TN API cuando cambia search
+  // Buscar en TN API cuando cambia search — solo si el kanban no tiene matches propios
   useEffect(()=>{
     if(!search||search.length<2){ setSearchApiResults([]); return; }
+    const sq=search.toLowerCase();
+    const kanbanMatches=reclamos.some(r=>
+      r.orderNum?.toLowerCase().includes(sq)||
+      r.clienteNombre?.toLowerCase().includes(sq)||
+      r.clienteEmail?.toLowerCase().includes(sq)
+    );
+    if(kanbanMatches){ setSearchApiResults([]); return; }
     const timer=setTimeout(async()=>{
       setSearchApiLoading(true);
       try{
@@ -2466,9 +2473,9 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         if(Array.isArray(data)) setSearchApiResults(buildOrdersFromAPI(data));
       }catch(e){}
       setSearchApiLoading(false);
-    },400);
+    },250);
     return ()=>clearTimeout(timer);
-  },[search,user?.uid]);
+  },[search,user?.uid,reclamos]);
 
   const activeR=reclamos.find(r=>r._docId===activeReclamo);
   const [activeOrderCache,setActiveOrderCache]=useState({});
@@ -2666,14 +2673,25 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
         {view==="reclamos"&&(
           <div>
             {/* Buscador siempre visible */}
-            <div style={{position:"relative",marginBottom:16}}>
-              <svg style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <input autoComplete="off" placeholder="Buscar reclamo, cliente, pedido..." value={search} onChange={e=>setSearch(e.target.value)}
-                style={{...InputStyle(T),paddingLeft:40,fontSize:14,padding:"11px 40px 11px 40px",width:"100%",boxSizing:"border-box"}}
-                onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=InputStyle(T).borderColor}/>
-              {search&&<button onClick={()=>{setSearch("");setSearchApiResults([]);}} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:20,lineHeight:1,padding:4}}>×</button>}
-              {searchApiLoading&&<div style={{position:"absolute",right:search?36:14,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></div>}
-            </div>
+            {(()=>{
+              const sq2=search.toLowerCase();
+              const matchCount=search.length>=2?reclamos.filter(r=>r.orderNum?.toLowerCase().includes(sq2)||r.clienteNombre?.toLowerCase().includes(sq2)||r.clienteEmail?.toLowerCase().includes(sq2)).length:0;
+              return(
+              <div style={{marginBottom:16}}>
+                <div style={{position:"relative"}}>
+                  <svg style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                  <input autoComplete="off" placeholder="Buscar reclamo, cliente o #pedido..." value={search} onChange={e=>setSearch(e.target.value)}
+                    style={{...InputStyle(T),paddingLeft:40,fontSize:14,padding:"11px 40px 11px 40px",width:"100%",boxSizing:"border-box"}}
+                    onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=InputStyle(T).borderColor}/>
+                  {search&&<button onClick={()=>{setSearch("");setSearchApiResults([]);}} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:20,lineHeight:1,padding:4}}>×</button>}
+                  {searchApiLoading&&<div style={{position:"absolute",right:search?36:14,top:"50%",transform:"translateY(-50%)"}}><Spinner size={13} color={T.textSm}/></div>}
+                </div>
+                {search.length>=2&&<div style={{fontSize:11,color:matchCount>0?T.accent:T.textSm,marginTop:5,paddingLeft:2,fontWeight:matchCount>0?600:400}}>
+                  {matchCount>0?`${matchCount} reclamo${matchCount!==1?"s":""} encontrado${matchCount!==1?"s":""}`:searchApiLoading?"Buscando en Tienda Nube...":"Sin resultados en reclamos"}
+                </div>}
+              </div>
+              );
+            })()}
             {/* Resultados pedidos TN sin reclamo */}
             {search.length>=2&&searchOrderResults.length>0&&(
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",marginBottom:16,animation:"growith-fadeIn 0.2s ease"}}>
