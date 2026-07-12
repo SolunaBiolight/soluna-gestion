@@ -810,11 +810,10 @@ export default async function handler(req, res) {
         if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
-      // El código original filtraba solo page=1. Ahora los pedidos están 400 atrás (páginas 2-3).
-      // fetchAllPages hace requests paralelas que TN rate-limita → páginas vacías.
-      // Solución: paginación secuencial hasta encontrar todos los PACKED.
+      // Órdenes PACKED están 400 atrás = páginas 2-3. 5 páginas (1000 órdenes) es suficiente.
+      // Secuencial para no rate-limitear TN con las requests paralelas de empaquetar.
       const porEnviar = [];
-      for (let p = 1; p <= 15; p++) {
+      for (let p = 1; p <= 5; p++) {
         let batch;
         try { batch = await fetchPage(storeId, accessToken, "payment_status=paid&status=open", p); }
         catch(e) { break; }
