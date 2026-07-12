@@ -232,13 +232,16 @@ export default async function handler(req, res) {
       // Si tenés VARIAS tiendas en la misma app, elegís en Costos qué cuenta de
       // Meta es la de ESTA tienda (margenesMetaAdAccount) → el margen usa SOLO ese
       // ad spend, no la suma de todas. Sin elegir, suma todas (como antes).
-      const metaAccChosen = String(userData.margenesMetaAdAccount || "").trim();
+      // Puede ser una LISTA de cuentas elegidas (multi-selección). Fallback al
+      // campo viejo (single) y, si no hay nada, suma todas.
+      const metaAccChosenList = (Array.isArray(userData.margenesMetaAdAccounts) ? userData.margenesMetaAdAccounts : (userData.margenesMetaAdAccount ? [userData.margenesMetaAdAccount] : []))
+        .map(x => String(x||"").trim()).filter(Boolean);
       async function fetchMetaAll(s, u, eRef) {
         if (!metaAccounts.length) return {};
         const token = metaAccounts[0].access_token;
         let accountIds = [];
-        if (metaAccChosen) {
-          accountIds = [metaAccChosen.startsWith("act_") ? metaAccChosen : "act_" + metaAccChosen];
+        if (metaAccChosenList.length) {
+          accountIds = metaAccChosenList.map(id => id.startsWith("act_") ? id : "act_" + id);
         } else {
           try {
             const acc = await metaGet("me/adaccounts", { fields: "account_id,name", limit: "100" }, token);

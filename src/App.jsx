@@ -21472,7 +21472,7 @@ function CostosPanel({ T, uid }) {
   const [costos, setCostos] = React.useState({}); // { [key]: costo }
   const [fijos, setFijos] = React.useState([]);
   const [varios, setVarios] = React.useState([]); // costos variables: % de la facturación
-  const [metaAdAccount, setMetaAdAccount] = React.useState(""); // cuenta de Meta para el margen (multi-tienda)
+  const [metaSel, setMetaSel] = React.useState([]); // cuentas de Meta elegidas para el margen ([]=todas)
   const [mlAccounts, setMlAccounts] = React.useState([]); // cuentas de ML conectadas
   const [mlMp, setMlMp] = React.useState("");             // ML usado para comisiones de MP
   const [mlVentas, setMlVentas] = React.useState("");     // ML usado para ventas de ML
@@ -21493,7 +21493,7 @@ function CostosPanel({ T, uid }) {
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
         setVarios(Array.isArray(d.margenesCostosVar) ? d.margenesCostosVar : []);
-        setMetaAdAccount(String(d.margenesMetaAdAccount || ""));
+        setMetaSel(Array.isArray(d.margenesMetaAdAccounts) ? d.margenesMetaAdAccounts.map(String) : (d.margenesMetaAdAccount ? [String(d.margenesMetaAdAccount)] : []));
         setMlAccounts((Array.isArray(d.stores)?d.stores:[]).filter(s=>s.type==="mercadolibre"||s.type==="meli").map(s=>({userId:String(s.userId||""),nombre:s.nickname||s.email||("ML #"+(s.userId||""))})).filter(s=>s.userId));
         setMlMp(String(d.margenesMlMp || ""));
         setMlVentas(String(d.margenesMlVentas || ""));
@@ -21525,7 +21525,7 @@ function CostosPanel({ T, uid }) {
     setSaving(true);
     try {
       const variosClean = varios.filter(v=>(parseFloat(v.pct)||0)>0).map(v=>({id:v.id||margId(),nombre:v.nombre||"",pct:parseFloat(v.pct)||0}));
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos, margenesCostosVar: variosClean, margenesMetaAdAccount: String(metaAdAccount||"") }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos, margenesCostosVar: variosClean, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "" }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -21632,12 +21632,20 @@ function CostosPanel({ T, uid }) {
           misma app (sino el ad spend de todas las cuentas se te mezcla). */}
       {metaAdAccts.length > 0 && (
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Cuenta de Meta Ads para el margen</div>
-          <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Si tenés varias tiendas en la misma app, elegí la cuenta publicitaria de <strong style={{color:T.text}}>esta</strong> tienda. El Ad Spend del margen va a tomar SOLO esa cuenta. Si dejás "Todas", suma el gasto de todas las cuentas del token (se mezcla entre tiendas).</div>
-          <select value={metaAdAccount} onChange={e=>setMetaAdAccount(e.target.value)} style={{...InputStyle(T),fontSize:13,width:"100%",maxWidth:420}}>
-            <option value="">Todas las cuentas (suma todo)</option>
-            {metaAdAccts.map(a => { const id = String(a.account_id || (a.id||"").replace(/^act_/,"")); return <option key={a.id||id} value={id}>{(a.name||a.id)} ({a.currency||"—"})</option>; })}
-          </select>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Cuentas de Meta Ads para el margen</div>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Tildá las cuentas publicitarias de <strong style={{color:T.text}}>esta</strong> tienda — el Ad Spend del margen suma SOLO esas. Si no tildás ninguna, toma <strong style={{color:T.text}}>todas</strong> (se mezcla entre tiendas).</div>
+          <div style={{display:"flex",flexDirection:"column",gap:2}}>
+            <label style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,cursor:"pointer",background:metaSel.length===0?T.accent+"14":"transparent",border:`1px solid ${metaSel.length===0?T.accent+"55":T.borderL}`}}>
+              <input type="checkbox" checked={metaSel.length===0} onChange={()=>setMetaSel([])} style={{width:15,height:15}}/>
+              <span style={{fontSize:13,color:T.text,fontWeight:600}}>Todas las cuentas (suma todo)</span>
+            </label>
+            {metaAdAccts.map(a => { const id = String(a.account_id || (a.id||"").replace(/^act_/,"")); const on = metaSel.includes(id); return (
+              <label key={a.id||id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,cursor:"pointer",background:on?T.accent+"14":"transparent",border:`1px solid ${on?T.accent+"55":T.borderL}`}}>
+                <input type="checkbox" checked={on} onChange={()=>setMetaSel(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id])} style={{width:15,height:15}}/>
+                <span style={{fontSize:13,color:T.text}}>{(a.name||a.id)} <span style={{color:T.textSm,fontSize:11}}>({a.currency||"—"})</span></span>
+              </label>
+            ); })}
+          </div>
         </div>
       )}
 
