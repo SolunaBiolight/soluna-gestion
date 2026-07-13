@@ -5144,6 +5144,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const lsCacheRef=useRef(null); // cache localStorage (SWR): última lista conocida por tab
   const tabEnvioRef=useRef(tabEnvio); // tab activo, para que fetches viejos no pisen la vista
   useEffect(()=>{tabEnvioRef.current=tabEnvio;},[tabEnvio]);
+  const enviarPrefetchRef=useRef(null); // promesa del prefetch de enviar en vuelo
   const [buscarQuery,setBuscarQuery]=useState("");
   const [buscarLoading,setBuscarLoading]=useState(false);
   const [compactMode,setCompactMode]=useState(false);
@@ -5571,6 +5572,16 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         setTabOrders(tabCacheRef.current[tab]);
         return;
       }
+      // Si el prefetch de enviar está en vuelo, esperarlo en vez de duplicar el request
+      if(tab==="enviar" && enviarPrefetchRef.current){
+        const ls=lsCacheRef.current?.tabs?.enviar;
+        if(Array.isArray(ls)&&ls.length){ setTabOrders(ls); setTabRefreshing(true); }
+        else setTabLoading(true);
+        try{ await enviarPrefetchRef.current; }catch(e){}
+        setTabLoading(false); setTabRefreshing(false);
+        const c=tabCacheRef.current["enviar"];
+        if(c!==undefined){ if(tabEnvioRef.current==="enviar") setTabOrders(c); return; }
+      }
     }
     // SWR: si hay lista guardada de una sesión anterior, mostrarla YA y refrescar atrás
     let background=!!opts.background;
@@ -5612,6 +5623,21 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             if(tabEnvioRef.current==="enviar") setTabOrders(enviar);
           } else {
             setTabCounts(prev=>({...prev,empaquetar:built.length}));
+          }
+          // Prefetch de enviar en background: cuando el usuario clickee el tab, ya está
+          if(tabCacheRef.current["enviar"]===undefined&&!enviarPrefetchRef.current){
+            enviarPrefetchRef.current=fetch(`/api/orders?uid=${user.uid}&tab=enviar${opts.fresh?"&fresh=1":""}`)
+              .then(r=>r.ok?r.json():null)
+              .then(d=>{
+                if(Array.isArray(d)){
+                  const env=buildOrdersFromAPI(d);
+                  tabCacheRef.current["enviar"]=env;
+                  setTabCounts(prev=>({...prev,enviar:env.length}));
+                  if(tabEnvioRef.current==="enviar") setTabOrders(env);
+                  saveEnviosCache();
+                }
+              }).catch(()=>{})
+              .finally(()=>{enviarPrefetchRef.current=null;});
           }
         }
         saveEnviosCache();

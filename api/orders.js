@@ -886,36 +886,44 @@ export default async function handler(req, res) {
         if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
-      // Órdenes PACKED están 400 atrás = páginas 2-3. 5 páginas (1000 órdenes) es suficiente.
-      // Secuencial para no rate-limitear TN con las requests paralelas de empaquetar.
+      // Vía rápida: filtro nativo shipping_status=packed de TN — trae exactamente
+      // las órdenes empaquetadas en 1-2 requests. Si TN lo rechaza o devuelve
+      // vacío, caemos al scan de 5 páginas filtrando fulfillments PACKED (el
+      // método que ya funcionaba, más lento pero seguro).
+      const PACKED_PARAMS = "payment_status=paid&shipping_status=packed&status=open";
       const ENV_PARAMS = "payment_status=paid&status=open";
-      // countOnly: solo necesitamos id+fulfillments para filtrar PACKED — payload ~50x más chico
-      if (countOnly === 'true') {
-        let n = 0;
+      const scanPacked = async (light) => {
+        const out = [];
+        const params = light ? ENV_PARAMS + "&fields=id,fulfillments" : ENV_PARAMS;
         for (let p = 1; p <= 5; p++) {
           let batch;
-          try { batch = await fetchPage(storeId, accessToken, ENV_PARAMS + "&fields=id,fulfillments", p); }
+          try { batch = await fetchPage(storeId, accessToken, params, p); }
           catch(e) { break; }
           if (!batch.length) break;
-          n += batch.filter(o => o.fulfillments?.some(f => f.status === 'PACKED')).length;
+          batch.forEach(o => { if (o.fulfillments?.some(f => f.status === 'PACKED')) out.push(o); });
           if (batch.length < 200) break;
         }
+        return out;
+      };
+      if (countOnly === 'true') {
+        let n = null;
+        try { n = await fetchTNCount(storeId, accessToken, PACKED_PARAMS); } catch (_) {}
+        if (n === null || n === 0) n = (await scanPacked(true)).length; // verificar 0 con el scan liviano
         return res.status(200).json(Array.from({length: n}, (_,i) => ({id:i})));
       }
-      // quick=1: primera página filtrada para render progresivo
+      // quick=1: primera página para render progresivo
       if (req.query.quick === '1') {
-        const first = await fetchPage(storeId, accessToken, ENV_PARAMS, 1).catch(() => []);
-        return res.status(200).json(first.filter(o => o.fulfillments?.some(f => f.status === 'PACKED')));
+        let first = [];
+        try { first = await fetchPage(storeId, accessToken, PACKED_PARAMS, 1); } catch (_) {}
+        if (!first.length) {
+          const p1 = await fetchPage(storeId, accessToken, ENV_PARAMS, 1).catch(() => []);
+          first = p1.filter(o => o.fulfillments?.some(f => f.status === 'PACKED'));
+        }
+        return res.status(200).json(first);
       }
-      const porEnviar = [];
-      for (let p = 1; p <= 5; p++) {
-        let batch;
-        try { batch = await fetchPage(storeId, accessToken, ENV_PARAMS, p); }
-        catch(e) { break; }
-        if (!batch.length) break;
-        batch.forEach(o => { if (o.fulfillments?.some(f => f.status === 'PACKED')) porEnviar.push(o); });
-        if (batch.length < 200) break;
-      }
+      let porEnviar = [];
+      try { porEnviar = await fetchAllPages(storeId, accessToken, PACKED_PARAMS); } catch (_) {}
+      if (!porEnviar.length) porEnviar = await scanPacked(false);
       return res.status(200).json(porEnviar);
     }
 
