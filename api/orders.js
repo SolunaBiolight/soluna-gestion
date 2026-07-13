@@ -977,20 +977,8 @@ export default async function handler(req, res) {
     }
     // ── fin Coupons ───────────────────────────────────────────────────────
 
-    // debug=2: prueba qué parámetro de búsqueda acepta TN realmente
-    if (req.query.debug === '2' && q) {
-      const qTrim = q.trim();
-      const out = {};
-      for (const param of ['number', 'q', 'query']) {
-        try {
-          const r = await fetchPage(storeId, accessToken, `${param}=${encodeURIComponent(qTrim)}`, 1, 10);
-          out[param] = r.map(o => o.number);
-        } catch (e) { out[param] = 'ERR ' + e.message; }
-      }
-      return res.status(200).json(out);
-    }
-
-    // Búsqueda: si q es un número busca por número de orden (rápido); si es texto devuelve recientes
+    // Búsqueda: TN filtra server-side por número de orden, nombre o email vía "q"
+    // (el parámetro "number" existe pero TN lo ignora silenciosamente — verificado).
     if (q) {
       const qTrim = q.trim();
       if (platform === 'shopify') {
@@ -1004,14 +992,7 @@ export default async function handler(req, res) {
         )).slice(0, 30).map(shopifyToTNFormat);
         return res.status(200).json(filtered);
       }
-      const isNum = /^\d+$/.test(qTrim);
-      if (isNum) {
-        // Búsqueda por número de orden — TN soporta filtro nativo, ultra rápido
-        const orders = await fetchPage(storeId, accessToken, `number=${qTrim}`, 1, 10);
-        return res.status(200).json(orders);
-      }
-      // Búsqueda por texto: últimos 200 pedidos, el cliente filtra
-      const orders = await fetchPage(storeId, accessToken, "payment_status=paid", 1, 200);
+      const orders = await fetchPage(storeId, accessToken, `q=${encodeURIComponent(qTrim)}`, 1, 30);
       return res.status(200).json(orders);
     }
 
