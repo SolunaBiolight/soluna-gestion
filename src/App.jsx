@@ -5139,7 +5139,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
   const [tabOrders,setTabOrders]=useState([]);
   const [tabLoading,setTabLoading]=useState(false);
+  const [tabRefreshing,setTabRefreshing]=useState(false); // datos viejos visibles, refresh en background
   const tabCacheRef=useRef({});
+  const lsCacheRef=useRef(null); // cache localStorage (SWR): última lista conocida por tab
+  const tabEnvioRef=useRef(tabEnvio); // tab activo, para que fetches viejos no pisen la vista
+  useEffect(()=>{tabEnvioRef.current=tabEnvio;},[tabEnvio]);
   const [buscarQuery,setBuscarQuery]=useState("");
   const [buscarLoading,setBuscarLoading]=useState(false);
   const [compactMode,setCompactMode]=useState(false);
@@ -5192,10 +5196,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
   function toggleCurrentPage(){togglePageSel(orderPage);}
 
-  async function fetchTabCounts(uid) {
+  async function fetchTabCounts(uid, fresh) {
+    const f=fresh?"&fresh=1":"";
     const [emp,env] = await Promise.all([
-      fetch(`/api/orders?uid=${uid}&tab=empaquetar&countOnly=true`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
-      fetch(`/api/orders?uid=${uid}&tab=enviar&countOnly=true`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
+      fetch(`/api/orders?uid=${uid}&tab=empaquetar&countOnly=true${f}`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
+      fetch(`/api/orders?uid=${uid}&tab=enviar&countOnly=true${f}`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
     ]);
     setTabCounts({empaquetar:emp,enviar:env});
   }
@@ -5538,51 +5543,99 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   },[selected, tab, exportModal, tabOrders]);
 
   // Fetch local tab orders - independiente del estado global de orders
-  async function fetchTabOrders(tab) {
+  // Persiste la última lista conocida para que el próximo ingreso sea instantáneo (SWR)
+  function saveEnviosCache(){
     if(!user?.uid) return;
-    // Optimización: si empaquetar ya está en caché y tiene PACKED, enviar es instantáneo
-    if(tab==="enviar" && tabCacheRef.current["empaquetar"]?.some(o=>o.isPacked)) {
-      const enviar=tabCacheRef.current["empaquetar"].filter(o=>o.isPacked);
-      tabCacheRef.current["enviar"]=enviar;
-      setTabCounts(prev=>({...prev,enviar:enviar.length}));
-      setTabOrders(enviar);
-      return;
+    try{
+      const t=tabCacheRef.current;
+      localStorage.setItem(`growith_envios_cache_${user.uid}`,JSON.stringify({
+        ts:Date.now(),
+        tabs:{empaquetar:t.empaquetar||[],enviar:t.enviar||[]},
+        counts:{empaquetar:t.empaquetar?t.empaquetar.length:null,enviar:t.enviar?t.enviar.length:null},
+      }));
+    }catch(e){}
+  }
+
+  async function fetchTabOrders(tab, opts={}) {
+    if(!user?.uid) return;
+    if(!opts.fresh){
+      // Optimización: si empaquetar ya está en caché y tiene PACKED, enviar es instantáneo
+      if(tab==="enviar" && tabCacheRef.current["empaquetar"]?.some(o=>o.isPacked)) {
+        const enviar=tabCacheRef.current["empaquetar"].filter(o=>o.isPacked);
+        tabCacheRef.current["enviar"]=enviar;
+        setTabCounts(prev=>({...prev,enviar:enviar.length}));
+        setTabOrders(enviar);
+        return;
+      }
+      if(tabCacheRef.current[tab] !== undefined) {
+        setTabOrders(tabCacheRef.current[tab]);
+        return;
+      }
     }
-    if(tabCacheRef.current[tab] !== undefined) {
-      setTabOrders(tabCacheRef.current[tab]);
-      return;
+    // SWR: si hay lista guardada de una sesión anterior, mostrarla YA y refrescar atrás
+    let background=!!opts.background;
+    if(!background){
+      const ls=lsCacheRef.current?.tabs?.[tab];
+      if(Array.isArray(ls)&&ls.length){ setTabOrders(ls); background=true; }
     }
-    setTabLoading(true);
+    let superseded=false;
+    if(background){ setTabRefreshing(true); }
+    else {
+      setTabLoading(true);
+      // Render progresivo: la primera página llega rápido mientras baja el resto
+      fetch(`/api/orders?uid=${user.uid}&tab=${tab}&quick=1`)
+        .then(r=>r.ok?r.json():null)
+        .then(d=>{
+          if(!superseded&&Array.isArray(d)&&d.length&&tabEnvioRef.current===tab){
+            setTabOrders(buildOrdersFromAPI(d));
+            setTabLoading(false);
+            setTabRefreshing(true);
+          }
+        }).catch(()=>{});
+    }
     try {
-      const res=await fetch(`/api/orders?uid=${user.uid}&tab=${tab}`);
+      const res=await fetch(`/api/orders?uid=${user.uid}&tab=${tab}${opts.fresh?"&fresh=1":""}`);
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
+      superseded=true;
       if(Array.isArray(data)){
         const built=buildOrdersFromAPI(data);
         tabCacheRef.current[tab]=built;
-        setTabOrders(built);
+        // Solo actualizar la vista si el usuario sigue en este tab
+        if(tabEnvioRef.current===tab) setTabOrders(built);
         // Cuando empaquetar carga, derivar count de enviar como side-effect
         if(tab==="empaquetar"){
           const enviar=built.filter(o=>o.isPacked);
           if(enviar.length>0){
             tabCacheRef.current["enviar"]=enviar;
             setTabCounts(prev=>({...prev,empaquetar:built.length,enviar:enviar.length}));
+            if(tabEnvioRef.current==="enviar") setTabOrders(enviar);
           } else {
             setTabCounts(prev=>({...prev,empaquetar:built.length}));
           }
         }
+        saveEnviosCache();
       }
-    } catch(e){ console.error(e); }
-    finally { setTabLoading(false); }
+    } catch(e){ console.error(e); superseded=true; }
+    finally { setTabLoading(false); setTabRefreshing(false); }
   }
 
-  // Al montar: cargar tab empaquetar + contadores
+  // Al montar: mostrar cache local al instante (SWR) + refrescar datos y contadores
   useEffect(()=>{
-    if(user?.uid){
-      setTabLoading(true);
-      fetchTabCounts(user.uid);
-      fetchTabOrders("empaquetar");
-    }
+    if(!user?.uid) return;
+    let hadCache=false;
+    try{
+      const c=JSON.parse(localStorage.getItem(`growith_envios_cache_${user.uid}`)||"null");
+      // Cache válido por 24h — más viejo que eso, mejor skeleton que datos irreales
+      if(c&&Date.now()-c.ts<24*3600*1000&&Array.isArray(c.tabs?.empaquetar)&&c.tabs.empaquetar.length){
+        lsCacheRef.current=c;
+        setTabOrders(c.tabs.empaquetar);
+        setTabCounts({empaquetar:c.counts?.empaquetar??null,enviar:c.counts?.enviar??null});
+        hadCache=true;
+      }
+    }catch(e){}
+    fetchTabCounts(user.uid);
+    fetchTabOrders("empaquetar",{background:hadCache});
   },[user?.uid]);
 
   function isSucursalOrder(o) {
@@ -6078,8 +6131,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       <AppTopbar T={T} section="Envíos" onHome={onHome}>
         <AsyncButton onClick={async()=>{
           tabCacheRef.current={};
-          setTabOrders([]);
-          await Promise.all([fetchTabOrders(tabEnvio), fetchTabCounts(user?.uid)]);
+          // No vaciar la lista: se mantiene visible con el chip "Actualizando" (SWR)
+          await Promise.all([fetchTabOrders(tabEnvio,{background:true,fresh:true}), fetchTabCounts(user?.uid,true)]);
         }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",color:T.textMd}}>
           ⟳ Sincronizar
         </AsyncButton>
@@ -6137,6 +6190,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   );
                 })}
               </div>
+              {tabRefreshing&&(
+                <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:500,color:T.textSm}}>
+                  <span style={{width:10,height:10,border:`2px solid ${T.accent}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",display:"inline-block",flexShrink:0}}/>
+                  Actualizando pedidos…
+                </span>
+              )}
             </div>
 
             {/* Panel buscar */}
@@ -24780,8 +24839,6 @@ export default function App() {
       if(!Array.isArray(data)) throw new Error("Bad response");
       const built=buildOrdersFromAPI(data);
       setOrders(built);
-      // Guardar en cache por tab
-      if(tab) tabCacheRef.current[tab]=built;
       setOrdersStatus("ok");
     } catch(e){setOrdersStatus("error");}
   }

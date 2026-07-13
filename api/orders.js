@@ -118,6 +118,37 @@ async function fetchPage(storeId, accessToken, extraParams, page, perPage=200) {
   return Array.isArray(data) ? data : [];
 }
 
+// Cuenta órdenes leyendo el header X-Total-Count de TN (1 request de ~1KB en vez
+// de paginar payloads completos). Devuelve null si el header no viene, para que
+// el caller caiga al conteo paginado.
+async function fetchTNCount(storeId, accessToken, extraParams = "") {
+  const headers = {
+    'Authentication': `bearer ${accessToken}`,
+    'User-Agent': 'GrowithApp (soluna.biolight@gmail.com)'
+  };
+  const url = `https://api.tiendanube.com/v1/${storeId}/orders?per_page=1&page=1${extraParams ? "&" + extraParams : ""}`;
+  const res = await fetch(url, { headers });
+  if (res.status === 404) return 0;
+  if (!res.ok) throw new Error(`TN API error ${res.status}`);
+  const total = parseInt(res.headers.get("x-total-count"), 10);
+  return Number.isFinite(total) ? total : null;
+}
+
+// Cache en memoria por instancia warm de Vercel — absorbe las llamadas duplicadas
+// que hacen Home y Envíos al mismo tab con segundos de diferencia, sin re-pegar a TN.
+const _tabCache = new Map();
+const _TAB_CACHE_TTL = 60000;
+function tabCacheGet(key) {
+  const e = _tabCache.get(key);
+  if (e && Date.now() - e.ts < _TAB_CACHE_TTL) return e.body;
+  if (e) _tabCache.delete(key);
+  return null;
+}
+function tabCacheSet(key, body) {
+  if (_tabCache.size > 200) _tabCache.clear();
+  _tabCache.set(key, { ts: Date.now(), body });
+}
+
 async function fetchAllPages(storeId, accessToken, extraParams = "") {
   const first = await fetchPage(storeId, accessToken, extraParams, 1);
   if (first.length === 0 || first.length < 200) return first;
@@ -142,6 +173,27 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { uid, tab, countOnly, q, action } = req.query;
+
+  // Cache 60s para los tabs de listado. `fresh=1` (botón Sincronizar) lo saltea.
+  const _cacheableTabs = ['total', 'cobrar', 'empaquetar', 'enviar'];
+  const _fresh = req.query.fresh === '1' || req.query.fresh === 'true';
+  const _cacheKey = (!action && !q && uid && _cacheableTabs.includes(tab))
+    ? `${uid}|${tab}|${countOnly || ''}|${req.query.quick || ''}`
+    : null;
+  if (_cacheKey && !_fresh) {
+    const hit = tabCacheGet(_cacheKey);
+    if (hit) {
+      res.setHeader('X-Growith-Cache', 'hit');
+      return res.status(200).json(hit);
+    }
+  }
+  if (_cacheKey) {
+    const _origJson = res.json.bind(res);
+    res.json = (body) => {
+      if (res.statusCode === 200 && Array.isArray(body)) tabCacheSet(_cacheKey, body);
+      return _origJson(body);
+    };
+  }
 
   // ── Rendimiento: financial dashboard (antiguo /api/rendimiento) ──────────
   if (action === 'daily_metrics') {
@@ -769,11 +821,16 @@ export default async function handler(req, res) {
         const orders = await shopifyFetchOrders("financial_status=paid&fields=id");
         return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
       }
-      let total = 0;
-      for (let p = 1; p <= 20; p++) {
-        const page = await fetchPage(storeId, accessToken, "payment_status=paid,partially_paid,partially_refunded", p, 200);
-        total += page.length;
-        if (page.length < 200) break;
+      // Conteo por header X-Total-Count: 1 request en vez de hasta 20 páginas.
+      let total = null;
+      try { total = await fetchTNCount(storeId, accessToken, "payment_status=paid,partially_paid,partially_refunded"); } catch (_) {}
+      if (total === null) {
+        total = 0;
+        for (let p = 1; p <= 20; p++) {
+          const page = await fetchPage(storeId, accessToken, "payment_status=paid,partially_paid,partially_refunded", p, 200);
+          total += page.length;
+          if (page.length < 200) break;
+        }
       }
       return res.status(200).json(Array.from({length: total}, (_,i) => ({id:i})));
     }
@@ -785,6 +842,11 @@ export default async function handler(req, res) {
         const filtered = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
         if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
+      }
+      if (countOnly === 'true') {
+        let n = null;
+        try { n = await fetchTNCount(storeId, accessToken, "payment_status=pending,partially_paid&status=open"); } catch (_) {}
+        if (n !== null) return res.status(200).json(Array.from({length: n}, (_,i) => ({id:i})));
       }
       const orders = await fetchAllPages(storeId, accessToken, "payment_status=pending,partially_paid&status=open");
       if (countOnly === 'true') return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
@@ -799,7 +861,18 @@ export default async function handler(req, res) {
         if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
-      const orders = await fetchAllPages(storeId, accessToken, "payment_status=paid&shipping_status=unpacked&status=open");
+      const EMP_PARAMS = "payment_status=paid&shipping_status=unpacked&status=open";
+      if (countOnly === 'true') {
+        let n = null;
+        try { n = await fetchTNCount(storeId, accessToken, EMP_PARAMS); } catch (_) {}
+        if (n !== null) return res.status(200).json(Array.from({length: n}, (_,i) => ({id:i})));
+      }
+      // quick=1: primera página sola para render progresivo mientras baja el resto
+      if (req.query.quick === '1') {
+        const first = await fetchPage(storeId, accessToken, EMP_PARAMS, 1).catch(() => []);
+        return res.status(200).json(first);
+      }
+      const orders = await fetchAllPages(storeId, accessToken, EMP_PARAMS);
       if (countOnly === 'true') return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
       return res.status(200).json(orders);
     }
@@ -815,16 +888,34 @@ export default async function handler(req, res) {
       }
       // Órdenes PACKED están 400 atrás = páginas 2-3. 5 páginas (1000 órdenes) es suficiente.
       // Secuencial para no rate-limitear TN con las requests paralelas de empaquetar.
+      const ENV_PARAMS = "payment_status=paid&status=open";
+      // countOnly: solo necesitamos id+fulfillments para filtrar PACKED — payload ~50x más chico
+      if (countOnly === 'true') {
+        let n = 0;
+        for (let p = 1; p <= 5; p++) {
+          let batch;
+          try { batch = await fetchPage(storeId, accessToken, ENV_PARAMS + "&fields=id,fulfillments", p); }
+          catch(e) { break; }
+          if (!batch.length) break;
+          n += batch.filter(o => o.fulfillments?.some(f => f.status === 'PACKED')).length;
+          if (batch.length < 200) break;
+        }
+        return res.status(200).json(Array.from({length: n}, (_,i) => ({id:i})));
+      }
+      // quick=1: primera página filtrada para render progresivo
+      if (req.query.quick === '1') {
+        const first = await fetchPage(storeId, accessToken, ENV_PARAMS, 1).catch(() => []);
+        return res.status(200).json(first.filter(o => o.fulfillments?.some(f => f.status === 'PACKED')));
+      }
       const porEnviar = [];
       for (let p = 1; p <= 5; p++) {
         let batch;
-        try { batch = await fetchPage(storeId, accessToken, "payment_status=paid&status=open", p); }
+        try { batch = await fetchPage(storeId, accessToken, ENV_PARAMS, p); }
         catch(e) { break; }
         if (!batch.length) break;
         batch.forEach(o => { if (o.fulfillments?.some(f => f.status === 'PACKED')) porEnviar.push(o); });
         if (batch.length < 200) break;
       }
-      if (countOnly === 'true') return res.status(200).json(Array.from({length: porEnviar.length}, (_,i) => ({id:i})));
       return res.status(200).json(porEnviar);
     }
 

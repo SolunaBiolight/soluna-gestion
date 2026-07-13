@@ -140,6 +140,7 @@ growith_alert_config_{uid} → JSON config alertas por producto
 growith_alert_global_{uid} → número (días umbral global)
 growith_lead_time_{uid}    → JSON lead times por producto
 growith_stockouts_{uid}    → JSON[] historial de agotados
+growith_envios_cache_{uid} → JSON cache SWR de Envíos: {ts, tabs:{empaquetar,enviar}, counts}
 ```
 
 ### Flujo de git
