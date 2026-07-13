@@ -6034,7 +6034,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <>
                 <div style={{textAlign:"center",marginBottom:24}}>
                   <div style={{marginBottom:16}}><StatusIcon type={seguimientoProgress.fail===0?"success":seguimientoProgress.ok===0?"error":"warning"} size={64}/></div>
-                  <div style={{fontSize:18,fontWeight:800,color:seguimientoProgress.fail===0?T.green:seguimientoProgress.ok===0?T.red:(T.orange||"#f97316"),marginBottom:6}}>
+                  <div style={{fontSize:18,fontWeight:800,color:seguimientoProgress.fail===0?T.green:seguimientoProgress.ok===0?T.red:T.orange,marginBottom:6}}>
                     {seguimientoProgress.fail===0?"¡Seguimientos enviados!":seguimientoProgress.ok===0?"Error al enviar":"Envío parcial"}
                   </div>
                   <div style={{fontSize:13,color:T.textSm}}>{seguimientoProgress.total} seguimiento{seguimientoProgress.total!==1?"s":""} procesados</div>
@@ -6115,8 +6115,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Etiquetas incluidas</div>
                   </div>
                   {exportDone.esquinas>0&&(
-                    <div style={{background:T.yellowBg||(T.yellow+"18"),border:`1.5px solid ${T.yellow||"#eab308"}44`,borderRadius:12,padding:"14px 16px",textAlign:"center",boxShadow:`0 0 0 1px ${T.yellow||"#eab308"}18, 0 6px 20px ${T.yellow||"#eab308"}14`}}>
-                      <div style={{fontSize:28,fontWeight:800,color:T.yellow||"#eab308",letterSpacing:-1}}>{exportDone.esquinas}</div>
+                    <div style={{background:T.yellowBg,border:`1.5px solid ${T.yellow}44`,borderRadius:12,padding:"14px 16px",textAlign:"center",boxShadow:`0 0 0 1px ${T.yellow}18, 0 6px 20px ${T.yellow}14`}}>
+                      <div style={{fontSize:28,fontWeight:800,color:T.yellow,letterSpacing:-1}}>{exportDone.esquinas}</div>
                       <div style={{fontSize:12,color:T.textSm,marginTop:2}}>En esquina (excluidas)</div>
                     </div>
                   )}
@@ -6535,29 +6535,29 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
             {/* Barra de progreso inline — visible mientras genera el PDF */}
             {(skuProcessing||skuGenerating)&&(
-              <div style={{background:"#1a1a2e",border:`1px solid ${skuGenerating?"#a78bfa44":"#60a5fa44"}`,borderRadius:14,padding:"20px 22px",marginBottom:20}}>
+              <div style={{background:T.card,border:`1px solid ${skuGenerating?T.accent:T.blue}44`,borderRadius:14,padding:"20px 22px",marginBottom:20}}>
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-                  <div style={{width:36,height:36,borderRadius:10,background:skuGenerating?"#a78bfa22":"#60a5fa22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <div style={{width:18,height:18,border:`2.5px solid ${skuGenerating?"#a78bfa":"#60a5fa"}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
+                  <div style={{width:36,height:36,borderRadius:10,background:(skuGenerating?T.accent:T.blue)+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <div style={{width:18,height:18,border:`2.5px solid ${skuGenerating?T.accent:T.blue}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>
                   </div>
                   <div style={{flex:1}}>
-                    <div style={{fontSize:14,fontWeight:700,color:"#f8fafc",marginBottom:3}}>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>
                       {skuProcessing?"Buscando pedidos en TN...":skuProgress<40?"Preparando datos...":skuProgress<80?"Procesando rótulos...":"Generando PDF con SKUs..."}
                     </div>
-                    <div style={{fontSize:12,color:"#94a3b8"}}>
+                    <div style={{fontSize:12,color:T.textMd}}>
                       {skuProcessing?"Esto puede tardar unos segundos según la cantidad de pedidos":`${skuProgress}% completado`}
                     </div>
                   </div>
-                  {skuGenerating&&<span style={{fontSize:13,fontWeight:700,color:"#a78bfa"}}>{skuProgress}%</span>}
+                  {skuGenerating&&<span style={{fontSize:13,fontWeight:700,color:T.accent}}>{skuProgress}%</span>}
                 </div>
                 {skuGenerating&&(
-                  <div style={{height:6,background:"rgba(255,255,255,0.08)",borderRadius:10,overflow:"hidden"}}>
-                    <div style={{height:"100%",width:`${skuProgress}%`,background:"linear-gradient(90deg,#7c3aed,#a78bfa)",borderRadius:10,transition:"width 0.4s ease"}}/>
+                  <div style={{height:6,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${skuProgress}%`,background:`linear-gradient(90deg,${T.accentSolid},${T.accent})`,borderRadius:10,transition:"width 0.4s ease"}}/>
                   </div>
                 )}
                 {skuProcessing&&(
-                  <div style={{height:6,background:"rgba(255,255,255,0.08)",borderRadius:10,overflow:"hidden"}}>
-                    <div style={{height:"100%",width:"100%",background:"linear-gradient(90deg,#2563eb,#60a5fa,#2563eb)",backgroundSize:"200% 100%",animation:"growith-shimmer 1.5s linear infinite",borderRadius:10}}/>
+                  <div style={{height:6,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:"100%",background:`linear-gradient(90deg,${T.blue},${T.blue}66,${T.blue})`,backgroundSize:"200% 100%",animation:"growith-shimmer 1.5s linear infinite",borderRadius:10}}/>
                   </div>
                 )}
               </div>
@@ -6592,14 +6592,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
                 {/* Botón Generar PDF — mismo diseño que Descargar */}
                 {found.length>0&&!skuBlob&&!skuGenerating&&(
-                  <div style={{background:"linear-gradient(135deg,#7c3aed18,#7c3aed08)",border:"2px solid #7c3aed66",borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
-                    <div style={{width:44,height:44,borderRadius:12,background:"#7c3aed22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+                  <div style={{background:`linear-gradient(135deg,${T.accentSolid}18,${T.accentSolid}08)`,border:`2px solid ${T.accentSolid}66`,borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
+                    <div style={{width:44,height:44,borderRadius:12,background:T.accentSolid+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                     <div style={{flex:1}}>
-                      <div style={{fontSize:15,fontWeight:800,color:"#a78bfa",marginBottom:3}}>Resultados listos</div>
+                      <div style={{fontSize:15,fontWeight:800,color:T.accent,marginBottom:3}}>Resultados listos</div>
                       <div style={{fontSize:12,color:T.textSm}}>{found.length} rótulos encontrados{notFound.length>0?` · ${notFound.length} sin match`:""}</div>
                     </div>
                     <AsyncButton onClick={()=>{setSkuBlob(null);return autoGenerateSkuPdf(skuResults,skuFile);}}
-                      style={{background:"#7c3aed",border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:"0 4px 16px #7c3aed44"}}>
+                      style={{background:T.accentSolid,border:"none",color:"#fff",borderRadius:10,padding:"12px 24px",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:8,flexShrink:0,boxShadow:`0 4px 16px ${T.accentSolid}44`}}>
                       Generar PDF con SKUs
                     </AsyncButton>
                   </div>
@@ -6621,7 +6621,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
                 {/* Botón de descarga prominente cuando está listo */}
                 {skuBlob&&!skuGenerating&&(
-                  <div style={{background:"linear-gradient(135deg,#16a34a18,#16a34a08)",border:`2px solid ${T.green}66`,borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
+                  <div style={{background:`linear-gradient(135deg,${T.green}18,${T.green}08)`,border:`2px solid ${T.green}66`,borderRadius:14,padding:"18px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,animation:"growith-fadeIn 0.4s ease"}}>
                     <StatusIcon type="success" size={44}/>
                     <div style={{flex:1}}>
                       <div style={{fontSize:15,fontWeight:800,color:T.green,marginBottom:3}}>¡PDF listo para descargar!</div>
