@@ -149,6 +149,24 @@ function tabCacheSet(key, body) {
   _tabCache.set(key, { ts: Date.now(), body });
 }
 
+// Variante rápida: TN tarda ~14s en generar una página de 200 órdenes completas,
+// pero ~4s una de 50. Con el count del header sabemos cuántas páginas de 50 pedir
+// en paralelo → una sola ronda de ~4-5s en vez de 14-19s.
+async function fetchAllPagesFast(storeId, accessToken, extraParams = "", perPage = 50) {
+  let total = null;
+  try { total = await fetchTNCount(storeId, accessToken, extraParams); } catch (_) {}
+  if (total === 0) return [];
+  const maxPage = total ? Math.min(Math.ceil(total / perPage), 40) : 20;
+  const pages = await Promise.all(
+    Array.from({ length: maxPage }, (_, i) =>
+      fetchPage(storeId, accessToken, extraParams, i + 1, perPage).catch(() => [])
+    )
+  );
+  let all = [];
+  for (const pg of pages) { all = all.concat(pg); if (pg.length < perPage) break; }
+  return all;
+}
+
 async function fetchAllPages(storeId, accessToken, extraParams = "") {
   const first = await fetchPage(storeId, accessToken, extraParams, 1);
   if (first.length === 0 || first.length < 200) return first;
@@ -867,12 +885,12 @@ export default async function handler(req, res) {
         try { n = await fetchTNCount(storeId, accessToken, EMP_PARAMS); } catch (_) {}
         if (n !== null) return res.status(200).json(Array.from({length: n}, (_,i) => ({id:i})));
       }
-      // quick=1: primera página sola para render progresivo mientras baja el resto
+      // quick=1: primera página chica (50) para primer paint rápido mientras baja el resto
       if (req.query.quick === '1') {
-        const first = await fetchPage(storeId, accessToken, EMP_PARAMS, 1).catch(() => []);
+        const first = await fetchPage(storeId, accessToken, EMP_PARAMS, 1, 50).catch(() => []);
         return res.status(200).json(first);
       }
-      const orders = await fetchAllPages(storeId, accessToken, EMP_PARAMS);
+      const orders = await fetchAllPagesFast(storeId, accessToken, EMP_PARAMS);
       if (countOnly === 'true') return res.status(200).json(Array.from({length: orders.length}, (_,i) => ({id:i})));
       return res.status(200).json(orders);
     }
@@ -909,10 +927,10 @@ export default async function handler(req, res) {
         if (n === null || n === 0) n = (await scanPacked(true)).length; // verificar 0 con el scan liviano
         return res.status(200).json(Array.from({length: n}, (_,i) => ({id:i})));
       }
-      // quick=1: primera página para render progresivo
+      // quick=1: primera página chica para render progresivo
       if (req.query.quick === '1') {
         let first = [];
-        try { first = await fetchPage(storeId, accessToken, PACKED_PARAMS, 1); } catch (_) {}
+        try { first = await fetchPage(storeId, accessToken, PACKED_PARAMS, 1, 50); } catch (_) {}
         if (!first.length) {
           const p1 = await fetchPage(storeId, accessToken, ENV_PARAMS, 1).catch(() => []);
           first = p1.filter(o => o.fulfillments?.some(f => f.status === 'PACKED'));
@@ -920,7 +938,7 @@ export default async function handler(req, res) {
         return res.status(200).json(first);
       }
       let porEnviar = [];
-      try { porEnviar = await fetchAllPages(storeId, accessToken, PACKED_PARAMS); } catch (_) {}
+      try { porEnviar = await fetchAllPagesFast(storeId, accessToken, PACKED_PARAMS); } catch (_) {}
       if (!porEnviar.length) porEnviar = await scanPacked(false);
       return res.status(200).json(porEnviar);
     }
