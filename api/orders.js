@@ -977,6 +977,19 @@ export default async function handler(req, res) {
     }
     // ── fin Coupons ───────────────────────────────────────────────────────
 
+    // debug=2: prueba qué parámetro de búsqueda acepta TN realmente
+    if (req.query.debug === '2' && q) {
+      const qTrim = q.trim();
+      const out = {};
+      for (const param of ['number', 'q', 'query']) {
+        try {
+          const r = await fetchPage(storeId, accessToken, `${param}=${encodeURIComponent(qTrim)}`, 1, 10);
+          out[param] = r.map(o => o.number);
+        } catch (e) { out[param] = 'ERR ' + e.message; }
+      }
+      return res.status(200).json(out);
+    }
+
     // Búsqueda: si q es un número busca por número de orden (rápido); si es texto devuelve recientes
     if (q) {
       const qTrim = q.trim();
