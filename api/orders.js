@@ -886,22 +886,13 @@ export default async function handler(req, res) {
         if (countOnly === 'true') return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
-      // Vía rápida: filtro nativo shipping_status=packed de TN — trae exactamente
-      // las órdenes empaquetadas en 1-2 requests. Si TN lo rechaza o devuelve
-      // vacío, caemos al scan de 5 páginas filtrando fulfillments PACKED (el
-      // método que ya funcionaba, más lento pero seguro).
-      const PACKED_PARAMS = "payment_status=paid&shipping_status=packed&status=open";
+      // Vía rápida: filtro nativo shipping_status=unfulfilled de TN = empaquetadas
+      // sin enviar (verificado contra esta tienda: unpacked=por empaquetar,
+      // unfulfilled=por enviar, fulfilled=enviadas). Trae TODAS las pendientes
+      // sin límite de antigüedad en 1-2 requests. Si devuelve vacío o falla,
+      // caemos al scan de fulfillments PACKED (más lento pero seguro).
+      const PACKED_PARAMS = "payment_status=paid&shipping_status=unfulfilled&status=open";
       const ENV_PARAMS = "payment_status=paid&status=open";
-      // debug=1: prueba qué valores de shipping_status acepta TN y cuánto devuelve cada uno
-      if (req.query.debug === '1') {
-        const out = {};
-        for (const v of ['packed', 'unshipped', 'unpacked', 'fulfilled', 'unfulfilled', 'shipped']) {
-          try { out[v] = await fetchTNCount(storeId, accessToken, `payment_status=paid&shipping_status=${v}&status=open`); }
-          catch (e) { out[v] = 'ERR ' + e.message; }
-        }
-        try { out._sinFiltro = await fetchTNCount(storeId, accessToken, ENV_PARAMS); } catch (e) { out._sinFiltro = 'ERR ' + e.message; }
-        return res.status(200).json(out);
-      }
       // Scan fallback: 5 páginas en paralelo (~1 round-trip de TN en vez de 5)
       const scanPacked = async (light) => {
         const params = light ? ENV_PARAMS + "&fields=id,fulfillments" : ENV_PARAMS;
