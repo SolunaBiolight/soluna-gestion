@@ -892,18 +892,25 @@ export default async function handler(req, res) {
       // método que ya funcionaba, más lento pero seguro).
       const PACKED_PARAMS = "payment_status=paid&shipping_status=packed&status=open";
       const ENV_PARAMS = "payment_status=paid&status=open";
-      const scanPacked = async (light) => {
-        const out = [];
-        const params = light ? ENV_PARAMS + "&fields=id,fulfillments" : ENV_PARAMS;
-        for (let p = 1; p <= 5; p++) {
-          let batch;
-          try { batch = await fetchPage(storeId, accessToken, params, p); }
-          catch(e) { break; }
-          if (!batch.length) break;
-          batch.forEach(o => { if (o.fulfillments?.some(f => f.status === 'PACKED')) out.push(o); });
-          if (batch.length < 200) break;
+      // debug=1: prueba qué valores de shipping_status acepta TN y cuánto devuelve cada uno
+      if (req.query.debug === '1') {
+        const out = {};
+        for (const v of ['packed', 'unshipped', 'unpacked', 'fulfilled', 'unfulfilled', 'shipped']) {
+          try { out[v] = await fetchTNCount(storeId, accessToken, `payment_status=paid&shipping_status=${v}&status=open`); }
+          catch (e) { out[v] = 'ERR ' + e.message; }
         }
-        return out;
+        try { out._sinFiltro = await fetchTNCount(storeId, accessToken, ENV_PARAMS); } catch (e) { out._sinFiltro = 'ERR ' + e.message; }
+        return res.status(200).json(out);
+      }
+      // Scan fallback: 5 páginas en paralelo (~1 round-trip de TN en vez de 5)
+      const scanPacked = async (light) => {
+        const params = light ? ENV_PARAMS + "&fields=id,fulfillments" : ENV_PARAMS;
+        const pages = await Promise.all(
+          [1,2,3,4,5].map(p => fetchPage(storeId, accessToken, params, p).catch(() => []))
+        );
+        let all = [];
+        for (const pg of pages) { all = all.concat(pg); if (pg.length < 200) break; }
+        return all.filter(o => o.fulfillments?.some(f => f.status === 'PACKED'));
       };
       if (countOnly === 'true') {
         let n = null;
