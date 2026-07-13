@@ -5138,7 +5138,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [tabCounts,setTabCounts]=useState({empaquetar:null,enviar:null});
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
   const [tabOrders,setTabOrders]=useState([]);
-  const [tabLoading,setTabLoading]=useState(true);
+  const [tabLoading,setTabLoading]=useState(false);
   const tabCacheRef=useRef({});
   const [buscarQuery,setBuscarQuery]=useState("");
   const [buscarLoading,setBuscarLoading]=useState(false);
@@ -5192,13 +5192,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
   function toggleCurrentPage(){togglePageSel(orderPage);}
 
-  // Fetch contador solo de empaquetar — enviar se calcula client-side al cargar los datos
   async function fetchTabCounts(uid) {
-    const count = await fetch(`/api/orders?uid=${uid}&tab=empaquetar&countOnly=true`)
-      .then(r=>r.json())
-      .then(d=>Array.isArray(d)?d.length:0)
-      .catch(()=>0);
-    setTabCounts(prev=>({...prev,empaquetar:count}));
+    const [emp,env] = await Promise.all([
+      fetch(`/api/orders?uid=${uid}&tab=empaquetar&countOnly=true`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
+      fetch(`/api/orders?uid=${uid}&tab=enviar&countOnly=true`).then(r=>r.json()).then(d=>Array.isArray(d)?d.length:0).catch(()=>0),
+    ]);
+    setTabCounts({empaquetar:emp,enviar:env});
   }
 
   const counts=tabCounts;
@@ -5541,32 +5540,37 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // Fetch local tab orders - independiente del estado global de orders
   async function fetchTabOrders(tab) {
     if(!user?.uid) return;
-    // Si "enviar" se pide y empaquetar ya está en caché, extraer PACKED sin API call
-    if(tab==="enviar" && tabCacheRef.current["empaquetar"] !== undefined) {
+    // Optimización: si empaquetar ya está en caché y tiene PACKED, enviar es instantáneo
+    if(tab==="enviar" && tabCacheRef.current["empaquetar"]?.some(o=>o.isPacked)) {
       const enviar=tabCacheRef.current["empaquetar"].filter(o=>o.isPacked);
       tabCacheRef.current["enviar"]=enviar;
       setTabCounts(prev=>({...prev,enviar:enviar.length}));
       setTabOrders(enviar);
-      setTabLoading(false);
       return;
     }
     if(tabCacheRef.current[tab] !== undefined) {
       setTabOrders(tabCacheRef.current[tab]);
-      setTabLoading(false);
       return;
     }
     setTabLoading(true);
     try {
-      const res=await fetch(`/api/orders?uid=${user.uid}&tab=empaquetar`);
+      const res=await fetch(`/api/orders?uid=${user.uid}&tab=${tab}`);
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
       if(Array.isArray(data)){
         const built=buildOrdersFromAPI(data);
-        const enviar=built.filter(o=>o.isPacked);
-        tabCacheRef.current["empaquetar"]=built;
-        tabCacheRef.current["enviar"]=enviar;
-        setTabCounts(prev=>({...prev,empaquetar:built.length,enviar:enviar.length}));
-        setTabOrders(tab==="enviar"?enviar:built);
+        tabCacheRef.current[tab]=built;
+        setTabOrders(built);
+        // Cuando empaquetar carga, derivar count de enviar como side-effect
+        if(tab==="empaquetar"){
+          const enviar=built.filter(o=>o.isPacked);
+          if(enviar.length>0){
+            tabCacheRef.current["enviar"]=enviar;
+            setTabCounts(prev=>({...prev,empaquetar:built.length,enviar:enviar.length}));
+          } else {
+            setTabCounts(prev=>({...prev,empaquetar:built.length}));
+          }
+        }
       }
     } catch(e){ console.error(e); }
     finally { setTabLoading(false); }
@@ -5575,6 +5579,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   // Al montar: cargar tab empaquetar + contadores
   useEffect(()=>{
     if(user?.uid){
+      setTabLoading(true);
       fetchTabCounts(user.uid);
       fetchTabOrders("empaquetar");
     }
