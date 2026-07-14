@@ -2057,7 +2057,8 @@ function OrderSearchField({T, orders, onSelect, uid}) {
   const [loading,setLoading]=useState(false);
   const inputRef=useRef(null);
   const iS = InputStyle(T);
-  // Primero buscar en órdenes locales
+  // Locales: instantáneos, pero solo cubren los últimos ~250 pedidos "por empaquetar"
+  // — un pedido viejo o ya enviado nunca está ahí.
   const localResults=useMemo(()=>{
     if(!q||q.length<2) return [];
     const s=q.toLowerCase().trim();
@@ -2066,25 +2067,37 @@ function OrderSearchField({T, orders, onSelect, uid}) {
       (o.comprador||"").toLowerCase().includes(s)||
       (o.email||"").toLowerCase().includes(s)||
       (o.telefono||"").includes(s)
-    ).slice(0,8);
+    );
   },[q,orders]);
-  // Si no hay resultados locales, buscar en API
+  // Siempre consultar la API además de los locales — es la única fuente que cubre
+  // TODOS los pedidos, no solo los recientes.
   useEffect(()=>{
     if(!q||q.length<2){ setApiResults([]); return; }
-    if(localResults.length>0){ setApiResults([]); return; } // hay locales, no buscar API
     const t=setTimeout(async()=>{
       setLoading(true);
       try{
         const r=await fetch(`/api/orders?uid=${uid||""}&q=${encodeURIComponent(q.trim())}`);
         const data=await r.json();
-        if(Array.isArray(data)) setApiResults(buildOrdersFromAPI(data).slice(0,8));
+        if(Array.isArray(data)) setApiResults(buildOrdersFromAPI(data));
       }catch(e){}
       setLoading(false);
-    },400);
+    },350);
     return ()=>clearTimeout(t);
-  },[q,localResults.length,uid]);
+  },[q,uid]);
 
-  const results=localResults.length>0?localResults:apiResults;
+  // Mezclar locales + API sin duplicar por número, priorizando el match exacto
+  const results=useMemo(()=>{
+    const sTrim=q.trim();
+    const seen=new Set();
+    const merged=[];
+    [...localResults,...apiResults].forEach(o=>{
+      if(seen.has(o.numero)) return;
+      seen.add(o.numero);
+      merged.push(o);
+    });
+    merged.sort((a,b)=>(b.numero===sTrim?1:0)-(a.numero===sTrim?1:0));
+    return merged.slice(0,8);
+  },[localResults,apiResults,q]);
   useEffect(()=>{ if(inputRef.current) inputRef.current.focus(); },[]);
 
   return (
@@ -2709,32 +2722,34 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 ))}
               </div>
             )}
-            {/* Stats — pendientes */}
-            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:18,flexWrap:"wrap"}}>
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 18px",display:"flex",alignItems:"baseline",gap:6}}>
-                <span style={{fontSize:22,fontWeight:800,color:T.text,letterSpacing:-0.5}}>{stats.pendientes}</span>
-                <span style={{fontSize:12,color:T.textSm}}>abiertos</span>
-              </div>
-              <div style={{background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:DS.r.lg,padding:"10px 18px",display:"flex",alignItems:"baseline",gap:6}}>
-                <span style={{fontSize:22,fontWeight:800,color:T.purple,letterSpacing:-0.5}}>{stats.cambios}</span>
-                <span style={{fontSize:12,color:T.purple,opacity:0.7}}>cambios</span>
-              </div>
-              <div style={{background:T.orangeBg,border:`1px solid ${T.orange}33`,borderRadius:DS.r.lg,padding:"10px 18px",display:"flex",alignItems:"baseline",gap:6}}>
-                <span style={{fontSize:22,fontWeight:800,color:T.orange,letterSpacing:-0.5}}>{stats.devoluciones}</span>
-                <span style={{fontSize:12,color:T.orange,opacity:0.7}}>devoluciones</span>
-              </div>
-              {stats.urgentes>0&&(
-                <div style={{display:"flex",alignItems:"center",gap:6,background:T.redBg,border:`1.5px solid ${T.red}55`,borderRadius:DS.r.lg,padding:"10px 14px",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 14px ${T.red}18`}}>
-                  <span style={{width:7,height:7,borderRadius:"50%",background:T.red,flexShrink:0,boxShadow:`0 0 8px ${T.red}88`}}/>
-                  <span style={{fontSize:12,fontWeight:700,color:T.red}}>{stats.urgentes} urgente{stats.urgentes!==1?"s":""}</span>
+            {/* Stats — mismo patrón de tiles clickeables que Tareas: número grande + label, filtran el kanban */}
+            {(()=>{
+              const METRICS=[
+                {l:"abiertos",     v:stats.pendientes,   c:T.blue,   tipo:"Todos"},
+                {l:"cambios",      v:stats.cambios,      c:T.purple, tipo:"Cambio"},
+                {l:"devoluciones", v:stats.devoluciones, c:T.orange, tipo:"Devolución"},
+                {l:`urgente${stats.urgentes!==1?"s":""}`, v:stats.urgentes, c:T.red, tipo:null},
+              ];
+              return (
+                <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
+                  {METRICS.map(s=>{
+                    const clickable=s.tipo!==null;
+                    const isActive=clickable&&kanbanTipo===s.tipo;
+                    return (
+                      <div key={s.l} onClick={clickable?()=>{setKanbanTipo(s.tipo);setBulkSelected(new Set());}:undefined}
+                        style={{flex:"1 1 100px",background:isActive?s.c+"18":T.card,border:`1.5px solid ${isActive?s.c:s.c+"28"}`,borderRadius:DS.r.xl,padding:"14px 16px",cursor:clickable?"pointer":"default",transition:"all 0.15s",userSelect:"none"}}
+                        onMouseEnter={e=>{if(clickable&&!isActive){e.currentTarget.style.borderColor=s.c+"70";e.currentTarget.style.background=s.c+"08";}}}
+                        onMouseLeave={e=>{if(clickable&&!isActive){e.currentTarget.style.borderColor=s.c+"28";e.currentTarget.style.background=T.card;}}}>
+                        <div style={{fontSize:26,fontWeight:800,color:s.c,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.v}</div>
+                        <div style={{fontSize:12,color:isActive?s.c:T.textSm,fontWeight:isActive?600:400,marginTop:5,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.l}</div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-            {/* Filtro tipo kanban + bulk actions */}
+              );
+            })()}
+            {/* Bulk actions */}
             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
-              {["Todos","Cambio","Devolución"].map(t=>(
-                <button key={t} onClick={()=>{setKanbanTipo(t);setBulkSelected(new Set());}} style={{padding:"5px 12px",fontSize:12,fontWeight:kanbanTipo===t?700:400,borderRadius:DS.r.full,border:`1px solid ${kanbanTipo===t?T.accentSolid:T.border}`,background:kanbanTipo===t?T.accentSolid:"transparent",color:kanbanTipo===t?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:`all 0.12s ${DS.ease}`}}>{t}</button>
-              ))}
               {bulkSelected.size>0&&(
                 <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:"auto",background:T.accentSolid+"18",border:`1px solid ${T.accentSolid}44`,borderRadius:8,padding:"5px 10px"}}>
                   <span style={{fontSize:12,fontWeight:600,color:T.accent}}>{bulkSelected.size} seleccionados</span>
@@ -3830,24 +3845,23 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             </div>
           )}
         </div>
-        {/* Stats bar - clickeable para filtrar */}
-        <div style={{display:"flex",gap:0,background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:20}}>
+        {/* Stats — mismo patrón de tiles clickeables que Tareas/Reclamos */}
+        <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
           {[
             {label:"Total",value:stats.total,color:T.textMd,estado:""},
             {label:"Por enviar",value:stats.porEnviar,color:T.yellow,estado:"Por enviar"},
             {label:"Enviados",value:stats.enviados,color:T.blue,estado:"Enviado"},
             {label:"Cont. pendiente",value:stats.contPend,color:T.orange,estado:"Contenido pendiente"},
             {label:"Cerrados",value:stats.cerrados,color:T.green,estado:"Cerrado"},
-          ].map((s,i,arr)=>{
+          ].map(s=>{
             const isActive=filterEstado===s.estado;
             return (
               <div key={s.label} onClick={()=>{setFilterEstado(s.estado);if(viewTab!=="comisiones"&&viewTab!=="perfiles")setViewTab("kanban");}}
-                style={{flex:1,padding:"20px 16px",borderRight:i<arr.length-1?"1px solid "+T.borderL:"none",textAlign:"center",cursor:"pointer",background:isActive?s.color+"12":"transparent",transition:"background 0.15s ease",userSelect:"none"}}
-                onMouseEnter={e=>!isActive&&(e.currentTarget.style.background=T.surface)}
-                onMouseLeave={e=>!isActive&&(e.currentTarget.style.background="transparent")}>
-                <div style={{fontSize:32,fontWeight:800,color:s.color,letterSpacing:-1,lineHeight:1}}>{s.value??<Spinner size={16} color={s.color}/>}</div>
-                <div style={{fontSize:11,color:isActive?s.color:T.textSm,marginTop:7,fontWeight:isActive?700:500,textTransform:"uppercase",letterSpacing:"0.05em"}}>{s.label}</div>
-                {isActive&&<div style={{width:28,height:2,background:s.color,borderRadius:2,margin:"7px auto 0"}}/>}
+                style={{flex:"1 1 100px",background:isActive?s.color+"18":T.card,border:`1.5px solid ${isActive?s.color:s.color+"28"}`,borderRadius:DS.r.xl,padding:"14px 16px",cursor:"pointer",transition:"all 0.15s",userSelect:"none"}}
+                onMouseEnter={e=>{if(!isActive){e.currentTarget.style.borderColor=s.color+"70";e.currentTarget.style.background=s.color+"08";}}}
+                onMouseLeave={e=>{if(!isActive){e.currentTarget.style.borderColor=s.color+"28";e.currentTarget.style.background=T.card;}}}>
+                <div style={{fontSize:26,fontWeight:800,color:s.color,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.value??<Spinner size={16} color={s.color}/>}</div>
+                <div style={{fontSize:12,color:isActive?s.color:T.textSm,fontWeight:isActive?600:400,marginTop:5,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.label}</div>
               </div>
             );
           })}
