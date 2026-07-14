@@ -5116,7 +5116,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [tab,setTabState]=useState(tabProp||"panel");
   React.useEffect(()=>{ if(tabProp!==undefined&&tabProp!==tab) setTabState(tabProp); },[tabProp]);
   const setTab=(v)=>{ setTabState(v); setTabProp&&setTabProp(v); };
-  const [selected,setSelected]=useState(new Set());
+  // Map numero->pedido (no un Set de numeros): guarda el objeto completo al
+  // seleccionar, para que la selección sobreviva a búsquedas sucesivas en el
+  // tab "Buscar" — cada búsqueda nueva reemplaza tabOrders, así que filtrar
+  // por tabOrders.filter(selected.has) perdía los pedidos de búsquedas previas.
+  const [selected,setSelected]=useState(new Map());
   const [exportModal,setExportModal]=useState(false);
   // Pedido único elegido desde "Generar etiqueta" en el detalle de un pedido.
   // Separado de `selected` a propósito: antes ese botón pisaba la selección
@@ -5211,8 +5215,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   function getPageNums(pi){return exportables.slice(pi*PAGE_SIZE,(pi+1)*PAGE_SIZE).map(o=>o.numero);}
   function isPageFullSel(pi){const ns=getPageNums(pi);return ns.length>0&&ns.every(n=>selected.has(n));}
   function togglePageSel(pi){
-    const ns=getPageNums(pi);const full=isPageFullSel(pi);
-    setSelected(prev=>{const n=new Set(prev);if(full)ns.forEach(x=>n.delete(x));else ns.forEach(x=>n.add(x));return n;});
+    const pageOrds=exportables.slice(pi*PAGE_SIZE,(pi+1)*PAGE_SIZE);
+    const full=isPageFullSel(pi);
+    setSelected(prev=>{const n=new Map(prev);if(full)pageOrds.forEach(o=>n.delete(o.numero));else pageOrds.forEach(o=>n.set(o.numero,o));return n;});
   }
   function toggleCurrentPage(){togglePageSel(orderPage);}
 
@@ -5228,20 +5233,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const counts=tabCounts;
 
   const lastSelectedRef=useRef(null);
-  function toggleSelect(num,e){
+  function toggleSelect(num,e,orderObj){
     if(e?.shiftKey&&lastSelectedRef.current){
       const nums=exportables.map(o=>o.numero);
       const a=nums.indexOf(lastSelectedRef.current),b=nums.indexOf(num);
       if(a>=0&&b>=0){
         const [from,to]=[Math.min(a,b),Math.max(a,b)];
-        setSelected(s=>{const n=new Set(s);nums.slice(from,to+1).forEach(x=>n.add(x));return n;});
+        setSelected(s=>{const n=new Map(s);exportables.slice(from,to+1).forEach(o=>n.set(o.numero,o));return n;});
         return;
       }
     }
     lastSelectedRef.current=num;
-    setSelected(prev=>{const n=new Set(prev);n.has(num)?n.delete(num):n.add(num);return n;});
+    setSelected(prev=>{const n=new Map(prev);n.has(num)?n.delete(num):n.set(num,orderObj);return n;});
   }
-  function toggleAll(){if(selected.size===exportables.length)setSelected(new Set());else setSelected(new Set(exportables.map(o=>o.numero)));}
+  function toggleAll(){if(selected.size===exportables.length)setSelected(new Map());else setSelected(new Map(exportables.map(o=>[o.numero,o])));}
 
   // Registro de uso (fire-and-forget, no bloquea la UI ni rompe si falla)
   function logUsage(metric, n=1) {
@@ -5555,7 +5560,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     function handleKey(e) {
       if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.tagName==="SELECT") return;
       if((e.ctrlKey||e.metaKey)&&e.key==="a"&&tab==="panel") { e.preventDefault(); toggleAll(); }
-      if(e.key==="Escape") { setSelected(new Set()); setExportSingleOrder(null); setSearchEnvios(""); setBuscarQuery(""); }
+      if(e.key==="Escape") { setSelected(new Map()); setExportSingleOrder(null); setSearchEnvios(""); setBuscarQuery(""); }
       if(e.key==="Enter"&&selected.size>0&&!exportModal) { setExportModal(true); }
     }
     window.addEventListener("keydown", handleKey);
@@ -5688,7 +5693,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
 
   async function exportAndreani() {
-    const selOrders=exportSingleOrder?[exportSingleOrder]:tabOrders.filter(o=>selected.has(o.numero));
+    const selOrders=exportSingleOrder?[exportSingleOrder]:[...selected.values()];
     if(!selOrders.length) return;
     // Cerrar el modal INMEDIATAMENTE - el progreso se muestra en el overlay flotante
     setExportModal(false);
@@ -5754,7 +5759,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         localStorage.setItem("growith_exportHistory",JSON.stringify(hist.slice(0,50)));
       }catch(_){}
       setExportProgress({step:"¡Listo!",pct:100,current:finalOrders.length,total:finalOrders.length});
-      setSelected(new Set());
+      setSelected(new Map());
       setExportSingleOrder(null);
       locationOverridesRef.current={}; sucursalOverridesRef.current={};
       try{localStorage.removeItem("growith_locOverrides");localStorage.removeItem("growith_sucOverrides");}catch(_){}
@@ -6225,7 +6230,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   const isActive=tabEnvio===t.id;
                   return (
                     <button key={t.id} onClick={()=>{
-                      setTabEnvio(t.id);setSelected(new Set());setSearchEnvios("");
+                      setTabEnvio(t.id);setSelected(new Map());setSearchEnvios("");
                       if(t.id==="buscar"){setBuscarQuery("");setTabOrders([]);}
                       else{fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);}
                     }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:isActive?600:400,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
@@ -6287,7 +6292,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
               {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:8,padding:2}}>
                 {[["todos","Todos"],["domicilio","Domicilio"],["sucursal","Sucursal"]].map(([v,l])=>(
-                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Set());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
+                  <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{padding:"5px 10px",fontSize:12,border:"none",borderRadius:6,background:filterTipoEnvio===v?T.card:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?500:400,transition:"all 0.1s",boxShadow:filterTipoEnvio===v?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>
                 ))}
               </div>}
               {/* Selector unificado de pedidos */}
@@ -6352,7 +6357,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         <button onClick={()=>toggleAll()} style={{flex:1,fontSize:11,padding:"6px 8px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500}}>
                           {selected.size===exportables.length&&exportables.length>0?`Limpiar todo`:`Seleccionar todo (${exportables.length})`}
                         </button>
-                        {selected.size>0&&<button onClick={()=>setSelected(new Set())} style={{fontSize:11,padding:"6px 10px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>}
+                        {selected.size>0&&<button onClick={()=>setSelected(new Map())} style={{fontSize:11,padding:"6px 10px",border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>}
                       </div>
                     </div>
                   </>
@@ -6436,7 +6441,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
-                      <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e);}} style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1}}>
+                      <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1}}>
                         {sel&&<span style={{color:"#fff",fontSize:12,lineHeight:1}}>✓</span>}
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:3}}>
@@ -7030,7 +7035,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       {/* Export Modal */}
       <Modal T={T} open={exportModal} onClose={()=>!exporting&&(setExportModal(false),setExportSingleOrder(null))} title={`Generar ${exportSingleOrder?1:selected.size} etiqueta${(exportSingleOrder?1:selected.size)!==1?"s":""} para Andreani`} width={500}>
         {(()=>{
-          const selOrders=exportSingleOrder?[exportSingleOrder]:tabOrders.filter(o=>selected.has(o.numero));
+          const selOrders=exportSingleOrder?[exportSingleOrder]:[...selected.values()];
           const domCount=selOrders.filter(o=>!isSucursalOrder(o)).length;
           const sucCount=selOrders.filter(o=>isSucursalOrder(o)).length;
           let hist=[];try{hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");}catch(_){}
