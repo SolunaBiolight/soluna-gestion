@@ -5118,6 +5118,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const setTab=(v)=>{ setTabState(v); setTabProp&&setTabProp(v); };
   const [selected,setSelected]=useState(new Set());
   const [exportModal,setExportModal]=useState(false);
+  // Pedido único elegido desde "Generar etiqueta" en el detalle de un pedido.
+  // Separado de `selected` a propósito: antes ese botón pisaba la selección
+  // múltiple del usuario (seleccionaba 6, veía el detalle de uno, y al generar
+  // terminaba exportando solo ese 1).
+  const [exportSingleOrder,setExportSingleOrder]=useState(null);
   const [exporting,setExporting]=useState(false);
   const [exportProgress,setExportProgress]=useState({step:"",pct:0,current:0,total:0});
   const [exportDone,setExportDone]=useState(null); // null | {count,esquinas}
@@ -5550,7 +5555,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     function handleKey(e) {
       if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.tagName==="SELECT") return;
       if((e.ctrlKey||e.metaKey)&&e.key==="a"&&tab==="panel") { e.preventDefault(); toggleAll(); }
-      if(e.key==="Escape") { setSelected(new Set()); setSearchEnvios(""); setBuscarQuery(""); }
+      if(e.key==="Escape") { setSelected(new Set()); setExportSingleOrder(null); setSearchEnvios(""); setBuscarQuery(""); }
       if(e.key==="Enter"&&selected.size>0&&!exportModal) { setExportModal(true); }
     }
     window.addEventListener("keydown", handleKey);
@@ -5683,7 +5688,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
 
   async function exportAndreani() {
-    const selOrders=tabOrders.filter(o=>selected.has(o.numero));
+    const selOrders=exportSingleOrder?[exportSingleOrder]:tabOrders.filter(o=>selected.has(o.numero));
     if(!selOrders.length) return;
     // Cerrar el modal INMEDIATAMENTE - el progreso se muestra en el overlay flotante
     setExportModal(false);
@@ -5726,6 +5731,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       if(!finalOrders.length){
         setExporting(false);
         setExportProgress({step:"",pct:0,current:0,total:0});
+        setExportSingleOrder(null);
         if(esquinaOrders.length>0){
           setEsquinaModal({orders:esquinaOrders});
         } else {
@@ -5749,6 +5755,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       }catch(_){}
       setExportProgress({step:"¡Listo!",pct:100,current:finalOrders.length,total:finalOrders.length});
       setSelected(new Set());
+      setExportSingleOrder(null);
       locationOverridesRef.current={}; sucursalOverridesRef.current={};
       try{localStorage.removeItem("growith_locOverrides");localStorage.removeItem("growith_sucOverrides");}catch(_){}
       setExportDone({count:finalOrders.length, esquinas:esquinaOrders.length, esquinaOrders});
@@ -6906,7 +6913,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}>
                 <a href={o.linkOrden} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),textDecoration:"none",fontSize:13,display:"inline-flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Ver en TN</a>
                 <button onClick={()=>{
-                  setSelected(new Set([o.numero]));
+                  setExportSingleOrder(o);
                   setOrderDetail(null);
                   setExportModal(true);
                 }} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
@@ -6920,7 +6927,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       </Modal>
 
       {/* Location / Sucursal Resolution Modal */}
-      <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);}}} title={locationModal?.type==="sucursal"?"Confirmar sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
+      <Modal T={T} open={!!locationModal} onClose={()=>{if(locationModal){locationModal.resolve(null);setLocationModal(null);setExportSingleOrder(null);}}} title={locationModal?.type==="sucursal"?"Confirmar sucursal Andreani":"Confirmar localidad Andreani"} width={560} zIndex={2000}>
         {locationModal&&(()=>{
           const {order,locs,resolve,type,autoMatch}=locationModal;
           const isSuc=type==="sucursal";
@@ -7021,9 +7028,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       </Modal>
 
       {/* Export Modal */}
-      <Modal T={T} open={exportModal} onClose={()=>!exporting&&setExportModal(false)} title={`Generar ${selected.size} etiqueta${selected.size!==1?"s":""} para Andreani`} width={500}>
+      <Modal T={T} open={exportModal} onClose={()=>!exporting&&(setExportModal(false),setExportSingleOrder(null))} title={`Generar ${exportSingleOrder?1:selected.size} etiqueta${(exportSingleOrder?1:selected.size)!==1?"s":""} para Andreani`} width={500}>
         {(()=>{
-          const selOrders=tabOrders.filter(o=>selected.has(o.numero));
+          const selOrders=exportSingleOrder?[exportSingleOrder]:tabOrders.filter(o=>selected.has(o.numero));
           const domCount=selOrders.filter(o=>!isSucursalOrder(o)).length;
           const sucCount=selOrders.filter(o=>isSucursalOrder(o)).length;
           let hist=[];try{hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");}catch(_){}
@@ -7063,7 +7070,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             </div>
           </div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-            <button onClick={()=>setExportModal(false)} disabled={exporting} style={{...BtnSecondary(T),opacity:exporting?0.5:1}}>Cancelar</button>
+            <button onClick={()=>{setExportModal(false);setExportSingleOrder(null);}} disabled={exporting} style={{...BtnSecondary(T),opacity:exporting?0.5:1}}>Cancelar</button>
             <AsyncButton onClick={exportAndreani} style={{...BtnPrimary(T),minWidth:160,justifyContent:"center"}}>
               Generar etiquetas
             </AsyncButton>
