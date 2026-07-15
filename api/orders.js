@@ -332,10 +332,9 @@ export default async function handler(req, res) {
         fetchMetaAll(since, until, metaErr), fetchMetaAll(prevSince, prevUntil),
         fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
       ]);
-      const rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
-      const prevRows = buildRendRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
+      let rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
+      let prevRows = buildRendRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
       let totals = computeRendTotals(rows); let prevTotals = computeRendTotals(prevRows);
-      const byDow = computeRendDow(rows);
 
       // ── Capas de costo configuradas en Márgenes → margen real estilo Escalafy ──
       const cogsMap   = userData.margenesCogs && typeof userData.margenesCogs==="object" && !Array.isArray(userData.margenesCogs) ? userData.margenesCogs : {};
@@ -467,16 +466,6 @@ export default async function handler(req, res) {
         if (metodosImpNorm[np] != null) return metodosImpNorm[np];
         for (const [k,v] of Object.entries(metodosImpNorm)) { if (k && (k.includes(np) || np.includes(k))) return v; }
         return pctImp;
-      }
-      // Comisión de pago de las ventas que NO pasaron por MP, cada una con la tasa
-      // de su método (las de MP usan la comisión real, ya sumada en mpComm).
-      function noMpPayComm(raw) {
-        let s = 0;
-        for (const o of (raw?.orders_detail||[])) {
-          if (/mercado\s*pago/i.test(o.pay||"")) continue;
-          s += (parseFloat(o.revenue)||0) * pctPagoFor(o.pay);
-        }
-        return s;
       }
       const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
 
@@ -633,6 +622,44 @@ export default async function handler(req, res) {
 
       totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mpCommCurr.rev);
       prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mpCommPrev.rev);
+
+      // ── Filas diarias alineadas con el motor real ──
+      // Antes las filas usaban la "commission" legacy (aprox. 3%/10%): los
+      // sparklines y deltas diarios NO cerraban contra los totales reales.
+      // Ahora: (1) la facturación externa entra a su día; (2) los costos
+      // proporcionales al revenue (COGS, impuestos, comisiones, envío) se
+      // aplican por día con la tasa real del período; (3) los adicionales se
+      // prorratean por día; (4) el Ad Spend diario incluye fee del dólar y el
+      // reparto diario de Mercado Ads + costos marcados como pauta.
+      // La suma de las filas = el total del motor.
+      function mergeFactExtRows(rowsArr) {
+        if (!factExt.length) return rowsArr;
+        const byF = {};
+        for (const r of factExt) if (r.fecha) { const e = byF[r.fecha] || (byF[r.fecha] = {m:0,o:0}); e.m += parseFloat(r.monto)||0; e.o += parseInt(r.ord)||0; }
+        return rowsArr.map(r => { const e = byF[r.Fecha]; return e ? { ...r, Revenue: +((r.Revenue||0)+e.m).toFixed(2), "Ordenes > $0": (r["Ordenes > $0"]||0)+e.o } : r; });
+      }
+      function alinearRows(rowsArr, tot, dias) {
+        const rev = tot.revenue || 0;
+        const ratioDesc  = rev>0 ? ((tot.impuestos||0)+(tot.comisionPlataforma||0)+(tot.comisionPago||0))/rev : 0;
+        const ratioCosto = rev>0 ? ((tot.costoProductos||0)+(tot.costoEnvio||0))/rev : 0;
+        const fijoDia      = dias>0 ? (tot.costosAdicionales||0)/dias : 0;
+        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendExtra||0))/dias : 0;
+        return rowsArr.map(r => {
+          const revD = r.Revenue||0;
+          const adD  = (r["Ad Spend"]||0)*(1+feeAd) + adRepartoDia;
+          const netD = revD*(1-ratioDesc);
+          const profitD = revD*(1-ratioDesc-ratioCosto) - fijoDia - adD;
+          const ordD = r["Ordenes > $0"]||0;
+          return { ...r, "Ad Spend": +adD.toFixed(2), "Net Revenue": +netD.toFixed(2), Profit: +profitD.toFixed(2),
+            "Profit Margin": revD>0 ? parseFloat((profitD/revD).toFixed(6)) : 0,
+            ROAS: adD>0 ? parseFloat((revD/adD).toFixed(4)) : 0,
+            "True ROAS": adD>0 ? parseFloat((netD/adD).toFixed(4)) : 0,
+            CPA: ordD>0 ? parseFloat((adD/ordD).toFixed(2)) : 0 };
+        });
+      }
+      rows     = alinearRows(mergeFactExtRows(rows), totals, span+1);
+      prevRows = alinearRows(mergeFactExtRows(prevRows), prevTotals, span+1);
+      const byDow = computeRendDow(rows);
 
       // ── Desglose por canal (Tienda vs Mercado Libre) para los tableros ──
       // adSpend: Tienda = Meta Ads (toda la pauta de Meta empuja la tienda);
