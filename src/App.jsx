@@ -21602,6 +21602,7 @@ function CostosPanel({ T, uid }) {
   const [envio, setEnvio] = React.useState("");
   const [envioModo, setEnvioModo] = React.useState("fijo"); // "fijo" (promedio) | "orden" (costo real de cada orden)
   const [mlFlex, setMlFlex] = React.useState("");           // costo por envío Flex de ML (vacío = usa el promedio)
+  const [fulfillment, setFulfillment] = React.useState(""); // costo de fulfillment por paquete despachado (opcional)
   const [mlAdsList, setMlAdsList] = React.useState([]);
   const [mlAdsDraft, setMlAdsDraft] = React.useState({desde:"",hasta:"",monto:""});
   const [mlAdsSaving, setMlAdsSaving] = React.useState(false);
@@ -21630,6 +21631,7 @@ function CostosPanel({ T, uid }) {
         const ec = d.margenesEnvioCfg || {};
         setEnvioModo(ec.modoTienda === "orden" ? "orden" : "fijo");
         setMlFlex(ec.mlFlex ?? "");
+        setFulfillment(ec.fulfillment ?? "");
         setMlAdsList(Array.isArray(d.margenesMlAds) ? d.margenesMlAds : []);
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
@@ -21665,7 +21667,7 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0) }, margenesCogs: costos, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "" }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0), fulfillment: parseFloat(fulfillment)||0 }, margenesCogs: costos, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "" }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
@@ -21762,6 +21764,14 @@ function CostosPanel({ T, uid }) {
           </div>
           <span style={{fontSize:13,color:T.textSm}}>$</span>
           <input type="number" min="0" value={mlFlex} onChange={e=>setMlFlex(e.target.value)} placeholder={String(envio||0)} style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.text}}>Fulfillment por orden <span style={{fontSize:10,fontWeight:500,color:T.textSm}}>(opcional)</span></div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Si un fulfillment te despacha los paquetes, poné lo que te cobra por paquete despachado. Se suma al costo de logística de cada orden (tienda y ML), además del envío.</div>
+          </div>
+          <span style={{fontSize:13,color:T.textSm}}>$</span>
+          <input type="number" min="0" value={fulfillment} onChange={e=>setFulfillment(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
         </div>
       </div>
 
@@ -24599,6 +24609,7 @@ function AppRendimiento({T, user, onHome}) {
               {label:"Comisiones Plataforma",val:tot.comisionPlataforma, color:"#a855f7", icon:"🏪"},
               {label:"Comisiones de Pago",   val:tot.comisionPago,       color:"#ec4899", icon:"💳"},
               {label:"Costos Adicionales",   val:tot.costosAdicionales,  color:"#6366f1", icon:"🏢"},
+              ...(((tot.fulfillment||0)>0)?[{label:"Fulfillment (incl. en Envío)",val:tot.fulfillment,color:"#14b8a6",icon:"📦"}]:[]),
               ...(((tot.facturacionExterna||0)>0)?[{label:"Fact. Externa (incluida)",val:tot.facturacionExterna,color:T.green,icon:"🧮"}]:[]),
             ].map(k=>(
               <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>

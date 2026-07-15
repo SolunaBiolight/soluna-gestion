@@ -358,6 +358,9 @@ export default async function handler(req, res) {
       const envioCfg = userData.margenesEnvioCfg && typeof userData.margenesEnvioCfg==="object" ? userData.margenesEnvioCfg : {};
       const envioModoTienda = envioCfg.modoTienda === "orden" ? "orden" : "fijo";
       const envioMlFlex = (envioCfg.mlFlex!=null && envioCfg.mlFlex!=="" && isFinite(parseFloat(envioCfg.mlFlex))) ? parseFloat(envioCfg.mlFlex) : null;
+      // Fulfillment: costo fijo por paquete despachado (lo que cobra el fulfillment
+      // por orden). Se suma a la logística de CADA orden (tienda y ML).
+      const fulfillFee = parseFloat(envioCfg.fulfillment) || 0;
       // Gasto de Mercado Ads cargado por períodos: [{desde, hasta, monto}].
       // Cada período se promedia por día (monto / días) y se toma el solape con
       // el rango del dashboard. Ej: 10/06–19/06 $1.000.000 = $100.000/día.
@@ -514,7 +517,11 @@ export default async function handler(req, res) {
         const envioTienda = (envioModoTienda==="orden" && (raw?.orders_detail||[]).length)
           ? (raw.orders_detail||[]).reduce((s,o)=>s+(parseFloat(o.envioCosto)||0),0)
           : storeOrders * envioProm;
-        const envio     = envioTienda + (parseFloat(mlEnvio)||0);
+        // Fulfillment por paquete: se aplica a cada orden real (tienda + ML),
+        // no a la facturación externa.
+        const mlOrders  = Object.values(raw?.ml_data?.daily_orders||{}).reduce((a,b)=>a+b,0);
+        const fulfill   = fulfillFee * (storeOrders + mlOrders);
+        const envio     = envioTienda + (parseFloat(mlEnvio)||0) + fulfill;
         // Costos adicionales: legacy (fijos mensuales + % variable) + lista v2.
         const adic      = costosAdicPeriodo(sinceR, untilR, revenue);
         const costosAdic= (dias>0 ? (fijosMensual/30)*dias : 0) + revenue*pctVar + adic.gasto;
@@ -529,7 +536,7 @@ export default async function handler(req, res) {
           revenue, orders: ordersTot, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), adSpendExtra: +adic.gastoAds.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
           costoProductos: +cogs.toFixed(2), impuestos: +impuestos.toFixed(2),
           comisionPlataforma: +comPlat.toFixed(2), comisionPago: +comPago.toFixed(2),
-          costoEnvio: +envio.toFixed(2), costosAdicionales: +costosAdic.toFixed(2),
+          costoEnvio: +envio.toFixed(2), fulfillment: +fulfill.toFixed(2), costosAdicionales: +costosAdic.toFixed(2),
           facturacionExterna: +factExtTot.toFixed(2), facturacionExternaOrd: factExtOrd,
           profitMargin: revenue>0 ? profit/revenue : 0,
           roas: adSpendEf>0 ? revenue/adSpendEf : 0,
@@ -652,11 +659,11 @@ export default async function handler(req, res) {
         const comPlat = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : rev*pctPlat;
         const comPago = isMl ? 0 : (parseFloat(mpComm)||0); // mpComm ya = shopifyPayComm de esta tienda
         const comis = comPlat + comPago;
-        const envio = isMl
+        const envio = (isMl
           ? (parseFloat(mlEnv)||0)
           : ((envioModoTienda==="orden" && (raw?.orders_detail||[]).length)
               ? (raw.orders_detail||[]).reduce((s,o)=>s+(parseFloat(o.envioCosto)||0),0)
-              : ord*envioProm);
+              : ord*envioProm)) + fulfillFee*ord;
         const ads = parseFloat(adSpend)||0;
         const netRev = rev - impuestos - comis;
         const profit = rev - cogs - impuestos - comis - envio - ads;
@@ -689,7 +696,7 @@ export default async function handler(req, res) {
         const cogsDe = items => (items||[]).reduce((s,it)=>s+cogsCosto(cogsMap[it.key], priceByKey[it.key])*(it.qty||0),0);
         for (const o of (raw?.orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
-          const env = (envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm;
+          const env = ((envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm) + fulfillFee;
           // Comisión = % plataforma + comisión de pago: si tenemos la real de MP
           // de esta venta (vía receipt_id) la usamos; si no, caemos al % configurado.
           const ref = mpRefCache[o.id];
@@ -699,7 +706,7 @@ export default async function handler(req, res) {
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImpML, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o);
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImpML, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o)+fulfillFee;
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
@@ -711,7 +718,7 @@ export default async function handler(req, res) {
       return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, sales, since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
           metaTokenExpired: !!metaErr.expired,
-          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2) } } });
+          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2) } } });
     } catch(e) { console.error("Dashboard error:", e); return res.status(500).json({ error: e.message }); }
   }
 
