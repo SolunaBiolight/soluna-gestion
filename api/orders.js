@@ -339,9 +339,25 @@ export default async function handler(req, res) {
 
       // ── Capas de costo configuradas en Márgenes → margen real estilo Escalafy ──
       const cogsMap   = userData.margenesCogs && typeof userData.margenesCogs==="object" && !Array.isArray(userData.margenesCogs) ? userData.margenesCogs : {};
+      // COGS por producto: número/string = $ fijo; {t:"pct",v} = % del precio de venta.
+      const cogsCosto = (entry, price) => {
+        if (entry == null) return 0;
+        if (typeof entry === "object") {
+          const p = parseFloat(entry.v);
+          if (!isFinite(p)) return 0;
+          return entry.t === "pct" ? (parseFloat(price)||0) * (p/100) : p;
+        }
+        const n = parseFloat(entry); return isFinite(n) ? n : 0;
+      };
       const comCfg    = userData.margenesComisionesCfg || {};
       const metodos   = comCfg.metodos && typeof comCfg.metodos==="object" ? comCfg.metodos : {};
       const envioProm = parseFloat(userData.margenesEnvioProm) || 0;
+      // Config de envío v2: la tienda puede usar el costo REAL de cada orden
+      // (shipping_cost_owner de TN) en vez del promedio; ML Flex puede tener su
+      // propio costo por envío distinto del promedio de tienda.
+      const envioCfg = userData.margenesEnvioCfg && typeof userData.margenesEnvioCfg==="object" ? userData.margenesEnvioCfg : {};
+      const envioModoTienda = envioCfg.modoTienda === "orden" ? "orden" : "fijo";
+      const envioMlFlex = (envioCfg.mlFlex!=null && envioCfg.mlFlex!=="" && isFinite(parseFloat(envioCfg.mlFlex))) ? parseFloat(envioCfg.mlFlex) : null;
       // Gasto de Mercado Ads cargado por períodos: [{desde, hasta, monto}].
       // Cada período se promedia por día (monto / días) y se toma el solape con
       // el rango del dashboard. Ej: 10/06–19/06 $1.000.000 = $100.000/día.
@@ -369,7 +385,53 @@ export default async function handler(req, res) {
       // Costos variables = % de la facturación (ej: 2% a un growth partner).
       const costosVar = Array.isArray(userData.margenesCostosVar) ? userData.margenesCostosVar : [];
       const pctVar = costosVar.reduce((s,v)=>s+(parseFloat(v.pct)||0),0)/100;
+      // ── Costos Adicionales v2 ──────────────────────────────────────────
+      // Entradas: {nombre, categoria, tipo:"fijo"|"variable", moneda:"ARS"|"USD",
+      // monto|pct, recurrente, desde, hasta, sumaAds}. Los fijos recurrentes se
+      // prorratean por día (monto/30); los fijos por período reparten el monto en
+      // sus días; los variables son % del revenue. USD se convierte con la
+      // cotización (con su ajuste manual). sumaAds=true → va al Ad Spend, no a
+      // Costos Adicionales (afecta ROAS/CPA como en Escalafy).
+      // Conviven con los campos legacy margenesCostosFijos/Var hasta que el panel
+      // los migre (al guardar el panel nuevo, los legacy quedan vacíos).
+      const costosAdicList = Array.isArray(userData.margenesCostosAdic) ? userData.margenesCostosAdic : [];
+      const dolarValorEf = (parseFloat(dolarCfg.valor)||0) * (1 + (parseFloat(dolarCfg.ajuste)||0)/100);
+      function costosAdicPeriodo(sinceR, untilR, revenueR) {
+        let gasto = 0, gastoAds = 0;
+        for (const c of costosAdicList) {
+          const enUsd = c.moneda === "USD";
+          if (enUsd && !(dolarValorEf > 0)) continue; // sin cotización no hay conversión
+          const conv = enUsd ? dolarValorEf : 1;
+          if (c.tipo === "variable") {
+            const p = parseFloat(c.pct) || 0;
+            if (p <= 0) continue;
+            if ((c.desde && c.desde > untilR) || (c.hasta && c.hasta < sinceR)) continue;
+            const g = revenueR * (p/100);
+            if (c.sumaAds) gastoAds += g; else gasto += g;
+            continue;
+          }
+          const m = (parseFloat(c.monto) || 0) * conv;
+          if (m <= 0) continue;
+          const lo = (c.desde && c.desde > sinceR) ? c.desde : sinceR;
+          const hi = (c.hasta && c.hasta < untilR) ? c.hasta : untilR;
+          if (lo > hi) continue;
+          const overlap = Math.round((new Date(hi) - new Date(lo)) / 86400000) + 1;
+          if (overlap <= 0) continue;
+          let g = 0;
+          if (c.recurrente || !c.desde || !c.hasta) {
+            g = (m/30) * overlap;        // mensual recurrente, prorrateado por día
+          } else {
+            const entryDays = Math.round((new Date(c.hasta) - new Date(c.desde)) / 86400000) + 1;
+            if (entryDays <= 0) continue;
+            g = (m/entryDays) * overlap; // monto único repartido en su período
+          }
+          if (c.sumaAds) gastoAds += g; else gasto += g;
+        }
+        return { gasto, gastoAds };
+      }
       const pctImp    = (parseFloat(comCfg.impuestos)||0)/100;
+      // Impuestos de ML separados de los de la tienda (fallback: mismo % de tienda).
+      const pctImpML  = (comCfg.impuestosML!=null && comCfg.impuestosML!=="") ? (parseFloat(comCfg.impuestosML)||0)/100 : pctImp;
       const pctPlat   = (parseFloat(comCfg.shopify)||0)/100;
       const metPcts   = Object.values(metodos).map(m=>parseFloat(m.pct)||0).filter(x=>x>0);
       const pctPago   = metPcts.length ? (metPcts.reduce((a,b)=>a+b,0)/metPcts.length)/100 : 0;
@@ -379,12 +441,29 @@ export default async function handler(req, res) {
       const normPay = s => String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
       const metodosNorm = {};
       for (const [k,v] of Object.entries(metodos)) { const p = parseFloat(v?.pct); if (isFinite(p) && p>0) metodosNorm[normPay(k)] = p/100; }
+      // Comisión de Mercado Pago explícita (para órdenes MP sin fee real matcheado,
+      // ej: todas las de TN). Sin configurar = 0 — el promedio de otros métodos
+      // (transferencia, etc.) no representa a MP.
+      const mpPctCfg = (parseFloat(comCfg.mpPct)||0)/100;
+      const esMPPay = s => /mercadopago|mercadolibre/.test(normPay(s));
       function pctPagoFor(payStr) {
         const np = normPay(payStr);
         if (!np) return pctPago;
         if (metodosNorm[np] != null) return metodosNorm[np];
         for (const [k,v] of Object.entries(metodosNorm)) { if (k && (k.includes(np) || np.includes(k))) return v; }
+        if (esMPPay(payStr)) return mpPctCfg;
         return pctPago;
+      }
+      // Impuesto por método de pago: sustituye el % de tienda para esas ventas
+      // (ej: pagos personalizados/efectivo con otra carga impositiva).
+      const metodosImpNorm = {};
+      for (const [k,v] of Object.entries(metodos)) { if (v && v.imp!=null && v.imp!=="") { const ip = parseFloat(v.imp); if (isFinite(ip)) metodosImpNorm[normPay(k)] = ip/100; } }
+      function impFor(payStr) {
+        const np = normPay(payStr);
+        if (!np) return pctImp;
+        if (metodosImpNorm[np] != null) return metodosImpNorm[np];
+        for (const [k,v] of Object.entries(metodosImpNorm)) { if (k && (k.includes(np) || np.includes(k))) return v; }
+        return pctImp;
       }
       // Comisión de pago de las ventas que NO pasaron por MP, cada una con la tasa
       // de su método (las de MP usan la comisión real, ya sumada en mpComm).
@@ -399,18 +478,28 @@ export default async function handler(req, res) {
       const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
 
       function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mpRev) {
-        // COGS = unidades vendidas × costo cargado por producto/variante.
+        // COGS = unidades vendidas × costo cargado por producto/variante ($ fijo o % del precio).
         let cogs = 0;
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
-          const c = parseFloat(cogsMap[v.sku || String(v.id)]); if (c>0) cogs += c*(v.units_sold||0);
+          const c = cogsCosto(cogsMap[v.sku || String(v.id)], v.price); if (c>0) cogs += c*(v.units_sold||0);
         }
         for (const m of (raw?.ml_data?.ml_products||[])) {
-          const c = parseFloat(cogsMap["ml:"+m.id]); if (c>0) cogs += c*(m.units||0);
+          const c = cogsCosto(cogsMap["ml:"+m.id], m.price); if (c>0) cogs += c*(m.units||0);
         }
         const storeRev = Object.values(raw?.daily_revenue||{}).reduce((a,b)=>a+b,0);
-        const factExtTot = factExt.filter(r => r.fecha && r.fecha>=sinceR && r.fecha<=untilR).reduce((s,r)=>s+(parseFloat(r.monto)||0),0);
+        const factRows = factExt.filter(r => r.fecha && r.fecha>=sinceR && r.fecha<=untilR);
+        const factExtTot = factRows.reduce((s,r)=>s+(parseFloat(r.monto)||0),0);
+        const factExtOrd = factRows.reduce((s,r)=>s+(parseInt(r.ord)||0),0);
         const revenue   = (tot.revenue||0) + factExtTot;
-        const impuestos = revenue * pctImp;
+        const ordersTot = (tot.orders||0) + factExtOrd;
+        // Impuestos: % de tienda sobre (tienda + externa) y % propio de ML sobre
+        // ML. Los métodos con impuesto propio sustituyen el % de tienda en SUS ventas.
+        const mlRev = Object.values(raw?.ml_data?.daily_revenue||{}).reduce((a,b)=>a+b,0);
+        let impuestos = Math.max(0, revenue - mlRev) * pctImp + mlRev * pctImpML;
+        for (const o of (raw?.orders_detail||[])) {
+          const rate = impFor(o.pay);
+          if (rate !== pctImp) impuestos += (parseFloat(o.revenue)||0) * (rate - pctImp);
+        }
         // Comisión de plataforma = % configurado del store (Shopify/TN) + comisión
         // REAL de Mercado Libre (sale_fee de cada orden, ya incluye el pago de MP).
         const comML     = parseFloat(raw?.ml_data?.ml_commission)||0;
@@ -419,34 +508,42 @@ export default async function handler(req, res) {
         // sobre las ventas que NO pasaron por MP (transferencia, etc.). Antes el %
         // se aplicaba a TODO el revenue y encima se sumaba MP → doble-conteo.
         const comPago   = parseFloat(mpComm)||0; // ya viene como shopifyPayComm (solo esta tienda)
-        // Envío = órdenes de tienda (TN/Shopify) × promedio + envío de las órdenes
-        // ML que son Flex (el resto de ML es Mercado Envíos: lo cubre ML, no se cuenta).
+        // Envío tienda: costo REAL por orden (si está el modo "orden" y hay detalle)
+        // o promedio × órdenes. ML: Flex a su costo propio, Mercado Envíos al real.
         const storeOrders = Object.values(raw?.daily_orders||{}).reduce((a,b)=>a+b,0);
-        const envio     = storeOrders * envioProm + (parseFloat(mlEnvio)||0);
-        const costosAdic= (dias>0 ? (fijosMensual/30)*dias : 0) + revenue*pctVar; // fijos prorrateados + variables (% facturación)
-        // Ad Spend general = Meta (con fee del dólar) + Mercado Ads manual prorrateado.
+        const envioTienda = (envioModoTienda==="orden" && (raw?.orders_detail||[]).length)
+          ? (raw.orders_detail||[]).reduce((s,o)=>s+(parseFloat(o.envioCosto)||0),0)
+          : storeOrders * envioProm;
+        const envio     = envioTienda + (parseFloat(mlEnvio)||0);
+        // Costos adicionales: legacy (fijos mensuales + % variable) + lista v2.
+        const adic      = costosAdicPeriodo(sinceR, untilR, revenue);
+        const costosAdic= (dias>0 ? (fijosMensual/30)*dias : 0) + revenue*pctVar + adic.gasto;
+        // Ad Spend general = Meta (con fee del dólar) + Mercado Ads manual prorrateado
+        // + costos adicionales marcados como inversión publicitaria (sumaAds).
         const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
         const adSpendMl   = mlAdsPeriodo(sinceR, untilR);
-        const adSpendEf = adSpendMeta + adSpendMl;
+        const adSpendEf = adSpendMeta + adSpendMl + adic.gastoAds;
         const netRevenue= revenue - impuestos - comPlat - comPago;
         const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;
         return { ...tot,
-          revenue, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
+          revenue, orders: ordersTot, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), adSpendExtra: +adic.gastoAds.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
           costoProductos: +cogs.toFixed(2), impuestos: +impuestos.toFixed(2),
           comisionPlataforma: +comPlat.toFixed(2), comisionPago: +comPago.toFixed(2),
           costoEnvio: +envio.toFixed(2), costosAdicionales: +costosAdic.toFixed(2),
-          facturacionExterna: +factExtTot.toFixed(2),
+          facturacionExterna: +factExtTot.toFixed(2), facturacionExternaOrd: factExtOrd,
           profitMargin: revenue>0 ? profit/revenue : 0,
           roas: adSpendEf>0 ? revenue/adSpendEf : 0,
           trueRoas: adSpendEf>0 ? netRevenue/adSpendEf : 0,
-          cpa: (tot.orders||0)>0 ? adSpendEf/tot.orders : 0,
+          cpa: ordersTot>0 ? adSpendEf/ordersTot : 0,
+          aov: ordersTot>0 ? revenue/ordersTot : 0,
+          aovNeto: ordersTot>0 ? netRevenue/ordersTot : 0,
           mer: revenue>0 ? adSpendEf/revenue : 0,
           // Break even REAL contando TODOS los costos (incluidos los fijos): es la
           // contribución antes de pauta = profit + adSpend. Si da negativo, el CPA
           // break even queda negativo a propósito: significa que perdés incluso con
           // CPA $0 (los costos ya superan al revenue) — es una señal válida.
           breakEvenRoas: (profit + adSpendEf)>0 ? revenue/(profit + adSpendEf) : 0,
-          cpaBreakEven: (tot.orders||0)>0 ? (profit + adSpendEf)/tot.orders : 0,
+          cpaBreakEven: ordersTot>0 ? (profit + adSpendEf)/ordersTot : 0,
         };
       }
       // ── Envío de ML: el COSTO REAL que ML le cobra al vendedor ──
@@ -478,7 +575,8 @@ export default async function handler(req, res) {
       const mlEnvioDe  = o => {
         const s = mlLogi[o?.shippingId];
         if (!s) return 0;
-        return s.lt === "self_service" ? envioProm : (s.cost || 0); // Flex: promedio · Mercado Envíos: costo real
+        // Flex: costo propio configurado (fallback: promedio de tienda) · Mercado Envíos: costo real
+        return s.lt === "self_service" ? (envioMlFlex!=null ? envioMlFlex : envioProm) : (s.cost || 0);
       };
       const mlEnvioTot = raw => (raw?.ml_data?.ml_orders_detail||[]).reduce((s,o)=>s+mlEnvioDe(o),0);
 
@@ -538,14 +636,27 @@ export default async function handler(req, res) {
         const rev = Object.values(dr).reduce((a,b)=>a+b,0);
         const ord = Object.values(dord).reduce((a,b)=>a+b,0);
         let cogs = 0;
-        if (isMl) { for (const m of (raw?.ml_data?.ml_products||[])) { const c=parseFloat(cogsMap["ml:"+m.id]); if(c>0) cogs+=c*(m.units||0); } }
-        else { for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const c=parseFloat(cogsMap[v.sku||String(v.id)]); if(c>0) cogs+=c*(v.units_sold||0); } }
-        const impuestos = rev*pctImp;
+        if (isMl) { for (const m of (raw?.ml_data?.ml_products||[])) { const c=cogsCosto(cogsMap["ml:"+m.id], m.price); if(c>0) cogs+=c*(m.units||0); } }
+        else { for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const c=cogsCosto(cogsMap[v.sku||String(v.id)], v.price); if(c>0) cogs+=c*(v.units_sold||0); } }
+        // Impuestos: tienda con su % (+ ajuste por método), ML con el suyo.
+        let impuestos;
+        if (isMl) { impuestos = rev*pctImpML; }
+        else {
+          impuestos = rev*pctImp;
+          for (const o of (raw?.orders_detail||[])) {
+            const rate = impFor(o.pay);
+            if (rate !== pctImp) impuestos += (parseFloat(o.revenue)||0) * (rate - pctImp);
+          }
+        }
         // Comisión separada como en el general: Plataforma vs Pago.
         const comPlat = isMl ? (parseFloat(raw?.ml_data?.ml_commission)||0) : rev*pctPlat;
         const comPago = isMl ? 0 : (parseFloat(mpComm)||0); // mpComm ya = shopifyPayComm de esta tienda
         const comis = comPlat + comPago;
-        const envio = isMl ? (parseFloat(mlEnv)||0) : ord*envioProm;
+        const envio = isMl
+          ? (parseFloat(mlEnv)||0)
+          : ((envioModoTienda==="orden" && (raw?.orders_detail||[]).length)
+              ? (raw.orders_detail||[]).reduce((s,o)=>s+(parseFloat(o.envioCosto)||0),0)
+              : ord*envioProm);
         const ads = parseFloat(adSpend)||0;
         const netRev = rev - impuestos - comis;
         const profit = rev - cogs - impuestos - comis - envio - ads;
@@ -572,9 +683,13 @@ export default async function handler(req, res) {
       // ── Venta por venta: cada orden con sus costos reales ──
       function buildSales(raw) {
         const list = [];
-        const cogsDe = items => (items||[]).reduce((s,it)=>s+(parseFloat(cogsMap[it.key])||0)*(it.qty||0),0);
+        // Precio de venta por key (sku/variant id) para poder resolver COGS en %.
+        const priceByKey = {};
+        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (priceByKey[k]==null) priceByKey[k]=v.price; }
+        const cogsDe = items => (items||[]).reduce((s,it)=>s+cogsCosto(cogsMap[it.key], priceByKey[it.key])*(it.qty||0),0);
         for (const o of (raw?.orders_detail||[])) {
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, env=envioProm;
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
+          const env = (envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm;
           // Comisión = % plataforma + comisión de pago: si tenemos la real de MP
           // de esta venta (vía receipt_id) la usamos; si no, caemos al % configurado.
           const ref = mpRefCache[o.id];
@@ -584,7 +699,7 @@ export default async function handler(req, res) {
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImp, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o);
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImpML, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o);
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
         }
@@ -596,7 +711,7 @@ export default async function handler(req, res) {
       return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, sales, since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
           metaTokenExpired: !!metaErr.expired,
-          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, fijosMensual, feeAd: feeAd*100 } } });
+          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2) } } });
     } catch(e) { console.error("Dashboard error:", e); return res.status(500).json({ error: e.message }); }
   }
 

@@ -141,6 +141,7 @@ growith_alert_global_{uid} → número (días umbral global)
 growith_lead_time_{uid}    → JSON lead times por producto
 growith_stockouts_{uid}    → JSON[] historial de agotados
 growith_envios_cache_{uid} → JSON cache SWR de Envíos: {ts, tabs:{empaquetar,enviar}, counts}
+growith_margenes_vis_{uid} → JSON visibilidad del dashboard Márgenes: {main,sec,costos,tienda,ml,canales,secKpis}
 ```
 
 ### Flujo de git

@@ -717,7 +717,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     { group:"FINANZAS" },
     {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
-      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos"},{id:"adicionales",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
@@ -21472,7 +21472,7 @@ function ComisionesPanel({ T, uid }) {
       try {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data().margenesComisionesCfg : null;
-        if (d) setCfg({ impuestos:d.impuestos??"", shopify:d.shopify??"", metodos:(d.metodos && typeof d.metodos==="object" && !Array.isArray(d.metodos)) ? d.metodos : {} });
+        if (d) setCfg({ impuestos:d.impuestos??"", impuestosML:d.impuestosML??"", mpPct:d.mpPct??"", shopify:d.shopify??"", metodos:(d.metodos && typeof d.metodos==="object" && !Array.isArray(d.metodos)) ? d.metodos : {} });
       } catch (_) {}
       try {
         // Métodos de pago detectados en las órdenes (solo TN/Shopify). Se excluye
@@ -21537,6 +21537,22 @@ function ComisionesPanel({ T, uid }) {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
           <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Impuestos de Mercado Libre</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>% sobre lo facturado en ML. Vacío = usa el mismo % de la tienda.</div>
+          </div>
+          <input type="number" step="0.1" min="0" value={cfg.impuestosML??""} onChange={e=>setCfg(c=>({...c,impuestosML:e.target.value}))} placeholder={String(cfg.impuestos||0)} style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
+          <span style={{fontSize:13,color:T.textSm}}>%</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Comisión Mercado Pago</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>% por transacción de MP en tu tienda (cuando no se puede leer el fee real). En TN suele ser ~6,4% con liberación inmediata.</div>
+          </div>
+          <input type="number" step="0.1" min="0" value={cfg.mpPct??""} onChange={e=>setCfg(c=>({...c,mpPct:e.target.value}))} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
+          <span style={{fontSize:13,color:T.textSm}}>%</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
+          <div style={{flex:1,minWidth:180}}>
             <div style={{fontSize:13,fontWeight:700,color:T.text}}>Comisión Shopify</div>
             <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Por transacción, si no usás Shopify Payments.</div>
           </div>
@@ -21548,17 +21564,19 @@ function ComisionesPanel({ T, uid }) {
       {/* Métodos de pago — auto-detectados de las órdenes */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
         <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Comisiones por método de pago</div>
-        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Se detectan solos de tus órdenes (los que creaste en Shopify/TN). Poné la comisión promedio que te quita cada uno.</div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Se detectan solos de tus órdenes (los que creaste en Shopify/TN). Poné la comisión que te quita cada uno. El <strong style={{color:T.textMd}}>impuesto propio</strong> es opcional: si lo cargás, esas ventas usan ESE % de impuestos en vez del de la tienda (como los "pagos personalizados" de Escalafy).</div>
         {metodos.length===0 && <div style={{fontSize:12,color:T.textSm}}>Todavía no se detectaron métodos de pago distintos de Mercado Pago en tus últimas órdenes.</div>}
         {metodos.map(name=>{
           const m = cfg.metodos[name]||{};
           return (
             <div key={name} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
               <span style={{flex:1,minWidth:140,fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={name}>{name}</span>
-              <span style={{fontSize:12,color:T.textSm}}>%</span>
+              <span style={{fontSize:12,color:T.textSm}}>com. %</span>
               <input type="number" step="0.1" min="0" value={m.pct??""} onChange={e=>setMet(name,{pct:e.target.value})} placeholder="0" style={{...InputStyle(T),width:74,fontSize:13,textAlign:"right"}}/>
               <span style={{fontSize:12,color:T.textSm}}>fijo $</span>
               <input type="number" min="0" value={m.fijo??""} onChange={e=>setMet(name,{fijo:e.target.value})} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
+              <span style={{fontSize:12,color:T.textSm}} title="Impuesto propio: sustituye el % de impuestos de la tienda para las ventas con este método">imp. %</span>
+              <input type="number" step="0.1" min="0" value={m.imp??""} onChange={e=>setMet(name,{imp:e.target.value})} placeholder={String(cfg.impuestos||0)} style={{...InputStyle(T),width:74,fontSize:13,textAlign:"right"}}/>
             </div>
           );
         })}
@@ -21582,6 +21600,8 @@ function ComisionesPanel({ T, uid }) {
 // ningún sistema sabe cuánto te cuesta el producto).
 function CostosPanel({ T, uid }) {
   const [envio, setEnvio] = React.useState("");
+  const [envioModo, setEnvioModo] = React.useState("fijo"); // "fijo" (promedio) | "orden" (costo real de cada orden)
+  const [mlFlex, setMlFlex] = React.useState("");           // costo por envío Flex de ML (vacío = usa el promedio)
   const [mlAdsList, setMlAdsList] = React.useState([]);
   const [mlAdsDraft, setMlAdsDraft] = React.useState({desde:"",hasta:"",monto:""});
   const [mlAdsSaving, setMlAdsSaving] = React.useState(false);
@@ -21607,6 +21627,9 @@ function CostosPanel({ T, uid }) {
         const snap = await getDoc(doc(db, "users", uid));
         const d = snap.exists() ? snap.data() : {};
         setEnvio(d.margenesEnvioProm ?? "");
+        const ec = d.margenesEnvioCfg || {};
+        setEnvioModo(ec.modoTienda === "orden" ? "orden" : "fijo");
+        setMlFlex(ec.mlFlex ?? "");
         setMlAdsList(Array.isArray(d.margenesMlAds) ? d.margenesMlAds : []);
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
@@ -21642,13 +21665,23 @@ function CostosPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
-      const variosClean = varios.filter(v=>(parseFloat(v.pct)||0)>0).map(v=>({id:v.id||margId(),nombre:v.nombre||"",pct:parseFloat(v.pct)||0}));
-      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesCogs: costos, margenesCostosFijos: fijos, margenesCostosVar: variosClean, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "" }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0) }, margenesCogs: costos, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "" }, { merge: true });
       toast("Costos guardados ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
-  const setCosto = (key,val)=>setCostos(c=>({...c,[key]:val}));
+  const setCosto = (key,val)=>setCostos(c=>{
+    const prev=c[key];
+    // Si el item está en modo %, el valor se guarda como {t:"pct",v} (el motor lo resuelve contra el precio).
+    return {...c,[key]: (prev&&typeof prev==="object"&&prev.t==="pct") ? {t:"pct",v:val} : val};
+  });
+  const setCostoTipo = (key,tipo)=>setCostos(c=>{
+    const prev=c[key];
+    const val = prev&&typeof prev==="object" ? prev.v : prev;
+    return {...c,[key]: tipo==="pct" ? {t:"pct",v:val??""} : (val??"")};
+  });
+  const costoVal  = entry => entry&&typeof entry==="object" ? (entry.v??"") : (entry??"");
+  const costoEsPct= entry => !!(entry&&typeof entry==="object"&&entry.t==="pct");
 
   async function persistMlAds(list) {
     await setDoc(doc(db,"users",uid), { margenesMlAds: list }, { merge: true });
@@ -21685,27 +21718,50 @@ function CostosPanel({ T, uid }) {
   const q = busqProd.trim().toLowerCase();
   const visRows = q ? prodRows.filter(r => `${r.nombre} ${r.variante} ${r.sku}`.toLowerCase().includes(q)) : prodRows;
   const visMl = q ? mlItems.filter(p => String(p.nombre||"").toLowerCase().includes(q)) : mlItems;
-  const conCosto = Object.values(costos).filter(v => parseFloat(v) > 0).length;
+  const conCosto = Object.values(costos).filter(v => (typeof v==="object" ? parseFloat(v?.v) : parseFloat(v)) > 0).length;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18,maxWidth:860}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
         <div>
           <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Costos</div>
-          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Envío, costo de producto (COGS) y costos fijos / empleados. Se restan de la ganancia neta.</div>
+          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Envíos y costo de producto (COGS, en $ fijo o % del precio). Se restan de la ganancia neta.</div>
         </div>
         <Btn T={T} variant="primary" onClick={save} disabled={saving||!loaded}>{saving?"Guardando…":"Guardar todo"}</Btn>
       </div>
 
-      {/* Costo promedio de envío */}
+      {/* Costos de envío — modo por orden (real) o promedio + Flex propio de ML */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Costo promedio de envío</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Por orden. Se usa cuando el costo real del envío no viene en la orden.</div>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Costos de envío de la tienda</div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Cómo se calcula lo que TE cuesta cada envío de Tienda Nube / Shopify.</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {[
+            {id:"fijo",  titulo:"Costo de envío personalizado", desc:"Un promedio fijo por orden que definís vos (recomendado si etiquetás por fuera, ej: Andreani)."},
+            {id:"orden", titulo:"Costo de envío de la orden",    desc:"Usa el costo real que la plataforma registró en cada orden (shipping del vendedor). Si tus etiquetas se generan fuera de la tienda, puede venir en $0."},
+          ].map(op=>(
+            <label key={op.id} onClick={()=>setEnvioModo(op.id)} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"10px 12px",borderRadius:10,cursor:"pointer",background:envioModo===op.id?T.accent+"10":"transparent",border:`1.5px solid ${envioModo===op.id?T.accentSolid:T.borderL}`}}>
+              <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${envioModo===op.id?T.accentSolid:T.border}`,background:envioModo===op.id?T.accentSolid:"transparent",flexShrink:0,marginTop:2,boxShadow:envioModo===op.id?`inset 0 0 0 2.5px ${T.card}`:"none"}}/>
+              <span>
+                <span style={{display:"block",fontSize:13,fontWeight:600,color:T.text}}>{op.titulo}</span>
+                <span style={{display:"block",fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.5}}>{op.desc}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {envioModo==="fijo" && (
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12}}>
+            <span style={{fontSize:12,color:T.textMd,flex:1}}>Costo promedio por orden</span>
+            <span style={{fontSize:13,color:T.textSm}}>$</span>
+            <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
+          </div>
+        )}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.text}}>Envío Flex de Mercado Libre</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Costo por envío Flex (lo pagás vos al correo). Vacío = usa el promedio de la tienda. Mercado Envíos se toma automático del costo real.</div>
           </div>
           <span style={{fontSize:13,color:T.textSm}}>$</span>
-          <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
+          <input type="number" min="0" value={mlFlex} onChange={e=>setMlFlex(e.target.value)} placeholder={String(envio||0)} style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
         </div>
       </div>
 
@@ -21786,8 +21842,14 @@ function CostosPanel({ T, uid }) {
               <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.nombre}{r.variante?` · ${r.variante}`:""}</div>
               <div style={{fontSize:10,color:T.textSm}}>{r.sku?`SKU ${r.sku} · `:""}{fmtARSm(r.price)}</div>
             </div>
-            <span style={{fontSize:12,color:T.textSm}}>costo $</span>
-            <input type="number" min="0" value={costos[r.key]??""} onChange={e=>setCosto(r.key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
+            <select value={costoEsPct(costos[r.key])?"pct":"fijo"} onChange={e=>setCostoTipo(r.key,e.target.value)} title="$ fijo o % del precio de venta" style={{...InputStyle(T),width:64,fontSize:12,padding:"7px 6px",flexShrink:0}}>
+              <option value="fijo">$</option>
+              <option value="pct">%</option>
+            </select>
+            <input type="number" min="0" value={costoVal(costos[r.key])} onChange={e=>setCosto(r.key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:100,fontSize:13,textAlign:"right",flexShrink:0}}/>
+            {costoEsPct(costos[r.key])&&(parseFloat(costoVal(costos[r.key]))||0)>0&&(
+              <span style={{fontSize:10,color:T.textSm,flexShrink:0,width:70,textAlign:"right"}}>≈ {fmtARSm((r.price||0)*(parseFloat(costoVal(costos[r.key]))||0)/100)}</span>
+            )}
           </div>
         ))}
         {visMl.length>0 && <div style={{fontSize:11,fontWeight:700,color:T.textSm,margin:"12px 0 4px",textTransform:"uppercase",letterSpacing:0.4}}>Mercado Libre</div>}
@@ -21800,46 +21862,177 @@ function CostosPanel({ T, uid }) {
                 <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.nombre}>{p.nombre}</div>
               </div>
               <span style={{fontSize:12,color:T.textSm}}>costo $</span>
-              <input type="number" min="0" value={costos[key]??""} onChange={e=>setCosto(key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
+              <input type="number" min="0" value={costoVal(costos[key])} onChange={e=>setCosto(key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
             </div>
           );
         })}
       </div>
 
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Costos fijos / empleados</div>
-          <span style={{fontSize:12,fontWeight:700,color:T.accent}}>Total: {fmtARSm(totalFijos)}/mes</span>
+      {(fijos.length>0||varios.length>0) ? (
+        <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.yellow}}>
+          Los costos fijos y variables ahora viven en <strong>Márgenes → Costos Adicionales</strong> (con categorías, USD, vigencia por fechas y opción de sumarlos al Ad Spend). Entrá ahí para migrarlos con un click.
         </div>
-        {fijos.map(r=>(
-          <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-            <input value={r.nombre} onChange={e=>setFijos(fs=>fs.map(x=>x.id===r.id?{...x,nombre:e.target.value}:x))} placeholder="Ej: Sueldos, Alquiler, Apps" style={{...InputStyle(T),flex:1,fontSize:13}}/>
-            <span style={{fontSize:12,color:T.textSm}}>$</span>
-            <input type="number" min="0" value={r.monto} onChange={e=>setFijos(fs=>fs.map(x=>x.id===r.id?{...x,monto:e.target.value}:x))} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
-            <button onClick={()=>setFijos(fs=>fs.filter(x=>x.id!==r.id))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
-          </div>
-        ))}
-        <button onClick={()=>setFijos(fs=>[...fs,{id:margId(),nombre:"",monto:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar costo fijo</button>
+      ) : (
+        <div style={{fontSize:11,color:T.textSm}}>Los costos fijos / empleados y los variables (% de facturación) se cargan en <strong style={{color:T.textMd}}>Márgenes → Costos Adicionales</strong>.</div>
+      )}
+    </div>
+  );
+}
+
+// Costos Adicionales — costos fijos (recurrentes o por período, ARS/USD) y
+// variables (% de facturación), con categoría, vigencia y opción de sumarse a
+// la Inversión Publicitaria (afecta ROAS/CPA). Reemplaza a los viejos "costos
+// fijos" y "costos variables" de Costos: al guardar acá, migra y vacía los legacy.
+const COSTO_CATEGORIAS = ["Team","Oficina","Software","Logística","Marketing","Otro"];
+function CostosAdicionalesPanel({ T, uid }) {
+  const [items, setItems] = React.useState([]);
+  const [loaded, setLoaded] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [migrado, setMigrado] = React.useState(false); // había legacy y se prefilló
+  const [dolarValor, setDolarValor] = React.useState(0);
+  const iS = InputStyle(T);
+
+  React.useEffect(() => {
+    if (!uid) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db,"users",uid));
+        const d = snap.exists() ? snap.data() : {};
+        const list = Array.isArray(d.margenesCostosAdic) ? d.margenesCostosAdic : [];
+        const legacyF = Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : [];
+        const legacyV = Array.isArray(d.margenesCostosVar) ? d.margenesCostosVar : [];
+        const dc = d.margenesDolar || {};
+        setDolarValor((parseFloat(dc.valor)||0) * (1 + (parseFloat(dc.ajuste)||0)/100));
+        if (list.length === 0 && (legacyF.length || legacyV.length)) {
+          // Migración: los legacy se muestran ya convertidos; se persisten al Guardar.
+          const mig = [
+            ...legacyF.filter(f=>(parseFloat(f.monto)||0)>0).map(f=>({ id:f.id||margId(), nombre:f.nombre||"Costo fijo", categoria:"Otro", tipo:"fijo", moneda:"ARS", monto:parseFloat(f.monto)||0, recurrente:true, desde:"", hasta:"", sumaAds:false })),
+            ...legacyV.filter(v=>(parseFloat(v.pct)||0)>0).map(v=>({ id:v.id||margId(), nombre:v.nombre||"Costo variable", categoria:"Otro", tipo:"variable", moneda:"ARS", pct:parseFloat(v.pct)||0, recurrente:false, desde:"", hasta:"", sumaAds:false })),
+          ];
+          setItems(mig);
+          setMigrado(mig.length>0);
+        } else {
+          setItems(list);
+        }
+      } catch (_) {}
+      setLoaded(true);
+    })();
+  }, [uid]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const clean = items.filter(c => c.tipo==="variable" ? (parseFloat(c.pct)||0)>0 : (parseFloat(c.monto)||0)>0)
+        .map(c => ({ id:c.id||margId(), nombre:c.nombre||"", categoria:c.categoria||"Otro", tipo:c.tipo==="variable"?"variable":"fijo", moneda:c.moneda==="USD"?"USD":"ARS", monto:parseFloat(c.monto)||0, pct:parseFloat(c.pct)||0, recurrente:!!c.recurrente, desde:c.desde||"", hasta:c.hasta||"", sumaAds:!!c.sumaAds }));
+      // Al guardar acá los legacy quedan vacíos: el motor suma ambos, así no se duplica.
+      await setDoc(doc(db,"users",uid), { margenesCostosAdic: clean, margenesCostosFijos: [], margenesCostosVar: [] }, { merge:true });
+      setItems(clean); setMigrado(false);
+      toast("Costos adicionales guardados ✓","success");
+    } catch (e) { toast("Error: "+e.message,"error"); }
+    setSaving(false);
+  }
+
+  const upd = (id,patch)=>setItems(list=>list.map(c=>c.id===id?{...c,...patch}:c));
+  const del = (id)=>setItems(list=>list.filter(c=>c.id!==id));
+  const add = (tipo)=>setItems(list=>[...list,{ id:margId(), nombre:"", categoria:"Team", tipo, moneda:"ARS", monto:"", pct:"", recurrente:tipo==="fijo", desde:"", hasta:"", sumaAds:false }]);
+
+  if (!loaded) return <div style={{padding:60,textAlign:"center",color:T.textSm}}>Cargando…</div>;
+
+  const porCat = {};
+  items.forEach(c => { const k=c.categoria||"Otro"; (porCat[k]=porCat[k]||[]).push(c); });
+  const totalMensualARS = items.reduce((s,c)=>{
+    if (c.tipo==="variable") return s;
+    const m = (parseFloat(c.monto)||0) * (c.moneda==="USD" ? (dolarValor||0) : 1);
+    if (!(m>0)) return s;
+    if (c.recurrente || !c.desde || !c.hasta) return s + m;
+    return s; // los por-período no son mensuales
+  },0);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:900}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Costos Adicionales</div>
+          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Sueldos, alquiler, software, agencia… Fijos (mensuales o por período, en ARS o USD) y variables (% de facturación). Se descuentan del profit del Dashboard.</div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <button onClick={()=>add("fijo")} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>+ Costo Fijo</button>
+          <button onClick={()=>add("variable")} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>+ Costo Variable</button>
+          <Btn T={T} variant="primary" onClick={save} disabled={saving}>{saving?"Guardando…":"Guardar"}</Btn>
+        </div>
       </div>
 
-      {/* Costos variables — % de la facturación (ej: 2% a un growth partner) */}
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Costos variables (% de facturación)</div>
-          <span style={{fontSize:12,fontWeight:700,color:T.accent}}>{(varios.reduce((s,v)=>s+(parseFloat(v.pct)||0),0)).toLocaleString("es-AR")}%</span>
+      {migrado && (
+        <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.yellow}}>
+          Se trajeron tus costos fijos/variables viejos de la sección Costos. Revisá categorías y fechas, y tocá <strong>Guardar</strong> para completar la migración.
         </div>
-        <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Un % que escala con tus ventas (ej: 2% de la facturación a un growth partner). Se calcula sobre el revenue del período y se suma a los costos del día.</div>
-        {varios.map(r=>(
-          <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-            <input value={r.nombre} onChange={e=>setVarios(vs=>vs.map(x=>x.id===r.id?{...x,nombre:e.target.value}:x))} placeholder="Ej: Growth partner, Comisión equipo" style={{...InputStyle(T),flex:1,fontSize:13}}/>
-            <input type="number" min="0" step="0.1" value={r.pct} onChange={e=>setVarios(vs=>vs.map(x=>x.id===r.id?{...x,pct:e.target.value}:x))} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
-            <span style={{fontSize:12,color:T.textSm}}>%</span>
-            <button onClick={()=>setVarios(vs=>vs.filter(x=>x.id!==r.id))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
-          </div>
-        ))}
-        <button onClick={()=>setVarios(vs=>[...vs,{id:margId(),nombre:"",pct:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar costo variable</button>
-      </div>
-      <div style={{fontSize:11,color:T.textSm}}>⚙ Quedan guardados. La resta automática en el margen del Dashboard se conecta en la próxima iteración del cálculo.</div>
+      )}
+
+      {items.length>0 && (
+        <div style={{fontSize:12,color:T.textSm}}>Fijos recurrentes: <strong style={{color:T.text}}>${Math.round(totalMensualARS).toLocaleString("es-AR")}/mes</strong>{dolarValor>0?"":" · los costos en USD necesitan cotización cargada en Cotización Dólar"}</div>
+      )}
+
+      {items.length===0 && (
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"40px 20px",textAlign:"center",color:T.textSm,fontSize:13}}>
+          Sin costos cargados. Agregá tu primer costo fijo (ej: sueldos) o variable (ej: 2% a un partner).
+        </div>
+      )}
+
+      {Object.entries(porCat).map(([cat,list])=>(
+        <div key={cat} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>{cat} <span style={{color:T.textSm,fontWeight:500,textTransform:"none"}}>· {list.length} item{list.length!==1?"s":""}</span></div>
+          {list.map(c=>(
+            <div key={c.id} style={{borderBottom:`1px solid ${T.borderL}`,padding:"10px 0",display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <DSBadge T={T} color={c.tipo==="variable"?T.purple:T.blue} size="sm">{c.tipo==="variable"?"Variable":"Fijo"}</DSBadge>
+                <input value={c.nombre} onChange={e=>upd(c.id,{nombre:e.target.value})} placeholder={c.tipo==="variable"?"Ej: Growth partner":"Ej: Sueldos equipo"} style={{...iS,flex:1,minWidth:150,fontSize:13}}/>
+                <select value={c.categoria||"Otro"} onChange={e=>upd(c.id,{categoria:e.target.value})} style={{...iS,width:110,fontSize:12}}>
+                  {COSTO_CATEGORIAS.map(x=><option key={x}>{x}</option>)}
+                </select>
+                {c.tipo==="variable" ? (
+                  <>
+                    <input type="number" min="0" step="0.1" value={c.pct} onChange={e=>upd(c.id,{pct:e.target.value})} placeholder="0" style={{...iS,width:80,fontSize:13,textAlign:"right"}}/>
+                    <span style={{fontSize:12,color:T.textSm}}>% de facturación</span>
+                  </>
+                ) : (
+                  <>
+                    <select value={c.moneda||"ARS"} onChange={e=>upd(c.id,{moneda:e.target.value})} style={{...iS,width:70,fontSize:12}}>
+                      <option>ARS</option><option>USD</option>
+                    </select>
+                    <input type="number" min="0" value={c.monto} onChange={e=>upd(c.id,{monto:e.target.value})} placeholder="0" style={{...iS,width:110,fontSize:13,textAlign:"right"}}/>
+                  </>
+                )}
+                <button onClick={()=>del(c.id)} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",paddingLeft:2}}>
+                {c.tipo==="fijo" && (
+                  <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:T.textMd,cursor:"pointer"}}>
+                    <DSToggle T={T} active={!!c.recurrente} onToggle={()=>upd(c.id,{recurrente:!c.recurrente})}/>
+                    {c.recurrente?"Mensual recurrente (se prorratea por día)":"Monto único en el período"}
+                  </label>
+                )}
+                <span style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.textMd}}>
+                  Vigencia
+                  <input type="date" value={c.desde||""} onChange={e=>upd(c.id,{desde:e.target.value})} style={{...iS,fontSize:11,padding:"4px 6px"}}/>
+                  →
+                  <input type="date" value={c.hasta||""} onChange={e=>upd(c.id,{hasta:e.target.value})} style={{...iS,fontSize:11,padding:"4px 6px"}}/>
+                  <span style={{color:T.textSm}}>(vacío = siempre)</span>
+                </span>
+                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:c.sumaAds?T.orange:T.textMd,cursor:"pointer"}}>
+                  <DSToggle T={T} active={!!c.sumaAds} onToggle={()=>upd(c.id,{sumaAds:!c.sumaAds})}/>
+                  Sumar a Inversión Publicitaria
+                </label>
+              </div>
+              {c.moneda==="USD" && c.tipo==="fijo" && (parseFloat(c.monto)||0)>0 && (
+                <div style={{fontSize:11,color:dolarValor>0?T.textSm:T.red,paddingLeft:2}}>
+                  {dolarValor>0 ? `≈ $${Math.round((parseFloat(c.monto)||0)*dolarValor).toLocaleString("es-AR")} ARS al dólar cargado` : "⚠ Cargá la cotización en Cotización Dólar para que este costo cuente"}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+      <div style={{fontSize:11,color:T.textSm}}>Los marcados como "Inversión Publicitaria" se suman al Ad Spend del Dashboard (afectan ROAS y CPA) en vez de a Costos Adicionales.</div>
     </div>
   );
 }
@@ -21857,6 +22050,7 @@ const DOLAR_TIPOS = [
 function DolarPanel({ T, uid }) {
   const [tipo, setTipo] = React.useState("blue");
   const [valor, setValor] = React.useState("");
+  const [ajuste, setAjuste] = React.useState(""); // % de ajuste manual sobre la cotización (para costos en USD)
   const [fee, setFee] = React.useState(""); // % que se suma al Ad Spend (costo del dólar/tarjeta para Meta)
   const [actualizado, setActualizado] = React.useState(null);
   const [loaded, setLoaded] = React.useState(false);
@@ -21883,7 +22077,7 @@ function DolarPanel({ T, uid }) {
       try {
         const snap = await getDoc(doc(db,"users",uid));
         const d = snap.exists() ? snap.data().margenesDolar : null;
-        if (d) { savedTipo=d.tipo||"blue"; setTipo(savedTipo); setValor(d.valor||""); setFee(d.feeAdSpend??d.ajuste??""); setActualizado(d.actualizado||null); }
+        if (d) { savedTipo=d.tipo||"blue"; setTipo(savedTipo); setValor(d.valor||""); setAjuste(d.ajuste??""); setFee(d.feeAdSpend??""); setActualizado(d.actualizado||null); }
       } catch (_) {}
       setLoaded(true);
       if (savedTipo !== "manual") traerCotizacion(savedTipo, true); // auto-actualiza al entrar
@@ -21901,7 +22095,7 @@ function DolarPanel({ T, uid }) {
     setSaving(true);
     const now = new Date().toISOString();
     try {
-      await setDoc(doc(db,"users",uid), { margenesDolar: { tipo, valor: v, feeAdSpend: parseFloat(fee)||0, actualizado: now } }, { merge: true });
+      await setDoc(doc(db,"users",uid), { margenesDolar: { tipo, valor: v, ajuste: parseFloat(ajuste)||0, feeAdSpend: parseFloat(fee)||0, actualizado: now } }, { merge: true });
       setActualizado(now);
       toast("Guardado ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
@@ -21933,10 +22127,20 @@ function DolarPanel({ T, uid }) {
               <input type="number" step="1" min="0" value={valor} onChange={e=>setValor(e.target.value)} disabled={!esManual} placeholder="0" style={{...InputStyle(T),width:140,fontSize:18,fontWeight:700,padding:"10px 14px",opacity:esManual?1:0.7,cursor:esManual?"text":"not-allowed"}}/>
             </div>
           </div>
+          <div>
+            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}} title="Se suma (o resta) a la cotización para convertir tus costos en USD">Ajuste manual</label>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:13,color:T.textSm}}>%</span>
+              <input type="number" step="0.5" value={ajuste} onChange={e=>setAjuste(e.target.value)} placeholder="0" style={{...InputStyle(T),width:80,fontSize:14,padding:"10px 12px",textAlign:"right"}}/>
+            </div>
+          </div>
           {!esManual && <button onClick={()=>traerCotizacion(tipo)} disabled={fetching} style={{...BtnSecondary(T),fontSize:12,padding:"10px 12px"}}>{fetching?"Trayendo…":"↻ Actualizar"}</button>}
           <Btn T={T} variant="primary" onClick={save} disabled={saving} style={{marginLeft:"auto"}}>{saving?"Guardando…":"Guardar"}</Btn>
         </div>
-        {actualizado && <div style={{fontSize:11,color:T.textSm,marginTop:12}}>Última actualización: {new Date(actualizado).toLocaleString("es-AR")}</div>}
+        {(parseFloat(valor)||0)>0 && (parseFloat(ajuste)||0)!==0 && (
+          <div style={{fontSize:12,color:T.accent,fontWeight:600,marginTop:12}}>Cotización efectiva: ${Math.round((parseFloat(valor)||0)*(1+(parseFloat(ajuste)||0)/100)).toLocaleString("es-AR")} (con ajuste del {ajuste}%)</div>
+        )}
+        {actualizado && <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Última actualización: {new Date(actualizado).toLocaleString("es-AR")}</div>}
       </div>
 
       {/* Fee del dólar para Ad Spend */}
@@ -21954,10 +22158,16 @@ function DolarPanel({ T, uid }) {
 }
 
 // Facturación Externa — ventas fuera de las plataformas (efectivo, mayorista).
+// Grilla diaria por mes (estilo Escalafy): N° de órdenes + facturación por día.
+// Se suman a la facturación y a las órdenes del Dashboard.
 function FacturacionExternaPanel({ T, uid }) {
-  const [rows, setRows] = React.useState([]);
+  const hoy = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
+  const [data, setData] = React.useState({});     // { "YYYY-MM-DD": {ord, monto} }
+  const [mes, setMes] = React.useState(hoy.slice(0,7));
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [dirty, setDirty] = React.useState(false);
+  const iS = InputStyle(T);
 
   React.useEffect(() => {
     if (!uid) return;
@@ -21965,7 +22175,14 @@ function FacturacionExternaPanel({ T, uid }) {
       try {
         const snap = await getDoc(doc(db,"users",uid));
         const d = snap.exists() ? snap.data().margenesFactExterna : null;
-        setRows(Array.isArray(d) ? d : []);
+        const map = {};
+        for (const r of (Array.isArray(d)?d:[])) {
+          if (!r?.fecha) continue;
+          const e = map[r.fecha] || (map[r.fecha] = { ord:0, monto:0 });
+          e.monto += parseFloat(r.monto)||0;
+          e.ord   += parseInt(r.ord)||0;
+        }
+        setData(map);
       } catch (_) {}
       setLoaded(true);
     })();
@@ -21974,42 +22191,89 @@ function FacturacionExternaPanel({ T, uid }) {
   async function save() {
     setSaving(true);
     try {
+      const rows = Object.entries(data)
+        .filter(([,v]) => (parseFloat(v.monto)||0)>0 || (parseInt(v.ord)||0)>0)
+        .map(([fecha,v]) => ({ fecha, monto: parseFloat(v.monto)||0, ord: parseInt(v.ord)||0 }))
+        .sort((a,b)=>a.fecha.localeCompare(b.fecha));
       await setDoc(doc(db,"users",uid), { margenesFactExterna: rows }, { merge: true });
-      toast("Ventas externas guardadas ✓", "success");
+      setDirty(false);
+      toast("Facturación externa guardada ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
 
-  const total = rows.reduce((s,r)=>s+(parseFloat(r.monto)||0),0);
-  const hoy = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
+  // Meses disponibles: últimos 13 + los que tengan datos.
+  const meses = React.useMemo(() => {
+    const set = new Set(Object.keys(data).map(f=>f.slice(0,7)));
+    const [hy,hm] = hoy.slice(0,7).split("-").map(Number);
+    for (let i=0;i<13;i++){ const dte=new Date(Date.UTC(hy,hm-1-i,1)); set.add(dte.toISOString().slice(0,7)); }
+    return [...set].sort().reverse();
+  }, [data, hoy]);
+
+  const diasDelMes = React.useMemo(() => {
+    const [y,m] = mes.split("-").map(Number);
+    const n = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return Array.from({length:n},(_,i)=>{
+      const f = `${mes}-${String(i+1).padStart(2,"0")}`;
+      const dow = new Date(f+"T12:00:00Z").toLocaleDateString("es-AR",{weekday:"long",timeZone:"UTC"});
+      return { fecha:f, dia: dow.charAt(0).toUpperCase()+dow.slice(1) };
+    });
+  }, [mes]);
+
+  const setCell = (fecha, campo, val) => {
+    setDirty(true);
+    setData(d => ({ ...d, [fecha]: { ord: campo==="ord"?val:(d[fecha]?.ord??0), monto: campo==="monto"?val:(d[fecha]?.monto??0) } }));
+  };
+
+  const totalMes = diasDelMes.reduce((a,d)=>{ const e=data[d.fecha]; return { ord: a.ord+(parseInt(e?.ord)||0), monto: a.monto+(parseFloat(e?.monto)||0) }; }, {ord:0,monto:0});
+  const fmtMesLabel = m => { const [y,mm]=m.split("-"); const n=new Date(Date.UTC(+y,+mm-1,1)).toLocaleDateString("es-AR",{month:"long",timeZone:"UTC"}); return n.charAt(0).toUpperCase()+n.slice(1)+" "+y; };
+
+  if (!loaded) return <div style={{padding:60,textAlign:"center",color:T.textSm}}>Cargando…</div>;
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:760}}>
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:820}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
         <div>
           <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Facturación Externa</div>
-          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Ventas fuera de las plataformas conectadas (efectivo, transferencia, mayorista). Se suman a la facturación.</div>
+          <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Ventas fuera de las plataformas conectadas (efectivo, transferencia, mayorista). Se suman a la facturación y a las órdenes del Dashboard.</div>
         </div>
-        <Btn T={T} variant="primary" onClick={save} disabled={saving||!loaded}>{saving?"Guardando…":"Guardar"}</Btn>
-      </div>
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Ventas cargadas</div>
-          <span style={{fontSize:13,fontWeight:800,color:T.green}}>Total: {fmtARSm(total)}</span>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <select value={mes} onChange={e=>setMes(e.target.value)} style={{...iS,fontSize:13,width:170}}>
+            {meses.map(m=><option key={m} value={m}>{fmtMesLabel(m)}</option>)}
+          </select>
+          <Btn T={T} variant="primary" onClick={save} disabled={saving||!dirty}>{saving?"Guardando…":"Guardar cambios"}</Btn>
         </div>
-        {rows.length===0 && <div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Todavía no cargaste ventas externas.</div>}
-        {rows.map(r=>(
-          <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-            <input type="date" value={r.fecha} onChange={e=>setRows(rs=>rs.map(x=>x.id===r.id?{...x,fecha:e.target.value}:x))} style={{...InputStyle(T),width:150,fontSize:13}}/>
-            <input value={r.descripcion} onChange={e=>setRows(rs=>rs.map(x=>x.id===r.id?{...x,descripcion:e.target.value}:x))} placeholder="Descripción" style={{...InputStyle(T),flex:1,minWidth:140,fontSize:13}}/>
-            <span style={{fontSize:12,color:T.textSm}}>$</span>
-            <input type="number" min="0" value={r.monto} onChange={e=>setRows(rs=>rs.map(x=>x.id===r.id?{...x,monto:e.target.value}:x))} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
-            <button onClick={()=>setRows(rs=>rs.filter(x=>x.id!==r.id))} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:16,padding:"0 4px"}}>×</button>
-          </div>
-        ))}
-        <button onClick={()=>setRows(rs=>[...rs,{id:margId(),fecha:hoy,descripcion:"",monto:""}])} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",marginTop:4}}>+ Agregar venta</button>
       </div>
-      <div style={{fontSize:11,color:T.textSm}}>⚙ Quedan guardadas. La suma automática a la Facturación del Dashboard se conecta en la próxima iteración del cálculo.</div>
+
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"110px 110px 1fr 1fr",gap:8,padding:"10px 16px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.border}`}}>
+          <span>Fecha</span><span>Día</span><span>N° Órdenes</span><span>Facturación (ARS)</span>
+        </div>
+        <div style={{maxHeight:430,overflowY:"auto"}}>
+          {diasDelMes.map(d=>{
+            const e = data[d.fecha];
+            const esHoy = d.fecha===hoy;
+            const futuro = d.fecha>hoy;
+            return (
+              <div key={d.fecha} style={{display:"grid",gridTemplateColumns:"110px 110px 1fr 1fr",gap:8,padding:"7px 16px",alignItems:"center",borderBottom:`1px solid ${T.borderL}`,background:esHoy?T.accent+"0c":"transparent",opacity:futuro?0.45:1}}>
+                <span style={{fontSize:12,color:T.text,fontWeight:esHoy?700:500}}>{d.fecha.split("-").reverse().join("-")}</span>
+                <span style={{fontSize:12,color:T.textSm}}>{d.dia}</span>
+                <input type="number" min="0" value={e?.ord??""} onChange={ev=>setCell(d.fecha,"ord",ev.target.value)} placeholder="0" style={{...iS,fontSize:12,padding:"6px 10px"}}/>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:12,color:T.textSm}}>$</span>
+                  <input type="number" min="0" value={e?.monto??""} onChange={ev=>setCell(d.fecha,"monto",ev.target.value)} placeholder="0" style={{...iS,fontSize:12,padding:"6px 10px",flex:1}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:T.surface,borderTop:`1px solid ${T.border}`}}>
+          <span style={{fontSize:13,fontWeight:700,color:T.text}}>Total mes</span>
+          <span style={{fontSize:12,color:T.textMd}}>Órdenes: <strong style={{color:T.text}}>{totalMes.ord}</strong></span>
+          <span style={{fontSize:13,fontWeight:800,color:T.green}}>Revenue: {fmtARSm(totalMes.monto)}</span>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:T.textSm}}>✓ Conectada al Dashboard: estos montos suman a la Facturación, la Ganancia y las Órdenes del período.</div>
     </div>
   );
 }
@@ -22030,6 +22294,7 @@ function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
         {tab==="comisiones" && <ComisionesPanel T={T} uid={uid}/>}
         {tab==="costos" && <CostosPanel T={T} uid={uid}/>}
+        {tab==="adicionales" && <CostosAdicionalesPanel T={T} uid={uid}/>}
         {tab==="dolar" && <DolarPanel T={T} uid={uid}/>}
         {tab==="facturacion_externa" && <FacturacionExternaPanel T={T} uid={uid}/>}
       </div>
@@ -24010,6 +24275,44 @@ function AppRendimiento({T, user, onHome}) {
   const [showConfig, setShowConfig] = useState(false);
   const [chartMode, setChartMode] = useState("all");
   const [hovDay, setHovDay] = useState(null);
+  // Personalización del dashboard (por usuario, en localStorage):
+  // ocultar secciones (ojo) y elegir qué KPIs secundarios se ven (lápiz).
+  const VIS_DEFAULT = {main:true,sec:true,costos:true,tienda:true,ml:true,canales:true,secKpis:{}};
+  const [vis, setVis] = useState(()=>{
+    try { const v=JSON.parse(localStorage.getItem(`growith_margenes_vis_${user?.uid}`)||"null"); return v?{...VIS_DEFAULT,...v,secKpis:v.secKpis||{}}:VIS_DEFAULT; }
+    catch(_) { return VIS_DEFAULT; }
+  });
+  const [editSecKpis, setEditSecKpis] = useState(false);
+  const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
+  function updVis(patch){ setVis(v=>{ const n={...v,...patch}; try{localStorage.setItem(`growith_margenes_vis_${user?.uid}`,JSON.stringify(n));}catch(_){} return n; }); }
+  const EyeBtn = ({k}) => (
+    <button onClick={()=>updVis({[k]:!vis[k]})} title={vis[k]!==false?"Ocultar sección":"Mostrar sección"} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"2px 4px",display:"inline-flex",alignItems:"center"}}>
+      {vis[k]!==false
+        ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>}
+    </button>
+  );
+  // Presets de rango estilo Escalafy (Hoy/Ayer/semana/mes...) en zona AR.
+  function presetRange(id){
+    const hoyAr = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
+    const D=(ymd,n)=>{const[y,m,d]=ymd.split("-").map(Number);return new Date(Date.UTC(y,m-1,d)+n*86400000).toISOString().slice(0,10);};
+    const dowLun=(new Date(hoyAr+"T12:00:00Z").getUTCDay()+6)%7; // lunes=0
+    if(id==="hoy") return [hoyAr,hoyAr];
+    if(id==="ayer"){ const a=D(hoyAr,-1); return [a,a]; }
+    if(id==="14d") return [D(hoyAr,-13),hoyAr];
+    if(id==="semana") return [D(hoyAr,-dowLun),hoyAr];
+    if(id==="semanaPasada"){ const ini=D(hoyAr,-dowLun-7); return [ini,D(ini,6)]; }
+    if(id==="mes") return [hoyAr.slice(0,8)+"01",hoyAr];
+    if(id==="mesPasado"){ const finMesAnt=D(hoyAr.slice(0,8)+"01",-1); return [finMesAnt.slice(0,8)+"01",finMesAnt]; }
+    return null;
+  }
+  function aplicarPreset(id){
+    const r=presetRange(id);
+    if(!r) return;
+    setUseCustom(true); setDateFrom(r[0]); setDateTo(r[1]);
+    setDays(Math.round((new Date(r[1])-new Date(r[0]))/86400000)+1);
+    loadData(0,r[0],r[1]);
+  }
 
   useEffect(()=>{
     if(!uid) return;
@@ -24169,6 +24472,16 @@ function AppRendimiento({T, user, onHome}) {
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Márgenes" onHome={onHome}>
+        <select defaultValue="" onChange={e=>{const v=e.target.value; if(v){aplicarPreset(v); e.target.value="";}}} title="Rangos rápidos" style={{...InputStyle(T),fontSize:11,padding:"5px 8px",width:110}}>
+          <option value="" disabled>Rango…</option>
+          <option value="hoy">Hoy</option>
+          <option value="ayer">Ayer</option>
+          <option value="14d">Últimos 14 días</option>
+          <option value="semana">Esta semana</option>
+          <option value="semanaPasada">Semana pasada</option>
+          <option value="mes">Este mes</option>
+          <option value="mesPasado">Mes pasado</option>
+        </select>
         <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:0}}>
           {[{d:7,l:"7d"},{d:30,l:"30d"},{d:60,l:"60d"},{d:90,l:"90d"}].map(p=>(
             <button key={p.d} onClick={()=>{setUseCustom(false);setDays(p.d);loadData(p.d,"","");}}
@@ -24219,8 +24532,8 @@ function AppRendimiento({T, user, onHome}) {
           </div>
 
           {/* Hero KPIs */}
-          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📊</span>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span></div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
+          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📊</span>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="main"/></span></div>
+          {vis.main!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
             {[
               {label:"Revenue",     val:tot.revenue,    prev:prevTot.revenue,    color:"#3b82f6", icon:"💰", desc:"Ingreso bruto",     spk:dailyRows.map(r=>r.Revenue)},
               {label:"Net Revenue", val:tot.netRevenue, prev:prevTot.netRevenue, color:"#6366f1", icon:"💵", desc:"Tras comisiones",    spk:dailyRows.map(r=>r["Net Revenue"])},
@@ -24238,31 +24551,47 @@ function AppRendimiento({T, user, onHome}) {
                 <Spk vals={k.spk} color={k.color} h={38} w={140} showZero={k.zero}/>
               </div>
             ))}
-          </div>
+          </div>}
 
-          {/* Secondary KPIs */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:18}}>
-            {[
+          {/* Secondary KPIs — con selector de cuáles mostrar (lápiz) */}
+          {(()=>{
+            const SEC_KPIS=[
               {label:"ROAS",       val:fmtX(tot.roas),            good:(tot.roas||0)>=2,             hint:"Revenue / Ad Spend"},
               {label:"True ROAS",  val:fmtX(tot.trueRoas),        good:(tot.trueRoas||0)>=1.2,        hint:"Net Rev / Ad Spend"},
               {label:"CPA real",   val:fmtM(tot.cpa),             good:true,                          hint:"Ad Spend / Órdenes"},
               {label:"CPA Break Even",val:fmtM(tot.cpaBreakEven), good:true,                          hint:"CPA máx. antes de perder"},
               {label:"Órdenes",    val:fmtInt(tot.orders),         good:(tot.orders||0)>0,             hint:"Con revenue"},
+              {label:"AOV",        val:fmtM(tot.aov),              good:true,                          hint:"Ticket promedio"},
               {label:"Margen",     val:fmtPct(tot.profitMargin),   good:(tot.profitMargin||0)>0.05,    hint:"Profit / Revenue"},
               {label:"MER %",      val:fmtPct(tot.mer),            good:true,                          hint:"Ad Spend / Revenue"},
               {label:"Break Even", val:fmtX(tot.breakEvenRoas),    good:true,                          hint:"ROAS de equilibrio"},
               {label:"Días profit",val:`${profitDays}/${dailyRows.length}`, good:profitDays>=lossDays, hint:"Días positivos"},
-            ].map(k=>(
-              <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
-                <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
-                <div style={{fontSize:15,fontWeight:800,color:k.good?T.text:T.red,letterSpacing:-0.5}}>{k.val}</div>
-                <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
-              </div>
-            ))}
-          </div>
+            ];
+            return (<>
+              {editSecKpis && (
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px"}}>
+                  <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Elegí qué KPIs mostrar:</span>
+                  {SEC_KPIS.map(k=>{
+                    const on=vis.secKpis[k.label]!==false;
+                    return <button key={k.label} onClick={()=>updVis({secKpis:{...vis.secKpis,[k.label]:!on}})} style={{fontSize:11,padding:"4px 10px",borderRadius:DS.r.full,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid:"transparent",color:on?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{k.label}</button>;
+                  })}
+                </div>
+              )}
+              {vis.main!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:18}}>
+                {SEC_KPIS.filter(k=>vis.secKpis[k.label]!==false).map(k=>(
+                  <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+                    <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
+                    <div style={{fontSize:15,fontWeight:800,color:k.good?T.text:T.red,letterSpacing:-0.5}}>{k.val}</div>
+                    <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
+                  </div>
+                ))}
+              </div>}
+            </>);
+          })()}
 
           {/* Desglose de costos — estilo Escalafy */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:18}}>
+          <div style={{fontSize:13,fontWeight:800,color:T.text,letterSpacing:-0.2,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span>💸</span>Costos<span style={{marginLeft:"auto"}}><EyeBtn k="costos"/></span></div>
+          {vis.costos!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:18}}>
             {[
               {label:"Costos de Productos",  val:tot.costoProductos,     color:"#ef4444", icon:"📦"},
               {label:"Costos de Envío",      val:tot.costoEnvio,         color:"#f97316", icon:"🚚"},
@@ -24270,23 +24599,27 @@ function AppRendimiento({T, user, onHome}) {
               {label:"Comisiones Plataforma",val:tot.comisionPlataforma, color:"#a855f7", icon:"🏪"},
               {label:"Comisiones de Pago",   val:tot.comisionPago,       color:"#ec4899", icon:"💳"},
               {label:"Costos Adicionales",   val:tot.costosAdicionales,  color:"#6366f1", icon:"🏢"},
+              ...(((tot.facturacionExterna||0)>0)?[{label:"Fact. Externa (incluida)",val:tot.facturacionExterna,color:T.green,icon:"🧮"}]:[]),
             ].map(k=>(
               <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
                 <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.icon} {k.label}</div>
                 <div style={{fontSize:17,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{fmtM(k.val||0)}</div>
               </div>
             ))}
-          </div>
+          </div>}
 
           {/* Tableros por canal — Tienda y Mercado Libre (estilo Escalafy) */}
           {rendData.byChannel && (()=>{
             const bc = rendData.byChannel;
-            const board = (titulo, icon, c, cp) => (
+            const board = (titulo, icon, c, cp, visKey) => (
               <div style={{marginBottom:18,borderTop:`1px solid ${T.border}`,paddingTop:18}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:vis[visKey]!==false?12:0}}>
                   <span style={{fontSize:16}}>{icon}</span>
                   <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</span>
+                  <span style={{marginLeft:"auto"}}><EyeBtn k={visKey}/></span>
                 </div>
+                {vis[visKey]!==false && <>
+
                 {/* Hero del canal */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
                   {[
@@ -24342,14 +24675,65 @@ function AppRendimiento({T, user, onHome}) {
                     </div>
                   ))}
                 </div>
+                </>}
               </div>
             );
             const esShop = bc.platform==="shopify";
             return (
               <>
-                {board(esShop?"Shopify":"Tienda Nube", esShop?"🛍️":"🏪", bc.tienda||{}, bc.tiendaPrev)}
-                {bc.hasMl && board("Mercado Libre", "🛒", bc.ml||{}, bc.mlPrev)}
+                {board(esShop?"Shopify":"Tienda Nube", esShop?"🛍️":"🏪", bc.tienda||{}, bc.tiendaPrev, "tienda")}
+                {bc.hasMl && board("Mercado Libre", "🛒", bc.ml||{}, bc.mlPrev, "ml")}
               </>
+            );
+          })()}
+
+          {/* Canales de Marketing — tabla comparativa ordenable (estilo Escalafy) */}
+          {rendData.byChannel && (()=>{
+            const bc = rendData.byChannel;
+            const esShop = bc.platform==="shopify";
+            const filas = [
+              { canal:(esShop?"Tienda":"Tienda Nube")+" · Meta", icon:"🏪", ...(bc.tienda||{}) },
+              ...(bc.hasMl ? [{ canal:"Mercado Libre · Mercado Ads", icon:"🛒", ...(bc.ml||{}) }] : []),
+            ];
+            const COLS = [
+              ["adSpend","Ad Spend",fmtM],["roas","ROAS",fmtX],["trueRoas","True ROAS",fmtX],
+              ["orders","Órdenes",fmtInt],["revenue","Revenue",fmtM],["netRevenue","Net Revenue",fmtM],
+              ["cpa","CPA",fmtM],["aov","AOV",fmtM],["aovNeto","AOV Neto",fmtM],
+            ];
+            const sk = canalSort.k, sd = canalSort.dir;
+            const orden = sk ? [...filas].sort((a,b)=>((b[sk]||0)-(a[sk]||0))*(sd==="desc"?1:-1)) : filas;
+            return (
+              <div style={{marginBottom:18,borderTop:`1px solid ${T.border}`,paddingTop:18}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:vis.canales!==false?12:0}}>
+                  <span style={{fontSize:16}}>📣</span>
+                  <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Canales de Marketing</span>
+                  <span style={{marginLeft:"auto"}}><EyeBtn k="canales"/></span>
+                </div>
+                {vis.canales!==false && (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",minWidth:760}}>
+                      <thead>
+                        <tr>
+                          <th style={{padding:"10px 14px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>Canal</th>
+                          {COLS.map(([k,l])=>(
+                            <th key={k} onClick={()=>setCanalSort(s=>({k,dir:s.k===k&&s.dir==="desc"?"asc":"desc"}))} style={{padding:"10px 12px",textAlign:"right",fontSize:10,color:sk===k?T.accent:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>{l}{sk===k?(sd==="desc"?" ↓":" ↑"):" ⇅"}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {orden.map(f=>(
+                          <tr key={f.canal}>
+                            <td style={{padding:"10px 14px",fontWeight:600,color:T.text,whiteSpace:"nowrap",borderBottom:`1px solid ${T.borderL}`}}>{f.icon} {f.canal}</td>
+                            {COLS.map(([k,,fmt])=>(
+                              <td key={k} style={{padding:"10px 12px",textAlign:"right",color:T.text,whiteSpace:"nowrap",borderBottom:`1px solid ${T.borderL}`}}>{fmt(f[k])}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             );
           })()}
 

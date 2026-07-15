@@ -158,6 +158,7 @@ async function mlOrders(sellerId, tok, days, sinceDateISO, untilDateISO) {
 function processTN(orders) {
   const map={}, daily={}, dailyRevenue={}, byProv={}, byHour={}, byPayment={}, byVariant={};
   const dailyOrders={}; // "YYYY-MM-DD" → cantidad de órdenes
+  const ordersDetail=[]; // detalle por orden — habilita comisiones/envío/impuestos por método en Márgenes
   for(const o of orders){
     const dt=o.created_at||"";
     const day=dt.slice(0,10);
@@ -176,6 +177,7 @@ function processTN(orders) {
     const orderDiscount = parseFloat(o.discount||0);
     const discountRatio = orderSubtotal>0 ? Math.max(0, orderSubtotal-orderDiscount)/orderSubtotal : 1;
 
+    const detItems=[];
     for(const item of o.products||[]){
       const vid=String(item.variant_id||item.product_id);
       const qty=parseInt(item.quantity)||0;
@@ -187,13 +189,15 @@ function processTN(orders) {
       orderRevenue+=rev;
       const vname=item.variant_values?.join(" / ")||item.name||"Default";
       byVariant[vname]=(byVariant[vname]||0)+qty;
+      detItems.push({ key: item.sku || vid, qty });
     }
     if(day)  { daily[day]=(daily[day]||0)+orderUnits; dailyRevenue[day]=(dailyRevenue[day]||0)+orderRevenue; }
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
+    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.number||o.id}`, fecha:dt, platform:"tiendanube", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.shipping_cost_owner)||0 });
   }
-  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant};
+  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail};
 }
 
 // ── Procesar órdenes Shopify ──────────────────────────────────────────
@@ -238,7 +242,7 @@ function processSH(orders) {
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.order_number||o.name||o.id}`, fecha:dt, platform:"shopify", revenue:orderRevenue, items:detItems, pay });
+    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.order_number||o.name||o.id}`, fecha:dt, platform:"shopify", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.total_shipping_price_set?.shop_money?.amount)||0 });
   }
   return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail};
 }
