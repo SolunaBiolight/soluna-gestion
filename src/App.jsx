@@ -15636,20 +15636,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           <>
             {/* ══ CON CUITs → PANEL PRINCIPAL ══ */}
 
-            {/* Guía colapsable — vive en Métricas (primera del sidenav, default landing) */}
-            <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,overflow:"hidden",marginBottom:24,display:(sidebarTab==="metricas"||sidebarTab==="pendientes"||!sidebarTab)?"block":"none"}}>
-              <button onClick={()=>setShowGuia(s=>!s)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"16px 20px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{fontSize:18}}>📖</span>
-                  <div style={{textAlign:"left"}}>
-                    <div style={{fontSize:14,fontWeight:700,color:T.text}}>¿Cómo funciona la facturación en ARCA?</div>
-                    <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Guía completa paso a paso — tocá para {showGuia?"cerrar":"abrir"}</div>
-                  </div>
-                </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round" style={{transform:showGuia?"rotate(180deg)":"none",transition:"transform 0.2s ease"}}><path d="M6 9l6 6 6-6"/></svg>
+            {/* GUÍA ¿Cómo funciona? — mismo patrón chico y discreto que el resto de las secciones */}
+            <div style={{marginBottom:16,display:(sidebarTab==="metricas"||sidebarTab==="pendientes"||!sidebarTab)?"block":"none"}}>
+              <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span style={{fontSize:11,color:T.textSm}}>¿Cómo funciona? {showGuia?"▲":"▾"}</span>
               </button>
               {showGuia&&(
-                <div style={{padding:"0 20px 20px",borderTop:"1px solid "+T.border}}>
+                <div style={{marginTop:12,padding:16,background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
                     {[
                       {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre — Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá) y verificación. Si ya tenés un certificado emitido con su clave privada, hay un modo manual para pegarlos directo.",color:T.accent},
