@@ -110,8 +110,11 @@ export default async function handler(req, res) {
         page_id:         pages.length === 1 ? pages[0].id   : null,
         page_name:       pages.length === 1 ? pages[0].name : null,
         page_access_token: pages.length === 1 ? pages[0].access_token : null,
-        ig_account_id:   pages.length === 1 ? pages[0].instagram_business_account?.id       : null,
-        ig_username:     pages.length === 1 ? pages[0].instagram_business_account?.username  : null,
+        // Sin instagram_basic (fuera de esta ronda de App Review), Graph API omite
+        // el campo instagram_business_account en vez de devolverlo null — el ?.
+        // encadenado da "undefined", que Firestore rechaza. ?? null lo normaliza.
+        ig_account_id:   (pages.length === 1 ? pages[0].instagram_business_account?.id       : null) ?? null,
+        ig_username:     (pages.length === 1 ? pages[0].instagram_business_account?.username  : null) ?? null,
         has_token:       true,
         connected_at:    new Date().toISOString(),
         last_test: { ok: true, ts: new Date().toISOString(), msg: "Conectado vía OAuth" },
