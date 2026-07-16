@@ -306,6 +306,15 @@ export default async function handler(req, res) {
       // campo viejo (single) y, si no hay nada, suma todas.
       const metaAccChosenList = (Array.isArray(userData.margenesMetaAdAccounts) ? userData.margenesMetaAdAccounts : (userData.margenesMetaAdAccount ? [userData.margenesMetaAdAccount] : []))
         .map(x => String(x||"").trim()).filter(Boolean);
+      if (req.query.debugmeta === '1') {
+        return res.json({
+          metaAccountsDocsCount: metaAccounts.length,
+          metaAccountsDocs: metaAccounts.map(a => ({ ad_account_id: a.ad_account_id, ad_account_name: a.ad_account_name, has_token: !!a.access_token })),
+          margenesMetaAdAccounts_raw: userData.margenesMetaAdAccounts ?? null,
+          margenesMetaAdAccount_raw: userData.margenesMetaAdAccount ?? null,
+          metaAccChosenList,
+        });
+      }
       async function fetchMetaAll(s, u, eRef) {
         if (!metaAccounts.length) return {};
         const token = metaAccounts[0].access_token;
