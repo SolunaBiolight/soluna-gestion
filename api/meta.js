@@ -992,14 +992,17 @@ export default async function handler(req, res) {
       const appId = process.env.META_APP_ID;
       if (!appId) return res.status(500).json({ error: "Falta META_APP_ID en Vercel" });
       const redirectUri = encodeURIComponent("https://www.growithapp.com/api/meta-callback");
+      // Scopes alineados a lo enviado en el App Review (jul 2026). instagram_basic
+      // e instagram_content_publish quedan afuera de esta ronda a propósito — Meta
+      // rechaza como "Invalid Scopes" cualquier permiso pedido en el diálogo OAuth
+      // que no forme parte de un caso de uso aprobado/en revisión. Se re-agregan
+      // cuando se pida esa segunda tanda de permisos.
       const scopes = [
         "ads_management",
         "ads_read",
         "business_management",
         "pages_show_list",
         "pages_read_engagement",
-        "instagram_basic",
-        "instagram_content_publish",
       ].join(",");
       const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${encodeURIComponent(uid)}&scope=${encodeURIComponent(scopes)}&response_type=code`;
       return res.json({ url });
