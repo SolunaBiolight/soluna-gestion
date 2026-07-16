@@ -306,52 +306,53 @@ export default async function handler(req, res) {
       // campo viejo (single) y, si no hay nada, suma todas.
       const metaAccChosenList = (Array.isArray(userData.margenesMetaAdAccounts) ? userData.margenesMetaAdAccounts : (userData.margenesMetaAdAccount ? [userData.margenesMetaAdAccount] : []))
         .map(x => String(x||"").trim()).filter(Boolean);
-      if (req.query.debugmeta === '1') {
-        const out = {
-          metaAccountsDocsCount: metaAccounts.length,
-          metaAccountsDocs: metaAccounts.map(a => ({ ad_account_id: a.ad_account_id, ad_account_name: a.ad_account_name, has_token: !!a.access_token })),
-          margenesMetaAdAccounts_raw: userData.margenesMetaAdAccounts ?? null,
-          margenesMetaAdAccount_raw: userData.margenesMetaAdAccount ?? null,
-          metaAccChosenList,
-        };
-        if (metaAccounts.length) {
-          const token = metaAccounts[0].access_token;
-          try {
-            const naive = await metaGet("me/adaccounts", { fields: "account_id,name,currency", limit: "100" }, token);
-            out.naive_meAdaccounts = naive.data || [];
-            out.spendPorCuenta = {};
-            for (const a of (naive.data||[])) {
-              const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: "act_"+a.account_id }, since, until, {});
-              const total = Object.values(bd).reduce((s,v)=>s+(v.spend||0),0);
-              out.spendPorCuenta[a.name+" ("+a.currency+")"] = +total.toFixed(2);
-            }
-          } catch (e) { out.naive_error = e.message; }
-          try {
-            const biz = await metaGet("me", { fields: "businesses{id,name,owned_ad_accounts.limit(200){id,account_id,name},client_ad_accounts.limit(200){id,account_id,name}}" }, token);
-            const businesses = biz.businesses?.data || [];
-            out.businesses = businesses.map(b => ({
-              name: b.name,
-              owned: (b.owned_ad_accounts?.data||[]).map(a=>a.name+" ("+a.account_id+")"),
-              client: (b.client_ad_accounts?.data||[]).map(a=>a.name+" ("+a.account_id+")"),
-            }));
-          } catch (e) { out.businesses_error = e.message; }
-        }
-        return res.json(out);
-      }
+      // Cotización para convertir cuentas de Meta que facturan en USD (ej. cuentas
+      // manejadas por agencia) — Meta devuelve "spend" en la moneda PROPIA de cada
+      // ad account, no en ARS. Sumar cuentas ARS + USD sin convertir sub-representa
+      // brutalmente el gasto real (ej. USD 35.000 sumados como si fueran $35.000
+      // ARS, ~1300x menos de lo real). Mismo valor efectivo que usa aplicarCostos
+      // más abajo para costos en USD — calculado antes acá porque fetchMetaAll
+      // corre en paralelo con fetchStock, previo a esa sección.
+      const dolarCfgMeta = userData.margenesDolar || {};
+      const dolarValorMeta = (parseFloat(dolarCfgMeta.valor)||0) * (1 + (parseFloat(dolarCfgMeta.ajuste)||0)/100);
       async function fetchMetaAll(s, u, eRef) {
         if (!metaAccounts.length) return {};
         const token = metaAccounts[0].access_token;
-        let accountIds = [];
+        let accounts = []; // [{id, currency}]
         if (metaAccChosenList.length) {
-          accountIds = metaAccChosenList.map(id => id.startsWith("act_") ? id : "act_" + id);
+          accounts = metaAccChosenList.map(id => ({ id: id.startsWith("act_") ? id : "act_" + id, currency: null }));
+          // Necesitamos la moneda de cada una para convertir — se resuelve abajo si falta.
         } else {
           try {
-            const acc = await metaGet("me/adaccounts", { fields: "account_id,name", limit: "100" }, token);
-            accountIds = (acc.data||[]).map(a => "act_" + a.account_id);
+            const acc = await metaGet("me/adaccounts", { fields: "account_id,name,currency", limit: "100" }, token);
+            accounts = (acc.data||[]).map(a => ({ id: "act_" + a.account_id, currency: a.currency || null }));
           } catch(e) { console.error("Meta adaccounts list error:", e.message); }
-          if (!accountIds.length) accountIds = metaAccounts.map(a => a.ad_account_id).filter(Boolean);
+          if (!accounts.length) accounts = metaAccounts.map(a => ({ id: a.ad_account_id, currency: null })).filter(a => a.id);
         }
-        const arr = await Promise.all(accountIds.map(id => fetchMetaDailySpend({ access_token: token, ad_account_id: id }, s, u, eRef)));
+        // Si vino sin moneda (lista elegida a mano o fallback), la resolvemos 1x c/u.
+        const sinMoneda = accounts.filter(a => !a.currency);
+        if (sinMoneda.length) {
+          await Promise.all(sinMoneda.map(async a => {
+            try { const info = await metaGet(a.id, { fields: "currency" }, token); a.currency = info.currency || "ARS"; }
+            catch (_) { a.currency = "ARS"; }
+          }));
+        }
+        const arr = await Promise.all(accounts.map(async a => {
+          const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: a.id }, s, u, eRef);
+          if (a.currency && a.currency !== "ARS") {
+            if (!(dolarValorMeta > 0)) {
+              // Sin cotización cargada no hay forma de convertir de forma confiable:
+              // se descarta esta cuenta en vez de sumarla mal (mejor un total
+              // incompleto y explícito que uno silenciosamente equivocado).
+              return {};
+            }
+            for (const v of Object.values(bd)) {
+              v.spend = (v.spend||0) * dolarValorMeta;
+              v.purchaseVal = (v.purchaseVal||0) * dolarValorMeta;
+            }
+          }
+          return bd;
+        }));
         const merged = {};
         for (const bd of arr) for (const [d,v] of Object.entries(bd)) {
           const m = merged[d] || (merged[d] = { spend:0, impressions:0, clicks:0, reach:0, purchases:0, purchaseVal:0 });
