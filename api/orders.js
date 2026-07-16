@@ -307,13 +307,30 @@ export default async function handler(req, res) {
       const metaAccChosenList = (Array.isArray(userData.margenesMetaAdAccounts) ? userData.margenesMetaAdAccounts : (userData.margenesMetaAdAccount ? [userData.margenesMetaAdAccount] : []))
         .map(x => String(x||"").trim()).filter(Boolean);
       if (req.query.debugmeta === '1') {
-        return res.json({
+        const out = {
           metaAccountsDocsCount: metaAccounts.length,
           metaAccountsDocs: metaAccounts.map(a => ({ ad_account_id: a.ad_account_id, ad_account_name: a.ad_account_name, has_token: !!a.access_token })),
           margenesMetaAdAccounts_raw: userData.margenesMetaAdAccounts ?? null,
           margenesMetaAdAccount_raw: userData.margenesMetaAdAccount ?? null,
           metaAccChosenList,
-        });
+        };
+        if (metaAccounts.length) {
+          const token = metaAccounts[0].access_token;
+          try {
+            const naive = await metaGet("me/adaccounts", { fields: "account_id,name", limit: "100" }, token);
+            out.naive_meAdaccounts = (naive.data||[]).map(a => a.name + " (" + a.account_id + ")");
+          } catch (e) { out.naive_error = e.message; }
+          try {
+            const biz = await metaGet("me", { fields: "businesses{id,name,owned_ad_accounts.limit(200){id,account_id,name},client_ad_accounts.limit(200){id,account_id,name}}" }, token);
+            const businesses = biz.businesses?.data || [];
+            out.businesses = businesses.map(b => ({
+              name: b.name,
+              owned: (b.owned_ad_accounts?.data||[]).map(a=>a.name+" ("+a.account_id+")"),
+              client: (b.client_ad_accounts?.data||[]).map(a=>a.name+" ("+a.account_id+")"),
+            }));
+          } catch (e) { out.businesses_error = e.message; }
+        }
+        return res.json(out);
       }
       async function fetchMetaAll(s, u, eRef) {
         if (!metaAccounts.length) return {};
