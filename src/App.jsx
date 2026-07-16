@@ -21389,7 +21389,7 @@ function ComisionesPanel({ T, uid }) {
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
         {[
           {n:"Mercado Libre",d:"Comisión de venta, cuotas y envíos: se leen automáticas de cada orden de ML.",badge:"AUTOMÁTICO",bc:T.green,bg:T.greenBg},
-          {n:"Mercado Pago",d:"Si el fee real no se puede leer de MP (ej: ventas de Tienda Nube), se usa el % de \"Comisión Mercado Pago\" de acá abajo.",badge:"CONFIGURABLE",bc:T.yellow,bg:T.yellowBg},
+          {n:"Mercado Pago",d:"Comisión real por transacción: siempre se lee automática de cada pago desde la integración.",badge:"AUTOMÁTICO",bc:T.green,bg:T.greenBg},
         ].map(p=>(
           <div key={p.n} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,gap:8}}>
