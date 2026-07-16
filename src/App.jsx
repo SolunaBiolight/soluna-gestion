@@ -24149,6 +24149,7 @@ function AppRendimiento({T, user, onHome}) {
   });
   const [editSecKpis, setEditSecKpis] = useState(false);
   const [dragKpi, setDragKpi] = useState(null); // label del KPI que se está arrastrando
+  const [fullNums, setFullNums] = useState(()=>{ try{return localStorage.getItem("growith_margenes_fullnums")==="1";}catch(_){return false;} });
   const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
   function updVis(patch){ setVis(v=>{ const n={...v,...patch}; try{localStorage.setItem(`growith_margenes_vis_${user?.uid}`,JSON.stringify(n));}catch(_){} return n; }); }
   const EyeBtn = ({k}) => (
@@ -24244,7 +24245,7 @@ function AppRendimiento({T, user, onHome}) {
     loadData();
   }
 
-  const fmtM=(v)=>{if(v==null||v===""||isNaN(Number(v)))return"—";const n=Number(v),abs=Math.abs(n),s=n<0?"-":"";if(abs>=1e9)return s+"$"+(abs/1e9).toFixed(1)+"B";if(abs>=1e6)return s+"$"+(abs/1e6).toFixed(1)+"M";if(abs>=1e3)return s+"$"+Math.round(abs/1e3).toLocaleString("es-AR")+"K";return s+"$"+Math.round(abs).toLocaleString("es-AR");};
+  const fmtM=(v)=>{if(v==null||v===""||isNaN(Number(v)))return"—";const n=Number(v),abs=Math.abs(n),s=n<0?"-":"";if(fullNums)return s+"$"+Math.round(abs).toLocaleString("es-AR");if(abs>=1e9)return s+"$"+(abs/1e9).toFixed(1)+"B";if(abs>=1e6)return s+"$"+(abs/1e6).toFixed(1)+"M";if(abs>=1e3)return s+"$"+Math.round(abs/1e3).toLocaleString("es-AR")+"K";return s+"$"+Math.round(abs).toLocaleString("es-AR");};
   const fmtPct=(v,dec=1)=>{const n=Number(v);return isNaN(n)?"—":(n*100).toFixed(dec)+"%";};
   const fmtX=(v)=>{const n=Number(v);return isNaN(n)?"—":n.toFixed(2)+"x";};
   const fmtInt=(v)=>{const n=Number(v);return isNaN(n)?"—":Math.round(n).toLocaleString("es-AR");};
@@ -24300,16 +24301,9 @@ function AppRendimiento({T, user, onHome}) {
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Márgenes" onHome={onHome}>
-        <select defaultValue="" onChange={e=>{const v=e.target.value; if(v){aplicarPreset(v); e.target.value="";}}} title="Rangos rápidos" style={{...InputStyle(T),fontSize:11,padding:"5px 8px",width:110}}>
-          <option value="" disabled>Rango…</option>
-          <option value="hoy">Hoy</option>
-          <option value="ayer">Ayer</option>
-          <option value="14d">Últimos 14 días</option>
-          <option value="semana">Esta semana</option>
-          <option value="semanaPasada">Semana pasada</option>
-          <option value="mes">Este mes</option>
-          <option value="mesPasado">Mes pasado</option>
-        </select>
+        <button onClick={()=>setFullNums(f=>{const n=!f; try{localStorage.setItem("growith_margenes_fullnums",n?"1":"0");}catch(_){} return n;})} title={fullNums?"Ver números redondeados (K/M)":"Ver todos los números sin redondear"} style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",fontWeight:fullNums?700:500,color:fullNums?T.accent:T.textMd,borderColor:fullNums?T.accent+"66":T.inputBorder}}>
+          {fullNums?"$ Completos":"$ 1,2K"}
+        </button>
         <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:0}}>
           {[{d:7,l:"7d"},{d:30,l:"30d"},{d:60,l:"60d"},{d:90,l:"90d"}].map(p=>(
             <button key={p.d} onClick={()=>{setUseCustom(false);setDays(p.d);loadData(p.d,"","");}}
@@ -24355,9 +24349,13 @@ function AppRendimiento({T, user, onHome}) {
           return(<>
 
           {/* Status row */}
-          <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
-            <span style={{fontSize:11,color:T.textSm}}>{fmtDate(rendData.since)} — {fmtDate(rendData.until)} · {dailyRows.length}d</span>
-            {hasPrev&&<span style={{fontSize:11,color:T.textSm}}>comparando vs {fmtDate(rendData.prevSince)}–{fmtDate(rendData.prevUntil)}</span>}
+          <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:20,padding:"4px 12px"}}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              {fmtDate(rendData.since)} – {fmtDate(rendData.until)}
+              <span style={{color:T.textSm,fontWeight:500,fontSize:10}}>· {dailyRows.length}d</span>
+            </span>
+            {hasPrev&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:T.textSm}}><span style={{opacity:0.7}}>↔ vs</span> {fmtDate(rendData.prevSince)} – {fmtDate(rendData.prevUntil)}</span>}
             <span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>act. {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>
           </div>
 
