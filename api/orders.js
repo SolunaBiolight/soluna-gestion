@@ -317,8 +317,14 @@ export default async function handler(req, res) {
         if (metaAccounts.length) {
           const token = metaAccounts[0].access_token;
           try {
-            const naive = await metaGet("me/adaccounts", { fields: "account_id,name", limit: "100" }, token);
-            out.naive_meAdaccounts = (naive.data||[]).map(a => a.name + " (" + a.account_id + ")");
+            const naive = await metaGet("me/adaccounts", { fields: "account_id,name,currency", limit: "100" }, token);
+            out.naive_meAdaccounts = naive.data || [];
+            out.spendPorCuenta = {};
+            for (const a of (naive.data||[])) {
+              const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: "act_"+a.account_id }, since, until, {});
+              const total = Object.values(bd).reduce((s,v)=>s+(v.spend||0),0);
+              out.spendPorCuenta[a.name+" ("+a.currency+")"] = +total.toFixed(2);
+            }
           } catch (e) { out.naive_error = e.message; }
           try {
             const biz = await metaGet("me", { fields: "businesses{id,name,owned_ad_accounts.limit(200){id,account_id,name},client_ad_accounts.limit(200){id,account_id,name}}" }, token);
