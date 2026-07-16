@@ -21421,14 +21421,6 @@ function ComisionesPanel({ T, uid }) {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
           <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Comisión Mercado Pago</div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>% por transacción de MP en tu tienda (cuando no se puede leer el fee real). En TN suele ser ~6,4% con liberación inmediata.</div>
-          </div>
-          <input type="number" step="0.1" min="0" value={cfg.mpPct??""} onChange={e=>setCfg(c=>({...c,mpPct:e.target.value}))} placeholder="0" style={{...InputStyle(T),width:90,fontSize:13,textAlign:"right"}}/>
-          <span style={{fontSize:13,color:T.textSm}}>%</span>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderTop:`1px solid ${T.borderL}`,marginTop:14,paddingTop:14}}>
-          <div style={{flex:1,minWidth:180}}>
             <div style={{fontSize:13,fontWeight:700,color:T.text}}>Comisión Shopify</div>
             <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Por transacción, si no usás Shopify Payments.</div>
           </div>
@@ -24156,6 +24148,7 @@ function AppRendimiento({T, user, onHome}) {
     catch(_) { return VIS_DEFAULT; }
   });
   const [editSecKpis, setEditSecKpis] = useState(false);
+  const [dragKpi, setDragKpi] = useState(null); // label del KPI que se está arrastrando
   const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
   function updVis(patch){ setVis(v=>{ const n={...v,...patch}; try{localStorage.setItem(`growith_margenes_vis_${user?.uid}`,JSON.stringify(n));}catch(_){} return n; }); }
   const EyeBtn = ({k}) => (
@@ -24403,18 +24396,38 @@ function AppRendimiento({T, user, onHome}) {
               {label:"Break Even", val:fmtX(tot.breakEvenRoas),    good:true,                          hint:"ROAS de equilibrio"},
               {label:"Días profit",val:`${profitDays}/${dailyRows.length}`, good:profitDays>=lossDays, hint:"Días positivos"},
             ];
+            // Orden custom (drag): labels guardados en vis.secKpisOrder; los que no
+            // estén quedan al final en su orden original.
+            const kpiOrder = Array.isArray(vis.secKpisOrder) ? vis.secKpisOrder : [];
+            const orderedKpis = [...SEC_KPIS].sort((a,b)=>{ const ia=kpiOrder.indexOf(a.label), ib=kpiOrder.indexOf(b.label); return (ia<0?999:ia)-(ib<0?999:ib); });
+            const reorderKpi = (fromLbl, toLbl) => {
+              if(!fromLbl||!toLbl||fromLbl===toLbl) return;
+              const cur = orderedKpis.map(k=>k.label);
+              const fi=cur.indexOf(fromLbl); if(fi<0) return;
+              cur.splice(fi,1);
+              const ti=cur.indexOf(toLbl);
+              cur.splice(ti<0?cur.length:ti,0,fromLbl);
+              updVis({secKpisOrder:cur});
+            };
             return (<>
               {editSecKpis && (
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px"}}>
-                  <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Elegí qué KPIs mostrar:</span>
-                  {SEC_KPIS.map(k=>{
+                  <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Elegí qué KPIs mostrar · arrastrá para reordenar:</span>
+                  {orderedKpis.map(k=>{
                     const on=vis.secKpis[k.label]!==false;
-                    return <button key={k.label} onClick={()=>updVis({secKpis:{...vis.secKpis,[k.label]:!on}})} style={{fontSize:11,padding:"4px 10px",borderRadius:DS.r.full,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid:"transparent",color:on?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{k.label}</button>;
+                    return <button key={k.label}
+                      draggable
+                      onDragStart={()=>setDragKpi(k.label)}
+                      onDragOver={e=>e.preventDefault()}
+                      onDrop={e=>{e.preventDefault(); reorderKpi(dragKpi, k.label); setDragKpi(null);}}
+                      onDragEnd={()=>setDragKpi(null)}
+                      onClick={()=>updVis({secKpis:{...vis.secKpis,[k.label]:!on}})}
+                      style={{fontSize:11,padding:"4px 10px",borderRadius:DS.r.full,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid:"transparent",color:on?"#fff":T.textMd,cursor:"grab",opacity:dragKpi===k.label?0.4:1,fontFamily:"'Inter',system-ui,sans-serif"}}>⠿ {k.label}</button>;
                   })}
                 </div>
               )}
               {vis.main!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:18}}>
-                {SEC_KPIS.filter(k=>vis.secKpis[k.label]!==false).map(k=>(
+                {orderedKpis.filter(k=>vis.secKpis[k.label]!==false).map(k=>(
                   <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
                     <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
                     <div style={{fontSize:15,fontWeight:800,color:k.good?T.text:T.red,letterSpacing:-0.5}}>{k.val}</div>
