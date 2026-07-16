@@ -58,6 +58,42 @@ async function fetchMetaDailySpend(cfg, since, until, errRef) {
   }
 }
 
+// ── Cotización histórica del dólar, día por día ─────────────────────────
+// El Ad Spend de Meta se factura en USD (habitualmente al tipo cripto) y se
+// trae día por día — convertirlo con UNA sola cotización actual distorsiona
+// los días viejos cuando el dólar se mueve. Serie completa por "casa"
+// (oficial/blue/bolsa=mep/cripto), cacheada en memoria por instancia warm
+// (los valores de días pasados no cambian; el de hoy se refresca solo).
+const _dolarHistCache = new Map(); // casa -> { ts, map: Map(fecha->venta) }
+const _DOLAR_HIST_TTL = 3600000; // 1h — alcanza para no repegar en cada request
+async function fetchDolarHistorico(casa) {
+  const hit = _dolarHistCache.get(casa);
+  if (hit && Date.now() - hit.ts < _DOLAR_HIST_TTL) return hit.map;
+  try {
+    const r = await fetch(`https://api.argentinadatos.com/v1/cotizaciones/dolares/${casa}`);
+    const j = await r.json();
+    const map = new Map();
+    for (const row of (Array.isArray(j) ? j : [])) {
+      const v = parseFloat(row.venta);
+      if (row.fecha && isFinite(v) && v > 0) map.set(row.fecha, v);
+    }
+    if (map.size) { _dolarHistCache.set(casa, { ts: Date.now(), map }); return map; }
+  } catch (e) { console.error("Dólar histórico error:", e.message); }
+  return hit?.map || new Map(); // si falla y había cache vieja, mejor eso que nada
+}
+// Cotización de una fecha puntual: exacta si existe, sino el día hábil
+// anterior más cercano (fines de semana/feriados no siempre tienen registro
+// para oficial/blue/mep — cripto cotiza todos los días).
+function dolarDeFecha(map, fecha) {
+  if (map.has(fecha)) return map.get(fecha);
+  let d = fecha;
+  for (let i = 0; i < 7; i++) {
+    d = new Date(new Date(d + "T12:00:00Z").getTime() - 86400000).toISOString().slice(0, 10);
+    if (map.has(d)) return map.get(d);
+  }
+  return null;
+}
+
 function buildRendRows(since, until, dailyRevenue, dailyOrders, metaDailySpend, commission) {
   const allDates = new Set([...Object.keys(dailyRevenue), ...Object.keys(dailyOrders), ...Object.keys(metaDailySpend)]);
   const start = new Date(since + "T12:00:00"); const end = new Date(until + "T12:00:00");
@@ -306,15 +342,23 @@ export default async function handler(req, res) {
       // campo viejo (single) y, si no hay nada, suma todas.
       const metaAccChosenList = (Array.isArray(userData.margenesMetaAdAccounts) ? userData.margenesMetaAdAccounts : (userData.margenesMetaAdAccount ? [userData.margenesMetaAdAccount] : []))
         .map(x => String(x||"").trim()).filter(Boolean);
-      // Cotización para convertir cuentas de Meta que facturan en USD (ej. cuentas
-      // manejadas por agencia) — Meta devuelve "spend" en la moneda PROPIA de cada
-      // ad account, no en ARS. Sumar cuentas ARS + USD sin convertir sub-representa
-      // brutalmente el gasto real (ej. USD 35.000 sumados como si fueran $35.000
-      // ARS, ~1300x menos de lo real). Mismo valor efectivo que usa aplicarCostos
-      // más abajo para costos en USD — calculado antes acá porque fetchMetaAll
-      // corre en paralelo con fetchStock, previo a esa sección.
-      const dolarCfgMeta = userData.margenesDolar || {};
-      const dolarValorMeta = (parseFloat(dolarCfgMeta.valor)||0) * (1 + (parseFloat(dolarCfgMeta.ajuste)||0)/100);
+      // Cotización para convertir cuentas de Meta que facturan en USD — Meta
+      // devuelve "spend" en la moneda PROPIA de cada ad account, no en ARS.
+      // Sumar cuentas ARS + USD sin convertir sub-representa brutalmente el
+      // gasto real (ej. USD 35.000 sumados como si fueran $35.000 ARS, ~1300x
+      // menos de lo real). Se usa el dólar HISTÓRICO de cada día del período
+      // (default: cripto, el más común para pautar) en vez de una cotización
+      // única — así el gasto de una semana atrás no se recalcula con el dólar
+      // de hoy cada vez que se mueve. Config propia (margenesDolarAds),
+      // independiente del dólar de Costos Adicionales.
+      const CASA_POR_TIPO = { oficial:"oficial", blue:"blue", mep:"bolsa", cripto:"cripto" };
+      const dolarAdsCfg = userData.margenesDolarAds || {};
+      const dolarAdsTipo = dolarAdsCfg.tipo || "cripto";
+      const dolarAdsAjuste = (parseFloat(dolarAdsCfg.ajuste)||0)/100;
+      const dolarAdsManual = (parseFloat(dolarAdsCfg.valor)||0) * (1 + dolarAdsAjuste);
+      const dolarAdsHistProm = dolarAdsTipo !== "manual" && CASA_POR_TIPO[dolarAdsTipo]
+        ? fetchDolarHistorico(CASA_POR_TIPO[dolarAdsTipo])
+        : Promise.resolve(null);
       async function fetchMetaAll(s, u, eRef) {
         if (!metaAccounts.length) return {};
         const token = metaAccounts[0].access_token;
@@ -337,18 +381,21 @@ export default async function handler(req, res) {
             catch (_) { a.currency = "ARS"; }
           }));
         }
+        const histMap = await dolarAdsHistProm;
         const arr = await Promise.all(accounts.map(async a => {
           const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: a.id }, s, u, eRef);
           if (a.currency && a.currency !== "ARS") {
-            if (!(dolarValorMeta > 0)) {
-              // Sin cotización cargada no hay forma de convertir de forma confiable:
-              // se descarta esta cuenta en vez de sumarla mal (mejor un total
-              // incompleto y explícito que uno silenciosamente equivocado).
-              return {};
-            }
-            for (const v of Object.values(bd)) {
-              v.spend = (v.spend||0) * dolarValorMeta;
-              v.purchaseVal = (v.purchaseVal||0) * dolarValorMeta;
+            for (const [fecha, v] of Object.entries(bd)) {
+              let rate;
+              if (dolarAdsTipo === "manual") {
+                rate = dolarAdsManual > 0 ? dolarAdsManual : null;
+              } else {
+                const base = histMap ? dolarDeFecha(histMap, fecha) : null;
+                rate = base != null ? base * (1 + dolarAdsAjuste) : null;
+              }
+              if (!rate) { delete bd[fecha]; continue; } // sin cotización de ese día: se excluye, no se suma mal
+              v.spend = (v.spend||0) * rate;
+              v.purchaseVal = (v.purchaseVal||0) * rate;
             }
           }
           return bd;
@@ -786,7 +833,7 @@ export default async function handler(req, res) {
       return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, sales, since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
           metaTokenExpired: !!metaErr.expired,
-          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2) } } });
+          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo } } });
     } catch(e) { console.error("Dashboard error:", e); return res.status(500).json({ error: e.message }); }
   }
 

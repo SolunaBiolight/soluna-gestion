@@ -21924,6 +21924,14 @@ function DolarPanel({ T, uid }) {
   const [loaded, setLoaded] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [fetching, setFetching] = React.useState(false);
+  // Dólar para Meta Ads — SEPARADO del de arriba a propósito: Meta cobra en USD
+  // pero al tipo de cambio cripto (así se paga con tarjetas/billeteras cripto,
+  // el método más común para pautar). El motor usa la cotización HISTÓRICA de
+  // cada día del período (no una sola actual) para no distorsionar días pasados
+  // cuando el dólar se mueve. "Manual" es la única excepción (un valor fijo).
+  const [adsTipo, setAdsTipo] = React.useState("cripto");
+  const [adsAjuste, setAdsAjuste] = React.useState("");
+  const [adsValorManual, setAdsValorManual] = React.useState("");
 
   async function traerCotizacion(tipoId, silent) {
     const t = DOLAR_TIPOS.find(x=>x.id===tipoId);
@@ -21946,6 +21954,8 @@ function DolarPanel({ T, uid }) {
         const snap = await getDoc(doc(db,"users",uid));
         const d = snap.exists() ? snap.data().margenesDolar : null;
         if (d) { savedTipo=d.tipo||"blue"; setTipo(savedTipo); setValor(d.valor||""); setAjuste(d.ajuste??""); setFee(d.feeAdSpend??""); setActualizado(d.actualizado||null); }
+        const da = snap.exists() ? snap.data().margenesDolarAds : null;
+        if (da) { setAdsTipo(da.tipo||"cripto"); setAdsAjuste(da.ajuste??""); setAdsValorManual(da.valor??""); }
       } catch (_) {}
       setLoaded(true);
       if (savedTipo !== "manual") traerCotizacion(savedTipo, true); // auto-actualiza al entrar
@@ -21960,10 +21970,14 @@ function DolarPanel({ T, uid }) {
   async function save() {
     const v = parseFloat(valor);
     if (!isFinite(v) || v<=0) { toast("Ingresá una cotización válida", "warning"); return; }
+    if (adsTipo==="manual" && !((parseFloat(adsValorManual)||0)>0)) { toast("Poné el valor manual del dólar de Ads", "warning"); return; }
     setSaving(true);
     const now = new Date().toISOString();
     try {
-      await setDoc(doc(db,"users",uid), { margenesDolar: { tipo, valor: v, ajuste: parseFloat(ajuste)||0, feeAdSpend: parseFloat(fee)||0, actualizado: now } }, { merge: true });
+      await setDoc(doc(db,"users",uid), {
+        margenesDolar: { tipo, valor: v, ajuste: parseFloat(ajuste)||0, feeAdSpend: parseFloat(fee)||0, actualizado: now },
+        margenesDolarAds: { tipo: adsTipo, ajuste: parseFloat(adsAjuste)||0, valor: parseFloat(adsValorManual)||0 },
+      }, { merge: true });
       setActualizado(now);
       toast("Guardado ✓", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
@@ -21978,7 +21992,7 @@ function DolarPanel({ T, uid }) {
     <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:900}}>
       <div>
         <div style={{fontSize:18,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Cotización Dólar</div>
-        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Para convertir costos en USD a pesos. Se actualiza solo según el tipo elegido — el Dashboard siempre muestra todo en pesos.</div>
+        <div style={{fontSize:12,color:T.textSm,marginTop:4}}>Esta cotización convierte los <strong style={{color:T.textMd}}>Costos Adicionales en USD</strong>. El dólar de <strong style={{color:T.textMd}}>Meta Ads</strong> se configura aparte, más abajo.</div>
       </div>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px"}}>
         <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:8}}>Tipo de dólar</label>
@@ -22011,10 +22025,44 @@ function DolarPanel({ T, uid }) {
         {actualizado && <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Última actualización: {new Date(actualizado).toLocaleString("es-AR")}</div>}
       </div>
 
+      {/* Dólar para Meta Ads — separado, histórico día por día */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Dólar para Meta Ads</div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:14,lineHeight:1.5}}>
+          Meta cobra la publicidad en USD, y este dólar puede ser distinto al de arriba (por defecto <strong style={{color:T.text}}>Cripto</strong>, el más usado para pautar). A diferencia de un costo puntual, el gasto en Ads se trae <strong style={{color:T.text}}>día por día</strong> — así que acá el Dashboard usa la cotización <strong style={{color:T.text}}>histórica de cada día</strong> del período, no un valor único. Si el dólar subió esta semana, el gasto de la semana pasada se calcula con lo que valía el dólar la semana pasada.
+        </div>
+        <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}}>Tipo de dólar para Ads</label>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+          {DOLAR_TIPOS.map(t=>(
+            <button key={t.id} onClick={()=>setAdsTipo(t.id)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:`1px solid ${adsTipo===t.id?T.accentSolid:T.border}`,borderRadius:8,background:adsTipo===t.id?T.accentSolid:"transparent",color:adsTipo===t.id?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{t.label}</button>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:14,flexWrap:"wrap"}}>
+          {adsTipo==="manual" ? (
+            <div>
+              <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}}>Cotización fija (ARS por USD)</label>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:16,fontWeight:700,color:T.textSm}}>$</span>
+                <input type="number" step="1" min="0" value={adsValorManual} onChange={e=>setAdsValorManual(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:16,fontWeight:700,padding:"9px 12px"}}/>
+              </div>
+            </div>
+          ) : (
+            <div style={{fontSize:11,color:T.textSm,background:T.surface,borderRadius:8,padding:"9px 12px"}}>Se trae solo, día por día, de la serie histórica del dólar {DOLAR_TIPOS.find(t=>t.id===adsTipo)?.label.toLowerCase()}.</div>
+          )}
+          <div>
+            <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}} title="Se suma a la cotización de cada día — recargo de tarjeta, fee de agencia, etc.">Ajuste manual</label>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:13,color:T.textSm}}>%</span>
+              <input type="number" step="0.5" value={adsAjuste} onChange={e=>setAdsAjuste(e.target.value)} placeholder="0" style={{...InputStyle(T),width:80,fontSize:14,padding:"9px 12px",textAlign:"right"}}/>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Fee del dólar para Ad Spend */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Fee del dólar para Meta Ads</div>
-        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Meta cobra la publicidad en USD. Lo que te cuesta <strong style={{color:T.text}}>de más</strong> comprar esos dólares (recargo de la tarjeta, fee de la agencia, % de tu app de pago, etc.) <strong style={{color:T.text}}>se suma al Ad Spend</strong> porque es parte de lo que te cuesta pautar.</div>
+        <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Fee adicional del dólar para Meta Ads</div>
+        <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Un % extra encima de todo lo anterior (recargo de la tarjeta, fee de la agencia, etc.) — se suma al Ad Spend final del Dashboard.</div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:13,color:T.textSm,flex:1}}>% que se suma al Ad Spend</span>
           <input type="number" step="0.5" min="0" value={fee} onChange={e=>setFee(e.target.value)} placeholder="0" style={{...InputStyle(T),width:90,fontSize:14,padding:"10px 12px",textAlign:"right"}}/>
