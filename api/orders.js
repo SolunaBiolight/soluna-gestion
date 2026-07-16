@@ -690,8 +690,16 @@ export default async function handler(req, res) {
             CPA: ordD>0 ? parseFloat((adD/ordD).toFixed(2)) : 0 };
         });
       }
-      rows     = alinearRows(mergeFactExtRows(rows), totals, span+1);
-      prevRows = alinearRows(mergeFactExtRows(prevRows), prevTotals, span+1);
+      // dias = cantidad real de filas, no span+1: Meta a veces devuelve un día
+      // de más/menos en los daily insights (time_range se interpreta en el huso
+      // horario de la cuenta publicitaria, no en el nuestro), y esa fila extra
+      // entra al Set de allDates de buildRendRows. Prorratear con la cantidad
+      // real de filas evita que costosAdicionales quede levemente sobre/sub
+      // contado en la suma diaria vs el total.
+      const rowsPreAlign = mergeFactExtRows(rows);
+      const prevRowsPreAlign = mergeFactExtRows(prevRows);
+      rows     = alinearRows(rowsPreAlign, totals, rowsPreAlign.length || (span+1));
+      prevRows = alinearRows(prevRowsPreAlign, prevTotals, prevRowsPreAlign.length || (span+1));
       const byDow = computeRendDow(rows);
 
       // ── Desglose por canal (Tienda vs Mercado Libre) para los tableros ──
