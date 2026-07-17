@@ -359,6 +359,12 @@ export default async function handler(req, res) {
       const dolarAdsHistProm = dolarAdsTipo !== "manual" && CASA_POR_TIPO[dolarAdsTipo]
         ? fetchDolarHistorico(CASA_POR_TIPO[dolarAdsTipo])
         : Promise.resolve(null);
+      // Fallback si la serie histórica no está disponible (API caída, red, etc.):
+      // valor manual de Ads → cotización de Costos → nunca dejar el Ad Spend en $0
+      // por un problema de datos externos.
+      const dolarCostosEf = (parseFloat((userData.margenesDolar||{}).valor)||0) * (1 + (parseFloat((userData.margenesDolar||{}).ajuste)||0)/100);
+      const dolarAdsFallback = dolarAdsManual > 0 ? dolarAdsManual : (dolarCostosEf > 0 ? dolarCostosEf * (1 + dolarAdsAjuste) : 0);
+      let dolarAdsHistDias = -1; // diagnóstico: cuántos días tiene la serie (-1 = no aplica)
       async function fetchMetaAll(s, u, eRef) {
         if (!metaAccounts.length) return {};
         const token = metaAccounts[0].access_token;
@@ -382,6 +388,7 @@ export default async function handler(req, res) {
           }));
         }
         const histMap = await dolarAdsHistProm;
+        dolarAdsHistDias = histMap ? histMap.size : -1;
         const arr = await Promise.all(accounts.map(async a => {
           const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: a.id }, s, u, eRef);
           if (a.currency && a.currency !== "ARS") {
@@ -393,7 +400,11 @@ export default async function handler(req, res) {
                 const base = histMap ? dolarDeFecha(histMap, fecha) : null;
                 rate = base != null ? base * (1 + dolarAdsAjuste) : null;
               }
-              if (!rate) { delete bd[fecha]; continue; } // sin cotización de ese día: se excluye, no se suma mal
+              // Fallback: si el histórico no tiene ese día (o la API de series
+              // falló), usar el valor manual de Ads o la cotización de Costos —
+              // un Ad Spend aproximado es infinitamente mejor que $0.
+              if (!rate && dolarAdsFallback > 0) rate = dolarAdsFallback;
+              if (!rate) { delete bd[fecha]; continue; } // sin NINGUNA cotización: se excluye, no se suma mal
               v.spend = (v.spend||0) * rate;
               v.purchaseVal = (v.purchaseVal||0) * rate;
             }
@@ -833,7 +844,7 @@ export default async function handler(req, res) {
       return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, sales, since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
           metaTokenExpired: !!metaErr.expired,
-          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo } } });
+          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } });
     } catch(e) { console.error("Dashboard error:", e); return res.status(500).json({ error: e.message }); }
   }
 
