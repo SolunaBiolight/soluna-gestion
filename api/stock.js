@@ -48,7 +48,7 @@ async function fetchT(url, opts={}, ms=15000) {
 // función serverless. Con 3 intentos de 15s (el valor original) el peor
 // caso por endpoint pasó a ~47s y la función entera moría en seco sin
 // devolver ni el JSON de error — peor que el comportamiento anterior.
-async function fetchTR(url, opts={}, { ms=8000, tries=2 } = {}) {
+async function fetchTR(url, opts={}, { ms=10000, tries=2 } = {}) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
@@ -88,19 +88,31 @@ async function tnProducts(sid, tok) {
 }
 
 async function tnOrders(sid, tok, days, since, until) {
-  const PP = 50;
-  let all=[], page=1;
-  while(page<=40){ // techo: 40 páginas de 50 = 2000 órdenes
-    let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=${PP}&page=${page}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
-    if(until) url+=`&created_at_max=${until}`;
-    const r=await fetchTR(url,{headers:TN_H(tok)});
-    if(r.status===404) break; // fin real de la paginación
-    if(!r.ok) throw new Error(`TN orders HTTP ${r.status} (página ${page})`);
-    const d=await r.json();
-    if(!Array.isArray(d)||d.length===0) break;
-    all=all.concat(d);
-    if(d.length<PP) break;
-    page++;
+  // 100/página en vez de 50: menos vueltas totales sin acercarse al costo
+  // de 200 (~14s). Lotes de 3 en paralelo (no 1 a la vez, no 40 de golpe):
+  // TN tolera ~2 req/s, y cada request tarda ~7s — 3 concurrentes cada
+  // ~7.4s promedia bien por debajo de ese límite sin pagar el costo de
+  // la secuencial pura.
+  const PP = 100, BATCH = 3, STAGGER = 400, MAXPAGE = 20; // 20×100 = 2000 órdenes
+  let all=[], page=1, done=false;
+  while(page<=MAXPAGE && !done){
+    const batchPages = Array.from({length: BATCH}, (_,i)=>page+i).filter(p=>p<=MAXPAGE);
+    const results = await Promise.all(batchPages.map(async p => {
+      let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=${PP}&page=${p}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
+      if(until) url+=`&created_at_max=${until}`;
+      const r=await fetchTR(url,{headers:TN_H(tok)});
+      if(r.status===404) return null; // fin real de la paginación
+      if(!r.ok) throw new Error(`TN orders HTTP ${r.status} (página ${p})`);
+      const d=await r.json();
+      return Array.isArray(d) ? d : [];
+    }));
+    for (const d of results) {
+      if (d===null || d.length===0) { done=true; break; }
+      all=all.concat(d);
+      if (d.length<PP) { done=true; break; }
+    }
+    page += BATCH;
+    if (!done) await new Promise(res=>setTimeout(res, STAGGER));
   }
   return all;
 }
@@ -505,7 +517,7 @@ export default async function handler(req, res) {
   // reintenten en cascada bajo una red inestable, esto garantiza una respuesta
   // JSON clara ANTES de que Vercel mate la función en seco (que devuelve 0
   // bytes al cliente, mucho peor que un error explícito).
-  const DEADLINE_MS = 25000;
+  const DEADLINE_MS = 45000;
   function withDeadline(promise, label) {
     return Promise.race([
       promise,

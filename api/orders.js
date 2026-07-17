@@ -437,7 +437,7 @@ export default async function handler(req, res) {
           fetchMetaAll(since, until, metaErr), fetchMetaAll(prevSince, prevUntil),
           fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
         ]),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("Tiempo agotado trayendo métricas (30s) — la tienda, Meta o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.")), 30000)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Tiempo agotado trayendo métricas (55s) — la tienda, Meta o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.")), 55000)),
       ]);
       let rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
       let prevRows = buildRendRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
