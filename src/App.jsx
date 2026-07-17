@@ -22273,16 +22273,22 @@ function MargenesPnl({ T, uid }) {
     const hasta = mes===mesActual ? hoyAr : finMes;
     return [desde, hasta];
   };
-  const cargarMes = async (mes) => {
-    const hit = leerCache(mes);
-    if (hit) { setMeses(p=>({...p,[mes]:hit})); return; }
+  const cargarMes = async (mes, force) => {
+    if (!force) { const hit = leerCache(mes); if (hit) { setMeses(p=>({...p,[mes]:hit})); return; } }
     setCargando(mes);
     setErrorMes(p=>({...p,[mes]:null}));
     try {
       const [desde,hasta] = rangoDe(mes);
-      const r = await fetch(`/api/orders?action=daily_metrics&uid=${uid}&date_from=${desde}&date_to=${hasta}`);
-      const j = await r.json();
-      if (j.error) throw new Error(j.error);
+      const base = `/api/orders?action=daily_metrics&uid=${uid}&date_from=${desde}&date_to=${hasta}`;
+      // Primero la caché del servidor (si otro dispositivo o el warmer ya
+      // calculó este mes, es instantáneo); si no hay, cálculo en vivo (~30s).
+      let j = null;
+      if (!force) { try { const rc = await fetch(base+"&cache=only"); const jc = await rc.json(); if (!jc.noCache && !jc.error && jc.totals) j = jc; } catch(_) {} }
+      if (!j) {
+        const r = await fetch(base);
+        j = await r.json();
+        if (j.error) throw new Error(j.error);
+      }
       const t = j.totals || {};
       setMeses(p=>({...p,[mes]:t}));
       try { localStorage.setItem(cacheKey(mes), JSON.stringify({ ts:Date.now(), totals:t })); } catch(_) {}
@@ -22370,7 +22376,7 @@ function MargenesPnl({ T, uid }) {
                     )}
                     <td style={{padding:"6px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
                       {!t && cargando!==mes && <Btn T={T} variant="ghost" size="sm" onClick={()=>cargarMes(mes)} disabled={!!cargando}>{errorMes[mes]?"Reintentar":"Calcular"}</Btn>}
-                      {t && cargando!==mes && <button title="Recalcular este mes con la configuración de costos actual" onClick={()=>{ try{localStorage.removeItem(cacheKey(mes));}catch(_){ } setMeses(p=>{const n={...p}; delete n[mes]; return n;}); cargarMes(mes); }} disabled={!!cargando} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:DS.font.base,padding:"2px 6px"}}>↻</button>}
+                      {t && cargando!==mes && <button title="Recalcular este mes con la configuración de costos actual" onClick={()=>{ try{localStorage.removeItem(cacheKey(mes));}catch(_){ } setMeses(p=>{const n={...p}; delete n[mes]; return n;}); cargarMes(mes, true); }} disabled={!!cargando} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:DS.font.base,padding:"2px 6px"}}>↻</button>}
                     </td>
                   </tr>
                 );
@@ -24431,32 +24437,49 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>}
     </button>
   );
+  const [revalidando, setRevalidando] = useState(false);
   async function loadData(overrideDays, overrideFrom, overrideTo, silent) {
     if(!uid){setError("Sin sesión");return;}
-    if(!silent) setLoading(true);
     setError(null);
+    const d=overrideDays||days;
+    const from=overrideFrom!=null?overrideFrom:(useCustom?dateFrom:"");
+    const to=overrideTo!=null?overrideTo:(useCustom?dateTo:"");
+    let url=`/api/orders?action=daily_metrics&uid=${uid}`;
+    if(from&&to){url+=`&date_from=${from}&date_to=${to}`;}
+    else{url+=`&days=${d}`;}
+    // 1) Pintado INSTANTÁNEO desde la caché del servidor (estilo Escalafy):
+    //    ~300ms vs 30-50s del cálculo en vivo. Después se revalida de fondo.
+    if(!silent){
+      setLoading(true);
+      try{
+        const rc=await fetch(url+"&cache=only");
+        const jc=await rc.json();
+        if(!jc.noCache&&!jc.error&&jc.totals){
+          setRendData({...jc, loadedAt:jc.cachedAt||new Date().toISOString()});
+          setLoading(false); setRevalidando(true);
+        }
+      }catch(_){}
+    }
+    // 2) Datos en vivo — el server los deja cacheados para la próxima carga.
     try {
-      const d=overrideDays||days;
-      const from=overrideFrom!=null?overrideFrom:(useCustom?dateFrom:"");
-      const to=overrideTo!=null?overrideTo:(useCustom?dateTo:"");
-      let url=`/api/orders?action=daily_metrics&uid=${uid}`;
-      if(from&&to){url+=`&date_from=${from}&date_to=${to}`;}
-      else{url+=`&days=${d}`;}
       const r=await fetch(url);
       const j=await r.json();
       if(j.error) throw new Error(j.error);
       setRendData({...j, loadedAt:new Date().toISOString()});
     }catch(e){setError(e.message);}
-    finally{if(!silent) setLoading(false);}
+    finally{ setRevalidando(false); if(!silent) setLoading(false); }
   }
 
-  // Carga automática al entrar + refresco silencioso cada 60s (sin botón).
+  // Carga automática al entrar + refresco silencioso cada 4 min. (No cada 60s:
+  // cada refresh en vivo son 30-50s de cómputo contra TN rate-limitada — a 60s
+  // la función vivía recalculando; además el cron warm_margenes ya refresca la
+  // caché cada 5 min por su cuenta.)
   const loadRef = React.useRef();
   loadRef.current = loadData;
   useEffect(()=>{
     if(!uid) return;
     loadRef.current();
-    const iv = setInterval(()=>loadRef.current(undefined,undefined,undefined,true), 60000);
+    const iv = setInterval(()=>loadRef.current(undefined,undefined,undefined,true), 240000);
     return ()=>clearInterval(iv);
   },[uid]);
 
@@ -24646,7 +24669,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               <span style={{color:T.textSm,fontWeight:500,fontSize:10}}>· {dailyRows.length}d</span>
             </span>
             {hasPrev&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:T.textSm}}><span style={{opacity:0.7}}>↔ vs</span> {fmtDate(rendData.prevSince)} – {fmtDate(rendData.prevUntil)}</span>}
-            <span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>act. {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>
+            <span style={{fontSize:10,color:T.textSm,marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:6}}>
+              {revalidando && <span style={{display:"inline-flex",alignItems:"center",gap:5,color:T.accent,fontWeight:600}}><Spinner size={9} color={T.accent}/> actualizando en vivo…</span>}
+              act. {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}
+            </span>
           </div>
 
           {/* Checklist de configuración inicial — sin costos cargados el profit es mentira */}

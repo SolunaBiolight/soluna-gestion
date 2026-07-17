@@ -265,6 +265,25 @@ export default async function handler(req, res) {
       const span = Math.round((Date.parse(until+"T00:00:00Z") - Date.parse(since+"T00:00:00Z"))/86400000); // nº de días - 1
       const prevUntil = addDays(since, -1);
       const prevSince = addDays(prevUntil, -span);
+      // ── Capa de caché estilo Escalafy ──
+      // El cálculo en vivo tarda 30-50s (TN rate-limitada + Meta + ML + MP): eso
+      // NO puede estar en el camino del render. El dashboard pide primero
+      // `cache=only` (respuesta guardada en Firestore, ~300ms) y pinta al
+      // instante; después revalida en vivo de fondo. Un cron (warm_margenes,
+      // cada 5 min) mantiene la caché fresca para que lo "instantáneo" también
+      // sea reciente.
+      const cacheKey = req.query.date_from ? `${since}_${until}` : `d${days}`;
+      const cacheRef = db.collection("users").doc(uid).collection("margenes_cache").doc(cacheKey);
+      if (req.query.cache === "only") {
+        const cs = await cacheRef.get();
+        if (!cs.exists) return res.json({ noCache: true });
+        const cd = cs.data() || {};
+        try {
+          const body = JSON.parse(cd.body || "{}");
+          body.cachedAt = cd.cachedAt || null;
+          return res.json(body);
+        } catch(_) { return res.json({ noCache: true }); }
+      }
       const userSnap = await db.collection("users").doc(uid).get();
       const userData = userSnap.data() || {};
       const stores = userData.stores || [];
@@ -967,14 +986,57 @@ export default async function handler(req, res) {
         reembolsosParciales: rawQ.partial_refund_orders||0,
       };
 
-      return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, sales, byProduct, clientes,
+      const responseBody = { rows, prevRows, totals, prevTotals, byDow, byChannel, sales, byProduct, clientes,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
           metaTokenExpired: !!metaErr.expired,
-          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } });
+          costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };
+      // Guardar caché + registrar el rango en el warmer (best-effort: si Firestore
+      // falla acá, la respuesta en vivo sale igual).
+      try {
+        const nowIso = new Date().toISOString();
+        await cacheRef.set({ body: JSON.stringify(responseBody), cachedAt: nowIso, ts: Date.now() });
+        await db.collection("system").doc("margenes_warm").set({
+          entries: { [`${uid}|${cacheKey}`]: {
+            uid, key: cacheKey,
+            days: req.query.date_from ? null : days,
+            date_from: req.query.date_from || null, date_to: req.query.date_to || null,
+            // lastAccess solo lo actualizan los requests de usuarios reales — el
+            // warmer no se retroalimenta a sí mismo para siempre.
+            ...(req.query.warm === "1" ? {} : { lastAccess: nowIso }),
+            lastWarm: nowIso,
+          } },
+        }, { merge: true });
+      } catch(e) { console.error("margenes cache set error:", e.message); }
+      return res.json(responseBody);
     } catch(e) { console.error("Dashboard error:", e); return res.status(500).json({ error: e.message }); }
+  }
+
+  // ── Warmer del dashboard Márgenes (cron cada 5 min) ──
+  // Recalcula EN VIVO el rango más desactualizado que algún usuario haya mirado
+  // en las últimas 48h y refresca su caché. Uno solo por corrida: el cálculo
+  // tarda 30-50s y el presupuesto de la función no da para más — con la corrida
+  // cada 5 min, los rangos activos rotan y la caché queda siempre a minutos.
+  if (action === 'warm_margenes') {
+    try {
+      const db = initAdmin();
+      const regSnap = await db.collection("system").doc("margenes_warm").get();
+      const entries = Object.values((regSnap.data()||{}).entries || {});
+      const hace48h = new Date(Date.now() - 48*3600000).toISOString();
+      const activos = entries.filter(e => e && e.uid && (e.lastAccess||"") >= hace48h);
+      if (!activos.length) return res.json({ ok: true, warmed: null, motivo: "sin rangos activos en 48h" });
+      activos.sort((a,b) => String(a.lastWarm||"").localeCompare(String(b.lastWarm||"")));
+      const e = activos[0];
+      const url = new URL(`https://${req.headers.host}/api/orders`);
+      url.searchParams.set("action","daily_metrics"); url.searchParams.set("uid", e.uid); url.searchParams.set("warm","1");
+      if (e.date_from && e.date_to) { url.searchParams.set("date_from", e.date_from); url.searchParams.set("date_to", e.date_to); }
+      else url.searchParams.set("days", String(e.days || 30));
+      const r = await fetch(url.toString(), { headers: { host: req.headers.host } });
+      const j = await r.json().catch(() => ({}));
+      return res.json({ ok: r.ok && !j.error, warmed: `${e.uid}|${e.key}`, error: j.error || null });
+    } catch(e) { console.error("warm_margenes error:", e.message); return res.status(500).json({ error: e.message }); }
   }
 
   if (action === 'save_config' && req.method === 'POST') {
