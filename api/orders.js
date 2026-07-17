@@ -65,6 +65,7 @@ async function fetchMetaDailySpend(cfg, since, until, errRef) {
 // (oficial/blue/bolsa=mep/cripto), cacheada en memoria por instancia warm
 // (los valores de días pasados no cambian; el de hoy se refresca solo).
 const _dolarHistCache = new Map(); // casa -> { ts, map: Map(fecha->venta) }
+const _mlAdvCache = new Map(); // uid -> { ts, id: advertiser_id, site } (Mercado Ads)
 const _DOLAR_HIST_TTL = 3600000; // 1h — alcanza para no repegar en cada request
 async function fetchDolarHistorico(casa) {
   const hit = _dolarHistCache.get(casa);
@@ -293,7 +294,6 @@ export default async function handler(req, res) {
       const mlMpAcc     = String(userData.margenesMlMp || "") || null;
       const mlVentasAcc = String(userData.margenesMlVentas || "") || null;
       const hasML = stores.some(s => s.type === "meli");
-      const commission = parseFloat(userData.rendimientoCommission) || (hasML ? 0.10 : 0.03);
       async function fetchStock(from, to) {
         // Sin catch silencioso: si la fuente de ventas falla, es MUCHO mejor
         // devolver un error explícito ("reintentá") que un dashboard con
@@ -477,8 +477,10 @@ export default async function handler(req, res) {
         ]),
         new Promise((_, rej) => setTimeout(() => rej(new Error("Tiempo agotado trayendo métricas (55s) — la tienda, Meta o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.")), 55000)),
       ]);
-      let rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
-      let prevRows = buildRendRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
+      // commission=0: las filas se re-derivan después con el motor real
+      // (alinearRowsExacto) — el % legacy quedó eliminado.
+      let rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, 0);
+      let prevRows = buildRendRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, 0);
       let totals = computeRendTotals(rows); let prevTotals = computeRendTotals(prevRows);
 
       // ── Capas de costo configuradas en Márgenes → margen real estilo Escalafy ──
@@ -509,6 +511,35 @@ export default async function handler(req, res) {
       // Cada período se promedia por día (monto / días) y se toma el solape con
       // el rango del dashboard. Ej: 10/06–19/06 $1.000.000 = $100.000/día.
       const mlAdsList = Array.isArray(userData.margenesMlAds) ? userData.margenesMlAds : [];
+      // ── Mercado Ads AUTOMÁTICO (Product Ads API) ──
+      // Si la cuenta de ML tiene Product Ads, el gasto real del período se trae
+      // solo: advertisers (Api-Version 1) → campaigns/search con metrics=cost
+      // (Api-Version 2). Si la API falla o no hay campañas, rige el gasto manual
+      // cargado por períodos (mlAdsPeriodo) — nunca se suman los dos.
+      async function fetchMlAdsSpend(sinceR, untilR) {
+        try {
+          if (!hasML) return null;
+          const tokML = mlVentasAcc === "__none__" ? null : await getValidMLToken(db, uid, mlVentasAcc);
+          if (!tokML?.accessToken) return null;
+          let adv = _mlAdvCache.get(uid);
+          if (!adv || Date.now() - adv.ts > 3600000) {
+            const r = await fetch("https://api.mercadolibre.com/advertising/advertisers?product_id=PADS", { headers: { Authorization: `Bearer ${tokML.accessToken}`, "Api-Version": "1" } });
+            if (!r.ok) return null;
+            const j = await r.json();
+            const a = (j.advertisers || [])[0];
+            if (!a?.advertiser_id) return null;
+            adv = { ts: Date.now(), id: a.advertiser_id, site: a.site_id || "MLA" };
+            _mlAdvCache.set(uid, adv);
+          }
+          const url = `https://api.mercadolibre.com/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/campaigns/search?limit=50&metrics=cost&metrics_summary=true&date_from=${sinceR}&date_to=${untilR}`;
+          const r2 = await fetch(url, { headers: { Authorization: `Bearer ${tokML.accessToken}`, "Api-Version": "2" } });
+          if (!r2.ok) return null;
+          const j2 = await r2.json();
+          let cost = parseFloat(j2?.metrics_summary?.cost);
+          if (!isFinite(cost)) cost = (j2.results || []).reduce((s, c) => s + (parseFloat(c?.metrics?.cost) || 0), 0);
+          return isFinite(cost) && cost > 0 ? +cost.toFixed(2) : null;
+        } catch (e) { console.error("Mercado Ads spend error:", e.message); return null; }
+      }
       function mlAdsPeriodo(sinceR, untilR) {
         let total = 0;
         for (const e of mlAdsList) {
@@ -614,7 +645,7 @@ export default async function handler(req, res) {
       }
       const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
 
-      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mpRev) {
+      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mlAdsAuto) {
         // COGS = unidades vendidas × costo cargado por producto/variante ($ fijo o % del precio).
         let cogs = 0;
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
@@ -662,7 +693,8 @@ export default async function handler(req, res) {
         // Ad Spend general = Meta (con fee del dólar) + Mercado Ads manual prorrateado
         // + costos adicionales marcados como inversión publicitaria (sumaAds).
         const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
-        const adSpendMl   = mlAdsPeriodo(sinceR, untilR);
+        // Mercado Ads: gasto REAL de la API si está disponible; sino el manual.
+        const adSpendMl   = (mlAdsAuto!=null) ? mlAdsAuto : mlAdsPeriodo(sinceR, untilR);
         const adSpendEf = adSpendMeta + adSpendMl + adic.gastoAds;
         const netRevenue= revenue - impuestos - comPlat - comPago;
         const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;
@@ -765,8 +797,12 @@ export default async function handler(req, res) {
         return s;
       }
 
-      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mpCommCurr.rev);
-      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mpCommPrev.rev);
+      // Gasto real de Mercado Ads (API) para ambos períodos — fallback: manual.
+      const [mlAdsAutoCurr, mlAdsAutoPrev] = await Promise.all([
+        fetchMlAdsSpend(since, until), fetchMlAdsSpend(prevSince, prevUntil),
+      ]);
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mlAdsAutoCurr);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev);
 
       // ── Filas diarias alineadas con el motor real ──
       // Antes las filas usaban la "commission" legacy (aprox. 3%/10%): los
@@ -808,9 +844,63 @@ export default async function handler(req, res) {
       // entra al Set de allDates de buildRendRows. Prorratear con la cantidad
       // real de filas evita que costosAdicionales quede levemente sobre/sub
       // contado en la suma diaria vs el total.
+      // ── Costos VARIABLES reales por día (desde cada orden) ──
+      // Antes el profit diario era proporcional (revenue del día × ratio del
+      // período): un día que vendió solo productos de bajo margen mostraba el
+      // mismo margen % que el resto. Ahora COGS/impuestos/comisiones/envío se
+      // computan orden por orden a su fecha real. El pequeño residuo (fact.
+      // externa, redondeos, fórmula agregada de impuestos) se reparte por
+      // revenue para que la suma diaria siga cerrando EXACTA contra el total.
+      function costosDiarios(raw) {
+        const porDia = {};                       // fecha -> costo variable del día
+        const chContrib = { tienda:{}, ml:{} };  // fecha -> contribución (rev-costos, sin pauta) por canal
+        const priceByKey = {};
+        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (priceByKey[k]==null) priceByKey[k]=v.price; }
+        const cogsDe = items => (items||[]).reduce((s,it)=>s+cogsCosto(cogsMap[it.key], priceByKey[it.key])*(it.qty||0),0);
+        const add = (fecha, ch, cost, rev) => {
+          const f = String(fecha||"").slice(0,10); if (!f) return;
+          porDia[f] = (porDia[f]||0) + cost;
+          chContrib[ch][f] = (chContrib[ch][f]||0) + (rev - cost);
+        };
+        for (const o of (raw?.orders_detail||[])) {
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
+          const env=((envioModoTienda==="orden")?(parseFloat(o.envioCosto)||0):envioProm)+fulfillFee;
+          const ref=mpRefCache[o.id]; const realMp=(ref&&feeByRef[ref]!=null)?feeByRef[ref]:null;
+          const comis=(realMp!=null)?(rev*pctPlat+realMp):(rev*(pctPlat+pctPagoFor(o.pay)));
+          add(o.fecha, "tienda", cogs+imp+comis+env, rev);
+        }
+        for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
+          const rev=parseFloat(o.revenue)||0;
+          add(o.fecha, "ml", cogsDe(o.items) + rev*pctImpML + (parseFloat(o.saleFee)||0) + mlEnvioDe(o)+fulfillFee, rev);
+        }
+        return { porDia, chContrib };
+      }
+      function alinearRowsExacto(rowsArr, tot, dias, porDia) {
+        const rev = tot.revenue || 0;
+        const totVar = (tot.costoProductos||0)+(tot.impuestos||0)+(tot.comisionPlataforma||0)+(tot.comisionPago||0)+(tot.costoEnvio||0);
+        const sumDc = Object.values(porDia).reduce((a,b)=>a+b,0);
+        const residRatio = rev>0 ? (totVar - sumDc)/rev : 0;
+        const ratioDesc  = rev>0 ? ((tot.impuestos||0)+(tot.comisionPlataforma||0)+(tot.comisionPago||0))/rev : 0;
+        const fijoDia      = dias>0 ? (tot.costosAdicionales||0)/dias : 0;
+        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendExtra||0))/dias : 0;
+        return rowsArr.map(r => {
+          const revD = r.Revenue||0;
+          const adD  = (r["Ad Spend"]||0)*(1+feeAd) + adRepartoDia;
+          const costD = (porDia[r.Fecha]||0) + revD*residRatio;
+          const netD = revD*(1-ratioDesc);
+          const profitD = revD - costD - fijoDia - adD;
+          const ordD = r["Ordenes > $0"]||0;
+          return { ...r, "Ad Spend": +adD.toFixed(2), "Net Revenue": +netD.toFixed(2), Profit: +profitD.toFixed(2),
+            "Profit Margin": revD>0 ? parseFloat((profitD/revD).toFixed(6)) : 0,
+            ROAS: adD>0 ? parseFloat((revD/adD).toFixed(4)) : 0,
+            "True ROAS": adD>0 ? parseFloat((netD/adD).toFixed(4)) : 0,
+            CPA: ordD>0 ? parseFloat((adD/ordD).toFixed(2)) : 0 };
+        });
+      }
+      const cdCurr = costosDiarios(curr.raw);
       const rowsPreAlign = mergeFactExtRows(rows);
       const prevRowsPreAlign = mergeFactExtRows(prevRows);
-      rows     = alinearRows(rowsPreAlign, totals, rowsPreAlign.length || (span+1));
+      rows     = alinearRowsExacto(rowsPreAlign, totals, rowsPreAlign.length || (span+1), cdCurr.porDia);
       prevRows = alinearRows(prevRowsPreAlign, prevTotals, prevRowsPreAlign.length || (span+1));
       const byDow = computeRendDow(rows);
 
@@ -868,10 +958,16 @@ export default async function handler(req, res) {
       // Series diarias POR CANAL — para que las vistas Tienda/ML tengan su
       // propio gráfico de evolución (revenue y órdenes del canal, día a día).
       const byChannelDaily = {
-        tienda: { revenue: curr.raw?.daily_revenue||{}, orders: curr.raw?.daily_orders||{} },
-        ml:     { revenue: curr.raw?.ml_data?.daily_revenue||{}, orders: curr.raw?.ml_data?.daily_orders||{} },
+        tienda: { revenue: curr.raw?.daily_revenue||{}, orders: curr.raw?.daily_orders||{}, contrib: cdCurr.chContrib.tienda },
+        ml:     { revenue: curr.raw?.ml_data?.daily_revenue||{}, orders: curr.raw?.ml_data?.daily_orders||{}, contrib: cdCurr.chContrib.ml },
       };
 
+
+      // Nombres legibles por key (sku/variant/publicación ML) — para el detalle
+      // de cada venta (drill-down) y la tabla de productos.
+      const nameByKeyGlobal = {};
+      for (const p of (curr.raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (nameByKeyGlobal[k]==null) nameByKeyGlobal[k]=(p.nombre||k)+(v.nombre&&v.nombre!=="Default"?" · "+v.nombre:""); }
+      for (const m of (curr.raw?.ml_data?.ml_products||[])) { if (nameByKeyGlobal["ml:"+m.id]==null) nameByKeyGlobal["ml:"+m.id]=m.nombre||("ML "+m.id); }
 
       // ── Venta por venta: cada orden con sus costos reales ──
       function buildSales(raw) {
@@ -880,6 +976,7 @@ export default async function handler(req, res) {
         const priceByKey = {};
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) { const k=v.sku||String(v.id); if (priceByKey[k]==null) priceByKey[k]=v.price; }
         const cogsDe = items => (items||[]).reduce((s,it)=>s+cogsCosto(cogsMap[it.key], priceByKey[it.key])*(it.qty||0),0);
+        const itemsDe = items => (items||[]).map(it=>({ n: nameByKeyGlobal[it.key]||it.key, q: it.qty||0 }));
         for (const o of (raw?.orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*impFor(o.pay);
           const env = ((envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm) + fulfillFee;
@@ -889,12 +986,14 @@ export default async function handler(req, res) {
           const realMp = (ref && feeByRef[ref]!=null) ? feeByRef[ref] : null;
           const comis = (realMp!=null) ? (rev*pctPlat + realMp) : (rev*(pctPlat+pctPagoFor(o.pay)));
           const profit=rev-cogs-imp-comis-env;
-          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
+          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:(curr.raw?.platform==="shopify"?"Shopify":"Tienda Nube"), revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
+            pay:o.pay||"", cust:o.cust||"", items:itemsDe(o.items), feeReal: realMp!=null });
         }
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o.items), imp=rev*pctImpML, comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o)+fulfillFee;
           const profit=rev-cogs-imp-comis-env;
-          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0 });
+          list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
+            pay:"Mercado Pago", cust:o.cust||"", items:itemsDe(o.items), feeReal: true, mlLink:`https://www.mercadolibre.com.ar/ventas/${o.id}/detalle` });
         }
         list.sort((a,b)=>String(b.fecha||"").localeCompare(String(a.fecha||"")));
         return list.slice(0, 600);
@@ -996,7 +1095,8 @@ export default async function handler(req, res) {
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,
-        meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
+        meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, metaAccountsCount: metaAccounts.length,
+          mlAdsFuente: mlAdsAutoCurr!=null ? "auto" : (mlAdsList.length ? "manual" : "sin_datos"),
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };
       // Guardar caché + registrar el rango en el warmer (best-effort: si Firestore
@@ -1045,15 +1145,6 @@ export default async function handler(req, res) {
     } catch(e) { console.error("warm_margenes error:", e.message); return res.status(500).json({ error: e.message }); }
   }
 
-  if (action === 'save_config' && req.method === 'POST') {
-    if (!uid) return res.status(400).json({ error: "Falta uid" });
-    const body = await new Promise(resolve => {
-      let d = ""; req.on("data", c => d += c); req.on("end", () => resolve(JSON.parse(d || "{}")));
-    });
-    const db = initAdmin();
-    await db.collection("users").doc(uid).update({ rendimientoCommission: parseFloat(body.commission) || 0.03 });
-    return res.json({ ok: true });
-  }
   // ── fin Rendimiento ──────────────────────────────────────────────────────
 
   if (!uid) return res.status(401).json({ error: "uid requerido" });

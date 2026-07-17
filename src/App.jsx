@@ -24415,6 +24415,27 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [usdMode, setUsdMode] = useState(()=>{ try{return localStorage.getItem("growith_margenes_usd")==="1";}catch(_){return false;} });
   // Vista por canal estilo Escalafy: Global / solo Tienda / solo ML.
   const [canalVista, setCanalVista] = useState("global");
+  // Metas del negocio (umbrales de "bueno/malo" en los KPIs) — configurables,
+  // guardadas en Firestore (margenesMetas). Antes estaban hardcodeadas.
+  const METAS_DEF = { roas: 2, trueRoas: 1.2, margen: 5 };
+  const [metas, setMetas] = useState(METAS_DEF);
+  const [editMetas, setEditMetas] = useState(false);
+  const [metasDraft, setMetasDraft] = useState(METAS_DEF);
+  useEffect(()=>{
+    if(!uid) return;
+    getDoc(doc(db,"users",uid)).then(s=>{
+      const m = s.data()?.margenesMetas;
+      if (m) { const v = {...METAS_DEF, roas:parseFloat(m.roas)||METAS_DEF.roas, trueRoas:parseFloat(m.trueRoas)||METAS_DEF.trueRoas, margen:parseFloat(m.margen)||METAS_DEF.margen}; setMetas(v); setMetasDraft(v); }
+    }).catch(()=>{});
+  },[uid]);
+  async function saveMetas() {
+    const v = { roas:parseFloat(metasDraft.roas)||METAS_DEF.roas, trueRoas:parseFloat(metasDraft.trueRoas)||METAS_DEF.trueRoas, margen:parseFloat(metasDraft.margen)||METAS_DEF.margen };
+    setMetas(v); setEditMetas(false);
+    try { await setDoc(doc(db,"users",uid), { margenesMetas: v }, { merge:true }); toast("Metas guardadas ✓","success"); }
+    catch(_) { toast("No se pudieron guardar las metas","error"); }
+  }
+  // Drill-down: id de la venta expandida en la tabla venta-por-venta.
+  const [expandedSale, setExpandedSale] = useState(null);
   // Filtros y orden de la tabla venta-por-venta
   const [salesQ, setSalesQ] = useState("");
   const [salesCanal, setSalesCanal] = useState("todos");
@@ -24750,8 +24771,40 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           })()}
 
           {canalVista==="global" && (<>
+
+          {/* Resumen de ayer */}
+          {(()=>{
+            const hoyAr = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
+            const [y,m,d] = hoyAr.split("-").map(Number);
+            const ayerYmd = new Date(Date.UTC(y,m-1,d)-86400000).toISOString().slice(0,10);
+            const a = dailyRows.find(r=>r.Fecha===ayerYmd);
+            if (!a || !(a.Revenue>0 || a["Ad Spend"]>0)) return null;
+            return (
+              <div style={{display:"flex",alignItems:"center",gap:16,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 16px",marginBottom:16,flexWrap:"wrap"}}>
+                <span style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4}}>Ayer ({fmtDate(ayerYmd)})</span>
+                <span style={{fontSize:DS.font.base,color:T.textMd}}>Revenue <strong style={{color:T.text}}>{fmtM(a.Revenue)}</strong></span>
+                <span style={{fontSize:DS.font.base,color:T.textMd}}>Profit <strong style={{color:(a.Profit||0)>=0?T.green:T.red}}>{fmtM(a.Profit)}</strong></span>
+                <span style={{fontSize:DS.font.base,color:T.textMd}}>Órdenes <strong style={{color:T.text}}>{fmtInt(a["Ordenes > $0"])}</strong></span>
+                <span style={{fontSize:DS.font.base,color:T.textMd}}>ROAS <strong style={{color:(a.ROAS||0)>=metas.roas?T.green:T.text}}>{fmtX(a.ROAS)}</strong></span>
+              </div>
+            );
+          })()}
+
           {/* Hero KPIs */}
-          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.accent,flexShrink:0}}/>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
+          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.accent,flexShrink:0}}/>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>{setEditMetas(s=>!s); setMetasDraft(metas);}} title="Configurar metas (ROAS y margen objetivo)" style={{background:editMetas?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editMetas?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
+          {editMetas && (
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"12px 14px"}}>
+              <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Metas del negocio — definen cuándo un KPI se marca en rojo:</span>
+              {[["roas","ROAS objetivo (x)"],["trueRoas","True ROAS objetivo (x)"],["margen","Margen objetivo (%)"]].map(([k,l])=>(
+                <label key={k} style={{display:"flex",flexDirection:"column",gap:4,fontSize:10,color:T.textSm,fontWeight:600}}>
+                  {l}
+                  <input type="number" step="0.1" value={metasDraft[k]} onChange={e=>setMetasDraft(p=>({...p,[k]:e.target.value}))} style={{...InputStyle(T),fontSize:12,padding:"6px 10px",width:120}}/>
+                </label>
+              ))}
+              <Btn T={T} variant="primary" size="sm" onClick={saveMetas}>Guardar metas</Btn>
+              <Btn T={T} variant="ghost" size="sm" onClick={()=>setEditMetas(false)}>Cancelar</Btn>
+            </div>
+          )}
           {vis.main!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
             {[
               {label:"Profit",      val:tot.profit,     prev:prevTot.profit,     color:(tot.profit||0)>=0?T.green:T.red, desc:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
@@ -24774,13 +24827,13 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {/* Secondary KPIs — con selector de cuáles mostrar (lápiz) */}
           {(()=>{
             const SEC_KPIS=[
-              {label:"ROAS",       val:fmtX(tot.roas),            good:(tot.roas||0)>=2,             hint:"Revenue / Ad Spend"},
-              {label:"True ROAS",  val:fmtX(tot.trueRoas),        good:(tot.trueRoas||0)>=1.2,        hint:"Net Rev / Ad Spend"},
+              {label:"ROAS",       val:fmtX(tot.roas),            good:(tot.roas||0)>=metas.roas,     hint:`meta ≥ ${metas.roas}x`},
+              {label:"True ROAS",  val:fmtX(tot.trueRoas),        good:(tot.trueRoas||0)>=metas.trueRoas, hint:`meta ≥ ${metas.trueRoas}x`},
               {label:"CPA real",   val:fmtM(tot.cpa),             good:true,                          hint:"Ad Spend / Órdenes"},
               {label:"CPA Break Even",val:fmtM(tot.cpaBreakEven), good:true,                          hint:"CPA máx. antes de perder"},
               {label:"Órdenes",    val:fmtInt(tot.orders),         good:(tot.orders||0)>0,             hint:"Con revenue"},
               {label:"AOV",        val:fmtM(tot.aov),              good:true,                          hint:"Ticket promedio"},
-              {label:"Margen",     val:fmtPct(tot.profitMargin),   good:(tot.profitMargin||0)>0.05,    hint:"Profit / Revenue"},
+              {label:"Margen",     val:fmtPct(tot.profitMargin),   good:(tot.profitMargin||0)>metas.margen/100, hint:`meta > ${metas.margen}%`},
               {label:"MER %",      val:fmtPct(tot.mer),            good:true,                          hint:"Ad Spend / Revenue"},
               {label:"Break Even", val:fmtX(tot.breakEvenRoas),    good:true,                          hint:"ROAS de equilibrio"},
               {label:"Días profit",val:`${profitDays}/${dailyRows.length}`, good:profitDays>=lossDays, hint:"Días positivos"},
@@ -25069,12 +25122,18 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             // reparto diario de Mercado Ads/extras es el resto. Profit diario =
             // revenue del día × margen del canal (proporcional, igual que el global).
             const adRepartoDia = ((tot.adSpendMl||0)+(tot.adSpendExtra||0))/nDias;
-            const ratioProfit = (cSel.revenue||0)>0 ? (cSel.profit||0)/(cSel.revenue||0) : 0;
             const ratioNet    = (cSel.revenue||0)>0 ? (cSel.netRevenue||0)/(cSel.revenue||0) : 0;
+            // Profit diario EXACTO del canal: contribución real por día (rev −
+            // costos de las órdenes de ese día, del backend) − pauta del día.
+            // El residuo (fórmula agregada de impuestos, redondeos) se reparte
+            // por revenue para cerrar contra el total del canal.
+            const contrib = cDaily.contrib||{};
+            const sumContrib = Object.values(contrib).reduce((a,b)=>a+b,0);
+            const residCanal = (cSel.revenue||0)>0 ? (((cSel.profit||0)+(cSel.adSpend||0))-sumContrib)/(cSel.revenue||0) : 0;
             const canalRows = dailyRows.map(r=>{
               const rev = cDaily.revenue[r.Fecha]||0;
-              const ads = esMl ? (tot.adSpendMl||0)/nDias : Math.max(0,(r["Ad Spend"]||0)-adRepartoDia);
-              return { Fecha:r.Fecha, Revenue:rev, "Ad Spend":ads, Profit:rev*ratioProfit, "Net Revenue":rev*ratioNet, "Ordenes > $0":cDaily.orders[r.Fecha]||0 };
+              const ads = esMl ? (cSel.adSpend||0)/nDias : Math.max(0,(r["Ad Spend"]||0)-adRepartoDia);
+              return { Fecha:r.Fecha, Revenue:rev, "Ad Spend":ads, Profit:(contrib[r.Fecha]||0)+rev*residCanal-ads, "Net Revenue":rev*ratioNet, "Ordenes > $0":cDaily.orders[r.Fecha]||0 };
             });
             const dotColor = esMl?T.yellow:T.blue;
             const titulo = esMl?"Mercado Libre":(bc.platform==="shopify"?"Shopify":"Tienda Nube");
@@ -25105,12 +25164,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {/* KPIs del canal */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:18}}>
                 {[
-                  {label:"ROAS",          val:fmtX(cSel.roas),          good:(cSel.roas||0)>=2||!(cSel.adSpend>0),  hint:"Revenue / Ad Spend"},
-                  {label:"True ROAS",     val:fmtX(cSel.trueRoas),      good:(cSel.trueRoas||0)>=1.2||!(cSel.adSpend>0), hint:"Net Rev / Ad Spend"},
+                  {label:"ROAS",          val:fmtX(cSel.roas),          good:(cSel.roas||0)>=metas.roas||!(cSel.adSpend>0),  hint:`meta ≥ ${metas.roas}x`},
+                  {label:"True ROAS",     val:fmtX(cSel.trueRoas),      good:(cSel.trueRoas||0)>=metas.trueRoas||!(cSel.adSpend>0), hint:`meta ≥ ${metas.trueRoas}x`},
                   {label:"CPA real",      val:fmtM(cSel.cpa),           good:true,                  hint:"Ad Spend / Órdenes"},
                   {label:"CPA Break Even",val:fmtM(cSel.cpaBreakEven),  good:true,                  hint:"CPA máx. antes de perder"},
                   {label:"Órdenes",       val:fmtInt(cSel.orders),      good:(cSel.orders||0)>0,    hint:"Con revenue"},
-                  {label:"Margen",        val:fmtPct(cSel.margin),      good:(cSel.margin||0)>0.05, hint:"Profit / Revenue"},
+                  {label:"Margen",        val:fmtPct(cSel.margin),      good:(cSel.margin||0)>metas.margen/100, hint:`meta > ${metas.margen}%`},
                   {label:"MER %",         val:fmtPct(cSel.mer),         good:true,                  hint:"Ad Spend / Revenue"},
                   {label:"Break Even",    val:fmtX(cSel.breakEvenRoas), good:true,                  hint:"ROAS de equilibrio"},
                   {label:"AOV",           val:fmtM(cSel.aov),           good:true,                  hint:"Ticket promedio"},
@@ -25259,9 +25318,13 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                     </thead>
                     <tbody>
                       {sales.length===0 && <tr><td colSpan={10} style={{padding:"30px",textAlign:"center",color:T.textSm}}>{salesAll.length===0?"No hay ventas en el período.":"Ninguna venta coincide con los filtros."}</td></tr>}
-                      {sales.map((s,i)=>(
-                        <tr key={s.id||i} style={{borderBottom:`1px solid ${T.borderL}`,background:s.profit>0?T.green+"07":s.profit<0?T.red+"07":"transparent"}}>
-                          <td style={{padding:"8px 12px",color:T.text,fontWeight:500,whiteSpace:"nowrap",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis"}}>{s.nombre||s.id}</td>
+                      {sales.map((s,i)=>{
+                        const sid = s.id||String(i);
+                        const abierto = expandedSale===sid;
+                        return (
+                        <React.Fragment key={sid}>
+                        <tr onClick={()=>setExpandedSale(abierto?null:sid)} title="Click para ver el detalle de la orden" style={{borderBottom:`1px solid ${T.borderL}`,background:abierto?T.accent+"0C":s.profit>0?T.green+"07":s.profit<0?T.red+"07":"transparent",cursor:"pointer"}}>
+                          <td style={{padding:"8px 12px",color:T.text,fontWeight:500,whiteSpace:"nowrap",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis"}}><span style={{color:T.textSm,marginRight:6,fontSize:9}}>{abierto?"▼":"▶"}</span>{s.nombre||s.id}</td>
                           <td style={{padding:"8px 12px",color:T.textMd,whiteSpace:"nowrap"}}>{fmtFecha(s.fecha)}</td>
                           <td style={{padding:"8px 12px",color:T.textSm,whiteSpace:"nowrap"}}>{s.canal}</td>
                           <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.blue}}>{fmtM(s.revenue)}</td>
@@ -25272,7 +25335,36 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                           <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:s.profit>0?T.green:s.profit<0?T.red:T.textMd}}>{fmtM(s.profit)}</td>
                           <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:(s.margin||0)>=0.1?T.green:(s.margin||0)>=0?T.yellow:T.red}}>{fmtPct(s.margin)}</td>
                         </tr>
-                      ))}
+                        {abierto && (
+                          <tr style={{background:T.surface}}>
+                            <td colSpan={10} style={{padding:"10px 24px 12px",borderBottom:`1px solid ${T.borderL}`}}>
+                              <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:DS.font.md,color:T.textMd,lineHeight:1.8}}>
+                                <div>
+                                  <div style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>Productos</div>
+                                  {(s.items||[]).length ? (s.items||[]).map((it,ix)=>(<div key={ix} style={{color:T.text}}>{it.q}× {it.n}</div>)) : <div>—</div>}
+                                </div>
+                                <div>
+                                  <div style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>Pago</div>
+                                  <div style={{color:T.text}}>{s.pay||"—"} {s.feeReal&&<DSBadge T={T} color={T.green} size="sm">fee real</DSBadge>}</div>
+                                </div>
+                                {s.cust && (
+                                  <div>
+                                    <div style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>Cliente</div>
+                                    <div style={{color:T.text}}>{s.cust}</div>
+                                  </div>
+                                )}
+                                <div>
+                                  <div style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,textTransform:"uppercase",letterSpacing:0.4,marginBottom:2}}>Desglose</div>
+                                  <div>Revenue {fmtM(s.revenue)} − COGS {fmtM(s.cogs)} − Comisión {fmtM(s.comisiones)} − Imp. {fmtM(s.impuestos)} − Envío {fmtM(s.envio)} = <strong style={{color:s.profit>=0?T.green:T.red}}>{fmtM(s.profit)}</strong></div>
+                                </div>
+                                {s.mlLink && <a href={s.mlLink} target="_blank" rel="noreferrer" style={{color:T.accent,fontWeight:DS.w.bold,alignSelf:"center"}}>Ver en Mercado Libre ↗</a>}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
+                        );
+                      })}
                     </tbody>
                     <tfoot>
                       <tr style={{background:T.surface,borderTop:`2px solid ${T.border}`,position:"sticky",bottom:0}}>
@@ -26022,7 +26114,8 @@ export default function App() {
   if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} isTrialExpired={false} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
-  else if(page==="rendimiento") pageContent = adminGate("rendimiento") || <PageView T={T} pageKey="rendimiento"><AppRendimiento T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
+  // Ruta legacy #/rendimiento → mismo dashboard de Márgenes, con navegación completa.
+  else if(page==="rendimiento") pageContent = adminGate("margenes") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={(t)=>{setMargenesTab(t); setPage("margenes");}}/></PageView>;
   else if(page==="margenes") pageContent = adminGate("margenes") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
   else if(page==="stock") pageContent = adminGate("stock") || planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
