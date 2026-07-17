@@ -62,36 +62,57 @@ async function fetchTR(url, opts={}, { ms=8000, tries=2 } = {}) {
 }
 
 // ── TN Fetch ──────────────────────────────────────────────────────────
+// TN tarda ~14s en generar una página de 200 registros pero solo ~4s una de
+// 50 — con per_page=200 cualquier timeout razonable (8s) falla SIEMPRE,
+// tienda esté lenta o no (así se diagnosticó mal como "TN caída" un rato).
+// Mismo patrón ya probado en api/orders.js: pedir el total por header
+// X-Total-Count (1 request liviana) y traer páginas de 50 en PARALELO.
+async function tnCount(sid, tok, extraParams) {
+  const r = await fetchTR(`https://api.tiendanube.com/v1/${sid}/orders?per_page=1&page=1${extraParams?"&"+extraParams:""}`, { headers: TN_H(tok) });
+  if (r.status === 404) return 0;
+  if (!r.ok) throw new Error(`TN count HTTP ${r.status}`);
+  const total = parseInt(r.headers.get("x-total-count"), 10);
+  return Number.isFinite(total) ? total : null;
+}
 async function tnProducts(sid, tok) {
+  const PP = 50;
   let all=[], page=1;
   while(true){
-    const r=await fetchTR(`https://api.tiendanube.com/v1/${sid}/products?per_page=200&page=${page}`,{headers:TN_H(tok)});
+    const r=await fetchTR(`https://api.tiendanube.com/v1/${sid}/products?per_page=${PP}&page=${page}`,{headers:TN_H(tok)});
     if(r.status===404) break; // fin real de la paginación
     if(!r.ok) throw new Error(`TN products HTTP ${r.status} (página ${page})`);
     const d=await r.json();
     if(!Array.isArray(d)||d.length===0) break;
     all=all.concat(d);
-    if(d.length<200) break;
+    if(d.length<PP) break;
     page++;
   }
   return all;
 }
 
-// Bug #2 fix: sequential pagination instead of always firing 5 parallel requests
 async function tnOrders(sid, tok, days, since, until) {
-  let all=[], page=1;
-  while(page<=10){
-    let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=200&page=${page}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
-    if(until) url+=`&created_at_max=${until}`;
-    const r=await fetchTR(url,{headers:TN_H(tok)});
-    if(r.status===404) break; // fin real de la paginación
-    if(!r.ok) throw new Error(`TN orders HTTP ${r.status} (página ${page})`);
-    const d=await r.json();
-    if(!Array.isArray(d)||d.length===0) break;
-    all=all.concat(d);
-    if(d.length<200) break;
-    page++;
-  }
+  const PP = 50;
+  let extraParams=`payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
+  if(until) extraParams+=`&created_at_max=${until}`;
+  let total = null;
+  try { total = await tnCount(sid, tok, extraParams); } catch(_) {}
+  if (total === 0) return [];
+  // Sin count confiable, techo conservador (40 páginas de 50 = 2000 órdenes).
+  const maxPage = total ? Math.min(Math.ceil(total / PP), 40) : 40;
+  const pages = await Promise.all(
+    Array.from({ length: maxPage }, (_, i) => {
+      const p = i + 1;
+      const url = `https://api.tiendanube.com/v1/${sid}/orders?per_page=${PP}&page=${p}&${extraParams}`;
+      return fetchTR(url, { headers: TN_H(tok) }).then(async r => {
+        if (r.status === 404) return [];
+        if (!r.ok) throw new Error(`TN orders HTTP ${r.status} (página ${p})`);
+        const d = await r.json();
+        return Array.isArray(d) ? d : [];
+      });
+    })
+  );
+  let all=[];
+  for (const pg of pages) { all=all.concat(pg); if (pg.length<PP) break; }
   return all;
 }
 
