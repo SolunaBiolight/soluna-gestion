@@ -34,19 +34,40 @@ async function fetchT(url, opts={}, ms=15000) {
   }
 }
 
+// ── Fetch con reintentos — evita facturación parcial silenciosa ────────
+// Las paginaciones de abajo (tnOrders/shOrders/mlOrders) antes hacían
+// `catch(_){break}`: un timeout o un 429 en la página 3 de 5 se trataba
+// IGUAL que "no hay más páginas", y el dashboard mostraba una facturación
+// incompleta con pinta de real (mismo rango daba $12M/$39M/$64M en
+// llamadas consecutivas). fetchTR reintenta las fallas transitorias
+// (red, timeout, 429, 5xx) con backoff, y solo después de agotarlas
+// LANZA — así el caller puede fallar explícito en vez de mentir con un
+// total parcial.
+async function fetchTR(url, opts={}, { ms=15000, tries=3 } = {}) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetchT(url, opts, ms);
+      if (r.status === 429 || r.status >= 500) { lastErr = new Error(`HTTP ${r.status}`); }
+      else return r; // 2xx, 4xx (salvo 429) — respuesta válida, la maneja el caller
+    } catch (e) { lastErr = e; }
+    if (i < tries - 1) await new Promise(res => setTimeout(res, 500 * (i + 1)));
+  }
+  throw new Error(`Fetch falló tras ${tries} intentos (${url.split("?")[0]}): ${lastErr?.message || "?"}`);
+}
+
 // ── TN Fetch ──────────────────────────────────────────────────────────
 async function tnProducts(sid, tok) {
   let all=[], page=1;
   while(true){
-    try{
-      const r=await fetchT(`https://api.tiendanube.com/v1/${sid}/products?per_page=200&page=${page}`,{headers:TN_H(tok)});
-      if(!r.ok) break;
-      const d=await r.json();
-      if(!Array.isArray(d)||d.length===0) break;
-      all=all.concat(d);
-      if(d.length<200) break;
-      page++;
-    }catch(_){break;}
+    const r=await fetchTR(`https://api.tiendanube.com/v1/${sid}/products?per_page=200&page=${page}`,{headers:TN_H(tok)});
+    if(r.status===404) break; // fin real de la paginación
+    if(!r.ok) throw new Error(`TN products HTTP ${r.status} (página ${page})`);
+    const d=await r.json();
+    if(!Array.isArray(d)||d.length===0) break;
+    all=all.concat(d);
+    if(d.length<200) break;
+    page++;
   }
   return all;
 }
@@ -55,17 +76,16 @@ async function tnProducts(sid, tok) {
 async function tnOrders(sid, tok, days, since, until) {
   let all=[], page=1;
   while(page<=10){
-    try{
-      let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=200&page=${page}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
-      if(until) url+=`&created_at_max=${until}`;
-      const r=await fetchT(url,{headers:TN_H(tok)});
-      if(!r.ok) break;
-      const d=await r.json();
-      if(!Array.isArray(d)||d.length===0) break;
-      all=all.concat(d);
-      if(d.length<200) break;
-      page++;
-    }catch(_){break;}
+    let url=`https://api.tiendanube.com/v1/${sid}/orders?per_page=200&page=${page}&payment_status=paid,partially_paid,partially_refunded&created_at_min=${since}`;
+    if(until) url+=`&created_at_max=${until}`;
+    const r=await fetchTR(url,{headers:TN_H(tok)});
+    if(r.status===404) break; // fin real de la paginación
+    if(!r.ok) throw new Error(`TN orders HTTP ${r.status} (página ${page})`);
+    const d=await r.json();
+    if(!Array.isArray(d)||d.length===0) break;
+    all=all.concat(d);
+    if(d.length<200) break;
+    page++;
   }
   return all;
 }
@@ -76,8 +96,8 @@ async function shProducts(shop, tok) {
   while(true){
     let url=`${SH_URL(shop)}/products.json?limit=250&fields=id,title,variants,image`;
     if(sinceId) url+=`&since_id=${sinceId}`;
-    const r=await fetchT(url,{headers:SH_H(tok)});
-    if(!r.ok) break;
+    const r=await fetchTR(url,{headers:SH_H(tok)});
+    if(!r.ok) throw new Error(`Shopify products HTTP ${r.status}`);
     const {products:batch}=await r.json();
     if(!batch||batch.length===0) break;
     all=all.concat(batch);
@@ -96,8 +116,8 @@ async function shOrders(shop, tok, days, since, until) {
   let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway,payment_gateway_names,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds`;
   if(until) url+=`&created_at_max=${until}`;
   while(url){
-    const r=await fetchT(url,{headers:SH_H(tok)});
-    if(!r.ok) break;
+    const r=await fetchTR(url,{headers:SH_H(tok)});
+    if(!r.ok) throw new Error(`Shopify orders HTTP ${r.status}`);
     const d=await r.json();
     const batch=d.orders||[];
     // Excluir canceladas y refundeadas totales
@@ -139,17 +159,15 @@ async function mlOrders(sellerId, tok, days, sinceDateISO, untilDateISO) {
   // ML pagina de a 50; iteramos con offset hasta 2000 (40 páginas).
   const all=[];
   for (let offset = 0; offset < 2000; offset += 50) {
-    try {
-      const r = await fetch(
-        `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${encodeURIComponent(fromISO)}&order.date_created.to=${encodeURIComponent(toISO)}&limit=50&offset=${offset}&sort=date_desc`,
-        { headers: ML_H(tok) }
-      );
-      if (!r.ok) break;
-      const d = await r.json();
-      const batch = d.results || [];
-      all.push(...batch);
-      if (batch.length < 50) break;
-    } catch (_) { break; }
+    const r = await fetchTR(
+      `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${encodeURIComponent(fromISO)}&order.date_created.to=${encodeURIComponent(toISO)}&limit=50&offset=${offset}&sort=date_desc`,
+      { headers: ML_H(tok) }
+    );
+    if (!r.ok) throw new Error(`ML orders HTTP ${r.status} (offset ${offset})`);
+    const d = await r.json();
+    const batch = d.results || [];
+    all.push(...batch);
+    if (batch.length < 50) break;
   }
   return all;
 }
@@ -473,16 +491,16 @@ export default async function handler(req, res) {
       // Helper: fetch ML data en paralelo (si está conectado).
       // Funciona con cualquier plataforma primaria (Shopify O TN).
       const fetchML = async () => {
-        if (!mlSellerId || !mlToken) return null;
-        try {
-          // Pasar el MISMO rango exacto que usamos para Shopify/TN, así
-          // las series diarias y los totales matchean perfecto entre canales.
-          const [mlOrd, coupons] = await Promise.all([
-            mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate),
-            mlCouponFees(mlToken, sinceDate, untilDate),
-          ]);
-          return processML(mlOrd, coupons);
-        } catch (e) { return null; }
+        if (!mlSellerId || !mlToken) return null; // ML no conectado: no-op legítimo
+        // Si ML SÍ está conectado, un fallo acá no puede tragarse en silencio —
+        // ocultaría facturación real (exactamente el bug de los totales
+        // fluctuantes). mlCouponFees es best-effort (afecta un descuento
+        // menor, no el total de ventas); mlOrders no.
+        const [mlOrd, coupons] = await Promise.all([
+          mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate),
+          mlCouponFees(mlToken, sinceDate, untilDate).catch(() => ({})),
+        ]);
+        return processML(mlOrd, coupons);
       };
       if(platform==="shopify"){
         const [products, orders, mlAnalytics] = await Promise.all([
