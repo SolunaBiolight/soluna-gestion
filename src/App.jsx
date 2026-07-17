@@ -717,7 +717,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     { group:"FINANZAS" },
     {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
-      subs:[{id:"dashboard",label:"Dashboard"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos"},{id:"adicionales",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos"},{id:"adicionales",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
@@ -22194,26 +22194,195 @@ function FacturacionExternaPanel({ T, uid }) {
   );
 }
 
+// Barra de sub-tabs de Márgenes — en desktop duplica el sidebar (útil), en
+// mobile es la ÚNICA forma de llegar a la configuración (el bottom nav solo
+// navega a #/margenes = dashboard y el sidebar no existe).
+function MargenesTabsBar({ T, tab, setTab }) {
+  if (!setTab) return null; // ruta legacy #/rendimiento sin navegación de tabs
+  const TABS = [
+    {id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"comisiones",label:"Comisiones"},
+    {id:"costos",label:"Costos"},{id:"adicionales",label:"Adicionales"},{id:"dolar",label:"Dólar"},{id:"facturacion_externa",label:"Fact. Externa"},
+  ];
+  return (
+    <div style={{display:"flex",gap:DS.sp.xs,overflowX:"auto",padding:"10px 24px 0",maxWidth:1440,margin:"0 auto",width:"100%",boxSizing:"border-box",WebkitOverflowScrolling:"touch"}}>
+      {TABS.map(t=>(
+        <button key={t.id} onClick={()=>setTab(t.id)}
+          style={{padding:"6px 12px",fontSize:DS.font.md,fontWeight:tab===t.id?DS.w.bold:DS.w.medium,border:`1px solid ${tab===t.id?T.accent+"55":T.border}`,borderRadius:DS.r.full,background:tab===t.id?T.accent+"16":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
   const uid = user?.uid;
 
-  // El sub-tab "Dashboard" ES el dashboard financiero completo (AppRendimiento):
-  // revenue/profit/ROAS, gráfico, calendario de performance, proyección 30d,
-  // tabla diaria y por día de semana. Renderiza su propio topbar + controles.
+  // El sub-tab "Dashboard" ES el dashboard financiero completo (AppRendimiento).
+  // Renderiza su propio topbar + controles; recibe setTab para la barra de
+  // sub-tabs y los links del checklist de configuración.
   if (tab === "dashboard") {
-    return <AppRendimiento T={T} user={user} onHome={onHome}/>;
+    return <AppRendimiento T={T} user={user} onHome={onHome} tab={tab} setTab={setTab}/>;
   }
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Márgenes" onHome={onHome}/>
+      <MargenesTabsBar T={T} tab={tab} setTab={setTab}/>
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
+        {tab==="pnl" && <MargenesPnl T={T} uid={uid}/>}
         {tab==="comisiones" && <ComisionesPanel T={T} uid={uid}/>}
         {tab==="costos" && <CostosPanel T={T} uid={uid}/>}
         {tab==="adicionales" && <CostosAdicionalesPanel T={T} uid={uid}/>}
         {tab==="dolar" && <DolarPanel T={T} uid={uid}/>}
         {tab==="facturacion_externa" && <FacturacionExternaPanel T={T} uid={uid}/>}
       </div>
+    </div>
+  );
+}
+
+// ── P&L Mensual — foto contable mes a mes, exportable ──
+// Cada mes cerrado se calcula UNA vez y queda cacheado para siempre en
+// localStorage (los meses pasados no cambian salvo reprocesamiento manual);
+// el mes corriente se refresca si el cache tiene más de 1 hora. Los meses se
+// cargan secuencialmente (daily_metrics es pesado contra TN/ML/Meta) — por
+// eso arranca con 3 y el resto se pide a demanda.
+function MargenesPnl({ T, uid }) {
+  const [meses, setMeses] = useState({});      // "YYYY-MM" -> totals
+  const [cargando, setCargando] = useState(null); // "YYYY-MM" en curso
+  const [errorMes, setErrorMes] = useState({});
+  const [numMeses, setNumMeses] = useState(6);
+  const hoyAr = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
+  const mesActual = hoyAr.slice(0,7);
+  const listaMeses = [];
+  { let [y,m] = mesActual.split("-").map(Number);
+    for (let i=0;i<numMeses;i++){ listaMeses.push(`${y}-${String(m).padStart(2,"0")}`); m--; if(m===0){m=12;y--;} } }
+  const cacheKey = mes => `growith_pnl_${uid}_${mes}`;
+  const leerCache = mes => {
+    try {
+      const c = JSON.parse(localStorage.getItem(cacheKey(mes))||"null");
+      if (!c?.totals) return null;
+      if (mes === mesActual && Date.now()-(c.ts||0) > 3600000) return null; // mes corriente: refresco horario
+      return c.totals;
+    } catch(_) { return null; }
+  };
+  const rangoDe = mes => {
+    const [y,m] = mes.split("-").map(Number);
+    const desde = `${mes}-01`;
+    const finMes = new Date(Date.UTC(y, m, 0)).toISOString().slice(0,10);
+    const hasta = mes===mesActual ? hoyAr : finMes;
+    return [desde, hasta];
+  };
+  const cargarMes = async (mes) => {
+    const hit = leerCache(mes);
+    if (hit) { setMeses(p=>({...p,[mes]:hit})); return; }
+    setCargando(mes);
+    setErrorMes(p=>({...p,[mes]:null}));
+    try {
+      const [desde,hasta] = rangoDe(mes);
+      const r = await fetch(`/api/orders?action=daily_metrics&uid=${uid}&date_from=${desde}&date_to=${hasta}`);
+      const j = await r.json();
+      if (j.error) throw new Error(j.error);
+      const t = j.totals || {};
+      setMeses(p=>({...p,[mes]:t}));
+      try { localStorage.setItem(cacheKey(mes), JSON.stringify({ ts:Date.now(), totals:t })); } catch(_) {}
+    } catch(e) { setErrorMes(p=>({...p,[mes]:e.message})); }
+    finally { setCargando(null); }
+  };
+  // Al entrar: cache instantáneo + carga secuencial de los que falten (máx 3 auto).
+  useEffect(()=>{
+    if (!uid) return;
+    let vivo = true;
+    (async ()=>{
+      const pendientes = [];
+      for (const mes of listaMeses) {
+        const hit = leerCache(mes);
+        if (hit) setMeses(p=>({...p,[mes]:hit}));
+        else pendientes.push(mes);
+      }
+      for (const mes of pendientes.slice(0,3)) { if (!vivo) return; await cargarMes(mes); }
+    })();
+    return ()=>{ vivo = false; };
+  },[uid]);
+  const fmt$ = v => v==null||isNaN(Number(v)) ? "—" : (Number(v)<0?"-":"")+"$"+Math.round(Math.abs(Number(v))).toLocaleString("es-AR");
+  const fmtP = v => v==null||isNaN(Number(v)) ? "—" : (Number(v)*100).toFixed(1)+"%";
+  const MES_L = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const labelMes = mes => { const [y,m]=mes.split("-").map(Number); return `${MES_L[m-1]} ${y}`; };
+  const COLS = [
+    ["revenue","Revenue"],["orders","Órdenes","int"],["costoProductos","COGS"],["comisionPlataforma","Com. Plataforma"],
+    ["comisionPago","Com. Pago"],["impuestos","Impuestos"],["costoEnvio","Envío"],["adSpend","Ad Spend"],
+    ["costosAdicionales","Adicionales"],["profit","Profit"],["profitMargin","Margen","pct"],
+  ];
+  const exportCsv = () => {
+    const filas = listaMeses.filter(m=>meses[m]);
+    const head = ["Mes",...COLS.map(c=>c[1])].join(";");
+    const body = filas.map(mes=>{
+      const t = meses[mes];
+      return [labelMes(mes),...COLS.map(([k,,tp])=> tp==="pct" ? ((t[k]||0)*100).toFixed(2)+"%" : Math.round(t[k]||0))].join(";");
+    }).join("\n");
+    const blob = new Blob(["﻿"+head+"\n"+body],{type:"text/csv;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "pnl_mensual_growith.csv"; a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.4}}>P&L Mensual</div>
+          <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Resultado mes a mes con tu configuración de costos actual. Los meses cerrados quedan guardados; el corriente se actualiza cada hora.</div>
+        </div>
+        <div style={{marginLeft:"auto"}}>
+          <Btn T={T} variant="secondary" size="sm" onClick={exportCsv} disabled={!listaMeses.some(m=>meses[m])}>⬇ Exportar CSV</Btn>
+        </div>
+      </div>
+      <Card T={T} padding="lg">
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:DS.font.md,fontFamily:"'Inter',system-ui,sans-serif",minWidth:900}}>
+            <thead>
+              <tr>
+                <th style={{padding:"9px 12px",textAlign:"left",fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>Mes</th>
+                {COLS.map(([k,l])=>(<th key={k} style={{padding:"9px 12px",textAlign:"right",fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{l}</th>))}
+                <th style={{padding:"9px 12px",borderBottom:`1px solid ${T.border}`}}/>
+              </tr>
+            </thead>
+            <tbody>
+              {listaMeses.map((mes,idx)=>{
+                const t = meses[mes];
+                const tPrev = meses[listaMeses[idx+1]];
+                const dMoM = t && tPrev && tPrev.profit ? (t.profit-tPrev.profit)/Math.abs(tPrev.profit)*100 : null;
+                return (
+                  <tr key={mes} style={{borderBottom:`1px solid ${T.borderL}`,background:mes===mesActual?T.accent+"08":"transparent"}}>
+                    <td style={{padding:"9px 12px",fontWeight:DS.w.semibold,color:T.text,whiteSpace:"nowrap"}}>{labelMes(mes)}{mes===mesActual&&<span style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.medium}}> (en curso)</span>}</td>
+                    {t ? COLS.map(([k,,tp])=>(
+                      <td key={k} style={{padding:"9px 12px",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",
+                        fontWeight:k==="profit"?DS.w.bold:DS.w.regular,
+                        color:k==="profit"?((t[k]||0)>=0?T.green:T.red):k==="profitMargin"?((t[k]||0)>=0?T.textMd:T.red):T.text}}>
+                        {tp==="pct"?fmtP(t[k]):tp==="int"?Math.round(t[k]||0).toLocaleString("es-AR"):fmt$(t[k])}
+                        {k==="profit"&&dMoM!=null&&<span style={{fontSize:DS.font.xs,marginLeft:6,color:dMoM>=0?T.green:T.red}}>{dMoM>=0?"↑":"↓"}{Math.abs(dMoM).toFixed(0)}%</span>}
+                      </td>
+                    )) : (
+                      <td colSpan={COLS.length} style={{padding:"9px 12px",textAlign:"center",color:T.textSm}}>
+                        {cargando===mes ? <span style={{display:"inline-flex",alignItems:"center",gap:8}}><Spinner size={12} color={T.accent}/> Calculando {labelMes(mes)}… (~30s)</span>
+                          : errorMes[mes] ? <span style={{color:T.red}}>{errorMes[mes]}</span>
+                          : "Sin calcular"}
+                      </td>
+                    )}
+                    <td style={{padding:"6px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
+                      {!t && cargando!==mes && <Btn T={T} variant="ghost" size="sm" onClick={()=>cargarMes(mes)} disabled={!!cargando}>{errorMes[mes]?"Reintentar":"Calcular"}</Btn>}
+                      {t && cargando!==mes && <button title="Recalcular este mes con la configuración de costos actual" onClick={()=>{ try{localStorage.removeItem(cacheKey(mes));}catch(_){ } setMeses(p=>{const n={...p}; delete n[mes]; return n;}); cargarMes(mes); }} disabled={!!cargando} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:DS.font.base,padding:"2px 6px"}}>↻</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:12}}>
+          <Btn T={T} variant="ghost" size="sm" onClick={()=>setNumMeses(n=>n+6)}>+ Ver más meses</Btn>
+          <span style={{fontSize:DS.font.sm,color:T.textSm}}>Cada mes sin guardar tarda ~30s en calcularse (consulta las plataformas en vivo). Si cambiaste costos/COGS y querés recalcular un mes, usá el ↻ de esa fila.</span>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -24174,20 +24343,75 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
 // ===========================================
 // ===========================================
+// Gráfico principal de evolución (Revenue / Ad Spend / Profit) con hover.
+// Componente top-level (no inline en AppRendimiento) para que el estado de
+// hover sobreviva a los re-renders del dashboard.
+function RendChart({T, rows, cv, fmtM, fmtDate}) {
+  const [hover, setHover] = useState(null);
+  const wrapRef = useRef(null);
+  const n = rows.length;
+  if (n < 2) return null;
+  const W=920, H=250, PL=8, PR=8, PT=12, PB=24;
+  const series = [
+    { k:"Revenue",  color:T.blue,   vals:rows.map(r=>cv(r.Revenue||0)) },
+    { k:"Ad Spend", color:T.orange, vals:rows.map(r=>cv(r["Ad Spend"]||0)) },
+    { k:"Profit",   color:T.green,  vals:rows.map(r=>cv(r.Profit||0)) },
+  ];
+  const all = series.flatMap(s=>s.vals);
+  const min = Math.min(0, ...all), max = Math.max(...all, 1);
+  const rng = max-min || 1;
+  const X = i => PL + (i/(n-1))*(W-PL-PR);
+  const Y = v => PT + (1-(v-min)/rng)*(H-PT-PB);
+  const path = vals => vals.map((v,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const zeroY = Y(0);
+  const gridVals = [max, (max+min)/2, min];
+  const onMove = e => {
+    const r = wrapRef.current?.getBoundingClientRect(); if(!r) return;
+    const i = Math.round(((e.clientX-r.left)/r.width*W - PL)/(W-PL-PR)*(n-1));
+    setHover(Math.max(0, Math.min(n-1, i)));
+  };
+  const hovRow = hover!=null ? rows[hover] : null;
+  const xLabelIdx = [];
+  { const step = Math.max(1, Math.round((n-1)/6)); for(let i=0;i<n;i+=step) xLabelIdx.push(i); if(xLabelIdx[xLabelIdx.length-1]!==n-1) xLabelIdx.push(n-1); }
+  return (
+    <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={()=>setHover(null)} style={{position:"relative",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 14px 6px",marginBottom:18}}>
+      <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
+        {series.map(s=>(<span key={s.k} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.sm,color:T.textMd,fontWeight:DS.w.semibold}}><span style={{width:10,height:3,borderRadius:2,background:s.color,display:"inline-block"}}/>{s.k}</span>))}
+        {hovRow && <span style={{marginLeft:"auto",fontSize:DS.font.sm,color:T.textSm}}>{fmtDate(hovRow.Fecha)} · Rev {fmtM(hovRow.Revenue)} · Ads {fmtM(hovRow["Ad Spend"])} · Profit <span style={{color:(hovRow.Profit||0)>=0?T.green:T.red,fontWeight:DS.w.bold}}>{fmtM(hovRow.Profit)}</span></span>}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}}>
+        {gridVals.map((v,i)=>(<line key={i} x1={PL} x2={W-PR} y1={Y(v)} y2={Y(v)} stroke={T.border} strokeWidth="1" strokeDasharray={i===2&&min<0?"":"3,4"}/>))}
+        {min<0 && <line x1={PL} x2={W-PR} y1={zeroY} y2={zeroY} stroke={T.textSm} strokeWidth="1" strokeOpacity="0.5" strokeDasharray="2,3"/>}
+        <path d={`${path(series[0].vals)} L${X(n-1)},${Y(Math.max(0,min))} L${X(0)},${Y(Math.max(0,min))} Z`} fill={T.blue} fillOpacity="0.06" stroke="none"/>
+        {series.map(s=>(<path key={s.k} d={path(s.vals)} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>))}
+        {hover!=null && <line x1={X(hover)} x2={X(hover)} y1={PT} y2={H-PB} stroke={T.textSm} strokeWidth="1" strokeOpacity="0.6"/>}
+        {hover!=null && series.map(s=>(<circle key={s.k} cx={X(hover)} cy={Y(s.vals[hover])} r="3.5" fill={s.color} stroke={T.card} strokeWidth="1.5"/>))}
+        {xLabelIdx.map(i=>(<text key={i} x={X(i)} y={H-7} textAnchor={i===0?"start":i===n-1?"end":"middle"} fontSize="11" fill={T.textSm} fontFamily="'Inter',system-ui,sans-serif">{fmtDate(rows[i].Fecha)}</text>))}
+        {gridVals.slice(0,2).map((v,i)=>(<text key={i} x={W-PR} y={Y(v)-4} textAnchor="end" fontSize="10" fill={T.textSm} fontFamily="'Inter',system-ui,sans-serif">{fmtM(v)}</text>))}
+      </svg>
+    </div>
+  );
+}
+
 // APP DASHBOARD (Rendimiento) — Financiero automático
 // ===========================================
-function AppRendimiento({T, user, onHome}) {
+function AppRendimiento({T, user, onHome, tab, setTab}) {
   const uid = user?.uid;
   const [rendData, setRendData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [sortCol, setSortCol] = useState("Fecha"); const [sortDir, setSortDir] = useState("desc");
   const [days, setDays] = useState(30);
   const [useCustom, setUseCustom] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [commission, setCommission] = useState(0.03);
-  const [showConfig, setShowConfig] = useState(false);
+  // Modo USD: convierte todo el dashboard con el dólar del período (serie
+  // histórica de Ads) — con inflación, comparar en ARS nominal engaña.
+  const [usdMode, setUsdMode] = useState(()=>{ try{return localStorage.getItem("growith_margenes_usd")==="1";}catch(_){return false;} });
+  // Filtros y orden de la tabla venta-por-venta
+  const [salesQ, setSalesQ] = useState("");
+  const [salesCanal, setSalesCanal] = useState("todos");
+  const [salesLoss, setSalesLoss] = useState(false);
+  const [salesSort, setSalesSort] = useState({k:"fecha",dir:"desc"});
   // Personalización del dashboard (por usuario, en localStorage):
   // ocultar secciones (ojo) y elegir qué KPIs secundarios se ven (lápiz).
   const VIS_DEFAULT = {main:true,sec:true,costos:true,tienda:true,ml:true,canales:true,secKpis:{}};
@@ -24207,36 +24431,6 @@ function AppRendimiento({T, user, onHome}) {
         : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>}
     </button>
   );
-  // Presets de rango estilo Escalafy (Hoy/Ayer/semana/mes...) en zona AR.
-  function presetRange(id){
-    const hoyAr = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date());
-    const D=(ymd,n)=>{const[y,m,d]=ymd.split("-").map(Number);return new Date(Date.UTC(y,m-1,d)+n*86400000).toISOString().slice(0,10);};
-    const dowLun=(new Date(hoyAr+"T12:00:00Z").getUTCDay()+6)%7; // lunes=0
-    if(id==="hoy") return [hoyAr,hoyAr];
-    if(id==="ayer"){ const a=D(hoyAr,-1); return [a,a]; }
-    if(id==="14d") return [D(hoyAr,-13),hoyAr];
-    if(id==="semana") return [D(hoyAr,-dowLun),hoyAr];
-    if(id==="semanaPasada"){ const ini=D(hoyAr,-dowLun-7); return [ini,D(ini,6)]; }
-    if(id==="mes") return [hoyAr.slice(0,8)+"01",hoyAr];
-    if(id==="mesPasado"){ const finMesAnt=D(hoyAr.slice(0,8)+"01",-1); return [finMesAnt.slice(0,8)+"01",finMesAnt]; }
-    return null;
-  }
-  function aplicarPreset(id){
-    const r=presetRange(id);
-    if(!r) return;
-    setUseCustom(true); setDateFrom(r[0]); setDateTo(r[1]);
-    setDays(Math.round((new Date(r[1])-new Date(r[0]))/86400000)+1);
-    loadData(0,r[0],r[1]);
-  }
-
-  useEffect(()=>{
-    if(!uid) return;
-    getDoc(doc(db,"users",uid)).then(snap=>{
-      const d=snap.data();
-      if(d?.rendimientoCommission) setCommission(parseFloat(d.rendimientoCommission)||0.03);
-    });
-  },[uid]);
-
   async function loadData(overrideDays, overrideFrom, overrideTo, silent) {
     if(!uid){setError("Sin sesión");return;}
     if(!silent) setLoading(true);
@@ -24287,13 +24481,13 @@ function AppRendimiento({T, user, onHome}) {
     setReproc(false);
   }
 
-  async function saveCommission(val) {
-    const v=parseFloat(val)||0.03; setCommission(v);
-    await fetch(`/api/orders?action=save_config&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commission:v})});
-    loadData();
-  }
-
-  const fmtM=(v)=>{if(v==null||v===""||isNaN(Number(v)))return"—";const n=Number(v),abs=Math.abs(n),s=n<0?"-":"";if(fullNums)return s+"$"+Math.round(abs).toLocaleString("es-AR");if(abs>=1e9)return s+"$"+(abs/1e9).toFixed(1)+"B";if(abs>=1e6)return s+"$"+(abs/1e6).toFixed(1)+"M";if(abs>=1e3)return s+"$"+Math.round(abs/1e3).toLocaleString("es-AR")+"K";return s+"$"+Math.round(abs).toLocaleString("es-AR");};
+  // Conversión a USD: promedio de la serie histórica del período (día por día
+  // sería aún más fino, pero el promedio mantiene consistencia entre totales y
+  // porcentajes). Sin serie disponible cae a la cotización actual.
+  const usdRate = (()=>{ const vals=Object.values(rendData?.dolarSerie||{}); if(vals.length) return vals.reduce((a,b)=>a+b,0)/vals.length; return rendData?.dolarActual||0; })();
+  const usdOn = usdMode && usdRate>0;
+  const cv = v => usdOn ? Number(v)/usdRate : Number(v);
+  const fmtM=(v)=>{if(v==null||v===""||isNaN(Number(v)))return"—";const n=cv(v),abs=Math.abs(n),s=n<0?"-":"",P=usdOn?"US$":"$";if(fullNums)return s+P+Math.round(abs).toLocaleString("es-AR");if(abs>=1e9)return s+P+(abs/1e9).toFixed(1)+"B";if(abs>=1e6)return s+P+(abs/1e6).toFixed(1)+"M";if(abs>=1e3)return s+P+Math.round(abs/1e3).toLocaleString("es-AR")+"K";return s+P+Math.round(abs).toLocaleString("es-AR");};
   const fmtPct=(v,dec=1)=>{const n=Number(v);return isNaN(n)?"—":(n*100).toFixed(dec)+"%";};
   const fmtX=(v)=>{const n=Number(v);return isNaN(n)?"—":n.toFixed(2)+"x";};
   const fmtInt=(v)=>{const n=Number(v);return isNaN(n)?"—":Math.round(n).toLocaleString("es-AR");};
@@ -24322,6 +24516,38 @@ function AppRendimiento({T, user, onHome}) {
   const projRevenue=(tot.revenue||0)/daysElapsed*30;
   const projProfit=(tot.profit||0)/daysElapsed*30;
   const projAdSpend=(tot.adSpend||0)/daysElapsed*30;
+
+  // ── Calidad del dato + alertas proactivas ──
+  const q = rendData?.quality || {};
+  const byProduct = rendData?.byProduct || [];
+  const clientes = rendData?.clientes || null;
+  const cashflow = rendData?.cashflow || {};
+  // Setup casi vacío → checklist de onboarding en lugar de warnings sueltos.
+  const cc = rendData?.meta?.costosConfigurados || {};
+  const setupVacio = rendData && (cc.cogs||0)===0 && !(cc.impuestos>0) && !(cc.envioProm>0) && cc.envioModo!=="orden";
+  const qItems = [];
+  if (rendData && !setupVacio) {
+    if ((q.productosSinCogs||0)>0) qItems.push({k:"costos", msg:`${q.productosSinCogs} producto(s) vendidos sin costo cargado — su COGS cuenta $0 y el profit está sobreestimado (${(q.productosSinCogsNombres||[]).slice(0,3).join(", ")}${(q.productosSinCogs||0)>3?"…":""})`, cta:"Cargar costos"});
+    if (q.impuestosSinConfig) qItems.push({k:"comisiones", msg:"Impuestos configurados en 0% — el profit no descuenta carga impositiva", cta:"Configurar"});
+    if (q.envioSinConfig) qItems.push({k:"costos", msg:"Costo de envío en $0 (modo promedio sin valor cargado)", cta:"Configurar"});
+    if (q.mpSinConfig) qItems.push({k:"comisiones", msg:"Hay ventas cobradas con Mercado Pago sin % de comisión configurado — esas comisiones cuentan $0", cta:"Configurar"});
+    if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});
+    if (q.mlTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Mercado Libre — los totales de ML están TRUNCADOS."});
+    if ((q.reembolsosParciales||0)>0) qItems.push({k:null, msg:`${q.reembolsosParciales} orden(es) con reembolso parcial contadas a valor pleno (TN no informa el monto devuelto)`});
+    if (!q.dolarAdsHistorico && (tot.adSpendMeta||0)>0) qItems.push({k:"dolar", msg:"La serie histórica del dólar no está disponible — el Ad Spend USD se convirtió con una cotización única actual", cta:"Ver"});
+  }
+  const alerts = [];
+  if (rendData) {
+    if ((tot.profit||0)<0) alerts.push({sev:"red", msg:`Período en pérdida: ${fmtM(tot.profit)} de resultado neto.`});
+    if ((tot.adSpend||0)>0 && (tot.roas||0)>0 && (tot.breakEvenRoas||0)>0 && (tot.roas||0) < (tot.breakEvenRoas||0)) alerts.push({sev:"red", msg:`El ROAS (${fmtX(tot.roas)}) está por debajo del break even (${fmtX(tot.breakEvenRoas)}): cada peso de pauta vende a pérdida.`});
+    const ult3 = dailyRows.slice(-3);
+    if (ult3.length===3 && ult3.every(r=>(r.Profit||0)<0) && (tot.profit||0)>=0) alerts.push({sev:"red", msg:"Los últimos 3 días del período cerraron en pérdida."});
+    const spendSinVentas = dailyRows.filter(r=>(r["Ad Spend"]||0)>0 && (r["Ordenes > $0"]||0)===0).length;
+    if (spendSinVentas>0) alerts.push({sev:"amber", msg:`${spendSinVentas} día(s) con inversión publicitaria activa y 0 órdenes.`});
+    const prodPerdida = byProduct.filter(p=>(p.profit||0)<0 && !p.sinCogs && (p.revenue||0)>0);
+    if (prodPerdida.length>0) alerts.push({sev:"amber", msg:`${prodPerdida.length} producto(s) vendiendo a pérdida: ${prodPerdida.slice(0,3).map(p=>p.nombre).join(", ")}${prodPerdida.length>3?"…":""}`});
+  }
+  const goTab = k => { if (setTab && k) setTab(k); };
 
   const Spk=({vals,color,h=38,w=130,showZero=false})=>{
     if(!vals||vals.length<2)return null;
@@ -24352,6 +24578,12 @@ function AppRendimiento({T, user, onHome}) {
         <button onClick={()=>setFullNums(f=>{const n=!f; try{localStorage.setItem("growith_margenes_fullnums",n?"1":"0");}catch(_){} return n;})} title={fullNums?"Ver números redondeados (K/M)":"Ver todos los números sin redondear"} style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",fontWeight:fullNums?700:500,color:fullNums?T.accent:T.textMd,borderColor:fullNums?T.accent+"66":T.inputBorder}}>
           {fullNums?"$ Completos":"$ 1,2K"}
         </button>
+        <button onClick={()=>setUsdMode(f=>{const n=!f; try{localStorage.setItem("growith_margenes_usd",n?"1":"0");}catch(_){} return n;})}
+          disabled={!usdMode && !(usdRate>0)}
+          title={usdRate>0?`Ver el dashboard en dólares (cotización ${usdMode?"activa":"promedio del período"}: $${Math.round(usdRate).toLocaleString("es-AR")})`:"Sin cotización disponible todavía"}
+          style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",fontWeight:usdMode?700:500,color:usdMode?T.green:T.textMd,borderColor:usdMode?T.green+"66":T.inputBorder}}>
+          {usdMode?"US$ Dólares":"ARS $"}
+        </button>
         <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:0}}>
           {[{d:7,l:"7d"},{d:30,l:"30d"},{d:60,l:"60d"},{d:90,l:"90d"}].map(p=>(
             <button key={p.d} onClick={()=>{setUseCustom(false);setDays(p.d);loadData(p.d,"","");}}
@@ -24369,6 +24601,14 @@ function AppRendimiento({T, user, onHome}) {
           {loading?<Spinner size={11} color="#fff"/>:"↻"} Actualizar
         </button>
       </AppTopbar>
+
+      <MargenesTabsBar T={T} tab={tab||"dashboard"} setTab={setTab}/>
+
+      {error && rendData && (
+        <div style={{background:T.red+"14",borderBottom:`1px solid ${T.red}44`,padding:"8px 24px",fontSize:12,color:T.red,fontWeight:600}}>
+          ⚠ La última actualización falló ({error}) — estás viendo datos de las {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}. <button onClick={()=>loadData()} style={{background:"transparent",border:"none",color:T.red,textDecoration:"underline",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>Reintentar</button>
+        </div>
+      )}
 
       {rendData?.meta?.metaTokenExpired && (
         <div style={{background:T.red+"18",borderBottom:`1px solid ${T.red}44`,padding:"10px 24px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.text,flexWrap:"wrap"}}>
@@ -24393,8 +24633,10 @@ function AppRendimiento({T, user, onHome}) {
           </div>
         )}
 
-        {rendData&&!loading&&(()=>{
-          return(<>
+        {rendData&&(()=>{
+          // Mantener el dashboard visible durante la recarga (sin flash de
+          // pantalla vacía al cambiar período) — se atenúa levemente.
+          return(<div style={{opacity:loading?0.55:1,transition:"opacity .2s",pointerEvents:loading?"none":"auto"}}>
 
           {/* Status row */}
           <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
@@ -24407,14 +24649,64 @@ function AppRendimiento({T, user, onHome}) {
             <span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}>act. {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>
           </div>
 
+          {/* Checklist de configuración inicial — sin costos cargados el profit es mentira */}
+          {setupVacio && (
+            <div style={{background:T.card,border:`1px solid ${T.accent}44`,borderRadius:DS.r.xl,padding:"18px 20px",marginBottom:20}}>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.black,color:T.text,marginBottom:4}}>⚙️ Configurá tus costos para que el Profit sea real</div>
+              <div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:12,lineHeight:1.6}}>Ahora mismo el dashboard muestra tus ventas, pero sin costos cargados el Profit está inflado. Son 4 pasos (~10 min):</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {[
+                  {k:"costos",     n:"1", t:"Cargá el costo de cada producto (COGS)"},
+                  {k:"comisiones", n:"2", t:"Configurá impuestos y comisiones por método de pago"},
+                  {k:"costos",     n:"3", t:"Definí el costo de envío (promedio o real por orden)"},
+                  {k:"adicionales",n:"4", t:"Sumá tus costos fijos mensuales (equipo, software, oficina)"},
+                ].map((s,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{width:22,height:22,borderRadius:"50%",background:T.accent+"22",color:T.accent,fontSize:DS.font.sm,fontWeight:DS.w.bold,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{s.n}</span>
+                    <span style={{fontSize:DS.font.base,color:T.text,flex:1}}>{s.t}</span>
+                    {setTab && <Btn T={T} variant="secondary" size="sm" onClick={()=>goTab(s.k)}>Ir →</Btn>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Alertas proactivas */}
+          {alerts.length>0 && (
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+              {alerts.map((a,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:(a.sev==="red"?T.red:T.orange)+"12",border:`1px solid ${(a.sev==="red"?T.red:T.orange)}33`,borderRadius:DS.r.lg,padding:"9px 14px",fontSize:DS.font.base,color:T.text}}>
+                  <span style={{fontSize:14,flexShrink:0}}>{a.sev==="red"?"🔴":"🟠"}</span>
+                  <span>{a.msg}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Calidad del dato — qué puede estar haciendo mentir a los números */}
+          {qItems.length>0 && (
+            <div style={{background:T.yellow+"0E",border:`1px solid ${T.yellow}44`,borderRadius:DS.r.lg,padding:"10px 14px",marginBottom:16}}>
+              <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>⚠ Precisión de los datos</div>
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                {qItems.map((it,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd,lineHeight:1.5}}>
+                    <span style={{width:5,height:5,borderRadius:"50%",background:T.yellow,flexShrink:0}}/>
+                    <span style={{flex:1}}>{it.msg}</span>
+                    {setTab && it.k && it.cta && <button onClick={()=>goTab(it.k)} style={{background:"transparent",border:"none",color:T.accent,fontSize:DS.font.sm,fontWeight:DS.w.bold,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{it.cta} →</button>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Hero KPIs */}
-          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.accent,flexShrink:0}}/>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="main"/></span></div>
+          <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.accent,flexShrink:0}}/>Métricas Principales <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· general (Tienda + ML)</span><span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
           {vis.main!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
             {[
-              {label:"Revenue",     val:tot.revenue,    prev:prevTot.revenue,    color:T.blue,   desc:"Ingreso bruto",     spk:dailyRows.map(r=>r.Revenue)},
-              {label:"Net Revenue", val:tot.netRevenue, prev:prevTot.netRevenue, color:T.accent, desc:"Tras comisiones",    spk:dailyRows.map(r=>r["Net Revenue"])},
-              {label:"Ad Spend",    val:tot.adSpend,    prev:prevTot.adSpend,    color:T.orange, desc:"Gasto publicitario", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
               {label:"Profit",      val:tot.profit,     prev:prevTot.profit,     color:(tot.profit||0)>=0?T.green:T.red, desc:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
+              {label:"Revenue",     val:tot.revenue,    prev:prevTot.revenue,    color:T.blue,   desc:"Ingreso bruto",     spk:dailyRows.map(r=>r.Revenue)},
+              {label:"Ad Spend",    val:tot.adSpend,    prev:prevTot.adSpend,    color:T.orange, desc:"Gasto publicitario", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
+              {label:"Net Revenue", val:tot.netRevenue, prev:prevTot.netRevenue, color:T.accent, desc:"Tras comisiones",    spk:dailyRows.map(r=>r["Net Revenue"])},
             ].map(k=>(
               <div key={k.label} style={{background:T.card,border:`1px solid ${k.color}28`,borderRadius:14,padding:"18px 18px 14px",position:"relative",overflow:"hidden"}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
@@ -24472,7 +24764,7 @@ function AppRendimiento({T, user, onHome}) {
                   })}
                 </div>
               )}
-              {vis.main!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:18}}>
+              {vis.sec!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:18}}>
                 {orderedKpis.filter(k=>vis.secKpis[k.label]!==false).map(k=>(
                   <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
                     <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
@@ -24482,6 +24774,54 @@ function AppRendimiento({T, user, onHome}) {
                 ))}
               </div>}
             </>);
+          })()}
+
+          {/* Gráfico principal de evolución */}
+          {vis.main!==false && <RendChart T={T} rows={dailyRows} cv={cv} fmtM={fmtM} fmtDate={fmtDate}/>}
+
+          {/* Proyección y extremos del período */}
+          {vis.main!==false && dailyRows.length>=7 && (
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:18}}>
+              {[
+                {label:"Proyección Revenue 30d", val:fmtM(projRevenue), hint:"Al ritmo actual"},
+                {label:"Proyección Profit 30d",  val:fmtM(projProfit),  hint:"Al ritmo actual", color:projProfit>=0?T.green:T.red},
+                {label:"Proyección Ad Spend 30d",val:fmtM(projAdSpend), hint:"Al ritmo actual"},
+                ...(bestDay?[{label:"Mejor día",  val:fmtM(bestDay.Profit),  hint:fmtDate(bestDay.Fecha)+" · profit", color:T.green}]:[]),
+                ...(worstDay?[{label:"Peor día",  val:fmtM(worstDay.Profit), hint:fmtDate(worstDay.Fecha)+" · profit", color:worstDay.Profit<0?T.red:T.textMd}]:[]),
+              ].map(k=>(
+                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
+                  <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</div>
+                  <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5}}>{k.val}</div>
+                  <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Performance por día de semana */}
+          {vis.main!==false && byDow.some(d=>d.days>0) && (()=>{
+            const maxAbs = Math.max(...byDow.map(d=>Math.abs(d.avgProfit||0)), 1);
+            return (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 16px",marginBottom:18}}>
+                <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,textTransform:"uppercase",letterSpacing:0.4,marginBottom:10}}>Profit promedio por día de semana</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,alignItems:"end"}}>
+                  {[1,2,3,4,5,6,0].map(dow=>{
+                    const d = byDow[dow]||{};
+                    const h = Math.max(4, Math.abs(d.avgProfit||0)/maxAbs*56);
+                    const pos = (d.avgProfit||0)>=0;
+                    return (
+                      <div key={dow} style={{textAlign:"center"}} title={`${d.label}: profit prom. ${fmtM(d.avgProfit)} · revenue prom. ${fmtM(d.avgRevenue)} · ${(d.avgOrders||0).toFixed(1)} órdenes/día`}>
+                        <div style={{height:60,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+                          <div style={{width:"70%",maxWidth:38,height:h,background:pos?T.green:T.red,opacity:0.75,borderRadius:"4px 4px 0 0"}}/>
+                        </div>
+                        <div style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.semibold,marginTop:4}}>{d.label}</div>
+                        <div style={{fontSize:DS.font.xs,color:pos?T.green:T.red,fontWeight:DS.w.bold}}>{fmtM(d.avgProfit)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
           })()}
 
           {/* Desglose de costos — estilo Escalafy */}
@@ -24504,83 +24844,115 @@ function AppRendimiento({T, user, onHome}) {
             ))}
           </div>}
 
-          {/* Tableros por canal — Tienda y Mercado Libre (estilo Escalafy) */}
+          {/* Comparativa por canal — una tabla en vez de tableros duplicados */}
           {rendData.byChannel && (()=>{
             const bc = rendData.byChannel;
-            const board = (titulo, dotColor, c, cp, visKey) => (
+            const esShop = bc.platform==="shopify";
+            const canales = [
+              { nombre: esShop?"Shopify":"Tienda Nube", dot:T.blue,   c:bc.tienda||{}, cp:bc.tiendaPrev },
+              ...(bc.hasMl ? [{ nombre:"Mercado Libre", dot:T.yellow, c:bc.ml||{}, cp:bc.mlPrev }] : []),
+            ];
+            const METRICS = [
+              ["profit","Profit","m",{bold:true,signColor:true}],
+              ["revenue","Revenue","m"],
+              ["netRevenue","Net Revenue","m"],
+              ["adSpend","Ad Spend","m",{inv:true}],
+              ["margin","Margen","p",{signColor:true}],
+              ["roas","ROAS","x"],
+              ["trueRoas","True ROAS","x"],
+              ["breakEvenRoas","Break Even ROAS","x"],
+              ["cpa","CPA","m",{inv:true}],
+              ["cpaBreakEven","CPA Break Even","m"],
+              ["orders","Órdenes","i"],
+              ["aov","AOV","m"],
+              ["costoProductos","COGS","m"],
+              ["comisiones","Comisiones","m"],
+              ["impuestos","Impuestos","m"],
+              ["costoEnvio","Envío","m"],
+            ];
+            const F = (tp,v) => tp==="m"?fmtM(v):tp==="p"?fmtPct(v):tp==="x"?fmtX(v):fmtInt(v);
+            return (
               <div style={{marginBottom:18,borderTop:`1px solid ${T.border}`,paddingTop:18}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:vis[visKey]!==false?12:0}}>
-                  <span style={{width:8,height:8,borderRadius:"50%",background:dotColor,flexShrink:0}}/>
-                  <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{titulo}</span>
-                  <span style={{marginLeft:"auto"}}><EyeBtn k={visKey}/></span>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:vis.tienda!==false?12:0}}>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:T.blue,flexShrink:0}}/>
+                  <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Comparativa por canal</span>
+                  <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· los costos fijos/adicionales no se reparten por canal</span>
+                  <span style={{marginLeft:"auto"}}><EyeBtn k="tienda"/></span>
                 </div>
-                {vis[visKey]!==false && <>
-
-                {/* Hero del canal */}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
-                  {[
-                    {label:"Revenue",     val:c.revenue,    prev:cp?.revenue,    color:T.blue,   desc:"Ingreso bruto"},
-                    {label:"Net Revenue", val:c.netRevenue, prev:cp?.netRevenue, color:T.accent, desc:"Tras comisiones"},
-                    {label:"Ad Spend",    val:c.adSpend,    prev:cp?.adSpend,    color:T.orange, desc:"Gasto publicitario", inv:true},
-                    {label:"Profit",      val:c.profit,     prev:cp?.profit,     color:(c.profit||0)>=0?T.green:T.red, desc:(c.profit||0)>=0?"Ganancia neta":"Pérdida neta"},
-                  ].map(k=>(
-                    <div key={k.label} style={{background:T.card,border:`1px solid ${k.color}28`,borderRadius:14,padding:"16px 16px 14px",position:"relative",overflow:"hidden"}}>
-                      <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
-                      <div style={{fontSize:24,fontWeight:800,color:k.color,letterSpacing:-1,lineHeight:1,marginBottom:4}}>{fmtM(k.val)}</div>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{fontSize:10,color:T.textSm}}>{k.desc}</span>
-                        {cp&&hasPrev&&<DeltaBadge curr={k.val} prev={k.prev} invert={k.inv}/>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {/* KPIs secundarios del canal */}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:12}}>
-                  {[
-                    {label:"ROAS",          val:fmtX(c.roas),          good:(c.roas||0)>=2,       hint:"Revenue / Ad Spend"},
-                    {label:"True ROAS",     val:fmtX(c.trueRoas),      good:(c.trueRoas||0)>=1.2, hint:"Net Rev / Ad Spend"},
-                    {label:"CPA real",      val:fmtM(c.cpa),           good:true,                 hint:"Ad Spend / Órdenes"},
-                    {label:"CPA Break Even",val:fmtM(c.cpaBreakEven),  good:true,                 hint:"CPA máx. antes de perder"},
-                    {label:"Órdenes",       val:fmtInt(c.orders),      good:(c.orders||0)>0,      hint:"Con revenue"},
-                    {label:"Margen",        val:fmtPct(c.margin),      good:(c.margin||0)>0.05,   hint:"Profit / Revenue"},
-                    {label:"MER %",         val:fmtPct(c.mer),         good:true,                 hint:"Ad Spend / Revenue"},
-                    {label:"Break Even",    val:fmtX(c.breakEvenRoas), good:true,                 hint:"ROAS de equilibrio"},
-                    {label:"AOV",           val:fmtM(c.aov),           good:true,                 hint:"Ticket promedio"},
-                  ].map(k=>(
-                    <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
-                      <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
-                      <div style={{fontSize:15,fontWeight:800,color:k.good?T.text:T.red,letterSpacing:-0.5}}>{k.val}</div>
-                      <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
-                    </div>
-                  ))}
-                </div>
-                {/* Desglose de costos del canal */}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
-                  {[
-                    {label:"Costos de Productos",  val:c.costoProductos},
-                    {label:"Costos de Envío",      val:c.costoEnvio},
-                    {label:"Impuestos",            val:c.impuestos},
-                    {label:"Comisiones Plataforma",val:c.comisionPlataforma},
-                    {label:"Comisiones de Pago",   val:c.comisionPago},
-                    {label:"Costos Adicionales",   val:c.costosAdicionales},
-                  ].map(k=>(
-                    <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
-                      <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</div>
-                      <div style={{fontSize:17,fontWeight:800,color:T.text,letterSpacing:-0.5}}>{fmtM(k.val||0)}</div>
-                    </div>
-                  ))}
-                </div>
-                </>}
+                {vis.tienda!==false && (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",minWidth:canales.length>1?560:420}}>
+                      <thead>
+                        <tr>
+                          <th style={{padding:"10px 14px",textAlign:"left",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`}}>Métrica</th>
+                          {canales.map(ch=>(
+                            <th key={ch.nombre} style={{padding:"10px 14px",textAlign:"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>
+                              <span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:ch.dot,marginRight:7}}/>{ch.nombre}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {METRICS.map(([k,l,tp,opt={}])=>(
+                          <tr key={k} style={{borderBottom:`1px solid ${T.borderL}`}}>
+                            <td style={{padding:"8px 14px",color:T.textMd,fontWeight:600,whiteSpace:"nowrap"}}>{l}</td>
+                            {canales.map(ch=>{
+                              const v = ch.c[k];
+                              const col = opt.signColor ? ((v||0)>=0?T.green:T.red) : T.text;
+                              return (
+                                <td key={ch.nombre} style={{padding:"8px 14px",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",fontWeight:opt.bold?800:500,color:col}}>
+                                  {F(tp,v)}
+                                  {hasPrev && ch.cp && tp!=="p" && <span style={{marginLeft:8}}><DeltaBadge curr={v} prev={ch.cp[k]} invert={!!opt.inv}/></span>}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             );
-            const esShop = bc.platform==="shopify";
-            return (
-              <>
-                {board(esShop?"Shopify":"Tienda Nube", T.blue, bc.tienda||{}, bc.tiendaPrev, "tienda")}
-                {bc.hasMl && board("Mercado Libre", T.yellow, bc.ml||{}, bc.mlPrev, "ml")}
-              </>
-            );
           })()}
+
+          {/* Clientes y caja */}
+          {(clientes || (cashflow.liberado||0)>0 || (cashflow.retenido||0)>0) && (
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:13,fontWeight:800,color:T.text,letterSpacing:-0.2,marginBottom:8,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:T.accent,flexShrink:0}}/>Clientes y Caja</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+                {clientes && [
+                  {label:"Clientes nuevos",      val:fmtInt(clientes.nuevos),      hint:"No compraron en el período anterior"},
+                  {label:"Clientes recurrentes", val:fmtInt(clientes.recurrentes), hint:"También compraron en el período anterior", color:T.green},
+                  {label:"Tasa de recompra",     val:fmtPct(clientes.repeatRate),  hint:"Recurrentes / total"},
+                  {label:"Repiten en el período",val:fmtInt(clientes.repitenEnPeriodo), hint:"2+ compras en este rango"},
+                ].map(k=>(
+                  <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
+                    <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</div>
+                    <div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.5}}>{k.val}</div>
+                    <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
+                  </div>
+                ))}
+                {((cashflow.liberado||0)>0 || (cashflow.retenido||0)>0) && [
+                  {label:"MP: plata liberada",  val:fmtM(cashflow.liberado), hint:"Neto ya disponible (pagos del período)", color:T.green},
+                  {label:"MP: plata retenida",  val:fmtM(cashflow.retenido), hint:"Neto pendiente de liberación", color:T.orange},
+                ].map(k=>(
+                  <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
+                    <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</div>
+                    <div style={{fontSize:17,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{k.val}</div>
+                    <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
+                  </div>
+                ))}
+              </div>
+              {((cashflow.retenciones||0)>0 || (cashflow.financingFee||0)>0) && (
+                <div style={{fontSize:11,color:T.textSm,marginTop:8,lineHeight:1.6}}>
+                  {(cashflow.retenciones||0)>0 && <>MP aplicó <strong style={{color:T.text}}>{fmtM(cashflow.retenciones)}</strong> en retenciones impositivas en el período (verificá que tu % de impuestos las contemple). </>}
+                  {(cashflow.financingFee||0)>0 && <>El costo de financiación en cuotas fue <strong style={{color:T.text}}>{fmtM(cashflow.financingFee)}</strong> (ya incluido en las comisiones de pago reales).</>}
+                </div>
+              )}
+              {clientes && (clientes.sinDato||0)>0 && <div style={{fontSize:10,color:T.textSm,marginTop:4}}>{clientes.sinDato} orden(es) sin identificación de cliente quedan fuera del conteo.</div>}
+            </div>
+          )}
 
           {/* Canales de Marketing — tabla comparativa ordenable (estilo Escalafy) */}
           {rendData.byChannel && (()=>{
@@ -24632,52 +25004,141 @@ function AppRendimiento({T, user, onHome}) {
             );
           })()}
 
+          {/* Rentabilidad por producto */}
+          {byProduct.length>0 && (()=>{
+            const perdida = byProduct.filter(p=>(p.profit||0)<0 && !p.sinCogs);
+            const exportProdCsv = () => {
+              const head = ["Producto","Canal","Unidades","Órdenes","Revenue","COGS","Comisiones","Impuestos","Envío","Profit","Margen %"].join(";");
+              const body = byProduct.map(p=>[`"${String(p.nombre).replace(/"/g,'""')}"`,p.canal==="ml"?"Mercado Libre":"Tienda",p.units,p.orders,Math.round(p.revenue),Math.round(p.cogs),Math.round(p.comisiones),Math.round(p.impuestos),Math.round(p.envio),Math.round(p.profit),((p.margin||0)*100).toFixed(1)].join(";")).join("\n");
+              const blob = new Blob(["﻿"+head+"\n"+body],{type:"text/csv;charset=utf-8"});
+              const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="rentabilidad_productos_growith.csv"; a.click(); URL.revokeObjectURL(a.href);
+            };
+            return (
+              <div style={{marginBottom:18,borderTop:`1px solid ${T.border}`,paddingTop:18}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:vis.productos!==false?12:0,flexWrap:"wrap"}}>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:T.orange,flexShrink:0}}/>
+                  <span style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Rentabilidad por producto</span>
+                  <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· margen de contribución (sin repartir Ad Spend ni costos fijos)</span>
+                  {perdida.length>0 && <DSBadge T={T} color={T.red} size="sm">{perdida.length} a pérdida</DSBadge>}
+                  <span style={{marginLeft:"auto",display:"inline-flex",gap:6,alignItems:"center"}}>
+                    <button onClick={exportProdCsv} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>⬇ CSV</button>
+                    <EyeBtn k="productos"/>
+                  </span>
+                </div>
+                {vis.productos!==false && (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                    <div style={{maxHeight:420,overflow:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",minWidth:820}}>
+                        <thead style={{background:T.bg,position:"sticky",top:0,zIndex:1}}>
+                          <tr>{["Producto","Canal","Unid.","Revenue","COGS","Comisiones","Impuestos","Envío","Profit","Margen %"].map((l,i)=>(
+                            <th key={l} style={{padding:"10px 12px",textAlign:i<2?"left":"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{l}</th>
+                          ))}</tr>
+                        </thead>
+                        <tbody>
+                          {byProduct.map(p=>(
+                            <tr key={p.key} style={{borderBottom:`1px solid ${T.borderL}`,background:(p.profit||0)<0&&!p.sinCogs?T.red+"09":"transparent"}}>
+                              <td style={{padding:"8px 12px",color:T.text,fontWeight:500,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.nombre}>
+                                {p.nombre}{p.sinCogs&&<span title="Sin costo cargado — el profit de este producto está sobreestimado" style={{marginLeft:6,fontSize:10,color:T.yellow,fontWeight:700}}>sin costo</span>}
+                              </td>
+                              <td style={{padding:"8px 12px",color:T.textSm,whiteSpace:"nowrap"}}>{p.canal==="ml"?"Mercado Libre":"Tienda"}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtInt(p.units)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.blue}}>{fmtM(p.revenue)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.red}}>{fmtM(p.cogs)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtM(p.comisiones)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtM(p.impuestos)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.orange}}>{fmtM(p.envio)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:(p.profit||0)>0?T.green:(p.profit||0)<0?T.red:T.textMd}}>{fmtM(p.profit)}</td>
+                              <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:(p.margin||0)>=0.1?T.green:(p.margin||0)>=0?T.yellow:T.red}}>{fmtPct(p.margin)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* divisor antes de la tabla */}
           <div style={{borderTop:`1px solid ${T.border}`,marginBottom:18,paddingTop:2}}/>
 
 
           {/* Costos por venta */}
           {(()=>{
-            const sales = rendData.sales || [];
+            const salesAll = rendData.sales || [];
+            const canalesUnicos = [...new Set(salesAll.map(s=>s.canal))];
+            const qNorm = salesQ.trim().toLowerCase();
+            let sales = salesAll.filter(s =>
+              (salesCanal==="todos" || s.canal===salesCanal) &&
+              (!salesLoss || (s.profit||0)<0) &&
+              (!qNorm || String(s.nombre||s.id).toLowerCase().includes(qNorm))
+            );
+            const sk = salesSort.k, sd = salesSort.dir==="desc"?1:-1;
+            sales = [...sales].sort((a,b)=> sk==="fecha"||sk==="nombre"||sk==="canal"
+              ? String(b[sk]||"").localeCompare(String(a[sk]||""))*sd
+              : ((b[sk]||0)-(a[sk]||0))*sd);
             const fmtFecha = f => { try { return new Date(f).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}); } catch(_) { return String(f||"").slice(0,10); } };
             const t2 = sales.reduce((a,s)=>({revenue:a.revenue+s.revenue,cogs:a.cogs+s.cogs,comisiones:a.comisiones+s.comisiones,impuestos:a.impuestos+s.impuestos,envio:a.envio+s.envio,profit:a.profit+s.profit}),{revenue:0,cogs:0,comisiones:0,impuestos:0,envio:0,profit:0});
+            const COLS = [["nombre","Venta"],["fecha","Fecha"],["canal","Canal"],["revenue","Revenue"],["cogs","COGS"],["comisiones","Comisión"],["impuestos","Impuestos"],["envio","Envío"],["profit","Margen Neto"],["margin","Margen %"]];
+            const exportSalesCsv = () => {
+              const head = COLS.map(c=>c[1]).join(";");
+              const body = sales.map(s=>[`"${String(s.nombre||s.id).replace(/"/g,'""')}"`,String(s.fecha||"").slice(0,10),s.canal,Math.round(s.revenue),Math.round(s.cogs),Math.round(s.comisiones),Math.round(s.impuestos),Math.round(s.envio),Math.round(s.profit),((s.margin||0)*100).toFixed(1)].join(";")).join("\n");
+              const blob = new Blob(["﻿"+head+"\n"+body],{type:"text/csv;charset=utf-8"});
+              const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="costos_por_venta_growith.csv"; a.click(); URL.revokeObjectURL(a.href);
+            };
             return (
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,fontSize:11,color:T.textSm}}>{sales.length} ventas · cada fila es una orden con sus costos reales (sin contar Ad Spend, que es a nivel cuenta)</div>
+                <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,color:T.textSm,fontWeight:600}}>{sales.length}{sales.length!==salesAll.length?` de ${salesAll.length}`:""} ventas · costos reales por orden (sin Ad Spend, que es a nivel cuenta)</span>
+                  <span style={{marginLeft:"auto",display:"inline-flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <input value={salesQ} onChange={e=>setSalesQ(e.target.value)} placeholder="Buscar orden…" style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:130}}/>
+                    {canalesUnicos.length>1 && (
+                      <select value={salesCanal} onChange={e=>setSalesCanal(e.target.value)} style={{...InputStyle(T),fontSize:11,padding:"5px 8px",width:"auto",cursor:"pointer"}}>
+                        <option value="todos">Todos los canales</option>
+                        {canalesUnicos.map(c=><option key={c} value={c}>{c}</option>)}
+                      </select>
+                    )}
+                    <label style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,color:salesLoss?T.red:T.textMd,fontWeight:600,cursor:"pointer",userSelect:"none"}}>
+                      <input type="checkbox" checked={salesLoss} onChange={e=>setSalesLoss(e.target.checked)} style={{accentColor:T.red,cursor:"pointer"}}/> Solo pérdidas
+                    </label>
+                    <button onClick={exportSalesCsv} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:8,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",padding:"4px 10px",fontFamily:"'Inter',system-ui,sans-serif"}}>⬇ CSV</button>
+                  </span>
+                </div>
                 <div style={{maxHeight:520,overflow:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",minWidth:820}}>
                     <thead style={{background:T.bg,position:"sticky",top:0,zIndex:1}}>
-                      <tr>{["Venta","Fecha","Canal","Revenue","COGS","Comisión","Impuestos","Envío","Margen Neto","Margen %"].map((l,i)=>(
-                        <th key={l} style={{padding:"10px 12px",textAlign:i<3?"left":"right",fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{l}</th>
+                      <tr>{COLS.map(([k,l],i)=>(
+                        <th key={k} onClick={()=>setSalesSort(s=>({k,dir:s.k===k&&s.dir==="desc"?"asc":"desc"}))} style={{padding:"10px 12px",textAlign:i<3?"left":"right",fontSize:10,color:sk===k?T.accent:T.textSm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>{l}{sk===k?(salesSort.dir==="desc"?" ↓":" ↑"):""}</th>
                       ))}</tr>
                     </thead>
                     <tbody>
-                      {sales.length===0 && <tr><td colSpan={10} style={{padding:"30px",textAlign:"center",color:T.textSm}}>No hay ventas en el período.</td></tr>}
+                      {sales.length===0 && <tr><td colSpan={10} style={{padding:"30px",textAlign:"center",color:T.textSm}}>{salesAll.length===0?"No hay ventas en el período.":"Ninguna venta coincide con los filtros."}</td></tr>}
                       {sales.map((s,i)=>(
                         <tr key={s.id||i} style={{borderBottom:`1px solid ${T.borderL}`,background:s.profit>0?T.green+"07":s.profit<0?T.red+"07":"transparent"}}>
                           <td style={{padding:"8px 12px",color:T.text,fontWeight:500,whiteSpace:"nowrap",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis"}}>{s.nombre||s.id}</td>
                           <td style={{padding:"8px 12px",color:T.textMd,whiteSpace:"nowrap"}}>{fmtFecha(s.fecha)}</td>
                           <td style={{padding:"8px 12px",color:T.textSm,whiteSpace:"nowrap"}}>{s.canal}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#3b82f6"}}>{fmtM(s.revenue)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#ef4444"}}>{fmtM(s.cogs)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#ec4899"}}>{fmtM(s.comisiones)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#eab308"}}>{fmtM(s.impuestos)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:"#f97316"}}>{fmtM(s.envio)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:s.profit>0?T.green:s.profit<0?T.red:T.textMd}}>{fmtM(s.profit)}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontFamily:"monospace",color:(s.margin||0)>=0.1?T.green:(s.margin||0)>=0?(T.yellow||"#eab308"):T.red}}>{fmtPct(s.margin)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.blue}}>{fmtM(s.revenue)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.red}}>{fmtM(s.cogs)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.accent}}>{fmtM(s.comisiones)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.yellow}}>{fmtM(s.impuestos)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.orange}}>{fmtM(s.envio)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:s.profit>0?T.green:s.profit<0?T.red:T.textMd}}>{fmtM(s.profit)}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:(s.margin||0)>=0.1?T.green:(s.margin||0)>=0?T.yellow:T.red}}>{fmtPct(s.margin)}</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
                       <tr style={{background:T.surface,borderTop:`2px solid ${T.border}`,position:"sticky",bottom:0}}>
                         <td style={{padding:"9px 12px",fontWeight:700,color:T.textSm}} colSpan={3}>TOTAL · {sales.length}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#3b82f6"}}>{fmtM(t2.revenue)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#ef4444"}}>{fmtM(t2.cogs)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#ec4899"}}>{fmtM(t2.comisiones)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#eab308"}}>{fmtM(t2.impuestos)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:"#f97316"}}>{fmtM(t2.envio)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:t2.profit>=0?T.green:T.red}}>{fmtM(t2.profit)}</td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontFamily:"monospace",fontWeight:700,color:T.textMd}}>{fmtPct(t2.revenue>0?t2.profit/t2.revenue:0)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:T.blue}}>{fmtM(t2.revenue)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:T.red}}>{fmtM(t2.cogs)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:T.accent}}>{fmtM(t2.comisiones)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:T.yellow}}>{fmtM(t2.impuestos)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:T.orange}}>{fmtM(t2.envio)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:t2.profit>=0?T.green:T.red}}>{fmtM(t2.profit)}</td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:T.textMd}}>{fmtPct(t2.revenue>0?t2.profit/t2.revenue:0)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -24687,7 +25148,7 @@ function AppRendimiento({T, user, onHome}) {
           })()}
 
 
-          </>);
+          </div>);
         })()}
 
       </div>

@@ -312,6 +312,15 @@ export default async function handler(req, res) {
           if (!tok?.accessToken) return { fee:0, rev:0 };
           const begin = `${sinceYmd}T00:00:00.000-03:00`, end = `${untilYmd}T23:59:59.999-03:00`;
           let fee = 0, rev = 0, offset = 0; const feeByRef = {};
+          // Cashflow real de MP: profit ≠ caja. money_release_date dice cuándo MP
+          // libera cada pago (0-18 días). Se acumula el NETO recibido (post fees)
+          // liberado vs retenido, sobre TODOS los pagos aprobados de la cuenta en
+          // el rango (tienda + ML). También: costo de financiación en cuotas
+          // (fee_details type financing_fee) y retenciones impositivas que MP
+          // aplica en la liquidación (taxes/charges) — informativas, para que el
+          // usuario verifique que su % de impuestos las contempla.
+          let liberado = 0, retenido = 0, financingFee = 0, retenciones = 0;
+          const ahora = new Date().toISOString();
           for (let i=0; i<25; i++) {
             const url = `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(end)}&limit=100&offset=${offset}`;
             const r = await fetch(url, { headers: { Authorization: `Bearer ${tok.accessToken}` } });
@@ -320,7 +329,17 @@ export default async function handler(req, res) {
             const results = j.results || [];
             for (const p of results) {
               const ref = String(p.external_reference || "");
-              if (p.status==="approved" && p.operation_type==="regular_payment" && /[a-zA-Z]/.test(ref) && !/^cashback|^INSTORE/i.test(ref)) {
+              const esRegular = p.status==="approved" && p.operation_type==="regular_payment";
+              if (esRegular && !/^cashback|^INSTORE/i.test(ref)) {
+                const neto = parseFloat(p.transaction_details?.net_received_amount);
+                const monto = isFinite(neto) && neto>0 ? neto : (parseFloat(p.transaction_amount)||0);
+                const rel = p.money_release_date ? String(p.money_release_date) : null;
+                if (rel && rel > ahora) retenido += monto; else liberado += monto;
+                financingFee += (p.fee_details||[]).filter(fd=>fd.type==="financing_fee").reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
+                retenciones  += (p.charges_details||[]).filter(c=>String(c.type||"").toLowerCase()==="tax").reduce((s,c)=>s+(parseFloat(c?.amounts?.original)||0),0)
+                              + (parseFloat(p.taxes_amount)||0);
+              }
+              if (esRegular && /[a-zA-Z]/.test(ref) && !/^cashback|^INSTORE/i.test(ref)) {
                 const f = (p.fee_details||[]).reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
                 fee += f;
                 rev += parseFloat(p.transaction_amount)||0; // revenue cobrado por MP (para no doble-contar el % en estas ventas)
@@ -330,7 +349,7 @@ export default async function handler(req, res) {
             offset += results.length;
             if (results.length < 100 || offset >= (j.paging?.total||0)) break;
           }
-          return { fee, rev, feeByRef };
+          return { fee, rev, feeByRef, cashflow:{ liberado:+liberado.toFixed(2), retenido:+retenido.toFixed(2) }, financingFee:+financingFee.toFixed(2), retenciones:+retenciones.toFixed(2) };
         } catch(_) { return { fee:0, rev:0, feeByRef:{} }; }
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
@@ -857,7 +876,101 @@ export default async function handler(req, res) {
       }
       const sales = buildSales(curr.raw);
 
-      return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, sales, since, until, prevSince, prevUntil,
+      // ── Rentabilidad por producto/SKU ──
+      // Los costos por orden (impuestos, comisiones, envío) se reparten entre los
+      // items de la orden por peso precio×cantidad; el COGS es directo por item.
+      // NO incluye Ad Spend (es a nivel cuenta): es margen de contribución.
+      function buildByProduct(raw) {
+        const nameByKey = {}, priceByKey = {};
+        for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
+          const k = v.sku || String(v.id);
+          if (nameByKey[k]==null) nameByKey[k] = (p.nombre||k) + (v.nombre && v.nombre!=="Default" ? " · "+v.nombre : "");
+          if (priceByKey[k]==null) priceByKey[k] = parseFloat(v.price)||0;
+        }
+        for (const m of (raw?.ml_data?.ml_products||[])) { if (nameByKey["ml:"+m.id]==null) nameByKey["ml:"+m.id] = m.nombre || ("ML "+m.id); }
+        const agg = {};
+        const slot = (key, canal) => agg[key] || (agg[key] = { key, nombre:nameByKey[key]||key, canal, units:0, orders:0, revenue:0, cogs:0, impuestos:0, comisiones:0, envio:0 });
+        const repartir = (o, items, imp, comis, env, canal, mlKey) => {
+          const rev = parseFloat(o.revenue)||0;
+          const its = (items||[]).map(it=>({ ...it, w:(priceByKey[it.key]||0)*(it.qty||0) }));
+          let wSum = its.reduce((s,it)=>s+it.w,0);
+          if (wSum<=0) { its.forEach(it=>it.w=it.qty||0); wSum = its.reduce((s,it)=>s+it.w,0)||1; }
+          for (const it of its) {
+            const sh = it.w/wSum;
+            const a = slot(it.key, canal);
+            a.units += it.qty||0; a.orders += 1;
+            a.revenue += rev*sh; a.impuestos += imp*sh; a.comisiones += comis*sh; a.envio += env*sh;
+            a.cogs += cogsCosto(cogsMap[it.key], priceByKey[it.key])*(it.qty||0);
+          }
+        };
+        for (const o of (raw?.orders_detail||[])) {
+          const rev = parseFloat(o.revenue)||0;
+          const ref = mpRefCache[o.id];
+          const realMp = (ref && feeByRef[ref]!=null) ? feeByRef[ref] : null;
+          const comis = (realMp!=null) ? (rev*pctPlat + realMp) : (rev*(pctPlat+pctPagoFor(o.pay)));
+          const env = ((envioModoTienda==="orden") ? (parseFloat(o.envioCosto)||0) : envioProm) + fulfillFee;
+          repartir(o, o.items, rev*impFor(o.pay), comis, env, "tienda");
+        }
+        for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
+          const rev = parseFloat(o.revenue)||0;
+          repartir(o, o.items, rev*pctImpML, parseFloat(o.saleFee)||0, mlEnvioDe(o)+fulfillFee, "ml");
+        }
+        return Object.values(agg).map(a=>{
+          const profit = a.revenue - a.cogs - a.impuestos - a.comisiones - a.envio;
+          return { ...a, revenue:+a.revenue.toFixed(2), cogs:+a.cogs.toFixed(2), impuestos:+a.impuestos.toFixed(2),
+            comisiones:+a.comisiones.toFixed(2), envio:+a.envio.toFixed(2), profit:+profit.toFixed(2),
+            margin: a.revenue>0 ? profit/a.revenue : 0, sinCogs: cogsMap[a.key]==null };
+        }).sort((x,y)=>y.revenue-x.revenue).slice(0, 200);
+      }
+      const byProduct = buildByProduct(curr.raw);
+
+      // ── Clientes nuevos vs recurrentes ──
+      // "Recurrente" = compró también en el período anterior (aprox.: la ventana
+      // de comparación es el período previo, no todo el historial).
+      const allOrdersDe = raw => [...(raw?.orders_detail||[]), ...(raw?.ml_data?.ml_orders_detail||[])];
+      const custKey = o => String(o.cust||"").trim().toLowerCase();
+      const prevCust = new Set(allOrdersDe(prev.raw).map(custKey).filter(Boolean));
+      const ordersByCust = {}; let custSinDato = 0;
+      for (const o of allOrdersDe(curr.raw)) { const c = custKey(o); if (!c) { custSinDato++; continue; } ordersByCust[c] = (ordersByCust[c]||0)+1; }
+      let custNuevos = 0, custRecurrentes = 0;
+      for (const c of Object.keys(ordersByCust)) { if (prevCust.has(c)) custRecurrentes++; else custNuevos++; }
+      const custTotal = custNuevos + custRecurrentes;
+      const clientes = { nuevos:custNuevos, recurrentes:custRecurrentes, total:custTotal, sinDato:custSinDato,
+        repeatRate: custTotal>0 ? custRecurrentes/custTotal : 0,
+        repitenEnPeriodo: Object.values(ordersByCust).filter(n=>n>1).length };
+
+      // ── Serie del dólar del período (para el modo USD del dashboard) ──
+      const histMapFinal = await dolarAdsHistProm.catch(()=>null);
+      const dolarSerie = {};
+      if (histMapFinal && histMapFinal.size) {
+        for (let d = since; d <= until; d = addDays(d, 1)) { const v = dolarDeFecha(histMapFinal, d); if (v) dolarSerie[d] = v; }
+      }
+      const dolarActual = (histMapFinal && dolarDeFecha(histMapFinal, until)) || dolarAdsFallback || 0;
+
+      // ── Calidad del dato / configuración — para que el dashboard diga cuándo
+      // el número puede no ser exacto en vez de mostrarlo con pinta de real ──
+      const sinCogsNombres = [];
+      for (const p of (curr.raw?.products||[])) for (const v of (p.variants||[])) {
+        if ((v.units_sold||0)>0 && cogsMap[v.sku||String(v.id)]==null) sinCogsNombres.push((p.nombre||"") + (v.nombre && v.nombre!=="Default" ? " · "+v.nombre : ""));
+      }
+      for (const m of (curr.raw?.ml_data?.ml_products||[])) { if ((m.units||0)>0 && cogsMap["ml:"+m.id]==null) sinCogsNombres.push("ML · "+(m.nombre||m.id)); }
+      const rawQ = curr.raw?.quality || {};
+      const quality = {
+        productosSinCogs: sinCogsNombres.length,
+        productosSinCogsNombres: sinCogsNombres.slice(0,6),
+        impuestosSinConfig: !(pctImp>0),
+        envioSinConfig: envioModoTienda==="fijo" && !(envioProm>0),
+        mpSinConfig: !(mpPctCfg>0) && (curr.raw?.orders_detail||[]).some(o=>esMPPay(o.pay) && !mpRefCache[o.id]),
+        dolarAdsHistorico: dolarAdsHistDias>0,
+        tnTruncated: !!rawQ.tn_truncated, mlTruncated: !!rawQ.ml_truncated,
+        canceladasExcluidas: rawQ.cancelled_excluded||0,
+        reembolsosParciales: rawQ.partial_refund_orders||0,
+      };
+
+      return res.json({ rows, prevRows, totals, prevTotals, byDow, byChannel, sales, byProduct, clientes,
+        cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
+        dolarSerie, dolarActual, quality,
+        since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, commission, metaAccountsCount: metaAccounts.length,
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } });

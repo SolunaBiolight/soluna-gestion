@@ -114,6 +114,10 @@ async function tnOrders(sid, tok, days, since, until) {
     page += BATCH;
     if (!done) await new Promise(res=>setTimeout(res, STAGGER));
   }
+  // Techo de páginas alcanzado sin llegar al fin real: el resultado está
+  // TRUNCADO (períodos largos / alta escala). Se marca para que el dashboard
+  // lo diga en vez de mostrar un total parcial con pinta de completo.
+  if (!done) all.truncated = true;
   return all;
 }
 
@@ -140,7 +144,7 @@ async function shProducts(shop, tok) {
 async function shOrders(shop, tok, days, since, until) {
   // Format exact que usa Facturador: 2026-05-22T00:00:00-03:00 (sin URL-encode).
   // status=any incluye canceladas — filtramos por cancelled_at en JS.
-  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,line_items,created_at,shipping_address,payment_gateway,payment_gateway_names,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds`;
+  let all=[], url=`${SH_URL(shop)}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${since}&fields=id,email,line_items,created_at,shipping_address,payment_gateway,payment_gateway_names,financial_status,total_price,subtotal_price,total_tax,total_discounts,total_shipping_price_set,cancelled_at,refunds`;
   if(until) url+=`&created_at_max=${until}`;
   while(url){
     const r=await fetchTR(url,{headers:SH_H(tok)});
@@ -185,6 +189,7 @@ async function mlOrders(sellerId, tok, days, sinceDateISO, untilDateISO) {
   }
   // ML pagina de a 50; iteramos con offset hasta 2000 (40 páginas).
   const all=[];
+  let complete=false;
   for (let offset = 0; offset < 2000; offset += 50) {
     const r = await fetchTR(
       `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&order.date_created.from=${encodeURIComponent(fromISO)}&order.date_created.to=${encodeURIComponent(toISO)}&limit=50&offset=${offset}&sort=date_desc`,
@@ -194,8 +199,9 @@ async function mlOrders(sellerId, tok, days, sinceDateISO, untilDateISO) {
     const d = await r.json();
     const batch = d.results || [];
     all.push(...batch);
-    if (batch.length < 50) break;
+    if (batch.length < 50) { complete=true; break; }
   }
+  if (!complete) all.truncated = true; // techo de 2000 alcanzado — resultado parcial
   return all;
 }
 
@@ -204,7 +210,15 @@ function processTN(orders) {
   const map={}, daily={}, dailyRevenue={}, byProv={}, byHour={}, byPayment={}, byVariant={};
   const dailyOrders={}; // "YYYY-MM-DD" → cantidad de órdenes
   const ordersDetail=[]; // detalle por orden — habilita comisiones/envío/impuestos por método en Márgenes
+  // Calidad del dato: TN filtra por payment_status, pero una orden CANCELADA
+  // puede seguir con payment_status=paid — antes contaba a valor pleno. Se
+  // excluye acá y se informa cuántas fueron. Los reembolsos parciales sí
+  // entran (TN no expone el monto reembolsado), pero se cuentan para que el
+  // dashboard pueda avisar que esos números son a valor pleno.
+  let cancelledExcluded=0, partialRefundOrders=0;
   for(const o of orders){
+    if(o.status==="cancelled" || o.cancelled_at){ cancelledExcluded++; continue; }
+    if(o.payment_status==="partially_refunded") partialRefundOrders++;
     const dt=o.created_at||"";
     const day=dt.slice(0,10);
     const hour=dt.slice(11,13);
@@ -240,9 +254,9 @@ function processTN(orders) {
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.number||o.id}`, fecha:dt, platform:"tiendanube", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.shipping_cost_owner)||0 });
+    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.number||o.id}`, fecha:dt, platform:"tiendanube", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.shipping_cost_owner)||0, cust:String(o.customer?.id||o.contact_email||"") });
   }
-  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail};
+  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail,quality:{cancelledExcluded,partialRefundOrders}};
 }
 
 // ── Procesar órdenes Shopify ──────────────────────────────────────────
@@ -287,7 +301,7 @@ function processSH(orders) {
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.order_number||o.name||o.id}`, fecha:dt, platform:"shopify", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.total_shipping_price_set?.shop_money?.amount)||0 });
+    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.order_number||o.name||o.id}`, fecha:dt, platform:"shopify", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.total_shipping_price_set?.shop_money?.amount)||0, cust:String(o.email||"") });
   }
   return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail};
 }
@@ -374,7 +388,7 @@ function processML(orders, couponMap = {}) {
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    if(orderRev>0) ordersDetail.push({ id:String(o.id), nombre:`ML #${o.id}`, fecha:(o.date_closed||o.date_created||""), platform:"mercadolibre", revenue:orderRev, items:detItems, saleFee:orderFee, shippingId:o.shipping?.id||null });
+    if(orderRev>0) ordersDetail.push({ id:String(o.id), nombre:`ML #${o.id}`, fecha:(o.date_closed||o.date_created||""), platform:"mercadolibre", revenue:orderRev, items:detItems, saleFee:orderFee, shippingId:o.shipping?.id||null, cust:String(o.buyer?.id||"") });
   }
   return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,byVariantRev,comisionML,comisionMLDaily,ordersDetail};
 }
@@ -539,7 +553,9 @@ export default async function handler(req, res) {
           mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate),
           mlCouponFees(mlToken, sinceDate, untilDate).catch(() => ({})),
         ]);
-        return processML(mlOrd, coupons);
+        const out = processML(mlOrd, coupons);
+        out.truncated = !!mlOrd.truncated;
+        return out;
       };
       if(platform==="shopify"){
         const [products, orders, mlAnalytics] = await withDeadline(Promise.all([
@@ -550,6 +566,7 @@ export default async function handler(req, res) {
         const analytics = processSH(orders);
         const normalized = products.map(p => normSH(p, analytics.map, days));
         const resp = buildResponse("shopify", normalized, analytics, effectiveDays);
+        resp.quality = { tn_truncated:false, ml_truncated:!!(mlAnalytics&&mlAnalytics.truncated), cancelled_excluded:0, partial_refund_orders:0 };
         if (mlAnalytics) resp.ml_data = {
           daily:         mlAnalytics.daily,         // unidades por día
           daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día (NETO de la orden)
@@ -579,6 +596,7 @@ export default async function handler(req, res) {
         const analytics = processTN(orders);
         const normalized = products.map(p => normTN(p, analytics.map, effectiveDays));
         const resp = buildResponse("tiendanube", normalized, analytics, effectiveDays);
+        resp.quality = { tn_truncated:!!orders.truncated, ml_truncated:!!(mlAnalytics&&mlAnalytics.truncated), cancelled_excluded:analytics.quality?.cancelledExcluded||0, partial_refund_orders:analytics.quality?.partialRefundOrders||0 };
         if (mlAnalytics) resp.ml_data = {
           daily:         mlAnalytics.daily,         // unidades por día
           daily_revenue: mlAnalytics.dailyRevenue,  // facturación por día (NETO de la orden)
