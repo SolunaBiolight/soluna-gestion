@@ -865,6 +865,12 @@ export default async function handler(req, res) {
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
       };
+      // Series diarias POR CANAL — para que las vistas Tienda/ML tengan su
+      // propio gráfico de evolución (revenue y órdenes del canal, día a día).
+      const byChannelDaily = {
+        tienda: { revenue: curr.raw?.daily_revenue||{}, orders: curr.raw?.daily_orders||{} },
+        ml:     { revenue: curr.raw?.ml_data?.daily_revenue||{}, orders: curr.raw?.ml_data?.daily_orders||{} },
+      };
 
 
       // ── Venta por venta: cada orden con sus costos reales ──
@@ -986,7 +992,7 @@ export default async function handler(req, res) {
         reembolsosParciales: rawQ.partial_refund_orders||0,
       };
 
-      const responseBody = { rows, prevRows, totals, prevTotals, byDow, byChannel, sales, byProduct, clientes,
+      const responseBody = { rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,
