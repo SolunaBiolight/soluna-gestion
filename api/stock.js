@@ -43,7 +43,12 @@ async function fetchT(url, opts={}, ms=15000) {
 // (red, timeout, 429, 5xx) con backoff, y solo después de agotarlas
 // LANZA — así el caller puede fallar explícito en vez de mentir con un
 // total parcial.
-async function fetchTR(url, opts={}, { ms=15000, tries=3 } = {}) {
+// ms/tries deliberadamente chicos: cada página puede reintentar, pero el
+// PRESUPUESTO TOTAL tiene que quedar muy por debajo del maxDuration de la
+// función serverless. Con 3 intentos de 15s (el valor original) el peor
+// caso por endpoint pasó a ~47s y la función entera moría en seco sin
+// devolver ni el JSON de error — peor que el comportamiento anterior.
+async function fetchTR(url, opts={}, { ms=8000, tries=2 } = {}) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
@@ -51,7 +56,7 @@ async function fetchTR(url, opts={}, { ms=15000, tries=3 } = {}) {
       if (r.status === 429 || r.status >= 500) { lastErr = new Error(`HTTP ${r.status}`); }
       else return r; // 2xx, 4xx (salvo 429) — respuesta válida, la maneja el caller
     } catch (e) { lastErr = e; }
-    if (i < tries - 1) await new Promise(res => setTimeout(res, 500 * (i + 1)));
+    if (i < tries - 1) await new Promise(res => setTimeout(res, 400));
   }
   throw new Error(`Fetch falló tras ${tries} intentos (${url.split("?")[0]}): ${lastErr?.message || "?"}`);
 }
@@ -486,6 +491,18 @@ export default async function handler(req, res) {
   }
   if(!accessToken) return res.status(403).json({ error: "Tienda no conectada" });
 
+  // Techo duro para TODA la consulta de ventas — sin importar cuántas páginas
+  // reintenten en cascada bajo una red inestable, esto garantiza una respuesta
+  // JSON clara ANTES de que Vercel mate la función en seco (que devuelve 0
+  // bytes al cliente, mucho peor que un error explícito).
+  const DEADLINE_MS = 25000;
+  function withDeadline(promise, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, rej) => setTimeout(() => rej(new Error(`Tiempo agotado trayendo ${label} (${DEADLINE_MS/1000}s) — la tienda o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.`)), DEADLINE_MS)),
+    ]);
+  }
+
   try{
     if(action==="products"){
       // Helper: fetch ML data en paralelo (si está conectado).
@@ -503,11 +520,11 @@ export default async function handler(req, res) {
         return processML(mlOrd, coupons);
       };
       if(platform==="shopify"){
-        const [products, orders, mlAnalytics] = await Promise.all([
+        const [products, orders, mlAnalytics] = await withDeadline(Promise.all([
           shProducts(shop, accessToken),
           shOrders(shop, accessToken, effectiveDays, sinceDate, untilDate),
           fetchML(),
-        ]);
+        ]), "Shopify/ML");
         const analytics = processSH(orders);
         const normalized = products.map(p => normSH(p, analytics.map, days));
         const resp = buildResponse("shopify", normalized, analytics, effectiveDays);
@@ -532,11 +549,11 @@ export default async function handler(req, res) {
         };
         return res.status(200).json(resp);
       } else {
-        const [products, orders, mlAnalytics] = await Promise.all([
+        const [products, orders, mlAnalytics] = await withDeadline(Promise.all([
           tnProducts(storeId, accessToken),
           tnOrders(storeId, accessToken, effectiveDays, sinceDate, untilDate),
           fetchML(),
-        ]);
+        ]), "Tienda Nube/ML");
         const analytics = processTN(orders);
         const normalized = products.map(p => normTN(p, analytics.map, effectiveDays));
         const resp = buildResponse("tiendanube", normalized, analytics, effectiveDays);

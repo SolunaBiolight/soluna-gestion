@@ -427,10 +427,17 @@ export default async function handler(req, res) {
         }
         return merged;
       }
-      const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev] = await Promise.all([
-        fetchStock(since, until), fetchStock(prevSince, prevUntil),
-        fetchMetaAll(since, until, metaErr), fetchMetaAll(prevSince, prevUntil),
-        fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
+      // Techo duro para toda la carga: metaGet() no tiene timeout propio (fetch
+      // nativo sin AbortController) y puede colgarse sin límite si Meta responde
+      // lento. Sin este freno, la función entera se cuelga hasta que Vercel la
+      // mata en seco (0 bytes al cliente) en vez de devolver un error claro.
+      const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev] = await Promise.race([
+        Promise.all([
+          fetchStock(since, until), fetchStock(prevSince, prevUntil),
+          fetchMetaAll(since, until, metaErr), fetchMetaAll(prevSince, prevUntil),
+          fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
+        ]),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Tiempo agotado trayendo métricas (30s) — la tienda, Meta o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.")), 30000)),
       ]);
       let rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, commission);
       let prevRows = buildRendRows(prevSince, prevUntil, prev.dailyRevenue, prev.dailyOrders, metaPrev, commission);
