@@ -276,24 +276,29 @@ export default async function handler(req, res) {
       const hasML = stores.some(s => s.type === "meli");
       const commission = parseFloat(userData.rendimientoCommission) || (hasML ? 0.10 : 0.03);
       async function fetchStock(from, to) {
-        try {
-          const stockUrl = new URL(`https://${req.headers.host}/api/stock`);
-          stockUrl.searchParams.set("uid", uid); stockUrl.searchParams.set("action", "products");
-          stockUrl.searchParams.set("date_from", from); stockUrl.searchParams.set("date_to", to);
-          const r = await fetch(stockUrl.toString(), { headers: { host: req.headers.host } });
-          if (!r.ok) return { dailyRevenue:{}, dailyOrders:{} };
-          const j = await r.json();
-          // Combinar TN/Shopify + Mercado Libre (ML viene aparte en ml_data),
-          // igual que el tab Análisis del front (mergeDaily). Antes se ignoraba ML
-          // → facturación incompleta en el tab Márgenes.
-          const dailyRevenue = { ...(j.daily_revenue||{}) };
-          const dailyOrders  = { ...(j.daily_orders||{}) };
-          const mlRev = j.ml_data?.daily_revenue || {};
-          const mlOrd = j.ml_data?.daily_orders  || {};
-          for (const [day,v] of Object.entries(mlRev)) dailyRevenue[day] = (dailyRevenue[day]||0) + (v||0);
-          for (const [day,v] of Object.entries(mlOrd)) dailyOrders[day]  = (dailyOrders[day]||0)  + (v||0);
-          return { dailyRevenue, dailyOrders, raw: j };
-        } catch(_) { return { dailyRevenue:{}, dailyOrders:{}, raw:{} }; }
+        // Sin catch silencioso: si la fuente de ventas falla, es MUCHO mejor
+        // devolver un error explícito ("reintentá") que un dashboard con
+        // facturación parcial que parece real. Con datos parciales el mismo
+        // rango devolvía $39M/$64M/$12M en llamadas consecutivas.
+        const stockUrl = new URL(`https://${req.headers.host}/api/stock`);
+        stockUrl.searchParams.set("uid", uid); stockUrl.searchParams.set("action", "products");
+        stockUrl.searchParams.set("date_from", from); stockUrl.searchParams.set("date_to", to);
+        let r;
+        try { r = await fetch(stockUrl.toString(), { headers: { host: req.headers.host } }); }
+        catch (e) { throw new Error("No se pudieron traer las ventas (red). Reintentá en unos segundos."); }
+        if (!r.ok) throw new Error(`No se pudieron traer las ventas (HTTP ${r.status}). Reintentá en unos segundos.`);
+        const j = await r.json();
+        if (j.error) throw new Error(`Ventas: ${j.error}`);
+        // Combinar TN/Shopify + Mercado Libre (ML viene aparte en ml_data),
+        // igual que el tab Análisis del front (mergeDaily). Antes se ignoraba ML
+        // → facturación incompleta en el tab Márgenes.
+        const dailyRevenue = { ...(j.daily_revenue||{}) };
+        const dailyOrders  = { ...(j.daily_orders||{}) };
+        const mlRev = j.ml_data?.daily_revenue || {};
+        const mlOrd = j.ml_data?.daily_orders  || {};
+        for (const [day,v] of Object.entries(mlRev)) dailyRevenue[day] = (dailyRevenue[day]||0) + (v||0);
+        for (const [day,v] of Object.entries(mlOrd)) dailyOrders[day]  = (dailyOrders[day]||0)  + (v||0);
+        return { dailyRevenue, dailyOrders, raw: j };
       }
       // Comisión REAL de Mercado Pago en ventas que NO son ML (Shopify/TN vía MP
       // Checkout). Con el token de ML se consultan los pagos de MP y se suma el
