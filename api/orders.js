@@ -334,7 +334,11 @@ export default async function handler(req, res) {
         } catch(_) { return { fee:0, rev:0, feeByRef:{} }; }
       }
       const metaAccountsSnap = await db.collection("users").doc(uid).collection("meta_accounts").get();
-      const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token && a.ad_account_id);
+      // Solo exige token: fetchMetaAll descubre las cuentas publicitarias vía
+      // /me/adaccounts, así que no necesita ad_account_id pre-elegido. (Antes el
+      // filtro exigía ad_account_id y una reconexión que lo borraba dejaba el
+      // Ad Spend en $0 aunque el token estuviera perfecto.)
+      const metaAccounts = metaAccountsSnap.docs.map(d => d.data()).filter(a => a.access_token);
       const metaErr = {};
       // Suma el gasto de TODAS las cuentas publicitarias que el token puede ver
       // (CP5, CP7, etc.) — las descubre con /me/adaccounts, así no hay que

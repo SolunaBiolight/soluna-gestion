@@ -94,9 +94,15 @@ export default async function handler(req, res) {
 
     // Config base — sin ad_account ni page todavía (el usuario los elige en la UI)
     const accId = me.id;
-    await db.collection("users").doc(uid)
-      .collection("meta_accounts").doc(accId)
-      .set({
+    const accRef = db.collection("users").doc(uid).collection("meta_accounts").doc(accId);
+    // Al RE-conectar, preservar la selección previa de cuenta publicitaria/página:
+    // antes se escribía null (merge no protege contra nulls explícitos) y cada
+    // reconexión con 2+ ad accounts borraba la elección → Ad Spend $0 en Márgenes.
+    const prevSnap = await accRef.get();
+    const prev = prevSnap.exists ? (prevSnap.data() || {}) : {};
+    const autoAd  = adAccounts.length === 1 ? adAccounts[0] : null;
+    const autoPg  = pages.length === 1 ? pages[0] : null;
+    await accRef.set({
         id:          accId,
         user_id:     me.id,
         user_name:   me.name  || "—",
@@ -104,17 +110,17 @@ export default async function handler(req, res) {
         access_token: longToken,
         ad_accounts: adAccounts,
         pages,
-        // Si solo tiene 1 ad account y 1 página, los pre-seleccionamos automáticamente
-        ad_account_id:   adAccounts.length === 1 ? adAccounts[0].id   : null,
-        ad_account_name: adAccounts.length === 1 ? adAccounts[0].name : null,
-        page_id:         pages.length === 1 ? pages[0].id   : null,
-        page_name:       pages.length === 1 ? pages[0].name : null,
-        page_access_token: pages.length === 1 ? pages[0].access_token : null,
+        // Auto-selección si hay 1 sola; sino se conserva lo ya elegido.
+        ad_account_id:   autoAd ? autoAd.id   : (prev.ad_account_id   ?? null),
+        ad_account_name: autoAd ? autoAd.name : (prev.ad_account_name ?? null),
+        page_id:         autoPg ? autoPg.id   : (prev.page_id   ?? null),
+        page_name:       autoPg ? autoPg.name : (prev.page_name ?? null),
+        page_access_token: autoPg ? autoPg.access_token : (prev.page_access_token ?? null),
         // Sin instagram_basic (fuera de esta ronda de App Review), Graph API omite
         // el campo instagram_business_account en vez de devolverlo null — el ?.
         // encadenado da "undefined", que Firestore rechaza. ?? null lo normaliza.
-        ig_account_id:   (pages.length === 1 ? pages[0].instagram_business_account?.id       : null) ?? null,
-        ig_username:     (pages.length === 1 ? pages[0].instagram_business_account?.username  : null) ?? null,
+        ig_account_id:   (autoPg ? autoPg.instagram_business_account?.id      : prev.ig_account_id) ?? null,
+        ig_username:     (autoPg ? autoPg.instagram_business_account?.username : prev.ig_username)   ?? null,
         has_token:       true,
         connected_at:    new Date().toISOString(),
         last_test: { ok: true, ts: new Date().toISOString(), msg: "Conectado vía OAuth" },
