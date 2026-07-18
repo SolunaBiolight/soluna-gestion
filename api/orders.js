@@ -359,7 +359,11 @@ export default async function handler(req, res) {
                               + (parseFloat(p.taxes_amount)||0);
               }
               if (esRegular && /[a-zA-Z]/.test(ref) && !/^cashback|^INSTORE/i.test(ref)) {
-                const f = (p.fee_details||[]).reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
+                // Solo los fees que paga el VENDEDOR (collector). Excluimos el
+                // financing_fee de cuotas que paga el COMPRADOR (fee_payer "payer") —
+                // sino la comisión se dispara (ej: $57.920 cuando el cargo real de MP
+                // fue $7.185 porque las cuotas las financia el cliente).
+                const f = (p.fee_details||[]).filter(fd=>fd.fee_payer!=="payer").reduce((s,fd)=>s+(parseFloat(fd.amount)||0),0);
                 fee += f;
                 rev += parseFloat(p.transaction_amount)||0; // revenue cobrado por MP (para no doble-contar el % en estas ventas)
                 feeByRef[ref] = (feeByRef[ref]||0) + f; // comisión real de MP por receipt_id (= external_reference)
