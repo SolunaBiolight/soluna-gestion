@@ -430,7 +430,11 @@ export default async function handler(req, res) {
       const dolarCostosEf = (parseFloat((userData.margenesDolar||{}).valor)||0) * (1 + (parseFloat((userData.margenesDolar||{}).ajuste)||0)/100);
       const dolarAdsFallback = dolarAdsManual > 0 ? dolarAdsManual : (dolarCostosEf > 0 ? dolarCostosEf * (1 + dolarAdsAjuste) : 0);
       let dolarAdsHistDias = -1; // diagnóstico: cuántos días tiene la serie (-1 = no aplica)
-      async function fetchMetaAll(s, u, eRef) {
+      // Desglose del Ad Spend del período ACTUAL (para el panel "cómo se compone
+      // la inversión" del dashboard): gasto original por moneda según Meta,
+      // convertido a ARS, cotización promedio usada y días sin cotización.
+      const adsBd = { porMoneda:{}, convertido:0, sinCotiz:0, rateSum:0, rateDias:0 };
+      async function fetchMetaAll(s, u, eRef, bdCollect) {
         if (!metaAccounts.length) return {};
         const token = metaAccounts[0].access_token;
         let accounts = []; // [{id, currency}]
@@ -456,6 +460,7 @@ export default async function handler(req, res) {
         dolarAdsHistDias = histMap ? histMap.size : -1;
         const arr = await Promise.all(accounts.map(async a => {
           const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: a.id }, s, u, eRef);
+          const curCode = String(a.currency || "ARS").toUpperCase();
           if (a.currency && a.currency !== "ARS") {
             for (const [fecha, v] of Object.entries(bd)) {
               let rate;
@@ -469,9 +474,20 @@ export default async function handler(req, res) {
               // falló), usar el valor manual de Ads o la cotización de Costos —
               // un Ad Spend aproximado es infinitamente mejor que $0.
               if (!rate && dolarAdsFallback > 0) rate = dolarAdsFallback;
-              if (!rate) { delete bd[fecha]; continue; } // sin NINGUNA cotización: se excluye, no se suma mal
-              v.spend = (v.spend||0) * rate;
+              if (!rate) { if (bdCollect) bdCollect.sinCotiz++; delete bd[fecha]; continue; } // sin NINGUNA cotización: se excluye, no se suma mal
+              const orig = v.spend||0;
+              if (bdCollect) {
+                bdCollect.porMoneda[curCode] = (bdCollect.porMoneda[curCode]||0) + orig;
+                bdCollect.convertido += orig * rate;
+                bdCollect.rateSum += rate; bdCollect.rateDias++;
+              }
+              v.spend = orig * rate;
               v.purchaseVal = (v.purchaseVal||0) * rate;
+            }
+          } else if (bdCollect) {
+            for (const v of Object.values(bd)) {
+              bdCollect.porMoneda.ARS = (bdCollect.porMoneda.ARS||0) + (v.spend||0);
+              bdCollect.convertido += v.spend||0;
             }
           }
           return bd;
@@ -490,7 +506,7 @@ export default async function handler(req, res) {
       const [curr, prev, metaCurr, metaPrev, mpCommCurr, mpCommPrev] = await Promise.race([
         Promise.all([
           fetchStock(since, until), fetchStock(prevSince, prevUntil),
-          fetchMetaAll(since, until, metaErr), fetchMetaAll(prevSince, prevUntil),
+          fetchMetaAll(since, until, metaErr, adsBd), fetchMetaAll(prevSince, prevUntil),
           fetchMPCommission(since, until), fetchMPCommission(prevSince, prevUntil),
         ]),
         new Promise((_, rej) => setTimeout(() => rej(new Error("Tiempo agotado trayendo métricas (55s) — la tienda, Meta o Mercado Libre están respondiendo muy lento. Reintentá en unos segundos.")), 55000)),
@@ -1109,9 +1125,9 @@ export default async function handler(req, res) {
         reembolsosParciales: rawQ.partial_refund_orders||0,
       };
 
-      // Desglose de facturación TN (diagnóstico de diferencias vs otras apps):
-      // hoy revenue = neto (bruto − descuento). Acá exponemos cada componente
-      // para ver cuánto aporta el envío cobrado al cliente y los descuentos.
+      // Desglose de facturación TN: revenue = neto (bruto − descuento) + envío
+      // cobrado al cliente — igual que la facturación que reporta el admin de TN.
+      // Acá exponemos cada componente para que el total siempre sea auditable.
       const fB = curr.raw?.facturacion || null;
       const envioClienteTot = (curr.raw?.orders_detail||[]).reduce((s,o)=>s+(parseFloat(o.envioCliente)||0),0);
       const facturacionBreakdown = fB ? {
@@ -1119,8 +1135,21 @@ export default async function handler(req, res) {
         envioCliente: +envioClienteTot.toFixed(2),
         conEnvio: +(fB.neto + envioClienteTot).toFixed(2),
       } : null;
+      // Desglose del Ad Spend de Meta: gasto original por moneda → conversión a
+      // ARS (cotización histórica por día) → fee sobre pauta → total del dashboard.
+      const adSpendBreakdown = Object.keys(adsBd.porMoneda).length ? {
+        porMoneda: Object.fromEntries(Object.entries(adsBd.porMoneda).map(([k,v])=>[k, +v.toFixed(2)])),
+        convertido: +adsBd.convertido.toFixed(2),
+        cotizTipo: dolarAdsTipo,
+        cotizAjuste: +(dolarAdsAjuste*100).toFixed(2),
+        cotizProm: adsBd.rateDias>0 ? +(adsBd.rateSum/adsBd.rateDias).toFixed(2) : null,
+        diasSinCotiz: adsBd.sinCotiz,
+        feePct: +(feeAd*100).toFixed(2),
+        feeMonto: +(adsBd.convertido*feeAd).toFixed(2),
+        total: +(adsBd.convertido*(1+feeAd)).toFixed(2),
+      } : null;
 
-      const responseBody = { rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown,
+      const responseBody = { rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,

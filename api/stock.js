@@ -254,13 +254,17 @@ function processTN(orders) {
       byVariant[vname]=(byVariant[vname]||0)+qty;
       detItems.push({ key: item.sku || vid, qty });
     }
+    // Envío cobrado al cliente (lo que pagó por el shipping). TN lo expone como
+    // shipping_cost_customer; shipping_cost_owner es lo que la tienda le paga al correo.
+    const envioCliente = parseFloat(o.shipping_cost_customer)||0;
+    // La facturación de TN INCLUYE el envío cobrado al cliente (así lo reporta el
+    // admin de TN y así lo trae Shopify en total_price). Se suma a nivel orden —
+    // no por variante, porque el envío no es atribuible a un producto.
+    if(orderRevenue>0) orderRevenue += envioCliente;
     if(day)  { daily[day]=(daily[day]||0)+orderUnits; dailyRevenue[day]=(dailyRevenue[day]||0)+orderRevenue; }
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    // Envío cobrado al cliente (lo que pagó por el shipping). TN lo expone como
-    // shipping_cost_customer; shipping_cost_owner es lo que la tienda le paga al correo.
-    const envioCliente = parseFloat(o.shipping_cost_customer)||0;
     if(orderRevenue>0){
       brutoTotal += orderSubtotal;
       descuentoTotal += Math.min(orderDiscount, orderSubtotal);
@@ -466,8 +470,9 @@ function normSH(p, salesMap, days) {
 
 function buildResponse(platform, products, analytics, days) {
   const totalOrders=Object.values(analytics.dailyOrders||{}).reduce((a,b)=>a+b,0);
-  // total_revenue ahora viene de la suma de dailyRevenue (subtotal por orden, sin tax/shipping/refunds)
-  // — antes era suma de line_items.price × qty que daba inflado por IVA incluido.
+  // total_revenue viene de la suma de dailyRevenue: productos netos de descuento
+  // + envío cobrado al cliente (= la "facturación" que reporta el admin de TN;
+  // Shopify ya lo trae así en total_price). Antes era line_items × precio de lista.
   const totalRevenueFromOrders = Object.values(analytics.dailyRevenue||{}).reduce((a,b)=>a+b,0);
   return {
     platform, products, days,

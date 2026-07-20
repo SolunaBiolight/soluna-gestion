@@ -25029,10 +25029,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             </div>
           )}
 
-          {/* Desglose de facturación TN — diagnóstico de diferencias con otras apps.
-              Hoy la facturación de Growith = neto (productos − descuentos). Otras
-              apps a veces muestran el bruto (con descuentos) o suman el envío que
-              le cobrás al cliente. Esto deja ver cuánto aporta cada componente. */}
+          {/* Desglose de facturación TN — la facturación de Growith = productos
+              netos de descuento + envío cobrado al cliente (igual que el admin
+              de Tienda Nube). Este panel deja el total siempre auditable. */}
           {(()=>{
             const fb = rendData?.facturacionBreakdown;
             if (!fb || !(fb.bruto>0)) return null;
@@ -25047,13 +25046,46 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             return (
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 16px",marginBottom:16}}>
                 <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cómo se compone tu facturación de Tienda Nube</div>
-                {row("Facturación bruta", fb.bruto, "(productos a precio de lista)")}
+                {row("Productos a precio de lista", fb.bruto, null)}
                 {(fb.descuento||0)>0 && row("− Descuentos / cupones", -fb.descuento, null)}
-                {row("Facturación neta", fb.neto, "= lo que muestra Growith hoy", true)}
-                {(fb.envioCliente||0)>0 && row("+ Envío cobrado al cliente", fb.envioCliente, "(no lo suma hoy)")}
-                {(fb.envioCliente||0)>0 && row("Neto + envío cobrado", fb.conEnvio, "= facturación estilo Escalafy", true)}
+                {(fb.descuento||0)>0 && row("Productos netos", fb.neto, null)}
+                {(fb.envioCliente||0)>0 && row("+ Envío cobrado al cliente", fb.envioCliente, null)}
+                {row("Facturación total", fb.conEnvio, "= lo que muestra Growith y Tienda Nube", true)}
                 <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.5,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
-                  Si el número que ves en otra app coincide con <strong style={{color:T.textMd}}>{fmtM(fb.conEnvio)}</strong>, la diferencia es el <strong style={{color:T.textMd}}>envío que le cobrás al cliente</strong>. Si coincide con <strong style={{color:T.textMd}}>{fmtM(fb.bruto)}</strong>, es que esa app muestra el <strong style={{color:T.textMd}}>bruto antes de descuentos</strong>. Decime cuál coincide y ajusto la métrica.
+                  La facturación incluye el envío que le cobrás al cliente, igual que la reporta el admin de Tienda Nube. El costo del envío (lo que vos le pagás al correo) se descuenta aparte, en la capa de costos.
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Desglose de inversión publicitaria (Meta) — gasto original según Meta,
+              conversión a ARS con dólar histórico por día y fee sobre pauta. */}
+          {(()=>{
+            const ab = rendData?.adSpendBreakdown;
+            if (!ab || !(ab.total>0)) return null;
+            const monedas = Object.entries(ab.porMoneda||{}).filter(([,v])=>v>0);
+            const hayConv = monedas.some(([k])=>k!=="ARS");
+            if (!hayConv && !(ab.feePct>0)) return null; // gasto ARS sin fee: no hay nada que desglosar
+            const fmtOrig = (mon,v) => mon==="ARS" ? fmtM(v) : mon+" "+Number(v).toLocaleString("es-AR",{maximumFractionDigits:0});
+            const row = (lbl, val, hint, strong) => (
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:10,padding:"3px 0"}}>
+                <span style={{fontSize:DS.font.md,color:strong?T.text:T.textMd,fontWeight:strong?DS.w.bold:DS.w.medium}}>{lbl}{hint&&<span style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.regular,marginLeft:6}}>{hint}</span>}</span>
+                <span style={{fontSize:DS.font.md,color:strong?T.text:T.textMd,fontWeight:DS.w.bold,fontVariantNumeric:"tabular-nums"}}>{val}</span>
+              </div>
+            );
+            const TIPO_LBL = {oficial:"oficial",blue:"blue",mep:"MEP",cripto:"cripto",manual:"manual"};
+            return (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 16px",marginBottom:16}}>
+                <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cómo se compone tu inversión publicitaria (Meta)</div>
+                {monedas.map(([mon,v]) => row(`Gasto según Meta (${mon})`, fmtOrig(mon,v), mon==="ARS"?null:"(lo que factura Meta, en su moneda)"))}
+                {hayConv && row("Convertido a pesos", fmtM(ab.convertido), `dólar ${TIPO_LBL[ab.cotizTipo]||ab.cotizTipo}${ab.cotizProm?` prom. $${Number(ab.cotizProm).toLocaleString("es-AR",{maximumFractionDigits:0})}`:""}${ab.cotizAjuste?` +${ab.cotizAjuste}% ajuste`:""}, día por día`)}
+                {(ab.feePct>0) && row(`+ Fee sobre pauta (${ab.feePct}%)`, fmtM(ab.feeMonto), "(configurado en Cotización Dólar)")}
+                {row("Ad Spend Meta total", fmtM(ab.total), "= la tarjeta AD SPEND", true)}
+                {(ab.diasSinCotiz>0) && (
+                  <div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:6}}>⚠ {ab.diasSinCotiz} día{ab.diasSinCotiz>1?"s":""} sin cotización disponible — ese gasto quedó excluido del total.</div>
+                )}
+                <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.5,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
+                  {hayConv ? "Cada día se convierte con la cotización de ESE día (histórico), no con el dólar de hoy — por eso el total no cambia cuando se mueve el dólar. " : ""}{ab.feePct>0 ? "El fee sobre pauta suma el recargo real que pagás sobre lo que factura Meta (impuestos/tarjeta). Otras apps muestran el gasto sin ese recargo — por eso pueden mostrar un número más chico." : ""}
                 </div>
               </div>
             );
