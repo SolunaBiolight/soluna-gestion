@@ -1109,7 +1109,18 @@ export default async function handler(req, res) {
         reembolsosParciales: rawQ.partial_refund_orders||0,
       };
 
-      const responseBody = { rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes,
+      // Desglose de facturación TN (diagnóstico de diferencias vs otras apps):
+      // hoy revenue = neto (bruto − descuento). Acá exponemos cada componente
+      // para ver cuánto aporta el envío cobrado al cliente y los descuentos.
+      const fB = curr.raw?.facturacion || null;
+      const envioClienteTot = (curr.raw?.orders_detail||[]).reduce((s,o)=>s+(parseFloat(o.envioCliente)||0),0);
+      const facturacionBreakdown = fB ? {
+        bruto: fB.bruto, descuento: fB.descuento, neto: fB.neto,
+        envioCliente: +envioClienteTot.toFixed(2),
+        conEnvio: +(fB.neto + envioClienteTot).toFixed(2),
+      } : null;
+
+      const responseBody = { rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,

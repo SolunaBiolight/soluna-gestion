@@ -216,6 +216,10 @@ function processTN(orders) {
   // entran (TN no expone el monto reembolsado), pero se cuentan para que el
   // dashboard pueda avisar que esos números son a valor pleno.
   let cancelledExcluded=0, partialRefundOrders=0;
+  // Desglose de facturación (para diagnosticar diferencias vs otras apps):
+  // bruto = productos a precio de lista · descuento = cupones/promos ·
+  // envíoCliente = lo que el cliente pagó de envío (no lo que la tienda le paga al correo).
+  let brutoTotal=0, descuentoTotal=0, envioClienteTotal=0;
   for(const o of orders){
     if(o.status==="cancelled" || o.cancelled_at){ cancelledExcluded++; continue; }
     if(o.payment_status==="partially_refunded") partialRefundOrders++;
@@ -254,9 +258,19 @@ function processTN(orders) {
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    if(orderRevenue>0) ordersDetail.push({ id:String(o.id), nombre:`#${o.number||o.id}`, fecha:dt, platform:"tiendanube", revenue:orderRevenue, items:detItems, pay, envioCosto:parseFloat(o.shipping_cost_owner)||0, cust:String(o.customer?.id||o.contact_email||"") });
+    // Envío cobrado al cliente (lo que pagó por el shipping). TN lo expone como
+    // shipping_cost_customer; shipping_cost_owner es lo que la tienda le paga al correo.
+    const envioCliente = parseFloat(o.shipping_cost_customer)||0;
+    if(orderRevenue>0){
+      brutoTotal += orderSubtotal;
+      descuentoTotal += Math.min(orderDiscount, orderSubtotal);
+      envioClienteTotal += envioCliente;
+      ordersDetail.push({ id:String(o.id), nombre:`#${o.number||o.id}`, fecha:dt, platform:"tiendanube", revenue:orderRevenue, envioCliente, items:detItems, pay, envioCosto:parseFloat(o.shipping_cost_owner)||0, cust:String(o.customer?.id||o.contact_email||"") });
+    }
   }
-  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail,quality:{cancelledExcluded,partialRefundOrders}};
+  return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,ordersDetail,
+    facturacion:{ bruto:+brutoTotal.toFixed(2), descuento:+descuentoTotal.toFixed(2), envioCliente:+envioClienteTotal.toFixed(2), neto:+(brutoTotal-descuentoTotal).toFixed(2) },
+    quality:{cancelledExcluded,partialRefundOrders}};
 }
 
 // ── Procesar órdenes Shopify ──────────────────────────────────────────
@@ -471,6 +485,7 @@ function buildResponse(platform, products, analytics, days) {
     by_hour:        analytics.byHour,
     by_payment:     analytics.byPayment,
     by_variant:     analytics.byVariant,  // unidades por variante
+    facturacion:    analytics.facturacion||null, // desglose bruto/descuento/envíoCliente/neto (TN)
   };
 }
 

@@ -25029,6 +25029,36 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             </div>
           )}
 
+          {/* Desglose de facturación TN — diagnóstico de diferencias con otras apps.
+              Hoy la facturación de Growith = neto (productos − descuentos). Otras
+              apps a veces muestran el bruto (con descuentos) o suman el envío que
+              le cobrás al cliente. Esto deja ver cuánto aporta cada componente. */}
+          {(()=>{
+            const fb = rendData?.facturacionBreakdown;
+            if (!fb || !(fb.bruto>0)) return null;
+            const dif = (fb.descuento||0) + (fb.envioCliente||0);
+            if (dif < (fb.neto||0)*0.002) return null; // sin diferencias relevantes
+            const row = (lbl, val, hint, strong) => (
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:10,padding:"3px 0"}}>
+                <span style={{fontSize:DS.font.md,color:strong?T.text:T.textMd,fontWeight:strong?DS.w.bold:DS.w.medium}}>{lbl}{hint&&<span style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.regular,marginLeft:6}}>{hint}</span>}</span>
+                <span style={{fontSize:DS.font.md,color:strong?T.text:T.textMd,fontWeight:DS.w.bold,fontVariantNumeric:"tabular-nums"}}>{fmtM(val)}</span>
+              </div>
+            );
+            return (
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"12px 16px",marginBottom:16}}>
+                <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.4}}>Cómo se compone tu facturación de Tienda Nube</div>
+                {row("Facturación bruta", fb.bruto, "(productos a precio de lista)")}
+                {(fb.descuento||0)>0 && row("− Descuentos / cupones", -fb.descuento, null)}
+                {row("Facturación neta", fb.neto, "= lo que muestra Growith hoy", true)}
+                {(fb.envioCliente||0)>0 && row("+ Envío cobrado al cliente", fb.envioCliente, "(no lo suma hoy)")}
+                {(fb.envioCliente||0)>0 && row("Neto + envío cobrado", fb.conEnvio, "= facturación estilo Escalafy", true)}
+                <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.5,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
+                  Si el número que ves en otra app coincide con <strong style={{color:T.textMd}}>{fmtM(fb.conEnvio)}</strong>, la diferencia es el <strong style={{color:T.textMd}}>envío que le cobrás al cliente</strong>. Si coincide con <strong style={{color:T.textMd}}>{fmtM(fb.bruto)}</strong>, es que esa app muestra el <strong style={{color:T.textMd}}>bruto antes de descuentos</strong>. Decime cuál coincide y ajusto la métrica.
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Selector de canal — Global / Tienda / ML (estilo Escalafy) */}
           {(()=>{
             const bc = rendData.byChannel||{};
