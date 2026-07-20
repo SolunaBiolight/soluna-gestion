@@ -768,6 +768,9 @@ export default async function handler(req, res) {
       // falla: list_cost (mejor pasarse que $0). Flex (self_service, el vendedor
       // le paga al correo por fuera) → costo propio configurado.
       const mlLogi = {};
+      // Diagnóstico del costo de envío ML: cuántos shipments resolvieron por cada
+      // fuente + una respuesta cruda de /costs de muestra (para auditar campos).
+      const mlEnvioDebug = { costsOk:0, costsFallback:0, flex:0, sumCost:0, sumSave:0, sample:null };
       try {
         const tokML = mlVentasAcc === "__none__" ? null : await getValidMLToken(db, uid, mlVentasAcc); // cuenta de ventas ML
         if (tokML?.accessToken) {
@@ -783,16 +786,23 @@ export default async function handler(req, res) {
                 const j = await r.json();
                 const lt = j.logistic_type || null;
                 let cost = parseFloat(j.shipping_option?.list_cost) || 0;
-                if (lt !== "self_service") {
+                if (lt === "self_service") { mlEnvioDebug.flex++; }
+                else {
+                  let ok = false;
                   try {
                     const rc = await fetch(`https://api.mercadolibre.com/shipments/${id}/costs`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
                     if (rc.ok) {
                       const jc = await rc.json();
                       if (Array.isArray(jc.senders) && jc.senders.length) {
                         cost = jc.senders.reduce((s,x)=>s+(parseFloat(x.cost)||0),0);
+                        mlEnvioDebug.sumCost += cost;
+                        mlEnvioDebug.sumSave += jc.senders.reduce((s,x)=>s+(parseFloat(x.save)||0),0);
+                        if (!mlEnvioDebug.sample) mlEnvioDebug.sample = JSON.stringify(jc).slice(0,900);
+                        ok = true;
                       }
                     }
                   } catch(_) {}
+                  if (ok) mlEnvioDebug.costsOk++; else mlEnvioDebug.costsFallback++;
                 }
                 return [id, { lt, cost }];
               } catch(_) { return [id, null]; }
@@ -1182,7 +1192,7 @@ export default async function handler(req, res) {
         since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, metaAccountsCount: metaAccounts.length,
           mlAdsFuente: mlAdsAutoCurr!=null ? "auto" : (mlAdsList.length ? "manual" : "sin_datos"),
-          mlAdsDebug,
+          mlAdsDebug, mlEnvioDebug,
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };
       // Guardar caché + registrar el rango en el warmer (best-effort: si Firestore
