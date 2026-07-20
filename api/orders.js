@@ -307,7 +307,9 @@ export default async function handler(req, res) {
       // primera cuenta (comportamiento de siempre con 1 solo ML).
       const mlMpAcc     = String(userData.margenesMlMp || "") || null;
       const mlVentasAcc = String(userData.margenesMlVentas || "") || null;
-      const hasML = stores.some(s => s.type === "meli");
+      // El OAuth guarda type "mercadolibre" (integrations.js) — el chequeo viejo
+      // por "meli" nunca matcheaba y Mercado Ads automático quedaba siempre en 0.
+      const hasML = stores.some(s => s.type === "mercadolibre" || s.type === "meli");
       async function fetchStock(from, to) {
         // Sin catch silencioso: si la fuente de ventas falla, es MUCHO mejor
         // devolver un error explícito ("reintentá") que un dashboard con
