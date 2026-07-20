@@ -25542,7 +25542,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {renderCards([
                 {label:"Profit",      val:fmtM(cSel.profit),    c:cSel.profit,     p:cPrev?.profit,     accent:(cSel.profit||0)>=0?MC.green:MC.red, valColor:(cSel.profit||0)>=0?MC.green:MC.red, hint:(cSel.profit||0)>=0?"Ganancia neta del canal":"Pérdida neta del canal", spk:canalRows.map(r=>r.Profit), zero:true},
                 {label:"Revenue",     val:fmtM(cSel.revenue),   c:cSel.revenue,    p:cPrev?.revenue,    accent:MC.blue,   hint:"Facturación del canal", spk:canalRows.map(r=>r.Revenue)},
-                {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    accent:MC.gold,   hint:esMl?"Mercado Ads (manual)":"Meta Ads", spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
+                {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    accent:MC.gold,   hint:esMl?(rendData?.meta?.mlAdsFuente==="auto"?"Mercado Ads (real, API)":"Mercado Ads (manual)"):"Meta Ads", spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
                 {label:"Net Revenue", val:fmtM(cSel.netRevenue),c:cSel.netRevenue, p:cPrev?.netRevenue, accent:MC.violet, hint:"Tras comisiones e impuestos", spk:canalRows.map(r=>r["Net Revenue"])},
                 {label:"Órdenes",     val:fmtInt(cSel.orders),  c:cSel.orders,     p:cPrev?.orders,     hint:"Con revenue", spk:canalRows.map(r=>r["Ordenes > $0"]), bad:!((cSel.orders||0)>0)},
                 {label:"ROAS",        val:fmtX(cSel.roas),      c:cSel.roas,       p:cPrev?.roas,       hint:`meta ≥ ${metas.roas}x`, bad:(cSel.adSpend>0)&&(cSel.roas||0)<metas.roas},
