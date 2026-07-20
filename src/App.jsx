@@ -731,8 +731,9 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     {id:"copilot",  label:"Copilot",   icon:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"},
     { group:"FINANZAS" },
-    {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
-      subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos"},{id:"adicionales",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
+    // Sin subs: la navegación interna vive en las pills de la sección (tenerla
+    // dos veces —sidebar y pills— duplicaba y ocupaba espacio).
+    {id:"margenes", label:"Dashboard", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
@@ -965,6 +966,7 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   const items = [
     {label:"Inicio",              page:"home",     icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     {label:"Copilot (preguntale a tu negocio)", page:"copilot", icon:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"},
+    {label:"Dashboard (finanzas y márgenes)", page:"margenes", icon:"M18 20V10M12 20V4M6 20v-6"},
     {label:"Envíos",              page:"envios",   icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
     {label:"Reclamos",            page:"reclamos", icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
     {label:"Canjes",              page:"canjes",   icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
@@ -976,7 +978,6 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
     {label:"Planes",              page:"planes",   icon:"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"},
     ...(isAdmin?[
       {label:"Admin Panel",  page:"admin",       icon:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"},
-      {label:"Dashboard",     page:"rendimiento", icon:"M18 20V10M12 20V4M6 20v-6"},
     ]:[]),
   ];
   const filtered = items.filter(i => !q || i.label.toLowerCase().includes(q.toLowerCase()));
@@ -22508,7 +22509,7 @@ function AppMargenes({ T, user, onHome, tab="dashboard", setTab }) {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Márgenes" onHome={onHome}/>
+      <AppTopbar T={T} section="Dashboard" onHome={onHome}/>
       <MargenesTabsBar T={T} tab={tab} setTab={setTab}/>
       <div style={{maxWidth:1280,margin:"0 auto",padding:"20px 24px 80px",width:"100%"}}>
         {tab==="pnl" && <MargenesPnl T={T} uid={uid}/>}
@@ -24732,6 +24733,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   });
   const [editSecKpis, setEditSecKpis] = useState(false);
   const [dragKpi, setDragKpi] = useState(null); // label del KPI que se está arrastrando
+  // Desplegables compactos: alertas, precisión de datos y desgloses viven en
+  // chips que se expanden a demanda (antes eran bloques fijos que comían espacio).
+  const [openInfo, setOpenInfo] = useState(null); // null | "alertas" | "avisos" | "fb" | "ab"
   const [fullNums, setFullNums] = useState(()=>{ try{return localStorage.getItem("growith_margenes_fullnums")==="1";}catch(_){return false;} });
   const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
   function updVis(patch){ setVis(v=>{ const n={...v,...patch}; try{localStorage.setItem(`growith_margenes_vis_${user?.uid}`,JSON.stringify(n));}catch(_){} return n; }); }
@@ -24902,7 +24906,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
-      <AppTopbar T={T} section="Márgenes" onHome={onHome}>
+      <AppTopbar T={T} section="Dashboard" onHome={onHome}>
         <button onClick={()=>setFullNums(f=>{const n=!f; try{localStorage.setItem("growith_margenes_fullnums",n?"1":"0");}catch(_){} return n;})} title={fullNums?"Ver números redondeados (K/M)":"Ver todos los números sin redondear"} style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",fontWeight:fullNums?700:500,color:fullNums?T.accent:T.textMd,borderColor:fullNums?T.accent+"66":T.inputBorder}}>
           {fullNums?"$ Completos":"$ 1,2K"}
         </button>
@@ -25002,8 +25006,36 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             </div>
           )}
 
+          {/* Chips de estado — alertas, precisión y desgloses en desplegables
+              compactos (antes eran bloques fijos que comían medio viewport). */}
+          {(()=>{
+            const fb0 = rendData?.facturacionBreakdown;
+            const fbOk = fb0 && fb0.bruto>0 && ((fb0.descuento||0)+(fb0.envioCliente||0)) >= (fb0.neto||0)*0.002;
+            const ab0 = rendData?.adSpendBreakdown;
+            const abOk = ab0 && ab0.total>0 && (Object.entries(ab0.porMoneda||{}).some(([k,v])=>k!=="ARS"&&v>0) || ab0.feePct>0);
+            const chips = [
+              alerts.length>0 && {id:"alertas", color:alerts.some(a=>a.sev==="red")?T.red:T.orange, label:`${alerts.length} alerta${alerts.length>1?"s":""}`},
+              qItems.length>0 && {id:"avisos", color:T.yellow, label:`${qItems.length} aviso${qItems.length>1?"s":""} de precisión`},
+              fbOk && {id:"fb", color:T.blue, label:"Desglose facturación"},
+              abOk && {id:"ab", color:T.orange, label:"Desglose inversión"},
+            ].filter(Boolean);
+            if (!chips.length) return null;
+            return (
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+                {chips.map(c=>(
+                  <button key={c.id} onClick={()=>setOpenInfo(o=>o===c.id?null:c.id)}
+                    style={{display:"inline-flex",alignItems:"center",gap:7,padding:"5px 12px",fontSize:DS.font.sm,fontWeight:DS.w.bold,border:`1px solid ${c.color}${openInfo===c.id?"88":"44"}`,borderRadius:DS.r.full,background:openInfo===c.id?c.color+"22":c.color+"0E",color:c.color,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:c.color,display:"inline-block"}}/>
+                    {c.label}
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{transform:openInfo===c.id?"rotate(180deg)":"none",transition:`transform .15s ${DS.ease}`}}><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+
           {/* Alertas proactivas */}
-          {alerts.length>0 && (
+          {openInfo==="alertas" && alerts.length>0 && (
             <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
               {alerts.map((a,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:(a.sev==="red"?T.red:T.orange)+"12",border:`1px solid ${(a.sev==="red"?T.red:T.orange)}33`,borderRadius:DS.r.lg,padding:"9px 14px",fontSize:DS.font.base,color:T.text}}>
@@ -25015,7 +25047,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           )}
 
           {/* Calidad del dato — qué puede estar haciendo mentir a los números */}
-          {qItems.length>0 && (
+          {openInfo==="avisos" && qItems.length>0 && (
             <div style={{background:T.yellow+"0E",border:`1px solid ${T.yellow}44`,borderRadius:DS.r.lg,padding:"10px 14px",marginBottom:16}}>
               <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>⚠ Precisión de los datos</div>
               <div style={{display:"flex",flexDirection:"column",gap:5}}>
@@ -25033,7 +25065,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {/* Desglose de facturación TN — la facturación de Growith = productos
               netos de descuento + envío cobrado al cliente (igual que el admin
               de Tienda Nube). Este panel deja el total siempre auditable. */}
-          {(()=>{
+          {openInfo==="fb" && (()=>{
             const fb = rendData?.facturacionBreakdown;
             if (!fb || !(fb.bruto>0)) return null;
             const dif = (fb.descuento||0) + (fb.envioCliente||0);
@@ -25061,7 +25093,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
           {/* Desglose de inversión publicitaria (Meta) — gasto original según Meta,
               conversión a ARS con dólar histórico por día y fee sobre pauta. */}
-          {(()=>{
+          {openInfo==="ab" && (()=>{
             const ab = rendData?.adSpendBreakdown;
             if (!ab || !(ab.total>0)) return null;
             const monedas = Object.entries(ab.porMoneda||{}).filter(([,v])=>v>0);
@@ -25149,75 +25181,73 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               <Btn T={T} variant="ghost" size="sm" onClick={()=>setEditMetas(false)}>Cancelar</Btn>
             </div>
           )}
-          {vis.main!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
-            {[
-              {label:"Profit",      val:tot.profit,     prev:prevTot.profit,     color:(tot.profit||0)>=0?T.green:T.red, desc:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
-              {label:"Revenue",     val:tot.revenue,    prev:prevTot.revenue,    color:T.blue,   desc:"Ingreso bruto",     spk:dailyRows.map(r=>r.Revenue)},
-              {label:"Ad Spend",    val:tot.adSpend,    prev:prevTot.adSpend,    color:T.orange, desc:"Gasto publicitario", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
-              {label:"Net Revenue", val:tot.netRevenue, prev:prevTot.netRevenue, color:T.accent, desc:"Tras comisiones",    spk:dailyRows.map(r=>r["Net Revenue"])},
-            ].map(k=>(
-              <div key={k.label} style={{background:T.card,border:`1px solid ${k.color}28`,borderRadius:14,padding:"18px 18px 14px",position:"relative",overflow:"hidden"}}>
-                <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
-                <div style={{fontSize:26,fontWeight:800,color:k.color,letterSpacing:-1,lineHeight:1,marginBottom:4}}>{fmtM(k.val)}</div>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-                  <span style={{fontSize:10,color:T.textSm}}>{k.desc}</span>
-                  {hasPrev&&<DeltaBadge curr={k.val} prev={k.prev} invert={k.inv}/>}
-                </div>
-                <Spk vals={k.spk} color={k.color} h={38} w={140} showZero={k.zero}/>
-              </div>
-            ))}
-          </div>}
-
-          {/* Secondary KPIs — con selector de cuáles mostrar (lápiz) */}
+          {/* Cards de métricas — TODAS del mismo tamaño y arrastrables (estilo
+              Escalafy): las 4 principales (con color propio) + las secundarias en
+              un solo grid uniforme. Orden persistido en vis.cardsOrder; visibilidad
+              por card en vis.secKpis (lápiz). El diferencial vs Escalafy: cada card
+              trae sparkline diario Y delta vs período anterior. */}
           {(()=>{
-            const SEC_KPIS=[
-              {label:"ROAS",       val:fmtX(tot.roas),            good:(tot.roas||0)>=metas.roas,     hint:`meta ≥ ${metas.roas}x`},
-              {label:"True ROAS",  val:fmtX(tot.trueRoas),        good:(tot.trueRoas||0)>=metas.trueRoas, hint:`meta ≥ ${metas.trueRoas}x`},
-              {label:"CPA real",   val:fmtM(tot.cpa),             good:true,                          hint:"Ad Spend / Órdenes"},
-              {label:"CPA Break Even",val:fmtM(tot.cpaBreakEven), good:true,                          hint:"CPA máx. antes de perder"},
-              {label:"Órdenes",    val:fmtInt(tot.orders),         good:(tot.orders||0)>0,             hint:"Con revenue"},
-              {label:"AOV",        val:fmtM(tot.aov),              good:true,                          hint:"Ticket promedio"},
-              {label:"Margen",     val:fmtPct(tot.profitMargin),   good:(tot.profitMargin||0)>metas.margen/100, hint:`meta > ${metas.margen}%`},
-              {label:"MER %",      val:fmtPct(tot.mer),            good:true,                          hint:"Ad Spend / Revenue"},
-              {label:"Break Even", val:fmtX(tot.breakEvenRoas),    good:true,                          hint:"ROAS de equilibrio"},
-              {label:"Días profit",val:`${profitDays}/${dailyRows.length}`, good:profitDays>=lossDays, hint:"Días positivos"},
+            const CARDS=[
+              {label:"Profit",      val:fmtM(tot.profit),    c:tot.profit,     p:prevTot.profit,     hero:true, color:(tot.profit||0)>=0?T.green:T.red, hint:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
+              {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, color:T.blue,   hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue)},
+              {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, color:T.orange, hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
+              {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, color:T.accent, hint:"Tras comisiones",        spk:dailyRows.map(r=>r["Net Revenue"])},
+              {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,     hint:"Con revenue",            spk:dailyRows.map(r=>r["Ordenes > $0"]), bad:!((tot.orders||0)>0)},
+              {label:"ROAS",        val:fmtX(tot.roas),      c:tot.roas,       p:prevTot.roas,       hint:`meta ≥ ${metas.roas}x`,  spk:dailyRows.map(r=>r.ROAS||0), bad:(tot.roas||0)<metas.roas},
+              {label:"True ROAS",   val:fmtX(tot.trueRoas),  c:tot.trueRoas,   p:prevTot.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, spk:dailyRows.map(r=>r["True ROAS"]||0), bad:(tot.trueRoas||0)<metas.trueRoas},
+              {label:"CPA real",    val:fmtM(tot.cpa),       c:tot.cpa,        p:prevTot.cpa,        hint:"Ad Spend / Órdenes",     spk:dailyRows.map(r=>r.CPA||0), inv:true},
+              {label:"CPA Break Even", val:fmtM(tot.cpaBreakEven), c:tot.cpaBreakEven, p:prevTot.cpaBreakEven, hint:"CPA máx. antes de perder"},
+              {label:"AOV",         val:fmtM(tot.aov),       c:tot.aov,        p:prevTot.aov,        hint:"Ticket promedio"},
+              {label:"Margen",      val:fmtPct(tot.profitMargin), c:tot.profitMargin, p:prevTot.profitMargin, hint:`meta > ${metas.margen}%`, bad:(tot.profitMargin||0)<=metas.margen/100},
+              {label:"MER %",       val:fmtPct(tot.mer),     c:tot.mer,        p:prevTot.mer,        hint:"Ad Spend / Revenue", inv:true},
+              {label:"Break Even",  val:fmtX(tot.breakEvenRoas), c:tot.breakEvenRoas, p:prevTot.breakEvenRoas, hint:"ROAS de equilibrio", inv:true},
+              {label:"Días profit", val:`${profitDays}/${dailyRows.length}`, hint:"Días positivos", bad:profitDays<lossDays},
             ];
-            // Orden custom (drag): labels guardados en vis.secKpisOrder; los que no
-            // estén quedan al final en su orden original.
-            const kpiOrder = Array.isArray(vis.secKpisOrder) ? vis.secKpisOrder : [];
-            const orderedKpis = [...SEC_KPIS].sort((a,b)=>{ const ia=kpiOrder.indexOf(a.label), ib=kpiOrder.indexOf(b.label); return (ia<0?999:ia)-(ib<0?999:ib); });
-            const reorderKpi = (fromLbl, toLbl) => {
+            const order = Array.isArray(vis.cardsOrder) ? vis.cardsOrder : (Array.isArray(vis.secKpisOrder) ? vis.secKpisOrder : []);
+            const ordered = [...CARDS].sort((a,b)=>{ const ia=order.indexOf(a.label), ib=order.indexOf(b.label); return (ia<0?999:ia)-(ib<0?999:ib); });
+            const reorder = (fromLbl, toLbl) => {
               if(!fromLbl||!toLbl||fromLbl===toLbl) return;
-              const cur = orderedKpis.map(k=>k.label);
+              const cur = ordered.map(k=>k.label);
               const fi=cur.indexOf(fromLbl); if(fi<0) return;
               cur.splice(fi,1);
               const ti=cur.indexOf(toLbl);
               cur.splice(ti<0?cur.length:ti,0,fromLbl);
-              updVis({secKpisOrder:cur});
+              updVis({cardsOrder:cur});
             };
+            const visibleCards = ordered.filter(k=> vis.secKpis[k.label]!==false && (k.hero || vis.sec!==false));
             return (<>
               {editSecKpis && (
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px"}}>
-                  <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Elegí qué KPIs mostrar · arrastrá para reordenar:</span>
-                  {orderedKpis.map(k=>{
+                  <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Elegí qué cards mostrar · arrastrá (acá o en el grid) para reordenar:</span>
+                  {ordered.map(k=>{
                     const on=vis.secKpis[k.label]!==false;
                     return <button key={k.label}
                       draggable
                       onDragStart={()=>setDragKpi(k.label)}
                       onDragOver={e=>e.preventDefault()}
-                      onDrop={e=>{e.preventDefault(); reorderKpi(dragKpi, k.label); setDragKpi(null);}}
+                      onDrop={e=>{e.preventDefault(); reorder(dragKpi, k.label); setDragKpi(null);}}
                       onDragEnd={()=>setDragKpi(null)}
                       onClick={()=>updVis({secKpis:{...vis.secKpis,[k.label]:!on}})}
                       style={{fontSize:11,padding:"4px 10px",borderRadius:DS.r.full,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid:"transparent",color:on?"#fff":T.textMd,cursor:"grab",opacity:dragKpi===k.label?0.4:1,fontFamily:"'Inter',system-ui,sans-serif"}}>⠿ {k.label}</button>;
                   })}
                 </div>
               )}
-              {vis.sec!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:18}}>
-                {orderedKpis.filter(k=>vis.secKpis[k.label]!==false).map(k=>(
-                  <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
-                    <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
-                    <div style={{fontSize:15,fontWeight:800,color:k.good?T.text:T.red,letterSpacing:-0.5}}>{k.val}</div>
-                    <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
+              {vis.main!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:10,marginBottom:18}}>
+                {visibleCards.map(k=>(
+                  <div key={k.label}
+                    draggable
+                    onDragStart={()=>setDragKpi(k.label)}
+                    onDragOver={e=>e.preventDefault()}
+                    onDrop={e=>{e.preventDefault(); reorder(dragKpi,k.label); setDragKpi(null);}}
+                    onDragEnd={()=>setDragKpi(null)}
+                    style={{background:T.card,border:`1px solid ${k.color?k.color+"28":(k.bad?T.red+"33":T.border)}`,borderRadius:14,padding:"14px 16px 12px",position:"relative",overflow:"hidden",cursor:"grab",opacity:dragKpi===k.label?0.4:1,minHeight:112,display:"flex",flexDirection:"column"}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
+                    <div style={{fontSize:22,fontWeight:800,color:k.color||(k.bad?T.red:T.text),letterSpacing:-0.8,lineHeight:1,marginBottom:5}}>{k.val}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:k.spk?8:0}}>
+                      <span style={{fontSize:9,color:T.textSm}}>{k.hint}</span>
+                      {hasPrev && k.c!=null && k.p!=null && <DeltaBadge curr={k.c} prev={k.p} invert={k.inv}/>}
+                    </div>
+                    {k.spk && <div style={{marginTop:"auto"}}><Spk vals={k.spk} color={k.color||T.textSm} h={28} w={140} showZero={k.zero}/></div>}
                   </div>
                 ))}
               </div>}
@@ -26388,7 +26418,7 @@ export default function App() {
       {[
         {id:"home",label:"Inicio",icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
         {id:"copilot",label:"Copilot",icon:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"},
-        {id:"margenes",label:"Márgenes",icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
+        {id:"margenes",label:"Dashboard",icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
         {id:"arca",label:"Facturador",icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6M9 9h1"},
         {id:"meta",label:"Meta Ads",icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
         {id:"stock",label:"Stock",icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"},
