@@ -729,6 +729,7 @@ function GrowithLogo({size=28, variant="color", darkMode=false}) {
 function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[], onToggleDark, darkMode, onLogout, alerts={}, collapsed, setCollapsed, enviosTab, setEnviosTab, reclamosView, setReclamosView, metaTab, setMetaTab, stockTab, setStockTab, margenesTab, setMargenesTab, arcaTab, setArcaTab, tareasTab, setTareasTab, canjesTab, setCanjesTab, mlTab, setMlTab, connectedStores={}, orgs=[], activeOrgId=null, onSwitchOrg=()=>{}, onOpenCreateOrg=()=>{}, onOpenManageOrg=()=>{}, isInTrial=false}) {
   const GROUPS = [
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
+    {id:"copilot",  label:"Copilot",   icon:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"},
     { group:"FINANZAS" },
     {id:"margenes", label:"Márgenes", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
       subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos"},{id:"adicionales",label:"Costos Adicionales"},{id:"dolar",label:"Cotización Dólar"},{id:"facturacion_externa",label:"Facturación Externa"}]},
@@ -963,6 +964,7 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
 
   const items = [
     {label:"Inicio",              page:"home",     icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
+    {label:"Copilot (preguntale a tu negocio)", page:"copilot", icon:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"},
     {label:"Envíos",              page:"envios",   icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"},
     {label:"Reclamos",            page:"reclamos", icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"},
     {label:"Canjes",              page:"canjes",   icon:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"},
@@ -8205,7 +8207,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
   async function connectMetaOauth() {
     setConnectingMeta(true);
     try {
-      const r = await fetch(`/api/meta?action=oauth_start&uid=${user.uid}`);
+      const r = await authFetch(`/api/meta?action=oauth_start&uid=${user.uid}`);
       const d = await r.json();
       if(d.error) { setMsg("Error: "+d.error); setConnectingMeta(false); return; }
       window.location.href = d.url; // redirect en la misma pestaña; vuelve con ?meta_success=1
@@ -8221,7 +8223,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
     setConnectingMeta(true);
     try {
       // 1. connect: valida el token y trae info
-      const cr = await fetch(`/api/meta?action=connect&uid=${user.uid}`, {
+      const cr = await authFetch(`/api/meta?action=connect&uid=${user.uid}`, {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({access_token: metaToken.trim()}),
       }).then(r=>r.json());
@@ -8233,7 +8235,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
       // Caso 0: no hay ad accounts → el token no tiene permisos suficientes
       if(adAccounts.length === 0) {
         // Aun así marco activa la cuenta para que el usuario pueda ir a Meta a configurar
-        await fetch(`/api/meta?action=set_active&uid=${user.uid}`,{
+        await authFetch(`/api/meta?action=set_active&uid=${user.uid}`,{
           method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({id:cr.id}),
         });
@@ -8248,7 +8250,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
       const aa = adAccounts[0];
       const pg = pages[0];
       const ig = pg?.instagram_business_account;
-      const sr = await fetch(`/api/meta?action=select&uid=${user.uid}&acc_id=${cr.id}`, {
+      const sr = await authFetch(`/api/meta?action=select&uid=${user.uid}&acc_id=${cr.id}`, {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           ad_account_id: aa.id, ad_account_name: aa.name||"",
@@ -8264,7 +8266,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
       }
 
       // 3. set_active
-      await fetch(`/api/meta?action=set_active&uid=${user.uid}`, {
+      await authFetch(`/api/meta?action=set_active&uid=${user.uid}`, {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({id: cr.id}),
       });
@@ -8283,7 +8285,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
     if(!await appConfirm("¿Desvincular Meta? Vas a perder el acceso a las cuentas conectadas.",{danger:true,okLabel:"Desvincular"})) return;
     setSaving(true);
     try {
-      await fetch(`/api/meta?action=disconnect&uid=${user.uid}`, {method:"POST"});
+      await authFetch(`/api/meta?action=disconnect&uid=${user.uid}`, {method:"POST"});
       setMsg("Meta desvinculada.");
     } finally { setSaving(false); }
   }
@@ -17778,6 +17780,7 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
   const [logic,setLogic]=useState(initialRule?.logic||"AND");
   const [action,setAction]=useState(initialRule?.action||"pause");
   const [actionPct,setActionPct]=useState(initialRule?.action_pct||20);
+  const [actionMax,setActionMax]=useState(initialRule?.action_max||"");
   const [active,setActive]=useState(initialRule?.active!==false);
   const [conditions,setConditions]=useState(initialRule?.conditions?.length?[...initialRule.conditions]:[{metric:"spend",op:">=",value:"",window_days:7}]);
   const [productIds,setProductIds]=useState(Array.isArray(initialRule?.product_ids)?[...initialRule.product_ids]:[]);
@@ -17797,7 +17800,8 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
     const ok = await onSave({
       ...(initialRule?{id:initialRule.id}:{}),
       name:name.trim(), level, logic, action, active,
-      action_pct: action === "reduce_budget" ? (parseFloat(actionPct) || 20) : null,
+      action_pct: (action === "reduce_budget" || action === "increase_budget") ? (parseFloat(actionPct) || 20) : null,
+      action_max: action === "increase_budget" ? (parseFloat(actionMax) || null) : null,
       product_ids: productIds,
       conditions: validConds.map(c=>({metric:c.metric,op:c.op,value:parseFloat(c.value),window_days:parseInt(c.window_days)||7})),
     });
@@ -17878,7 +17882,8 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {[
               {id:"pause", l:"⏸ Pausar"},
-              {id:"reduce_budget", l:"Bajar presupuesto"},
+              {id:"reduce_budget", l:"↓ Bajar presupuesto"},
+              {id:"increase_budget", l:"↑ Subir presupuesto"},
               {id:"notify", l:"Solo notificar"},
             ].map(a=>(
               <button key={a.id} onClick={()=>setAction(a.id)} style={{flex:1,minWidth:140,padding:"9px 12px",fontSize:12,fontWeight:600,border:`1px solid ${action===a.id?T.accentSolid+"88":T.border}`,borderRadius:8,background:action===a.id?T.accentSolid+"15":"transparent",color:action===a.id?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{a.l}</button>
@@ -17889,6 +17894,18 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
               <span style={{fontSize:12,color:T.textMd}}>Bajar el presupuesto un</span>
               <input type="number" min="1" max="99" value={actionPct} onChange={e=>setActionPct(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"6px 10px",fontSize:13,color:T.text,width:70,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700,textAlign:"center"}}/>
               <span style={{fontSize:12,color:T.textMd}}>% cuando se cumpla la regla</span>
+            </div>
+          )}
+          {action === "increase_budget" && (
+            <div style={{marginTop:10,padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,color:T.textMd}}>Subir el presupuesto un</span>
+                <input type="number" min="1" max="200" value={actionPct} onChange={e=>setActionPct(e.target.value)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"6px 10px",fontSize:13,color:T.text,width:70,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700,textAlign:"center"}}/>
+                <span style={{fontSize:12,color:T.textMd}}>% · tope diario</span>
+                <span style={{fontSize:13,color:T.textSm}}>$</span>
+                <input type="number" min="0" value={actionMax} onChange={e=>setActionMax(e.target.value)} placeholder="sin tope" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:6,padding:"6px 10px",fontSize:13,color:T.text,width:110,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700,textAlign:"center"}}/>
+              </div>
+              <div style={{fontSize:10,color:T.yellow,marginTop:6,lineHeight:1.5}}>⚠ Usá siempre un tope: sin tope, una regla que se cumple varios días seguidos escala el presupuesto sin límite.</div>
             </div>
           )}
         </div>
@@ -18019,9 +18036,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   ];
   const CTAS=["LEARN_MORE","SHOP_NOW","SIGN_UP","GET_OFFER","ORDER_NOW","BUY_NOW","CONTACT_US","WHATSAPP_MESSAGE"];
   const CTAS_LABELS={LEARN_MORE:"Más información",SHOP_NOW:"Comprar ahora",SIGN_UP:"Suscribirse",GET_OFFER:"Obtener oferta",ORDER_NOW:"Pedir ahora",BUY_NOW:"Comprar",CONTACT_US:"Contactar",WHATSAPP_MESSAGE:"WhatsApp"};
-  const TONOS=["directo","empático","experto","ugc","dramático","informativo","inspirador"];
-  const LARGOS=[{id:"corto",label:"Corto"},{id:"medio",label:"Medio"},{id:"largo",label:"Largo"},{id:"nativo",label:"Nativo +500"}];
-  const FORMATOS=["storytelling","pregunta-hook","lista de beneficios","testimonio","experto/médico","ugc casual"];
   // Símbolo de moneda según la cuenta publicitaria activa
   function currencySymbol(code) {
     return ({ARS:"$",USD:"US$",BRL:"R$",MXN:"MX$",EUR:"€",CLP:"CLP$",PEN:"S/",UYU:"$U",COP:"COL$",GBP:"£"})[code] || code || "$";
@@ -18053,6 +18067,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [aQuery,setAQuery]=useState("");
   const [aFilterStatus,setAFilterStatus]=useState("all"); // all | active | paused
   const [aBusyIds,setABusyIds]=useState({}); // ids siendo pausadas/activadas
+  // Breakdown (segmentación por edad/género/ubicación/hora)
+  const [aBreakdown,setABreakdown]=useState(""); // "" | age | gender | placement | hour
+  const [bdRows,setBdRows]=useState([]);
+  const [bdLoading,setBdLoading]=useState(false);
 
   // Estado del tab Biblioteca
   const [libAds,setLibAds]=useState([]);
@@ -18096,23 +18114,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [campaigns,setCampaigns]=useState([]);
   const [adsets,setAdsets]=useState([]);
   const [campsLoading,setCampsLoading]=useState(false);
-  const [showNewCamp,setShowNewCamp]=useState(false);
-  const [showNewAdset,setShowNewAdset]=useState(false);
-  const [newCamp,setNewCamp]=useState({name:"",objective:"OUTCOME_SALES",cbo_daily_budget_ars:"",is_cbo:true});
-  const [newAdset,setNewAdset]=useState({name:"",campaign_id:"",daily_budget_ars:"3000",is_cbo:false,start_time:""});
-  const [campCreating,setCampCreating]=useState(false);
-  const [adsetCreating,setAdsetCreating]=useState(false);
 
   // Creativos
   const [creatives,setCreatives]=useState([]);
   const [creativesLoading,setCreativesLoading]=useState(false);
   const [selCreative,setSelCreative]=useState(null);
-  const [addingUrl,setAddingUrl]=useState(false);
-  const [newCUrl,setNewCUrl]=useState("");
-  const [newCName,setNewCName]=useState("");
-  const [newCKind,setNewCKind]=useState("image");
-  const [generatingCopy,setGeneratingCopy]=useState(null);
-  const [publishing,setPublishing]=useState(null);
   const [uploadingFile,setUploadingFile]=useState(false);
   const [uploadProgress,setUploadProgress]=useState({ done: 0, total: 0 });
   const [analyzingCreative,setAnalyzingCreative]=useState(null);
@@ -18126,16 +18132,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [showCopyAgentEdit,setShowCopyAgentEdit]=useState(false);
 
   // Publicar: destino del ad (flujo viejo, todavía usado para crear campaña inline)
-  const [pubDest,setPubDest]=useState("existing"); // existing | newCamp
-  const [pubForm,setPubForm]=useState({
-    camp_name:"",
-    objective:"OUTCOME_SALES",
-    mode:"cbo", // cbo | abo
-    daily_budget_ars:"3000",
-    start_time:"", // datetime-local
-    adset_name:"",
-  });
-  const [pubCreating,setPubCreating]=useState(false);
 
   // ── Meta Ads Studio (rediseño Publicar tab) ───────────
   const [studioMode,setStudioMode]=useState("shared"); // "shared" | "perAd"
@@ -18173,7 +18169,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Drop zone state
   const [dragOver,setDragOver]=useState(false);
   // Picker desde biblioteca
-  const [showLibraryPicker,setShowLibraryPicker]=useState(false);
   // Modal "Cambiar recursos" — todos los assets del token
   const [showResourcesModal,setShowResourcesModal]=useState(false);
   const [resourcesLoading,setResourcesLoading]=useState(false);
@@ -18183,6 +18178,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   const uid=user?.uid;
   const activeAcc=accounts.find(a=>a.id===activeAccId)||null;
+  // Símbolo de la moneda REAL de la cuenta publicitaria (US$ si es cuenta en dólares)
+  const cur=currencySymbol(activeAcc?.currency||"ARS");
+  const tokenDead = activeAcc && (activeAcc.token_invalid || !activeAcc.has_token);
 
   const iS={width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
   const BtnPri={background:T.accentSolid,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6};
@@ -18192,7 +18190,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   const metaApi=async(action,method="GET",body=null,extra={})=>{
     const params=new URLSearchParams({action,uid,...extra});
-    const r=await fetch(`/api/meta?${params}`,{
+    const r=await authFetch(`/api/meta?${params}`,{
       method,
       headers:method!=="GET"?{"Content-Type":"application/json"}:undefined,
       body:body?JSON.stringify(body):undefined,
@@ -18245,7 +18243,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   },[activeAccId]);
 
   useEffect(()=>{
-    if(tab==="campanas"&&activeAccId) loadCampaigns();
     if(tab==="creativos"&&activeAccId) { loadCreatives(); loadCampaigns(); loadPublishBatches(); }
     if(tab==="analisis"&&activeAccId) loadInsights();
     if(tab==="biblioteca"&&activeAccId) loadLibrary();
@@ -18280,7 +18277,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // Auto-análisis deshabilitado: tomaba demasiado tiempo y bloqueaba la UI.
   // El usuario puede disparar análisis individual con el botón "Analizar con IA".
-  const [autoAnalyzeStatus] = React.useState({ active: false, done: 0, total: 0 });
 
   // ── Historial de batches publicados ──
   async function loadPublishBatches() {
@@ -18334,7 +18330,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   async function deleteProduct(productId) {
     if (!await appConfirm("¿Borrar este producto? Las reglas que lo usaban pasarán a aplicar a todos.",{danger:true,okLabel:"Borrar"})) return;
     const params = new URLSearchParams({action:"product_delete",uid,product_id:productId});
-    const d = await fetch(`/api/meta?${params}`,{method:"DELETE"}).then(r=>r.json()).catch(()=>({error:"network"}));
+    const d = await authFetch(`/api/meta?${params}`,{method:"DELETE"}).then(r=>r.json()).catch(()=>({error:"network"}));
     if (d.error) { toast(d.error,"error"); return; }
     toast("Producto eliminado","success");
     loadProducts();
@@ -18372,7 +18368,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   async function deleteRule(ruleId) {
     if(!await appConfirm("¿Borrar esta regla?",{danger:true,okLabel:"Borrar"})) return;
     const params=new URLSearchParams({action:"rule_delete",uid,rule_id:ruleId});
-    const d=await fetch(`/api/meta?${params}`,{method:"DELETE"}).then(r=>r.json());
+    const d=await authFetch(`/api/meta?${params}`,{method:"DELETE"}).then(r=>r.json());
     if(d.error) { toast("Error: "+d.error,"error"); return; }
     toast("Regla eliminada","success");
     loadRules();
@@ -18410,6 +18406,22 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     if(tab==="analisis"&&activeAccId) loadInsights();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[aLevel,aSince,aUntil,aDrill]);
+
+  // Cargar filas segmentadas cuando hay breakdown elegido
+  useEffect(()=>{
+    if(tab!=="analisis"||!activeAccId||!aBreakdown){ setBdRows([]); return; }
+    let alive=true;
+    setBdLoading(true);
+    const params={acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil,breakdown:aBreakdown};
+    const lastParent=aDrill[aDrill.length-1];
+    if(lastParent){params.parent_id=lastParent.id;params.parent_type=lastParent.level;}
+    metaApi("insights","GET",null,params)
+      .then(d=>{ if(alive) setBdRows(d.error?[]:(d.rows||[])); })
+      .catch(()=>{ if(alive) setBdRows([]); })
+      .finally(()=>{ if(alive) setBdLoading(false); });
+    return ()=>{alive=false;};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[tab,activeAccId,aBreakdown,aLevel,aSince,aUntil,aDrill]);
 
   useEffect(()=>{
     if(tab==="biblioteca"&&activeAccId) loadLibrary();
@@ -18470,6 +18482,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+    const levelLabel = aLevel==="campaign" ? "la campaña" : aLevel==="adset" ? "el adset" : "el ad";
+    const verb = targetStatus==="PAUSED" ? "Pausar" : "Activar";
+    if (!await appConfirm(`¿${verb} ${levelLabel} "${row.name||row.id}"?${targetStatus==="PAUSED"&&aLevel==="campaign"?"\n\nSe pausan también todos sus adsets y ads.":""}`,{okLabel:verb,danger:targetStatus==="PAUSED"})) return;
     setABusyIds(b=>({...b,[row.id]:true}));
     try {
       const d = await metaApi("set_status","POST",{node_id:row.id,status:targetStatus},{acc_id:activeAccId});
@@ -18542,7 +18557,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   async function handleDisconnect(accId) {
     if(!await appConfirm("¿Desconectar esta cuenta de Meta?",{danger:true,okLabel:"Desconectar"})) return;
-    await fetch(`/api/meta?action=delete_account&uid=${uid}&acc_id=${accId}`,{method:"DELETE"});
+    await authFetch(`/api/meta?action=delete_account&uid=${uid}&acc_id=${accId}`,{method:"DELETE"});
     setAccounts(prev=>prev.filter(a=>a.id!==accId));
     if(activeAccId===accId) setActiveAccId(null);
     toast("Cuenta desconectada","success");
@@ -18558,28 +18573,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     setCampsLoading(false);
   }
 
-  async function handleCreateCampaign() {
-    if(!newCamp.name.trim()) return toast("Poné un nombre","warning");
-    setCampCreating(true);
-    const d=await metaApi("create_campaign","POST",newCamp,{acc_id:activeAccId});
-    if(d.error){toast(d.error,"error");setCampCreating(false);return;}
-    toast(`Campaña "${d.name}" creada ✓`,"success");
-    setShowNewCamp(false);
-    setNewCamp({name:"",objective:"OUTCOME_SALES",cbo_daily_budget_ars:"",is_cbo:true});
-    loadCampaigns(); setCampCreating(false);
-  }
 
-  async function handleCreateAdset() {
-    if(!newAdset.campaign_id) return toast("Elegí una campaña","warning");
-    if(!newAdset.name.trim()) return toast("Poné un nombre","warning");
-    setAdsetCreating(true);
-    const d=await metaApi("create_adset","POST",newAdset,{acc_id:activeAccId});
-    if(d.error){toast(d.error,"error");setAdsetCreating(false);return;}
-    toast(`AdSet "${d.name}" creado ✓`,"success");
-    setShowNewAdset(false);
-    setNewAdset({name:"",campaign_id:"",daily_budget_ars:"3000",is_cbo:false,start_time:""});
-    loadCampaigns(); setAdsetCreating(false);
-  }
 
   // ── Creativos ─────────────────────────────────────────
   async function loadCreatives() {
@@ -18589,14 +18583,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     setCreativesLoading(false);
   }
 
-  async function handleAddCreative() {
-    if(!newCUrl.trim()||!newCName.trim()) return toast("Completá URL y nombre","warning");
-    const d=await metaApi("add_creative","POST",{filename:newCName,kind:newCKind,url:newCUrl},{acc_id:activeAccId});
-    if(d.error){toast(d.error,"error");return;}
-    setCreatives(prev=>[d.creative,...prev]);
-    setNewCUrl("");setNewCName("");setAddingUrl(false);
-    toast("Creativo agregado ✓","success");
-  }
 
   // Sube archivo DIRECTO a Meta desde el browser (sin pasar por Vercel) y
   // dispara analisis+copy automatico con Gemini. La razon de subir directo
@@ -18660,7 +18646,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       } else {
         // Publicado OK — sacamos el creative de la cola al instante (mismo
         // patron que el bulk publish)
-        try { await fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${creative.id}`,{method:"DELETE"}); } catch(_) {}
+        try { await authFetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${creative.id}`,{method:"DELETE"}); } catch(_) {}
         setCreatives(prev => prev.filter(c => c.id !== creative.id));
         setAutoPubStats(s => ({ ok: s.ok + 1, errors: s.errors }));
         // Registrar como single-item batch para que quede historial
@@ -18731,26 +18717,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     return videoId;
   }
 
-  // Genera copy text-only (sin cid, sin analizar el video) con reintentos
-  // silenciosos. Devuelve {copy,title,description} o null. Al no mandar cid,
-  // el backend no busca el creative en Firestore — evita el error "creativo no
-  // encontrado" del upload en paralelo (era la fuente del spam de errores).
-  async function generateCopyTextOnly() {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        const r = await fetch(`/api/meta?action=generate_copy&uid=${uid}`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ length: "nativo" }),
-        });
-        const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
-        if (!d.error && (d.copy || d.title || d.description)) {
-          return { copy: d.copy || "", title: d.title || "", description: d.description || "" };
-        }
-      } catch (_) {}
-      await new Promise(res => setTimeout(res, 1200 * (attempt + 1)));
-    }
-    return null;
-  }
 
   // tempId = id placeholder en la cola; localPreviewUrl = blob URL preview.
   // preFetchedCreds = creds compartidas del bulk upload (evita 1 call extra
@@ -18913,7 +18879,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         // encontrado" en parallel upload donde Firestore puede estar lento).
         let d = null;
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-          const r = await fetch(`/api/meta?action=generate_copy&uid=${uid}&cid=${c.id}`,{
+          const r = await authFetch(`/api/meta?action=generate_copy&uid=${uid}&cid=${c.id}`,{
             method:"POST",headers:{"Content-Type":"application/json"},
             body:JSON.stringify({
               product_data: c.product_data || "",
@@ -18963,24 +18929,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     } finally { setAnalyzingCreative(null); }
   }
 
-  async function handleGenerateCopy(c) {
-    setGeneratingCopy(c.id);
-    const params=new URLSearchParams({action:"generate_copy",uid,cid:c.id});
-    const body={tone:c.tone,length:c.length,format:c.format,notes:c.notes||"",word_min:c.word_min||"",word_max:c.word_max||"",product_data:c.product_data||""};
-    const d=await fetch(`/api/meta?${params}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(r=>r.json());
-    if(d.error){toast(d.error,"error");setGeneratingCopy(null);return;}
-    setCreatives(prev=>prev.map(x=>x.id===c.id?d.creative:x));
-    setSelCreative(d.creative);
-    toast("Copy generado ✓","success");
-    setGeneratingCopy(null);
-  }
 
   async function handlePatch(c,updates) {
     // Durante la subida el creative tiene id temporal (aún no existe en backend);
     // el copy queda en estado local y se persiste al completar la subida.
     if(!c?.id || String(c.id).startsWith("_temp")) return;
     const params=new URLSearchParams({action:"patch_creative",uid,cid:c.id});
-    const d=await fetch(`/api/meta?${params}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(updates)}).then(r=>r.json());
+    const d=await authFetch(`/api/meta?${params}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(updates)}).then(r=>r.json());
     if(d.error){toast(d.error,"error");return;}
     setCreatives(prev=>prev.map(x=>x.id===c.id?d.creative:x));
     setSelCreative(d.creative);
@@ -19255,7 +19210,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     await Promise.all(Array.from({ length: Math.min(PUBLISH_CONCURRENT, queue.length) }, () => publishWorker()));
     // Borrar los publicados de la cola (en backend y en state local).
     if (publishedIds.length > 0) {
-      await Promise.all(publishedIds.map(cid => fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${cid}`,{method:"DELETE"}).catch(()=>{})));
+      await Promise.all(publishedIds.map(cid => authFetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${cid}`,{method:"DELETE"}).catch(()=>{})));
       setCreatives(prev => prev.filter(x => !publishedIds.includes(x.id)));
     }
     // Guardar registro del batch
@@ -19322,7 +19277,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     };
     await Promise.all(Array.from({ length: Math.min(10, found.length) }, () => retryWorker()));
     if (newPublishedIds.length > 0) {
-      await Promise.all(newPublishedIds.map(cid => fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${cid}`,{method:"DELETE"}).catch(()=>{})));
+      await Promise.all(newPublishedIds.map(cid => authFetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${cid}`,{method:"DELETE"}).catch(()=>{})));
       setCreatives(prev => prev.filter(x => !newPublishedIds.includes(x.id)));
     }
     try {
@@ -19344,7 +19299,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     if (!creatives.length) return;
     if (!await appConfirm(`¿Borrar los ${creatives.length} creativos de la cola?\n(no afecta los ya publicados en Meta)`,{danger:true,okLabel:"Borrar todo"})) return;
     for (const c of creatives) {
-      try { await fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${c.id}`,{method:"DELETE"}); } catch (_) {}
+      try { await authFetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${c.id}`,{method:"DELETE"}); } catch (_) {}
     }
     setCreatives([]);
     setSelCreative(null);
@@ -19352,59 +19307,12 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // ── Studio: borrar un solo creative de la cola ──
   async function handleDeleteCreative(c) {
-    try { await fetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${c.id}`,{method:"DELETE"}); } catch (_) {}
+    try { await authFetch(`/api/meta?action=delete_creative&uid=${uid}&cid=${c.id}`,{method:"DELETE"}); } catch (_) {}
     setCreatives(prev => prev.filter(x => x.id !== c.id));
     if (selCreative?.id === c.id) setSelCreative(null);
   }
 
-  // Crea Campaña + AdSet inline desde el Publicador, y asigna el adset al creative
-  async function handleCreateCampAndAdsetInline(c) {
-    if(!pubForm.camp_name.trim()) return toast("Poné un nombre para la campaña","warning");
-    if(!pubForm.adset_name.trim()) return toast("Poné un nombre para el adset","warning");
-    if(!pubForm.daily_budget_ars || parseFloat(pubForm.daily_budget_ars)<=0) return toast("Poné un presupuesto diario válido","warning");
-    setPubCreating(true);
-    try {
-      const isCbo = pubForm.mode === "cbo";
-      // 1) Campaña
-      const cBody = {
-        name: pubForm.camp_name.trim(),
-        objective: pubForm.objective,
-        is_cbo: isCbo,
-        cbo_daily_budget_ars: isCbo ? pubForm.daily_budget_ars : "",
-      };
-      const campRes = await metaApi("create_campaign","POST",cBody,{acc_id:activeAccId});
-      if(campRes.error){toast("Error creando campaña: "+campRes.error,"error");setPubCreating(false);return;}
-      // 2) AdSet
-      const aBody = {
-        name: pubForm.adset_name.trim(),
-        campaign_id: campRes.id,
-        is_cbo: isCbo,
-        daily_budget_ars: isCbo ? "" : pubForm.daily_budget_ars,
-        start_time: localToMetaISO(pubForm.start_time),
-      };
-      const asRes = await metaApi("create_adset","POST",aBody,{acc_id:activeAccId});
-      if(asRes.error){toast("Campaña creada pero falló el adset: "+asRes.error,"error");setPubCreating(false);loadCampaigns();return;}
-      // 3) Asignar al creativo
-      await handlePatch(c,{adset_id:asRes.id});
-      toast(`Campaña + AdSet creados ✓ (${isCbo?"CBO":"ABO"})`,"success");
-      // Refrescar lista
-      loadCampaigns();
-      setPubDest("existing");
-    } catch(e){
-      toast("Error: "+(e.message||"falló creación"),"error");
-    } finally { setPubCreating(false); }
-  }
 
-  async function handlePublish(c) {
-    if(!c.copy?.trim()) return toast("Generá el copy primero","warning");
-    if(!c.adset_id) return toast("Asigná un AdSet","warning");
-    if(!c.url) return toast("El creativo necesita URL","warning");
-    setPublishing(c.id);
-    const d=await metaApi("publish","POST",{creative_id:c.id,activate:false},{acc_id:activeAccId});
-    if(d.error){toast(d.error,"error");setPublishing(null);return;}
-    toast(`Ad publicado en PAUSED ✓ (ID: ${d.ad_id})`,"success");
-    setPublishing(null);
-  }
 
   async function handleSaveBrand() {
     setBrandSaving(true);
@@ -19425,16 +19333,16 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     </div>
   );
 
-  const TABS=[
-    {id:"productos",label:"Productos"},
-    {id:"analisis",label:"Análisis"},
-    {id:"biblioteca",label:"Biblioteca"},
-    {id:"reglas",label:"Reglas"},
-    {id:"creativos",label:"Publicar"},
-    {id:"cuenta",label:"Cuenta"},
-  ];
 
   // Guía paso a paso para obtener System User Token
+  // Empty state unificado cuando no hay cuenta de Meta conectada — con CTA
+  // directo al tab Cuenta (antes cada tab tenía un aviso distinto y sin botón).
+  const NoAccount=()=>(
+    <DSEmpty T={T} icon="📣" title="Conectá tu cuenta de Meta"
+      subtitle="Para ver campañas, métricas y reglas necesitás conectar Meta. Se hace una sola vez desde el tab Cuenta."
+      action={<Btn T={T} variant="primary" onClick={()=>setTab("cuenta")}>Ir a Cuenta →</Btn>}/>
+  );
+
   const GuiaToken=()=>(
     <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>Cómo obtener tu System User Token (5 min)</div>
@@ -19494,6 +19402,29 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"28px 24px",width:"100%"}}>
 
+        {/* Banner global: token de Meta vencido/inválido — visible en TODOS los tabs */}
+        {tokenDead && (
+          <div style={{background:T.red+"12",border:`1.5px solid ${T.red}55`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:220}}>
+              <div style={{fontSize:14,fontWeight:700,color:T.red}}>El token de Meta está vencido</div>
+              <div style={{fontSize:12,color:T.textMd,marginTop:3,lineHeight:1.5}}>Sin token válido no se leen métricas, las reglas no operan y Márgenes no ve el gasto de ads. Reconectá para retomar — a partir de ahora Growith renueva el token solo antes de que venza.</div>
+            </div>
+            <div style={{display:"flex",gap:8,flexShrink:0,flexWrap:"wrap"}}>
+              <button onClick={async()=>{ try{ const d=await metaApi("oauth_start"); if(d.url) window.location.href=d.url; else toast(d.error||"No se pudo iniciar la conexión","error"); }catch(e){ toast("Error: "+(e?.message||""),"error"); } }} style={{...BtnPri,background:T.red}}>Reconectar con Facebook</button>
+              <button onClick={()=>setTab("cuenta")} style={BtnSec}>Ver cuenta</button>
+            </div>
+          </div>
+        )}
+
+        {/* Tabs de la sección (visibles en mobile — en desktop la navegación va por el sidebar) */}
+        <div className="mobile-only no-scrollbar" style={{overflowX:"auto",marginBottom:14}}>
+          <div style={{display:"flex",gap:6,minWidth:"max-content"}}>
+            {[{id:"productos",l:"Productos"},{id:"analisis",l:"Análisis"},{id:"biblioteca",l:"Biblioteca"},{id:"reglas",l:"Reglas"},{id:"creativos",l:"Publicar"},{id:"cuenta",l:"Cuenta"}].map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tab===t.id?T.accentSolid+"88":T.border}`,borderRadius:20,background:tab===t.id?T.accentSolid+"18":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{t.l}</button>
+            ))}
+          </div>
+        </div>
+
         {/* GUÍA ¿Cómo funciona? */}
         <div style={{marginBottom:16}}>
           <button onClick={()=>setShowGuia(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -19504,9 +19435,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               {[
                 {n:1,icon:"",title:"Conectar Meta",desc:"Necesitás un token desde Business Manager → Usuarios del sistema. Configuralo en Config → Meta Ads siguiendo las instrucciones exactas de permisos."},
                 {n:2,icon:"",title:"Ver campañas",desc:"Ves todas tus campañas activas con gasto, alcance, impresiones y resultados del período seleccionado."},
-                {n:3,icon:"",title:"Copy con IA",desc:"Subí un creativo y Growith analiza la imagen y escribe el copy automáticamente usando el contexto de tu marca y el estilo que definiste."},
-                {n:4,icon:"",title:"Comparar períodos",desc:"Usá el selector de fechas para ver la evolución semana a semana o comparar con el mes anterior y detectar tendencias."},
-                {n:5,icon:"",title:"Token expirado",desc:"Si ves un error de permisos, normalmente el token expiró. Regeneralo desde Business Manager y actualizalo en Config → Meta Ads."},
+                {n:3,icon:"",title:"Publicar creativos",desc:"En Publicar subís imágenes y videos en masa, escribís el copy y Growith crea los anuncios en tu campaña (con opción de publicación automática al terminar la subida)."},
+                {n:4,icon:"",title:"Reglas automáticas",desc:"En Reglas definís condiciones (ROAS, CPA, gasto) y Growith pausa, sube o baja presupuesto solo — cada 30 min con la app abierta y 1 vez al día en la nube."},
+                {n:5,icon:"",title:"Token vencido",desc:"Si el token vence, aparece un banner rojo arriba con el botón para reconectar. Desde esta versión Growith renueva el token automáticamente antes del vencimiento."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -19521,9 +19452,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {tab==="productos"&&(
           <div>
             {!activeAccId ? (
-              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd}}>
-                Conectá tu cuenta de Meta primero desde Config.
-              </div>
+              <NoAccount/>
             ) : (
               <>
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 22px",marginBottom:16}}>
@@ -19593,9 +19522,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {tab==="analisis"&&(
           <div>
             {!activeAccId ? (
-              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd,lineHeight:1.6}}>
-                Conectá tu cuenta de Meta primero. Andá a <strong style={{color:T.text}}>Config → Tiendas conectadas → Meta Ads</strong> y dale "Conectar".
-              </div>
+              <NoAccount/>
             ) : (
               <>
                 {/* Breadcrumb de drill-down */}
@@ -19656,6 +19583,20 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <option value="active">Solo activos</option>
                       <option value="paused">Solo pausados</option>
                     </select>
+                    {/* Segmentar por breakdown */}
+                    <select value={aBreakdown} onChange={e=>setABreakdown(e.target.value)} title="Segmentar las métricas del rango por audiencia/ubicación/hora" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:aBreakdown?T.accent:T.text,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:aBreakdown?600:400}}>
+                      <option value="">Sin segmentar</option>
+                      <option value="age">Por edad</option>
+                      <option value="gender">Por género</option>
+                      <option value="placement">Por ubicación (feed/reels/stories)</option>
+                      <option value="hour">Por hora del día</option>
+                    </select>
+                    {/* BE de referencia global (cuando el producto no tiene BE propio) */}
+                    <div title="ROAS break-even de referencia: colorea el ROAS en verde/rojo cuando el anuncio no tiene un producto con BE propio" style={{display:"flex",alignItems:"center",gap:5,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"3px 8px"}}>
+                      <span style={{fontSize:10,color:T.textSm,fontWeight:700,letterSpacing:0.3}}>BE</span>
+                      <input type="number" step="0.1" min="0" value={aRoasBe} onChange={e=>setARoasBe(parseFloat(e.target.value)||0)} style={{width:44,background:"transparent",border:"none",fontSize:12,color:T.text,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",outline:"none"}}/>
+                      <span style={{fontSize:11,color:T.textSm}}>x</span>
+                    </div>
                     {/* Búsqueda */}
                     <input type="text" placeholder="Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     <button onClick={loadInsights} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -19663,6 +19604,49 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </button>
                   </div>
                 </div>
+
+                {/* Panel de segmentos (breakdown) — agrega TODO el rango por segmento */}
+                {aBreakdown && (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:16}}>
+                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:10}}>
+                      {aBreakdown==="age"?"Rendimiento por edad":aBreakdown==="gender"?"Rendimiento por género":aBreakdown==="placement"?"Rendimiento por ubicación":"Rendimiento por hora del día"}
+                      <span style={{fontSize:10,color:T.textSm,fontWeight:400,marginLeft:8}}>agregado del rango, todos los {aLevel==="campaign"?"campañas":aLevel==="adset"?"adsets":"ads"} visibles</span>
+                    </div>
+                    {bdLoading ? (
+                      <div style={{padding:"20px 0",textAlign:"center"}}><Spinner size={16} color={T.accent}/></div>
+                    ) : (() => {
+                      const agg = {};
+                      for (const r of bdRows) {
+                        const k = r.segment || "?";
+                        const a = agg[k] || (agg[k] = {spend:0,purchases:0,purchase_value:0,impressions:0,clicks:0});
+                        a.spend += r.spend; a.purchases += r.purchases; a.purchase_value += r.purchase_value;
+                        a.impressions += r.impressions; a.clicks += r.clicks;
+                      }
+                      const segs = Object.entries(agg).map(([seg,a])=>({seg,...a,roas:a.spend>0?a.purchase_value/a.spend:0,ctr:a.impressions>0?a.clicks/a.impressions*100:0}))
+                        .filter(s=>s.spend>0||s.impressions>0)
+                        .sort((x,y)=>aBreakdown==="hour"?x.seg.localeCompare(y.seg):y.spend-x.spend);
+                      if (segs.length===0) return <div style={{fontSize:12,color:T.textSm,padding:"10px 0"}}>Sin datos segmentados en este rango.</div>;
+                      const maxSpend = Math.max(...segs.map(s=>s.spend),1);
+                      const f2=(n)=>n.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+                      return (
+                        <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:320,overflowY:"auto"}}>
+                          {segs.map(s=>(
+                            <div key={s.seg} style={{display:"grid",gridTemplateColumns:"minmax(90px,150px) 1fr 90px 60px 70px 55px",gap:10,alignItems:"center",fontSize:11}}>
+                              <span style={{fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={s.seg}>{s.seg}</span>
+                              <div style={{height:8,background:T.borderL,borderRadius:20,overflow:"hidden"}}>
+                                <div style={{height:"100%",width:`${Math.round(s.spend/maxSpend*100)}%`,background:T.accentSolid,borderRadius:20}}/>
+                              </div>
+                              <span style={{textAlign:"right",fontWeight:700,color:T.text}}>{cur}{f2(s.spend)}</span>
+                              <span style={{textAlign:"right",color:T.textMd}}>{s.purchases} c.</span>
+                              <span style={{textAlign:"right",fontWeight:700,color:s.roas>=(aRoasBe||0)&&s.roas>0?T.green:(s.roas>0?T.red:T.textSm)}}>{f2(s.roas)}x</span>
+                              <span style={{textAlign:"right",color:T.textSm}}>{f2(s.ctr)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 {/* Banner de error de Meta API */}
                 {aError && (() => {
@@ -19738,14 +19722,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   // Mapa de columnas configurables
                   const COL_META = {
-                    spend:          { label:"Gasto",          render: r => "$"+fmt(r.spend),            total: () => "$"+fmt(sumSpend), bold:true },
+                    spend:          { label:"Gasto",          render: r => cur+fmt(r.spend),            total: () => cur+fmt(sumSpend), bold:true },
                     purchases:      { label:"Compras",        render: r => r.purchases,                 total: () => sumPurchases },
-                    purchase_value: { label:"Valor compras",  render: r => "$"+fmt(r.purchase_value),   total: () => "$"+fmt(sumPurchaseValue) },
+                    purchase_value: { label:"Valor compras",  render: r => cur+fmt(r.purchase_value),   total: () => cur+fmt(sumPurchaseValue) },
                     roas:           { label:"ROAS",           render: r => fmt(r.roas)+"x", total: () => fmt(totalRoas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); if(!be||be<=0) return T.text; return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => T.text, bold:true },
-                    cpa:            { label:"CPA",            render: r => r.cpa ? "$"+fmt(r.cpa) : "—", total: () => totalCpa ? "$"+fmt(totalCpa) : "—" },
+                    cpa:            { label:"CPA",            render: r => r.cpa ? cur+fmt(r.cpa) : "—", total: () => totalCpa ? cur+fmt(totalCpa) : "—" },
                     ctr:            { label:"CTR",            render: r => fmt(r.ctr)+"%",              total: () => fmt(totalCtr)+"%" },
-                    cpm:            { label:"CPM",            render: r => "$"+fmt(r.cpm),              total: () => "—" },
-                    cpc:            { label:"CPC",            render: r => "$"+fmt(r.cpc),              total: () => "—" },
+                    cpm:            { label:"CPM",            render: r => cur+fmt(r.cpm),              total: () => "—" },
+                    cpc:            { label:"CPC",            render: r => cur+fmt(r.cpc),              total: () => "—" },
                     frequency:      { label:"Frec.",          render: r => fmt(r.frequency),            total: () => "—" },
                     impressions:    { label:"Impr.",          render: r => fmtInt(r.impressions),       total: () => fmtInt(sumImpr) },
                     reach:          { label:"Alcance",        render: r => fmtInt(r.reach),             total: () => "—" },
@@ -19755,6 +19739,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   const canDrill = aLevel !== "ad";
 
                   return (
+                    <>
+                    {/* Resumen ejecutivo del rango (sobre lo filtrado) */}
+                    <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:14}}>
+                      <KPI T={T} label="Gasto" value={cur+fmt(sumSpend)} sub={`${filtered.length} ${aLevel==="campaign"?"campañas":aLevel==="adset"?"adsets":"ads"}`} color={T.accent}/>
+                      <KPI T={T} label="Compras" value={String(sumPurchases)} sub={sumClicks?`${fmtInt(sumClicks)} clicks`:""} color={T.text}/>
+                      <KPI T={T} label="Valor compras" value={cur+fmt(sumPurchaseValue)} sub="según píxel de Meta" color={T.text}/>
+                      <KPI T={T} label="ROAS" value={fmt(totalRoas)+"x"} sub={aRoasBe>0?`BE de referencia ${aRoasBe}x`:""} color={totalRoas>=aRoasBe?T.green:(totalRoas>0?T.red:T.textSm)}/>
+                      <KPI T={T} label="CPA" value={totalCpa?cur+fmt(totalCpa):"—"} sub={totalCtr?`CTR ${fmt(totalCtr)}%`:""} color={T.text}/>
+                    </div>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
                       <div style={{overflowX:"auto"}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -19792,7 +19785,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     <div style={{fontSize:10,color:T.textSm,marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                                       <span style={{padding:"1px 6px",borderRadius:4,background:aLevel==="campaign"?T.accent+"22":aLevel==="adset"?T.green+"22":T.yellow+"22",color:aLevel==="campaign"?T.accent:aLevel==="adset"?T.green:T.yellow,fontWeight:700,letterSpacing:0.3,textTransform:"uppercase"}}>{aLevel==="campaign"?"Camp":aLevel==="adset"?"Adset":"Ad"}</span>
                                       <span style={{padding:"1px 6px",borderRadius:4,background:isActive?T.green+"22":T.red+"22",color:isActive?T.green:T.red,fontWeight:600}}>{r.effective_status||"—"}</span>
-                                      {r.daily_budget && <span>· ${fmt(r.daily_budget)}/día</span>}
+                                      {r.daily_budget && <span>· {cur}{fmt(r.daily_budget)}/día</span>}
                                       {(() => {
                                         const prods = productsForRow(r, aLevel);
                                         if (prods.length === 0) return null;
@@ -19831,6 +19824,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         </table>
                       </div>
                     </div>
+                    </>
                   );
                 })()}
               </>
@@ -19842,9 +19836,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {tab==="biblioteca"&&(
           <div>
             {!activeAccId ? (
-              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd}}>
-                Conectá tu cuenta de Meta primero desde Config.
-              </div>
+              <NoAccount/>
             ) : (
               <>
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16}}>
@@ -20039,11 +20031,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               {/* Métricas */}
                               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:6,padding:"10px 12px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`}}>
                                 <div>
-                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Gasto 7d</div>
-                                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginTop:2}}>${fmt(ad.spend)}</div>
+                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Gasto {Math.max(1,Math.round((Date.parse(libUntil)-Date.parse(libSince))/86400000)+1)}d</div>
+                                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginTop:2}}>{cur}{fmt(ad.spend)}</div>
                                 </div>
                                 <div>
-                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>ROAS 7d</div>
+                                  <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>ROAS</div>
                                   <div style={{fontSize:13,fontWeight:700,color:roasColor,marginTop:2}}>{fmt(ad.roas)}x</div>
                                 </div>
                                 <div>
@@ -20060,13 +20052,40 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 </div>
                                 <div>
                                   <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>CPC</div>
-                                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginTop:2}}>${fmt(ad.cpc)}</div>
+                                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginTop:2}}>{cur}{fmt(ad.cpc)}</div>
                                 </div>
                                 <div>
                                   <div style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Frec.</div>
                                   <div style={{fontSize:12,fontWeight:700,color:T.text,marginTop:2}}>{fmt(ad.frequency)}</div>
                                 </div>
                               </div>
+
+                              {/* Retención de video (% de impresiones que llegan a cada cuarto) */}
+                              {ad.video_p25!=null && (
+                                <div style={{padding:"8px 12px",background:T.bg,borderRadius:8,marginTop:6,border:`1px solid ${T.borderL}`}}>
+                                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                                    <span style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Retención de video</span>
+                                    {ad.video_p25<40 && <span title="Menos del 40% llega al primer cuarto — el hook pierde a la mayoría" style={{fontSize:9,color:T.orange||T.yellow,fontWeight:700}}>⚠ hook débil</span>}
+                                  </div>
+                                  <div style={{display:"flex",gap:4,alignItems:"flex-end",height:26}}>
+                                    {[["25%",ad.video_p25],["50%",ad.video_p50],["75%",ad.video_p75],["100%",ad.video_p100]].map(([l,v])=>(
+                                      <div key={l} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                                        <div style={{width:"100%",height:Math.max(2,Math.round((v||0)/100*18)),background:(v||0)>=40?T.green:T.yellow,borderRadius:2,opacity:0.85}}/>
+                                        <span style={{fontSize:8,color:T.textSm}}>{l} · {v??0}%</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {/* Rankings de Meta vs competencia */}
+                              {ad.quality_ranking && (
+                                <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:6}}>
+                                  {[["Calidad",ad.quality_ranking],["Engag.",ad.engagement_ranking],["Conv.",ad.conversion_ranking]].filter(([,v])=>v).map(([l,v])=>{
+                                    const good=/above/i.test(v), bad=/below/i.test(v);
+                                    return <span key={l} title={`${l}: ${v} (según Meta, vs ads que compiten por la misma audiencia)`} style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,background:(good?T.green:bad?T.red:T.textSm)+"18",color:good?T.green:bad?T.red:T.textSm}}>{l} {good?"↑":bad?"↓":"~"}</span>;
+                                  })}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -20092,9 +20111,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {tab==="reglas"&&(
           <div>
             {!activeAccId ? (
-              <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"22px 24px",fontSize:13,color:T.textMd}}>
-                Conectá tu cuenta de Meta primero desde Config.
-              </div>
+              <NoAccount/>
             ) : (
               <>
                 {/* Acceso rapido: Productos vive en su propio tab arriba */}
@@ -20103,6 +20120,25 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <span> Las reglas pueden filtrar por producto. <button onClick={()=>setTab("productos")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",fontSize:12,padding:0}}>Andá a Productos</button> para crear el primero.</span>
                   </div>
                 )}
+
+                {/* Avisos de reglas "Solo notificar" — la notificación ES este panel (no un toast fugaz) */}
+                {(() => {
+                  const avisos = (ruleLog||[]).filter(ev => ev.action_taken==="notify" && ev.ok && (Date.now()-Date.parse(ev.ts)) < 7*86400000).slice(0,8);
+                  if (avisos.length===0) return null;
+                  return (
+                    <div style={{background:(T.blue||T.accent)+"10",border:`1px solid ${(T.blue||T.accent)}33`,borderRadius:12,padding:"12px 16px",marginBottom:14}}>
+                      <div style={{fontSize:12,fontWeight:700,color:T.blue||T.accent,marginBottom:6}}>🔔 Avisos de reglas (últimos 7 días)</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        {avisos.map(ev=>(
+                          <div key={ev.id} style={{fontSize:11,color:T.textMd,lineHeight:1.5}}>
+                            <strong style={{color:T.text}}>{ev.rule_name}</strong> se cumplió en <span style={{color:T.accent,fontWeight:600}}>{ev.node_name||ev.node_id}</span>
+                            <span style={{color:T.textSm}}> · {new Date(ev.ts).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
@@ -20137,7 +20173,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       const fmtVal = (m, v) => m==="spend"||m==="cpa"||m==="purchase_value"||m==="cpm"||m==="cpc"?`$${v}`:m==="ctr"?`${v}%`:m==="roas"?`${v}x`:v;
                       const ruleEvents = (ruleLog||[]).filter(ev => ev.rule_id === r.id);
                       const isExpanded = expandedRuleId === r.id;
-                      const actionLabel = r.action==="pause" ? "Pausar" : r.action==="reduce_budget" ? `Bajar presupuesto ${r.action_pct||20}%` : "Notificar";
+                      const actionLabel = r.action==="pause" ? "Pausar" : r.action==="reduce_budget" ? `Bajar presupuesto ${r.action_pct||20}%` : r.action==="increase_budget" ? `Subir presupuesto ${r.action_pct||20}%${r.action_max?` (tope $${r.action_max})`:""}` : "Notificar";
                       return (
                         <div key={r.id} style={{background:T.card,border:`1px solid ${r.active?T.green+"44":T.border}`,borderRadius:12,padding:"14px 18px"}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
@@ -20179,8 +20215,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     const date = new Date(ev.ts);
                                     const fechaLabel = date.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});
                                     const horaLabel = date.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-                                    const actionIcon = ev.ok ? (ev.action_taken==="pause" ? "▐▐" : ev.action_taken==="reduce_budget" ? "↓" : "→") : "✕";
-                                    const actionTxt = !ev.ok ? "Falló:" : ev.action_taken==="pause" ? "Pausó" : ev.action_taken==="reduce_budget" ? "Redujo presupuesto de" : "Notificó sobre";
+                                    const actionIcon = ev.ok ? (ev.action_taken==="pause" ? "▐▐" : ev.action_taken==="reduce_budget" ? "↓" : ev.action_taken==="increase_budget" ? "↑" : "🔔") : "✕";
+                                    const actionTxt = !ev.ok ? "Falló:" : ev.action_taken==="pause" ? "Pausó" : ev.action_taken==="reduce_budget" ? "Redujo presupuesto de" : ev.action_taken==="increase_budget" ? "Subió presupuesto de" : "Notificó sobre";
                                     return (
                                       <div key={ev.id} style={{padding:"10px 12px",background:ev.ok?T.bg:T.red+"08",borderRadius:8,border:`1px solid ${ev.ok?T.borderL:T.red+"33"}`}}>
                                         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
@@ -20264,7 +20300,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.user_name||"Cuenta Meta"}</div>
                         <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{a.ad_account_name||"Sin ad account"}{a.ig_username?` · @${a.ig_username}`:""}</div>
-                        <div style={{fontSize:10,color:T.green,marginTop:2}}>✓ System User Token · No vence</div>
+                        {a.token_invalid
+                          ? <div style={{fontSize:10,color:T.red,marginTop:2,fontWeight:700}}>✕ Token vencido — reconectá esta cuenta</div>
+                          : a.oauth
+                            ? <div style={{fontSize:10,color:T.green,marginTop:2}}>✓ Conectada vía Facebook{a.token_expires_at?` · renueva sola (vence ${new Date(a.token_expires_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})})`:" · se renueva sola"}</div>
+                            : <div style={{fontSize:10,color:T.green,marginTop:2}}>✓ System User Token</div>}
                       </div>
                       {activeAccId===a.id&&<span style={{fontSize:10,background:T.accentSolid,color:"#fff",borderRadius:4,padding:"2px 7px",fontWeight:600,flexShrink:0}}>ACTIVA</span>}
                       <button onClick={e=>{e.stopPropagation();handleDisconnect(a.id);}} style={{...BtnSec,padding:"4px 8px",fontSize:11,color:T.red,borderColor:T.red+"44",flexShrink:0}}>✕</button>
@@ -20304,6 +20344,12 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {accounts.length>0?"Agregar otra cuenta":"Conectar cuenta Meta"}
                   </div>
 
+                  {/* Opción 1: OAuth con Facebook (renovación automática del token) */}
+                  <button onClick={async()=>{ try{ const d=await metaApi("oauth_start"); if(d.url) window.location.href=d.url; else toast(d.error||"No se pudo iniciar la conexión","error"); }catch(e){ toast("Error: "+(e?.message||""),"error"); } }} style={{...BtnPri,width:"100%",justifyContent:"center",marginBottom:10}}>
+                    Conectar con Facebook (recomendado)
+                  </button>
+                  <div style={{fontSize:10,color:T.textSm,textAlign:"center",marginBottom:12,lineHeight:1.5}}>Un click, sin tokens a mano — Growith renueva la conexión automáticamente antes de que venza.<br/>¿Preferís un System User Token? Pegalo abajo.</div>
+
                   {/* Botón mostrar/ocultar guía */}
                   <button onClick={()=>setShowGuide(s=>!s)} style={{...BtnSec,marginBottom:12,width:"100%",justifyContent:"center",fontSize:12}}>
                     {showGuide?"▲ Ocultar guía":"¿Cómo obtengo el token?"}
@@ -20328,92 +20374,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           </>
         )}
 
-        {/* ── CAMPAÑAS ────────────────────────────────── */}
-        {tab==="campanas"&&(
-          !activeAcc
-          ?<div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero en la pestaña Cuenta</div>
-          :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-            {/* Campañas */}
-            <div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text}}>Campañas ({campaigns.length})</div>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={loadCampaigns} disabled={campsLoading} style={{...BtnSec,padding:"6px 10px"}}>↻</button>
-                  <button onClick={()=>setShowNewCamp(s=>!s)} style={{...BtnSec,fontSize:12,padding:"6px 12px"}}>+ Nueva</button>
-                </div>
-              </div>
-              {showNewCamp&&(
-                <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
-                  <input value={newCamp.name} onChange={e=>setNewCamp(p=>({...p,name:e.target.value}))} placeholder="Nombre campaña" style={{...iS,marginBottom:10}}/>
-                  <select value={newCamp.objective} onChange={e=>setNewCamp(p=>({...p,objective:e.target.value}))} style={{...iS,marginBottom:10}}>
-                    {OBJECTIVES.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}
-                  </select>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,cursor:"pointer"}} onClick={()=>setNewCamp(p=>({...p,is_cbo:!p.is_cbo}))}>
-                    <div className="gh-toggle" style={{width:34,height:18,borderRadius:9,background:newCamp.is_cbo?T.accentSolid:T.border,position:"relative",flexShrink:0}}>
-                      <div className="gh-toggle-thumb" style={{width:14,height:14,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:newCamp.is_cbo?18:2}}/>
-                    </div>
-                    <span style={{fontSize:12,color:T.text}}>CBO</span>
-                    {newCamp.is_cbo&&<input onClick={e=>e.stopPropagation()} value={newCamp.cbo_daily_budget_ars} onChange={e=>setNewCamp(p=>({...p,cbo_daily_budget_ars:e.target.value}))} placeholder="Budget diario ARS" style={{...iS,width:160}}/>}
-                  </div>
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={handleCreateCampaign} disabled={campCreating} style={{...BtnPri,flex:1,justifyContent:"center"}}>{campCreating?<><Spinner size={12} color="#fff"/>Creando...</>:"Crear campaña"}</button>
-                    <button onClick={()=>setShowNewCamp(false)} style={{...BtnSec,padding:"9px 14px"}}>✕</button>
-                  </div>
-                </div>
-              )}
-              {campsLoading?<div style={{textAlign:"center",padding:40}}><Spinner size={24} color={T.accent}/></div>
-              :campaigns.length===0?<div style={{textAlign:"center",padding:32,color:T.textSm,fontSize:13}}>No hay campañas</div>
-              :campaigns.map(c=>(
-                <div key={c.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 14px",marginBottom:8}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
-                      <div style={{fontSize:11,color:T.textSm}}>{OBJECTIVES.find(o=>o.id===c.objective)?.label||c.objective}{c.daily_budget?` · $${Math.round(c.daily_budget/100).toLocaleString("es-AR")}/día`:""}</div>
-                    </div>
-                    <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,fontWeight:600,background:c.effective_status==="ACTIVE"?T.greenBg:T.surface,color:c.effective_status==="ACTIVE"?T.green:T.textSm,border:`1px solid ${c.effective_status==="ACTIVE"?T.green+"33":T.border}`,flexShrink:0}}>{c.effective_status||c.status}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* AdSets */}
-            <div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text}}>AdSets ({adsets.length})</div>
-                <button onClick={()=>setShowNewAdset(s=>!s)} style={{...BtnSec,fontSize:12,padding:"6px 12px"}}>+ Nuevo</button>
-              </div>
-              {showNewAdset&&(
-                <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
-                  <select value={newAdset.campaign_id} onChange={e=>setNewAdset(p=>({...p,campaign_id:e.target.value}))} style={{...iS,marginBottom:10}}>
-                    <option value="">— Campaña —</option>
-                    {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  <input value={newAdset.name} onChange={e=>setNewAdset(p=>({...p,name:e.target.value}))} placeholder="Nombre AdSet" style={{...iS,marginBottom:10}}/>
-                  <input value={newAdset.daily_budget_ars} onChange={e=>setNewAdset(p=>({...p,daily_budget_ars:e.target.value}))} placeholder="Presupuesto diario ARS" style={{...iS,marginBottom:10}}/>
-                  <input type="datetime-local" value={newAdset.start_time} onChange={e=>setNewAdset(p=>({...p,start_time:e.target.value}))} style={{...iS,marginBottom:12}}/>
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={handleCreateAdset} disabled={adsetCreating} style={{...BtnPri,flex:1,justifyContent:"center"}}>{adsetCreating?<><Spinner size={12} color="#fff"/>Creando...</>:"Crear AdSet"}</button>
-                    <button onClick={()=>setShowNewAdset(false)} style={{...BtnSec,padding:"9px 14px"}}>✕</button>
-                  </div>
-                </div>
-              )}
-              {adsets.length===0?<div style={{textAlign:"center",padding:32,color:T.textSm,fontSize:13}}>No hay adsets</div>
-              :adsets.map(a=>{
-                const camp=campaigns.find(c=>c.id===a.campaign_id);
-                return(
-                  <div key={a.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 14px",marginBottom:8}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
-                    <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{camp?.name||a.campaign_id} · {a.effective_status||a.status}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         {/* ── CREATIVOS ────────────────────────────────── */}
         {tab==="creativos"&&(
           !activeAcc
-          ? <div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero</div>
+          ? <NoAccount/>
           : (() => {
             const cur = currencySymbol(activeAcc?.currency);
             const curCode = activeAcc?.currency || "USD";
@@ -20458,7 +20422,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 return (
                 <div style={{background:T.card,border:`1px solid ${allReady?T.green+"44":T.yellow+"44"}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
                   <SectionHeader n="1" title="Configuración activa"/>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:14}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(160px, 1fr))",gap:10,marginBottom:14}}>
                     <ConfigCard icon="" label="Cuenta publicitaria" value={hasAd?`${activeAcc?.ad_account_name||""} (${curCode})`:""} sub={activeAcc?.ad_account_id}/>
                     <ConfigCard icon="" label="Página Facebook" value={activeAcc?.page_name} sub={activeAcc?.page_id}/>
                     <ConfigCard icon="" label="Instagram" value={activeAcc?.ig_username ? `@${activeAcc.ig_username}` : ""} sub={activeAcc?.ig_account_id}/>
@@ -21030,215 +20994,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             );
           })()
         )}
-        {/* OLD CREATIVOS LAYOUT REMOVED IN STUDIO REDESIGN ─────── */}
-        {false && (
-          !activeAcc
-          ?<div style={{textAlign:"center",padding:60,color:T.textSm}}>Conectá una cuenta Meta primero</div>
-          :<div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:20,alignItems:"start"}}>
-            <div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:10,flexWrap:"wrap"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.text}}>Creativos ({creatives.length})</div>
-                <div style={{display:"flex",gap:6}}>
-                  <label style={{...BtnPri,fontSize:12,padding:"8px 14px",cursor:uploadingFile?"wait":"pointer",margin:0}}>
-                    {uploadingFile?<><Spinner size={12} color="#fff"/> Subiendo a Meta...</>:"📤 Subir imagen/video"}
-                    <input type="file" accept="image/*,video/*" disabled={uploadingFile} style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0]; if(f){handleUploadFile(f); e.target.value="";}}}/>
-                  </label>
-                  <button onClick={()=>setAddingUrl(s=>!s)} style={{...BtnSec,fontSize:12,padding:"6px 12px"}}>📎 URL</button>
-                </div>
-              </div>
-              {addingUrl&&(
-                <div style={{...Card,border:`1px solid ${T.accentSolid}44`}}>
-                  <div style={{fontSize:11,color:T.textSm,marginBottom:8,lineHeight:1.5}}>Agregar un creativo desde una URL pública (sin subirlo a Meta todavía). Útil si ya tenés el archivo en Drive u otro lado.</div>
-                  <div style={{display:"flex",gap:6,marginBottom:10}}>
-                    <input value={newCUrl} onChange={e=>setNewCUrl(e.target.value)} placeholder="URL pública del archivo" style={{...iS,flex:1,marginBottom:0}}/>
-                    <DriveBtn T={T} onPick={f=>{setNewCUrl(f.url);setNewCName(prev=>prev||f.name);}}/>
-                  </div>
-                  <input value={newCName} onChange={e=>setNewCName(e.target.value)} placeholder="Nombre (ej: reel_dolor.mp4)" style={{...iS,marginBottom:10}}/>
-                  <select value={newCKind} onChange={e=>setNewCKind(e.target.value)} style={{...iS,marginBottom:12}}>
-                    <option value="image">Imagen</option>
-                    <option value="video">Video</option>
-                  </select>
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={handleAddCreative} style={{...BtnPri,flex:1,justifyContent:"center"}}>Agregar</button>
-                    <button onClick={()=>setAddingUrl(false)} style={{...BtnSec,padding:"9px 14px"}}>✕</button>
-                  </div>
-                </div>
-              )}
-              {creativesLoading?<div style={{textAlign:"center",padding:40}}><Spinner size={24} color={T.accent}/></div>
-              :creatives.length===0?<div style={{textAlign:"center",padding:40,color:T.textSm,fontSize:13}}>No hay creativos. Agregá uno con URL pública.</div>
-              :creatives.map(c=>(
-                <div key={c.id} onClick={()=>setSelCreative(selCreative?.id===c.id?null:c)}
-                  style={{background:selCreative?.id===c.id?T.accentSolid+"12":T.card,border:`1px solid ${selCreative?.id===c.id?T.accentSolid+"55":T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,cursor:"pointer",transition:"all 0.15s"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10}}>
-                    <span style={{fontSize:20,flexShrink:0}}>{c.kind==="video"?"🎬":"🖼️"}</span>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.filename}</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>
-                        {c.ia_status==="ok"?<span style={{color:T.green}}>✓ Copy listo</span>:<span>Sin copy</span>}
-                        {c.adset_id?<span style={{color:T.blue,marginLeft:8}}>· AdSet ✓</span>:""}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {selCreative&&(
-              <div style={{...Card,position:"sticky",top:105}}>
-                <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:8}}>{selCreative.filename_base}</div>
-
-                {/* Preview del creative */}
-                {selCreative.url && selCreative.kind === "image" && !selCreative.url.startsWith("meta-video://") && (
-                  <img src={selCreative.url} alt="" style={{width:"100%",borderRadius:8,marginBottom:10,maxHeight:200,objectFit:"cover",background:T.bg}} onError={e=>{e.target.style.display="none";}}/>
-                )}
-
-                {/* Análisis IA del creative */}
-                <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:8,marginBottom:12}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,marginBottom:6}}>
-                    <span style={{fontSize:10,color:T.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>🤖 Análisis IA</span>
-                    {selCreative.kind === "image" && (
-                      <button onClick={()=>handleAnalyzeCreative(selCreative)} disabled={analyzingCreative===selCreative.id} style={{padding:"3px 8px",fontSize:10,fontWeight:600,border:`1px solid ${T.accent}55`,borderRadius:5,background:"transparent",color:T.accent,cursor:analyzingCreative===selCreative.id?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                        {analyzingCreative===selCreative.id?<><Spinner size={9} color={T.accent}/> Analizando…</>:(selCreative.analysis?"🔄 Re-analizar":"Analizar")}
-                      </button>
-                    )}
-                  </div>
-                  {selCreative.analysis ? (
-                    <div style={{fontSize:11,color:T.textMd,lineHeight:1.55}}>
-                      <div><strong style={{color:T.text}}>Qué se ve:</strong> {selCreative.analysis.que_se_ve}</div>
-                      <div style={{marginTop:4}}><strong style={{color:T.text}}>Audiencia:</strong> {selCreative.analysis.audiencia_target}</div>
-                      <div style={{marginTop:4}}><strong style={{color:T.text}}>Tono visual:</strong> {selCreative.analysis.tono_visual}</div>
-                      <div style={{marginTop:4}}><strong style={{color:T.text}}>Ángulo sugerido:</strong> {selCreative.analysis.angulo_sugerido}</div>
-                      {selCreative.analysis.headline_sugerido && <div style={{marginTop:6,padding:"6px 10px",background:T.surface,borderRadius:5,fontStyle:"italic"}}>💡 "{selCreative.analysis.headline_sugerido}"</div>}
-                    </div>
-                  ) : selCreative.kind === "image" ? (
-                    <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Tocá "Analizar" — la IA va a mirar la imagen y sugerir audiencia, ángulo y headline.</div>
-                  ) : (
-                    <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>El análisis con IA solo funciona en imágenes por ahora. Para videos, agregá notas manualmente abajo.</div>
-                  )}
-                </div>
-
-                {[{label:"Tono",key:"tone",opts:TONOS},{label:"Largo",key:"length",opts:LARGOS},{label:"Formato",key:"format",opts:FORMATOS}].map(({label,key,opts})=>(
-                  <div key={key} style={{marginBottom:10}}>
-                    <label style={Label}>{label}</label>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                      {opts.map(o=>(
-                        <button key={o} onClick={()=>{const u={...selCreative,[key]:o};setSelCreative(u);handlePatch(selCreative,{[key]:o});}}
-                          style={{padding:"4px 10px",fontSize:11,borderRadius:6,border:`1px solid ${selCreative[key]===o?T.accentSolid+"88":T.border}`,background:selCreative[key]===o?T.accentSolid+"18":"transparent",color:selCreative[key]===o?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                          {o}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-
-                {/* Largo exacto en palabras (override del corto/medio/largo) */}
-                <div style={{marginBottom:10}}>
-                  <label style={Label}>Palabras (opcional, sobreescribe el largo)</label>
-                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                    <input type="number" min="5" max="500" value={selCreative.word_min||""} onChange={e=>setSelCreative(p=>({...p,word_min:e.target.value}))} onBlur={()=>handlePatch(selCreative,{word_min:selCreative.word_min||""})} placeholder="min" style={{...iS,width:80}}/>
-                    <span style={{fontSize:11,color:T.textSm}}>a</span>
-                    <input type="number" min="5" max="500" value={selCreative.word_max||""} onChange={e=>setSelCreative(p=>({...p,word_max:e.target.value}))} onBlur={()=>handlePatch(selCreative,{word_max:selCreative.word_max||""})} placeholder="max" style={{...iS,width:80}}/>
-                    <span style={{fontSize:11,color:T.textSm}}>palabras</span>
-                  </div>
-                </div>
-
-                {/* Data específica del producto (este creative en particular) */}
-                <label style={Label}>Data del producto (este anuncio)</label>
-                <textarea value={selCreative.product_data||""} onChange={e=>setSelCreative(p=>({...p,product_data:e.target.value}))} onBlur={()=>handlePatch(selCreative,{product_data:selCreative.product_data||""})}
-                  placeholder="Características, beneficios, precio actual, descuento, garantía, casos de uso, link a producto. La IA lo usa SÍ o SÍ."
-                  style={{...iS,minHeight:80,resize:"vertical",marginBottom:10,lineHeight:1.5}}/>
-
-                <label style={Label}>Notas para la IA</label>
-                <textarea value={selCreative.notes||""} onChange={e=>setSelCreative(p=>({...p,notes:e.target.value}))} onBlur={()=>handlePatch(selCreative,{notes:selCreative.notes})} placeholder="Indicaciones extras (ej: que use emojis, que mencione envío gratis, etc)" style={{...iS,minHeight:60,resize:"vertical",marginBottom:12}}/>
-                <button onClick={()=>handleGenerateCopy(selCreative)} disabled={!!generatingCopy} style={{...BtnPri,width:"100%",justifyContent:"center",marginBottom:14}}>
-                  {generatingCopy===selCreative.id?<><Spinner size={13} color="#fff"/>Generando...</>:"✨ Generar copy con Gemini"}
-                </button>
-                {selCreative.copy&&(
-                  <>
-                    <label style={Label}>Copy</label>
-                    <textarea value={selCreative.copy} onChange={e=>{const u={...selCreative,copy:e.target.value};setSelCreative(u);}} onBlur={()=>handlePatch(selCreative,{copy:selCreative.copy})} style={{...iS,minHeight:90,resize:"vertical",marginBottom:10}}/>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-                      <div>
-                        <label style={Label}>Titular</label>
-                        <input value={selCreative.title||""} onChange={e=>{const u={...selCreative,title:e.target.value};setSelCreative(u);}} onBlur={()=>handlePatch(selCreative,{title:selCreative.title})} style={iS}/>
-                      </div>
-                      <div>
-                        <label style={Label}>Descripción</label>
-                        <input value={selCreative.description||""} onChange={e=>{const u={...selCreative,description:e.target.value};setSelCreative(u);}} onBlur={()=>handlePatch(selCreative,{description:selCreative.description})} style={iS}/>
-                      </div>
-                    </div>
-                    {/* Destino del ad */}
-                    <div style={{padding:"10px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,marginBottom:10}}>
-                      <div style={{fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>📍 Destino del anuncio</div>
-                      <div style={{display:"flex",gap:6,marginBottom:10}}>
-                        <button onClick={()=>setPubDest("existing")} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${pubDest==="existing"?T.accentSolid+"88":T.border}`,background:pubDest==="existing"?T.accentSolid+"18":"transparent",color:pubDest==="existing"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Campaña activa</button>
-                        <button onClick={()=>{setPubDest("newCamp"); if(campaigns.length===0) loadCampaigns();}} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${pubDest==="newCamp"?T.accentSolid+"88":T.border}`,background:pubDest==="newCamp"?T.accentSolid+"18":"transparent",color:pubDest==="newCamp"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Nueva campaña</button>
-                      </div>
-
-                      {pubDest==="existing"&&(
-                        <>
-                          <label style={Label}>AdSet existente</label>
-                          {adsets.length===0
-                            ? <div style={{fontSize:11,color:T.textSm,padding:"8px 0",lineHeight:1.5}}>No hay AdSets cargados. <button onClick={loadCampaigns} style={{background:"none",border:"none",color:T.accent,padding:0,cursor:"pointer",textDecoration:"underline",fontSize:11}}>Recargar</button> o crear una nueva campaña.</div>
-                            : <select value={selCreative.adset_id||""} onChange={e=>{const u={...selCreative,adset_id:e.target.value};setSelCreative(u);handlePatch(selCreative,{adset_id:e.target.value});}} style={iS}>
-                                <option value="">— Elegí un AdSet —</option>
-                                {adsets.map(a=>{ const camp=campaigns.find(c=>c.id===a.campaign_id); return <option key={a.id} value={a.id}>{camp?camp.name+" → ":""}{a.name}</option>; })}
-                              </select>
-                          }
-                        </>
-                      )}
-
-                      {pubDest==="newCamp"&&(
-                        <div>
-                          <label style={Label}>Nombre de la campaña</label>
-                          <input value={pubForm.camp_name} onChange={e=>setPubForm(p=>({...p,camp_name:e.target.value}))} placeholder="Ej: BlackFriday-VentasAR" style={{...iS,marginBottom:8}}/>
-
-                          <label style={Label}>Objetivo</label>
-                          <select value={pubForm.objective} onChange={e=>setPubForm(p=>({...p,objective:e.target.value}))} style={{...iS,marginBottom:10}}>
-                            {OBJECTIVES.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}
-                          </select>
-
-                          <label style={Label}>Modo de budget</label>
-                          <div style={{display:"flex",gap:6,marginBottom:6}}>
-                            <button onClick={()=>setPubForm(p=>({...p,mode:"cbo"}))} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${pubForm.mode==="cbo"?T.accentSolid+"88":T.border}`,background:pubForm.mode==="cbo"?T.accentSolid+"18":"transparent",color:pubForm.mode==="cbo"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>CBO</button>
-                            <button onClick={()=>setPubForm(p=>({...p,mode:"abo"}))} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${pubForm.mode==="abo"?T.accentSolid+"88":T.border}`,background:pubForm.mode==="abo"?T.accentSolid+"18":"transparent",color:pubForm.mode==="abo"?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>ABO</button>
-                          </div>
-                          <div style={{fontSize:10,color:T.textSm,lineHeight:1.5,marginBottom:10,padding:"6px 8px",background:T.bg,border:`1px solid ${T.border}`,borderRadius:5}}>
-                            {pubForm.mode==="cbo"
-                              ? <>🧠 <strong style={{color:T.text}}>CBO</strong>: el presupuesto vive en la campaña. Meta decide cuánto darle a cada adset según rendimiento. Recomendado.</>
-                              : <>🎯 <strong style={{color:T.text}}>ABO</strong>: cada adset tiene su propio presupuesto fijo. Más control, menos automático.</>
-                            }
-                          </div>
-
-                          <label style={Label}>Presupuesto diario (ARS)</label>
-                          <input type="number" min="100" value={pubForm.daily_budget_ars} onChange={e=>setPubForm(p=>({...p,daily_budget_ars:e.target.value}))} placeholder="3000" style={{...iS,marginBottom:10}}/>
-
-                          <label style={Label}>Fecha de activación (opcional)</label>
-                          <input type="datetime-local" value={pubForm.start_time} onChange={e=>setPubForm(p=>({...p,start_time:e.target.value}))} style={{...iS,marginBottom:4}}/>
-                          <div style={{fontSize:10,color:T.textSm,marginBottom:10}}>Vacío = arranca cuando le des "Activar" (queda en PAUSED).</div>
-
-                          <label style={Label}>Nombre del AdSet</label>
-                          <input value={pubForm.adset_name} onChange={e=>setPubForm(p=>({...p,adset_name:e.target.value}))} placeholder="Ej: AR-30a55-PantallasMucho" style={{...iS,marginBottom:10}}/>
-
-                          <button onClick={()=>handleCreateCampAndAdsetInline(selCreative)} disabled={pubCreating} style={{...BtnPri,width:"100%",justifyContent:"center"}}>
-                            {pubCreating?<><Spinner size={12} color="#fff"/>Creando...</>:"➕ Crear campaña + adset y asignar"}
-                          </button>
-                          {selCreative.adset_id&&pubDest==="newCamp"&&<div style={{fontSize:11,color:T.green,marginTop:8,fontWeight:600}}>✓ Asignado al AdSet recién creado</div>}
-                        </div>
-                      )}
-                    </div>
-                    <label style={Label}>CTA</label>
-                    <select value={selCreative.cta||"LEARN_MORE"} onChange={e=>{const u={...selCreative,cta:e.target.value};setSelCreative(u);handlePatch(selCreative,{cta:e.target.value});}} style={{...iS,marginBottom:14}}>
-                      {CTAS.map(c=><option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <button onClick={()=>handlePublish(selCreative)} disabled={!!publishing} style={{...BtnPri,width:"100%",justifyContent:"center",background:"#16a34a"}}>
-                      {publishing===selCreative.id?<><Spinner size={13} color="#fff"/>Publicando...</>:"🚀 Publicar en Meta (PAUSED)"}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Modal preview HD del creative */}
@@ -21284,6 +21039,171 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   );
 }
 
+
+// ===========================================
+// COPILOT — asistente sobre los datos reales del negocio
+// ===========================================
+// Anti-alucinación por diseño: el backend (api/copilot.js) arma un snapshot
+// determinista (caché de Márgenes, envíos, cuentas) y la IA solo interpreta.
+// v1 solo lectura — no ejecuta acciones.
+
+// Render mínimo de markdown (negrita, saltos de línea, bullets) sin librerías.
+function CopilotText({T, text}) {
+  const lines = String(text || "").split("\n");
+  const renderInline = (s, keyBase) => {
+    const parts = s.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((p, i) => p.startsWith("**") && p.endsWith("**")
+      ? <strong key={keyBase + "_" + i} style={{color:T.text,fontWeight:700}}>{p.slice(2, -2)}</strong>
+      : p);
+  };
+  return (
+    <div style={{fontSize:13,color:T.text,lineHeight:1.65,wordBreak:"break-word"}}>
+      {lines.map((ln, i) => {
+        const t = ln.trim();
+        if (!t) return <div key={i} style={{height:8}}/>;
+        if (/^[-*•]\s+/.test(t)) return (
+          <div key={i} style={{display:"flex",gap:8,paddingLeft:4}}>
+            <span style={{color:T.accent,flexShrink:0}}>•</span>
+            <span>{renderInline(t.replace(/^[-*•]\s+/, ""), i)}</span>
+          </div>
+        );
+        return <div key={i}>{renderInline(t, i)}</div>;
+      })}
+    </div>
+  );
+}
+
+function AppCopilot({T, user, onHome, onNavigate}) {
+  const uid = user?.uid;
+  const [msgs, setMsgs] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("growith_copilot_msgs") || "[]"); } catch (_) { return []; }
+  });
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [datosAl, setDatosAl] = useState(null);
+  const scrollRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("growith_copilot_msgs", JSON.stringify(msgs.slice(-30))); } catch (_) {}
+    // Auto-scroll al último mensaje
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [msgs, sending]);
+
+  async function send(text) {
+    const q = String(text ?? input).trim();
+    if (!q || sending || !uid) return;
+    setInput("");
+    const next = [...msgs, { role: "user", text: q }];
+    setMsgs(next);
+    setSending(true);
+    try {
+      const r = await authFetch(`/api/copilot?uid=${uid}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next.slice(-16).map(m => ({ role: m.role, text: m.text })) }),
+      });
+      const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+      if (d.error) {
+        setMsgs(prev => [...prev, { role: "assistant", text: "No pude responder: " + d.error, error: true }]);
+      } else {
+        setMsgs(prev => [...prev, { role: "assistant", text: d.reply }]);
+        if (d.datos_al) setDatosAl(d.datos_al);
+      }
+    } catch (e) {
+      setMsgs(prev => [...prev, { role: "assistant", text: "Error de red: " + (e?.message || "sin conexión"), error: true }]);
+    } finally {
+      setSending(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }
+
+  const SUGERIDAS = [
+    "¿Cómo me fue ayer?",
+    "¿Cuánta ganancia hice en los últimos 30 días?",
+    "¿Qué producto deja más margen?",
+    "¿Tengo envíos demorados o sin retirar?",
+    "¿Cómo genero las etiquetas de Andreani?",
+    "¿Mi ROAS está por encima del break-even?",
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
+      <AppTopbar T={T} section="Copilot" onHome={onHome}>
+        {msgs.length > 0 && (
+          <button onClick={()=>{ setMsgs([]); setDatosAl(null); try{sessionStorage.removeItem("growith_copilot_msgs");}catch(_){} }} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textSm,borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Nueva conversación</button>
+        )}
+      </AppTopbar>
+
+      <div style={{flex:1,display:"flex",flexDirection:"column",maxWidth:760,margin:"0 auto",width:"100%",padding:"0 16px"}} className="main-content">
+
+        {/* Mensajes */}
+        <div ref={scrollRef} style={{flex:1,overflowY:"auto",padding:"24px 4px 12px",display:"flex",flexDirection:"column",gap:14}}>
+          {msgs.length === 0 && (
+            <div style={{textAlign:"center",padding:"48px 12px 24px"}}>
+              <div style={{width:56,height:56,borderRadius:18,background:`linear-gradient(135deg, ${T.accentSolid}, ${T.purple||"#a855f7"})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"/></svg>
+              </div>
+              <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.4}}>Preguntale a tu negocio</div>
+              <div style={{fontSize:13,color:T.textSm,marginTop:8,lineHeight:1.6,maxWidth:440,margin:"8px auto 0"}}>
+                El Copilot responde con <strong style={{color:T.textMd}}>tus números reales</strong> — los mismos que calculan Márgenes y Envíos. No inventa cifras: si no tiene un dato, te dice dónde encontrarlo.
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginTop:24}}>
+                {SUGERIDAS.map(s=>(
+                  <button key={s} onClick={()=>send(s)} style={{padding:"8px 14px",fontSize:12,fontWeight:500,border:`1px solid ${T.border}`,borderRadius:20,background:T.card,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accentSolid+"88";e.currentTarget.style.color=T.accent;}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.textMd;}}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {msgs.map((m, i) => m.role === "user" ? (
+            <div key={i} style={{alignSelf:"flex-end",maxWidth:"85%",background:T.accentSolid,color:"#fff",borderRadius:"14px 14px 4px 14px",padding:"10px 16px",fontSize:13,lineHeight:1.55,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+              {m.text}
+            </div>
+          ) : (
+            <div key={i} style={{alignSelf:"flex-start",maxWidth:"92%",display:"flex",gap:10}}>
+              <div style={{width:28,height:28,borderRadius:9,background:m.error?T.red+"22":`linear-gradient(135deg, ${T.accentSolid}, ${T.purple||"#a855f7"})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={m.error?T.red:"#fff"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/></svg>
+              </div>
+              <div style={{background:T.card,border:`1px solid ${m.error?T.red+"44":T.border}`,borderRadius:"4px 14px 14px 14px",padding:"12px 16px",flex:1,minWidth:0}}>
+                <CopilotText T={T} text={m.text}/>
+              </div>
+            </div>
+          ))}
+
+          {sending && (
+            <div style={{alignSelf:"flex-start",display:"flex",gap:10,alignItems:"center"}}>
+              <div style={{width:28,height:28,borderRadius:9,background:`linear-gradient(135deg, ${T.accentSolid}, ${T.purple||"#a855f7"})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <Spinner size={13} color="#fff"/>
+              </div>
+              <span style={{fontSize:12,color:T.textSm}}>Consultando tus datos...</span>
+            </div>
+          )}
+        </div>
+
+        {/* Input */}
+        <div style={{padding:"8px 0 18px",position:"sticky",bottom:0,background:T.bg}}>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:14,padding:"10px 12px"}}>
+            <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} rows={1}
+              onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
+              placeholder="Preguntá sobre tus ventas, márgenes, envíos o cómo usar Growith..."
+              style={{flex:1,background:"transparent",border:"none",outline:"none",resize:"none",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",lineHeight:1.5,maxHeight:120,padding:"4px 2px"}}/>
+            <button onClick={()=>send()} disabled={sending||!input.trim()} style={{width:34,height:34,borderRadius:10,border:"none",background:input.trim()&&!sending?T.accentSolid:T.borderL,color:"#fff",cursor:input.trim()&&!sending?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background 0.15s"}}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+          <div style={{fontSize:10,color:T.textSm,textAlign:"center",marginTop:8,lineHeight:1.5}}>
+            Responde solo con datos calculados por Growith{datosAl ? ` · datos de Márgenes al ${new Date(datosAl).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}` : ""}. Si Márgenes nunca se abrió, <button onClick={()=>onNavigate&&onNavigate("margenes")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:10,padding:0,textDecoration:"underline",fontFamily:"inherit"}}>abrila una vez</button> para que se generen los números.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ===========================================
 // APP MERCADO LIBRE — Gestión + Bulk Edit
@@ -21864,11 +21784,11 @@ function CostosPanel({ T, uid }) {
       // Cuentas de Meta accesibles con el token (CP5, CP7, etc.) — para elegir
       // cuál es la de ESTA tienda cuando tenés varias en la misma app.
       try {
-        const accRes = await fetch(`/api/meta?action=accounts&uid=${uid}`).then(r=>r.json());
+        const accRes = await authFetch(`/api/meta?action=accounts&uid=${uid}`).then(r=>r.json());
         const accs = accRes.accounts || [];
         if (accs.length) {
           const accId = (accs.find(a=>a.ad_account_id)||accs[0]).id;
-          const aaRes = await fetch(`/api/meta?action=available_ad_accounts&uid=${uid}&acc_id=${accId}`).then(r=>r.json());
+          const aaRes = await authFetch(`/api/meta?action=available_ad_accounts&uid=${uid}&acc_id=${accId}`).then(r=>r.json());
           setMetaAdAccts(Array.isArray(aaRes.ad_accounts) ? aaRes.ad_accounts : []);
         }
       } catch (_) {}
@@ -25866,7 +25786,7 @@ export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock","ml","tareas","rendimiento"];
+  const VALID_PAGES = ["home","copilot","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock","ml","tareas","rendimiento"];
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
   // Detectar ruta pública de colaborador: #/colaborador/TOKEN
   const _colabMatch = _initialHash.match(/^colaborador\/([a-z0-9]{8,})/i);
@@ -26404,6 +26324,7 @@ export default function App() {
     }}>
       {[
         {id:"home",label:"Inicio",icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
+        {id:"copilot",label:"Copilot",icon:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z"},
         {id:"margenes",label:"Márgenes",icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
         {id:"arca",label:"Facturador",icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6M9 9h1"},
         {id:"meta",label:"Meta Ads",icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
@@ -26474,6 +26395,7 @@ export default function App() {
   let pageContent = null;
   if(page==="planes") pageContent = <AppPlanes T={T} user={user} userPlan={userPlan} planExpiry={planExpiry} onBack={()=>setPage("home")} isTrialExpired={false} USDT_ADDRESS={USDT_ADDRESS} CVU_PAGO={CVU_PAGO} ALIAS_PAGO={ALIAS_PAGO} TITULAR_PAGO={TITULAR_PAGO} SUPPORT_EMAIL={SUPPORT_EMAIL}/>;
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
+  else if(page==="copilot") pageContent = <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage}/></PageView>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
   // Ruta legacy #/rendimiento → mismo dashboard de Márgenes, con navegación completa.
   else if(page==="rendimiento") pageContent = adminGate("margenes") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={(t)=>{setMargenesTab(t); setPage("margenes");}}/></PageView>;

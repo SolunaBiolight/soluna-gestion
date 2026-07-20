@@ -16,7 +16,7 @@ function initAdmin() {
 }
 
 // ─── Rendimiento helpers (antiguo rendimiento.js) ────────────────────────
-const META_V = "v21.0";
+const META_V = "v23.0"; // mantener sincronizada con api/meta.js y api/meta-callback.js
 const META_BASE = `https://graph.facebook.com/${META_V}`;
 
 async function metaGet(path, params, token) {

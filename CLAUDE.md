@@ -21,7 +21,9 @@ Actualmente en uso real por Soluna Biolight (anteojos blue light blocker).
 │   ├── stock.js         ← Stock analytics (TN + Shopify + ML)
 │   ├── orders.js        ← Órdenes TN
 │   ├── arca.js          ← Facturación AFIP
-│   ├── meta.js          ← Meta Ads
+│   ├── meta.js          ← Meta Ads (auth: verifyAuth + cron con CRON_SECRET)
+│   ├── copilot.js       ← Copilot IA (Gemini + snapshot determinista de Firestore)
+│   ├── _auth.js         ← verifyAuth (Firebase ID token) — no expuesto por Vercel
 │   ├── integrations.js  ← OAuth TN + Shopify
 │   ├── audio.js         ← TTS Gemini
 │   ├── tn-callback.js   ← Callback OAuth TN
@@ -42,6 +44,7 @@ FIREBASE_PROJECT_ID
 FIREBASE_CLIENT_EMAIL
 FIREBASE_PRIVATE_KEY
 GOOGLE_AI_KEY
+CRON_SECRET               ← auth de los crons (Vercel lo manda como Bearer)
 META_APP_ID=905872205806657
 META_APP_SECRET
 NEXT_PUBLIC_META_APP_ID=905872205806657
@@ -51,6 +54,7 @@ NEXT_PUBLIC_META_APP_ID=905872205806657
 | Componente | Sección | Descripción |
 |---|---|---|
 | `HomeScreen` | Inicio | Dashboard con KPIs, alertas y acciones rápidas |
+| `AppCopilot` | Copilot | Chat IA sobre datos reales (solo lectura, no inventa cifras) |
 | `AppEnvios` | Envíos | Pedidos TN, etiquetas Andreani, seguimientos |
 | `AppReclamos` | Reclamos | Pipeline kanban de reclamos y cambios |
 | `AppCanjes` | Canjes | Gestión de influencers y canjes |

@@ -5,11 +5,12 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { createHmac, timingSafeEqual } from "crypto";
 
 const META_APP_ID     = process.env.META_APP_ID;
 const META_APP_SECRET = process.env.META_APP_SECRET;
 const APP_URL         = "https://www.growithapp.com";
-const META_V          = "v21.0";
+const META_V          = "v23.0"; // mantener sincronizada con api/meta.js y api/orders.js
 const REDIRECT_URI    = `${APP_URL}/api/meta-callback`;
 
 function initAdmin() {
@@ -40,8 +41,20 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Faltan parámetros", received: req.query });
   }
 
-  // state = uid del usuario en Firestore (lo mandamos nosotros al iniciar el OAuth)
-  const uid = decodeURIComponent(state);
+  // state = "uid.firma" — la firma HMAC la genera oauth_start (api/meta.js).
+  // Sin esto, cualquiera podía completar un OAuth con SU cuenta de Meta y
+  // state=<uid víctima>, pisando la conexión de la víctima (CSRF de vinculación).
+  const rawState = decodeURIComponent(state);
+  const dot = rawState.lastIndexOf(".");
+  if (dot <= 0) return res.redirect(`${APP_URL}?meta_error=bad_state`);
+  const uid = rawState.slice(0, dot);
+  const gotSig = rawState.slice(dot + 1);
+  const expSig = createHmac("sha256", META_APP_SECRET || "").update(uid).digest("hex").slice(0, 32);
+  const a = Buffer.from(gotSig), b = Buffer.from(expSig);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    console.error("[meta-callback] state con firma inválida");
+    return res.redirect(`${APP_URL}?meta_error=bad_state`);
+  }
 
   try {
     // 1. Intercambiar code por short-lived token
@@ -68,7 +81,16 @@ export default async function handler(req, res) {
       `https://graph.facebook.com/${META_V}/oauth/access_token?grant_type=fb_exchange_token&client_id=${META_APP_ID}&client_secret=${META_APP_SECRET}&fb_exchange_token=${shortToken}`
     );
     const longData = await longRes.json();
-    const longToken = longData.access_token || shortToken;
+    // Si el exchange a long-lived falla, NO conectar con el short-lived (~2h):
+    // el usuario quedaría "conectado" y a las 2 horas todo muere sin aviso.
+    if (!longData.access_token) {
+      console.error("[meta-callback] exchange a long-lived falló:", JSON.stringify(longData.error || longData).slice(0, 300));
+      return res.redirect(`${APP_URL}?meta_error=long_token_failed`);
+    }
+    const longToken = longData.access_token;
+    const tokenExpiresAt = longData.expires_in
+      ? new Date(Date.now() + longData.expires_in * 1000).toISOString()
+      : new Date(Date.now() + 60 * 86400000).toISOString(); // default 60 días
 
     // 3. Traer info del usuario
     const meRes  = await fetch(`https://graph.facebook.com/${META_V}/me?fields=id,name,email&access_token=${longToken}`);
@@ -122,6 +144,10 @@ export default async function handler(req, res) {
         ig_account_id:   (autoPg ? autoPg.instagram_business_account?.id      : prev.ig_account_id) ?? null,
         ig_username:     (autoPg ? autoPg.instagram_business_account?.username : prev.ig_username)   ?? null,
         has_token:       true,
+        oauth:           true, // el cron re-extiende el token automáticamente a los 40 días
+        token_invalid:   false,
+        token_expires_at: tokenExpiresAt,
+        token_refreshed_at: new Date().toISOString(),
         connected_at:    new Date().toISOString(),
         last_test: { ok: true, ts: new Date().toISOString(), msg: "Conectado vía OAuth" },
       }, { merge: true });

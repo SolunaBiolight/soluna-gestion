@@ -9,6 +9,8 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { createHmac } from "crypto";
+import { verifyAuth } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -22,8 +24,19 @@ function initAdmin() {
   return getFirestore();
 }
 
-const META_V = "v21.0";
+// Versión de Graph API — la Marketing API deprecia versiones cada ~1 año.
+// Mantener sincronizada con api/meta-callback.js y api/orders.js.
+const META_V = "v23.0";
 const META_BASE = `https://graph.facebook.com/${META_V}`;
+
+// Firma HMAC del state de OAuth — evita que un tercero complete el flujo
+// con su propia cuenta de Meta apuntando al uid de una víctima (CSRF de
+// vinculación). oauth_start la genera, meta-callback.js la verifica.
+export function signOauthState(uid) {
+  const secret = process.env.META_APP_SECRET || "";
+  const sig = createHmac("sha256", secret).update(String(uid)).digest("hex").slice(0, 32);
+  return `${uid}.${sig}`;
+}
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const GEMINI_TEXT_MODEL = "gemini-2.5-flash";
@@ -96,7 +109,7 @@ async function metaGet(path, params, token) {
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
   let lastErr = null;
   for (let attempt = 0; attempt <= META_RETRY_DELAYS_MS.length; attempt++) {
-    const r = await fetch(url.toString());
+    const r = await fetch(url.toString(), { signal: AbortSignal.timeout(25000) });
     const d = await r.json();
     if (!d.error) return d;
     const code = d.error.code;
@@ -115,7 +128,7 @@ async function metaPost(path, payload, token) {
   let lastErr = null;
   for (let attempt = 0; attempt <= META_RETRY_DELAYS_MS.length; attempt++) {
     const body = new URLSearchParams({ ...payload, access_token: token });
-    const r = await fetch(`${META_BASE}/${path.replace(/^\//, "")}`, { method: "POST", body });
+    const r = await fetch(`${META_BASE}/${path.replace(/^\//, "")}`, { method: "POST", body, signal: AbortSignal.timeout(25000) });
     const d = await r.json();
     if (!d.error) return d;
     const code = d.error.code;
@@ -201,6 +214,10 @@ function safeAccount(cfg) {
   if (!cfg) return null;
   const { access_token, page_access_token, ...safe } = cfg;
   safe.has_token = Boolean(cfg.access_token);
+  // Salud del token — la UI muestra banner "Reconectá Meta" cuando token_invalid
+  safe.token_invalid = Boolean(cfg.token_invalid);
+  safe.token_expires_at = cfg.token_expires_at || null;
+  safe.token_refreshed_at = cfg.token_refreshed_at || null;
   return safe;
 }
 
@@ -456,8 +473,9 @@ async function fetchInsightsRows(cfg, level, since, until) {
     };
   });
   // Agregar nodos sin gasto
+  const rowIds = new Set(rows.map(r => r.id));
   for (const id in nodeMap) {
-    if (!rows.find(r => r.id === id)) {
+    if (!rowIds.has(id)) {
       const n = nodeMap[id];
       rows.push({
         id, name: n.name || "", status: n.status, effective_status: n.effective_status,
@@ -509,6 +527,7 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
     for (const cond of rule.conditions || []) combos.add(`${rule.level}|${effectiveWindow(cond)}`);
   }
   const cache = new Map(); // "level|window" -> Map<nodeId, row>
+  let tokenExpired = false;
   for (const combo of combos) {
     const [level, w] = combo.split("|");
     const since = new Date(Date.now() - parseInt(w) * 86400000).toISOString().slice(0, 10);
@@ -518,8 +537,12 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
       cache.set(combo, new Map(rows.map(r => [r.id, r])));
     } catch (e) {
       console.error("[meta-rules] fetch failed", combo, e.message);
+      if (/\(190\)/.test(e.message)) tokenExpired = true;
     }
   }
+  // Con token muerto no hay data: devolver la causa real en vez de
+  // "0 acciones" (que se leía como si el optimizador estuviera trabajando).
+  if (tokenExpired) return { evaluated: rules.length, actions: 0, token_expired: true };
 
   // ── Productos (clasificador URL→producto) — para reglas con product_ids ──
   // Solo cargamos si alguna regla usa filtro de productos (ahorra una API call si nadie filtra).
@@ -831,7 +854,48 @@ async function evaluateRulesForAccount(db, uid, accId, opts = {}) {
             errMsg = `Meta aceptó el POST de presupuesto (2 intentos) pero ${field} no quedó en ${newBudget}. Revisar permisos del System User en BM ('Administrar campañas') o si la campaña usa CBO/Advantage+ Budget (en ese caso hay que bajar el presupuesto de la CAMPAÑA, no del adset).`;
           }
         } catch (e) { ok = false; errMsg = e.message; }
+      } else if (rule.action === "increase_budget") {
+        // Escalar ganadores: sube el presupuesto N% con tope opcional (action_max,
+        // en moneda de la cuenta) para que una regla nunca escale sin límite.
+        try {
+          const node = await metaGet(nodeId, { fields: "daily_budget,lifetime_budget" }, cfg.access_token);
+          const dailyOld = parseInt(node.daily_budget) || 0;
+          const lifetimeOld = parseInt(node.lifetime_budget) || 0;
+          const oldBudget = dailyOld || lifetimeOld;
+          if (oldBudget <= 0) throw new Error("Sin presupuesto editable (puede tener CBO/Advantage+ Budget en la campaña)");
+          const pctNum = parseFloat(rule.action_pct) || 20;
+          let newBudget = Math.round(oldBudget * (100 + pctNum) / 100);
+          const capCents = Math.round((parseFloat(rule.action_max) || 0) * 100);
+          if (capCents > 0) newBudget = Math.min(newBudget, capCents);
+          const field = dailyOld > 0 ? "daily_budget" : "lifetime_budget";
+          if (newBudget <= oldBudget) {
+            // Ya está en el tope — no accionar, pero dejar constancia en el log
+            errMsg = `Ya está en el tope configurado (${(oldBudget / 100).toFixed(0)}). Sin cambios.`;
+          } else {
+            const tryIncrease = async () => {
+              await metaPost(nodeId, { [field]: String(newBudget) }, cfg.access_token);
+            };
+            const verifyIncreased = async () => {
+              const after = await metaGet(nodeId, { fields: "daily_budget,lifetime_budget" }, cfg.access_token);
+              return (parseInt(after[field]) || 0) === newBudget;
+            };
+            await tryIncrease();
+            await sleep(1200);
+            let applied = await verifyIncreased();
+            if (!applied) {
+              await tryIncrease();
+              await sleep(2500);
+              applied = await verifyIncreased();
+            }
+            if (!applied) {
+              ok = false;
+              errMsg = `Meta aceptó el POST de presupuesto (2 intentos) pero ${field} no subió a ${newBudget}. Revisar permisos del System User o CBO/Advantage+ Budget.`;
+            }
+          }
+        } catch (e) { ok = false; errMsg = e.message; }
       }
+      // action === "notify": no toca Meta — el log de abajo ES la notificación
+      // (la UI de Reglas muestra los disparos "notify" como avisos pendientes).
 
       const logRef = logCol.doc();
       const matchedProductIds = (rule.product_ids?.length && adProductsByNode[rule.level]?.get(nodeId))
@@ -905,6 +969,14 @@ ${adData.body || "(vacío)"}
 - Valor compras: $${fmt(adData.purchase_value)}
 - ROAS: ${fmt(adData.roas)}x
 - CPA: $${fmt(adData.cpa)}
+${adData.video_p25 != null ? `
+## Retención de video (% de impresiones que llegan a cada punto)
+- 25%: ${adData.video_p25}% · 50%: ${adData.video_p50 ?? "?"}% · 75%: ${adData.video_p75 ?? "?"}% · 100%: ${adData.video_p100 ?? "?"}%
+- ThruPlays: ${adData.thruplays || 0}
+(Usá esto: si la retención cae fuerte antes del 25%, el hook no funciona.)` : ""}
+${adData.quality_ranking ? `
+## Rankings de Meta vs competencia
+- Calidad: ${adData.quality_ranking} · Engagement: ${adData.engagement_ranking || "?"} · Conversión: ${adData.conversion_ranking || "?"}` : ""}
 
 Analizá el anuncio FULL y devolvé el JSON. Sé específico y útil — no des consejos genéricos.`;
 
@@ -942,22 +1014,62 @@ export const config = { api: { bodyParser: { sizeLimit: "50mb" } } };
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const { action, uid, acc_id, cid } = req.query;
 
   const db = initAdmin();
 
-  // ── CRON: corre evaluación de reglas para TODOS los users con reglas activas ──
+  // ── CRON: reglas + mantenimiento de tokens para TODOS los users ──
   // Lo dispara Vercel Cron (Bearer CRON_SECRET) sin uid.
   if (action === "cron_run_all" && req.method === "GET") {
     const expected = process.env.CRON_SECRET;
     const got = req.headers.authorization || "";
-    if (expected && got !== `Bearer ${expected}`) {
+    // CRON_SECRET es OBLIGATORIO — sin la env var, el cron no corre en vez de
+    // quedar abierto a internet (antes el chequeo era opcional).
+    if (!expected || got !== `Bearer ${expected}`) {
       return res.status(401).json({ error: "Unauthorized cron" });
     }
     try {
+      // 1) Renovación proactiva de long-lived tokens OAuth (~60 días de vida).
+      // El exchange fb_exchange_token funciona mientras el token siga válido,
+      // así que re-extendemos a los 40 días y el token nunca llega a vencer.
+      // System User Tokens (pegados a mano) no vencen — se saltean.
+      const tokensRefreshed = [];
+      try {
+        const accsSnap = await db.collectionGroup("meta_accounts").get();
+        const now = Date.now();
+        for (const d of accsSnap.docs) {
+          const a = d.data() || {};
+          if (!a.access_token || a.token_invalid) continue;
+          const isOauth = a.oauth === true || String(a.last_test?.msg || "").includes("OAuth");
+          if (!isOauth) continue;
+          const baseTs = Date.parse(a.token_refreshed_at || a.connected_at || a.created_at || "") || 0;
+          if (!baseTs || (now - baseTs) < 40 * 86400000) continue;
+          try {
+            const r = await fetch(
+              `https://graph.facebook.com/${META_V}/oauth/access_token?grant_type=fb_exchange_token&client_id=${process.env.META_APP_ID}&client_secret=${process.env.META_APP_SECRET}&fb_exchange_token=${a.access_token}`,
+              { signal: AbortSignal.timeout(20000) }
+            );
+            const j = await r.json();
+            if (j.access_token) {
+              await d.ref.set({
+                access_token: j.access_token,
+                token_refreshed_at: new Date().toISOString(),
+                token_expires_at: j.expires_in ? new Date(now + j.expires_in * 1000).toISOString() : null,
+                token_invalid: false,
+              }, { merge: true });
+              tokensRefreshed.push(d.ref.path);
+            } else if (j.error?.code === 190) {
+              // El token ya murió — marcar para que la UI muestre "Reconectá Meta"
+              await d.ref.set({ token_invalid: true, last_test: { ok: false, ts: new Date().toISOString(), msg: `Token vencido: ${j.error.message}`.slice(0, 200) } }, { merge: true });
+            }
+          } catch (e) { console.warn("[cron-token-refresh]", d.ref.path, e.message); }
+        }
+      } catch (e) { console.warn("[cron-token-refresh] sweep failed:", e.message); }
+
+      // 2) Evaluación de reglas activas
       const allRules = await db.collectionGroup("meta_rules").where("active", "==", true).get();
       const tasks = new Map();
       allRules.docs.forEach(d => {
@@ -970,17 +1082,32 @@ export default async function handler(req, res) {
         try {
           const r = await evaluateRulesForAccount(db, u, accId);
           summary.push({ uid: u, accId, ...r });
+          // Token muerto detectado durante la evaluación → flag en la cuenta,
+          // para que el cron no "no-opee" en silencio como antes.
+          if (r?.token_expired) {
+            await metaAccountRef(db, u, accId).set({ token_invalid: true, last_test: { ok: false, ts: new Date().toISOString(), msg: "Token vencido (detectado por el cron de reglas)" } }, { merge: true }).catch(() => {});
+          }
         } catch (e) {
           summary.push({ uid: u, accId, error: e.message });
         }
       }
-      return res.json({ ok: true, ran: tasks.size, summary });
+      return res.json({ ok: true, ran: tasks.size, tokens_refreshed: tokensRefreshed.length, summary });
     } catch (e) {
       return res.status(500).json({ error: e.message });
     }
   }
 
   if (!uid) return res.status(401).json({ error: "Falta uid" });
+
+  // ── AUTH: todo lo demás exige sesión válida de Firebase (Bearer ID token).
+  // Antes el único "auth" era conocer el uid por query string — cualquiera
+  // podía leer insights, pausar campañas o exfiltrar el access_token de Meta.
+  // Mismo patrón que orders.js / update-shipping.js (equipo multi-login: se
+  // valida que el token sea válido, no que token.uid === uid).
+  const authUser = await verifyAuth(req);
+  if (!authUser) {
+    return res.status(401).json({ error: "Sesión inválida. Cerrá sesión y volvé a entrar." });
+  }
 
   try {
 
@@ -1004,7 +1131,7 @@ export default async function handler(req, res) {
         "pages_show_list",
         "pages_read_engagement",
       ].join(",");
-      const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${encodeURIComponent(uid)}&scope=${encodeURIComponent(scopes)}&response_type=code`;
+      const url = `https://www.facebook.com/${META_V}/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${encodeURIComponent(signOauthState(uid))}&scope=${encodeURIComponent(scopes)}&response_type=code`;
       return res.json({ url });
     }
 
@@ -1203,6 +1330,17 @@ export default async function handler(req, res) {
         ? JSON.stringify([{ field: `${parentType}.id`, operator: "IN", value: [parentId] }])
         : null;
 
+      // Breakdown opcional: segmenta las filas por edad/género/ubicación/hora.
+      // Whitelist → el valor va directo al param `breakdowns` de la Graph API.
+      const BREAKDOWNS = {
+        age: "age",
+        gender: "gender",
+        placement: "publisher_platform,platform_position",
+        hour: "hourly_stats_aggregated_by_advertiser_time_zone",
+      };
+      const breakdownKey = String(req.query.breakdown || "");
+      const breakdownParam = BREAKDOWNS[breakdownKey] || null;
+
       try {
         // Meta acepta time_range[since]/[until] como params separados — mas confiable
         // que JSON.stringify (que con URL-encoding agresivo a veces es ignorado y devuelve "lifetime").
@@ -1216,6 +1354,7 @@ export default async function handler(req, res) {
           action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]),
         };
         if (filteringParam) insightsParams.filtering = filteringParam;
+        if (breakdownParam) insightsParams.breakdowns = breakdownParam;
         // Paginar insights — sin esto, accounts con > 500 nodos cortan los datos
         // y los nodos sobrantes caían como "sin gasto" aunque hayan gastado.
         const insightsAll = [];
@@ -1234,6 +1373,42 @@ export default async function handler(req, res) {
           } catch (_) { break; }
         }
         const data = { data: insightsAll };
+
+        // Con breakdown: devolvemos filas segmentadas (una por nodo × segmento),
+        // sin merge de status ni zero-fill (no aplican a filas segmentadas).
+        if (breakdownParam) {
+          const segName = (r) => {
+            if (breakdownKey === "age") return r.age || "?";
+            if (breakdownKey === "gender") return r.gender === "male" ? "Hombres" : r.gender === "female" ? "Mujeres" : "Sin datos";
+            if (breakdownKey === "placement") return [r.publisher_platform, r.platform_position].filter(Boolean).join(" · ") || "?";
+            if (breakdownKey === "hour") return String(r.hourly_stats_aggregated_by_advertiser_time_zone || "?").slice(0, 5);
+            return "?";
+          };
+          const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
+          const rows = (data.data || []).map(r => {
+            const purchases = (r.actions || []).find(a => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase");
+            const purchaseValue = (r.action_values || []).find(a => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase");
+            const cpaPurchase = (r.cost_per_action_type || []).find(a => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase");
+            return {
+              id: r[idField],
+              name: r[level + "_name"] || "",
+              segment: segName(r),
+              spend: parseFloat(r.spend) || 0,
+              impressions: parseInt(r.impressions) || 0,
+              clicks: parseInt(r.clicks) || 0,
+              ctr: parseFloat(r.ctr) || 0,
+              cpm: parseFloat(r.cpm) || 0,
+              cpc: parseFloat(r.cpc) || 0,
+              frequency: parseFloat(r.frequency) || 0,
+              reach: parseInt(r.reach) || 0,
+              purchases: parseInt(purchases?.value) || 0,
+              purchase_value: parseFloat(purchaseValue?.value) || 0,
+              roas: parseFloat((r.purchase_roas || [])[0]?.value) || 0,
+              cpa: parseFloat(cpaPurchase?.value) || 0,
+            };
+          });
+          return res.json({ rows, since, until, level, breakdown: breakdownKey });
+        }
 
         // También necesitamos el status de cada nodo (que insights no devuelve).
         // Filtrar la lista de nodos por parent si aplica.
@@ -1299,8 +1474,9 @@ export default async function handler(req, res) {
         });
 
         // Sumar nodos sin gasto (que no aparecen en insights pero existen)
+        const rowIds = new Set(rows.map(r => r.id));
         for (const id in nodeMap) {
-          if (!rows.find(r => r.id === id)) {
+          if (!rowIds.has(id)) {
             const n = nodeMap[id];
             rows.push({
               id, name: n.name || "", status: n.status, effective_status: n.effective_status,
@@ -1338,7 +1514,7 @@ export default async function handler(req, res) {
       // 2 min siguientes es instantáneo. Botón "🔄" del front pasa fresh=1 para
       // saltearlo cuando el user quiere data nueva sí o sí.
       // v2: bump cuando cambie shape del payload o cuando queramos invalidar caches viejos
-      const libCacheKey = `libv4_${String(accIdQ).replace(/[^a-zA-Z0-9_]/g,"_")}_${since}_${until}`;
+      const libCacheKey = `libv5_${String(accIdQ).replace(/[^a-zA-Z0-9_]/g,"_")}_${since}_${until}`;
       const libCacheRef = db.collection("users").doc(uid).collection("meta_lib_cache").doc(libCacheKey);
       const LIB_CACHE_TTL_MS = 2 * 60 * 1000;
       const forceFresh = req.query.fresh === "1";
@@ -1430,15 +1606,36 @@ export default async function handler(req, res) {
 
         // 2) Insights del rango por ad — y análisis en paralelo (independientes)
         const _tIns = Date.now();
-        const [insightsRes, analysesSnap] = await Promise.all([
-          metaGet(`${cfg.ad_account_id}/insights`, {
+        // Insights por ad con PAGINACIÓN (antes: una sola página de 500 — cuentas
+        // con más ads con gasto perdían filas) + métricas de video y rankings de
+        // calidad para que el análisis IA sea accionable (retención, hook).
+        const fetchLibInsights = async () => {
+          const all = [];
+          let page = await metaGet(`${cfg.ad_account_id}/insights`, {
             level: "ad",
             "time_range[since]": since,
             "time_range[until]": until,
             action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]),
-            fields: "ad_id,spend,impressions,clicks,ctr,cpm,cpc,frequency,reach,actions,action_values,purchase_roas,cost_per_action_type",
+            fields: "ad_id,spend,impressions,clicks,ctr,cpm,cpc,frequency,reach,actions,action_values,purchase_roas,cost_per_action_type,video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,quality_ranking,engagement_rate_ranking,conversion_rate_ranking",
             limit: 500,
-          }, cfg.access_token).catch(e => { console.warn("[ads_library] insights fail:", e.message); return { data: [] }; }),
+          }, cfg.access_token);
+          all.push(...(page.data || []));
+          let next = page.paging?.next || null;
+          let safety2 = 0;
+          while (next && safety2 < 10) {
+            safety2++;
+            try {
+              const r = await fetch(next);
+              const j = await r.json();
+              if (!r.ok || j.error) break;
+              all.push(...(j.data || []));
+              next = j.paging?.next || null;
+            } catch (_) { break; }
+          }
+          return { data: all };
+        };
+        const [insightsRes, analysesSnap] = await Promise.all([
+          fetchLibInsights().catch(e => { console.warn("[ads_library] insights fail:", e.message); return { data: [] }; }),
           db.collection("users").doc(uid).collection("meta_ad_analyses").get(),
         ]);
         const insightsRows = insightsRes.data || [];
@@ -1447,8 +1644,14 @@ export default async function handler(req, res) {
         analysesSnap.docs.forEach(d => { cachedAnalyses[d.id] = d.data(); });
 
         // 4) Mergear todo
+        const insByAd = new Map(insightsRows.map(i => [i.ad_id, i]));
+        const vidPct = (ins, key) => {
+          const n = parseInt((ins[key] || [])[0]?.value) || 0;
+          const imp = parseInt(ins.impressions) || 0;
+          return imp > 0 ? Math.round((n / imp) * 100) : null;
+        };
         const result = ads.map(ad => {
-          const ins = insightsRows.find(i => i.ad_id === ad.id) || {};
+          const ins = insByAd.get(ad.id) || {};
           const purchases = (ins.actions || []).find(a => /purchase/.test(a.action_type || ""));
           const purchaseValue = (ins.action_values || []).find(a => /purchase/.test(a.action_type || ""));
           const cpaPurchase = (ins.cost_per_action_type || []).find(a => /purchase/.test(a.action_type || ""));
@@ -1494,6 +1697,16 @@ export default async function handler(req, res) {
             purchase_value: parseFloat(purchaseValue?.value) || 0,
             roas: parseFloat((ins.purchase_roas || [])[0]?.value) || 0,
             cpa: parseFloat(cpaPurchase?.value) || 0,
+            // Retención de video (% de impresiones que llegan a cada cuarto) +
+            // rankings de calidad de Meta — null para ads de imagen o sin datos.
+            video_p25: vidPct(ins, "video_p25_watched_actions"),
+            video_p50: vidPct(ins, "video_p50_watched_actions"),
+            video_p75: vidPct(ins, "video_p75_watched_actions"),
+            video_p100: vidPct(ins, "video_p100_watched_actions"),
+            thruplays: parseInt((ins.video_thruplay_watched_actions || [])[0]?.value) || 0,
+            quality_ranking: ins.quality_ranking || null,
+            engagement_ranking: ins.engagement_rate_ranking || null,
+            conversion_ranking: ins.conversion_rate_ranking || null,
             analysis: cachedAnalyses[ad.id]?.analysis || null,
             analyzed_at: cachedAnalyses[ad.id]?.analyzed_at || null,
           };
@@ -1594,6 +1807,9 @@ export default async function handler(req, res) {
           purchase_value: ad.purchase_value,
           roas: ad.roas,
           cpa: ad.cpa,
+          video_p25: ad.video_p25, video_p50: ad.video_p50, video_p75: ad.video_p75, video_p100: ad.video_p100,
+          thruplays: ad.thruplays,
+          quality_ranking: ad.quality_ranking, engagement_ranking: ad.engagement_ranking, conversion_ranking: ad.conversion_ranking,
         });
         await db.collection("users").doc(uid).collection("meta_ad_analyses").doc(String(ad.id))
           .set({ ad_id: ad.id, analysis, analyzed_at: new Date().toISOString() }, { merge: true });
@@ -1632,8 +1848,9 @@ export default async function handler(req, res) {
           value: parseFloat(c.value) || 0,
           window_days: parseInt(c.window_days) || 7,
         })),
-        action: ["pause", "notify", "reduce_budget"].includes(rule.action) ? rule.action : "pause",
-        action_pct: rule.action === "reduce_budget" ? (parseFloat(rule.action_pct) || 20) : null,
+        action: ["pause", "notify", "reduce_budget", "increase_budget"].includes(rule.action) ? rule.action : "pause",
+        action_pct: (rule.action === "reduce_budget" || rule.action === "increase_budget") ? (parseFloat(rule.action_pct) || 20) : null,
+        action_max: rule.action === "increase_budget" ? (parseFloat(rule.action_max) || null) : null,
         // Productos a los que se aplica esta regla (URL match). [] o ausente = todos los productos / cualquier ad.
         product_ids: Array.isArray(rule.product_ids) ? rule.product_ids.filter(Boolean) : [],
         active: rule.active !== false,
@@ -2709,6 +2926,20 @@ export default async function handler(req, res) {
 
   } catch (e) {
     console.error("[meta]", e.message);
+    // Token de Meta muerto (código 190) → marcar la cuenta para que la UI
+    // muestre el banner "Reconectá Meta" en vez de un 500 críptico.
+    if (/\(190\)/.test(e.message)) {
+      const accToMark = acc_id || req.query.acc_id;
+      if (accToMark) {
+        try {
+          await metaAccountRef(db, uid, accToMark).set({
+            token_invalid: true,
+            last_test: { ok: false, ts: new Date().toISOString(), msg: e.message.slice(0, 200) },
+          }, { merge: true });
+        } catch (_) {}
+      }
+      return res.status(401).json({ error: e.message, token_expired: true });
+    }
     return res.status(500).json({ error: e.message });
   }
 }
