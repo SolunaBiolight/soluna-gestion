@@ -812,6 +812,9 @@ export default async function handler(req, res) {
         }
       } catch(_) {}
       const mlEnvioDe  = o => {
+        // Venta devuelta/reembolsada: ML anula el cargo de envío en la facturación
+        // ("Anulaciones de cargos") — no es un costo real, no se cuenta.
+        if (o?.refunded) return 0;
         const s = mlLogi[o?.shippingId];
         if (!s) return 0;
         // Flex: costo propio configurado (fallback: promedio de tienda) · Mercado Envíos: costo real
@@ -1156,6 +1159,7 @@ export default async function handler(req, res) {
         tnTruncated: !!rawQ.tn_truncated, mlTruncated: !!rawQ.ml_truncated,
         canceladasExcluidas: rawQ.cancelled_excluded||0,
         reembolsosParciales: rawQ.partial_refund_orders||0,
+        mlDevueltas: (curr.raw?.ml_data?.ml_orders_detail||[]).filter(o=>o.refunded).length,
       };
 
       // Desglose de facturación TN: revenue = neto (bruto − descuento) + envío
@@ -1184,9 +1188,9 @@ export default async function handler(req, res) {
 
       // engineV: versión del motor de métricas. Se sube cuando cambia la DEFINICIÓN
       // de una métrica (v2 = facturación TN incluye envío cobrado al cliente;
-      // v3 = corte de día TN en hora argentina; v4 = envío ML real con descuentos, senders.cost) para que los caches del
+      // v3 = corte de día TN en hora argentina; v4 = envío ML real con descuentos; v5 = envío ML en cero para ventas devueltas) para que los caches del
       // cliente (P&L mensual) descarten resultados viejos.
-      const responseBody = { engineV: 4, rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
+      const responseBody = { engineV: 5, rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,

@@ -22544,7 +22544,7 @@ function MargenesPnl({ T, uid }) {
     try {
       const c = JSON.parse(localStorage.getItem(cacheKey(mes))||"null");
       if (!c?.totals) return null;
-      if (c.v !== 4) return null; // motor viejo (pre-envío en facturación): recalcular
+      if (c.v !== 5) return null; // motor viejo (pre-envío en facturación): recalcular
       if (mes === mesActual && Date.now()-(c.ts||0) > 3600000) return null; // mes corriente: refresco horario
       return c.totals;
     } catch(_) { return null; }
@@ -22566,7 +22566,7 @@ function MargenesPnl({ T, uid }) {
       // Primero la caché del servidor (si otro dispositivo o el warmer ya
       // calculó este mes, es instantáneo); si no hay, cálculo en vivo (~30s).
       let j = null;
-      if (!force) { try { const rc = await fetch(base+"&cache=only"); const jc = await rc.json(); if (!jc.noCache && !jc.error && jc.totals && jc.engineV === 4) j = jc; } catch(_) {} }
+      if (!force) { try { const rc = await fetch(base+"&cache=only"); const jc = await rc.json(); if (!jc.noCache && !jc.error && jc.totals && jc.engineV === 5) j = jc; } catch(_) {} }
       if (!j) {
         const r = await fetch(base);
         j = await r.json();
@@ -22574,7 +22574,7 @@ function MargenesPnl({ T, uid }) {
       }
       const t = j.totals || {};
       setMeses(p=>({...p,[mes]:t}));
-      try { localStorage.setItem(cacheKey(mes), JSON.stringify({ v:4, ts:Date.now(), totals:t })); } catch(_) {}
+      try { localStorage.setItem(cacheKey(mes), JSON.stringify({ v:5, ts:Date.now(), totals:t })); } catch(_) {}
     } catch(e) { setErrorMes(p=>({...p,[mes]:e.message})); }
     finally { setCargando(null); }
   };
@@ -24870,6 +24870,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});
     if (q.mlTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Mercado Libre — los totales de ML están TRUNCADOS."});
     if ((q.reembolsosParciales||0)>0) qItems.push({k:null, msg:`${q.reembolsosParciales} orden(es) con reembolso parcial contadas a valor pleno (TN no informa el monto devuelto)`});
+    if ((q.mlDevueltas||0)>0) qItems.push({k:null, msg:`${q.mlDevueltas} venta(s) de ML devueltas — su costo de envío no se cuenta (ML anula el cargo); el revenue sigue contado a valor pleno`});
     if (!q.dolarAdsHistorico && (tot.adSpendMeta||0)>0) qItems.push({k:"dolar", msg:"La serie histórica del dólar no está disponible — el Ad Spend USD se convirtió con una cotización única actual", cta:"Ver"});
   }
   const alerts = [];

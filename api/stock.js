@@ -435,7 +435,13 @@ function processML(orders, couponMap = {}) {
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
     byProv[prov]=(byProv[prov]||0)+orderUnits;
     byPayment[pay]=(byPayment[pay]||0)+orderUnits;
-    if(orderRev>0) ordersDetail.push({ id:String(o.id), nombre:`ML #${o.id}`, fecha:(o.date_closed||o.date_created||""), platform:"mercadolibre", revenue:orderRev, items:detItems, saleFee:orderFee, shippingId:o.shipping?.id||null, cust:String(o.buyer?.id||"") });
+    // Devolución: ML marca la orden con tag "refunded" (o el pago queda con el
+    // total reembolsado). ML ANULA los cargos de esas ventas (envío incluido) en
+    // la facturación — el motor usa este flag para no contar su costo de envío.
+    const totAmt = parseFloat(o.total_amount)||0;
+    const refTot = (o.payments||[]).reduce((s,p)=>s+(parseFloat(p.transaction_amount_refunded)||0),0);
+    const refunded = (o.tags||[]).includes("refunded") || (totAmt>0 && refTot >= totAmt*0.99);
+    if(orderRev>0) ordersDetail.push({ id:String(o.id), nombre:`ML #${o.id}`, fecha:(o.date_closed||o.date_created||""), platform:"mercadolibre", revenue:orderRev, items:detItems, saleFee:orderFee, shippingId:o.shipping?.id||null, cust:String(o.buyer?.id||""), refunded });
   }
   return {map,daily,dailyRevenue,dailyOrders,byProv,byHour,byPayment,byVariant,byVariantRev,comisionML,comisionMLDaily,ordersDetail};
 }
