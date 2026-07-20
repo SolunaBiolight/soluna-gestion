@@ -5324,7 +5324,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   }
 
   // ── Modo despacho (scan-to-verify): lector USB/Bluetooth o tipeo ──
-  const [showSegUpload,setShowSegUpload]=useState(false); // subida manual de PDF en Seguimientos (fallback)
   const [scanValue,setScanValue]=useState("");
   const [scanLog,setScanLog]=useState([]); // {tracking, numero|null, ok, ts}
   async function procesarScan(){
@@ -6997,88 +6996,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           return (
           <div key="seguimientos" className="gh-tab-content" style={{maxWidth:900,margin:"0 auto",paddingBottom:48}}>
 
-            {/* Métricas */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:16}}>
-              {[
-                {label:"En seguimiento",val:activos.length,color:T.accent,hint:"envíos activos"},
-                {label:"En camino",val:activos.filter(e=>e.categoria==="en_camino").length,color:T.blue,hint:"con Andreani"},
-                {label:"En sucursal",val:activos.filter(e=>e.categoria==="en_sucursal").length,color:T.orange,hint:"esperando retiro"},
-                {label:"Entregados (30d)",val:entregados30.length,color:T.green,hint:tPromEntrega!=null?`~${tPromEntrega.toFixed(1)} días desp.→entrega`:"últimos 30 días"},
-                ...(pctSuc!=null?[{label:"% a sucursal",val:pctSuc+"%",color:T.purple||T.accent,hint:"últimos 30 días"}]:[]),
-              ].map(k=>(
-                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
-                  <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>{k.label}</div>
-                  <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{k.val}</div>
-                  <div style={{fontSize:9,color:T.textSm,marginTop:2}}>{k.hint}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Alertas de excepción */}
-            {alertas.length>0&&(
-              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
-                {alertas.slice(0,8).map((a,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:(a.sev==="red"?T.red:T.orange)+"12",border:`1px solid ${(a.sev==="red"?T.red:T.orange)}33`,borderRadius:DS.r.lg,padding:"8px 14px",fontSize:12,color:T.text}}>
-                    <span style={{flexShrink:0}}>{a.sev==="red"?"🔴":"🟠"}</span><span>{a.msg}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Modo despacho: escanear rótulo (lector USB/Bluetooth o tipeo) */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",marginBottom:16}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <span style={{fontSize:12,fontWeight:700,color:T.text}}>📷 Modo despacho</span>
-                <input value={scanValue} onChange={e=>setScanValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")procesarScan();}}
-                  placeholder="Escaneá el código del rótulo (o tipeá tracking / N° pedido) y Enter"
-                  style={{...iS,flex:1,minWidth:220,fontSize:13}}/>
-                <span style={{fontSize:10,color:T.textSm}}>Verifica que el paquete escaneado corresponde a un envío registrado</span>
-              </div>
-              {scanLog.length>0&&(
-                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:3,maxHeight:120,overflowY:"auto"}}>
-                  {scanLog.map((s,i)=>(
-                    <div key={i} style={{fontSize:11,color:s.ok?T.green:T.red,fontWeight:600}}>
-                      {s.ok?`✓ #${s.numero} verificado`:`✗ ${s.tracking} — no corresponde a ningún envío registrado`}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Tabla de envíos */}
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
-              <div style={{padding:"10px 16px",borderBottom:`1px solid ${T.borderL}`,fontSize:11,color:T.textSm}}>
-                {envios.length} envíos de los últimos 60 días · el estado se actualiza solo cada 30 min (aunque la app esté cerrada)
-              </div>
-              {envios.length===0&&<div style={{padding:"36px",textAlign:"center",color:T.textSm,fontSize:13}}>Todavía no hay envíos registrados. Generá etiquetas y subí los rótulos en "SKU en Rótulos" — desde ahí cada envío entra al seguimiento automático.</div>}
-              <div style={{overflowX:"auto"}}><div style={{minWidth:640}}>
-                {envios.slice(0,120).map((e,i)=>{
-                  const [lbl,col]=CAT[e.categoria]||CAT.otro;
-                  const final=!e.activo&&(e.entregadoAt||e.devolucionAt);
-                  return (
-                    <div key={e.numero||i} style={{display:"grid",gridTemplateColumns:"90px 1fr 150px 170px 90px",gap:8,padding:"10px 16px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:final?0.65:1}}>
-                      <span style={{fontWeight:700,color:T.accent,fontSize:13}}>#{e.numero}</span>
-                      <div style={{minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>📷✓</span>}</div>
-                        {e.tracking
-                          ? <a href={`https://www.andreani.com/#!/informacionEnvio/${e.tracking}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.textSm,textDecoration:"none"}}>{e.tracking} ↗</a>
-                          : <span style={{fontSize:10,color:T.textSm}}>sin tracking aún</span>}
-                      </div>
-                      <DSBadge T={T} color={e.tracking?col:T.textSm} size="sm">{e.tracking?lbl:"Etiqueta generada"}</DSBadge>
-                      <span style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={e.estadoAndreani||""}>{e.estadoAndreani||(e.tracking?"esperando 1er chequeo":"")}</span>
-                      <span style={{fontSize:10,color:T.textSm,textAlign:"right"}}>{e.creado?new Date(e.creado).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
-                    </div>
-                  );
-                })}
-              </div></div>
-            </div>
-
-            {/* Subida manual de PDF (fallback — el flujo normal es procesar el
-                rótulo UNA vez en "SKU en Rótulos", que también manda los trackings) */}
-            <button onClick={()=>setShowSegUpload(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",padding:0,marginBottom:12}}>
-              {showSegUpload?"▲ Ocultar subida manual de PDF":"▾ Subir un PDF de rótulos solo para seguimientos (opcional)"}
-            </button>
-            {showSegUpload&&(<div>
+            {/* Enviar seguimientos: subir el PDF de rótulos Andreani */}
+            <div style={{marginBottom:8}}>
 
             {/* Upload zone */}
             <label htmlFor="seg-file-input" style={{display:"block",background:T.card,border:`2px dashed ${pdfFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
@@ -7196,7 +7115,84 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 </div>
               </div>);
             })()}
-            </div>)}
+            </div>
+
+            {/* Métricas */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:16}}>
+              {[
+                {label:"En seguimiento",val:activos.length,color:T.accent,hint:"envíos activos"},
+                {label:"En camino",val:activos.filter(e=>e.categoria==="en_camino").length,color:T.blue,hint:"con Andreani"},
+                {label:"En sucursal",val:activos.filter(e=>e.categoria==="en_sucursal").length,color:T.orange,hint:"esperando retiro"},
+                {label:"Entregados (30d)",val:entregados30.length,color:T.green,hint:tPromEntrega!=null?`~${tPromEntrega.toFixed(1)} días desp.→entrega`:"últimos 30 días"},
+                ...(pctSuc!=null?[{label:"% a sucursal",val:pctSuc+"%",color:T.purple||T.accent,hint:"últimos 30 días"}]:[]),
+              ].map(k=>(
+                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
+                  <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>{k.label}</div>
+                  <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{k.val}</div>
+                  <div style={{fontSize:9,color:T.textSm,marginTop:2}}>{k.hint}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Alertas de excepción */}
+            {alertas.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+                {alertas.slice(0,8).map((a,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:(a.sev==="red"?T.red:T.orange)+"12",border:`1px solid ${(a.sev==="red"?T.red:T.orange)}33`,borderRadius:DS.r.lg,padding:"8px 14px",fontSize:12,color:T.text}}>
+                    <span style={{flexShrink:0}}>{a.sev==="red"?"🔴":"🟠"}</span><span>{a.msg}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Modo despacho: escanear rótulo (lector USB/Bluetooth o tipeo) */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,fontWeight:700,color:T.text}}>📷 Modo despacho</span>
+                <input value={scanValue} onChange={e=>setScanValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")procesarScan();}}
+                  placeholder="Escaneá el código del rótulo (o tipeá tracking / N° pedido) y Enter"
+                  style={{...iS,flex:1,minWidth:220,fontSize:13}}/>
+                <span style={{fontSize:10,color:T.textSm}}>Verifica que el paquete escaneado corresponde a un envío registrado</span>
+              </div>
+              {scanLog.length>0&&(
+                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:3,maxHeight:120,overflowY:"auto"}}>
+                  {scanLog.map((s,i)=>(
+                    <div key={i} style={{fontSize:11,color:s.ok?T.green:T.red,fontWeight:600}}>
+                      {s.ok?`✓ #${s.numero} verificado`:`✗ ${s.tracking} — no corresponde a ningún envío registrado`}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Tabla de envíos */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+              <div style={{padding:"10px 16px",borderBottom:`1px solid ${T.borderL}`,fontSize:11,color:T.textSm}}>
+                {envios.length} envíos de los últimos 60 días · el estado se actualiza solo cada 30 min (aunque la app esté cerrada)
+              </div>
+              {envios.length===0&&<div style={{padding:"36px",textAlign:"center",color:T.textSm,fontSize:13}}>Todavía no hay envíos registrados. Generá etiquetas y subí los rótulos en "SKU en Rótulos" — desde ahí cada envío entra al seguimiento automático.</div>}
+              <div style={{overflowX:"auto"}}><div style={{minWidth:640}}>
+                {envios.slice(0,120).map((e,i)=>{
+                  const [lbl,col]=CAT[e.categoria]||CAT.otro;
+                  const final=!e.activo&&(e.entregadoAt||e.devolucionAt);
+                  return (
+                    <div key={e.numero||i} style={{display:"grid",gridTemplateColumns:"90px 1fr 150px 170px 90px",gap:8,padding:"10px 16px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:final?0.65:1}}>
+                      <span style={{fontWeight:700,color:T.accent,fontSize:13}}>#{e.numero}</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>📷✓</span>}</div>
+                        {e.tracking
+                          ? <a href={`https://www.andreani.com/#!/informacionEnvio/${e.tracking}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.textSm,textDecoration:"none"}}>{e.tracking} ↗</a>
+                          : <span style={{fontSize:10,color:T.textSm}}>sin tracking aún</span>}
+                      </div>
+                      <DSBadge T={T} color={e.tracking?col:T.textSm} size="sm">{e.tracking?lbl:"Etiqueta generada"}</DSBadge>
+                      <span style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={e.estadoAndreani||""}>{e.estadoAndreani||(e.tracking?"esperando 1er chequeo":"")}</span>
+                      <span style={{fontSize:10,color:T.textSm,textAlign:"right"}}>{e.creado?new Date(e.creado).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
+                    </div>
+                  );
+                })}
+              </div></div>
+            </div>
+
           </div>
           );
         })()}
