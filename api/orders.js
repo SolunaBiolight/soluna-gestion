@@ -1,6 +1,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getValidMLToken } from "./integrations.js";
+import { verifyAuth } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -224,10 +225,23 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { uid, tab, countOnly, q, action } = req.query;
+
+  // ── Autenticación para endpoints con PII ──
+  // Los listados de pedidos exponen nombre/DNI/teléfono/dirección de clientes:
+  // exigen un ID token válido de Firebase (cualquier usuario autenticado de la
+  // app — el equipo opera con sus propios logins). Va ANTES del cache de tabs
+  // para que tampoco se sirvan respuestas cacheadas sin sesión. Exentos:
+  // counts (solo cantidades), stats/coupons (agregados) y tab=total (ids fake).
+  const _piiTabs = ['cobrar','empaquetar','enviar','bulk_lookup','ml_envios'];
+  const _needsAuth = (q != null && q !== '') || (_piiTabs.includes(tab) && !(countOnly === 'true' || countOnly === '1')) || (!tab && !action && (q == null || q === ''));
+  if (_needsAuth) {
+    const _authUser = await verifyAuth(req);
+    if (!_authUser) return res.status(401).json({ error: "Sesión inválida. Recargá la página e iniciá sesión de nuevo." });
+  }
 
   // Cache 60s para los tabs de listado. `fresh=1` (botón Sincronizar) lo saltea.
   const _cacheableTabs = ['total', 'cobrar', 'empaquetar', 'enviar'];
@@ -1260,6 +1274,38 @@ export default async function handler(req, res) {
       if (!r.ok) return res.status(200).json([]);
       const data = await r.json();
       return res.status(200).json(Array.isArray(data) ? data : []);
+    }
+
+    // ML_ENVIOS: pedidos de Mercado Libre para el panel de Envíos (solo
+    // lectura — ML despacha con su propia logística; acá se ve el ESTADO).
+    if (tab === 'ml_envios') {
+      if (!mlUserId || !mlToken) return res.status(200).json({ orders: [], mlConectado: false });
+      const dias = Math.min(parseInt(req.query.days) || 14, 30);
+      const to = new Date();
+      const from = new Date(Date.now() - dias * 86400000);
+      const mlOrds = await fetchMLOrdersInRange(from.toISOString(), to.toISOString());
+      // Estado real del envío: /shipments/{id} para los primeros 60 (lotes de 20).
+      const shipIds = [...new Set(mlOrds.map(o => o.shipping?.id).filter(Boolean))].slice(0, 60);
+      const shipInfo = {};
+      for (let i = 0; i < shipIds.length; i += 20) {
+        await Promise.all(shipIds.slice(i, i + 20).map(async id => {
+          try {
+            const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization: `Bearer ${mlToken}` } });
+            if (!r.ok) return;
+            const j = await r.json();
+            shipInfo[id] = { status: j.status || null, substatus: j.substatus || null, lt: j.logistic_type || null, tracking: j.tracking_number || null };
+          } catch (_) {}
+        }));
+      }
+      const orders = mlOrds.map(o => ({
+        id: String(o.id),
+        fecha: o.date_created || "",
+        comprador: o.buyer?.nickname || o.buyer?.first_name || "—",
+        items: (o.order_items || []).map(it => ({ titulo: it.item?.title || "", qty: parseInt(it.quantity) || 0 })),
+        total: parseFloat(o.total_amount) || 0,
+        envio: o.shipping?.id ? (shipInfo[o.shipping.id] || null) : null,
+      }));
+      return res.status(200).json({ orders, mlConectado: true });
     }
 
     // STATS: facturado + count período actual vs anterior (para Home KPIs)

@@ -15,6 +15,20 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
+
+// fetch con identidad: adjunta el ID token de Firebase. Los endpoints con
+// datos personales de clientes (listados de pedidos, tracking, rótulos) lo
+// exigen — sin token válido devuelven 401.
+async function authFetch(url, opts = {}) {
+  try {
+    const u = auth.currentUser;
+    if (u) {
+      const t = await u.getIdToken();
+      opts = { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${t}` } };
+    }
+  } catch (_) {}
+  return fetch(url, opts);
+}
 // ── Multi-cuenta: recordar cuentas usadas (email/nombre, NO contraseñas) para
 // cambio rápido. El switch desloguea y deja un flag para pre-cargar el login. ──
 function ghReadAccounts(){ try { return JSON.parse(localStorage.getItem("growith_accounts")||"[]"); } catch(_){ return []; } }
@@ -1428,6 +1442,7 @@ function buildOrdersFromAPI(data) {
     }
     return {
       numero:String(o.number||o.id||""),
+      tnId:String(o.id||""), // id REAL de la orden en TN (para acciones como /pack)
       fecha:o.created_at?new Date(o.created_at).toLocaleDateString('es-AR'):'',
       comprador:(`${sh.name||''} ${sh.last_name||''}`.trim()||o.contact_name||o.billing_address?.name||'').trim(),
       email:o.contact_email||o.billing_address?.email||'',
@@ -2076,7 +2091,7 @@ function OrderSearchField({T, orders, onSelect, uid}) {
     const t=setTimeout(async()=>{
       setLoading(true);
       try{
-        const r=await fetch(`/api/orders?uid=${uid||""}&q=${encodeURIComponent(q.trim())}`);
+        const r=await authFetch(`/api/orders?uid=${uid||""}&q=${encodeURIComponent(q.trim())}`);
         const data=await r.json();
         if(Array.isArray(data)) setApiResults(buildOrdersFromAPI(data));
       }catch(e){}
@@ -2482,7 +2497,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     const timer=setTimeout(async()=>{
       setSearchApiLoading(true);
       try{
-        const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(search.trim())}`);
+        const r=await authFetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(search.trim())}`);
         const data=await r.json();
         if(Array.isArray(data)) setSearchApiResults(buildOrdersFromAPI(data));
       }catch(e){}
@@ -2531,7 +2546,10 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       function idx(s){const k=String(s==null?"":s);if(ssMap.has(k))return ssMap.get(k);const i=newSS.length;newSS.push(k);ssMap.set(k,i);return i;}
       function sC(ref,val){return '<c r="'+ref+'" t="s"><v>'+idx(val)+'</v></c>';}
       function nC(ref,val){return (val===''||val===null||val===undefined)?sC(ref,''):'<c r="'+ref+'"><v>'+val+'</v></c>';}
-      function cl(s){return String(s||"").replace(/[-\/\|#*]+/g,' ').replace(/\s{2,}/g,' ').trim();}
+      // Paridad con el generador principal de AppEnvios: sin tildes (Andreani
+      // rechaza caracteres fuera de ASCII) y CUIT de 11 dígitos → DNI.
+      function cl(s){return String(s||"").normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-\/\|#*]+/g,' ').replace(/\s{2,}/g,' ').trim();}
+      const dniDep=(()=>{const d=String(o.dni||"").replace(/\D/g,'');return d.length===11?d.slice(2,10):d;})();
       const partes=o.comprador.trim().split(' ');
       const nombre=cl(partes[0]||"");const apellido=cl(partes.slice(1).join(' ')||"");
       const tel=(o.telefono||"").replace(/[^0-9]/g,'');
@@ -2555,7 +2573,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       const dirNum=String(o.dirNumero||"");
       const direccion=cl(o.direccion||"");
       const rn=3;
-      const cells=[sC('A'+rn,""),nC('B'+rn,200),nC('C'+rn,5),nC('D'+rn,5),nC('E'+rn,5),nC('F'+rn,6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(o.dni&&!isNaN(o.dni))?nC('J'+rn,parseFloat(o.dni)):sC('J'+rn,o.dni||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
+      const cells=[sC('A'+rn,""),nC('B'+rn,200),nC('C'+rn,5),nC('D'+rn,5),nC('E'+rn,5),nC('F'+rn,6000),sC('G'+rn,'#'+o.numero),sC('H'+rn,nombre),sC('I'+rn,apellido),(dniDep&&!isNaN(dniDep))?nC('J'+rn,parseFloat(dniDep)):sC('J'+rn,dniDep||""),sC('K'+rn,cl(o.email||"")),telCod?nC('L'+rn,parseFloat(telCod)):sC('L'+rn,""),telNum?nC('M'+rn,parseFloat(telNum)):sC('M'+rn,""),sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
       const rowXml='<row r="3" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
       const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
       const newSheet1=sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S3"/>').replace('</sheetData>',rowXml+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,'');
@@ -2573,7 +2591,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     if(!activeR) return;
     if(orders.find(o=>o.numero===activeR.orderNum)||activeOrderCache[activeR.orderNum]) return;
     // Buscar el pedido en TN
-    fetch(`/api/orders?uid=${user?.uid}&q=${activeR.orderNum}`)
+    authFetch(`/api/orders?uid=${user?.uid}&q=${activeR.orderNum}`)
       .then(r=>r.json())
       .then(data=>{
         if(Array.isArray(data)){
@@ -3016,7 +3034,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px"}} value={activeR.trackingCambio||""} placeholder="Código Andreani..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingCambio:e.target.value,updatedAt:serverTimestamp()});}}/>
                   {activeR.trackingCambio&&<a href={`https://www.andreani.com/#!/informacionEnvio/${activeR.trackingCambio}`} target="_blank" rel="noopener noreferrer" style={{...BtnPurple(T),fontSize:12,padding:"8px 14px",textDecoration:"none",flexShrink:0,display:"inline-flex",alignItems:"center",gap:5}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Ver</a>}
                 </div>
-                {activeR.trackingCambio&&(<AsyncButton onClick={async()=>{const r=await fetch(`/api/update-shipping?uid=${user?.uid}&orderId=${activeR.orderNum}&tracking=${activeR.trackingCambio}`);const d=await r.json();if(r.ok)appAlert("Tracking actualizado en TN");else appAlert("Error: "+(d.error||""));}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,marginBottom:8}}>↑ Subir a TN</AsyncButton>)}
+                {activeR.trackingCambio&&(<AsyncButton onClick={async()=>{const r=await authFetch(`/api/update-shipping?uid=${user?.uid}&orderId=${activeR.orderNum}&tracking=${activeR.trackingCambio}`);const d=await r.json();if(r.ok)appAlert("Tracking actualizado en TN");else appAlert("Error: "+(d.error||""));}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,marginBottom:8}}>↑ Subir a TN</AsyncButton>)}
                 <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"/></svg>Tracking devolución (cliente → nosotros)</div>
                 <div style={{display:"flex",gap:8}}>
                   <input style={{...InputStyle(T),flex:1,fontSize:13,padding:"8px 12px",borderColor:activeR.trackingDevolucion?T.green+"88":InputStyle(T).borderColor}} value={activeR.trackingDevolucion||""} placeholder="Código Andreani del cliente..." onChange={async e=>{await updateDoc(doc(db,"reclamos",activeR._docId),{trackingDevolucion:e.target.value,updatedAt:serverTimestamp()});}}/>
@@ -5133,9 +5151,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [exportCfg,setExportCfg]=useState(()=>{
     try {
       const saved=localStorage.getItem("growith_exportCfg");
-      if(saved) return {...{peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000",separar:false},...JSON.parse(saved)};
+      if(saved) return {...{peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"},...JSON.parse(saved)};
     } catch(e) {}
-    return {peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000",separar:false};
+    return {peso:"200",alto:"5",ancho:"5",prof:"5",valor:"6000"};
   });
   // Guardar config cuando cambia
   useEffect(()=>{ try{localStorage.setItem("growith_exportCfg",JSON.stringify(exportCfg));}catch(e){} },[exportCfg]);
@@ -5171,9 +5189,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [buscarQuery,setBuscarQuery]=useState("");
   const [buscarLoading,setBuscarLoading]=useState(false);
   const [compactMode,setCompactMode]=useState(false);
-  const [hiddenCols,setHiddenCols]=useState(new Set());
+  // Columnas ocultas persistidas (antes se perdían al recargar)
+  const [hiddenCols,setHiddenCols]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem("growith_envios_cols")||"[]"));}catch(_){return new Set();}});
   const [showColMenu,setShowColMenu]=useState(false);
-  function toggleCol(col){setHiddenCols(s=>{const n=new Set(s);n.has(col)?n.delete(col):n.add(col);return n;});}
+  function toggleCol(col){setHiddenCols(s=>{const n=new Set(s);n.has(col)?n.delete(col):n.add(col);try{localStorage.setItem("growith_envios_cols",JSON.stringify([...n]));}catch(_){}return n;});}
   const [orderPage,setOrderPage]=useState(0);
   const [showPagePicker,setShowPagePicker]=useState(false);
   // SKU tab
@@ -5193,6 +5212,133 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
   const [showGuia,setShowGuia]=useState(false);
   const iS=InputStyle(T);
 
+  // ── Envíos persistidos en Firestore (users/{uid}/envios) ──
+  // Historial COMPARTIDO entre dispositivos y usuarios del equipo (antes el
+  // "ya exportado" vivía en localStorage: en otra compu no se veía → riesgo
+  // de doble etiqueta). También es la base del tracking automático: el cron
+  // track_all actualiza el estado Andreani de cada envío activo cada 30 min.
+  const [enviosFs,setEnviosFs]=useState({});
+  const refrescarEnviosFs=async()=>{
+    if(!user?.uid) return;
+    try{
+      const r=await authFetch(`/api/update-shipping?action=envios_list&uid=${user.uid}`);
+      const d=await r.json();
+      if(d&&d.envios) setEnviosFs(d.envios);
+    }catch(_){}
+  };
+  useEffect(()=>{
+    if(!user?.uid) return;
+    refrescarEnviosFs();
+    const iv=setInterval(refrescarEnviosFs, 60000); // el cron actualiza cada 30 min; esto refresca la vista
+    return ()=>clearInterval(iv);
+  },[user?.uid]);
+  async function registrarEnviosFs(ordersArr){
+    if(!user?.uid) return;
+    try{
+      await authFetch(`/api/update-shipping?action=envios_registrar&uid=${user.uid}`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({envios:ordersArr.map(o=>({
+          numero:String(o.numero), tnId:String(o.tnId||""), cliente:o.comprador||"",
+          esSucursal:!!o.esSucursal, provincia:o.provincia||"", localidad:o.localidad||o.ciudad||"",
+          total:parseFloat(o.total)||0, skus:(o.productos||[]).map(p=>p.sku).filter(Boolean),
+          estado:"etiqueta_generada", activo:false,
+        }))}),
+      });
+      refrescarEnviosFs();
+    }catch(e){console.error("registrarEnviosFs:",e);}
+  }
+
+  // ── Marcar empaquetado en TN desde Growith (antes había que ir a TN) ──
+  const [packing,setPacking]=useState({}); // numero -> true
+  async function marcarEmpaquetado(o){
+    if(!user?.uid||!o?.tnId) { toast("Este pedido no tiene ID de TN","error"); return; }
+    setPacking(p=>({...p,[o.numero]:true}));
+    try{
+      const r=await authFetch(`/api/update-shipping?action=pack&uid=${user.uid}&orderId=${o.tnId}`);
+      const d=await r.json();
+      if(!r.ok||d.error) throw new Error(d.error||"Error");
+      toast(`#${o.numero} empaquetado ✓`,"success");
+      // Actualización local optimista: sale de "empaquetar", entra a "enviar"
+      setTabOrders(list=>list.map(x=>x.numero===o.numero?{...x,isPacked:true,estadoEnvio:"Por enviar"}:x));
+      if(tabEnvio==="empaquetar") setTabOrders(list=>list.filter(x=>x.numero!==o.numero));
+      setTabCounts(c=>({empaquetar:Math.max(0,(c.empaquetar||1)-1),enviar:(c.enviar||0)+1}));
+      tabCacheRef.current={}; // invalida cache local para el próximo cambio de tab
+    }catch(e){ toast(`#${o.numero}: ${e.message}`,"error"); }
+    finally{ setPacking(p=>{const n={...p};delete n[o.numero];return n;}); }
+  }
+  const [packingBatch,setPackingBatch]=useState(false);
+  async function marcarEmpaquetadosSel(){
+    const sel=[...selected.values()].filter(o=>!o.isPacked);
+    if(!sel.length) return;
+    const ok=await appConfirm(`¿Marcar ${sel.length} pedido(s) como empaquetados en Tienda Nube?`);
+    if(!ok) return;
+    setPackingBatch(true);
+    for(const o of sel){ await marcarEmpaquetado(o); await new Promise(r=>setTimeout(r,350)); }
+    setPackingBatch(false);
+    setSelected(new Map());
+  }
+
+  // ── Picking list imprimible: qué armar hoy, agrupado por SKU + por pedido ──
+  function imprimirPicking(){
+    const lista=selected.size?[...selected.values()]:exportables;
+    if(!lista.length){ toast("No hay pedidos para el picking","warning"); return; }
+    const porSku={};
+    for(const o of lista) for(const p of (o.productos||[])){
+      const k=p.sku||p.nombre||"—";
+      porSku[k]=(porSku[k]||0)+(parseInt(p.cantidad)||1);
+    }
+    const filasSku=Object.entries(porSku).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<tr><td>${k}</td><td style="text-align:right;font-weight:700">${n}</td></tr>`).join("");
+    const filasPed=lista.map(o=>`<tr><td>#${o.numero}</td><td>${o.comprador||""}</td><td>${(o.productos||[]).map(p=>`${p.cantidad||1}× ${p.sku||p.nombre}`).join(", ")}</td><td>${o.esSucursal?"Sucursal":"Domicilio"}</td></tr>`).join("");
+    const w=window.open("","_blank");
+    if(!w){ toast("Permití las ventanas emergentes para imprimir","warning"); return; }
+    w.document.write(`<html><head><title>Picking List — Growith</title><style>
+      body{font-family:system-ui,sans-serif;padding:24px;color:#111}
+      h1{font-size:18px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:18px}
+      h2{font-size:14px;margin:18px 0 6px}
+      table{width:100%;border-collapse:collapse;font-size:12px}
+      td,th{border:1px solid #ddd;padding:5px 8px;text-align:left}
+      th{background:#f5f5f5;font-size:11px;text-transform:uppercase}
+      @media print{button{display:none}}
+    </style></head><body>
+      <h1>Picking List</h1><div class="sub">${new Date().toLocaleString("es-AR")} · ${lista.length} pedidos</div>
+      <h2>Total a armar por SKU</h2><table><tr><th>SKU</th><th style="text-align:right">Unidades</th></tr>${filasSku}</table>
+      <h2>Detalle por pedido</h2><table><tr><th>Pedido</th><th>Cliente</th><th>Contenido</th><th>Envío</th></tr>${filasPed}</table>
+      <button onclick="window.print()" style="margin-top:16px;padding:8px 16px">Imprimir</button>
+      <script>setTimeout(()=>window.print(),400)</script>
+    </body></html>`);
+    w.document.close();
+  }
+
+  // ── Pedidos de Mercado Libre (solo lectura — ML despacha con su logística) ──
+  const [mlOrders,setMlOrders]=useState(null); // null=no cargado, {orders,mlConectado}
+  const [mlLoading,setMlLoading]=useState(false);
+  async function fetchMlEnvios(){
+    if(!user?.uid) return;
+    setMlLoading(true);
+    try{
+      const r=await authFetch(`/api/orders?uid=${user.uid}&tab=ml_envios&days=14`);
+      const d=await r.json();
+      setMlOrders(d&&!d.error?d:{orders:[],mlConectado:false});
+    }catch(_){ setMlOrders({orders:[],mlConectado:false}); }
+    finally{ setMlLoading(false); }
+  }
+
+  // ── Modo despacho (scan-to-verify): lector USB/Bluetooth o tipeo ──
+  const [showSegUpload,setShowSegUpload]=useState(false); // subida manual de PDF en Seguimientos (fallback)
+  const [scanValue,setScanValue]=useState("");
+  const [scanLog,setScanLog]=useState([]); // {tracking, numero|null, ok, ts}
+  async function procesarScan(){
+    const code=scanValue.trim().replace(/\s+/g,"");
+    setScanValue("");
+    if(!code) return;
+    // Busca el envío por tracking (rótulo escaneado) o por número de pedido
+    const entry=Object.values(enviosFs).find(e=>e.tracking===code)||enviosFs[code.replace(/^#/,"")];
+    if(!entry){ setScanLog(l=>[{tracking:code,numero:null,ok:false,ts:Date.now()},...l].slice(0,30)); return; }
+    setScanLog(l=>[{tracking:code,numero:entry.numero,ok:true,ts:Date.now()},...l].slice(0,30));
+    setEnviosFs(p=>({...p,[entry.numero]:{...p[entry.numero],verificado:true}}));
+    try{ await authFetch(`/api/update-shipping?action=envios_registrar&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({envios:[{numero:String(entry.numero),verificado:true}]})}); }catch(_){}
+  }
+
   // Pedidos exportables - usar tabOrders (local) no orders (global)
   const exportables=useMemo(()=>{
     let base=tabOrders;
@@ -5204,6 +5350,30 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     }
     return base;
   },[tabOrders,searchEnvios,filterTipoEnvio]);
+
+  // "Ya exportado": Firestore (compartido entre dispositivos/equipo) + historial
+  // local como fallback. Antes se hacía JSON.parse(localStorage) DENTRO del
+  // render de cada fila.
+  const exportadoMap=useMemo(()=>{
+    const m={};
+    for(const [n,e] of Object.entries(enviosFs)) if(e.creado) m[n]=e.creado;
+    try{ for(const h of JSON.parse(localStorage.getItem("growith_exportHistory")||"[]")) for(const n of (h.pedidos||[])) if(!m[n]) m[n]=h.fecha; }catch(_){}
+    return m;
+  },[enviosFs,exportDone]);
+  // Prefijo común de los nombres de producto → se recorta en la columna
+  // Productos (antes estaba hardcodeado el nombre del producto de Soluna,
+  // lo que no generaliza a otras tiendas).
+  const prefijoComun=useMemo(()=>{
+    const nombres=[...new Set(tabOrders.flatMap(o=>(o.productos||[]).map(p=>p.nombre||"")))].filter(n=>n.length>8);
+    if(nombres.length<2) return "";
+    let pref=nombres[0];
+    for(const n of nombres){ let i=0; while(i<pref.length&&i<n.length&&pref[i]===n[i]) i++; pref=pref.slice(0,i); if(!pref) break; }
+    // Cortar en el último separador razonable y solo si vale la pena
+    const cut=Math.max(pref.lastIndexOf(" - "),pref.lastIndexOf(" — "));
+    if(cut>6) pref=pref.slice(0,cut+3); else if(pref.length<10) pref="";
+    return pref;
+  },[tabOrders]);
+  const nombreCorto=n=>{const s=prefijoComun&&String(n||"").startsWith(prefijoComun)?String(n).slice(prefijoComun.length):String(n||"");return s.replace(/[()]/g,'');};
 
   // Paginación de pedidos — 50 por página
   const PAGE_SIZE=50;
@@ -5618,7 +5788,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     else {
       setTabLoading(true);
       // Render progresivo: la primera página llega rápido mientras baja el resto
-      fetch(`/api/orders?uid=${user.uid}&tab=${tab}&quick=1`)
+      authFetch(`/api/orders?uid=${user.uid}&tab=${tab}&quick=1`)
         .then(r=>r.ok?r.json():null)
         .then(d=>{
           if(!superseded&&Array.isArray(d)&&d.length&&tabEnvioRef.current===tab){
@@ -5629,7 +5799,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
         }).catch(()=>{});
     }
     try {
-      const res=await fetch(`/api/orders?uid=${user.uid}&tab=${tab}${opts.fresh?"&fresh=1":""}`);
+      const res=await authFetch(`/api/orders?uid=${user.uid}&tab=${tab}${opts.fresh?"&fresh=1":""}`);
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
       superseded=true;
@@ -5650,7 +5820,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           }
           // Prefetch de enviar en background: cuando el usuario clickee el tab, ya está
           if(tabCacheRef.current["enviar"]===undefined&&!enviarPrefetchRef.current){
-            enviarPrefetchRef.current=fetch(`/api/orders?uid=${user.uid}&tab=enviar${opts.fresh?"&fresh=1":""}`)
+            enviarPrefetchRef.current=authFetch(`/api/orders?uid=${user.uid}&tab=enviar${opts.fresh?"&fresh=1":""}`)
               .then(r=>r.ok?r.json():null)
               .then(d=>{
                 if(Array.isArray(d)){
@@ -5706,12 +5876,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       const domicilioOrders=selOrders.filter(o=>!isSucursalOrder(o));
       const sucursalOrders=selOrders.filter(o=>isSucursalOrder(o));
 
-      // Órdenes con dirección en esquina → excluir del export, mostrar modal informativo después
-      const esquinaOrders=sucursalOrders.filter(o=>hasEsquinaAddress(o));
+      // Órdenes con dirección en esquina → excluir del export, mostrar modal
+      // informativo después. Aplica a domicilio Y sucursal (antes solo sucursal:
+      // un domicilio "Esq." pasaba igual y rebotaba en Andreani).
+      const esquinaOrders=[...domicilioOrders,...sucursalOrders].filter(o=>hasEsquinaAddress(o));
       const esquinaSet=new Set(esquinaOrders.map(o=>o.numero));
       const sucursalOrdersSinEsquina=sucursalOrders.filter(o=>!esquinaSet.has(o.numero));
+      const domicilioOrdersSinEsquina=domicilioOrders.filter(o=>!esquinaSet.has(o.numero));
 
-      const unresolvedDom=domicilioOrders.filter(o=>{
+      const unresolvedDom=domicilioOrdersSinEsquina.filter(o=>{
         if(locationOverridesRef.current[o.numero]) return false;
         return !findAndreaniLocation(locs,o.cp,o.provincia,o.localidad||o.ciudad);
       });
@@ -5765,6 +5938,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       try{localStorage.removeItem("growith_locOverrides");localStorage.removeItem("growith_sucOverrides");}catch(_){}
       setExportDone({count:finalOrders.length, esquinas:esquinaOrders.length, esquinaOrders});
       logUsage("etiquetas", finalOrders.length);
+      registrarEnviosFs(finalOrders); // historial compartido en Firestore (fire-and-forget)
     } catch(e){
       console.error("exportAndreani:",e);
       toast("Error al exportar: "+e.message,"error");
@@ -5858,7 +6032,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           const missingSet=new Set(missingNums);
           for(let page=1; page<=4 && missingSet.size>0; page++){
             try{
-              const r=await fetch(`/api/orders?uid=${user?.uid||""}&tab=bulk_lookup&page=${page}`);
+              const r=await authFetch(`/api/orders?uid=${user?.uid||""}&tab=bulk_lookup&page=${page}`);
               if(!r.ok) break;
               const data=await r.json();
               if(!Array.isArray(data)||data.length===0) break;
@@ -5879,6 +6053,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           return {...p,skus:order?skuLines.join(', '):"No encontrado en TN",found:!!order,skuLines};
         });
         resultSetter(results);
+        // Un solo upload para todo: el mismo PDF alimenta el estampado de SKUs
+        // Y la subida de trackings (antes había que subirlo dos veces, en dos tabs).
+        setPdfResults(pageData.map(p=>({...p,status:"pending"})));
       } else {
         resultSetter(pageData.map(p=>({...p,status:"pending"})));
       }
@@ -5913,7 +6090,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
       fd.append("skuMap",JSON.stringify(skuMap));
       fd.append("config",JSON.stringify(cfg));
       setSkuProgress(60);
-      const resp=await fetch("/api/process-sku",{method:"POST",body:fd});
+      const resp=await authFetch("/api/process-sku",{method:"POST",body:fd});
       if(!resp.ok) throw new Error("Error al generar PDF: "+resp.status);
       setSkuProgress(85);
       const blob=await resp.blob();
@@ -5967,16 +6144,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     let lastErr;
     for(let intento=0; intento<retries; intento++){
       try {
-        const res=await fetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
+        const res=await authFetch(`/api/update-shipping?uid=${user.uid}&orderId=${result.pedidoNum}&tracking=${result.tracking}`);
         const data=await res.json();
         if(res.status===429){
           await new Promise(r=>setTimeout(r,2000*(intento+1)));
           continue;
         }
         if(res.ok&&!data.error) {
-          setTrackingSent(p=>({...p,[result.pedidoNum]:"ok"}));
+          // fulfilled=false: el tracking quedó en TN pero el fulfill falló →
+          // el cliente NO recibió el mail. Antes esto se ocultaba como "Ok".
+          setTrackingSent(p=>({...p,[result.pedidoNum]:data.fulfilled===false?"warn":"ok"}));
           setSendingTracking(p=>({...p,[result.pedidoNum]:false}));
           logUsage("seguimientos", 1);
+          // Persistir en Firestore (vía server): el envío entra al tracking automático (cron)
+          if(user?.uid) authFetch(`/api/update-shipping?action=envios_registrar&uid=${user.uid}`,{
+            method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({envios:[{numero:String(result.pedidoNum),tracking:String(result.tracking),tnId:String(data.tnOrderId||""),estado:"despachado",activo:true,fulfillOk:data.fulfilled!==false}]}),
+          }).catch(()=>{});
+          if(data.fulfilled===false) toast(`#${result.pedidoNum}: tracking guardado, pero TN no lo marcó como enviado (${data.fulfillError||"revisalo en TN"})`,"warning",6000);
           return;
         }
         lastErr=new Error(data.error||`Error ${res.status} al actualizar tracking en TN`);
@@ -6204,11 +6389,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               {showGuia&&(
                 <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                   {[
-                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. Ves todos los que están listos para preparar y despachar."},
-                    {n:2,icon:"",title:"Generar etiqueta",desc:"Seleccioná un pedido y hacé click en 'Generar etiqueta Andreani'. Elegí entre domicilio o retiro en sucursal (HOP)."},
-                    {n:3,icon:"",title:"Seguimiento",desc:"Una vez generada la etiqueta, el tracking se actualiza automáticamente. Ves el estado de cada envío en tiempo real."},
-                    {n:4,icon:"",title:"Facturar pedidos",desc:"Si tenés ARCA configurado, podés generar la factura del pedido desde el mismo panel de envíos."},
-                    {n:5,icon:"",title:"Reclamos",desc:"Si un cliente tiene un problema con un envío, usá 'Generar reclamo' para pasarlo al pipeline de Reclamos y darle seguimiento."},
+                    {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de Tienda Nube se sincronizan solos. En 'Por empaquetar' podés armar el paquete, imprimir el picking list y marcarlo como empaquetado sin salir de acá."},
+                    {n:2,icon:"",title:"Generar etiquetas",desc:"En 'Por enviar', seleccioná los pedidos y generá el Excel de carga masiva para Andreani (domicilio y sucursal/HOP). Lo subís al portal de Andreani y descargás los rótulos PDF."},
+                    {n:3,icon:"",title:"Procesar rótulos",desc:"Subí el PDF de rótulos UNA sola vez en 'SKU en Rótulos': imprime los SKUs en cada etiqueta Y desde ahí mismo enviás los seguimientos a Tienda Nube (que le avisa al cliente)."},
+                    {n:4,icon:"",title:"Seguimiento automático",desc:"Después del despacho, Growith consulta Andreani cada 30 minutos y en 'Seguimientos' ves cada envío: en camino, en sucursal, demorado o entregado, con alertas."},
                   ].map(s=>(
                     <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                       <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -6225,6 +6409,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 {[
                   {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
                   {id:"enviar",    label:"Por enviar",     color:T.blue},
+                  {id:"ml",        label:"Mercado Libre",  color:T.yellow},
                   {id:"buscar",    label:"Buscar",         color:T.accent},
                 ].map(t=>{
                   const isActive=tabEnvio===t.id;
@@ -6232,10 +6417,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     <button key={t.id} onClick={()=>{
                       setTabEnvio(t.id);setSelected(new Map());setSearchEnvios("");
                       if(t.id==="buscar"){setBuscarQuery("");setTabOrders([]);}
+                      else if(t.id==="ml"){ if(mlOrders===null) fetchMlEnvios(); }
                       else{fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);}
                     }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:isActive?600:400,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
                       {t.label}
-                      {t.id!=="buscar"&&<span style={{background:t.color+(counts[t.id]>0?"33":"15"),color:counts[t.id]>0?t.color:t.color+"99",fontSize:10,fontWeight:800,borderRadius:DS.r.full,padding:"0 7px",minWidth:20,height:18,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>
+                      {t.id!=="buscar"&&t.id!=="ml"&&<span style={{background:t.color+(counts[t.id]>0?"33":"15"),color:counts[t.id]>0?t.color:t.color+"99",fontSize:10,fontWeight:800,borderRadius:DS.r.full,padding:"0 7px",minWidth:20,height:18,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>
                         {counts[t.id]===null?"·":counts[t.id]}
                       </span>}
                     </button>
@@ -6265,7 +6451,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         if(e.key==="Enter"&&buscarQuery.trim().length>=2){
                           setBuscarLoading(true);
                           try{
-                            const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
+                            const r=await authFetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
                             const data=await r.json();
                             if(Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
                           }catch(ex){}
@@ -6277,7 +6463,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </div>
                   <AsyncButton onClick={async()=>{
                     if(!buscarQuery.trim()) return;
-                    const r=await fetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
+                    const r=await authFetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(buscarQuery.trim())}`);
                     const data=await r.json();
                     if(Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data));
                   }} style={{...BtnPrimary(T),fontSize:13}}>
@@ -6287,8 +6473,46 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </div>
             )}
 
+            {/* Vista Mercado Libre — solo lectura (ML despacha con su logística) */}
+            {tabEnvio==="ml"&&(
+              <div>
+                {mlLoading&&<div style={{padding:"40px 0",textAlign:"center",color:T.textSm,fontSize:13}}><Spinner size={18} color={T.accent}/> <div style={{marginTop:8}}>Cargando pedidos de Mercado Libre…</div></div>}
+                {!mlLoading&&mlOrders&&!mlOrders.mlConectado&&(
+                  <DSEmpty T={T} icon="🛒" title="Mercado Libre no conectado" subtitle="Conectá tu cuenta de ML desde Configuración → Integraciones para ver el estado de esos envíos acá."/>
+                )}
+                {!mlLoading&&mlOrders&&mlOrders.mlConectado&&(()=>{
+                  const EST_ML={pending:["Pendiente",T.textSm],handling:["Preparando",T.yellow],ready_to_ship:["Listo p/ despachar",T.blue],shipped:["En camino",T.accent],delivered:["Entregado",T.green],not_delivered:["No entregado",T.red],cancelled:["Cancelado",T.red]};
+                  const lista=mlOrders.orders||[];
+                  return (
+                    <div>
+                      <div style={{fontSize:12,color:T.textSm,marginBottom:10}}>{lista.length} pedidos de los últimos 14 días · ML gestiona su propia logística — acá ves el estado sin salir de Growith. <button onClick={fetchMlEnvios} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>↻ Actualizar</button></div>
+                      {lista.length===0&&<DSEmpty T={T} icon="📦" title="Sin pedidos recientes en ML" subtitle="Los pedidos pagos de los últimos 14 días aparecen acá."/>}
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {lista.map(o=>{
+                          const [lbl,col]=EST_ML[o.envio?.status]||[o.envio?.status||"Sin datos de envío",T.textSm];
+                          const esFlex=o.envio?.lt==="self_service";
+                          return (
+                            <div key={o.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                              <div style={{minWidth:120}}>
+                                <a href={`https://www.mercadolibre.com.ar/ventas/${o.id}/detalle`} target="_blank" rel="noreferrer" style={{fontSize:12,fontWeight:700,color:T.accent,textDecoration:"none"}}>ML #{o.id}</a>
+                                <div style={{fontSize:10,color:T.textSm}}>{o.fecha?new Date(o.fecha).toLocaleDateString("es-AR"):""} · {o.comprador}</div>
+                              </div>
+                              <div style={{flex:1,fontSize:12,color:T.textMd,minWidth:180}}>{(o.items||[]).map(it=>`${it.qty}× ${it.titulo}`).join(" · ")}</div>
+                              <DSBadge T={T} color={col} size="sm">{lbl}{esFlex?" · Flex":""}</DSBadge>
+                              {o.envio?.tracking&&<span style={{fontSize:10,color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}>{o.envio.tracking}</span>}
+                              <span style={{fontSize:12,fontWeight:700,color:T.text}}>${Math.round(o.total).toLocaleString("es-AR")}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
             {/* Acciones (solo cuando no es buscar o hay resultados) */}
-            {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
+            {tabEnvio!=="ml"&&(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
               {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:8,padding:2}}>
                 {[["todos","Todos"],["domicilio","Domicilio"],["sucursal","Sucursal"]].map(([v,l])=>(
@@ -6383,6 +6607,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   </>
                 )}
               </div>
+              <button onClick={imprimirPicking} title={selected.size?`Picking list de los ${selected.size} seleccionados`:"Picking list de todos los pedidos visibles"} style={{...BtnSecondary(T),fontSize:12,padding:"7px 10px"}}>
+                🖨 Picking
+              </button>
+              {tabEnvio==="empaquetar"&&selected.size>0&&(
+                <button onClick={marcarEmpaquetadosSel} disabled={packingBatch} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.green,borderColor:T.green+"66"}}>
+                  {packingBatch?<><Spinner size={11} color={T.green}/> Empaquetando…</>:`✓ Marcar ${selected.size} empaquetado${selected.size!==1?"s":""}`}
+                </button>
+              )}
               {selected.size>0&&(
                 <button onClick={()=>setExportModal(true)} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -6391,12 +6623,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               )}
               <span style={{fontSize:11,color:T.textSm,marginLeft:"auto",display:"flex",gap:10,alignItems:"center"}}>
                 <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
-                <span style={{opacity:0.5}}>· Ctrl+A todos · Shift+click rango · Esc limpiar · Enter exportar</span>
+                {typeof window!=="undefined"&&window.innerWidth>760&&<span style={{opacity:0.5}}>· Ctrl+A todos · Shift+click rango · Esc limpiar · Enter exportar</span>}
               </span>
             </div>
             )}
 
-            {tabLoading||buscarLoading?(
+            {tabEnvio==="ml"?null:tabLoading||buscarLoading?(
               <div>
                 {[...Array(6)].map((_,i)=>(
                   <div key={i} style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:1-i*0.12}}>
@@ -6419,12 +6651,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                   {tabEnvio==="buscar"?"Buscá por número, nombre o email":tabEnvio==="empaquetar"?"Todo empaquetado":"Sin pedidos para enviar"}
                 </div>
                 <div style={{fontSize:12,color:T.textSm,maxWidth:300,margin:"0 auto"}}>
-                  {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar":tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados en Tienda Nube"}
+                  {tabEnvio==="buscar"?"Escribí y presioná Enter o el botón Buscar":tabEnvio==="empaquetar"?"Los pedidos empaquetados van a Por enviar":"Marcá pedidos como empaquetados desde 'Por empaquetar' (botón ✓) y van a aparecer acá"}
                 </div>
               </div>
             ):(
               <>
-                <div style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
+                {/* Scroll horizontal en pantallas chicas — la grilla de 7 columnas
+                    fijas antes se aplastaba/desbordaba en mobile */}
+                <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><div style={{minWidth:720}}>
+                <div style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["110px"])].join(" "),gap:8,padding:"8px 14px",fontSize:11,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,borderBottom:`1px solid ${T.borderL}`}}>
                   <span/><span>Pedido</span><span>Cliente</span><span>Productos</span>
                   {!hiddenCols.has("estado")&&<span>Estado</span>}
                   {!hiddenCols.has("envio")&&<span>Envío</span>}
@@ -6433,12 +6668,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 {pageOrders.map((o,idx)=>{
                   const sel=selected.has(o.numero);
                   const ec=getEstadoEnvioC(T,o.estadoEnvio);
-                  const isSuc=o.medioEnvio&&(o.medioEnvio.toLowerCase().includes('sucursal')||o.medioEnvio.toLowerCase().includes('hop')||o.medioEnvio.toLowerCase().includes('punto'));
-                  let exportedOn=null;
-                  try{const hist=JSON.parse(localStorage.getItem("growith_exportHistory")||"[]");const found=hist.find(h=>h.pedidos?.includes(o.numero));if(found)exportedOn=new Date(found.fecha).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"});}catch(_){}
+                  const exportedOn=exportadoMap[o.numero]?new Date(exportadoMap[o.numero]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
                   return (
                     <div key={o.numero} onClick={()=>setOrderDetail(o)}
-                      style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["90px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
+                      style={{display:"grid",gridTemplateColumns:["40px","80px","1fr","1fr",...(hiddenCols.has("estado")?[]:["160px"]),...(hiddenCols.has("envio")?[]:["130px"]),...(hiddenCols.has("total")?[]:["110px"])].join(" "),gap:8,padding:compactMode?"8px 14px":"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,cursor:"pointer",transition:"background 0.1s",background:sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent",alignItems:"center",animation:`growith-fadeIn 0.2s ease both`,animationDelay:`${Math.min(idx*30,300)}ms`}}
                       onMouseEnter={e=>{if(!sel)e.currentTarget.style.background=T.card;}}
                       onMouseLeave={e=>{if(!sel)e.currentTarget.style.background=sel?T.accentSolid+"0a":exportedOn?T.green+"06":"transparent";}}>
                       <div onClick={e=>{e.stopPropagation();toggleSelect(o.numero,e,o);}} style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${sel?T.accentSolid:T.border}`,background:sel?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,zIndex:1}}>
@@ -6454,7 +6687,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                       </div>
                       <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                         <LensDots productos={o.productos}/>
-                        {!compactMode&&<span style={{marginLeft:6}}>{o.productos.map(p=>p.nombre.replace(/ANTEOJOS SOLUNA - BLUE LIGHT BLOCKER /,'').replace(/[()]/g,'')).join(', ')}</span>}
+                        {!compactMode&&<span style={{marginLeft:6}}>{o.productos.map(p=>nombreCorto(p.nombre)).join(', ')}</span>}
                       </div>
                       {!hiddenCols.has("estado")&&<Badge T={T} colors={ec}>{o.estadoEnvio}</Badge>}
                       {!hiddenCols.has("envio")&&<div style={{fontSize:11,color:o.esSucursal?T.purple:T.blue,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
@@ -6464,10 +6697,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{o.medioEnvio||"--"}</span>
                         {o.esSucursal&&o.pickupDetails&&<svg title="Puede requerir confirmar sucursal al exportar" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
                       </div>}
-                      {!hiddenCols.has("total")&&<span style={{fontSize:13,fontWeight:700,color:T.text}}>{fmtMoney(o.total)}</span>}
+                      {!hiddenCols.has("total")&&<span style={{fontSize:13,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
+                        {fmtMoney(o.total)}
+                        {tabEnvio==="empaquetar"&&(
+                          <button onClick={e=>{e.stopPropagation();marcarEmpaquetado(o);}} disabled={!!packing[o.numero]} title="Marcar como empaquetado en Tienda Nube"
+                            style={{border:`1px solid ${T.green}55`,background:T.green+"12",color:T.green,borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
+                            {packing[o.numero]?"…":"✓"}
+                          </button>
+                        )}
+                      </span>}
                     </div>
                   );
                 })}
+                </div></div>
                 {/* Paginador */}
                 {totalPages>1&&(
                   <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,padding:"14px 14px",borderTop:`0.5px solid ${T.borderL}`}}>
@@ -6507,7 +6749,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             <div style={{marginTop:24,borderTop:`0.5px solid ${T.borderL}`,paddingTop:20}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em"}}>Últimas exportaciones</div>
-                <button onClick={()=>{localStorage.removeItem("growith_exportHistory");}} style={{fontSize:11,color:T.textSm,background:"none",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
+                <button onClick={()=>{localStorage.removeItem("growith_exportHistory");setTabCounts(c=>({...c}));/* fuerza re-render: antes el bloque quedaba visible */}} style={{fontSize:11,color:T.textSm,background:"none",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar</button>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 {hist.map((h,i)=>{
@@ -6533,7 +6775,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
             {/* Upload zone */}
             <label htmlFor="sku-file-input" style={{display:"block",background:T.card,border:`2px dashed ${skuFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
-              <input id="sku-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuPending(false);setSkuResults([]);setSkuGenerating(false);setSkuProgress(0);setSkuBlob(null);parsePdf(f,"sku");}}}/>
+              <input id="sku-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setSkuFile(f);setSkuResults([]);setSkuGenerating(false);setSkuProgress(0);setSkuBlob(null);parsePdf(f,"sku");}}}/>
               {skuFile && (skuProcessing || skuGenerating)
                 ? <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,opacity:0.6}}>
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -6630,6 +6872,26 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                     </AsyncButton>
                   </div>
                 )}
+                {/* Enviar seguimientos desde el MISMO PDF — antes había que
+                    volver a subir el mismo archivo en el tab Seguimientos */}
+                {(()=>{
+                  const pend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]);
+                  const okCount=Object.values(trackingSent).filter(v=>v==="ok"||v==="warn").length;
+                  if(!pdfResults.length) return null;
+                  return (
+                    <div style={{background:`linear-gradient(135deg,${T.green}14,${T.green}06)`,border:`2px solid ${T.green}55`,borderRadius:14,padding:"16px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+                      <div style={{flex:1,minWidth:220}}>
+                        <div style={{fontSize:14,fontWeight:800,color:T.green,marginBottom:3}}>Seguimientos del mismo PDF</div>
+                        <div style={{fontSize:12,color:T.textSm}}>{pend.length>0?`${pend.length} tracking(s) listos para subir a Tienda Nube (avisa al cliente y activa el seguimiento automático)`:okCount>0?`✓ ${okCount} seguimientos enviados — ver estado en el tab Seguimientos`:"Sin trackings pendientes"}</div>
+                      </div>
+                      {pend.length>0&&(
+                        <AsyncButton onClick={sendAllTracking} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 22px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,boxShadow:`0 4px 16px ${T.green}44`}}>
+                          📨 Enviar {pend.length} seguimiento{pend.length!==1?"s":""}
+                        </AsyncButton>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* Exportar resumen */}
                 {Object.keys(skuTotals).length>0&&(
                   <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
@@ -6710,13 +6972,117 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
           </div>
         )}
 
-        {/* -- SEGUIMIENTOS -- */}
-        {tab==="seguimientos"&&(
-          <div key="seguimientos" className="gh-tab-content" style={{maxWidth:720,margin:"0 auto",paddingBottom:48}}>
+        {/* -- SEGUIMIENTOS: panel de tracking de TODOS los envíos activos -- */}
+        {tab==="seguimientos"&&(()=>{
+          const envios=Object.values(enviosFs).sort((a,b)=>String(b.creado||"").localeCompare(String(a.creado||"")));
+          const activos=envios.filter(e=>e.activo);
+          const hoy=Date.now();
+          const dias=iso=>iso?Math.floor((hoy-Date.parse(iso))/86400000):null;
+          const CAT={en_camino:["En camino",T.blue],en_sucursal:["En sucursal — retirar",T.orange],entregado:["Entregado",T.green],devolucion:["En devolución",T.red],visita_fallida:["Visita fallida",T.red],desconocido:["Sin datos aún",T.textSm],otro:["En proceso",T.textSm]};
+          // Alertas de excepción
+          const alertas=[];
+          for(const e of activos){
+            if(e.categoria==="en_sucursal"){ const d=dias(e.enSucursalDesde); if(d!=null&&d>=3) alertas.push({sev:"red",msg:`#${e.numero} está en sucursal hace ${d} días sin retirar — si vence el plazo, vuelve.`}); }
+            if(e.categoria==="visita_fallida") alertas.push({sev:"amber",msg:`#${e.numero}: visita fallida — puede reintentarse o ir a sucursal.`});
+            if(e.categoria==="devolucion") alertas.push({sev:"red",msg:`#${e.numero} está volviendo (devolución).`});
+            const dEstado=dias(e.estadoDesde||e.despachadoAt);
+            if((e.categoria==="en_camino"||e.categoria==="otro"||e.categoria==="desconocido")&&dEstado!=null&&dEstado>=7) alertas.push({sev:"amber",msg:`#${e.numero} sin movimiento hace ${dEstado} días.`});
+          }
+          // Métricas logísticas
+          const entregados30=envios.filter(e=>e.entregadoAt&&dias(e.entregadoAt)<=30);
+          const tiemposEntrega=entregados30.filter(e=>e.despachadoAt).map(e=>(Date.parse(e.entregadoAt)-Date.parse(e.despachadoAt))/86400000).filter(d=>d>=0&&d<40);
+          const tPromEntrega=tiemposEntrega.length?tiemposEntrega.reduce((a,b)=>a+b,0)/tiemposEntrega.length:null;
+          const ultimos30=envios.filter(e=>dias(e.creado)<=30);
+          const pctSuc=ultimos30.length?Math.round(ultimos30.filter(e=>e.esSucursal).length/ultimos30.length*100):null;
+          return (
+          <div key="seguimientos" className="gh-tab-content" style={{maxWidth:900,margin:"0 auto",paddingBottom:48}}>
+
+            {/* Métricas */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:16}}>
+              {[
+                {label:"En seguimiento",val:activos.length,color:T.accent,hint:"envíos activos"},
+                {label:"En camino",val:activos.filter(e=>e.categoria==="en_camino").length,color:T.blue,hint:"con Andreani"},
+                {label:"En sucursal",val:activos.filter(e=>e.categoria==="en_sucursal").length,color:T.orange,hint:"esperando retiro"},
+                {label:"Entregados (30d)",val:entregados30.length,color:T.green,hint:tPromEntrega!=null?`~${tPromEntrega.toFixed(1)} días desp.→entrega`:"últimos 30 días"},
+                ...(pctSuc!=null?[{label:"% a sucursal",val:pctSuc+"%",color:T.purple||T.accent,hint:"últimos 30 días"}]:[]),
+              ].map(k=>(
+                <div key={k.label} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 13px"}}>
+                  <div style={{fontSize:10,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:0.4}}>{k.label}</div>
+                  <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:-0.5}}>{k.val}</div>
+                  <div style={{fontSize:9,color:T.textSm,marginTop:2}}>{k.hint}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Alertas de excepción */}
+            {alertas.length>0&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+                {alertas.slice(0,8).map((a,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:(a.sev==="red"?T.red:T.orange)+"12",border:`1px solid ${(a.sev==="red"?T.red:T.orange)}33`,borderRadius:DS.r.lg,padding:"8px 14px",fontSize:12,color:T.text}}>
+                    <span style={{flexShrink:0}}>{a.sev==="red"?"🔴":"🟠"}</span><span>{a.msg}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Modo despacho: escanear rótulo (lector USB/Bluetooth o tipeo) */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 16px",marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,fontWeight:700,color:T.text}}>📷 Modo despacho</span>
+                <input value={scanValue} onChange={e=>setScanValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")procesarScan();}}
+                  placeholder="Escaneá el código del rótulo (o tipeá tracking / N° pedido) y Enter"
+                  style={{...iS,flex:1,minWidth:220,fontSize:13}}/>
+                <span style={{fontSize:10,color:T.textSm}}>Verifica que el paquete escaneado corresponde a un envío registrado</span>
+              </div>
+              {scanLog.length>0&&(
+                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:3,maxHeight:120,overflowY:"auto"}}>
+                  {scanLog.map((s,i)=>(
+                    <div key={i} style={{fontSize:11,color:s.ok?T.green:T.red,fontWeight:600}}>
+                      {s.ok?`✓ #${s.numero} verificado`:`✗ ${s.tracking} — no corresponde a ningún envío registrado`}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Tabla de envíos */}
+            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+              <div style={{padding:"10px 16px",borderBottom:`1px solid ${T.borderL}`,fontSize:11,color:T.textSm}}>
+                {envios.length} envíos de los últimos 60 días · el estado se actualiza solo cada 30 min (aunque la app esté cerrada)
+              </div>
+              {envios.length===0&&<div style={{padding:"36px",textAlign:"center",color:T.textSm,fontSize:13}}>Todavía no hay envíos registrados. Generá etiquetas y subí los rótulos en "SKU en Rótulos" — desde ahí cada envío entra al seguimiento automático.</div>}
+              <div style={{overflowX:"auto"}}><div style={{minWidth:640}}>
+                {envios.slice(0,120).map((e,i)=>{
+                  const [lbl,col]=CAT[e.categoria]||CAT.otro;
+                  const final=!e.activo&&(e.entregadoAt||e.devolucionAt);
+                  return (
+                    <div key={e.numero||i} style={{display:"grid",gridTemplateColumns:"90px 1fr 150px 170px 90px",gap:8,padding:"10px 16px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:final?0.65:1}}>
+                      <span style={{fontWeight:700,color:T.accent,fontSize:13}}>#{e.numero}</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>📷✓</span>}</div>
+                        {e.tracking
+                          ? <a href={`https://www.andreani.com/#!/informacionEnvio/${e.tracking}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.textSm,textDecoration:"none"}}>{e.tracking} ↗</a>
+                          : <span style={{fontSize:10,color:T.textSm}}>sin tracking aún</span>}
+                      </div>
+                      <DSBadge T={T} color={e.tracking?col:T.textSm} size="sm">{e.tracking?lbl:"Etiqueta generada"}</DSBadge>
+                      <span style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={e.estadoAndreani||""}>{e.estadoAndreani||(e.tracking?"esperando 1er chequeo":"")}</span>
+                      <span style={{fontSize:10,color:T.textSm,textAlign:"right"}}>{e.creado?new Date(e.creado).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
+                    </div>
+                  );
+                })}
+              </div></div>
+            </div>
+
+            {/* Subida manual de PDF (fallback — el flujo normal es procesar el
+                rótulo UNA vez en "SKU en Rótulos", que también manda los trackings) */}
+            <button onClick={()=>setShowSegUpload(s=>!s)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",padding:0,marginBottom:12}}>
+              {showSegUpload?"▲ Ocultar subida manual de PDF":"▾ Subir un PDF de rótulos solo para seguimientos (opcional)"}
+            </button>
+            {showSegUpload&&(<div>
 
             {/* Upload zone */}
             <label htmlFor="seg-file-input" style={{display:"block",background:T.card,border:`2px dashed ${pdfFile?T.accentSolid:T.border}`,borderRadius:16,padding:"32px 24px",marginBottom:20,textAlign:"center",cursor:"pointer",transition:"all 0.2s ease"}}>
-              <input id="seg-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfPending(false);setPdfResults([]);setTrackingSent({});parsePdf(f,"tracking");}}}/>
+              <input id="seg-file-input" type="file" accept=".pdf" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f){setPdfFile(f);setPdfResults([]);setTrackingSent({});parsePdf(f,"tracking");}}}/>
               {pdfProcessing
                 ? <div>
                     <div style={{width:44,height:44,border:`3px solid ${T.accentSolid}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite",margin:"0 auto 14px"}}/>
@@ -6795,8 +7161,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
 
                 {/* Lista */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                  <div style={{display:"grid",gridTemplateColumns:"80px 1fr 140px 80px",gap:8,padding:"8px 18px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
-                    <span>Pedido</span><span>Destinatario + Tracking</span><span></span><span>Estado</span>
+                  <div style={{display:"grid",gridTemplateColumns:"80px 1fr 80px",gap:8,padding:"8px 18px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}>
+                    <span>Pedido</span><span>Destinatario + Tracking</span><span style={{textAlign:"right"}}>Estado</span>
                   </div>
                   {pdfResults.map((r,i)=>{
                     const sentState=trackingSent[r.pedidoNum]; // "ok" | "error" | undefined
@@ -6811,6 +7177,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                         <div style={{display:"flex",justifyContent:"flex-end"}}>
                           {sentState==="ok"
                             ? <span style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Ok</span>
+                            : sentState==="warn"
+                            ? <span title="El tracking se guardó pero TN no marcó la orden como enviada — el cliente no recibió el aviso" style={{fontSize:12,color:T.orange,fontWeight:600}}>⚠ Sin aviso</span>
                             : sentState==="error"
                               ? <span style={{fontSize:12,color:T.red,fontWeight:600}}>✗ Error</span>
                               : sending
@@ -6828,8 +7196,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
                 </div>
               </div>);
             })()}
+            </div>)}
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Sucursal confirmed toast */}
@@ -7065,15 +7435,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             <Field T={T} label="Ancho (cm)"><input style={iS} type="number" value={exportCfg.ancho} onChange={e=>setExportCfg(c=>({...c,ancho:e.target.value}))} placeholder="5"/></Field>
           </div>
           <Field T={T} label="Prof. (cm)"><input style={iS} type="number" value={exportCfg.prof} onChange={e=>setExportCfg(c=>({...c,prof:e.target.value}))} placeholder="5"/></Field>
-          <div onClick={()=>!exporting&&setExportCfg(c=>({...c,separar:!c.separar}))} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"14px",background:T.bg,border:`1.5px solid ${exportCfg.separar?T.accentSolid:T.border}`,borderRadius:10,cursor:"pointer",marginBottom:20,transition:"all 0.15s"}}>
-            <div style={{width:20,height:20,borderRadius:4,border:`2px solid ${exportCfg.separar?T.accentSolid:T.border}`,background:exportCfg.separar?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>
-              {exportCfg.separar&&<span style={{color:"#fff",fontSize:12}}>✓</span>}
-            </div>
-            <div>
-              <div style={{fontSize:13,fontWeight:600,color:T.text}}>Separar Domicilios / Sucursales</div>
-              <div style={{fontSize:12,color:T.textSm,marginTop:3}}>Genera 2 archivos CSV en lugar de uno</div>
-            </div>
-          </div>
+          {/* El checkbox "Separar Domicilios/Sucursales" se eliminó: era código
+              muerto (el generador nunca lo leía — domicilio y sucursal ya van a
+              hojas separadas del mismo Excel) */}
+          <div style={{fontSize:11,color:T.textSm,marginBottom:20}}>Domicilios y sucursales van en hojas separadas del mismo Excel, como lo espera el portal de Andreani.</div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <button onClick={()=>{setExportModal(false);setExportSingleOrder(null);}} disabled={exporting} style={{...BtnSecondary(T),opacity:exporting?0.5:1}}>Cancelar</button>
             <AsyncButton onClick={exportAndreani} style={{...BtnPrimary(T),minWidth:160,justifyContent:"center"}}>
@@ -25793,7 +26158,7 @@ export default function App() {
     setOrdersStatus("loading");
     try {
       const tabParam = tab ? `&tab=${tab}` : "";
-      const res=await fetch(`/api/orders?uid=${targetUid}${tabParam}`);
+      const res=await authFetch(`/api/orders?uid=${targetUid}${tabParam}`);
       const data=await res.json();
       if(!Array.isArray(data)) throw new Error("Bad response");
       const built=buildOrdersFromAPI(data);

@@ -141,6 +141,11 @@ growith_alert_global_{uid} → número (días umbral global)
 growith_lead_time_{uid}    → JSON lead times por producto
 growith_stockouts_{uid}    → JSON[] historial de agotados
 growith_envios_cache_{uid} → JSON cache SWR de Envíos: {ts, tabs:{empaquetar,enviar}, counts}
+growith_envios_cols        → JSON[] columnas ocultas de la tabla de Envíos
+growith_exportCfg          → JSON config de paquete Andreani: {peso,alto,ancho,prof,valor}
+growith_exportHistory      → JSON[] historial local de exportaciones (fallback del historial en Firestore users/{uid}/envios)
+growith_locOverrides / growith_sucOverrides → JSON overrides de localidad/sucursal pendientes de export
+growith_skuCfg             → JSON posición/tamaño del estampado de SKU en rótulos
 growith_margenes_vis_{uid} → JSON visibilidad del dashboard Márgenes: {main,sec,costos,tienda,ml,canales,productos,secKpis,secKpisOrder}
 growith_margenes_fullnums  → "1" (números completos en Márgenes, sin K/M)
 growith_margenes_usd       → "1" (dashboard Márgenes en USD)

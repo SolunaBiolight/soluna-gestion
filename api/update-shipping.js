@@ -1,5 +1,6 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { verifyAuth } from "./_auth.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -13,110 +14,194 @@ function initAdmin() {
   return getFirestore();
 }
 
+// ── Consulta de tracking Andreani (endpoints públicos, sin API contratada) ──
+// Factoreada para que la usen tanto el proxy (action=tracking) como el cron
+// de seguimiento masivo (action=track_all).
+const BROWSER_HEADERS = {
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'es-AR,es;q=0.9',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Origin': 'https://www.andreani.com',
+  'Referer': 'https://www.andreani.com/',
+};
+
+function extractEstado(d) {
+  if (!d || typeof d !== 'object') return null;
+  if (Array.isArray(d.eventos) && d.eventos.length > 0) {
+    const ev = d.eventos[d.eventos.length - 1];
+    return ev.estado || ev.descripcion || ev.accion || null;
+  }
+  if (Array.isArray(d) && d.length > 0) {
+    const ev = d[d.length - 1];
+    return ev.estado || ev.descripcion || ev.accion || null;
+  }
+  return d.estado || d.estadoActual || d.estadoEnvio ||
+         d.ultimoEvento?.estado || d.ultimoEvento?.descripcion ||
+         d.evento || d.descripcion || null;
+}
+
+function extractEventos(d) {
+  if (Array.isArray(d.eventos)) return d.eventos;
+  if (Array.isArray(d)) return d;
+  if (Array.isArray(d.historial)) return d.historial;
+  if (Array.isArray(d.events)) return d.events;
+  return [];
+}
+
+async function trackAndreani(nroRaw) {
+  const nro = String(nroRaw || "").trim().replace(/\s+/g, '');
+  if (!nro) return null;
+  const endpoints = [
+    `https://tracking.andreani.com/api/v1/seguimiento?codigoAndreani=${encodeURIComponent(nro)}`,
+    `https://tracking.andreani.com/api/v1/seguimiento?numero=${encodeURIComponent(nro)}`,
+    `https://clientes.andreani.com/api/v2/ordenes/${encodeURIComponent(nro)}`,
+    `https://api.andreani.com/v2/envios/${encodeURIComponent(nro)}/eventos`,
+    `https://api.andreani.com/v2/ordenes/${encodeURIComponent(nro)}/eventos`,
+  ];
+  for (const url of endpoints) {
+    try {
+      const r = await fetch(url, { headers: BROWSER_HEADERS });
+      const text = await r.text();
+      if (text.startsWith('<') || text.startsWith('<!')) continue;
+      let d;
+      try { d = JSON.parse(text); } catch { continue; }
+      const estado = extractEstado(d);
+      if (estado) return { estado, eventos: extractEventos(d), raw: d, source: url };
+    } catch (_) {}
+  }
+  return null;
+}
+
+// Clasificación heurística del estado de Andreani → categoría interna.
+// (Misma lógica conceptual que mapAndreaniEstado del frontend.)
+function clasificarEstado(estadoStr) {
+  const s = String(estadoStr || "").toLowerCase();
+  if (!s) return "desconocido";
+  if (/entregad|retirad/.test(s)) return "entregado";
+  if (/sucursal|disponible.*retiro|retiro.*disponible|para retirar/.test(s)) return "en_sucursal";
+  if (/devoluci|devuelto|regres|rehusad|rechazad/.test(s)) return "devolucion";
+  if (/visita|no se pudo|ausente|no.*entrega|reprogram/.test(s)) return "visita_fallida";
+  if (/camino|reparto|distribuc|transito|tránsito|viaje|planta|procesamiento|admitid|retirado del cliente|colecta/.test(s)) return "en_camino";
+  return "otro";
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // ── action=tracking: proxy Andreani para evitar CORS ─────────────────
+  // ── action=tracking: proxy Andreani para evitar CORS (solo lectura) ──
   if (req.query.action === 'tracking') {
     const { tracking } = req.query;
     if (!tracking) return res.status(400).json({ error: 'tracking requerido' });
-
-    const browserHeaders = {
-      'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'es-AR,es;q=0.9',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Origin': 'https://www.andreani.com',
-      'Referer': 'https://www.andreani.com/',
-    };
-
-    // Normalizamos el número (Andreani acepta formatos variados)
     const nro = tracking.trim().replace(/\s+/g, '');
-
-    // Función para extraer estado de cualquier respuesta de Andreani
-    function extractEstado(d) {
-      if (!d || typeof d !== 'object') return null;
-      // Respuesta v2 API oficial: array de eventos
-      if (Array.isArray(d.eventos) && d.eventos.length > 0) {
-        const ev = d.eventos[d.eventos.length - 1];
-        return ev.estado || ev.descripcion || ev.accion || null;
-      }
-      if (Array.isArray(d) && d.length > 0) {
-        const ev = d[d.length - 1];
-        return ev.estado || ev.descripcion || ev.accion || null;
-      }
-      // Respuesta plana con campo de estado
-      return d.estado || d.estadoActual || d.estadoEnvio ||
-             d.ultimoEvento?.estado || d.ultimoEvento?.descripcion ||
-             d.evento || d.descripcion || null;
+    const out = await trackAndreani(nro);
+    if (out) {
+      console.log(`[andreani] tracking=${nro} estado="${out.estado}"`);
+      return res.status(200).json({ estado: out.estado, estadoActual: out.estado, ultimoEvento: { estado: out.estado }, eventos: out.eventos, raw: out.raw, source: out.source });
     }
-
-    // Función para extraer eventos completos
-    function extractEventos(d) {
-      if (Array.isArray(d.eventos)) return d.eventos;
-      if (Array.isArray(d)) return d;
-      if (Array.isArray(d.historial)) return d.historial;
-      if (Array.isArray(d.events)) return d.events;
-      return [];
-    }
-
-    // Intentamos múltiples endpoints en orden
-    const endpoints = [
-      // 1. API pública con codigoAndreani (parámetro correcto)
-      `https://tracking.andreani.com/api/v1/seguimiento?codigoAndreani=${encodeURIComponent(nro)}`,
-      // 2. API alternativa con numero
-      `https://tracking.andreani.com/api/v1/seguimiento?numero=${encodeURIComponent(nro)}`,
-      // 3. API clientes (suele funcionar sin auth para consultas públicas)
-      `https://clientes.andreani.com/api/v2/ordenes/${encodeURIComponent(nro)}`,
-      // 4. API v2 oficial
-      `https://api.andreani.com/v2/envios/${encodeURIComponent(nro)}/eventos`,
-      // 5. Fallback con otro formato
-      `https://api.andreani.com/v2/ordenes/${encodeURIComponent(nro)}/eventos`,
-    ];
-
-    for (const url of endpoints) {
-      try {
-        const r = await fetch(url, { headers: browserHeaders });
-        const text = await r.text();
-        // Ignorar respuestas HTML (páginas de error)
-        if (text.startsWith('<') || text.startsWith('<!')) continue;
-        let d;
-        try { d = JSON.parse(text); } catch { continue; }
-        const estado = extractEstado(d);
-        if (estado) {
-          const eventos = extractEventos(d);
-          console.log(`[andreani] tracking=${nro} endpoint=${url} estado="${estado}"`);
-          return res.status(200).json({
-            estado,
-            estadoActual: estado,
-            ultimoEvento: { estado },
-            eventos,
-            raw: d,
-            source: url,
-          });
-        }
-      } catch(e) {
-        console.log(`[andreani] endpoint falló: ${url} — ${e.message}`);
-      }
-    }
-
-    // Si no pudimos obtener estado, devolver estructura vacía (no error)
-    // para que el frontend pueda mostrar "no disponible" en vez de romper
     console.log(`[andreani] no se pudo obtener estado para tracking=${nro}`);
     return res.status(200).json({
-      estado: null,
-      estadoActual: null,
-      ultimoEvento: null,
-      eventos: [],
+      estado: null, estadoActual: null, ultimoEvento: null, eventos: [],
       error: 'No se pudo consultar el estado. Verificá el número de tracking.',
       trackingUrl: `https://www.andreani.com/#!/informacionEnvio/${nro}`,
     });
   }
 
+  // ── action=track_all: cron de seguimiento de TODOS los envíos activos ──
+  // Cada 30 min: para los usuarios con actividad reciente en Envíos, consulta
+  // el estado Andreani de sus envíos no finalizados y lo persiste en
+  // users/{uid}/envios/{docId}. Las vistas leen Firestore: el tracking deja
+  // de depender de que alguien tenga la pestaña abierta.
+  if (req.query.action === 'track_all') {
+    try {
+      const db = initAdmin();
+      const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
+      const usersSnap = await db.collection("users").where("enviosTrackActivo", ">", cutoff).limit(10).get();
+      let revisados = 0, actualizados = 0;
+      const ahora = new Date().toISOString();
+      const staleCutoff = new Date(Date.now() - 25 * 60000).toISOString();
+      for (const uDoc of usersSnap.docs) {
+        // Envíos activos con tracking, no finalizados, sin chequear hace 25+ min.
+        const envSnap = await uDoc.ref.collection("envios").where("activo", "==", true).limit(60).get();
+        const pendientes = envSnap.docs
+          .filter(d => { const e = d.data(); return e.tracking && (!e.lastCheck || e.lastCheck < staleCutoff); })
+          .slice(0, 30);
+        for (let i = 0; i < pendientes.length; i += 5) {
+          await Promise.all(pendientes.slice(i, i + 5).map(async d => {
+            const e = d.data();
+            revisados++;
+            const out = await trackAndreani(e.tracking);
+            if (!out) { await d.ref.set({ lastCheck: ahora }, { merge: true }); return; }
+            const cat = clasificarEstado(out.estado);
+            const upd = { lastCheck: ahora, estadoAndreani: out.estado, categoria: cat };
+            if (out.estado !== e.estadoAndreani) upd.estadoDesde = ahora; // cambió: resetea el reloj de "demorado"
+            if (cat === "en_sucursal" && e.categoria !== "en_sucursal") upd.enSucursalDesde = ahora;
+            if (cat === "entregado") { upd.activo = false; upd.entregadoAt = ahora; }
+            if (cat === "devolucion") { upd.activo = false; upd.devolucionAt = ahora; }
+            await d.ref.set(upd, { merge: true });
+            actualizados++;
+          }));
+        }
+      }
+      return res.json({ ok: true, usuarios: usersSnap.size, revisados, actualizados });
+    } catch (e) {
+      console.error("track_all error:", e.message);
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  // ── Acciones de ESCRITURA sobre la tienda: requieren usuario autenticado ──
+  const authUser = await verifyAuth(req);
+  if (!authUser) return res.status(401).json({ error: "Sesión inválida. Recargá la página e iniciá sesión de nuevo." });
+
   const { uid, orderId, tracking } = req.query;
   if (!uid) return res.status(401).json({ error: "uid requerido" });
-  if (!orderId || !tracking) return res.status(400).json({ error: "Faltan orderId o tracking" });
+
+  // ── Historial de envíos en Firestore (vía Admin SDK — no depende de las
+  // reglas de seguridad del cliente, que no cubren subcolecciones nuevas) ──
+  if (req.query.action === 'envios_list') {
+    try {
+      const db = initAdmin();
+      // Marca de actividad para el cron de tracking
+      await db.collection("users").doc(uid).set({ enviosTrackActivo: new Date().toISOString() }, { merge: true });
+      const cutoff = new Date(Date.now() - 60 * 86400000).toISOString();
+      const snap = await db.collection("users").doc(uid).collection("envios").where("creado", ">", cutoff).get();
+      const envios = {};
+      snap.forEach(d => { envios[d.id] = d.data(); });
+      return res.json({ envios });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+  if (req.query.action === 'envios_registrar' && req.method === 'POST') {
+    try {
+      const body = await new Promise(resolve => { let d = ""; req.on("data", c => d += c); req.on("end", () => { try { resolve(JSON.parse(d || "{}")); } catch (_) { resolve({}); } }); });
+      const items = Array.isArray(body.envios) ? body.envios.slice(0, 400) : [];
+      const db = initAdmin();
+      const ahora = new Date().toISOString();
+      for (let i = 0; i < items.length; i += 20) {
+        await Promise.all(items.slice(i, i + 20).map(e => {
+          const numero = String(e.numero || "").trim();
+          if (!numero) return null;
+          const docData = {};
+          for (const k of ["tnId","cliente","esSucursal","provincia","localidad","total","skus","estado","activo","tracking","fulfillOk","verificado"]) {
+            if (e[k] !== undefined) docData[k] = e[k];
+          }
+          docData.numero = numero;
+          if (e.estado === "despachado") docData.despachadoAt = ahora;
+          if (e.verificado) docData.verificadoAt = ahora;
+          return db.collection("users").doc(uid).collection("envios").doc(numero)
+            .set({ creado: ahora, ...docData }, { merge: true })
+            .then(async () => {
+              // no pisar "creado" si ya existía: merge lo sobreescribió — restaurar
+              // sería otra lectura por doc; aceptamos que "creado" refleje la
+              // última actividad (ventana de 60 días del historial).
+            });
+        }));
+      }
+      return res.json({ ok: true, guardados: items.length });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
 
   let storeId, accessToken;
   try {
@@ -141,10 +226,28 @@ export default async function handler(req, res) {
     'Content-Type': 'application/json',
   };
 
+  // ── action=pack: marcar pedido como empaquetado en TN (sin salir de Growith) ──
+  // Recibe el ID REAL de la orden de TN (no el número visible).
+  if (req.query.action === 'pack') {
+    if (!orderId) return res.status(400).json({ error: "Falta orderId" });
+    try {
+      const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders/${orderId}/pack`, { method: 'POST', headers });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        return res.status(r.status).json({ error: d.message || d.description || `Error TN ${r.status}` });
+      }
+      return res.status(200).json({ ok: true, order: orderId });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+
+  if (!orderId || !tracking) return res.status(400).json({ error: "Faltan orderId o tracking" });
+
   try {
-    // 1. Buscar el pedido por número
+    // 1. Buscar el pedido por número. per_page=30 (antes 5): el q= de TN matchea
+    // por substring y con 5 resultados la orden exacta podía quedar afuera
+    // (ej: "123" matchea #1123, #1234...) → 404 falso en plena tanda.
     const searchRes = await fetch(
-      `https://api.tiendanube.com/v1/${storeId}/orders?q=${orderId}&per_page=5`,
+      `https://api.tiendanube.com/v1/${storeId}/orders?q=${orderId}&per_page=30`,
       { headers }
     );
     if (!searchRes.ok) throw new Error(`TN search error ${searchRes.status}`);
@@ -183,10 +286,13 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3. POST /fulfill para marcar como enviado y notificar al cliente
-    // Ahora que el token tiene write_orders esto debería funcionar
+    // 3. POST /fulfill para marcar como enviado y notificar al cliente.
+    // Antes esto era un catch vacío: si TN lo rechazaba, la UI decía "✓ Ok"
+    // pero el cliente NO recibía el mail y la orden no quedaba enviada.
+    // Ahora el resultado se informa de verdad (fulfilled: true/false).
+    let fulfilled = false, fulfillError = null;
     try {
-      await fetch(
+      const fr = await fetch(
         `https://api.tiendanube.com/v1/${storeId}/orders/${tnOrderId}/fulfill`,
         {
           method: 'POST',
@@ -194,9 +300,11 @@ export default async function handler(req, res) {
           body: JSON.stringify({ shipping_tracking_number: tracking, notify_customer: true })
         }
       );
-    } catch(_) {}
+      fulfilled = fr.ok;
+      if (!fr.ok) { const fd = await fr.json().catch(() => ({})); fulfillError = fd.message || fd.description || `TN ${fr.status}`; }
+    } catch(e) { fulfillError = e.message; }
 
-    res.status(200).json({ ok: true, order: orderId, tracking });
+    res.status(200).json({ ok: true, order: orderId, tracking, tnOrderId: String(tnOrderId), fulfilled, fulfillError });
 
   } catch(e) {
     res.status(500).json({ error: e.message });
