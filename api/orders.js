@@ -550,29 +550,33 @@ export default async function handler(req, res) {
       // solo: advertisers (Api-Version 1) → campaigns/search con metrics=cost
       // (Api-Version 2). Si la API falla o no hay campañas, rige el gasto manual
       // cargado por períodos (mlAdsPeriodo) — nunca se suman los dos.
-      async function fetchMlAdsSpend(sinceR, untilR) {
+      // dbg: colector de diagnóstico (solo el período actual lo pasa) — sin él
+      // cada `return null` era invisible y "Ad Spend ML en $0" no se podía debuggear.
+      async function fetchMlAdsSpend(sinceR, untilR, dbg) {
+        const D = (step, extra) => { if (dbg) { dbg.step = step; Object.assign(dbg, extra||{}); } };
         try {
-          if (!hasML) return null;
+          if (!hasML) { D("sin_cuenta_ml"); return null; }
           const tokML = mlVentasAcc === "__none__" ? null : await getValidMLToken(db, uid, mlVentasAcc);
-          if (!tokML?.accessToken) return null;
+          if (!tokML?.accessToken) { D("sin_token"); return null; }
           let adv = _mlAdvCache.get(uid);
           if (!adv || Date.now() - adv.ts > 3600000) {
             const r = await fetch("https://api.mercadolibre.com/advertising/advertisers?product_id=PADS", { headers: { Authorization: `Bearer ${tokML.accessToken}`, "Api-Version": "1" } });
-            if (!r.ok) return null;
+            if (!r.ok) { D("advertisers_http", { status: r.status, body: (await r.text().catch(()=>"")).slice(0,300) }); return null; }
             const j = await r.json();
             const a = (j.advertisers || [])[0];
-            if (!a?.advertiser_id) return null;
+            if (!a?.advertiser_id) { D("sin_advertiser", { body: JSON.stringify(j).slice(0,300) }); return null; }
             adv = { ts: Date.now(), id: a.advertiser_id, site: a.site_id || "MLA" };
             _mlAdvCache.set(uid, adv);
           }
           const url = `https://api.mercadolibre.com/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/campaigns/search?limit=50&metrics=cost&metrics_summary=true&date_from=${sinceR}&date_to=${untilR}`;
           const r2 = await fetch(url, { headers: { Authorization: `Bearer ${tokML.accessToken}`, "Api-Version": "2" } });
-          if (!r2.ok) return null;
+          if (!r2.ok) { D("campaigns_http", { status: r2.status, advertiser: adv.id, site: adv.site, body: (await r2.text().catch(()=>"")).slice(0,300) }); return null; }
           const j2 = await r2.json();
           let cost = parseFloat(j2?.metrics_summary?.cost);
           if (!isFinite(cost)) cost = (j2.results || []).reduce((s, c) => s + (parseFloat(c?.metrics?.cost) || 0), 0);
+          D("ok", { cost: isFinite(cost)?cost:null, campanias: (j2.results||[]).length });
           return isFinite(cost) && cost > 0 ? +cost.toFixed(2) : null;
-        } catch (e) { console.error("Mercado Ads spend error:", e.message); return null; }
+        } catch (e) { D("exception", { error: String(e.message).slice(0,200) }); console.error("Mercado Ads spend error:", e.message); return null; }
       }
       function mlAdsPeriodo(sinceR, untilR) {
         let total = 0;
@@ -832,8 +836,9 @@ export default async function handler(req, res) {
       }
 
       // Gasto real de Mercado Ads (API) para ambos períodos — fallback: manual.
+      const mlAdsDebug = {};
       const [mlAdsAutoCurr, mlAdsAutoPrev] = await Promise.all([
-        fetchMlAdsSpend(since, until), fetchMlAdsSpend(prevSince, prevUntil),
+        fetchMlAdsSpend(since, until, mlAdsDebug), fetchMlAdsSpend(prevSince, prevUntil),
       ]);
       totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mlAdsAutoCurr);
       prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev);
@@ -1159,6 +1164,7 @@ export default async function handler(req, res) {
         since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, metaAccountsCount: metaAccounts.length,
           mlAdsFuente: mlAdsAutoCurr!=null ? "auto" : (mlAdsList.length ? "manual" : "sin_datos"),
+          mlAdsDebug,
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };
       // Guardar caché + registrar el rango en el warmer (best-effort: si Firestore
