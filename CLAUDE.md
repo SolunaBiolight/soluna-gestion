@@ -116,7 +116,7 @@ Ambas producen el mismo resultado visual. Usá la que más te convenga en cada c
 |---|---|---|
 | Tienda Nube | ✅ Activo | Firestore `users/{uid}.stores[]` type="tiendanube" |
 | Shopify | ✅ OAuth listo | Firestore `users/{uid}.stores[]` type="shopify" |
-| Mercado Libre | 🔌 Parcial | Firestore `users/{uid}.stores[]` type="meli" |
+| Mercado Libre | ✅ Activo | Firestore `users/{uid}.stores[]` type="mercadolibre" |
 | Meta Ads | ⚠️ Token vencido | Firestore `users/{uid}.metaAccounts[]` |
 | ARCA (AFIP) | ✅ Activo | Firestore `users/{uid}.cuits[]` |
 
