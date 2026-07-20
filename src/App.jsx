@@ -24826,11 +24826,15 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const fmtDate=(s)=>{try{return new Date(s+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short"});}catch(_){return s;}};
   const delta=(curr,prev)=>{if(!prev||prev===0)return null;return((curr-prev)/Math.abs(prev)*100);};
 
+  // Paleta de métricas del dashboard — saturada y sobria (los tonos pastel del
+  // tema quedaban lavados en las cards). Se usa MÍNIMO: punto del label,
+  // sparkline y semáforos; los números van en T.text para un look limpio.
+  const MC = { green:"#16c784", red:"#f6465d", blue:"#3861fb", violet:"#7c3aed", gold:"#f0b90b" };
   const DeltaBadge=({curr,prev,invert=false})=>{
     const d=delta(curr,prev);
     if(d===null)return null;
     const good=invert?d<0:d>=0;
-    return <span style={{fontSize:11,fontWeight:700,color:good?T.green:T.red}}>{good?"↑":"↓"}{Math.abs(d).toFixed(1)}%</span>;
+    return <span style={{fontSize:11,fontWeight:700,color:good?MC.green:MC.red}}>{good?"↑":"↓"}{Math.abs(d).toFixed(1)}%</span>;
   };
 
   const rows=rendData?.rows||[];
@@ -24895,6 +24899,54 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         {showZero&&(()=>{const zy=H-((0-min)/rng)*(H*0.85)-H*0.05;return <line x1={0} y1={zy} x2={W} y2={zy} stroke={color} strokeWidth={0.5} strokeOpacity={0.35} strokeDasharray="2,2"/>;})()}
         <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
       </svg>
+    );
+  };
+
+  // ── Sistema de cards de métricas (compartido: Global / Tienda / ML) ──
+  // Todas del mismo tamaño; se arrastran SOLO desde la agarradera ⠿ de la
+  // esquina (arrastrar la card entera molestaba al querer seleccionar/scrollear).
+  // Orden persistido por vista en vis[orderKey].
+  const cardsOrdered = (cards, orderKey) => {
+    const order = Array.isArray(vis[orderKey]) ? vis[orderKey] : (orderKey==="cardsOrder" && Array.isArray(vis.secKpisOrder) ? vis.secKpisOrder : []);
+    return [...cards].sort((a,b)=>{ const ia=order.indexOf(a.label), ib=order.indexOf(b.label); return (ia<0?999:ia)-(ib<0?999:ib); });
+  };
+  const cardsReorder = (cards, orderKey, fromLbl, toLbl) => {
+    if(!fromLbl||!toLbl||fromLbl===toLbl) return;
+    const cur = cardsOrdered(cards, orderKey).map(k=>k.label);
+    const fi=cur.indexOf(fromLbl); if(fi<0) return;
+    cur.splice(fi,1);
+    const ti=cur.indexOf(toLbl);
+    cur.splice(ti<0?cur.length:ti,0,fromLbl);
+    updVis({[orderKey]:cur});
+  };
+  const renderCards = (cards, orderKey, filter) => {
+    const ordered = cardsOrdered(cards, orderKey);
+    const visibleCards = filter ? ordered.filter(filter) : ordered;
+    return (
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:10,marginBottom:18}}>
+        {visibleCards.map(k=>(
+          <div key={k.label}
+            onDragOver={e=>e.preventDefault()}
+            onDrop={e=>{e.preventDefault(); cardsReorder(cards, orderKey, dragKpi, k.label); setDragKpi(null);}}
+            style={{background:T.card,border:`1px solid ${k.bad?MC.red+"44":T.border}`,borderRadius:14,padding:"14px 16px 12px",position:"relative",overflow:"hidden",minHeight:112,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s"}}>
+            <span draggable
+              onDragStart={e=>{ setDragKpi(k.label); try{e.dataTransfer.effectAllowed="move";}catch(_){} }}
+              onDragEnd={()=>setDragKpi(null)}
+              title="Arrastrá para reordenar"
+              style={{position:"absolute",top:9,right:10,cursor:"grab",color:T.textSm,opacity:0.4,fontSize:11,lineHeight:1,userSelect:"none"}}>⠿</span>
+            <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:7,paddingRight:16}}>
+              {k.accent && <span style={{width:6,height:6,borderRadius:"50%",background:k.accent,display:"inline-block",flexShrink:0}}/>}
+              {k.label}
+            </div>
+            <div style={{fontSize:22,fontWeight:800,color:k.valColor||(k.bad?MC.red:T.text),letterSpacing:-0.8,lineHeight:1,marginBottom:5,fontVariantNumeric:"tabular-nums"}}>{k.val}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:k.spk?8:0}}>
+              <span style={{fontSize:9,color:T.textSm}}>{k.hint}</span>
+              {hasPrev && k.c!=null && k.p!=null && <DeltaBadge curr={k.c} prev={k.p} invert={k.inv}/>}
+            </div>
+            {k.spk && <div style={{marginTop:"auto"}}><Spk vals={k.spk} color={k.accent||T.textSm} h={28} w={140} showZero={k.zero}/></div>}
+          </div>
+        ))}
+      </div>
     );
   };
 
@@ -25188,10 +25240,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               trae sparkline diario Y delta vs período anterior. */}
           {(()=>{
             const CARDS=[
-              {label:"Profit",      val:fmtM(tot.profit),    c:tot.profit,     p:prevTot.profit,     hero:true, color:(tot.profit||0)>=0?T.green:T.red, hint:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
-              {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, color:T.blue,   hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue)},
-              {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, color:T.orange, hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
-              {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, color:T.accent, hint:"Tras comisiones",        spk:dailyRows.map(r=>r["Net Revenue"])},
+              {label:"Profit",      val:fmtM(tot.profit),    c:tot.profit,     p:prevTot.profit,     hero:true, accent:(tot.profit||0)>=0?MC.green:MC.red, valColor:(tot.profit||0)>=0?MC.green:MC.red, hint:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
+              {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, accent:MC.blue,   hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue)},
+              {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, accent:MC.gold,   hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
+              {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, accent:MC.violet, hint:"Tras comisiones",        spk:dailyRows.map(r=>r["Net Revenue"])},
               {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,     hint:"Con revenue",            spk:dailyRows.map(r=>r["Ordenes > $0"]), bad:!((tot.orders||0)>0)},
               {label:"ROAS",        val:fmtX(tot.roas),      c:tot.roas,       p:prevTot.roas,       hint:`meta ≥ ${metas.roas}x`,  spk:dailyRows.map(r=>r.ROAS||0), bad:(tot.roas||0)<metas.roas},
               {label:"True ROAS",   val:fmtX(tot.trueRoas),  c:tot.trueRoas,   p:prevTot.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, spk:dailyRows.map(r=>r["True ROAS"]||0), bad:(tot.trueRoas||0)<metas.trueRoas},
@@ -25203,54 +25255,24 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"Break Even",  val:fmtX(tot.breakEvenRoas), c:tot.breakEvenRoas, p:prevTot.breakEvenRoas, hint:"ROAS de equilibrio", inv:true},
               {label:"Días profit", val:`${profitDays}/${dailyRows.length}`, hint:"Días positivos", bad:profitDays<lossDays},
             ];
-            const order = Array.isArray(vis.cardsOrder) ? vis.cardsOrder : (Array.isArray(vis.secKpisOrder) ? vis.secKpisOrder : []);
-            const ordered = [...CARDS].sort((a,b)=>{ const ia=order.indexOf(a.label), ib=order.indexOf(b.label); return (ia<0?999:ia)-(ib<0?999:ib); });
-            const reorder = (fromLbl, toLbl) => {
-              if(!fromLbl||!toLbl||fromLbl===toLbl) return;
-              const cur = ordered.map(k=>k.label);
-              const fi=cur.indexOf(fromLbl); if(fi<0) return;
-              cur.splice(fi,1);
-              const ti=cur.indexOf(toLbl);
-              cur.splice(ti<0?cur.length:ti,0,fromLbl);
-              updVis({cardsOrder:cur});
-            };
-            const visibleCards = ordered.filter(k=> vis.secKpis[k.label]!==false && (k.hero || vis.sec!==false));
             return (<>
               {editSecKpis && (
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px"}}>
-                  <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Elegí qué cards mostrar · arrastrá (acá o en el grid) para reordenar:</span>
-                  {ordered.map(k=>{
+                  <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Elegí qué cards mostrar · arrastrá (acá o desde la agarradera ⠿ del grid) para reordenar:</span>
+                  {cardsOrdered(CARDS,"cardsOrder").map(k=>{
                     const on=vis.secKpis[k.label]!==false;
                     return <button key={k.label}
                       draggable
                       onDragStart={()=>setDragKpi(k.label)}
                       onDragOver={e=>e.preventDefault()}
-                      onDrop={e=>{e.preventDefault(); reorder(dragKpi, k.label); setDragKpi(null);}}
+                      onDrop={e=>{e.preventDefault(); cardsReorder(CARDS,"cardsOrder",dragKpi,k.label); setDragKpi(null);}}
                       onDragEnd={()=>setDragKpi(null)}
                       onClick={()=>updVis({secKpis:{...vis.secKpis,[k.label]:!on}})}
                       style={{fontSize:11,padding:"4px 10px",borderRadius:DS.r.full,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid:"transparent",color:on?"#fff":T.textMd,cursor:"grab",opacity:dragKpi===k.label?0.4:1,fontFamily:"'Inter',system-ui,sans-serif"}}>⠿ {k.label}</button>;
                   })}
                 </div>
               )}
-              {vis.main!==false && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:10,marginBottom:18}}>
-                {visibleCards.map(k=>(
-                  <div key={k.label}
-                    draggable
-                    onDragStart={()=>setDragKpi(k.label)}
-                    onDragOver={e=>e.preventDefault()}
-                    onDrop={e=>{e.preventDefault(); reorder(dragKpi,k.label); setDragKpi(null);}}
-                    onDragEnd={()=>setDragKpi(null)}
-                    style={{background:T.card,border:`1px solid ${k.color?k.color+"28":(k.bad?T.red+"33":T.border)}`,borderRadius:14,padding:"14px 16px 12px",position:"relative",overflow:"hidden",cursor:"grab",opacity:dragKpi===k.label?0.4:1,minHeight:112,display:"flex",flexDirection:"column"}}>
-                    <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
-                    <div style={{fontSize:22,fontWeight:800,color:k.color||(k.bad?T.red:T.text),letterSpacing:-0.8,lineHeight:1,marginBottom:5}}>{k.val}</div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:k.spk?8:0}}>
-                      <span style={{fontSize:9,color:T.textSm}}>{k.hint}</span>
-                      {hasPrev && k.c!=null && k.p!=null && <DeltaBadge curr={k.c} prev={k.p} invert={k.inv}/>}
-                    </div>
-                    {k.spk && <div style={{marginTop:"auto"}}><Spk vals={k.spk} color={k.color||T.textSm} h={28} w={140} showZero={k.zero}/></div>}
-                  </div>
-                ))}
-              </div>}
+              {vis.main!==false && renderCards(CARDS, "cardsOrder", k=> vis.secKpis[k.label]!==false && (k.hero || vis.sec!==false))}
             </>);
           })()}
 
@@ -25516,46 +25538,23 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 <span style={{width:8,height:8,borderRadius:"50%",background:dotColor,flexShrink:0}}/>{titulo}
                 <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· solo este canal · sin costos fijos/adicionales (son globales)</span>
               </div>
-              {/* Hero del canal */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
-                {[
-                  {label:"Profit",      val:cSel.profit,     prev:cPrev?.profit,     color:(cSel.profit||0)>=0?T.green:T.red, desc:(cSel.profit||0)>=0?"Ganancia neta del canal":"Pérdida neta del canal", spk:canalRows.map(r=>r.Profit), zero:true},
-                  {label:"Revenue",     val:cSel.revenue,    prev:cPrev?.revenue,    color:T.blue,   desc:"Ingreso bruto del canal", spk:canalRows.map(r=>r.Revenue)},
-                  {label:"Ad Spend",    val:cSel.adSpend,    prev:cPrev?.adSpend,    color:T.orange, desc:esMl?"Mercado Ads (manual)":"Meta Ads", spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
-                  {label:"Net Revenue", val:cSel.netRevenue, prev:cPrev?.netRevenue, color:T.accent, desc:"Tras comisiones e impuestos", spk:canalRows.map(r=>r["Net Revenue"])},
-                ].map(k=>(
-                  <div key={k.label} style={{background:T.card,border:`1px solid ${k.color}28`,borderRadius:14,padding:"18px 18px 14px",position:"relative",overflow:"hidden"}}>
-                    <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{k.label}</div>
-                    <div style={{fontSize:26,fontWeight:800,color:k.color,letterSpacing:-1,lineHeight:1,marginBottom:4}}>{fmtM(k.val)}</div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-                      <span style={{fontSize:10,color:T.textSm}}>{k.desc}</span>
-                      {cPrev&&hasPrev&&<DeltaBadge curr={k.val} prev={k.prev} invert={k.inv}/>}
-                    </div>
-                    <Spk vals={k.spk} color={k.color} h={38} w={140} showZero={k.zero}/>
-                  </div>
-                ))}
-              </div>
-              {/* KPIs del canal */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:8,marginBottom:18}}>
-                {[
-                  {label:"ROAS",          val:fmtX(cSel.roas),          good:(cSel.roas||0)>=metas.roas||!(cSel.adSpend>0),  hint:`meta ≥ ${metas.roas}x`},
-                  {label:"True ROAS",     val:fmtX(cSel.trueRoas),      good:(cSel.trueRoas||0)>=metas.trueRoas||!(cSel.adSpend>0), hint:`meta ≥ ${metas.trueRoas}x`},
-                  {label:"CPA real",      val:fmtM(cSel.cpa),           good:true,                  hint:"Ad Spend / Órdenes"},
-                  {label:"CPA Break Even",val:fmtM(cSel.cpaBreakEven),  good:true,                  hint:"CPA máx. antes de perder"},
-                  {label:"Órdenes",       val:fmtInt(cSel.orders),      good:(cSel.orders||0)>0,    hint:"Con revenue"},
-                  {label:"Margen",        val:fmtPct(cSel.margin),      good:(cSel.margin||0)>metas.margen/100, hint:`meta > ${metas.margen}%`},
-                  {label:"MER %",         val:fmtPct(cSel.mer),         good:true,                  hint:"Ad Spend / Revenue"},
-                  {label:"Break Even",    val:fmtX(cSel.breakEvenRoas), good:true,                  hint:"ROAS de equilibrio"},
-                  {label:"AOV",           val:fmtM(cSel.aov),           good:true,                  hint:"Ticket promedio"},
-                  {label:"AOV Neto",      val:fmtM(cSel.aovNeto),       good:true,                  hint:"Ticket neto promedio"},
-                ].map(k=>(
-                  <div key={k.label} style={{background:T.card,border:`1px solid ${k.good?T.border:T.red+"33"}`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
-                    <div style={{fontSize:9,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>{k.label}</div>
-                    <div style={{fontSize:15,fontWeight:800,color:k.good?T.text:T.red,letterSpacing:-0.5}}>{k.val}</div>
-                    <div style={{fontSize:9,color:T.textSm,marginTop:3}}>{k.hint}</div>
-                  </div>
-                ))}
-              </div>
+              {/* Cards del canal — mismo sistema uniforme y arrastrable que Global */}
+              {renderCards([
+                {label:"Profit",      val:fmtM(cSel.profit),    c:cSel.profit,     p:cPrev?.profit,     accent:(cSel.profit||0)>=0?MC.green:MC.red, valColor:(cSel.profit||0)>=0?MC.green:MC.red, hint:(cSel.profit||0)>=0?"Ganancia neta del canal":"Pérdida neta del canal", spk:canalRows.map(r=>r.Profit), zero:true},
+                {label:"Revenue",     val:fmtM(cSel.revenue),   c:cSel.revenue,    p:cPrev?.revenue,    accent:MC.blue,   hint:"Facturación del canal", spk:canalRows.map(r=>r.Revenue)},
+                {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    accent:MC.gold,   hint:esMl?"Mercado Ads (manual)":"Meta Ads", spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
+                {label:"Net Revenue", val:fmtM(cSel.netRevenue),c:cSel.netRevenue, p:cPrev?.netRevenue, accent:MC.violet, hint:"Tras comisiones e impuestos", spk:canalRows.map(r=>r["Net Revenue"])},
+                {label:"Órdenes",     val:fmtInt(cSel.orders),  c:cSel.orders,     p:cPrev?.orders,     hint:"Con revenue", spk:canalRows.map(r=>r["Ordenes > $0"]), bad:!((cSel.orders||0)>0)},
+                {label:"ROAS",        val:fmtX(cSel.roas),      c:cSel.roas,       p:cPrev?.roas,       hint:`meta ≥ ${metas.roas}x`, bad:(cSel.adSpend>0)&&(cSel.roas||0)<metas.roas},
+                {label:"True ROAS",   val:fmtX(cSel.trueRoas),  c:cSel.trueRoas,   p:cPrev?.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, bad:(cSel.adSpend>0)&&(cSel.trueRoas||0)<metas.trueRoas},
+                {label:"CPA real",    val:fmtM(cSel.cpa),       c:cSel.cpa,        p:cPrev?.cpa,        hint:"Ad Spend / Órdenes", inv:true},
+                {label:"CPA Break Even", val:fmtM(cSel.cpaBreakEven), c:cSel.cpaBreakEven, p:cPrev?.cpaBreakEven, hint:"CPA máx. antes de perder"},
+                {label:"AOV",         val:fmtM(cSel.aov),       c:cSel.aov,        p:cPrev?.aov,        hint:"Ticket promedio"},
+                {label:"AOV Neto",    val:fmtM(cSel.aovNeto),   c:cSel.aovNeto,    p:cPrev?.aovNeto,    hint:"Ticket neto promedio"},
+                {label:"Margen",      val:fmtPct(cSel.margin),  c:cSel.margin,     p:cPrev?.margin,     hint:`meta > ${metas.margen}%`, bad:(cSel.margin||0)<=metas.margen/100},
+                {label:"MER %",       val:fmtPct(cSel.mer),     c:cSel.mer,        p:cPrev?.mer,        hint:"Ad Spend / Revenue", inv:true},
+                {label:"Break Even",  val:fmtX(cSel.breakEvenRoas), c:cSel.breakEvenRoas, p:cPrev?.breakEvenRoas, hint:"ROAS de equilibrio", inv:true},
+              ], esMl?"cardsOrderMl":"cardsOrderTienda")}
               {/* Gráfico del canal */}
               <RendChart T={T} rows={canalRows} cv={cv} fmtM={fmtM} fmtDate={fmtDate}/>
               {/* Costos del canal */}
