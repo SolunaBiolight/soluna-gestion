@@ -338,6 +338,29 @@ async function mlCouponFees(token, beginISO, endISO) {
   return map;
 }
 
+// Publicaciones REALES del vendedor de ML (id → título), aunque no se hayan
+// vendido — para poder cargarles el costo (COGS) en Márgenes. Devuelve {id: title}.
+async function mlPublications(sellerId, token) {
+  const out = {}, ids = [];
+  try {
+    for (let offset = 0; offset < 1000; offset += 50) {
+      const r = await fetchT(`https://api.mercadolibre.com/users/${sellerId}/items/search?limit=50&offset=${offset}`, { headers: ML_H(token) });
+      if (!r.ok) break;
+      const j = await r.json();
+      const res = j.results || [];
+      ids.push(...res);
+      if (res.length < 50) break;
+    }
+    for (let i = 0; i < ids.length; i += 20) {
+      const r = await fetchT(`https://api.mercadolibre.com/items?ids=${ids.slice(i, i+20).join(",")}&attributes=id,title`, { headers: ML_H(token) });
+      if (!r.ok) continue;
+      const arr = await r.json();
+      for (const it of (arr || [])) { const b = it.body || it; if (b?.id) out[b.id] = b.title || b.id; }
+    }
+  } catch (_) {}
+  return out;
+}
+
 function processML(orders, couponMap = {}) {
   const map={}, daily={}, dailyRevenue={}, dailyOrders={}, byProv={}, byHour={}, byPayment={}, byVariant={}, byVariantRev={}, comisionMLDaily={};
   let comisionML=0; const ordersDetail=[];
@@ -549,12 +572,19 @@ export default async function handler(req, res) {
         // ocultaría facturación real (exactamente el bug de los totales
         // fluctuantes). mlCouponFees es best-effort (afecta un descuento
         // menor, no el total de ventas); mlOrders no.
-        const [mlOrd, coupons] = await Promise.all([
+        const [mlOrd, coupons, pubs] = await Promise.all([
           mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate),
           mlCouponFees(mlToken, sinceDate, untilDate).catch(() => ({})),
+          mlPublications(mlSellerId, mlToken).catch(() => ({})),
         ]);
         const out = processML(mlOrd, coupons);
         out.truncated = !!mlOrd.truncated;
+        // Sumar publicaciones que NO se vendieron (units 0) para poder costearlas.
+        out.map = out.map || {};
+        for (const [id, title] of Object.entries(pubs || {})) {
+          if (!out.map[id]) out.map[id] = { nombre: title, units: 0 };
+          else if (!out.map[id].nombre) out.map[id].nombre = title;
+        }
         return out;
       };
       if(platform==="shopify"){
