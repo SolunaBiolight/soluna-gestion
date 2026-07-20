@@ -223,7 +223,13 @@ function processTN(orders) {
   for(const o of orders){
     if(o.status==="cancelled" || o.cancelled_at){ cancelledExcluded++; continue; }
     if(o.payment_status==="partially_refunded") partialRefundOrders++;
-    const dt=o.created_at||"";
+    // TN devuelve created_at en UTC (+0000). Se convierte a hora argentina (UTC-3,
+    // sin DST) ANTES de cortar día/hora — sino las ventas de 21:00 a 24:00 caían
+    // al día siguiente y el corte diario/mensual no coincidía con el admin de TN
+    // (y el histograma por hora quedaba corrido 3 horas).
+    const rawDt=o.created_at||"";
+    const dtMs=rawDt ? Date.parse(rawDt) : NaN;
+    const dt=isNaN(dtMs) ? "" : new Date(dtMs-3*3600000).toISOString().slice(0,19);
     const day=dt.slice(0,10);
     const hour=dt.slice(11,13);
     const prov=o.shipping_address?.province||o.billing_address?.province||"Sin provincia";

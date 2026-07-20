@@ -1150,9 +1150,10 @@ export default async function handler(req, res) {
       } : null;
 
       // engineV: versión del motor de métricas. Se sube cuando cambia la DEFINICIÓN
-      // de una métrica (ej: v2 = facturación TN incluye envío cobrado al cliente)
-      // para que los caches del cliente (P&L mensual) descarten resultados viejos.
-      const responseBody = { engineV: 2, rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
+      // de una métrica (v2 = facturación TN incluye envío cobrado al cliente;
+      // v3 = corte de día TN en hora argentina, no UTC) para que los caches del
+      // cliente (P&L mensual) descarten resultados viejos.
+      const responseBody = { engineV: 3, rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,
