@@ -760,10 +760,13 @@ export default async function handler(req, res) {
         };
       }
       // ── Envío de ML: el COSTO REAL que ML le cobra al vendedor ──
-      // ML cobra el envío también en Mercado Envíos (el "Cargo por envío" del
-      // detalle de MP = shipping_option.list_cost del shipment). Antes lo poníamos
-      // en $0 y inflaba el margen. Ahora: Mercado Envíos → list_cost real; Flex
-      // (self_service, el vendedor lo paga al correo) → promedio configurado.
+      // Mercado Envíos: /shipments/{id}/costs → senders[].cost = lo que ML le
+      // cobra al VENDEDOR de verdad: con los descuentos por reputación aplicados
+      // y en $0 si el envío lo pagó el comprador. Antes usábamos
+      // shipping_option.list_cost (tarifa plena) y el costo quedaba INFLADO
+      // (ej: $3.1M vs ~$2.2M reales en un rango de 19 días). Fallback si /costs
+      // falla: list_cost (mejor pasarse que $0). Flex (self_service, el vendedor
+      // le paga al correo por fuera) → costo propio configurado.
       const mlLogi = {};
       try {
         const tokML = mlVentasAcc === "__none__" ? null : await getValidMLToken(db, uid, mlVentasAcc); // cuenta de ventas ML
@@ -778,7 +781,20 @@ export default async function handler(req, res) {
                 const r = await fetch(`https://api.mercadolibre.com/shipments/${id}`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
                 if (!r.ok) return [id, null];
                 const j = await r.json();
-                return [id, { lt: j.logistic_type || null, cost: parseFloat(j.shipping_option?.list_cost) || 0 }];
+                const lt = j.logistic_type || null;
+                let cost = parseFloat(j.shipping_option?.list_cost) || 0;
+                if (lt !== "self_service") {
+                  try {
+                    const rc = await fetch(`https://api.mercadolibre.com/shipments/${id}/costs`, { headers: { Authorization:`Bearer ${tokML.accessToken}` } });
+                    if (rc.ok) {
+                      const jc = await rc.json();
+                      if (Array.isArray(jc.senders) && jc.senders.length) {
+                        cost = jc.senders.reduce((s,x)=>s+(parseFloat(x.cost)||0),0);
+                      }
+                    }
+                  } catch(_) {}
+                }
+                return [id, { lt, cost }];
               } catch(_) { return [id, null]; }
             }));
             for (const [id,v] of rs) if (v) mlLogi[id] = v;
@@ -1158,9 +1174,9 @@ export default async function handler(req, res) {
 
       // engineV: versión del motor de métricas. Se sube cuando cambia la DEFINICIÓN
       // de una métrica (v2 = facturación TN incluye envío cobrado al cliente;
-      // v3 = corte de día TN en hora argentina, no UTC) para que los caches del
+      // v3 = corte de día TN en hora argentina; v4 = envío ML real con descuentos, senders.cost) para que los caches del
       // cliente (P&L mensual) descarten resultados viejos.
-      const responseBody = { engineV: 3, rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
+      const responseBody = { engineV: 4, rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,

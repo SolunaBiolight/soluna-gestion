@@ -22544,7 +22544,7 @@ function MargenesPnl({ T, uid }) {
     try {
       const c = JSON.parse(localStorage.getItem(cacheKey(mes))||"null");
       if (!c?.totals) return null;
-      if (c.v !== 3) return null; // motor viejo (pre-envío en facturación): recalcular
+      if (c.v !== 4) return null; // motor viejo (pre-envío en facturación): recalcular
       if (mes === mesActual && Date.now()-(c.ts||0) > 3600000) return null; // mes corriente: refresco horario
       return c.totals;
     } catch(_) { return null; }
@@ -22566,7 +22566,7 @@ function MargenesPnl({ T, uid }) {
       // Primero la caché del servidor (si otro dispositivo o el warmer ya
       // calculó este mes, es instantáneo); si no hay, cálculo en vivo (~30s).
       let j = null;
-      if (!force) { try { const rc = await fetch(base+"&cache=only"); const jc = await rc.json(); if (!jc.noCache && !jc.error && jc.totals && jc.engineV === 3) j = jc; } catch(_) {} }
+      if (!force) { try { const rc = await fetch(base+"&cache=only"); const jc = await rc.json(); if (!jc.noCache && !jc.error && jc.totals && jc.engineV === 4) j = jc; } catch(_) {} }
       if (!j) {
         const r = await fetch(base);
         j = await r.json();
@@ -22574,7 +22574,7 @@ function MargenesPnl({ T, uid }) {
       }
       const t = j.totals || {};
       setMeses(p=>({...p,[mes]:t}));
-      try { localStorage.setItem(cacheKey(mes), JSON.stringify({ v:3, ts:Date.now(), totals:t })); } catch(_) {}
+      try { localStorage.setItem(cacheKey(mes), JSON.stringify({ v:4, ts:Date.now(), totals:t })); } catch(_) {}
     } catch(e) { setErrorMes(p=>({...p,[mes]:e.message})); }
     finally { setCargando(null); }
   };
