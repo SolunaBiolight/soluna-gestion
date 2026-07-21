@@ -25,7 +25,6 @@ Actualmente en uso real por Soluna Biolight (anteojos blue light blocker).
 │   ├── copilot.js       ← Copilot IA (Gemini + snapshot determinista de Firestore)
 │   ├── _auth.js         ← verifyAuth (Firebase ID token) — no expuesto por Vercel
 │   ├── integrations.js  ← OAuth TN + Shopify
-│   ├── audio.js         ← TTS Gemini
 │   ├── tn-callback.js   ← Callback OAuth TN
 │   ├── meta-callback.js ← Callback OAuth Meta
 │   ├── google-ads.js    ← Google Ads (oauth_start/status/disconnect; gasto en orders.js)
@@ -67,7 +66,6 @@ GOOGLE_ADS_LOGIN_CUSTOMER_ID  ← opcional, id del MCC sin guiones
 | `AppStock` | Stock | Analytics conectado a TN/Shopify/ML |
 | `AppMetaAds` | Meta Ads | Campañas Facebook/Instagram |
 | `AppArca` | ARCA | Facturación electrónica AFIP |
-| `AppAudioStudio` | Audio | TTS con Gemini |
 | `ConfigScreen` | Config | Integraciones, tokens, configuración |
 | `AppPlanes` | Planes | Gestión de suscripción |
 | `AppAdmin` | Admin | Panel de administración (solo admins) |
@@ -161,6 +159,23 @@ growith_margenes_fullnums  → "1" (números completos en Márgenes, sin K/M)
 growith_margenes_usd       → "1" (dashboard Márgenes en USD)
 growith_reproc_{uid}       → timestamp del último reprocesamiento de 60 días
 growith_pnl_{uid}_{YYYY-MM} → JSON cache del P&L mensual: {ts, totals} (meses cerrados: permanente; mes actual: TTL 1h)
+growith_accounts           → JSON[] cuentas recordadas en login (email, nombre, provider)
+growith_switch_to          → JSON {email,provider} temporal al cambiar de cuenta (se borra al usarse)
+growith_compaid_{uid}      → JSON comisiones de cupones marcadas como pagadas
+growith_comisionOverrides  → JSON overrides de % comisión por cupón
+growith_mpComision         → número, % comisión MP default en Canjes (12)
+growith_meta_roas_be       → número, ROAS break-even del análisis Meta (2)
+growith_meta_cols          → JSON[] columnas visibles de la tabla de análisis Meta
+growith_meta_lasteval_{accId} → timestamp última evaluación de reglas Meta
+growith_auto_publish_{uid} → "1" auto-publicar creativos Meta
+growith_alertNotif_{uid}   → JSON config notificaciones de alertas: {email,whatsapp,enabled}
+growith_stock_autosync_{uid} → timestamp del último autosync de stock
+growith_conceptos_{uid}    → JSON conceptos frecuentes del facturador ARCA
+growith_colab_banner_{token} / growith_pwa_banner_{token} → "1" banners cerrados en portal colaborador
+growith_expiry_dismiss_{uid}_{fecha} → "1" banner de vencimiento de plan/trial cerrado ese día
+(sessionStorage) growith_copilot_msgs → JSON[] historial del chat Copilot
+(sessionStorage) growith_colab_token / growith_board_id_{token} → sesión de portal colaborador / identidad de tablero compartido
+growith_orders_{uid} / growith_orders_v3 → LEGACY, solo se borran (purga de cache viejo de órdenes)
 ```
 
 ### Flujo de git

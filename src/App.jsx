@@ -1800,33 +1800,20 @@ function PageView({children, pageKey, T}) {
 
 // ─── UpgradeWall — pantalla de upgrade cuando el plan no alcanza ──────────────
 function UpgradeWall({T, requiredPlan, onNavigate}) {
-  const PLAN_INFO = {
-    plus: {
-      nombre:"Pro", icon:"", color:"#6366f1",
-      precio_usdt:49, precio_ars:49000,
-      features:[
-        "Stock multi-canal (Tienda Nube + Shopify + ML)",
-        "Facturación ARCA / AFIP completa",
-        "Envíos ilimitados + etiquetas PDF con SKU",
-        "Reclamos ilimitados + auto-tracking Andreani",
-        "Meta Ads (Facebook + Instagram)",
-        "Equipo hasta 5 personas + tareas",
-        "Audio Studio (TTS Gemini)",
-      ],
-    },
-    full: {
-      nombre:"Scale", icon:"", color:"#a855f7",
-      precio_usdt:89, precio_ars:89000,
-      features:[
-        "Todo Pro sin restricciones",
-        "Tiendas y equipo ilimitados",
-        "Soporte prioritario WhatsApp 24/7",
-        "Onboarding personalizado",
-        "API access (próximamente)",
-      ],
-    },
+  // Plan único Pro (id Firestore: "plus") — requiredPlan queda por compatibilidad
+  const info = {
+    nombre:"Pro", icon:"", color:"#6366f1",
+    precio_usdt:79, precio_ars:79000,
+    features:[
+      "Stock multi-canal (Tienda Nube + Shopify + ML)",
+      "Facturación ARCA / AFIP completa",
+      "Envíos ilimitados + etiquetas PDF con SKU",
+      "Reclamos ilimitados + auto-tracking Andreani",
+      "Meta Ads, Google Ads y Mercado Ads en el profit",
+      "Gestión de equipo + tareas ilimitadas",
+      "Tiendas ilimitadas",
+    ],
   };
-  const info = PLAN_INFO[requiredPlan] || PLAN_INFO.plus;
   return (
     <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:DS.sp["4xl"],minHeight:"60vh"}}>
       <div style={{maxWidth:460,width:"100%",textAlign:"center"}}>
@@ -8972,7 +8959,6 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
       "Google Ads y Mercado Ads en el profit",
       "Gestión de equipo + tareas ilimitadas",
       "Canjes e influencers ilimitados",
-      "Audio Studio (TTS Gemini)",
       "Tiendas ilimitadas",
     ],
   };
@@ -9326,7 +9312,7 @@ function AppAdmin({T, user, onBack}) {
     try {
       const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${user.uid}`);
       const j=await r.json();
-      if(Array.isArray(j.adminOnlySections)) setSectionsConfig(j.adminOnlySections);
+      if(Array.isArray(j.adminOnlySections)) setSectionsConfig(j.adminOnlySections.filter(s=>s!=="rendimiento")); // "rendimiento" = id legacy muerto
     }catch(_){}
   }
 
@@ -9893,7 +9879,7 @@ function AppAdmin({T, user, onBack}) {
                     <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
                       <div>
                         <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Acceso Admin</div>
-                        <div style={{fontSize:11,color:T.textSm}}>Permite ver secciones exclusivas de administrador (Rendimiento, etc.)</div>
+                        <div style={{fontSize:11,color:T.textSm}}>Permite ver secciones exclusivas de administrador (Dashboard, etc.)</div>
                       </div>
                       <AsyncButton onClick={async()=>{
                         const d=await adminApi({action:"toggleAdmin",targetUid:u._id});
@@ -9944,7 +9930,7 @@ function AppAdmin({T, user, onBack}) {
 
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {[
-              {id:"rendimiento", label:"Rendimiento", icon:"M18 20V10M12 20V4M6 20v-6", desc:"Dashboard financiero automático (Revenue, Profit, ROAS, Ad Spend)"},
+              {id:"margenes", label:"Dashboard", icon:"M18 20V10M12 20V4M6 20v-6", desc:"Dashboard financiero automático (Revenue, Profit, ROAS, Ad Spend)"},
               {id:"meta",        label:"Meta Ads",    icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", desc:"Campañas Facebook e Instagram"},
               {id:"stock",       label:"Stock & Estadísticas", icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z", desc:"Analytics de ventas, inventario, alertas"},
               {id:"ml",          label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20z", desc:"Gestión de publicaciones de Mercado Libre"},
@@ -26063,7 +26049,9 @@ export default function App() {
   const [user,setUser]=useState(undefined); // undefined=loading, null=no auth, object=authed
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","copilot","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","cupones","contenido","stock","ml","tareas","rendimiento"];
+  const VALID_PAGES = ["home","copilot","margenes","arca","meta","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas"];
+  // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
+  const _aliasPage = (p) => p === "rendimiento" ? "margenes" : p;
   const _initialHash = (typeof window !== "undefined" && window.location.hash.replace(/^#\/?/, "")) || "home";
   // Detectar ruta pública de colaborador: #/colaborador/TOKEN
   const _colabMatch = _initialHash.match(/^colaborador\/([a-z0-9]{8,})/i);
@@ -26077,7 +26065,7 @@ export default function App() {
   // Tablero compartido: #/tablero/BOARD_TOKEN
   const _boardMatch = _initialHash.match(/^tablero\/([a-z0-9]{8,})/i);
   const [boardToken, setBoardToken] = useState(_boardMatch ? _boardMatch[1] : null);
-  const [page,_setPage]=useState(VALID_PAGES.includes(_initialHash.split("/")[0]) ? _initialHash.split("/")[0] : "home");
+  const [page,_setPage]=useState(()=>{const p=_aliasPage(_initialHash.split("/")[0]);return VALID_PAGES.includes(p)?p:"home";});
   const setPage = (p) => {
     _setPage(p);
     if (typeof window !== "undefined") {
@@ -26099,7 +26087,7 @@ export default function App() {
       if (bm) { setBoardToken(bm[1]); setColabToken(null); setEditorProdToken(null); return; }
       try{sessionStorage.removeItem("growith_colab_token");}catch(e){}
       setColabToken(null); setEditorProdToken(null); setBoardToken(null);
-      const hPage = h.split("/")[0];
+      const hPage = _aliasPage(h.split("/")[0]);
       if (VALID_PAGES.includes(hPage)) _setPage(hPage);
     };
     window.addEventListener("hashchange", onHash);
@@ -26160,7 +26148,7 @@ export default function App() {
   const [planExpiry,setPlanExpiry]=useState(null); // Date or null
   const [trialEnd,setTrialEnd]=useState(null);    // Date or null — fin del período de prueba
   const [isAdmin,setIsAdmin]=useState(false);
-  const [adminOnlySections,setAdminOnlySections]=useState(["rendimiento"]); // default, se sobreescribe al cargar
+  const [adminOnlySections,setAdminOnlySections]=useState([]); // default, se sobreescribe al cargar ("rendimiento" legacy = "margenes")
 
   const ADMIN_UIDS=["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"]; // ADMIN_UID_2: completar cuando tengas el segundo
   const USDT_ADDRESS="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; // ← completar: dirección TRC20
@@ -26302,7 +26290,7 @@ export default function App() {
             // o sesión persistida sin re-login). Lo creamos acá para que las
             // integraciones OAuth (Shopify/ML/TN/Meta) no fallen con
             // "Tu usuario no se encontró en Firestore".
-            const trialEnd = new Date(Date.now() + 7*24*60*60*1000);
+            const trialEnd = new Date(Date.now() + 14*24*60*60*1000);
             try { await setDoc(userRef, { uid:u.uid, email:u.email||"", nombre:u.displayName||u.email?.split("@")[0]||"", createdAt: serverTimestamp(), plan:"free", trialEnd, stores:[] }, { merge:true }); } catch(_){}
             setUserPlan("free");
             setTrialEnd(trialEnd);
@@ -26312,7 +26300,7 @@ export default function App() {
         // Load sections config (available for all users)
         try {
           const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${u.uid}`);
-          if(r.ok){const j=await r.json();if(Array.isArray(j.adminOnlySections))setAdminOnlySections(j.adminOnlySections);}
+          if(r.ok){const j=await r.json();if(Array.isArray(j.adminOnlySections))setAdminOnlySections(j.adminOnlySections.filter(s=>s!=="rendimiento"));}
         }catch(_){}
       } else {
         setUserPlan("free");
@@ -26392,7 +26380,7 @@ export default function App() {
       }
       const tn=d.stores?.find(s=>s.type==="tiendanube");
       const shopify=d.stores?.find(s=>s.type==="shopify");
-      const ml=d.stores?.find(s=>s.type==="meli");
+      const ml=d.stores?.find(s=>s.type==="mercadolibre"||s.type==="meli");
       const meta=(d.metaAccounts||[]).length>0;
       setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,meta});
       const newId=tn?.storeId||null;
@@ -26674,14 +26662,12 @@ export default function App() {
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="copilot") pageContent = <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage}/></PageView>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
-  // Ruta legacy #/rendimiento → mismo dashboard de Márgenes, con navegación completa.
-  else if(page==="rendimiento") pageContent = adminGate("margenes") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={(t)=>{setMargenesTab(t); setPage("margenes");}}/></PageView>;
   else if(page==="margenes") pageContent = adminGate("margenes") || <PageView T={T} pageKey="margenes"><AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("plus") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
   else if(page==="stock") pageContent = adminGate("stock") || planGate("plus") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
   else if(page==="ml") pageContent = adminGate("ml") || planGate("plus") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
-  else if(page==="meta") pageContent = adminGate("meta") || planGate("full") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
-  else if(page==="tareas") pageContent = adminGate("tareas") || planGate("full") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
+  else if(page==="meta") pageContent = adminGate("meta") || planGate("plus") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;
+  else if(page==="tareas") pageContent = adminGate("tareas") || planGate("plus") || <PageView T={T} pageKey="tareas"><AppTareas T={T} user={user} onHome={()=>setPage("home")} tab={tareasTab} setTab={setTareasTab} pendingOpenTaskId={pendingOpenTaskId} onPendingOpenTaskConsumed={()=>setPendingOpenTaskId(null)}/></PageView>;
   else if(page==="reclamos") pageContent = adminGate("reclamos") || <PageView T={T} pageKey="reclamos"><AppReclamos T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={fetchOrders} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} totalOrdersCount={totalOrdersCount} onGenerarCanje={(datos)=>{setPendingCanje(datos);setPage("canjes");}} view={reclamosView} setView={setReclamosView}/></PageView>;
   else if(page==="canjes") pageContent = adminGate("canjes") || <PageView T={T} pageKey="canjes"><AppCanjes T={T} fbStatus={fbStatus} user={user} onHome={()=>setPage("home")} pendingCanje={pendingCanje} onClearPendingCanje={()=>setPendingCanje(null)} initialDetail={pendingCanjeDetail} onClearInitialDetail={()=>setPendingCanjeDetail(null)} tab={canjesTab} setTab={setCanjesTab} orders={orders}/></PageView>;
   else if(page==="envios") pageContent = adminGate("envios") || <PageView T={T} pageKey="envios"><AppEnvios T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} tab={enviosTab} setTab={setEnviosTab}/></PageView>;

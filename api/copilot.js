@@ -180,7 +180,6 @@ const GUIA_APP = `## Mapa de Growith (secciones y para qué sirve cada una)
 - **Márgenes** (#/margenes): rentabilidad real. Config de costos: tab "Costos" (COGS por producto, impuestos, comisiones, envío, costos fijos). Vistas Global / Tienda Nube / ML. Tab "P&L" = resultado mensual. Las metas de ROAS/margen se configuran con el engranaje.
 - **Meta Ads** (#/metaads): análisis de campañas, biblioteca de anuncios con análisis IA, reglas automáticas (pausar/subir/bajar presupuesto), publicación de creativos. Requiere cuenta de Meta conectada (tab Cuenta o Config).
 - **ARCA** (#/arca): facturación electrónica AFIP.
-- **Audio** (#/audio): text-to-speech para creativos.
 - **Config** (#/config): conectar Tienda Nube, Shopify, Mercado Libre, Meta; tokens y equipo.
 - Ctrl+K abre el buscador de comandos.`;
 
