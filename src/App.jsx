@@ -46,7 +46,10 @@ async function ghSwitchAccount(email,provider){
   signOut(auth);
 }
 const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
+// OJO: NO pedir scopes sensibles (ej. drive.readonly) en el LOGIN — Google
+// muestra "app no verificada" y bloquea el ingreso a usuarios nuevos. El
+// permiso de Drive lo pide _requestDriveToken() a demanda, solo cuando alguien
+// usa el botón de Drive (Canjes), no en el login.
 
 // Owner email for existing data migration
 const OWNER_EMAIL = "soluna.biolight@gmail.com";
