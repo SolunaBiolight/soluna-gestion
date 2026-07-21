@@ -22868,6 +22868,29 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Persistencia server-side de la config (inventory_settings en Firestore) —
   // localStorage queda como cache local para el Home y como fallback offline.
   function pushSettings(patch){ if(!uid) return; fetch(`/api/inventory?action=settings_save&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(patch)}).catch(()=>{}); }
+  // Stock cruzado (Etapa 2): escribir stock central en TN/ML
+  const [syncMode,setSyncMode]=useState("off"); // off | simulacion | on
+  const [syncMlSep,setSyncMlSep]=useState(false);
+  const [syncPushing,setSyncPushing]=useState(false);
+  const [syncResults,setSyncResults]=useState(null); // {resumen, results, mode}
+  async function cambiarSyncMode(m){
+    if(m==="on"){
+      if(!await appConfirm("Vas a ACTIVAR el stock cruzado: a partir de ahora Growith va a escribir el stock del inventario central en Tienda Nube y Mercado Libre cada vez que cambie (venta, edición manual, sincronización).\n\nRecomendado: usá primero el modo Simulación y revisá los resultados.\n\n¿Activar la escritura real?",{danger:true,okLabel:"Activar escritura"})) return;
+    }
+    setSyncMode(m); pushSettings({sync_mode:m});
+    toast(m==="off"?"Stock cruzado apagado":m==="simulacion"?"Modo simulación activado — nada se escribe todavía":"Stock cruzado ACTIVADO ✓","success");
+  }
+  async function sincronizarAhora(){
+    setSyncPushing(true); setSyncResults(null);
+    try{
+      const r=await fetch(`/api/inventory?action=sync_push_all&uid=${uid}`,{method:"POST"});
+      const j=await r.json();
+      if(j.error) return toast(j.error,"error");
+      setSyncResults(j);
+      toast(j.mode==="simulacion"?`Simulación lista · ${j.resumen.simulados} cambios detectados · ${j.resumen.errores} errores`:`Sincronizado ✓ · ${j.resumen.escritos} escritos · ${j.resumen.errores} errores`, j.resumen.errores>0?"warning":"success");
+    }catch(e){ toast(e.message,"error"); }
+    finally{ setSyncPushing(false); }
+  }
   // Item delete confirm state
   const [deleteItemConfirm, setDeleteItemConfirm] = useState(null);
   const [showGuia, setShowGuia] = useState(false);
@@ -23216,6 +23239,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         setGlobalThreshold(s.alert_global || localGlobal || 14);
         setLeadTime(srvLT ? s.lead_times : (localLT||{}));
         if(s.notif&&(s.notif.email||s.notif.whatsapp)) setAlertNotif(s.notif);
+        setSyncMode(s.sync_mode||"off"); setSyncMlSep(!!s.sync_ml_separado);
         // Migración: el server no tiene config pero este navegador sí → subirla
         if(!srvCfg&&!srvLT&&!s.alert_global&&(localCfg||localGlobal||localLT)){
           pushSettings({alert_config:localCfg||{}, alert_global:localGlobal||14, lead_times:localLT||{}});
@@ -24451,6 +24475,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   <input type="number" min="1" value={l.quantity||1} onChange={e=>updateLinkQty(l.product_id,e.target.value)} style={{width:42,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:5,padding:"3px 6px",fontSize:11,color:T.text,textAlign:"center",fontFamily:"monospace"}}/>
                                   <button onClick={()=>updateLinkQty(l.product_id,(l.quantity||1)+1)} style={{width:22,height:22,border:`1px solid ${T.border}`,borderRadius:5,background:T.surface,color:T.textMd,cursor:"pointer",fontSize:13,fontWeight:700,padding:0}}>+</button>
                                 </div>
+                                <label title="Si está apagado, el stock cruzado no escribe en esta publicación" style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:l.sync===false?T.textSm:T.green,cursor:"pointer",flexShrink:0,fontWeight:700}}>
+                                  <input type="checkbox" checked={l.sync!==false} onChange={e=>{const next=(editingItem.product_links||[]).map(x=>x.product_id===l.product_id?{...x,sync:e.target.checked}:x);setEditingItem({...editingItem,product_links:next});}} style={{cursor:"pointer"}}/>
+                                  Sync
+                                </label>
                                 <button onClick={()=>unlinkProduct(l.product_id)} style={{width:24,height:24,border:`1px solid ${T.red}33`,borderRadius:5,background:"transparent",color:T.red,cursor:"pointer",fontSize:11,padding:0}}>×</button>
                               </div>
                             );
@@ -24517,9 +24545,63 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               document.body
             )}
 
-            {/* ── CONFIG: alertas y notificaciones ── */}
+            {/* ── CONFIG: stock cruzado + alertas y notificaciones ── */}
             {tab==="config"&&(
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                {/* Stock cruzado entre canales */}
+                <div style={{background:T.card,border:`1.5px solid ${syncMode==="on"?T.green+"66":syncMode==="simulacion"?(T.yellow||"#eab308")+"66":T.border}`,borderRadius:12,padding:"16px 20px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
+                    <div style={{fontSize:15,fontWeight:700,color:T.text}}>Stock cruzado entre canales</div>
+                    <span style={{fontSize:9,padding:"2px 8px",borderRadius:10,fontWeight:800,letterSpacing:0.5,background:syncMode==="on"?T.green+"22":syncMode==="simulacion"?(T.yellow||"#eab308")+"22":T.surface,color:syncMode==="on"?T.green:syncMode==="simulacion"?(T.yellow||"#eab308"):T.textSm}}>{syncMode==="on"?"ACTIVADO":syncMode==="simulacion"?"SIMULACIÓN":"APAGADO"}</span>
+                  </div>
+                  <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
+                    Cuando el stock del <strong>inventario central</strong> cambia (venta en cualquier canal, edición manual o transferencia), Growith lo escribe automáticamente en <strong>Tienda Nube</strong> y en las publicaciones de <strong>Mercado Libre</strong> vinculadas. Así una venta en un canal descuenta el stock en todos y evitás la sobreventa.
+                  </div>
+                  <div style={{display:"flex",background:T.surface,borderRadius:9,padding:3,gap:2,width:"fit-content",marginBottom:12}}>
+                    {[{v:"off",l:"Apagado"},{v:"simulacion",l:"Simulación"},{v:"on",l:"Activado"}].map(o=>(
+                      <button key={o.v} onClick={()=>cambiarSyncMode(o.v)}
+                        style={{padding:"6px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:syncMode===o.v?T.card:"transparent",color:syncMode===o.v?(o.v==="on"?T.green:o.v==="simulacion"?(T.yellow||"#eab308"):T.text):T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:syncMode===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>
+                        {o.l}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.6}}>
+                    <strong>Simulación</strong> = te muestra qué escribiría, sin tocar nada (recomendado para empezar). <strong>Activado</strong> = escribe de verdad. Cada escritura queda registrada. Si un producto tiene varias variantes y ninguna coincide con el SKU del item, <strong>no se toca</strong>.
+                  </div>
+                  <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.text,cursor:"pointer",marginBottom:14}}>
+                    <DSToggle T={T} active={syncMlSep} onToggle={()=>{const v=!syncMlSep;setSyncMlSep(v);pushSettings({sync_ml_separado:v});toast(v?"Mercado Libre queda FUERA del stock cruzado (ni descuenta ni se escribe)":"Mercado Libre vuelve al pool de stock unificado","success");}}/>
+                    Manejar el stock de Mercado Libre por separado
+                    <span style={{fontSize:10,color:T.textSm}}>(sus ventas no descuentan del inventario central y Growith nunca escribe en ML)</span>
+                  </label>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <button onClick={sincronizarAhora} disabled={syncPushing||syncMode==="off"} style={{padding:"8px 16px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:syncMode==="off"?T.surface:T.accentSolid,color:syncMode==="off"?T.textSm:"#fff",cursor:syncMode==="off"?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      {syncPushing?<><Spinner size={12} color="#fff"/> Sincronizando…</>:(syncMode==="simulacion"?"Simular sincronización ahora":"Sincronizar ahora")}
+                    </button>
+                    {syncMode==="off"&&<span style={{fontSize:11,color:T.textSm}}>Elegí Simulación o Activado para probar</span>}
+                  </div>
+                  {syncResults&&(
+                    <div style={{marginTop:14,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 14px"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:8}}>
+                        {syncResults.mode==="simulacion"?"Resultado de la simulación":"Resultado de la sincronización"} — {syncResults.resumen.total} publicaciones revisadas · <span style={{color:T.green}}>{syncResults.mode==="simulacion"?`${syncResults.resumen.simulados} cambios detectados`:`${syncResults.resumen.escritos} escritas`}</span> · {syncResults.resumen.sin_cambio} ya iguales{syncResults.resumen.errores>0&&<> · <span style={{color:T.red}}>{syncResults.resumen.errores} errores</span></>}
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:260,overflowY:"auto"}}>
+                        {syncResults.results.filter(r=>!r.skipped).map((r,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:11,padding:"5px 8px",background:T.card,borderRadius:6,border:`1px solid ${r.ok?T.borderL:T.red+"44"}`}}>
+                            <span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:4,background:(r.platform==="tiendanube"?T.blue:r.platform==="mercadolibre"?T.yellow:T.textSm)+"22",color:r.platform==="tiendanube"?T.blue:r.platform==="mercadolibre"?T.yellow:T.textSm,flexShrink:0}}>{r.platform==="tiendanube"?"TN":r.platform==="mercadolibre"?"ML":"SH"}</span>
+                            <span style={{flex:1,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.item_name}</span>
+                            {r.ok
+                              ? <span style={{color:T.textMd,flexShrink:0,fontFamily:"monospace"}}>{r.from_qty??"?"} → <strong style={{color:T.text}}>{r.to_qty}</strong>{r.simulated&&<span style={{color:T.yellow||"#eab308",marginLeft:6,fontFamily:"'Inter',system-ui,sans-serif",fontSize:9,fontWeight:700}}>SIMULADO</span>}</span>
+                              : <span style={{color:T.red,flexShrink:0,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.error}>{r.error}</span>}
+                          </div>
+                        ))}
+                        {syncResults.results.filter(r=>!r.skipped).length===0&&<div style={{fontSize:11,color:T.textSm,padding:"4px 0"}}>Todo el stock ya está alineado — no había nada para cambiar.</div>}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{fontSize:10,color:T.textSm,marginTop:12,lineHeight:1.6,background:T.surface,borderRadius:6,padding:"7px 10px"}}>
+                    Si aparecen errores 401/403: tu app de Mercado Libre necesita el permiso <strong>"Publicación y sincronización"</strong> (developers.mercadolibre.com → tu app → Permisos) y después reconectar ML en Config → Integraciones. En Tienda Nube, el permiso de escritura de productos. Shopify: próximamente.
+                  </div>
+                </div>
                 {/* Config global */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:8}}>

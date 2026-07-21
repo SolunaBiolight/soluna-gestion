@@ -44,6 +44,8 @@ const SETTINGS_DEFAULTS = {
   alert_config: {},   // { [productId]: { threshold, enabled } } — overrides por producto
   lead_times: {},     // { [productId]: días } — demora del proveedor
   notif: { email: "", whatsapp: "", enabled: false },
+  sync_mode: "off",       // "off" | "simulacion" | "on" — stock cruzado: escribir stock en TN/ML
+  sync_ml_separado: false, // true = ML fuera del pool (ni descuenta ventas ML ni escribe en ML)
 };
 
 async function getSettings(db, uid) {
@@ -67,6 +69,104 @@ async function logMovement(db, uid, mov) {
     ...mov,
     ts: mov.ts || new Date().toISOString(),
   });
+}
+
+// ── STOCK CRUZADO: escribir el stock central en las plataformas ──────────────
+// Modo "simulacion": calcula y loguea qué escribiría, sin tocar nada.
+// Modo "on": escribe de verdad. Cada intento queda en users/{uid}/stock_sync_log.
+const normSku = s => String(s || "").trim().toUpperCase();
+
+async function syncLog(db, uid, entry) {
+  try {
+    await db.collection("users").doc(uid).collection("stock_sync_log").add({ ...entry, ts: new Date().toISOString() });
+  } catch (_) {}
+}
+
+// TN: el stock vive por variante → buscamos la variante cuyo SKU coincide con el
+// del item (o la única, si el producto tiene una sola). Nunca adivinamos.
+async function pushTN(db, uid, tn, link, item, stock, mode) {
+  const pid = link.product_id.replace(/^TN-/, "");
+  const base = { item_id: item.id, item_name: item.nombre, link_id: link.product_id, platform: "tiendanube", to_qty: stock, mode };
+  const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/products/${pid}/variants`, {
+    headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },
+  });
+  if (!r.ok) { const e = { ...base, ok: false, error: `TN HTTP ${r.status}${r.status===401||r.status===403?" — reconectá Tienda Nube (falta permiso de escritura)":""}` }; await syncLog(db, uid, e); return e; }
+  const variants = await r.json();
+  if (!Array.isArray(variants) || variants.length === 0) { const e = { ...base, ok: false, error: "Producto TN sin variantes" }; await syncLog(db, uid, e); return e; }
+  let v = variants.find(x => normSku(x.sku) === normSku(item.sku) && normSku(item.sku));
+  if (!v && variants.length === 1) v = variants[0];
+  if (!v) { const e = { ...base, ok: false, error: `Producto TN con ${variants.length} variantes y ninguna coincide con el SKU "${item.sku||"(vacío)"}" — no se toca` }; await syncLog(db, uid, e); return e; }
+  const from = v.stock == null ? null : parseInt(v.stock);
+  if (from === stock) { const e = { ...base, from_qty: from, ok: true, skipped: true }; return e; } // ya está igual, ni log
+  if (mode === "simulacion") { const e = { ...base, from_qty: from, ok: true, simulated: true }; await syncLog(db, uid, e); return e; }
+  const w = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/products/${pid}/variants/${v.id}`, {
+    method: "PUT", headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp", "Content-Type": "application/json" },
+    body: JSON.stringify({ stock }),
+  });
+  if (!w.ok) { const txt = await w.text().catch(()=>""); const e = { ...base, from_qty: from, ok: false, error: `TN PUT ${w.status}: ${txt.slice(0,120)}${w.status===401||w.status===403?" — reconectá TN (permiso de escritura)":""}` }; await syncLog(db, uid, e); return e; }
+  const e = { ...base, from_qty: from, ok: true }; await syncLog(db, uid, e); return e;
+}
+
+// ML: sin variaciones → available_quantity directo; con variaciones → la que
+// coincide por SKU (seller_custom_field / SELLER_SKU) o la única.
+async function pushML(db, uid, link, item, stock, mode) {
+  const mlId = link.product_id.replace(/^ML-/, "");
+  const base = { item_id: item.id, item_name: item.nombre, link_id: link.product_id, platform: "mercadolibre", to_qty: stock, mode };
+  const tokenInfo = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
+  if (!tokenInfo?.accessToken) { const e = { ...base, ok: false, error: "Sin token válido de ML — reconectá Mercado Libre" }; await syncLog(db, uid, e); return e; }
+  const r = await fetch(`https://api.mercadolibre.com/items/${mlId}?attributes=id,status,available_quantity,variations`, {
+    headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+  });
+  if (!r.ok) { const e = { ...base, ok: false, error: `ML HTTP ${r.status}` }; await syncLog(db, uid, e); return e; }
+  const it = await r.json();
+  if (it.status && it.status !== "active" && it.status !== "paused") { const e = { ...base, ok: false, error: `Publicación ML en estado "${it.status}" — no se toca` }; await syncLog(db, uid, e); return e; }
+  const vars = Array.isArray(it.variations) ? it.variations : [];
+  let body, from;
+  if (vars.length === 0) {
+    from = parseInt(it.available_quantity) || 0;
+    body = { available_quantity: stock };
+  } else {
+    let v = vars.find(x => normSku(x.seller_custom_field) === normSku(item.sku) && normSku(item.sku));
+    if (!v) v = vars.find(x => (x.attributes||[]).some(a => a.id === "SELLER_SKU" && normSku(a.value_name) === normSku(item.sku)) && normSku(item.sku));
+    if (!v && vars.length === 1) v = vars[0];
+    if (!v) { const e = { ...base, ok: false, error: `Publicación ML con ${vars.length} variantes y ninguna coincide con el SKU "${item.sku||"(vacío)"}" — no se toca` }; await syncLog(db, uid, e); return e; }
+    from = parseInt(v.available_quantity) || 0;
+    body = { variations: [{ id: v.id, available_quantity: stock }] };
+  }
+  if (from === stock) { return { ...base, from_qty: from, ok: true, skipped: true }; }
+  if (mode === "simulacion") { const e = { ...base, from_qty: from, ok: true, simulated: true }; await syncLog(db, uid, e); return e; }
+  const w = await fetch(`https://api.mercadolibre.com/items/${mlId}`, {
+    method: "PUT", headers: { Authorization: `Bearer ${tokenInfo.accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!w.ok) { const txt = await w.text().catch(()=>""); const e = { ...base, from_qty: from, ok: false, error: `ML PUT ${w.status}: ${txt.slice(0,120)}${w.status===403?" — habilitá 'Publicación y sincronización' en tu app de ML y reconectá":""}` }; await syncLog(db, uid, e); return e; }
+  const e = { ...base, from_qty: from, ok: true }; await syncLog(db, uid, e); return e;
+}
+
+// Empuja el stock de UN item a todas sus publicaciones vinculadas (según settings).
+async function pushItemStock(db, uid, item, stores, settings) {
+  const results = [];
+  const mode = settings.sync_mode || "off";
+  if (mode === "off") return results;
+  const stock = Math.max(0, parseInt(item.stock_total) || 0);
+  for (const link of (item.product_links || [])) {
+    if (link.sync === false) continue; // excluida por el usuario
+    try {
+      if (link.platform === "tiendanube") {
+        const tn = stores.find(s => s.type === "tiendanube");
+        if (tn?.accessToken && tn?.storeId) results.push(await pushTN(db, uid, tn, link, item, stock, mode));
+      } else if (link.platform === "mercadolibre") {
+        if (settings.sync_ml_separado) continue;
+        results.push(await pushML(db, uid, link, item, stock, mode));
+      } else if (link.platform === "shopify") {
+        results.push({ item_id: item.id, item_name: item.nombre, link_id: link.product_id, platform: "shopify", to_qty: stock, mode, ok: false, error: "Escritura de stock en Shopify: próximamente" });
+      }
+    } catch (e) {
+      const err = { item_id: item.id, item_name: item.nombre, link_id: link.product_id, platform: link.platform, to_qty: stock, mode, ok: false, error: e.message };
+      await syncLog(db, uid, err); results.push(err);
+    }
+  }
+  return results;
 }
 
 export default async function handler(req, res) {
@@ -284,6 +384,7 @@ export default async function handler(req, res) {
       const linkedItems = items.filter(i => Array.isArray(i.product_links) && i.product_links.length > 0);
       if (linkedItems.length === 0) return res.json({ ok: true, processed_orders: 0, items_updated: 0 });
 
+      const settings = await getSettings(db, uid);
       const userSnap = await db.collection("users").doc(uid).get();
       const stores = userSnap.data()?.stores || [];
 
@@ -343,9 +444,10 @@ export default async function handler(req, res) {
         }
       }
 
-      // ML
+      // ML — si el cliente maneja el stock de ML por separado, sus ventas no
+      // descuentan del inventario central.
       const ml = stores.find(s => s.type === "mercadolibre");
-      if (ml?.userId) {
+      if (ml?.userId && !settings.sync_ml_separado) {
         try {
           const tokenInfo = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
           if (tokenInfo?.accessToken) {
@@ -413,6 +515,8 @@ export default async function handler(req, res) {
             last_sync_at: new Date().toISOString(),
           });
           itemsUpdated++;
+          // Stock cruzado: propagar el nuevo stock a las plataformas (best-effort)
+          try { await pushItemStock(db, uid, { ...item, stock_total: finalStock }, stores, settings); } catch (_) {}
         } else if (newProcessed.length === 0 && !item.last_sync_at) {
           // primer sync sin ventas — solo marcamos timestamp
           await item.ref.update({ last_sync_at: new Date().toISOString() });
@@ -638,6 +742,11 @@ export default async function handler(req, res) {
         old_stock: oldWh, new_stock: newWh,
         source: "manual", event: event || "ajuste_deposito",
       });
+      try {
+        const settings = await getSettings(db, uid);
+        const stores = (await db.collection("users").doc(uid).get()).data()?.stores || [];
+        await pushItemStock(db, uid, { ...current, id: item_id, stock_total: newTotal }, stores, settings);
+      } catch (_) {}
       return res.json({ ok: true, old_stock: oldWh, new_stock: newWh, new_total: newTotal });
     }
 
@@ -672,6 +781,7 @@ export default async function handler(req, res) {
           title: String(l.title || ""),
           image: l.image || null,
           quantity: parseInt(l.quantity) || 1,
+          ...(l.sync === false ? { sync: false } : {}), // excluida del stock cruzado
         })) : (existing?.product_links || []),
         // Mantenemos el set de orders procesadas para no descontar 2 veces
         processed_orders: existing?.processed_orders || [],
@@ -698,7 +808,17 @@ export default async function handler(req, res) {
         });
       }
 
-      return res.json({ ok: true, item: data });
+      // Stock cruzado: si cambió el stock, propagar a las plataformas
+      let sync_results = [];
+      if (!existing || existing.stock_total !== data.stock_total) {
+        try {
+          const settings = await getSettings(db, uid);
+          const stores = (await db.collection("users").doc(uid).get()).data()?.stores || [];
+          sync_results = await pushItemStock(db, uid, data, stores, settings);
+        } catch (_) {}
+      }
+
+      return res.json({ ok: true, item: data, sync_results });
     }
 
     // ── ADJUST STOCK (suma/resta change, o setea new_stock) ─
@@ -724,7 +844,13 @@ export default async function handler(req, res) {
         source: source || "manual",
         event: event || "ajuste",
       });
-      return res.json({ ok: true, old_stock: oldStock, new_stock: newStock });
+      let sync_results = [];
+      try {
+        const settings = await getSettings(db, uid);
+        const stores = (await db.collection("users").doc(uid).get()).data()?.stores || [];
+        sync_results = await pushItemStock(db, uid, { ...current, id: item_id, stock_total: newStock }, stores, settings);
+      } catch (_) {}
+      return res.json({ ok: true, old_stock: oldStock, new_stock: newStock, sync_results });
     }
 
     // ── DELETE ITEM ─────────────────────────────────────────
@@ -772,6 +898,8 @@ export default async function handler(req, res) {
         whatsapp: String(body.notif.whatsapp || "").slice(0, 30),
         enabled: !!body.notif.enabled,
       };
+      if (body.sync_mode !== undefined) settings.sync_mode = ["off","simulacion","on"].includes(body.sync_mode) ? body.sync_mode : "off";
+      if (body.sync_ml_separado !== undefined) settings.sync_ml_separado = !!body.sync_ml_separado;
       await db.collection("users").doc(uid).set({ inventory_settings: settings }, { merge: true });
       return res.json({ ok: true, settings });
     }
@@ -802,6 +930,35 @@ export default async function handler(req, res) {
         source: "manual", event: "transferencia_deposito",
       });
       return res.json({ ok: true, stock_by_warehouse: sbw });
+    }
+
+    // ── STOCK CRUZADO: empujar TODO el inventario a las plataformas ──
+    if (action === "sync_push_all" && req.method === "POST") {
+      const settings = await getSettings(db, uid);
+      if ((settings.sync_mode || "off") === "off") return res.status(400).json({ error: "El stock cruzado está apagado. Activá Simulación o Activado en Configuración." });
+      const itemsSnap = await db.collection("users").doc(uid).collection("inventory_items").get();
+      const items = itemsSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => (i.product_links || []).length > 0);
+      const stores = (await db.collection("users").doc(uid).get()).data()?.stores || [];
+      const results = [];
+      for (const item of items) {
+        results.push(...await pushItemStock(db, uid, item, stores, settings));
+      }
+      const resumen = {
+        total: results.length,
+        escritos: results.filter(r => r.ok && !r.simulated && !r.skipped).length,
+        simulados: results.filter(r => r.simulated).length,
+        sin_cambio: results.filter(r => r.skipped).length,
+        errores: results.filter(r => !r.ok).length,
+      };
+      return res.json({ ok: true, mode: settings.sync_mode, resumen, results });
+    }
+
+    // ── STOCK CRUZADO: últimos registros del log ──
+    if (action === "sync_log_list" && req.method === "GET") {
+      const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+      const snap = await db.collection("users").doc(uid).collection("stock_sync_log")
+        .orderBy("ts", "desc").limit(limit).get();
+      return res.json({ log: snap.docs.map(d => ({ id: d.id, ...d.data() })) });
     }
 
     // ── STATS para gráfico + ranking ────────────────────────
