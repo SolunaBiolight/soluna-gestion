@@ -6,7 +6,10 @@ import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPasswor
 
 const firebaseConfig = {
   apiKey: "AIzaSyDT-cAeF1lm-xhIDtv0FZam88yhvLIcbMo",
-  authDomain: "soluna-gestion.firebaseapp.com",
+  // Dominio propio: el popup de Google dice "growithapp.com" en vez de firebaseapp.com.
+  // Requiere el rewrite /__/auth/* en vercel.json + dominio autorizado en Firebase
+  // + redirect URI en el OAuth client de Google Cloud (configurado 21/jul/2026).
+  authDomain: "www.growithapp.com",
   projectId: "soluna-gestion",
   storageBucket: "soluna-gestion.firebasestorage.app",
   messagingSenderId: "377364762337",

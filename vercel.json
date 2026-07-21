@@ -1,1 +1,12 @@
-{"crons":[{"path":"/api/check-expiring","schedule":"0 10 * * *"},{"path":"/api/meta?action=cron_run_all","schedule":"0 11 * * *"},{"path":"/api/orders?action=warm_margenes","schedule":"*/5 * * * *"},{"path":"/api/update-shipping?action=track_all","schedule":"*/30 * * * *"}]}
+{
+  "rewrites": [
+    { "source": "/__/auth/:path*", "destination": "https://soluna-gestion.firebaseapp.com/__/auth/:path*" },
+    { "source": "/__/firebase/:path*", "destination": "https://soluna-gestion.firebaseapp.com/__/firebase/:path*" }
+  ],
+  "crons": [
+    { "path": "/api/check-expiring", "schedule": "0 10 * * *" },
+    { "path": "/api/meta?action=cron_run_all", "schedule": "0 11 * * *" },
+    { "path": "/api/orders?action=warm_margenes", "schedule": "*/5 * * * *" },
+    { "path": "/api/update-shipping?action=track_all", "schedule": "*/30 * * * *" }
+  ]
+}
