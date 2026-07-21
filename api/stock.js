@@ -393,7 +393,9 @@ function processML(orders, couponMap = {}) {
     const dt=o.date_created||"";
     const day=dt.slice(0,10);
     const hour=dt.slice(11,13);
-    const prov="Buenos Aires"; // ML no siempre da provincia en search
+    // El search de ML no trae la provincia del comprador — etiquetamos honesto
+    // en vez de imputar "Buenos Aires" (mentía en el donut geográfico).
+    const prov="Mercado Libre (sin ubicación)";
     const pay=o.payments?.map(p=>p.payment_type).join(",")||"Mercado Pago";
     let orderUnits=0;
 

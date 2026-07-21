@@ -35,14 +35,21 @@ async function readBody(req) {
   });
 }
 
+const SETTINGS_DEFAULTS = {
+  multiplier: 1,
+  low_days: 14,       // sincronizado con alert_global — un solo umbral en toda la sección
+  empty_days: 5,
+  alert_email: false,
+  alert_global: 14,   // días de stock bajo el cual un producto está "crítico"
+  alert_config: {},   // { [productId]: { threshold, enabled } } — overrides por producto
+  lead_times: {},     // { [productId]: días } — demora del proveedor
+  notif: { email: "", whatsapp: "", enabled: false },
+};
+
 async function getSettings(db, uid) {
   const snap = await db.collection("users").doc(uid).get();
-  return snap.data()?.inventory_settings || {
-    multiplier: 1,
-    low_days: 15,
-    empty_days: 5,
-    alert_email: false,
-  };
+  const s = snap.data()?.inventory_settings || {};
+  return { ...SETTINGS_DEFAULTS, ...s, notif: { ...SETTINGS_DEFAULTS.notif, ...(s.notif || {}) } };
 }
 
 function computeStatus(stock, sales30d, settings) {
@@ -51,7 +58,7 @@ function computeStatus(stock, sales30d, settings) {
   const days_left = Math.floor((stock || 0) / salesPerDay);
   let status = "ok";
   if (days_left <= (settings.empty_days || 5)) status = "empty";
-  else if (days_left <= (settings.low_days || 15)) status = "low";
+  else if (days_left <= (settings.alert_global || settings.low_days || 14)) status = "low";
   return { days_left, status };
 }
 
@@ -415,6 +422,138 @@ export default async function handler(req, res) {
       return res.json({ ok: true, processed_orders: recentOrders.length, items_updated: itemsUpdated, sales_logged: salesLogged });
     }
 
+    // ── IMPORT CATALOG — crea/vincula items desde el catálogo TN/Shopify/ML por SKU ──
+    // Agrupa las publicaciones por SKU: un item de inventario por SKU, vinculado a
+    // todas las publicaciones que lo comparten (unificación multicanal). Sin SKU,
+    // crea un item por publicación. Nunca pisa el stock de items existentes.
+    if (action === "import_catalog" && req.method === "POST") {
+      const userSnap = await db.collection("users").doc(uid).get();
+      const stores = userSnap.data()?.stores || [];
+      const catalog = []; // {link_id, platform, title, sku, image, stock, price}
+
+      // TN — stock = suma de variantes (null = infinito en TN, se toma 0)
+      const tn = stores.find(s => s.type === "tiendanube");
+      if (tn?.accessToken && tn?.storeId) {
+        for (let page = 1; page <= 5; page++) {
+          try {
+            const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/products?per_page=200&page=${page}`, {
+              headers: { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "GrowithApp" },
+            });
+            if (!r.ok) break;
+            const batch = await r.json();
+            if (!Array.isArray(batch) || batch.length === 0) break;
+            for (const p of batch) {
+              const titleObj = p.name || {};
+              const title = typeof titleObj === "string" ? titleObj : (titleObj.es || Object.values(titleObj)[0] || "(sin nombre)");
+              const stock = (p.variants || []).reduce((s, v) => s + (v.stock == null ? 0 : (parseInt(v.stock) || 0)), 0);
+              catalog.push({ link_id: `TN-${p.id}`, platform: "tiendanube", title, sku: p.variants?.[0]?.sku || "", image: p.images?.[0]?.src || null, stock });
+            }
+            if (batch.length < 200) break;
+          } catch (e) { break; }
+        }
+      }
+      // Shopify
+      const sh = stores.find(s => s.type === "shopify");
+      if (sh?.accessToken && sh?.shop) {
+        let url = `https://${sh.shop}/admin/api/2024-10/products.json?limit=250`;
+        for (let i = 0; i < 4 && url; i++) {
+          try {
+            const r = await fetch(url, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+            if (!r.ok) break;
+            const data = await r.json();
+            for (const p of (data.products || [])) {
+              const stock = (p.variants || []).reduce((s, v) => s + (parseInt(v.inventory_quantity) || 0), 0);
+              catalog.push({ link_id: `SH-${p.id}`, platform: "shopify", title: p.title, sku: p.variants?.[0]?.sku || "", image: p.image?.src || null, stock });
+            }
+            const next = (r.headers.get("link") || "").match(/<([^>]+)>;\s*rel="next"/);
+            url = next ? next[1] : null;
+          } catch (e) { break; }
+        }
+      }
+      // ML — available_quantity de cada publicación activa
+      const ml = stores.find(s => s.type === "mercadolibre");
+      if (ml?.userId) {
+        try {
+          const tokenInfo = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
+          if (tokenInfo?.accessToken) {
+            for (let offset = 0; offset < 500; offset += 50) {
+              const idsRes = await fetch(`https://api.mercadolibre.com/users/${tokenInfo.userId}/items/search?status=active&limit=50&offset=${offset}`, {
+                headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+              });
+              if (!idsRes.ok) break;
+              const ids = (await idsRes.json()).results || [];
+              if (ids.length === 0) break;
+              const detRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(",")}&attributes=id,title,thumbnail,available_quantity,seller_custom_field`, {
+                headers: { Authorization: `Bearer ${tokenInfo.accessToken}` },
+              });
+              if (!detRes.ok) break;
+              for (const d of (await detRes.json())) {
+                if (d.body) catalog.push({ link_id: `ML-${d.body.id}`, platform: "mercadolibre", title: d.body.title, sku: d.body.seller_custom_field || "", image: d.body.thumbnail, stock: parseInt(d.body.available_quantity) || 0 });
+              }
+              if (ids.length < 50) break;
+            }
+          }
+        } catch (e) { /* ML opcional */ }
+      }
+
+      if (catalog.length === 0) return res.json({ ok: true, created: 0, linked: 0, unchanged: 0, catalog: 0 });
+
+      // Agrupar por SKU normalizado (sin SKU → grupo propio por publicación)
+      const norm = s => String(s || "").trim().toUpperCase();
+      const groups = new Map();
+      for (const c of catalog) {
+        const key = norm(c.sku) || `__nosku__${c.link_id}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(c);
+      }
+
+      const itemsSnap = await db.collection("users").doc(uid).collection("inventory_items").get();
+      const existing = itemsSnap.docs.map(d => ({ ref: d.ref, id: d.id, ...d.data() }));
+      const bySku = new Map(existing.filter(i => norm(i.sku)).map(i => [norm(i.sku), i]));
+      const byLink = new Map();
+      for (const i of existing) for (const l of (i.product_links || [])) byLink.set(l.product_id, i);
+
+      const PLAT_ORDER = { tiendanube: 0, shopify: 1, mercadolibre: 2 };
+      let created = 0, linked = 0, unchanged = 0;
+      for (const [key, group] of groups) {
+        group.sort((a, b) => (PLAT_ORDER[a.platform] ?? 9) - (PLAT_ORDER[b.platform] ?? 9));
+        const primary = group[0];
+        const item = (!key.startsWith("__nosku__") && bySku.get(key)) || group.map(g => byLink.get(g.link_id)).find(Boolean);
+        if (item) {
+          // Item existente: solo agregar links faltantes y completar sku/canales. NO tocar stock.
+          const links = [...(item.product_links || [])];
+          const have = new Set(links.map(l => l.product_id));
+          let changed = false;
+          for (const g of group) {
+            if (!have.has(g.link_id)) { links.push({ product_id: g.link_id, platform: g.platform, title: g.title, image: g.image, quantity: 1 }); changed = true; }
+          }
+          const canales = Array.from(new Set([...(item.canales || []), ...group.map(g => g.platform)]));
+          const skuFix = !norm(item.sku) && !key.startsWith("__nosku__") ? { sku: primary.sku } : {};
+          if (changed || canales.length !== (item.canales || []).length || skuFix.sku) {
+            await item.ref.update({ product_links: links, canales, ...skuFix, updated_at: new Date().toISOString() });
+            linked++;
+          } else unchanged++;
+        } else {
+          // Item nuevo: stock inicial = stock de la plataforma primaria (TN > SH > ML)
+          const itemsCol = db.collection("users").doc(uid).collection("inventory_items");
+          const id = itemsCol.doc().id;
+          const stock = Math.max(0, primary.stock || 0);
+          const data = {
+            id, nombre: String(primary.title).slice(0, 200), sku: key.startsWith("__nosku__") ? "" : primary.sku,
+            image: primary.image || null, stock_total: stock, stock_by_warehouse: stock ? { main: stock } : {},
+            canales: Array.from(new Set(group.map(g => g.platform))),
+            product_links: group.map(g => ({ product_id: g.link_id, platform: g.platform, title: g.title, image: g.image, quantity: 1 })),
+            processed_orders: [], last_sync_at: null,
+            created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          };
+          await itemsCol.doc(id).set(data);
+          await logMovement(db, uid, { item_id: id, item_name: data.nombre, change: stock, old_stock: 0, new_stock: stock, source: "manual", event: "importacion_catalogo" });
+          created++;
+        }
+      }
+      return res.json({ ok: true, created, linked, unchanged, catalog: catalog.length });
+    }
+
     // ── DEPOSITOS / WAREHOUSES ──────────────────────────────
     // Cada user tiene N depositos. Cada inventory_item tiene
     // stock_by_warehouse: {warehouseId: stock}. stock_total = sum.
@@ -613,14 +752,56 @@ export default async function handler(req, res) {
 
     if (action === "settings_save" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const settings = {
-        multiplier: parseFloat(body.multiplier) || 1,
-        low_days: parseInt(body.low_days) || 15,
-        empty_days: parseInt(body.empty_days) || 5,
-        alert_email: !!body.alert_email,
+      // Merge: solo pisa los campos que vienen en el body (el front puede guardar
+      // alertas sin conocer multiplier, y viceversa).
+      const current = await getSettings(db, uid);
+      const settings = { ...current };
+      if (body.multiplier !== undefined) settings.multiplier = parseFloat(body.multiplier) || 1;
+      if (body.empty_days !== undefined) settings.empty_days = parseInt(body.empty_days) || 5;
+      if (body.alert_email !== undefined) settings.alert_email = !!body.alert_email;
+      if (body.alert_global !== undefined || body.low_days !== undefined) {
+        // Un solo umbral: alert_global y low_days siempre iguales
+        const g = parseInt(body.alert_global ?? body.low_days) || 14;
+        settings.alert_global = g;
+        settings.low_days = g;
+      }
+      if (body.alert_config && typeof body.alert_config === "object") settings.alert_config = body.alert_config;
+      if (body.lead_times && typeof body.lead_times === "object") settings.lead_times = body.lead_times;
+      if (body.notif && typeof body.notif === "object") settings.notif = {
+        email: String(body.notif.email || "").slice(0, 120),
+        whatsapp: String(body.notif.whatsapp || "").slice(0, 30),
+        enabled: !!body.notif.enabled,
       };
       await db.collection("users").doc(uid).set({ inventory_settings: settings }, { merge: true });
       return res.json({ ok: true, settings });
+    }
+
+    // ── TRANSFER STOCK entre depósitos ──────────────────────
+    if (action === "transfer_stock" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const { item_id, from_id, to_id, qty } = body || {};
+      const q = parseInt(qty) || 0;
+      if (!item_id || !from_id || !to_id) return res.status(400).json({ error: "Faltan item_id, from_id y to_id" });
+      if (from_id === to_id) return res.status(400).json({ error: "Origen y destino son el mismo depósito" });
+      if (q <= 0) return res.status(400).json({ error: "La cantidad debe ser mayor a 0" });
+      const ref = db.collection("users").doc(uid).collection("inventory_items").doc(item_id);
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({ error: "Item no encontrado" });
+      const item = snap.data();
+      const sbw = { ...(item.stock_by_warehouse || {}) };
+      const disponible = parseInt(sbw[from_id]) || 0;
+      if (q > disponible) return res.status(400).json({ error: `El depósito de origen tiene solo ${disponible} unidades` });
+      sbw[from_id] = disponible - q;
+      sbw[to_id] = (parseInt(sbw[to_id]) || 0) + q;
+      // stock_total no cambia en una transferencia
+      await ref.update({ stock_by_warehouse: sbw, updated_at: new Date().toISOString() });
+      await logMovement(db, uid, {
+        item_id, item_name: item.nombre,
+        change: 0, old_stock: item.stock_total || 0, new_stock: item.stock_total || 0,
+        warehouse_from: from_id, warehouse_to: to_id, qty: q,
+        source: "manual", event: "transferencia_deposito",
+      });
+      return res.json({ ok: true, stock_by_warehouse: sbw });
     }
 
     // ── STATS para gráfico + ranking ────────────────────────

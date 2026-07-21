@@ -745,7 +745,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
       subs:[{id:"productos",label:"Productos"},{id:"analisis",label:"Análisis"},{id:"biblioteca",label:"Biblioteca"},{id:"reglas",label:"Reglas"},{id:"creativos",label:"Publicar"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", count:alerts.stock, badge:"red",
-      subs:[{id:"analisis",label:"Análisis"},{id:"items",label:"Items"},{id:"depositos",label:"Depósitos"},{id:"historial",label:"Historial"}]},
+      subs:[{id:"resumen",label:"Resumen"},{id:"inventario",label:"Inventario"},{id:"movimientos",label:"Movimientos"},{id:"config",label:"Configuración"}]},
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml",
       subs:[{id:"gestion",label:"Gestión"}]},
     { group:"OPERACIONES" },
@@ -22802,8 +22802,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [stockError, setStockError] = useState(null);
   const [data, setData] = useState(null);
   const [dataPrev, setDataPrev] = useState(null);
-  const [tabLocal, setTabLocal] = useState("analisis");
-  const tab = tabProp !== undefined ? tabProp : tabLocal;
+  const [tabLocal, setTabLocal] = useState("resumen");
+  // Alias de tabs viejos (v1 tenía 7 tabs) → estructura nueva de 4
+  const STOCK_TAB_ALIAS = {analisis:"resumen",productos:"inventario",facturacion:"resumen",items:"inventario",depositos:"config",historial:"movimientos",alertas:"config"};
+  const _rawTab = tabProp !== undefined ? tabProp : tabLocal;
+  const tab = STOCK_TAB_ALIAS[_rawTab] || _rawTab;
   const setTab = setTabProp || setTabLocal;
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("units");
@@ -22830,8 +22833,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [whAddress, setWhAddress] = useState("");
   const [whIsDefault, setWhIsDefault] = useState(false);
   const [whSaving, setWhSaving] = useState(false);
-  // Edit stock por depósito
-  const [editingStockItem, setEditingStockItem] = useState(null); // item object
+  // Edit stock por depósito (dentro del modal de Item)
   const [stockEditValues, setStockEditValues] = useState({}); // {whId: count}
   // Items (central inventory entities + mapping)
   const [invItems, setInvItems] = useState([]);
@@ -22859,10 +22861,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [movSort, setMovSort] = useState({col:"date",dir:"desc"});
   // Warehouse transfer modal
   const [transferModal, setTransferModal] = useState(null); // {item, values:{whId:qty}}
-  const [transferFrom, setTransferFrom] = useState(""); const [transferTo, setTransferTo] = useState(""); const [transferQty, setTransferQty] = useState(1); const [transferSaving, setTransferSaving] = useState(false);
+  const [transferFrom, setTransferFrom] = useState(""); const [transferTo, setTransferTo] = useState(""); const [transferQty, setTransferQty] = useState(1); const [transferSaving, setTransferSaving] = useState(false); const [transferItemId, setTransferItemId] = useState("");
   // Alert notifications config
   const [alertNotif, setAlertNotif] = useState(()=>{try{return JSON.parse(localStorage.getItem(`growith_alertNotif_${user?.uid}`)||"null")||{email:"",whatsapp:"",enabled:false};}catch(_){return{email:"",whatsapp:"",enabled:false};}});
-  function saveAlertNotif(v){setAlertNotif(v);try{localStorage.setItem(`growith_alertNotif_${uid}`,JSON.stringify(v));}catch(_){}}
+  function saveAlertNotif(v){setAlertNotif(v);try{localStorage.setItem(`growith_alertNotif_${uid}`,JSON.stringify(v));}catch(_){}pushSettings({notif:v});}
+  // Persistencia server-side de la config (inventory_settings en Firestore) —
+  // localStorage queda como cache local para el Home y como fallback offline.
+  function pushSettings(patch){ if(!uid) return; fetch(`/api/inventory?action=settings_save&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(patch)}).catch(()=>{}); }
   // Item delete confirm state
   const [deleteItemConfirm, setDeleteItemConfirm] = useState(null);
   const [showGuia, setShowGuia] = useState(false);
@@ -22888,18 +22893,6 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     a.href=url; a.download=`growith-stock-${new Date().toISOString().slice(0,10)}.csv`; a.click();
     URL.revokeObjectURL(url);
     toast("CSV exportado ✓","success");
-  }
-
-  function registrarAgotado(productName, variantName, date) {
-    try{
-      const key=`growith_stockouts_${uid}`;
-      const hist=JSON.parse(localStorage.getItem(key)||"[]");
-      hist.unshift({producto:productName,variante:variantName,fecha:date,ts:Date.now()});
-      localStorage.setItem(key, JSON.stringify(hist.slice(0,200)));
-    }catch(e){}
-  }
-  function getHistorialAgotados() {
-    try{ return JSON.parse(localStorage.getItem(`growith_stockouts_${uid}`)||"[]"); }catch(e){ return []; }
   }
 
   async function loadStock(d=days, from="", to="") {
@@ -23025,35 +23018,6 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     loadWarehouses();
     loadStock();
   }
-  function openEditStock(item) {
-    setEditingStockItem(item);
-    const sbw = item.stock_by_warehouse || {};
-    const obj = {};
-    for (const w of warehouses) obj[w.id] = sbw[w.id] || 0;
-    setStockEditValues(obj);
-  }
-  async function saveStockByWarehouse() {
-    if (!editingStockItem) return;
-    const total = Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0);
-    const r = await fetch(`/api/inventory?action=save_item&uid=${uid}`,{
-      method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        id: editingStockItem.id,
-        nombre: editingStockItem.nombre,
-        sku: editingStockItem.sku,
-        image: editingStockItem.image,
-        stock_total: total,
-        stock_by_warehouse: stockEditValues,
-        canales: editingStockItem.canales,
-      }),
-    });
-    const j = await r.json();
-    if (j.error) return toast(j.error,"error");
-    toast(`Stock actualizado · total ${total}`,"success");
-    setEditingStockItem(null);
-    loadStock();
-  }
-
   function applyQuickPeriod(d) {
     setDays(d);
     setUseCustomDate(false);
@@ -23165,32 +23129,18 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const next = (editingItem.product_links||[]).map(l => l.product_id===linkId ? {...l, quantity: Math.max(1, parseInt(qty)||1)} : l);
     setEditingItem({...editingItem, product_links: next});
   }
-  async function importAllPubs() {
-    if (!await appConfirm("Esto crea un Item por cada publicación de tus canales conectados (Shopify + TN + ML). Cantidad inicial = 1x. ¿Continuar?",{okLabel:"Importar"})) return;
-    let pubs = platformProducts;
-    if (pubs.length === 0) { pubs = await loadPlatformProducts(); }
-    if (pubs.length === 0) {
-      toast("No se encontraron publicaciones. Verificá que tengas Shopify/TN/ML conectados en Configuración.","warning");
-      return;
-    }
-    let created = 0, failed = 0;
-    for (const p of pubs) {
-      try {
-        const r = await fetch(`/api/inventory?action=save_item&uid=${uid}`,{
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({
-            nombre: p.title,
-            sku: p.sku || "",
-            image: p.image,
-            stock_total: 0,
-            product_links: [{ product_id: p.id, platform: p.platform, title: p.title, image: p.image, quantity: 1 }],
-          }),
-        });
-        if (r.ok) created++; else failed++;
-      } catch(e){ failed++; }
-    }
-    toast(`Importados ${created} items${failed?` · ${failed} fallaron`:""}`,"success");
-    loadInvItems();
+  const [importingCatalog,setImportingCatalog]=useState(false);
+  async function importCatalog() {
+    if (!await appConfirm("Growith va a leer tu catálogo de Tienda Nube / Shopify / Mercado Libre y crear un item de inventario por cada SKU, unificando las publicaciones que compartan el mismo SKU (multicanal).\n\n• El stock inicial de los items nuevos se toma del stock de tu tienda.\n• Los items que ya existen NO se modifican (solo se les agregan vínculos faltantes).\n• No se escribe nada en tus tiendas.\n\n¿Continuar?",{okLabel:"Vincular catálogo"})) return;
+    setImportingCatalog(true);
+    try {
+      const r = await fetch(`/api/inventory?action=import_catalog&uid=${uid}`,{method:"POST"});
+      const j = await r.json();
+      if (j.error) return toast(j.error,"error");
+      if (!j.catalog) return toast("No se encontraron publicaciones. Verificá que tengas TN/Shopify/ML conectados en Configuración.","warning");
+      toast(`Catálogo vinculado ✓ · ${j.created} items nuevos · ${j.linked} actualizados · ${j.catalog} publicaciones leídas`,"success");
+      loadInvItems();
+    } finally { setImportingCatalog(false); }
   }
   async function syncSales() {
     setSyncingSales(true);
@@ -23212,16 +23162,16 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     } finally { setMovementsLoading(false); }
   }
 
-  useEffect(()=>{ if (uid && tab === "depositos") loadWarehouses(); /* eslint-disable-next-line */ }, [uid, tab]);
-  useEffect(()=>{ if (uid && tab === "items") { loadInvItems(); loadWarehouses(); } /* eslint-disable-next-line */ }, [uid, tab]);
-  useEffect(()=>{ if (uid && tab === "historial") loadMovements(); /* eslint-disable-next-line */ }, [uid, tab]);
+  useEffect(()=>{ if (uid && tab === "config") { loadWarehouses(); loadInvItems(); } /* eslint-disable-next-line */ }, [uid, tab]);
+  useEffect(()=>{ if (uid && tab === "inventario") { loadInvItems(); loadWarehouses(); } /* eslint-disable-next-line */ }, [uid, tab]);
+  useEffect(()=>{ if (uid && tab === "movimientos") { loadMovements(); loadWarehouses(); } /* eslint-disable-next-line */ }, [uid, tab]);
 
   // Polling automático cada 60s mientras el usuario está en el tab Historial.
   // Así no necesita tocar "Refrescar" para ver las ventas que entran nuevas —
   // las ve solas como mucho 1 minuto después. Limpia el interval al cambiar
   // de tab o desmontar para no quedar pegado en segundo plano.
   useEffect(() => {
-    if (!uid || tab !== "historial") return;
+    if (!uid || tab !== "movimientos") return;
     const id = setInterval(() => { loadMovements(); }, 60_000);
     return () => clearInterval(id);
     /* eslint-disable-next-line */
@@ -23241,39 +23191,59 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       .then(j => {
         if (j.items_updated > 0 || j.sales_logged > 0) {
           // Recargar items si la tab actual los muestra
-          if (tab === "items") loadInvItems();
+          if (tab === "inventario") loadInvItems();
         }
       })
       .catch(()=>{});
     /* eslint-disable-next-line */
   }, [uid]);
 
-  // Cargar config de alertas desde localStorage
+  // Cargar config de alertas: Firestore es la fuente de verdad (cross-device);
+  // localStorage es cache local y fuente de migración one-time para users viejos.
   useEffect(()=>{
     if(!uid) return;
     loadStock();
-    try{
-      const saved = localStorage.getItem(`growith_alert_config_${uid}`);
-      if(saved) setAlertConfig(JSON.parse(saved));
-      const savedGlobal = localStorage.getItem(`growith_alert_global_${uid}`);
-      if(savedGlobal) setGlobalThreshold(parseInt(savedGlobal)||14);
-      const savedLT = localStorage.getItem(`growith_lead_time_${uid}`);
-      if(savedLT) setLeadTime(JSON.parse(savedLT));
-    }catch(e){}
+    let localCfg=null, localGlobal=null, localLT=null;
+    try{ localCfg=JSON.parse(localStorage.getItem(`growith_alert_config_${uid}`)||"null"); }catch(e){}
+    try{ localGlobal=parseInt(localStorage.getItem(`growith_alert_global_${uid}`))||null; }catch(e){}
+    try{ localLT=JSON.parse(localStorage.getItem(`growith_lead_time_${uid}`)||"null"); }catch(e){}
+    (async()=>{
+      try{
+        const r=await fetch(`/api/inventory?action=settings_get&uid=${uid}`);
+        const s=(await r.json()).settings||{};
+        const srvCfg=Object.keys(s.alert_config||{}).length>0, srvLT=Object.keys(s.lead_times||{}).length>0;
+        setAlertConfig(srvCfg ? s.alert_config : (localCfg||{}));
+        setGlobalThreshold(s.alert_global || localGlobal || 14);
+        setLeadTime(srvLT ? s.lead_times : (localLT||{}));
+        if(s.notif&&(s.notif.email||s.notif.whatsapp)) setAlertNotif(s.notif);
+        // Migración: el server no tiene config pero este navegador sí → subirla
+        if(!srvCfg&&!srvLT&&!s.alert_global&&(localCfg||localGlobal||localLT)){
+          pushSettings({alert_config:localCfg||{}, alert_global:localGlobal||14, lead_times:localLT||{}});
+        }
+      }catch(e){
+        if(localCfg)setAlertConfig(localCfg);
+        if(localGlobal)setGlobalThreshold(localGlobal);
+        if(localLT)setLeadTime(localLT);
+      }
+    })();
+    /* eslint-disable-next-line */
   },[uid]);
 
   function saveAlertConfig(config) {
     setAlertConfig(config);
     try{ localStorage.setItem(`growith_alert_config_${uid}`, JSON.stringify(config)); }catch(e){}
+    pushSettings({alert_config:config});
   }
   function saveGlobalThreshold(val) {
     setGlobalThreshold(val);
     try{ localStorage.setItem(`growith_alert_global_${uid}`, String(val)); }catch(e){}
+    pushSettings({alert_global:val});
   }
   function saveLeadTime(pid, days) {
     const updated = {...leadTime, [pid]: days};
     setLeadTime(updated);
     try{ localStorage.setItem(`growith_lead_time_${uid}`, JSON.stringify(updated)); }catch(e){}
+    pushSettings({lead_times:updated});
   }
 
   const fmt    = n => (n||0).toLocaleString("es-AR");
@@ -23575,7 +23545,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   {/* Lead time configurable */}
                   <div style={{padding:"8px 16px 8px 58px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,background:T.bg+"44"}}>
                     <span style={{fontSize:11,color:T.textSm}}>Tiempo de entrega del proveedor:</span>
-                    <select value={leadTime[p.id]||""} onChange={e=>{const v=e.target.value?parseInt(e.target.value):undefined;if(v) saveLeadTime(p.id,v); else {const n={...leadTime};delete n[p.id];setLeadTime(n);try{localStorage.setItem(`growith_lead_time_${uid}`,JSON.stringify(n));}catch(err){}};}}
+                    <select value={leadTime[p.id]||""} onChange={e=>{const v=e.target.value?parseInt(e.target.value):undefined;if(v) saveLeadTime(p.id,v); else {const n={...leadTime};delete n[p.id];setLeadTime(n);try{localStorage.setItem(`growith_lead_time_${uid}`,JSON.stringify(n));}catch(err){}pushSettings({lead_times:n});};}}
                       style={{...iS,width:"auto",padding:"3px 8px",fontSize:11}}>
                       <option value="">Sin configurar</option>
                       {[3,5,7,10,14,21,30].map(d=><option key={d} value={d}>{d} días</option>)}
@@ -23587,6 +23557,23 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       </span>;
                     })()}
                   </div>
+                  {/* Item de inventario vinculado por SKU (fusión Catálogo ↔ Inventario) */}
+                  {(()=>{
+                    const it=itemForProduct(p);
+                    if(!it) return null;
+                    const whsWithStock=Object.entries(it.stock_by_warehouse||{}).filter(([,q])=>(parseInt(q)||0)>0);
+                    const desync = (it.stock_total||0)!==(p.stock_total||0);
+                    return (
+                      <div style={{padding:"8px 16px 8px 58px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.bg+"22"}}>
+                        <span style={{fontSize:11,color:T.textSm}}>Inventario Growith:</span>
+                        <span style={{fontSize:11,fontWeight:700,color:T.text,background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"2px 8px"}}>{fmt(it.stock_total||0)} uds</span>
+                        {whsWithStock.map(([whId,q])=>{const w=warehouses.find(x=>x.id===whId);return <span key={whId} style={{fontSize:10,color:T.textMd,background:T.surface,borderRadius:5,padding:"2px 7px"}}>{w?.name||(whId==="main"?"Principal":whId)}: {q}</span>;})}
+                        {it.costo_unitario>0&&<span style={{fontSize:10,color:T.textSm}}>Valorizado: <strong style={{color:T.text}}>${Math.round((it.stock_total||0)*it.costo_unitario).toLocaleString("es-AR")}</strong></span>}
+                        {desync&&<span title="El stock del inventario de Growith difiere del que reporta tu tienda. Editá el item o reprocesá ventas para alinearlos." style={{fontSize:10,fontWeight:600,color:T.yellow||"#eab308",background:(T.yellow||"#eab308")+"18",borderRadius:5,padding:"2px 7px"}}>≠ tienda ({fmt(p.stock_total||0)})</span>}
+                        <button onClick={(e)=>{e.stopPropagation();setTab("inventario");openEditItem(it);}} style={{fontSize:10,fontWeight:600,color:T.accent,background:"transparent",border:`1px solid ${T.accent}44`,borderRadius:5,padding:"2px 8px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar item</button>
+                      </div>
+                    );
+                  })()}
                   {/* Header variantes */}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 75px 85px 70px 65px 105px 120px 28px",padding:"6px 16px 6px 58px",borderBottom:`1px solid ${T.borderL}`,background:T.bg+"88"}}>
                     {["Variante","Stock","Vendidos","Tasa","Días","Revenue","Proyección",""].map((h,i)=>(
@@ -23629,14 +23616,20 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
 
   const TABS=[
-    {id:"analisis",label:"Análisis"},
-    {id:"productos",label:"Productos"},
-    {id:"facturacion",label:"Facturación"},
-    {id:"items",label:"Items"},
-    {id:"depositos",label:"Depósitos"},
-    {id:"historial",label:"Historial"},
-    {id:"alertas",label:`Alertas${alertas.length>0?` (${alertas.length})`:""}`},
+    {id:"resumen",label:"Resumen"},
+    {id:"inventario",label:"Inventario"},
+    {id:"movimientos",label:"Movimientos"},
+    {id:"config",label:"Configuración"},
   ];
+
+  // Fusión Catálogo ↔ Items de inventario: matchea por SKU (cualquier variante)
+  // o por publicación vinculada. Una sola verdad de stock por producto.
+  const invBySku = (()=>{ const m=new Map(); for(const it of invItems){ const k=String(it.sku||"").trim().toUpperCase(); if(k&&!m.has(k)) m.set(k,it); } return m; })();
+  const itemForProduct = (p) => {
+    for (const v of (p.variants||[])) { const k=String(v.sku||"").trim().toUpperCase(); if(k&&invBySku.has(k)) return invBySku.get(k); }
+    const linkIds=[`TN-${p.id}`,`SH-${p.id}`,`ML-${p.id}`];
+    return invItems.find(it=>(it.product_links||[]).some(l=>linkIds.includes(l.product_id)))||null;
+  };
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
@@ -23677,11 +23670,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           {showGuia&&(
             <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,icon:"",title:"Conectar tienda",desc:"Para ver el stock real, primero conectá Tienda Nube o Shopify desde Config → Integraciones. Una vez conectado, los datos se sincronizan solos."},
-                {n:2,icon:"",title:"Alertas de stock",desc:"Configurá un umbral por producto para recibir alertas cuando el stock baje de ese número. Cada SKU puede tener su propio límite."},
-                {n:3,icon:"",title:"Lead time",desc:"Ingresá cuántos días tardás en reponer cada producto. Las alertas te avisan con suficiente anticipación para no quedarte sin stock."},
-                {n:4,icon:"",title:"Análisis de ventas",desc:"Ves ventas por período, rotación por SKU y comparativas entre plataformas (Tienda Nube vs Mercado Libre)."},
-                {n:5,icon:"",title:"Historial de agotados",desc:"Registra automáticamente cuándo y por cuánto tiempo estuviste sin stock de cada producto. Útil para planificar mejor los pedidos."},
+                {n:1,icon:"",title:"Resumen",desc:"KPIs de ventas y stock del período, proyección de demanda y las alertas activas (productos por agotarse). Es tu vista diaria."},
+                {n:2,icon:"",title:"Inventario",desc:"Tu catálogo con stock, velocidad de venta y días restantes por producto. Abajo, el inventario central de Growith: usá 'Vincular catálogo (SKU)' para unificar TN/Shopify/ML por SKU — las ventas lo descuentan solas."},
+                {n:3,icon:"",title:"Movimientos",desc:"Cada cambio de stock queda registrado: ventas por canal, ajustes manuales, transferencias entre depósitos."},
+                {n:4,icon:"",title:"Configuración",desc:"Umbral de alertas (global y por producto), lead time del proveedor, notificaciones y depósitos. La config se guarda en tu cuenta, no en el navegador."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -23744,8 +23736,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           </div>
         ):data?(
           <>
-            {/* KPIs de stock/ventas — solo en tab Análisis */}
-            {tab==="analisis" && (
+            {/* KPIs de stock/ventas — solo en tab Resumen */}
+            {tab==="resumen" && (
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
               {(()=>{
                 const prevU=dataPrev?.total_units||0;
@@ -23778,8 +23770,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
             {/* Tabs internos REMOVIDOS — navegación va por el sidebar izquierdo */}
 
-            {/* ── FORECAST DE DEMANDA (solo en tab análisis) ── */}
-            {tab==="analisis"&&data&&avgRate>0&&(
+            {/* ── FORECAST DE DEMANDA (solo en tab resumen) ── */}
+            {tab==="resumen"&&data&&avgRate>0&&(
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px",marginBottom:6}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Proyección de demanda</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
@@ -23802,11 +23794,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
             {/* ── BLOQUE COMÚN: Gráfico + Resumen + Donuts ── */}
             {(()=>{
-              // Config por tab — cada uno con sus propios datos
-              const isAnalisis  = tab==="analisis";
-              const isProductos  = tab==="productos";
-              const isFact       = tab==="facturacion";
-              // En tab Análisis hay subtoggle ventas/productos/revenue
+              // Bloque de gráficos: vive solo en Resumen. El toggle
+              // Ventas/Productos/Facturación cubre los tres enfoques.
+              const isAnalisis  = tab==="resumen";
+              const isProductos  = false;
+              const isFact       = false;
               const showingVentas = isAnalisis && analysisMode==="ventas";
               const showingProd   = isAnalisis && analysisMode==="productos";
               const showingRev    = isAnalisis && analysisMode==="revenue";
@@ -23833,7 +23825,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   })()
                 : mergeMap(data.by_variant||{}, ml?.by_variant);
 
-              if(!["analisis","productos","facturacion"].includes(tab)) return null;
+              if(tab!=="resumen") return null;
               const dailyEntries2=Object.entries(tabDaily).sort(([a],[b])=>a.localeCompare(b));
 
               return (
@@ -23959,26 +23951,28 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                   </div>
 
-                  {/* Detalle específico por tab */}
-                  {(tab==="productos"||tab==="facturacion")&&(
+                </div>
+              );
+            })()}
+
+            {/* ── TAB INVENTARIO: catálogo con analytics + items de inventario ── */}
+            {tab==="inventario"&&(
                     <div style={{display:"flex",flexDirection:"column",gap:12}}>
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                         <input type="text" placeholder="Buscar producto o SKU..." value={search} onChange={e=>setSearch(e.target.value)}
                           style={{...iS,flex:1,minWidth:200,fontSize:12,padding:"7px 12px"}}/>
-                        {tab==="productos"&&(
-                          <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
+                        <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
                             {[{v:"tabla",l:"Tabla"},{v:"kanban",l:"Kanban"}].map(o=>(
                               <button key={o.v} onClick={()=>setViewMode(o.v)}
                                 style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:viewMode===o.v?T.card:"transparent",color:viewMode===o.v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:viewMode===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>
                                 {o.l}
                               </button>
                             ))}
-                          </div>
-                        )}
+                        </div>
                         <span style={{fontSize:11,color:T.textSm}}>{allProducts.length} productos</span>
                       </div>
 
-                      {tab==="productos"&&viewMode==="kanban"&&(
+                      {viewMode==="kanban"&&(
                         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:10}}>
                           {allProducts.filter(p=>{const q=search.trim().toLowerCase();return !q||(p.nombre||"").toLowerCase().includes(q)||p.variants.some(v=>(v.sku||"").toLowerCase().includes(q));}).flatMap(p=>p.variants.map(v=>{
                             const vr=v.units_sold/Math.max(1,days);
@@ -24008,8 +24002,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         </div>
                       )}
 
-                      {(tab==="facturacion"||viewMode==="tabla")&&<ProductTable products={allProducts}/>}
-                      {tab==="productos"&&viewMode==="tabla"&&kpiDead>0&&(
+                      {viewMode==="tabla"&&<ProductTable products={allProducts}/>}
+                      {viewMode==="tabla"&&kpiDead>0&&(
                         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
                           <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
                               <div style={{fontSize:13,fontWeight:700,color:T.text}}>Sin ventas en el período</div>
@@ -24018,40 +24012,12 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           <ProductTable products={allProducts} showDead/>
                         </div>
                       )}
-                      {tab==="facturacion"&&(
-                        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 20px"}}>
-                          <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>Revenue por producto</div>
-                          {[...allProducts].sort((a,b)=>b.revenue-a.revenue).map((p,i)=>{
-                            const pct=totalRev>0?(p.revenue/totalRev*100).toFixed(1):0;
-                            return (
-                              <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                                <div style={{fontSize:11,fontWeight:700,color:T.textSm,width:18,textAlign:"right",flexShrink:0}}>{i+1}</div>
-                                {p.imagen?<img src={p.imagen} alt="" style={{width:28,height:28,borderRadius:6,objectFit:"cover",flexShrink:0,border:`1px solid ${T.border}`}}/>
-                                  :<div style={{width:28,height:28,borderRadius:6,background:T.surface,flexShrink:0}}/>}
-                                <div style={{flex:1,minWidth:0}}>
-                                  <div style={{fontSize:12,fontWeight:500,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3}}>{p.nombre}</div>
-                                  <div style={{height:6,background:T.borderL,borderRadius:10,overflow:"hidden"}}>
-                                    <div style={{height:"100%",width:`${pct}%`,background:T.green,borderRadius:10}}/>
-                                  </div>
-                                </div>
-                                <div style={{textAlign:"right",flexShrink:0}}>
-                                  <div style={{fontSize:13,fontWeight:700,color:T.green}}>{fmtARS(p.revenue)}</div>
-                                  <div style={{fontSize:10,color:T.textSm}}>{pct}%</div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })()}
+            )}
 
-            {/* ── TAB DEPÓSITOS ── */}
-            {tab==="depositos"&&(
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            {/* ── CONFIG: Depósitos ── */}
+            {tab==="config"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:16,marginTop:16}}>
                 {/* Header */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                   <div>
@@ -24069,22 +24035,20 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 ) : (
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))",gap:12}}>
                     {warehouses.map(w => {
-                      const totalItems = (data?.products || []).reduce((s,p)=>{
-                        const sbw = p.stock_by_warehouse || {};
-                        return s + (sbw[w.id] || 0);
-                      },0);
+                      // Stock por depósito: sale de los items de inventario (stock_by_warehouse)
+                      const totalItems = invItems.reduce((s,it)=> s + (parseInt(it.stock_by_warehouse?.[w.id])||0), 0);
                       return (
-                        <div key={w.id} style={{background:T.card,border:`1px solid ${w.id==="main"?T.accent+"55":T.border}`,borderRadius:12,padding:"14px 16px"}}>
+                        <div key={w.id} style={{background:T.card,border:`1px solid ${w.is_default?T.accent+"55":T.border}`,borderRadius:12,padding:"14px 16px"}}>
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                             <span style={{fontSize:14,fontWeight:700,color:T.text}}>{w.name}</span>
-                            {w.id==="main"&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,background:T.accentSolid+"22",color:T.accentSolid,letterSpacing:0.5}}>PRINCIPAL</span>}
+                            {w.is_default&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,fontWeight:700,background:T.accentSolid+"22",color:T.accentSolid,letterSpacing:0.5}}>PRINCIPAL</span>}
                           </div>
                           {w.address && <div style={{fontSize:11,color:T.textSm,marginBottom:8}}>{w.address}</div>}
                           <div style={{fontSize:12,color:T.textMd,marginBottom:10}}>Stock total: <strong style={{color:T.text}}>{totalItems}</strong> unidades</div>
                           <div style={{display:"flex",gap:6}}>
-                            {w.id!=="main"&&<button onClick={()=>{setTransferFrom(w.id);setTransferTo("");setTransferQty(1);setTransferModal({wh:w});}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⇄ Transferir</button>}
-                            <button onClick={()=>openEditWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{w.id==="main"?"Ver":"Editar"}</button>
-                            {w.id !== "main" && <button onClick={()=>deleteWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar</button>}
+                            <button onClick={()=>{setTransferFrom(w.id);setTransferTo("");setTransferQty(1);setTransferItemId("");setTransferModal({wh:w});}} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>⇄ Transferir</button>
+                            <button onClick={()=>openEditWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                            <button onClick={()=>deleteWarehouse(w)} style={{padding:"5px 10px",fontSize:11,border:`1px solid ${T.red}33`,borderRadius:6,background:"transparent",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar</button>
                           </div>
                         </div>
                       );
@@ -24110,38 +24074,6 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   document.body
                 )}
 
-                {/* Modal editar stock por depósito */}
-                {editingStockItem && ReactDOM.createPortal(
-                  <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingStockItem(null)}>
-                    <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:520,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      <h3 style={{margin:"0 0 6px",fontSize:17,fontWeight:800,color:T.text}}>{editingStockItem.nombre}</h3>
-                      <div style={{fontSize:11,color:T.textSm,marginBottom:16}}>Ajustá el stock por depósito. El total se calcula automáticamente.</div>
-                      {warehouses.map(w => (
-                        <div key={w.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"10px 12px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
-                          <div style={{flex:1}}>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{w.name}</div>
-                          </div>
-                          <input type="number" min="0" value={stockEditValues[w.id]||0} onChange={e=>setStockEditValues(p=>({...p,[w.id]:e.target.value}))} style={{width:100,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:7,padding:"7px 10px",fontSize:13,color:T.text,textAlign:"right",fontFamily:"monospace"}}/>
-                        </div>
-                      ))}
-                      {(()=>{const newTotal=Object.values(stockEditValues).reduce((s,v)=>s+(parseInt(v)||0),0);const origTotal=editingStockItem?.stock_total||0;const diff=newTotal-origTotal;return(<>
-                      <div style={{padding:"10px 12px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:8,marginTop:6,fontSize:12,color:T.text,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <span style={{fontWeight:600}}>Total</span>
-                        <div style={{display:"flex",alignItems:"center",gap:8}}>
-                          {diff!==0&&<span style={{fontSize:11,fontWeight:600,color:diff>0?T.green:T.red}}>{diff>0?"+":""}{diff} vs actual</span>}
-                          <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,color:T.accent}}>{newTotal}</span>
-                        </div>
-                      </div>
-                      {diff!==0&&<div style={{fontSize:10,color:diff>0?T.green:T.yellow,background:(diff>0?T.green:T.yellow)+"18",border:`1px solid ${(diff>0?T.green:T.yellow)}33`,borderRadius:6,padding:"5px 10px",marginTop:4}}>⚠ El nuevo total ({newTotal}) difiere del stock actual ({origTotal}). Asegurate de que sea correcto.</div>}
-                      </>);})()}
-                      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:18}}>
-                        <button onClick={()=>setEditingStockItem(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
-                        <button onClick={saveStockByWarehouse} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:"#16a34a",color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Guardar stock</button>
-                      </div>
-                    </div>
-                  </div>,
-                  document.body
-                )}
               </div>
             )}
 
@@ -24150,7 +24082,12 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setTransferModal(null)}>
                 <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:460,fontFamily:"'Inter',system-ui,sans-serif"}}>
                   <h3 style={{margin:"0 0 4px",fontSize:17,fontWeight:800,color:T.text}}>⇄ Transferir stock</h3>
-                  <div style={{fontSize:11,color:T.textSm,marginBottom:18}}>Mover unidades de un depósito a otro. Queda registrado en el historial.</div>
+                  <div style={{fontSize:11,color:T.textSm,marginBottom:18}}>Mover unidades de un producto entre depósitos. Queda registrado en Movimientos.</div>
+                  <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Producto (item de inventario)</label>
+                  <select value={transferItemId} onChange={e=>setTransferItemId(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:14}}>
+                    <option value="">Seleccionar...</option>
+                    {invItems.map(it=>{const enFrom=parseInt(it.stock_by_warehouse?.[transferFrom])||0;return <option key={it.id} value={it.id}>{it.nombre}{it.sku?` (${it.sku})`:""} — {enFrom} uds en origen</option>;})}
+                  </select>
                   <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:10,alignItems:"center",marginBottom:14}}>
                     <div>
                       <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Desde</label>
@@ -24172,14 +24109,14 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <input type="number" min="1" value={transferQty} onChange={e=>setTransferQty(Math.max(1,parseInt(e.target.value)||1))} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:14,fontWeight:700,color:T.text,boxSizing:"border-box",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:18}}/>
                   <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                     <button onClick={()=>setTransferModal(null)} style={{padding:"9px 16px",fontSize:13,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
-                    <button disabled={!transferFrom||!transferTo||transferSaving} onClick={async()=>{
-                      if(!transferFrom||!transferTo) return toast("Seleccioná origen y destino","warning");
+                    <button disabled={!transferFrom||!transferTo||!transferItemId||transferSaving} onClick={async()=>{
+                      if(!transferFrom||!transferTo||!transferItemId) return toast("Seleccioná producto, origen y destino","warning");
                       setTransferSaving(true);
-                      const r=await fetch(`/api/inventory?action=transfer_stock&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({from_warehouse:transferFrom,to_warehouse:transferTo,quantity:transferQty})});
+                      const r=await fetch(`/api/inventory?action=transfer_stock&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({item_id:transferItemId,from_id:transferFrom,to_id:transferTo,qty:transferQty})});
                       const j=await r.json();
-                      if(j.error){toast(j.error,"error");}else{toast(`${transferQty} unidades transferidas ✓`,"success");setTransferModal(null);loadMovements();}
+                      if(j.error){toast(j.error,"error");}else{toast(`${transferQty} unidades transferidas ✓`,"success");setTransferModal(null);loadInvItems();loadMovements();}
                       setTransferSaving(false);
-                    }} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(!transferFrom||!transferTo||transferSaving)?0.5:1}}>
+                    }} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(!transferFrom||!transferTo||!transferItemId||transferSaving)?0.5:1}}>
                       {transferSaving?<Spinner size={13} color="#fff"/>:"Transferir"}
                     </button>
                   </div>
@@ -24188,8 +24125,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               document.body
             )}
 
-            {/* ── TAB ITEMS (entidades centrales con mapeo multi-canal) ── */}
-            {tab==="items"&&(()=>{
+            {/* ── INVENTARIO: items de inventario (entidades centrales con mapeo multi-canal) ── */}
+            {tab==="inventario"&&(()=>{
               const filteredItems = invItems.filter(it => !invSearch.trim() || (it.nombre||"").toLowerCase().includes(invSearch.trim().toLowerCase()) || (it.sku||"").toLowerCase().includes(invSearch.trim().toLowerCase()));
               const kpis = {
                 total: invItems.length,
@@ -24198,17 +24135,17 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 empty: invItems.filter(i => i.status==="empty").length,
               };
               return (
-              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div style={{display:"flex",flexDirection:"column",gap:14,marginTop:16}}>
                 {/* Header con KPIs y acciones */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
                     <div>
-                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Items de inventario</div>
-                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Un item es la entidad central de tu stock. Vinculá las publicaciones de Shopify/TN/ML que correspondan a un mismo producto físico (con cantidades para packs).</div>
+                      <div style={{fontSize:15,fontWeight:700,color:T.text}}>Inventario central</div>
+                      <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Tu stock físico real, unificado por SKU entre canales. Las ventas de TN/Shopify/ML lo descuentan solas. Soporta packs (una venta descuenta N unidades) y depósitos.</div>
                     </div>
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       <button onClick={syncSales} disabled={syncingSales} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{syncingSales?<><Spinner size={11} color={T.textMd}/> Sincronizando</>:"Sincronizar ventas"}</button>
-                      <button onClick={importAllPubs} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Importar items</button>
+                      <button onClick={importCatalog} disabled={importingCatalog} style={{padding:"7px 12px",fontSize:12,fontWeight:600,border:`1px solid ${T.accent}55`,borderRadius:8,background:"transparent",color:T.accent,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{importingCatalog?<><Spinner size={11} color={T.accent}/> Vinculando…</>:"Vincular catálogo (SKU)"}</button>
                       <button onClick={openNewItem} style={{padding:"7px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear Item</button>
                     </div>
                   </div>
@@ -24238,11 +24175,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 ) : invItems.length === 0 ? (
                   <div style={{background:T.card,border:`1px dashed ${T.borderL}`,borderRadius:14,padding:"50px 20px",textAlign:"center"}}>
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
-                    <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>Todavía no tenés items</div>
-                    <div style={{fontSize:12,color:T.textMd,marginBottom:14,maxWidth:480,margin:"0 auto 14px"}}>Importá automáticamente desde tus canales conectados (Shopify, Tienda Nube, ML) o creá uno manual.</div>
+                    <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:6}}>Todavía no tenés inventario central</div>
+                    <div style={{fontSize:12,color:T.textMd,marginBottom:14,maxWidth:480,margin:"0 auto 14px"}}>Vinculá tu catálogo con un click: Growith lee tus publicaciones de TN/Shopify/ML, las unifica por SKU y toma el stock inicial de tu tienda. Después, cada venta lo descuenta sola.</div>
                     <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
-                      <button onClick={importAllPubs} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Importar de canales</button>
-                      <button onClick={openNewItem} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear item manual</button>
+                      <button onClick={importCatalog} disabled={importingCatalog} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{importingCatalog?<Spinner size={12} color="#fff"/>:"Vincular catálogo (SKU)"}</button>
+                      <button onClick={openNewItem} style={{padding:"8px 14px",fontSize:12,fontWeight:700,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Crear item manual</button>
                     </div>
                   </div>
                 ) : (
@@ -24325,8 +24262,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               );
             })()}
 
-            {/* ── TAB HISTORIAL ── */}
-            {tab==="historial"&&(()=>{
+            {/* ── TAB MOVIMIENTOS ── */}
+            {tab==="movimientos"&&(()=>{
               // Traducción de eventos
               const evtLabel=(ev,src)=>{if(!ev)return"—";const e=ev.toLowerCase();if(/sale|venta|orden|order/i.test(e))return"Venta";if(/manual|ajuste/i.test(e)||src==="manual")return"Ajuste manual";if(/creat|creac/i.test(e))return"Creación";if(/transfer/i.test(e))return"Transferencia";if(/import/i.test(e))return"Importación";if(/sync/i.test(e))return"Sincronización";return ev;};
               // Filtros locales sobre los movements ya cargados
@@ -24352,11 +24289,12 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <div style={{display:"flex",gap:6}}>
                     <button onClick={loadMovements} disabled={movementsLoading} style={{padding:"6px 12px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:8,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{movementsLoading?<Spinner size={11} color={T.textMd}/>:"↻"} Refrescar</button>
                     <button onClick={()=>{
-                      const cols=["fecha","producto","variante","origen","evento","cantidad","stock_resultante","orden"];
+                      const cols=["fecha","producto","origen","evento","cambio","stock_resultante","deposito"];
                       const rows=filteredMov.map(m=>[
-                        m.date||(m.timestamp?new Date(m.timestamp).toISOString():""),
-                        m.item_name||"",m.variant_name||"",m.source||"",m.event||"",
-                        m.quantity||"",m.stock_after||"",m.order_id||""
+                        m.ts||"",
+                        m.item_name||m.item_id||"",m.source||"",m.event||"",
+                        m.change??"",m.new_stock??"",
+                        (warehouses.find(w=>w.id===m.warehouse_id)?.name)||m.warehouse_id||""
                       ].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","));
                       const csv=[cols.join(","),...rows].join("\n");
                       const a=document.createElement("a");
@@ -24579,8 +24517,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               document.body
             )}
 
-            {/* ── TAB ALERTAS ── */}
-            {tab==="alertas"&&(
+            {/* ── CONFIG: alertas y notificaciones ── */}
+            {tab==="config"&&(
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
                 {/* Config global */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
@@ -24620,6 +24558,12 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* ── RESUMEN: alertas activas + calculadora de reorden ── */}
+            {tab==="resumen"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:16,marginTop:16}}>
                 {/* Calculadora punto de reorden */}
                 {alertas.length>0&&(
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
@@ -24694,27 +24638,6 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     })}
                   </>
                 )}
-
-                {/* Historial de agotados */}
-                {(()=>{
-                  const hist=getHistorialAgotados().slice(0,20);
-                  if(!hist.length) return null;
-                  return (
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px"}}>
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:12}}>Historial de agotados</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
-                        {hist.map((h,i)=>(
-                          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
-                            <span style={{color:T.red,flexShrink:0,fontSize:10,fontWeight:700}}>×</span>
-                            <span style={{flex:1,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.producto} · {h.variante}</span>
-                            <span style={{color:T.textSm,flexShrink:0,fontSize:11}}>{h.fecha}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <button onClick={()=>{try{localStorage.removeItem(`growith_stockouts_${uid}`);}catch(e){}toast("Historial borrado","success");}} style={{marginTop:10,fontSize:11,color:T.red,background:"transparent",border:"none",cursor:"pointer",padding:0}}>Borrar historial</button>
-                    </div>
-                  );
-                })()}
 
               </div>
             )}
@@ -26054,7 +25977,7 @@ export default function App() {
   const [stockTab,setStockTab]=useState(()=>{
     const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
     if(parts[0]==="stock"&&parts[1]) return parts[1];
-    return "analisis";
+    return "resumen";
   });
   const [margenesTab,setMargenesTab]=useState(()=>{
     const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
