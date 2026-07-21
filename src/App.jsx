@@ -942,6 +942,31 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
 }
 
 // ─── Command Palette (Ctrl+K) ───
+// ── Logos de marcas (SVG inline, sin assets externos) ──
+// Para integraciones y cabeceras: Tienda Nube, Shopify, Mercado Libre, Meta,
+// Google Ads, Mercado Pago. Tamaño por prop; colores de marca fijos (no theme).
+function BrandIcon({name, size=20, style}) {
+  const s = size;
+  const P = {width:s, height:s, viewBox:"0 0 24 24", style:{flexShrink:0, display:"block", ...style}};
+  switch(String(name||"").toLowerCase()){
+    case "tiendanube": case "tn": return (
+      <svg {...P}><path d="M17.6 18.2H6.8a4.3 4.3 0 01-.5-8.6 6 6 0 0111.7-1.5 4.8 4.8 0 01-.4 10.1z" fill="#33A0FF"/><circle cx="10.2" cy="12.7" r="1.15" fill="#fff"/><circle cx="14.4" cy="12.7" r="1.15" fill="#fff"/></svg>);
+    case "shopify": return (
+      <svg {...P}><path d="M14.8 4.6c-.5-.2-1-.2-1.5 0C12.8 3.5 12 2.6 11 2.6c-2.1 0-3.4 2.6-3.9 4.4l-1.8.6c-.5.2-.6.3-.7.8L3 19.7l11.3 2 5.7-1.5-2.9-15c-.4-.1-1.5-.4-2.3-.6z" fill="#95BF47"/><path d="M13.9 9c-.5-.2-1.1-.4-1.8-.4-1.5 0-2.3.9-2.3 2 0 1.5 2.4 1.7 2.4 3.1 0 .5-.4.9-1 .9-.8 0-1.7-.5-1.7-.5l-.4 1.5s.9.7 2.2.7c1.6 0 2.7-1 2.7-2.4 0-1.8-2.4-2.1-2.4-3.1 0-.3.2-.7.9-.7.7 0 1.2.3 1.2.3l.2-1.4z" fill="#fff"/></svg>);
+    case "mercadolibre": case "ml": return (
+      <svg {...P}><ellipse cx="12" cy="12" rx="10.5" ry="7.6" fill="#FFE600"/><path d="M4.4 11.2c1.9.7 3.8.8 5.2.3M19.6 11.2c-1.9.6-3.7 1.5-4.9 2.5M8.3 12.4c1.4-1.5 3-2.5 4.2-2.5 1.5 0 3.4 1.9 4.7 3.2" stroke="#2D3277" strokeWidth="1.25" fill="none" strokeLinecap="round"/></svg>);
+    case "meta": return (
+      <svg {...P}><path d="M6.9 7.5C4.8 7.5 3 10.7 3 13.6c0 2 1 3 2.4 3 1.6 0 2.6-1.4 4-4L12 8.4l2.6 4.2c1.4 2.6 2.4 4 4 4 1.4 0 2.4-1 2.4-3 0-2.9-1.8-6.1-3.9-6.1-1.4 0-2.6 1-3.9 3l-1.2 2-1.2-2c-1.3-2-2.5-3-3.9-3z" fill="none" stroke="#0081FB" strokeWidth="1.7" strokeLinejoin="round"/></svg>);
+    case "google": case "googleads": case "google_ads": return (
+      <svg {...P}><rect x="9.7" y="3.2" width="4.6" height="14.6" rx="2.3" transform="rotate(30 12 10.5)" fill="#FBBC04"/><rect x="9.7" y="3.2" width="4.6" height="14.6" rx="2.3" transform="rotate(-30 12 10.5)" fill="#4285F4"/><circle cx="5.9" cy="17.6" r="2.7" fill="#34A853"/></svg>);
+    case "mercadopago": case "mp": return (
+      <svg {...P}><ellipse cx="12" cy="12" rx="10.5" ry="7.6" fill="#009EE3"/><path d="M4.4 11.2c1.9.7 3.8.8 5.2.3M19.6 11.2c-1.9.6-3.7 1.5-4.9 2.5M8.3 12.4c1.4-1.5 3-2.5 4.2-2.5 1.5 0 3.4 1.9 4.7 3.2" stroke="#fff" strokeWidth="1.25" fill="none" strokeLinecap="round"/></svg>);
+    case "arca": case "afip": return (
+      <svg {...P}><rect x="3" y="3" width="18" height="18" rx="4" fill="#0B5FFF"/><path d="M7 16l3-8h1.6l3 8M8.2 13.4h5.2" stroke="#fff" strokeWidth="1.4" fill="none" strokeLinecap="round"/><circle cx="17" cy="8" r="1.2" fill="#fff"/></svg>);
+    default: return null;
+  }
+}
+
 function CommandPalette({T, open, onClose, setPage, isAdmin}) {
   const [q, setQ] = React.useState("");
   const [selIdx, setSelIdx] = React.useState(0);
@@ -8470,27 +8495,33 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
           {[
             {
               key:"tn", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : shStore ? "Desvinculá Shopify primero" : "No conectado",
-              connected:!!tnStore, disabled:!!shStore && !tnStore, brand:"#00a0e3", iconBg:"#00a0e3",
-              icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>,
+              connected:!!tnStore, disabled:!!shStore && !tnStore, brand:"#00a0e3", iconBg:"#fff",
+              icon:<BrandIcon name="tiendanube" size={30}/>,
               onConnect: connectTiendaNube, onDisconnect:()=>disconnectStore("tiendanube"),
             },
             {
               key:"sh", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : tnStore ? "Desvinculá Tienda Nube primero" : "No conectado",
-              connected:!!shStore, disabled:!!tnStore && !shStore, brand:"#95BF47", iconBg:"#95BF47",
-              icon:<span style={{fontSize:22,fontWeight:900,color:"#fff",fontFamily:"Georgia,serif",letterSpacing:"-1px"}}>S</span>,
+              connected:!!shStore, disabled:!!tnStore && !shStore, brand:"#95BF47", iconBg:"#fff",
+              icon:<BrandIcon name="shopify" size={30}/>,
               onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
             },
             {
               key:"ml", label:"Mercado Libre / Mercado Pago", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "Incluye Mercado Pago — comisiones, cupones y envíos",
-              connected:!!mlStore, disabled:false, brand:"#FFE600", iconBg:"#FFE600",
-              icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 001.95-1.57l1.65-7.74H6"/></svg>,
+              connected:!!mlStore, disabled:false, brand:"#FFE600", iconBg:"#fff",
+              icon:<BrandIcon name="mercadolibre" size={34}/>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
             },
             {
               key:"meta", label:"Meta Ads", sub: metaConnected ? "Conectado" : "Facebook + Instagram · No conectado",
-              connected:!!metaConnected, disabled:false, brand:"#1877F2", iconBg:"#1877F2",
-              icon:<span style={{fontSize:24,fontWeight:900,color:"#fff",fontFamily:"Georgia,serif"}}>f</span>,
+              connected:!!metaConnected, disabled:false, brand:"#1877F2", iconBg:"#fff",
+              icon:<BrandIcon name="meta" size={30}/>,
               onConnect:()=>{setMetaMode("oauth");setShowMetaModal(true);}, onDisconnect:disconnectMeta,
+            },
+            {
+              key:"gads", label:"Google Ads", sub:"Carga manual por período (Dashboard → Costos) · conexión automática próximamente",
+              connected:false, disabled:false, brand:"#4285F4", iconBg:"#fff",
+              icon:<BrandIcon name="google" size={28}/>,
+              onConnect:()=>{ toast("Cargá tu gasto de Google Ads por período en Dashboard → Costos — entra al profit y al ROAS igual que Meta.", "success"); onNavigate && onNavigate("margenes"); },
             },
           ].map(p=>{
             return (
@@ -8876,9 +8907,9 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
   // Plan único — Pro (id Firestore: "plus", NO cambiar)
   const PLAN={
     id:"plus", nombre:"Pro", color:"#6366f1", icon:"",
-    precio_usdt:59, precio_ars:59000,
-    precio_usdt_anual:49, precio_ars_anual:49000,
-    precio_normal:120,
+    precio_usdt:79, precio_ars:79000,
+    precio_usdt_anual:65, precio_ars_anual:65000,
+    precio_normal:99,
     features:[
       "Envíos ilimitados + etiquetas PDF con SKU",
       "Auto-tracking Andreani y reclamos ilimitados",
@@ -8886,6 +8917,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
       "Márgenes, profit y costos por venta en tiempo real",
       "Stock cruzado TN + Mercado Libre + Shopify",
       "Meta Ads — campañas y métricas",
+      "Google Ads y Mercado Ads en el profit",
       "Gestión de equipo + tareas ilimitadas",
       "Canjes e influencers ilimitados",
       "Audio Studio (TTS Gemini)",
@@ -9128,13 +9160,16 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
 
           {/* Precio */}
           <div style={{textAlign:"center",marginBottom:22,marginTop:8}}>
-            {!anual&&<div style={{fontSize:12,color:T.textSm,textDecoration:"line-through",marginBottom:2}}>Precio normal: ${PLAN.precio_normal} USD/mes</div>}
+            <div style={{display:"inline-flex",alignItems:"center",gap:6,background:"#22c55e18",border:"1px solid #22c55e44",borderRadius:20,padding:"3px 12px",marginBottom:8}}>
+              <span style={{fontSize:11,fontWeight:800,color:"#22c55e",letterSpacing:"0.03em"}}>🔥 OFERTA DE LANZAMIENTO — 20% OFF</span>
+            </div>
+            <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",marginBottom:2,fontWeight:600}}>${PLAN.precio_normal} USD/mes</div>
             <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:4}}>
               <span style={{fontSize:52,fontWeight:900,color:T.text,lineHeight:1}}>${precioU}</span>
               <span style={{fontSize:15,color:T.textSm,marginBottom:10}}>USD/mes</span>
             </div>
             <div style={{fontSize:13,color:T.textSm}}>${precioARS.toLocaleString("es-AR")} ARS / mes</div>
-            {anual&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600,marginTop:4}}>Ahorrás ${(PLAN.precio_usdt-PLAN.precio_usdt_anual)*12} USD al año (2 meses gratis)</div>}
+            {anual&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600,marginTop:4}}>Ahorrás ${(PLAN.precio_usdt-PLAN.precio_usdt_anual)*12} USD al año pagando anual</div>}
             {!anual&&<div style={{fontSize:11,color:"#6366f1",fontWeight:600,marginTop:6}}>o ${PLAN.precio_usdt_anual} USD/mes pagando anual</div>}
           </div>
 
@@ -21745,6 +21780,9 @@ function CostosPanel({ T, uid }) {
   const [fulfillment, setFulfillment] = React.useState(""); // costo de fulfillment por paquete despachado (opcional)
   const [mlAdsList, setMlAdsList] = React.useState([]);
   const [mlAdsDraft, setMlAdsDraft] = React.useState({desde:"",hasta:"",monto:""});
+  const [googleAdsList, setGoogleAdsList] = React.useState([]);
+  const [googleAdsDraft, setGoogleAdsDraft] = React.useState({desde:"",hasta:"",monto:""});
+  const [googleAdsSaving, setGoogleAdsSaving] = React.useState(false);
   const [mlAdsSaving, setMlAdsSaving] = React.useState(false);
   const [products, setProducts] = React.useState([]);
   const [mlItems, setMlItems] = React.useState([]);
@@ -21773,6 +21811,7 @@ function CostosPanel({ T, uid }) {
         setMlFlex(ec.mlFlex ?? "");
         setFulfillment(ec.fulfillment ?? "");
         setMlAdsList(Array.isArray(d.margenesMlAds) ? d.margenesMlAds : []);
+        setGoogleAdsList(Array.isArray(d.margenesGoogleAds) ? d.margenesGoogleAds : []);
         setCostos(d.margenesCogs && typeof d.margenesCogs==="object" && !Array.isArray(d.margenesCogs) ? d.margenesCogs : {});
         setFijos(Array.isArray(d.margenesCostosFijos) ? d.margenesCostosFijos : []);
         setVarios(Array.isArray(d.margenesCostosVar) ? d.margenesCostosVar : []);
@@ -21843,6 +21882,22 @@ function CostosPanel({ T, uid }) {
   async function delMlAdsPeriod(i) {
     const list = mlAdsList.filter((_,j)=>j!==i);
     try { await persistMlAds(list); setMlAdsList(list); toast("Período borrado","success"); }
+    catch(e) { toast("Error: "+e.message,"error"); }
+  }
+  async function addGoogleAdsPeriod() {
+    const d = googleAdsDraft;
+    if (!d.desde || !d.hasta) { toast("Elegí las fechas del período", "error"); return; }
+    if (d.hasta < d.desde) { toast("La fecha final no puede ser anterior a la inicial", "error"); return; }
+    if (!((parseFloat(d.monto)||0) > 0)) { toast("Poné el monto gastado", "error"); return; }
+    setGoogleAdsSaving(true);
+    const list = [...googleAdsList, { desde:d.desde, hasta:d.hasta, monto:parseFloat(d.monto)||0 }].sort((a,b)=>String(b.desde).localeCompare(String(a.desde)));
+    try { await setDoc(doc(db,"users",uid), { margenesGoogleAds: list }, { merge:true }); setGoogleAdsList(list); setGoogleAdsDraft({desde:"",hasta:"",monto:""}); toast("Período de Google Ads guardado ✓","success"); }
+    catch(e) { toast("Error: "+e.message,"error"); }
+    setGoogleAdsSaving(false);
+  }
+  async function delGoogleAdsPeriod(i) {
+    const list = googleAdsList.filter((_,j)=>j!==i);
+    try { await setDoc(doc(db,"users",uid), { margenesGoogleAds: list }, { merge:true }); setGoogleAdsList(list); toast("Período borrado","success"); }
     catch(e) { toast("Error: "+e.message,"error"); }
   }
 
@@ -21949,6 +22004,46 @@ function CostosPanel({ T, uid }) {
             {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
             <button onClick={addMlAdsPeriod} disabled={mlAdsSaving} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>{mlAdsSaving?"Guardando…":"+ Guardar período"}</button>
           </div>
+        </>); })()}
+      </div>
+
+      {/* Gasto de Google Ads por períodos (carga manual — la API oficial necesita
+          developer token aprobado por Google; cuando esté, pasa a automático). */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+          <BrandIcon name="google" size={18}/>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:T.text}}>Gasto de Google Ads (por período)</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cargá lo que gastás en Google Ads por rango de fechas — se promedia por día y entra al Ad Spend del Dashboard (global y canal Tienda), al ROAS, CPA y profit, igual que Meta y Mercado Ads.</div>
+          </div>
+        </div>
+        {(()=>{
+        const maxFut=new Date(Date.now()+730*86400000).toISOString().slice(0,10);
+        const fmtF=f=>{ try { return new Date(f+"T00:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}); } catch(_) { return f; } };
+        const dias=(a,b)=>{ if(!a||!b||b<a) return 0; return Math.round((new Date(b)-new Date(a))/86400000)+1; };
+        const dr=googleAdsDraft, dD=dias(dr.desde,dr.hasta), dProm=dD>0?(parseFloat(dr.monto)||0)/dD:0;
+        const setD=(k,v)=>setGoogleAdsDraft(s=>({...s,[k]:v}));
+        return (<>
+          {googleAdsList.length>0 && <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+            {googleAdsList.map((e,i)=>{ const d=dias(e.desde,e.hasta), prom=d>0?(parseFloat(e.monto)||0)/d:0; return (
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px"}}>
+                <span style={{fontSize:12,color:T.text,fontWeight:600}}>{fmtF(e.desde)} → {fmtF(e.hasta)}</span>
+                <span style={{fontSize:12,color:T.textMd}}>${(parseFloat(e.monto)||0).toLocaleString("es-AR")}</span>
+                <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(prom).toLocaleString("es-AR")}/día · {d}d</span>
+                <button onClick={()=>delGoogleAdsPeriod(i)} title="Borrar período" style={{...BtnSecondary(T),fontSize:12,padding:"4px 10px",color:T.red,marginLeft:"auto"}}>×</button>
+              </div>
+            );})}
+          </div>}
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderTop:googleAdsList.length>0?`1px solid ${T.borderL}`:"none",paddingTop:googleAdsList.length>0?12:0}}>
+            <input type="date" min="2023-01-01" max={dr.hasta||maxFut} value={dr.desde} onChange={ev=>setD("desde",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <span style={{fontSize:12,color:T.textSm}}>→</span>
+            <input type="date" min={dr.desde||"2023-01-01"} max={maxFut} value={dr.hasta} onChange={ev=>setD("hasta",ev.target.value)} style={{...InputStyle(T),fontSize:12,padding:"6px 8px"}}/>
+            <span style={{fontSize:13,color:T.textSm}}>$</span>
+            <input type="number" min="0" value={dr.monto} onChange={ev=>setD("monto",ev.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right",padding:"6px 8px"}}/>
+            {dProm>0 && <span style={{fontSize:11,color:T.accent,fontWeight:600}}>≈ ${Math.round(dProm).toLocaleString("es-AR")}/día</span>}
+            <button onClick={addGoogleAdsPeriod} disabled={googleAdsSaving} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>{googleAdsSaving?"Guardando…":"+ Guardar período"}</button>
+          </div>
+          <div style={{fontSize:10,color:T.textSm,marginTop:8}}>La conexión automática con la API de Google Ads llega pronto (requiere developer token de Google). Mientras tanto, la carga por período mantiene el profit exacto.</div>
         </>); })()}
       </div>
 
@@ -25183,8 +25278,8 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             const esShop = bc.platform==="shopify";
             const opts = [
               {id:"global", label:"🌐 Global"},
-              {id:"tienda", label: esShop?"Shopify":"Tienda Nube", dot:T.blue},
-              ...(bc.hasMl?[{id:"ml", label:"Mercado Libre", dot:T.yellow}]:[]),
+              {id:"tienda", label: esShop?"Shopify":"Tienda Nube", brand: esShop?"shopify":"tiendanube"},
+              ...(bc.hasMl?[{id:"ml", label:"Mercado Libre", brand:"mercadolibre"}]:[]),
             ];
             if (!bc.hasMl && canalVista==="ml") setCanalVista("global");
             return (
@@ -25192,7 +25287,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 {opts.map(o=>(
                   <button key={o.id} onClick={()=>setCanalVista(o.id)}
                     style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",fontSize:DS.font.base,fontWeight:canalVista===o.id?DS.w.bold:DS.w.medium,border:`1px solid ${canalVista===o.id?T.accent+"66":T.border}`,borderRadius:DS.r.lg,background:canalVista===o.id?T.accent+"16":T.card,color:canalVista===o.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    {o.dot&&<span style={{width:8,height:8,borderRadius:"50%",background:o.dot,display:"inline-block"}}/>}{o.label}
+                    {o.brand&&<BrandIcon name={o.brand} size={15}/>}{o.dot&&<span style={{width:8,height:8,borderRadius:"50%",background:o.dot,display:"inline-block"}}/>}{o.label}
                   </button>
                 ))}
               </div>
@@ -25543,7 +25638,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {renderCards([
                 {label:"Profit",      val:fmtM(cSel.profit),    c:cSel.profit,     p:cPrev?.profit,     accent:(cSel.profit||0)>=0?MC.green:MC.red, valColor:(cSel.profit||0)>=0?MC.green:MC.red, hint:(cSel.profit||0)>=0?"Ganancia neta del canal":"Pérdida neta del canal", spk:canalRows.map(r=>r.Profit), zero:true},
                 {label:"Revenue",     val:fmtM(cSel.revenue),   c:cSel.revenue,    p:cPrev?.revenue,    accent:MC.blue,   hint:"Facturación del canal", spk:canalRows.map(r=>r.Revenue)},
-                {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    accent:MC.gold,   hint:esMl?(rendData?.meta?.mlAdsFuente==="auto"?"Mercado Ads (real, API)":"Mercado Ads (manual)"):"Meta Ads", spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
+                {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    accent:MC.gold,   hint:esMl?(rendData?.meta?.mlAdsFuente==="auto"?"Mercado Ads (real, API)":"Mercado Ads (manual)"):((rendData?.totals?.adSpendGoogle||0)>0?"Meta + Google Ads":"Meta Ads"), spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
                 {label:"Net Revenue", val:fmtM(cSel.netRevenue),c:cSel.netRevenue, p:cPrev?.netRevenue, accent:MC.violet, hint:"Todo descontado, antes de pauta", spk:canalRows.map(r=>r["Net Revenue"])},
                 {label:"Órdenes",     val:fmtInt(cSel.orders),  c:cSel.orders,     p:cPrev?.orders,     hint:"Con revenue", spk:canalRows.map(r=>r["Ordenes > $0"]), bad:!((cSel.orders||0)>0)},
                 {label:"ROAS",        val:fmtX(cSel.roas),      c:cSel.roas,       p:cPrev?.roas,       hint:`meta ≥ ${metas.roas}x`, bad:(cSel.adSpend>0)&&(cSel.roas||0)<metas.roas},

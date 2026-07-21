@@ -547,6 +547,10 @@ export default async function handler(req, res) {
       // Cada período se promedia por día (monto / días) y se toma el solape con
       // el rango del dashboard. Ej: 10/06–19/06 $1.000.000 = $100.000/día.
       const mlAdsList = Array.isArray(userData.margenesMlAds) ? userData.margenesMlAds : [];
+      // Gasto de Google Ads por períodos (carga manual — la API oficial requiere
+      // developer token aprobado por Google; cuando esté, esto pasa a automático
+      // igual que Mercado Ads). Misma estructura: [{desde, hasta, monto}].
+      const googleAdsList = Array.isArray(userData.margenesGoogleAds) ? userData.margenesGoogleAds : [];
       // ── Mercado Ads AUTOMÁTICO (Product Ads API) ──
       // Si la cuenta de ML tiene Product Ads, el gasto real del período se trae
       // solo: advertisers (Api-Version 1) → campaigns/search con metrics=cost
@@ -580,9 +584,9 @@ export default async function handler(req, res) {
           return isFinite(cost) && cost > 0 ? +cost.toFixed(2) : null;
         } catch (e) { D("exception", { error: String(e.message).slice(0,200) }); console.error("Mercado Ads spend error:", e.message); return null; }
       }
-      function mlAdsPeriodo(sinceR, untilR) {
+      function adsPeriodoDe(list, sinceR, untilR) {
         let total = 0;
-        for (const e of mlAdsList) {
+        for (const e of list) {
           const d = e.desde, h = e.hasta, m = parseFloat(e.monto) || 0;
           if (!d || !h || m <= 0 || h < d) continue;
           const entryDays = Math.round((new Date(h) - new Date(d)) / 86400000) + 1;
@@ -596,6 +600,7 @@ export default async function handler(req, res) {
         }
         return total;
       }
+      const mlAdsPeriodo = (s,u) => adsPeriodoDe(mlAdsList, s, u);
       const fijos     = Array.isArray(userData.margenesCostosFijos) ? userData.margenesCostosFijos : [];
       const dolarCfg  = userData.margenesDolar || {};
       const factExt   = Array.isArray(userData.margenesFactExterna) ? userData.margenesFactExterna : [];
@@ -735,14 +740,16 @@ export default async function handler(req, res) {
         const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
         // Mercado Ads: gasto REAL de la API si está disponible; sino el manual.
         const adSpendMl   = (mlAdsAuto!=null) ? mlAdsAuto : mlAdsPeriodo(sinceR, untilR);
-        const adSpendEf = adSpendMeta + adSpendMl + adic.gastoAds;
+        // Google Ads: carga manual por períodos (prorrateado por día, como ML Ads).
+        const adSpendGoogle = adsPeriodoDe(googleAdsList, sinceR, untilR);
+        const adSpendEf = adSpendMeta + adSpendMl + adSpendGoogle + adic.gastoAds;
         const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;
         // Net Revenue = TODO descontado menos la pauta (contribución antes de ads).
         // Así la cascada es limpia: Revenue → Net Revenue → (− pauta) → Profit,
         // y True ROAS (netRevenue/adSpend) se lee directo: ≥1x = la pauta gana plata.
         const netRevenue= profit + adSpendEf;
         return { ...tot,
-          revenue, orders: ordersTot, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), adSpendExtra: +adic.gastoAds.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
+          revenue, orders: ordersTot, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), adSpendGoogle: +adSpendGoogle.toFixed(2), adSpendExtra: +adic.gastoAds.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
           costoProductos: +cogs.toFixed(2), impuestos: +impuestos.toFixed(2),
           comisionPlataforma: +comPlat.toFixed(2), comisionPago: +comPago.toFixed(2),
           costoEnvio: +envio.toFixed(2), fulfillment: +fulfill.toFixed(2), costosAdicionales: +costosAdic.toFixed(2),
@@ -897,7 +904,7 @@ export default async function handler(req, res) {
         const ratioDesc  = rev>0 ? ((tot.impuestos||0)+(tot.comisionPlataforma||0)+(tot.comisionPago||0))/rev : 0;
         const ratioCosto = rev>0 ? ((tot.costoProductos||0)+(tot.costoEnvio||0))/rev : 0;
         const fijoDia      = dias>0 ? (tot.costosAdicionales||0)/dias : 0;
-        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendExtra||0))/dias : 0;
+        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendGoogle||0)+(tot.adSpendExtra||0))/dias : 0;
         return rowsArr.map(r => {
           const revD = r.Revenue||0;
           const adD  = (r["Ad Spend"]||0)*(1+feeAd) + adRepartoDia;
@@ -955,7 +962,7 @@ export default async function handler(req, res) {
         const residRatio = rev>0 ? (totVar - sumDc)/rev : 0;
         const ratioDesc  = rev>0 ? ((tot.impuestos||0)+(tot.comisionPlataforma||0)+(tot.comisionPago||0))/rev : 0;
         const fijoDia      = dias>0 ? (tot.costosAdicionales||0)/dias : 0;
-        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendExtra||0))/dias : 0;
+        const adRepartoDia = dias>0 ? ((tot.adSpendMl||0)+(tot.adSpendGoogle||0)+(tot.adSpendExtra||0))/dias : 0;
         return rowsArr.map(r => {
           const revD = r.Revenue||0;
           const adD  = (r["Ad Spend"]||0)*(1+feeAd) + adRepartoDia;
@@ -1021,9 +1028,9 @@ export default async function handler(req, res) {
           aov: ord>0?rev/ord:0, aovNeto: ord>0?netRev/ord:0 };
       }
       const byChannel = {
-        tienda: canal(curr.raw, false, shopifyPayComm(curr.raw, feeByRef), totals.adSpendMeta, 0, mpCommCurr.rev),
+        tienda: canal(curr.raw, false, shopifyPayComm(curr.raw, feeByRef), totals.adSpendMeta + (totals.adSpendGoogle||0), 0, mpCommCurr.rev),
         ml:     canal(curr.raw, true,  0, totals.adSpendMl, mlEnvioTot(curr.raw), 0),
-        tiendaPrev: canal(prev.raw, false, shopifyPayComm(prev.raw, feeByRefPrev), prevTotals.adSpendMeta, 0, mpCommPrev.rev),
+        tiendaPrev: canal(prev.raw, false, shopifyPayComm(prev.raw, feeByRefPrev), prevTotals.adSpendMeta + (prevTotals.adSpendGoogle||0), 0, mpCommPrev.rev),
         mlPrev:     canal(prev.raw, true,  0, prevTotals.adSpendMl, mlEnvioTot(prev.raw), 0),
         platform: curr.raw?.platform || (curr.raw?.products?.[0]?.platform) || "tiendanube",
         hasMl: !!(curr.raw?.ml_data),
@@ -1199,6 +1206,7 @@ export default async function handler(req, res) {
         since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, metaAccountsCount: metaAccounts.length,
           mlAdsFuente: mlAdsAutoCurr!=null ? "auto" : (mlAdsList.length ? "manual" : "sin_datos"),
+          googleAdsFuente: googleAdsList.length ? "manual" : "sin_datos",
           mlAdsDebug, mlEnvioDebug,
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };
