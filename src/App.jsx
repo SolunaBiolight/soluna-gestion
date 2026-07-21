@@ -5338,20 +5338,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
     w.document.close();
   }
 
-  // ── Pedidos de Mercado Libre (solo lectura — ML despacha con su logística) ──
-  const [mlOrders,setMlOrders]=useState(null); // null=no cargado, {orders,mlConectado}
-  const [mlLoading,setMlLoading]=useState(false);
-  async function fetchMlEnvios(){
-    if(!user?.uid) return;
-    setMlLoading(true);
-    try{
-      const r=await authFetch(`/api/orders?uid=${user.uid}&tab=ml_envios&days=14`);
-      const d=await r.json();
-      setMlOrders(d&&!d.error?d:{orders:[],mlConectado:false});
-    }catch(_){ setMlOrders({orders:[],mlConectado:false}); }
-    finally{ setMlLoading(false); }
-  }
-
   // ── Modo despacho (scan-to-verify): lector USB/Bluetooth o tipeo ──
   const [scanValue,setScanValue]=useState("");
   const [scanLog,setScanLog]=useState([]); // {tracking, numero|null, ok, ts}
@@ -6435,21 +6421,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               {/* Segmented control */}
               <div style={{display:"flex",background:T.surface,borderRadius:10,padding:3,gap:0}}>
                 {[
-                  {id:"empaquetar",label:"Por empaquetar", color:T.yellow},
-                  {id:"enviar",    label:"Por enviar",     color:T.blue},
-                  {id:"ml",        label:"Mercado Libre",  color:T.yellow},
-                  {id:"buscar",    label:"Buscar",         color:T.accent},
+                  {id:"empaquetar",label:"Por empaquetar"},
+                  {id:"enviar",    label:"Por enviar"},
+                  {id:"buscar",    label:"Buscar"},
                 ].map(t=>{
                   const isActive=tabEnvio===t.id;
                   return (
                     <button key={t.id} onClick={()=>{
                       setTabEnvio(t.id);setSelected(new Map());setSearchEnvios("");
                       if(t.id==="buscar"){setBuscarQuery("");setTabOrders([]);}
-                      else if(t.id==="ml"){ if(mlOrders===null) fetchMlEnvios(); }
                       else{fetchTabOrders(t.id);if(!tabCounts[t.id])fetchTabCounts(user?.uid);}
                     }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:isActive?600:400,border:"none",background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap"}}>
                       {t.label}
-                      {t.id!=="buscar"&&t.id!=="ml"&&<span style={{background:t.color+(counts[t.id]>0?"33":"15"),color:counts[t.id]>0?t.color:t.color+"99",fontSize:10,fontWeight:800,borderRadius:DS.r.full,padding:"0 7px",minWidth:20,height:18,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>
+                      {t.id!=="buscar"&&<span style={{background:isActive?T.accent+"15":T.border+"66",color:isActive?T.accent:T.textMd,fontSize:10,fontWeight:800,borderRadius:DS.r.full,padding:"0 7px",minWidth:20,height:18,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>
                         {counts[t.id]===null?"·":counts[t.id]}
                       </span>}
                     </button>
@@ -6501,46 +6485,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
               </div>
             )}
 
-            {/* Vista Mercado Libre — solo lectura (ML despacha con su logística) */}
-            {tabEnvio==="ml"&&(
-              <div>
-                {mlLoading&&<div style={{padding:"40px 0",textAlign:"center",color:T.textSm,fontSize:13}}><Spinner size={18} color={T.accent}/> <div style={{marginTop:8}}>Cargando pedidos de Mercado Libre…</div></div>}
-                {!mlLoading&&mlOrders&&!mlOrders.mlConectado&&(
-                  <DSEmpty T={T} icon="🛒" title="Mercado Libre no conectado" subtitle="Conectá tu cuenta de ML desde Configuración → Integraciones para ver el estado de esos envíos acá."/>
-                )}
-                {!mlLoading&&mlOrders&&mlOrders.mlConectado&&(()=>{
-                  const EST_ML={pending:["Pendiente",T.textSm],handling:["Preparando",T.yellow],ready_to_ship:["Listo p/ despachar",T.blue],shipped:["En camino",T.accent],delivered:["Entregado",T.green],not_delivered:["No entregado",T.red],cancelled:["Cancelado",T.red]};
-                  const lista=mlOrders.orders||[];
-                  return (
-                    <div>
-                      <div style={{fontSize:12,color:T.textSm,marginBottom:10}}>{lista.length} pedidos de los últimos 14 días · ML gestiona su propia logística — acá ves el estado sin salir de Growith. <button onClick={fetchMlEnvios} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>↻ Actualizar</button></div>
-                      {lista.length===0&&<DSEmpty T={T} icon="📦" title="Sin pedidos recientes en ML" subtitle="Los pedidos pagos de los últimos 14 días aparecen acá."/>}
-                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                        {lista.map(o=>{
-                          const [lbl,col]=EST_ML[o.envio?.status]||[o.envio?.status||"Sin datos de envío",T.textSm];
-                          const esFlex=o.envio?.lt==="self_service";
-                          return (
-                            <div key={o.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-                              <div style={{minWidth:120}}>
-                                <a href={`https://www.mercadolibre.com.ar/ventas/${o.id}/detalle`} target="_blank" rel="noreferrer" style={{fontSize:12,fontWeight:700,color:T.accent,textDecoration:"none"}}>ML #{o.id}</a>
-                                <div style={{fontSize:10,color:T.textSm}}>{o.fecha?new Date(o.fecha).toLocaleDateString("es-AR"):""} · {o.comprador}</div>
-                              </div>
-                              <div style={{flex:1,fontSize:12,color:T.textMd,minWidth:180}}>{(o.items||[]).map(it=>`${it.qty}× ${it.titulo}`).join(" · ")}</div>
-                              <DSBadge T={T} color={col} size="sm">{lbl}{esFlex?" · Flex":""}</DSBadge>
-                              {o.envio?.tracking&&<span style={{fontSize:10,color:T.textSm,fontFamily:"'Inter',system-ui,sans-serif"}}>{o.envio.tracking}</span>}
-                              <span style={{fontSize:12,fontWeight:700,color:T.text}}>${Math.round(o.total).toLocaleString("es-AR")}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
             {/* Acciones (solo cuando no es buscar o hay resultados) */}
-            {tabEnvio!=="ml"&&(tabEnvio!=="buscar"||tabOrders.length>0)&&(
+            {(tabEnvio!=="buscar"||tabOrders.length>0)&&(
             <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
               {tabEnvio!=="buscar"&&<div style={{display:"flex",gap:4,background:T.surface,borderRadius:8,padding:2}}>
                 {[["todos","Todos"],["domicilio","Domicilio"],["sucursal","Sucursal"]].map(([v,l])=>(
@@ -6656,7 +6602,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, onGenera
             </div>
             )}
 
-            {tabEnvio==="ml"?null:tabLoading||buscarLoading?(
+            {tabLoading||buscarLoading?(
               <div>
                 {[...Array(6)].map((_,i)=>(
                   <div key={i} style={{display:"grid",gridTemplateColumns:"40px 80px 1fr 1fr 160px 130px 90px",gap:8,padding:"15px 14px",borderBottom:`0.5px solid ${T.borderL}`,alignItems:"center",opacity:1-i*0.12}}>
