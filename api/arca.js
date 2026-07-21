@@ -24,7 +24,7 @@ function normPlataformaPago(gateway, method) {
   const g = String(gateway || "").toLowerCase();
   if (g.includes("mercadopago") || g.includes("mercado pago")) return "Mercado Pago";
   if (g.includes("nuvempago") || g.includes("nuvem") || g.includes("pago nube") || g.includes("pagonube")) return "Pago Nube";
-  if (g === "offline" || g === "custom" || g.includes("transfer")) return "Personalizado / Transferencia";
+  if (g === "offline" || g === "custom" || g.includes("transfer") || g.includes("personalizado")) return "Personalizado / Transferencia";
   if (g) return String(gateway); // otro gateway: mostrar como venga
   if (String(method || "") === "custom") return "Personalizado / Transferencia";
   return "";

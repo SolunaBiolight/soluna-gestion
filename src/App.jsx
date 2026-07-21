@@ -15494,10 +15494,22 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   // seleccionado = lo que se factura". Antes facturarSeleccionadas recorría
   // TODO tnData.ordenes ignorando el filtro de plataforma → podía emitir
   // órdenes ocultas por el filtro y facturar de más (bug 41→87).
+  // Plataforma de cobro legible y unificada (espeja normPlataformaPago de api/arca.js).
+  // Cubre también órdenes viejas cacheadas sin plataforma_pago o con el nombre crudo
+  // del gateway ("Pagos Personalizados", "custom", etc.) para que no haya duplicados.
+  function normPlatPago(m) {
+    const g = String(m || "").trim(); if (!g) return "";
+    const l = g.toLowerCase();
+    if (l.includes("mercadopago") || l.includes("mercado pago")) return "Mercado Pago";
+    if (l.includes("nuvem") || l.includes("pagonube") || l.includes("pago nube")) return "Pago Nube";
+    if (l === "custom" || l === "offline" || l.includes("transfer") || l.includes("personalizado")) return "Personalizado / Transferencia";
+    return g;
+  }
+
   function ordenPasaFiltros(id, o) {
     if (o._billed) return false; // las facturadas van a la sección colapsada, no a la lista principal
     if (canalSel !== "todos" && o._platform !== canalSel) return false;
-    if (metodoPagoSel !== "todos" && ((o.plataforma_pago || o.metodo_pago || "").trim()) !== metodoPagoSel) return false;
+    if (metodoPagoSel !== "todos" && normPlatPago(o.plataforma_pago || o.metodo_pago) !== metodoPagoSel) return false;
     const minN = montoMin === "" ? null : parseFloat(montoMin);
     const maxN = montoMax === "" ? null : parseFloat(montoMax);
     if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
@@ -16232,7 +16244,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       {/* Agrupado por PLATAFORMA de cobro (Pago Nube / Mercado Pago / Transferencia),
                           no por tipo de tarjeta — sirve para facturar a distintos CUITs según
                           por dónde entró la plata. Órdenes viejas sin el campo caen al método crudo. */}
-                      {(()=>{const set=new Set();Object.values(tnData?.ordenes||{}).forEach(o=>{const m=(o.plataforma_pago||o.metodo_pago||"").trim();if(m)set.add(m);});return[...set].sort((a,b)=>a.localeCompare(b,"es")).map(m=><option key={m} value={m}>{m}</option>);})()}
+                      {(()=>{const set=new Set();Object.values(tnData?.ordenes||{}).forEach(o=>{const m=normPlatPago(o.plataforma_pago||o.metodo_pago);if(m)set.add(m);});return[...set].sort((a,b)=>a.localeCompare(b,"es")).map(m=><option key={m} value={m}>{m}</option>);})()}
                     </select>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
                       <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>$ mín</span>
