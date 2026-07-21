@@ -22979,6 +22979,17 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         prevParams += `&days=${d}`;
       }
 
+      // Sin snapshot local (primera visita en este navegador): probar la caché
+      // del servidor (~300ms, la pre-calienta un cron cada 15 min) antes del
+      // cálculo en vivo, que puede tardar varios segundos.
+      if(!cached?.json){
+        try{
+          const rc=await fetch(`/api/stock?${params}&cache=only`);
+          const jc=await rc.json();
+          if(jc?.products&&!jc.noCache){ setData(jc); setLoading(false); }
+        }catch(_){}
+      }
+
       // /api/orders?tab=stats es la fuente de verdad para "total órdenes" y
       // "total facturación" — el Home lo usa y matchea con Escalafy/dashboards
       // externos. Lo llamamos en paralelo y usamos sus números para override

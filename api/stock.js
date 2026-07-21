@@ -514,6 +514,26 @@ export default async function handler(req, res) {
   if(req.method==="OPTIONS") return res.status(200).end();
 
   const {uid, action, days:dRaw, date_from, date_to}=req.query;
+
+  // ── CRON: pre-calienta el snapshot de Stock (7d, el período default) de todos
+  // los usuarios con tienda conectada. Así la PRIMERA carga del día también es
+  // instantánea (cache=only), no solo las siguientes (SWR local).
+  if (action === "warm_all") {
+    if ((req.headers.authorization || "") !== `Bearer ${process.env.CRON_SECRET}`) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+    const db = initAdmin();
+    const usersSnap = await db.collection("users").limit(50).get();
+    const targets = usersSnap.docs
+      .filter(d => (d.data().stores || []).some(s => s.accessToken))
+      .slice(0, 15).map(d => d.id);
+    const base = `https://${req.headers.host}`;
+    const results = await Promise.allSettled(targets.map(u =>
+      fetch(`${base}/api/stock?action=products&uid=${u}&days=7`, { signal: AbortSignal.timeout(50000) }).then(r => r.status)
+    ));
+    return res.json({ ok: true, warmed: targets.length, statuses: results.map(r => r.status === "fulfilled" ? r.value : "err") });
+  }
+
   const days=parseInt(dRaw)||30;
   // Si hay fechas personalizadas, calcular días equivalentes
   const hasCustomDate = date_from && date_to;
@@ -584,6 +604,24 @@ export default async function handler(req, res) {
   }
   if(!accessToken) return res.status(403).json({ error: "Tienda no conectada" });
 
+  // ── Cache server-side del snapshot (users/{uid}/stock_cache/{periodo}) ──
+  const cacheKey = hasCustomDate ? `${String(date_from).slice(0,10)}_${String(date_to).slice(0,10)}` : `d${effectiveDays}`;
+  if (action === "products" && req.query.cache === "only") {
+    try {
+      const cs = await dbRef.collection("users").doc(uid).collection("stock_cache").doc(cacheKey).get();
+      if (cs.exists) { const c = cs.data(); return res.status(200).json({ ...c.data, cachedAt: c.ts }); }
+    } catch (_) {}
+    return res.status(200).json({ noCache: true });
+  }
+  async function saveStockCache(resp) {
+    try {
+      const s = JSON.stringify(resp);
+      if (s.length > 900000) return; // margen bajo el límite de 1MB por doc de Firestore
+      await dbRef.collection("users").doc(uid).collection("stock_cache").doc(cacheKey)
+        .set({ ts: new Date().toISOString(), data: JSON.parse(s) });
+    } catch (_) {}
+  }
+
   // Techo duro para TODA la consulta de ventas — sin importar cuántas páginas
   // reintenten en cascada bajo una red inestable, esto garantiza una respuesta
   // JSON clara ANTES de que Vercel mate la función en seco (que devuelve 0
@@ -650,6 +688,7 @@ export default async function handler(req, res) {
           total_revenue: Object.values(mlAnalytics.dailyRevenue||{}).reduce((a,b)=>a+b,0),
           total_orders:  Object.keys(mlAnalytics.dailyOrders||{}).reduce((a,k)=>a+mlAnalytics.dailyOrders[k], 0),
         };
+        await saveStockCache(resp);
         return res.status(200).json(resp);
       } else {
         const [products, orders, mlAnalytics] = await withDeadline(Promise.all([
@@ -680,6 +719,7 @@ export default async function handler(req, res) {
           total_revenue: Object.values(mlAnalytics.dailyRevenue||{}).reduce((a,b)=>a+b,0),
           total_orders:  Object.keys(mlAnalytics.dailyOrders||{}).reduce((a,k)=>a+mlAnalytics.dailyOrders[k], 0),
         };
+        await saveStockCache(resp);
         return res.status(200).json(resp);
       }
     }
