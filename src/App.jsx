@@ -21258,7 +21258,21 @@ function AppCopilot({T, user, onHome, onNavigate}) {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={m.error?T.red:"#fff"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/></svg>
               </div>
               <div style={{background:T.card,border:`1px solid ${m.error?T.red+"44":T.border}`,borderRadius:"4px 14px 14px 14px",padding:"12px 16px",flex:1,minWidth:0}}>
-                <CopilotText T={T} text={m.text}/>
+                {(()=>{
+                  // Acción del Copilot: [[ACCION:navegar:pagina]] al final del texto →
+                  // se saca del texto y se muestra como botón (no navega solo).
+                  const mAct = String(m.text||"").match(/\[\[ACCION:navegar:([a-z_]+)\]\]/);
+                  const clean = mAct ? m.text.replace(mAct[0],"").trim() : m.text;
+                  const NOMBRES = {home:"Inicio",margenes:"Dashboard",envios:"Envíos",reclamos:"Reclamos",canjes:"Canjes",stock:"Stock",meta:"Meta Ads",ml:"Mercado Libre",arca:"Facturador",tareas:"Tareas",config:"Configuración",planes:"Planes",copilot:"Copilot"};
+                  return (<>
+                    <CopilotText T={T} text={clean}/>
+                    {mAct && NOMBRES[mAct[1]] && onNavigate && (
+                      <button onClick={()=>onNavigate(mAct[1])} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",marginTop:10}}>
+                        Abrir {NOMBRES[mAct[1]]} →
+                      </button>
+                    )}
+                  </>);
+                })()}
               </div>
             </div>
           ))}
