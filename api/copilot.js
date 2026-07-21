@@ -134,6 +134,48 @@ async function snapshotEnvios(db, uid) {
   }
 }
 
+async function snapshotStock(db, uid) {
+  try {
+    const [itemsSnap, userSnap, cacheSnap] = await Promise.all([
+      db.collection("users").doc(uid).collection("inventory_items").get(),
+      db.collection("users").doc(uid).get(),
+      db.collection("users").doc(uid).collection("stock_cache").doc("d7").get(),
+    ]);
+    const settings = userSnap.data()?.inventory_settings || {};
+    const umbral = settings.alert_global || 14;
+    const items = itemsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const cache = cacheSnap.exists ? cacheSnap.data().data : null;
+    const variantes = [];
+    if (cache?.products) {
+      for (const p of cache.products) for (const v of (p.variants || [])) {
+        const rate = (v.units_sold || 0) / 7;
+        variantes.push({
+          producto: p.nombre, variante: v.nombre, sku: v.sku || null,
+          stock_tienda: v.stock, vendidos_7d: v.units_sold || 0,
+          dias_restantes: rate > 0 ? Math.round(v.stock / rate) : null,
+        });
+      }
+      variantes.sort((a, b) => (a.dias_restantes ?? 9999) - (b.dias_restantes ?? 9999));
+    }
+    if (items.length === 0 && variantes.length === 0) return null;
+    return {
+      umbral_alerta_dias: umbral,
+      stock_cruzado_modo: settings.sync_mode || "off",
+      // Inventario central de Growith (item_id sirve para la acción ajustar_stock)
+      inventario_central: items.slice(0, 40).map(i => ({
+        item_id: i.id, nombre: i.nombre, sku: i.sku || null,
+        stock: Math.max(0, i.stock_total || 0), canales: i.canales || [],
+      })),
+      // Stock y velocidad por variante según la tienda (últimos 7 días)
+      por_variante_7d: variantes.slice(0, 40),
+      alertas: variantes.filter(v => v.stock_tienda === 0 || (v.dias_restantes != null && v.dias_restantes <= umbral)).slice(0, 15),
+    };
+  } catch (e) {
+    console.warn("[copilot] snapshotStock:", e.message);
+    return null;
+  }
+}
+
 async function snapshotCuentas(db, uid) {
   try {
     const [userSnap, metaSnap] = await Promise.all([
@@ -162,6 +204,13 @@ async function snapshotCuentas(db, uid) {
         } catch (_) { return null; }
       })(),
       metas_margenes: u.margenesMetas || null,
+      // Colaboradores del equipo (para la acción crear_tarea — emails REALES)
+      colaboradores: await (async () => {
+        try {
+          const cs = await db.collection("colaboradores").where("uid", "==", uid).limit(20).get();
+          return cs.docs.map(d => ({ nombre: d.data().nombre || "", email: d.data().email || "" })).filter(c => c.email);
+        } catch (_) { return []; }
+      })(),
     };
   } catch (e) {
     console.warn("[copilot] snapshotCuentas:", e.message);
@@ -218,8 +267,32 @@ REGLAS: usá SOLO acc_id e ids de campañas que estén en DATOS.cuentas_conectad
 (si no está la campaña, decilo y sugerí abrir Meta Ads — no inventes ids). Si el pedido es
 ambiguo ("pausá la campaña"), primero listá las campañas y preguntá cuál.
 
-La app convierte la etiqueta en un botón/tarjeta de CONFIRMACIÓN que el usuario toca —
+[[ACCION:meta_presupuesto:<acc_id>:<campaign_id>:<monto_diario_en_pesos>:<nombre de la campaña>]]
+Para cambiar el presupuesto DIARIO de una campaña de Meta (monto entero en pesos, sin
+símbolos). Mismas reglas de ids que meta_estado. Si la campaña no tiene presupuesto_diario
+en DATOS (presupuesto a nivel ad set), decilo y sugerí hacerlo desde Meta Ads.
+
+[[ACCION:crear_tarea:<email_asignado>|<título>|<descripción>]]
+Para crear una tarea a un colaborador del equipo (separador: barra vertical |).
+REGLAS: el email TIENE que estar en DATOS.cuentas_conectadas.colaboradores. Si no hay
+colaboradores o el pedido no dice a quién, listá los disponibles y preguntá.
+
+[[ACCION:ajustar_stock:<item_id>|<nuevo_stock>|<nombre del item>]]
+Para setear el stock de un item del inventario central (número entero ≥ 0).
+REGLAS: usá SOLO item_id que estén en DATOS.stock.inventario_central. Si el stock cruzado
+está activado, aclarale que el cambio se propaga a sus tiendas.
+
+RESUMEN DIARIO: si el usuario pide "resumen diario" (o similar), armá un resumen ejecutivo
+breve: cómo cerró ayer (facturación, ganancia, órdenes), tendencia de los últimos 7 días,
+alertas de stock y de envíos si las hay, y UNA recomendación concreta. Terminá sin acción
+salvo que algo urgente amerite una.
+
+La app convierte cada etiqueta en un botón/tarjeta de CONFIRMACIÓN que el usuario toca —
 nada se ejecuta solo. Máximo una acción por respuesta. No inventes otros tipos de acción.
+
+ARCHIVOS ADJUNTOS: si el mensaje incluye una imagen o un archivo de texto/CSV adjunto,
+analizalo con el mismo rigor: podés leer sus números y citarlos (son datos que el usuario
+te dio), pero no los mezcles con los de DATOS sin aclarar la fuente.
 
 ${GUIA_APP}`;
 
@@ -253,10 +326,11 @@ export default async function handler(req, res) {
   const db = initAdmin();
 
   // Snapshot determinista (paralelo, best-effort por bloque)
-  const [margenes, envios, cuentas] = await Promise.all([
+  const [margenes, envios, cuentas, stock] = await Promise.all([
     snapshotMargenes(db, uid),
     snapshotEnvios(db, uid),
     snapshotCuentas(db, uid),
+    snapshotStock(db, uid),
   ]);
   if (margenes && cuentas?.metas_margenes) margenes.metas_configuradas = cuentas.metas_margenes;
 
@@ -264,28 +338,81 @@ export default async function handler(req, res) {
     fecha_hora_actual: new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
     margenes: margenes || "SIN DATOS — el usuario todavía no abrió la sección Márgenes (el caché se genera al abrirla). Sugerile entrar a Márgenes para que se calculen.",
     envios: envios || "SIN DATOS de envíos registrados.",
+    stock: stock || "SIN DATOS de stock — sugerile abrir la sección Stock (el snapshot se genera al usarla).",
     cuentas_conectadas: cuentas || "SIN DATOS",
   };
 
+  // Adjuntos: imagen (inlineData de Gemini) o texto/CSV (se inyecta en el mensaje)
+  const adjunto = req.body?.adjunto; // { mime, data_b64 } — solo imágenes
+  const adjuntoTexto = req.body?.adjunto_texto; // { nombre, texto }
+  const lastParts = [];
+  let lastText = `## DATOS (única fuente de verdad — calculados por Growith, no por vos):\n${JSON.stringify(datos)}\n\n`;
+  if (adjuntoTexto?.texto) {
+    lastText += `## Archivo adjunto "${String(adjuntoTexto.nombre || "archivo").slice(0, 80)}" (provisto por el usuario):\n${String(adjuntoTexto.texto).slice(0, 60000)}\n\n`;
+  }
+  lastText += `## Pregunta del usuario:\n${messages[messages.length - 1].text}`;
+  lastParts.push({ text: lastText });
+  if (adjunto?.data_b64 && /^image\//.test(String(adjunto.mime || ""))) {
+    if (adjunto.data_b64.length > 5_500_000) return res.status(400).json({ error: "La imagen es muy pesada (máx ~4MB)." });
+    lastParts.push({ inlineData: { mimeType: String(adjunto.mime), data: String(adjunto.data_b64) } });
+  }
+
   const contents = [
     ...messages.slice(0, -1).map(m => ({ role: m.role, parts: [{ text: m.text }] })),
-    {
-      role: "user",
-      parts: [{
-        text: `## DATOS (única fuente de verdad — calculados por Growith, no por vos):\n${JSON.stringify(datos)}\n\n## Pregunta del usuario:\n${messages[messages.length - 1].text}`,
-      }],
-    },
+    { role: "user", parts: lastParts },
   ];
 
+  const geminiBody = JSON.stringify({
+    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents,
+    generationConfig: { temperature: 0.3, top_p: 0.9, max_output_tokens: 2000 },
+  });
+
+  // ── Modo STREAMING (SSE): la respuesta se ve escribir en vivo ──
+  if (req.query.stream === "1") {
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    try {
+      const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody,
+        signal: AbortSignal.timeout(55000),
+      });
+      if (!r.ok || !r.body) {
+        res.write(`data: ${JSON.stringify({ error: `Gemini HTTP ${r.status}` })}\n\n`);
+        return res.end();
+      }
+      const decoder = new TextDecoder();
+      let buffer = "", total = "";
+      for await (const chunk of r.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // línea incompleta queda para el próximo chunk
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const j = JSON.parse(line.slice(6));
+            const t = j.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+            if (t) { total += t; res.write(`data: ${JSON.stringify({ t })}\n\n`); }
+          } catch (_) {}
+        }
+      }
+      if (!total.trim()) res.write(`data: ${JSON.stringify({ error: "El modelo no devolvió respuesta. Probá de nuevo." })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true, datos_al: margenes?.datos_al || null })}\n\n`);
+      return res.end();
+    } catch (e) {
+      console.error("[copilot stream]", e.message);
+      try { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); } catch (_) {}
+      return res.end();
+    }
+  }
+
+  // ── Modo clásico (fallback sin streaming) ──
   try {
     const r = await fetch(`${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents,
-        generationConfig: { temperature: 0.3, top_p: 0.9, max_output_tokens: 2000 },
-      }),
+      body: geminiBody,
       signal: AbortSignal.timeout(45000),
     });
     const data = await r.json();

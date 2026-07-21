@@ -2338,6 +2338,24 @@ export default async function handler(req, res) {
       }
     }
 
+    // Cambiar presupuesto diario de una campaña/ad set (lo usa el Copilot).
+    // Meta espera daily_budget en CENTAVOS de la moneda de la cuenta.
+    if (action === "set_budget" && req.method === "POST") {
+      const { node_id, daily_budget } = req.body || {};
+      const monto = parseFloat(daily_budget);
+      if (!node_id || !isFinite(monto) || monto <= 0) return res.status(400).json({ error: "Faltan node_id o daily_budget válido" });
+      const accIdQ = acc_id || req.query.acc_id;
+      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
+      const cfg = await loadMetaAccount(db, uid, accIdQ);
+      if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
+      try {
+        await metaPost(node_id, { daily_budget: Math.round(monto * 100) }, cfg.access_token);
+        return res.json({ ok: true, node_id, daily_budget: monto });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
     if (action === "resources" && req.method === "GET") {
       if (!acc_id) return res.status(400).json({ error: "Falta acc_id" });
       const cfg = await loadMetaAccount(db, uid, acc_id);

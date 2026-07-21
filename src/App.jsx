@@ -21134,34 +21134,120 @@ function AppCopilot({T, user, onHome, onNavigate}) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [datosAl, setDatosAl] = useState(null);
+  const [adjunto, setAdjunto] = useState(null); // {tipo:"imagen"|"texto", nombre, mime?, data_b64?, texto?}
   const scrollRef = React.useRef(null);
   const inputRef = React.useRef(null);
+  const fileRef = React.useRef(null);
+  const historyLoadedRef = React.useRef(false);
 
+  // Historial persistente en Firestore (cross-device, sobrevive al cierre de pestaña).
+  // sessionStorage queda como cache rápida de la sesión actual.
+  useEffect(() => {
+    if (!uid) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", uid, "copilot", "historial"));
+        if (snap.exists()) {
+          const d = snap.data();
+          if (Array.isArray(d.msgs) && d.msgs.length) {
+            setMsgs(prev => prev.length >= d.msgs.length ? prev : d.msgs);
+          }
+        }
+      } catch (_) {}
+      historyLoadedRef.current = true;
+      // Resumen diario proactivo: la primera vez que abrís el Copilot cada día
+      // te recibe con el estado del negocio, sin que preguntes nada.
+      try {
+        const key = `growith_copilot_daily_${uid}`;
+        const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+        if (localStorage.getItem(key) !== hoy) {
+          localStorage.setItem(key, hoy);
+          setTimeout(() => sendRef.current?.("Dame el resumen diario de mi negocio"), 400);
+        }
+      } catch (_) {}
+    })();
+    // eslint-disable-next-line
+  }, [uid]);
+
+  const persistTimer = React.useRef(null);
   useEffect(() => {
     try { sessionStorage.setItem("growith_copilot_msgs", JSON.stringify(msgs.slice(-30))); } catch (_) {}
+    // Persistir a Firestore con debounce (sin las corridas parciales del streaming)
+    if (uid && historyLoadedRef.current && msgs.length && !msgs[msgs.length-1]?.streaming) {
+      clearTimeout(persistTimer.current);
+      persistTimer.current = setTimeout(() => {
+        setDoc(doc(db, "users", uid, "copilot", "historial"), { msgs: msgs.slice(-60).map(m=>({role:m.role,text:m.text,...(m.error?{error:true}:{}),...(m.adj?{adj:m.adj}:{})})), updated: new Date().toISOString() }).catch(()=>{});
+      }, 800);
+    }
     // Auto-scroll al último mensaje
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [msgs, sending]);
 
+  async function onPickFile(e) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    if (/^image\//.test(f.type)) {
+      if (f.size > 4 * 1024 * 1024) return toast("La imagen es muy pesada (máx 4MB)", "warning");
+      const b64 = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(",")[1] || ""); fr.readAsDataURL(f); });
+      setAdjunto({ tipo: "imagen", nombre: f.name, mime: f.type, data_b64: b64 });
+    } else if (/\.(csv|txt|tsv|json)$/i.test(f.name) || /text|csv|json/.test(f.type)) {
+      if (f.size > 300 * 1024) return toast("El archivo es muy grande (máx 300KB de texto)", "warning");
+      const texto = await f.text();
+      setAdjunto({ tipo: "texto", nombre: f.name, texto });
+    } else {
+      toast("Formato no soportado — imágenes, CSV o TXT", "warning");
+    }
+  }
+
+  const sendRef = React.useRef(null);
   async function send(text) {
     const q = String(text ?? input).trim();
     if (!q || sending || !uid) return;
     setInput("");
-    const next = [...msgs, { role: "user", text: q }];
+    const adj = adjunto; setAdjunto(null);
+    const next = [...msgs, { role: "user", text: q, ...(adj ? { adj: adj.nombre } : {}) }];
     setMsgs(next);
     setSending(true);
+    const body = { messages: next.slice(-16).map(m => ({ role: m.role, text: m.text })) };
+    if (adj?.tipo === "imagen") body.adjunto = { mime: adj.mime, data_b64: adj.data_b64 };
+    if (adj?.tipo === "texto") body.adjunto_texto = { nombre: adj.nombre, texto: adj.texto };
     try {
-      const r = await authFetch(`/api/copilot?uid=${uid}`, {
+      // Streaming SSE: la respuesta se ve escribir en vivo
+      const r = await authFetch(`/api/copilot?uid=${uid}&stream=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.slice(-16).map(m => ({ role: m.role, text: m.text })) }),
+        body: JSON.stringify(body),
       });
-      const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
-      if (d.error) {
-        setMsgs(prev => [...prev, { role: "assistant", text: "No pude responder: " + d.error, error: true }]);
+      if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "", acc = "", started = false, gotError = null;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let j; try { j = JSON.parse(line.slice(6)); } catch (_) { continue; }
+          if (j.error) { gotError = j.error; continue; }
+          if (j.datos_al) setDatosAl(j.datos_al);
+          if (j.t) {
+            acc += j.t;
+            if (!started) { started = true; setMsgs(p => [...p, { role: "assistant", text: acc, streaming: true }]); }
+            else setMsgs(p => { const c = [...p]; c[c.length-1] = { ...c[c.length-1], text: acc }; return c; });
+          }
+        }
+      }
+      if (gotError && !acc.trim()) {
+        setMsgs(p => [...p, { role: "assistant", text: "No pude responder: " + gotError, error: true }]);
+      } else if (!acc.trim()) {
+        setMsgs(p => [...p, { role: "assistant", text: "No recibí respuesta del modelo. Probá de nuevo.", error: true }]);
       } else {
-        setMsgs(prev => [...prev, { role: "assistant", text: d.reply }]);
-        if (d.datos_al) setDatosAl(d.datos_al);
+        // Finalizar: sacar el flag streaming (dispara la persistencia)
+        setMsgs(p => { const c = [...p]; c[c.length-1] = { role: "assistant", text: acc }; return c; });
       }
     } catch (e) {
       setMsgs(prev => [...prev, { role: "assistant", text: "Error de red: " + (e?.message || "sin conexión"), error: true }]);
@@ -21170,13 +21256,14 @@ function AppCopilot({T, user, onHome, onNavigate}) {
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }
+  sendRef.current = send;
 
   const SUGERIDAS = [
+    "Dame el resumen diario de mi negocio",
     "¿Cómo me fue ayer?",
-    "¿Cuánta ganancia hice en los últimos 30 días?",
+    "¿Cuánto stock me queda de cada producto?",
     "¿Qué producto deja más margen?",
     "¿Tengo envíos demorados o sin retirar?",
-    "¿Cómo genero las etiquetas de Andreani?",
     "¿Mi ROAS está por encima del break-even?",
   ];
 
@@ -21184,7 +21271,7 @@ function AppCopilot({T, user, onHome, onNavigate}) {
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Copilot" onHome={onHome}>
         {msgs.length > 0 && (
-          <button onClick={()=>{ setMsgs([]); setDatosAl(null); try{sessionStorage.removeItem("growith_copilot_msgs");}catch(_){} }} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textSm,borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Nueva conversación</button>
+          <button onClick={()=>{ setMsgs([]); setDatosAl(null); try{sessionStorage.removeItem("growith_copilot_msgs");}catch(_){} if(uid) setDoc(doc(db,"users",uid,"copilot","historial"),{msgs:[],updated:new Date().toISOString()}).catch(()=>{}); }} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textSm,borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Nueva conversación</button>
         )}
       </AppTopbar>
 
@@ -21215,6 +21302,7 @@ function AppCopilot({T, user, onHome, onNavigate}) {
 
           {msgs.map((m, i) => m.role === "user" ? (
             <div key={i} style={{alignSelf:"flex-end",maxWidth:"85%",background:T.accentSolid,color:"#fff",borderRadius:"14px 14px 4px 14px",padding:"10px 16px",fontSize:13,lineHeight:1.55,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+              {m.adj && <div style={{fontSize:10,opacity:0.85,marginBottom:4}}>📎 {m.adj}</div>}
               {m.text}
             </div>
           ) : (
@@ -21229,6 +21317,9 @@ function AppCopilot({T, user, onHome, onNavigate}) {
                   const t = String(m.text||"");
                   const mNav = t.match(/\[\[ACCION:navegar:([a-z_]+)\]\]/);
                   const mMeta = t.match(/\[\[ACCION:meta_estado:([^:\]]+):([^:\]]+):(ACTIVE|PAUSED):([^\]]+)\]\]/);
+                  const mBudget = t.match(/\[\[ACCION:meta_presupuesto:([^:\]]+):([^:\]]+):(\d+):([^\]]+)\]\]/);
+                  const mTarea = t.match(/\[\[ACCION:crear_tarea:([^|\]]+)\|([^|\]]+)\|([^\]]*)\]\]/);
+                  const mStock = t.match(/\[\[ACCION:ajustar_stock:([^|\]]+)\|(\d+)\|([^\]]*)\]\]/);
                   const clean = t.replace(/\[\[ACCION:[^\]]*\]\]/g,"").trim();
                   const NOMBRES = {home:"Inicio",margenes:"Dashboard",envios:"Envíos",reclamos:"Reclamos",canjes:"Canjes",stock:"Stock",meta:"Meta Ads",ml:"Mercado Libre",arca:"Facturador",tareas:"Tareas",config:"Configuración",planes:"Planes",copilot:"Copilot"};
                   const ejecutarMeta = async () => {
@@ -21259,6 +21350,48 @@ function AppCopilot({T, user, onHome, onNavigate}) {
                         </button>
                       </div>
                     )}
+                    {mBudget && (
+                      <div style={{marginTop:10,padding:"10px 12px",background:T.surface,border:`1px solid ${T.accent}44`,borderRadius:10}}>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta — requiere tu confirmación</div>
+                        <div style={{fontSize:13,color:T.text,marginBottom:8}}>Presupuesto de <strong>{mBudget[4]}</strong> → <strong>${parseInt(mBudget[3]).toLocaleString("es-AR")}/día</strong></div>
+                        <button onClick={async()=>{
+                          if(!(await appConfirm(`¿Cambiar el presupuesto diario de "${mBudget[4]}" a $${parseInt(mBudget[3]).toLocaleString("es-AR")}?`,{okLabel:"Cambiar presupuesto"}))) return;
+                          try{
+                            const r=await authFetch(`/api/meta?action=set_budget&uid=${uid}&acc_id=${encodeURIComponent(mBudget[1])}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({node_id:mBudget[2],daily_budget:parseInt(mBudget[3])})}).then(x=>x.json());
+                            if(r.error) throw new Error(r.error);
+                            setMsgs(p=>[...p,{role:"assistant",text:`✅ Listo — **${mBudget[4]}** quedó con presupuesto de $${parseInt(mBudget[3]).toLocaleString("es-AR")}/día.`}]);
+                          }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude cambiar el presupuesto: ${e.message}`}]); }
+                        }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Cambiar presupuesto</button>
+                      </div>
+                    )}
+                    {mTarea && (
+                      <div style={{marginTop:10,padding:"10px 12px",background:T.surface,border:`1px solid ${T.accent}44`,borderRadius:10}}>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta — requiere tu confirmación</div>
+                        <div style={{fontSize:13,color:T.text,marginBottom:8}}>Crear tarea <strong>"{mTarea[2].trim()}"</strong> para <strong>{mTarea[1].trim()}</strong>{mTarea[3].trim()?<span style={{color:T.textSm}}> — {mTarea[3].trim()}</span>:null}</div>
+                        <button onClick={async()=>{
+                          if(!(await appConfirm(`¿Crear la tarea "${mTarea[2].trim()}" asignada a ${mTarea[1].trim()}? Le llega un email con el acceso.`,{okLabel:"Crear tarea"}))) return;
+                          try{
+                            const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"createTarea",uid,titulo:mTarea[2].trim(),descripcion:mTarea[3].trim(),asignadoEmail:mTarea[1].trim().toLowerCase(),asignadoNombre:"",managerEmail:user?.email||""})}).then(x=>x.json());
+                            if(r.error) throw new Error(r.error);
+                            setMsgs(p=>[...p,{role:"assistant",text:`✅ Tarea **#${r.tareaNumStr||""} ${mTarea[2].trim()}** creada y asignada a ${mTarea[1].trim()}.`}]);
+                          }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude crear la tarea: ${e.message}`}]); }
+                        }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Crear tarea</button>
+                      </div>
+                    )}
+                    {mStock && (
+                      <div style={{marginTop:10,padding:"10px 12px",background:T.surface,border:`1px solid ${T.accent}44`,borderRadius:10}}>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta — requiere tu confirmación</div>
+                        <div style={{fontSize:13,color:T.text,marginBottom:8}}>Stock de <strong>{mStock[3].trim()||"item"}</strong> → <strong>{parseInt(mStock[2])} unidades</strong></div>
+                        <button onClick={async()=>{
+                          if(!(await appConfirm(`¿Setear el stock de "${mStock[3].trim()}" en ${parseInt(mStock[2])} unidades? Si el stock cruzado está activado, se propaga a tus tiendas.`,{okLabel:"Ajustar stock"}))) return;
+                          try{
+                            const r=await fetch(`/api/inventory?action=adjust_stock&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({item_id:mStock[1].trim(),new_stock:parseInt(mStock[2]),source:"manual",event:"ajuste_copilot"})}).then(x=>x.json());
+                            if(r.error) throw new Error(r.error);
+                            setMsgs(p=>[...p,{role:"assistant",text:`✅ Stock de **${mStock[3].trim()}** actualizado: ${r.old_stock} → ${r.new_stock} unidades.${(r.sync_results||[]).some(s=>s.ok&&!s.skipped)?" Propagado a tus tiendas.":""}`}]);
+                          }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude ajustar el stock: ${e.message}`}]); }
+                        }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Ajustar stock</button>
+                      </div>
+                    )}
                   </>);
                 })()}
               </div>
@@ -21277,7 +21410,18 @@ function AppCopilot({T, user, onHome, onNavigate}) {
 
         {/* Input */}
         <div style={{padding:"8px 0 18px",position:"sticky",bottom:0,background:T.bg}}>
+          {adjunto && (
+            <div style={{display:"inline-flex",alignItems:"center",gap:8,background:T.card,border:`1px solid ${T.accent}55`,borderRadius:10,padding:"5px 10px",marginBottom:6,fontSize:11,color:T.text}}>
+              <span>📎 {adjunto.nombre}</span>
+              <span style={{fontSize:9,color:T.textSm}}>{adjunto.tipo==="imagen"?"imagen":"texto"}</span>
+              <button onClick={()=>setAdjunto(null)} style={{background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:12,padding:0,lineHeight:1}}>✕</button>
+            </div>
+          )}
           <div style={{display:"flex",gap:8,alignItems:"flex-end",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:14,padding:"10px 12px"}}>
+            <input ref={fileRef} type="file" accept="image/*,.csv,.txt,.tsv,.json" onChange={onPickFile} style={{display:"none"}}/>
+            <button onClick={()=>fileRef.current?.click()} title="Adjuntar imagen o CSV" style={{width:32,height:32,borderRadius:9,border:`1px solid ${adjunto?T.accent:T.border}`,background:"transparent",color:adjunto?T.accent:T.textSm,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+            </button>
             <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} rows={1}
               onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
               placeholder="Preguntá sobre tus ventas, márgenes, envíos o cómo usar Growith..."
