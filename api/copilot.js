@@ -146,8 +146,21 @@ async function snapshotCuentas(db, uid) {
       cuits_arca: (u.cuits || []).length,
       meta_ads: metaSnap.docs.map(d => {
         const a = d.data();
-        return { nombre: a.user_name, cuenta_publicitaria: a.ad_account_name || null, token_vencido: !!a.token_invalid, tiene_token: !!a.access_token };
+        return { acc_id: d.id, nombre: a.user_name, cuenta_publicitaria: a.ad_account_name || null, token_vencido: !!a.token_invalid, tiene_token: !!a.access_token };
       }),
+      // Campañas de Meta (para que el Copilot pueda proponer pausar/activar con
+      // ids REALES — nunca inventados). Primera cuenta con token, máx 25.
+      campanas_meta: await (async () => {
+        try {
+          const accDoc = metaSnap.docs.find(d => d.data().access_token && d.data().ad_account_id);
+          if (!accDoc) return null;
+          const a = accDoc.data();
+          const r = await fetch(`https://graph.facebook.com/v23.0/${a.ad_account_id}/campaigns?fields=id,name,status,daily_budget&limit=25&access_token=${encodeURIComponent(a.access_token)}`, { signal: AbortSignal.timeout(10000) });
+          if (!r.ok) return null;
+          const j = await r.json();
+          return (j.data || []).map(c => ({ acc_id: accDoc.id, id: c.id, nombre: c.name, estado: c.status, presupuesto_diario: c.daily_budget ? +(c.daily_budget/100).toFixed(0) : null }));
+        } catch (_) { return null; }
+      })(),
       metas_margenes: u.margenesMetas || null,
     };
   } catch (e) {
@@ -199,8 +212,15 @@ etiqueta EXACTA con este formato (sin nada más en esa línea):
 donde <pagina> es una de: home, margenes, envios, reclamos, canjes, stock, meta, ml, arca, tareas, config, planes, copilot.
 Usala cuando el usuario pida ir/abrir/ver una sección, o cuando tu respuesta invite a
 hacer algo en una sección concreta ("cargá el costo en..." → navegar a margenes).
-La app la convierte en un botón que el usuario toca — no navega sola. No inventes
-otras acciones: por ahora solo navegar existe.
+
+[[ACCION:meta_estado:<acc_id>:<campaign_id>:<ACTIVE|PAUSED>:<nombre de la campaña>]]
+Para pausar (PAUSED) o activar (ACTIVE) una campaña de Meta cuando el usuario lo pida.
+REGLAS: usá SOLO acc_id e ids de campañas que estén en DATOS.cuentas_conectadas.campanas_meta
+(si no está la campaña, decilo y sugerí abrir Meta Ads — no inventes ids). Si el pedido es
+ambiguo ("pausá la campaña"), primero listá las campañas y preguntá cuál.
+
+La app convierte la etiqueta en un botón/tarjeta de CONFIRMACIÓN que el usuario toca —
+nada se ejecuta solo. Máximo una acción por respuesta. No inventes otros tipos de acción.
 
 ${GUIA_APP}`;
 

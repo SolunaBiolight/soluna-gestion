@@ -21259,17 +21259,40 @@ function AppCopilot({T, user, onHome, onNavigate}) {
               </div>
               <div style={{background:T.card,border:`1px solid ${m.error?T.red+"44":T.border}`,borderRadius:"4px 14px 14px 14px",padding:"12px 16px",flex:1,minWidth:0}}>
                 {(()=>{
-                  // Acción del Copilot: [[ACCION:navegar:pagina]] al final del texto →
-                  // se saca del texto y se muestra como botón (no navega solo).
-                  const mAct = String(m.text||"").match(/\[\[ACCION:navegar:([a-z_]+)\]\]/);
-                  const clean = mAct ? m.text.replace(mAct[0],"").trim() : m.text;
+                  // Acciones del Copilot (nunca se ejecutan solas — siempre botón):
+                  // [[ACCION:navegar:pagina]] · [[ACCION:meta_estado:acc:camp:STATUS:nombre]]
+                  const t = String(m.text||"");
+                  const mNav = t.match(/\[\[ACCION:navegar:([a-z_]+)\]\]/);
+                  const mMeta = t.match(/\[\[ACCION:meta_estado:([^:\]]+):([^:\]]+):(ACTIVE|PAUSED):([^\]]+)\]\]/);
+                  const clean = t.replace(/\[\[ACCION:[^\]]*\]\]/g,"").trim();
                   const NOMBRES = {home:"Inicio",margenes:"Dashboard",envios:"Envíos",reclamos:"Reclamos",canjes:"Canjes",stock:"Stock",meta:"Meta Ads",ml:"Mercado Libre",arca:"Facturador",tareas:"Tareas",config:"Configuración",planes:"Planes",copilot:"Copilot"};
+                  const ejecutarMeta = async () => {
+                    const [,acc,camp,status,nombre] = mMeta;
+                    const verbo = status==="PAUSED"?"pausar":"activar";
+                    if (!(await appConfirm(`¿${verbo.charAt(0).toUpperCase()+verbo.slice(1)} la campaña "${nombre}"?`, {danger: status==="PAUSED", okLabel: verbo==="pausar"?"Pausar":"Activar"}))) return;
+                    try {
+                      const r = await authFetch(`/api/meta?action=set_status&uid=${uid}&acc_id=${encodeURIComponent(acc)}`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({node_id: camp, status})}).then(x=>x.json());
+                      if (r.error) throw new Error(r.error);
+                      setMsgs(p=>[...p,{role:"model",text:`✅ Listo — la campaña **${nombre}** quedó ${status==="PAUSED"?"pausada":"activa"}.`}]);
+                    } catch(e) {
+                      setMsgs(p=>[...p,{role:"model",error:true,text:`No pude ${verbo} la campaña: ${e.message}`}]);
+                    }
+                  };
                   return (<>
                     <CopilotText T={T} text={clean}/>
-                    {mAct && NOMBRES[mAct[1]] && onNavigate && (
-                      <button onClick={()=>onNavigate(mAct[1])} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",marginTop:10}}>
-                        Abrir {NOMBRES[mAct[1]]} →
+                    {mNav && NOMBRES[mNav[1]] && onNavigate && (
+                      <button onClick={()=>onNavigate(mNav[1])} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px",marginTop:10}}>
+                        Abrir {NOMBRES[mNav[1]]} →
                       </button>
+                    )}
+                    {mMeta && (
+                      <div style={{marginTop:10,padding:"10px 12px",background:T.surface,border:`1px solid ${mMeta[3]==="PAUSED"?T.red+"44":T.green+"44"}`,borderRadius:10}}>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta — requiere tu confirmación</div>
+                        <div style={{fontSize:13,color:T.text,marginBottom:8}}>{mMeta[3]==="PAUSED"?"Pausar":"Activar"} campaña: <strong>{mMeta[4]}</strong></div>
+                        <button onClick={ejecutarMeta} style={{...(mMeta[3]==="PAUSED"?BtnDanger(T):BtnPrimary(T)),fontSize:12,padding:"7px 14px"}}>
+                          {mMeta[3]==="PAUSED"?"Pausar campaña":"Activar campaña"}
+                        </button>
+                      </div>
                     )}
                   </>);
                 })()}
