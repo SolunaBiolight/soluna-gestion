@@ -26288,6 +26288,12 @@ export default function App() {
             setPlanExpiry(d.planExpiry?.toDate?.()||null);
             setTrialEnd(d.trialEnd instanceof Date ? d.trialEnd : d.trialEnd?.toDate?.()??null);
             setIsAdmin(["WJH3ArqDPQcNLha9lOinvkVi9uJ2"].includes(u.uid) || d?.isAdmin===true);
+            // Onboarding: localStorage se pierde en incógnito/otro dispositivo — si
+            // Firestore lo marca hecho o el usuario ya tiene integraciones, no mostrarlo.
+            if(d.onbDone===true || (d.stores||[]).length>0 || (d.metaAccounts||[]).length>0 || (d.cuits||[]).length>0){
+              setOnboardingDone(true);
+              try{localStorage.setItem(`growith_onb_done_${u.uid}`,"1");localStorage.setItem("growith_onb_done","1");}catch(e){}
+            }
           } else {
             // El doc del usuario no existe (registro donde ensureUserDoc no corrió,
             // o sesión persistida sin re-login). Lo creamos acá para que las
@@ -26684,6 +26690,7 @@ export default function App() {
       {showOnboarding && (
         <OnboardingWizard T={T} user={user} onComplete={(action)=>{
           try{localStorage.setItem("growith_onb_done","1");localStorage.setItem(`growith_onb_done_${user.uid}`,"1");}catch(e){}
+          updateDoc(doc(db,"users",user.uid),{onbDone:true}).catch(()=>{}); // persistir cross-dispositivo
           setOnboardingDone(true);
         }}/>
       )}
