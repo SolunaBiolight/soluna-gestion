@@ -34,6 +34,11 @@ async function authFetch(url, opts = {}) {
 }
 // ── Multi-cuenta: recordar cuentas usadas (email/nombre, NO contraseñas) para
 // cambio rápido. El switch desloguea y deja un flag para pre-cargar el login. ──
+// ── Cache SWR local: pintar al instante lo último conocido y refrescar de fondo ──
+// (mismo patrón que growith_envios_cache — la app "abre" en 0ms y se actualiza sola)
+function ghSwrGet(key, maxAgeMs=6*3600000){ try{ const c=JSON.parse(localStorage.getItem(key)||"null"); if(c&&c.ts&&(Date.now()-c.ts)<maxAgeMs) return c.data; }catch(_){} return null; }
+function ghSwrSet(key, data){ try{ localStorage.setItem(key, JSON.stringify({ts:Date.now(), data})); }catch(_){ try{localStorage.removeItem(key);}catch(__){}} }
+
 function ghReadAccounts(){ try { return JSON.parse(localStorage.getItem("growith_accounts")||"[]"); } catch(_){ return []; } }
 function ghRememberAccount(u){ if(!u?.email) return; try { const a=ghReadAccounts(); const prov=u.providerData?.[0]?.providerId||"password"; const e={email:u.email,nombre:u.displayName||u.email.split("@")[0],photoURL:u.photoURL||"",provider:prov,lastUsed:Date.now()}; const i=a.findIndex(x=>x.email===u.email); if(i>=0)a[i]={...a[i],...e}; else a.push(e); localStorage.setItem("growith_accounts",JSON.stringify(a)); } catch(_){} }
 function ghForgetAccount(email){ try { localStorage.setItem("growith_accounts",JSON.stringify(ghReadAccounts().filter(x=>x.email!==email))); } catch(_){} }
@@ -15464,13 +15469,20 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     // contra TN/Shopify/ML — si el merchant corrigió un CUIL en su tienda,
     // necesita que el reload vea el dato nuevo, no uno cacheado de CDN.
     params._t = Date.now();
-    setTnLoading(true);
+    // SWR: pintar al instante las pendientes de la última visita mientras se
+    // refresca de fondo (el fetch en vivo contra TN/ML tarda varios segundos).
+    const swrKey = `growith_arca_pend_${uid}_${cuitSel}_${periodoModo}`;
+    const cached = ghSwrGet(swrKey);
+    const pintoCache = !!(cached && !tnData);
+    if (pintoCache) setTnData(cached);
+    setTnLoading(!pintoCache); // con cache pintada no bloqueamos la UI con spinner
     const d = await api("pending_orders","GET",null,params);
     setTnLoading(false);
     if(d.error) { toast("Error: "+d.error,"error"); return; }
     // Normalizar para mantener compat: connections es array, agregamos flag connected si hay al menos 1
     d.connected = (d.connections||[]).some(c => c.connected);
     setTnData(d);
+    ghSwrSet(swrKey, d);
     // Auto-seleccionar la primera plataforma conectada si el usuario no eligió ninguna todavía.
     // Impide que se muestre el mix de todos los canales, que causaba errores de conteo.
     setCanalSel(prev => {
@@ -18470,14 +18482,17 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   async function loadInsights() {
     if(!activeAccId) return;
     const myReqId = ++loadInsightsReqIdRef.current;
+    const lastParent = aDrill[aDrill.length-1];
+    // SWR: pintar al instante el último resultado de esta vista exacta
+    // (cuenta+nivel+rango+drill) mientras Meta responde de fondo.
+    const swrKey = `growith_meta_ins_${activeAccId}_${aLevel}_${aSince}_${aUntil}_${lastParent?.id||"root"}`;
+    const cached = ghSwrGet(swrKey, 30*60000); // 30 min: métricas de pauta cambian rápido
     setALoading(true);
     setAError(null);
-    // Limpiar rows YA — sino al cambiar de nivel (ads → campaña) se ven los
-    // datos viejos del nivel anterior mientras carga.
-    setARows([]);
+    // Con cache mostramos eso; sin cache limpiamos YA para no ver el nivel anterior.
+    if (cached) setARows(cached); else setARows([]);
     try {
       const params = {acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil};
-      const lastParent = aDrill[aDrill.length-1];
       if (lastParent) {
         params.parent_id = lastParent.id;
         params.parent_type = lastParent.level;
@@ -18485,11 +18500,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const d = await metaApi("insights","GET",null,params);
       // Si dispararon otra carga después de esta, descartamos.
       if (myReqId !== loadInsightsReqIdRef.current) return;
-      if(d.error) { setAError(d.error); setARows([]); }
-      else setARows(d.rows||[]);
+      if(d.error) { setAError(d.error); if(!cached) setARows([]); }
+      else { setARows(d.rows||[]); ghSwrSet(swrKey, d.rows||[]); }
     } catch(e) {
       if (myReqId !== loadInsightsReqIdRef.current) return;
-      setAError(e.message || "Error de red");
+      if(!cached) setAError(e.message || "Error de red");
     } finally {
       if (myReqId === loadInsightsReqIdRef.current) setALoading(false);
     }
@@ -21312,17 +21327,22 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
   const ML_PAGE_SIZE = 50;
   async function loadItems() {
     if (!uid) return;
-    setLoading(true);
+    // SWR: pintar al instante las publicaciones de la última visita
+    const swrKey = `growith_ml_items_${uid}_${statusFilter}`;
+    const cached = ghSwrGet(swrKey);
+    if (cached) { setItems(cached); setLoading(false); }
+    else setLoading(true);
     setLoadError(null);
     setDiagnostic(null);
     try {
       const r = await fetch(`/api/inventory?action=ml_items&uid=${uid}&status=${statusFilter}`);
       const j = await r.json();
-      if (j.error) { setLoadError(j.error); setItems([]); return; }
+      if (j.error) { if(!cached){ setLoadError(j.error); setItems([]); } return; }
       setItems(j.items || []);
+      ghSwrSet(swrKey, j.items || []);
       if (j.diagnostic) setDiagnostic(j.diagnostic);
       setSelectedIds(new Set());
-    } catch (e) { setLoadError(e.message); }
+    } catch (e) { if(!cached) setLoadError(e.message); }
     finally { setLoading(false); }
   }
   async function runDiagnose() {
@@ -22935,7 +22955,16 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   async function loadStock(d=days, from="", to="") {
     if(!uid) return;
-    setLoading(true); setData(null); setDataPrev(null); setStockError(null);
+    // SWR: pintar al instante el último snapshot de este período y refrescar de
+    // fondo (el fetch en vivo contra TN/Shopify/ML tarda varios segundos).
+    const swrKey = `growith_stock_cache_${uid}_${from&&to?`${from}_${to}`:`d${d}`}`;
+    const cached = ghSwrGet(swrKey);
+    if (cached?.json) {
+      setData(cached.json); setDataPrev(cached.jsonPrev||null); setStockError(null);
+      setLoading(false);
+    } else {
+      setLoading(true); setData(null); setDataPrev(null); setStockError(null);
+    }
     try {
       let params = `action=products&uid=${uid}`;
       let prevParams = `action=products&uid=${uid}`;
@@ -23001,7 +23030,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         setData(json);
       }
       if(jsonPrev?.products) setDataPrev(jsonPrev);
-    } catch(e){setStockError(e.message);toast(e.message,"error");}
+      if(json?.products) ghSwrSet(swrKey, { json, jsonPrev: jsonPrev?.products ? jsonPrev : null });
+    } catch(e){
+      // Si ya pintamos cache, el error de refresco no rompe la vista
+      if(!cached?.json){ setStockError(e.message); toast(e.message,"error"); }
+    }
     setLoading(false);
   }
 
@@ -24895,10 +24928,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     let url=`/api/orders?action=daily_metrics&uid=${uid}`;
     if(from&&to){url+=`&date_from=${from}&date_to=${to}`;}
     else{url+=`&days=${d}`;}
-    // 1) Pintado INSTANTÁNEO desde la caché del servidor (estilo Escalafy):
-    //    ~300ms vs 30-50s del cálculo en vivo. Después se revalida de fondo.
+    // 0) Pintado en 0ms desde el snapshot local de la última visita, mientras
+    //    llegan la caché del servidor y los datos en vivo.
+    const swrKey=`growith_rend_cache_${uid}_${from&&to?`${from}_${to}`:`d${d}`}`;
     if(!silent){
-      setLoading(true);
+      const local=ghSwrGet(swrKey);
+      if(local?.totals){ setRendData(local); setLoading(false); setRevalidando(true); }
+      else setLoading(true);
+      // 1) Caché del servidor (~300ms vs 30-50s del cálculo en vivo)
       try{
         const rc=await fetch(url+"&cache=only");
         const jc=await rc.json();
@@ -24913,7 +24950,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       const r=await fetch(url);
       const j=await r.json();
       if(j.error) throw new Error(j.error);
-      setRendData({...j, loadedAt:new Date().toISOString()});
+      const fresh={...j, loadedAt:new Date().toISOString()};
+      setRendData(fresh);
+      if(j.totals) ghSwrSet(swrKey, fresh);
     }catch(e){setError(e.message);}
     finally{ setRevalidando(false); if(!silent) setLoading(false); }
   }

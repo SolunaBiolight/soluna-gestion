@@ -176,7 +176,13 @@ growith_expiry_dismiss_{uid}_{fecha} → "1" banner de vencimiento de plan/trial
 (sessionStorage) growith_copilot_msgs → JSON[] historial del chat Copilot
 (sessionStorage) growith_colab_token / growith_board_id_{token} → sesión de portal colaborador / identidad de tablero compartido
 growith_orders_{uid} / growith_orders_v3 → LEGACY, solo se borran (purga de cache viejo de órdenes)
+growith_stock_cache_{uid}_{periodo}  → SWR {ts,data} snapshot de Stock (pintado instantáneo)
+growith_arca_pend_{uid}_{cuit}_{periodo} → SWR pendientes del facturador
+growith_rend_cache_{uid}_{periodo}   → SWR snapshot del Dashboard (daily_metrics)
+growith_ml_items_{uid}_{status}      → SWR publicaciones de la sección ML
+growith_meta_ins_{acc}_{nivel}_{rango}_{drill} → SWR insights de Meta (TTL 30 min)
 ```
+Patrón SWR: helpers globales `ghSwrGet(key,maxAge)` / `ghSwrSet(key,data)` — pintar cache al instante, refrescar de fondo, y si el refresco falla con cache pintada no romper la vista.
 
 ### Flujo de git
 ```bash
