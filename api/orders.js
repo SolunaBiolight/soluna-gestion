@@ -690,7 +690,7 @@ export default async function handler(req, res) {
       }
       const feeAd     = (parseFloat(dolarCfg.feeAdSpend)||0)/100;
 
-      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mlAdsAuto) {
+      function aplicarCostos(tot, raw, sinceR, untilR, dias, mpComm, mlEnvio, mlAdsAuto, gAdsAuto) {
         // COGS = unidades vendidas × costo cargado por producto/variante ($ fijo o % del precio).
         let cogs = 0;
         for (const p of (raw?.products||[])) for (const v of (p.variants||[])) {
@@ -740,8 +740,9 @@ export default async function handler(req, res) {
         const adSpendMeta = (tot.adSpend||0) * (1+feeAd);
         // Mercado Ads: gasto REAL de la API si está disponible; sino el manual.
         const adSpendMl   = (mlAdsAuto!=null) ? mlAdsAuto : mlAdsPeriodo(sinceR, untilR);
-        // Google Ads: carga manual por períodos (prorrateado por día, como ML Ads).
-        const adSpendGoogle = adsPeriodoDe(googleAdsList, sinceR, untilR);
+        // Google Ads: gasto REAL de la API si la cuenta está conectada y hay
+        // developer token; sino la carga manual por períodos (prorrateada por día).
+        const adSpendGoogle = (gAdsAuto!=null) ? gAdsAuto : adsPeriodoDe(googleAdsList, sinceR, untilR);
         const adSpendEf = adSpendMeta + adSpendMl + adSpendGoogle + adic.gastoAds;
         const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;
         // Net Revenue = TODO descontado menos la pauta (contribución antes de ads).
@@ -876,13 +877,47 @@ export default async function handler(req, res) {
         return s;
       }
 
-      // Gasto real de Mercado Ads (API) para ambos períodos — fallback: manual.
+      // ── Google Ads AUTOMÁTICO (Google Ads API) ──
+      // Con la cuenta conectada (users/{uid}.googleAds.refresh_token) y las
+      // credenciales en Vercel, el gasto real sale de GAQL (metrics.cost_micros).
+      // Cualquier falta (token, credenciales, permisos) → null → rige el manual.
+      async function fetchGoogleAdsAuto(sinceR, untilR) {
+        try {
+          const g = userData.googleAds;
+          const cid = process.env.GOOGLE_ADS_CLIENT_ID, cs = process.env.GOOGLE_ADS_CLIENT_SECRET, dt = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+          if (!g?.refresh_token || !cid || !cs || !dt) return null;
+          const tr = await fetch("https://oauth2.googleapis.com/token", {
+            method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ client_id: cid, client_secret: cs, refresh_token: g.refresh_token, grant_type: "refresh_token" }),
+          });
+          if (!tr.ok) return null;
+          const at = (await tr.json()).access_token;
+          if (!at) return null;
+          let total = 0, any = false;
+          for (const c of (g.customers || []).slice(0, 5)) {
+            const cn = String(c).replace(/^customers\//, "").replace(/-/g, "");
+            const r = await fetch(`https://googleads.googleapis.com/v18/customers/${cn}/googleAds:search`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${at}`, "developer-token": dt, "Content-Type": "application/json",
+                ...(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ? { "login-customer-id": String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID).replace(/-/g, "") } : {}) },
+              body: JSON.stringify({ query: `SELECT metrics.cost_micros, segments.date FROM customer WHERE segments.date BETWEEN '${sinceR}' AND '${untilR}'` }),
+            });
+            if (!r.ok) { console.error("gads search HTTP", r.status, (await r.text().catch(()=>"" )).slice(0,200)); continue; }
+            const j = await r.json();
+            for (const row of (j.results || [])) { total += (parseFloat(row.metrics?.costMicros) || 0) / 1e6; any = true; }
+          }
+          return any ? +total.toFixed(2) : null;
+        } catch (e) { console.error("Google Ads spend error:", e.message); return null; }
+      }
+
+      // Gasto real de Mercado Ads y Google Ads (API) para ambos períodos — fallback: manual.
       const mlAdsDebug = {};
-      const [mlAdsAutoCurr, mlAdsAutoPrev] = await Promise.all([
+      const [mlAdsAutoCurr, mlAdsAutoPrev, gAdsAutoCurr, gAdsAutoPrev] = await Promise.all([
         fetchMlAdsSpend(since, until, mlAdsDebug), fetchMlAdsSpend(prevSince, prevUntil),
+        fetchGoogleAdsAuto(since, until), fetchGoogleAdsAuto(prevSince, prevUntil),
       ]);
-      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mlAdsAutoCurr);
-      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev);
+      totals     = aplicarCostos(totals,     curr.raw, since,     until,     span+1, shopifyPayComm(curr.raw, feeByRef),     mlEnvioTot(curr.raw), mlAdsAutoCurr, gAdsAutoCurr);
+      prevTotals = aplicarCostos(prevTotals, prev.raw, prevSince, prevUntil, span+1, shopifyPayComm(prev.raw, feeByRefPrev), mlEnvioTot(prev.raw), mlAdsAutoPrev, gAdsAutoPrev);
 
       // ── Filas diarias alineadas con el motor real ──
       // Antes las filas usaban la "commission" legacy (aprox. 3%/10%): los
@@ -1206,7 +1241,8 @@ export default async function handler(req, res) {
         since, until, prevSince, prevUntil,
         meta: { hasMetaData: Object.keys(metaCurr).length>0, hasStoreData: Object.keys(curr.dailyRevenue).length>0, metaAccountsCount: metaAccounts.length,
           mlAdsFuente: mlAdsAutoCurr!=null ? "auto" : (mlAdsList.length ? "manual" : "sin_datos"),
-          googleAdsFuente: googleAdsList.length ? "manual" : "sin_datos",
+          googleAdsFuente: gAdsAutoCurr!=null ? "auto" : (googleAdsList.length ? "manual" : "sin_datos"),
+          googleAdsConectado: !!userData.googleAds?.refresh_token,
           mlAdsDebug, mlEnvioDebug,
           metaTokenExpired: !!metaErr.expired,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };

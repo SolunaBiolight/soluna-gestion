@@ -28,6 +28,8 @@ Actualmente en uso real por Soluna Biolight (anteojos blue light blocker).
 │   ├── audio.js         ← TTS Gemini
 │   ├── tn-callback.js   ← Callback OAuth TN
 │   ├── meta-callback.js ← Callback OAuth Meta
+│   ├── google-ads.js    ← Google Ads (oauth_start/status/disconnect; gasto en orders.js)
+│   ├── google-ads-callback.js ← Callback OAuth Google Ads
 │   ├── update-shipping.js
 │   ├── process-sku.js
 │   ├── coupons.js
@@ -48,6 +50,10 @@ CRON_SECRET               ← auth de los crons (Vercel lo manda como Bearer)
 META_APP_ID=905872205806657
 META_APP_SECRET
 NEXT_PUBLIC_META_APP_ID=905872205806657
+GOOGLE_ADS_CLIENT_ID          ← OAuth de Google Cloud (Google Ads API habilitada) — PENDIENTE de crear
+GOOGLE_ADS_CLIENT_SECRET      ← ídem — PENDIENTE
+GOOGLE_ADS_DEVELOPER_TOKEN    ← centro de API de la cuenta admin de Google Ads — PENDIENTE
+GOOGLE_ADS_LOGIN_CUSTOMER_ID  ← opcional, id del MCC sin guiones
 ```
 
 ## Secciones de la app (componentes principales en App.jsx)
