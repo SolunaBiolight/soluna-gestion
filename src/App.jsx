@@ -7951,7 +7951,7 @@ function AuthScreen({T, darkMode, onToggleDark}) {
           )}
           {mode==="register"&&(
             <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:10,background:"linear-gradient(135deg,#22c55e18,#22c55e08)",border:"1.5px solid #22c55e55",borderRadius:20,padding:"6px 14px"}}>
-              <span style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>7 días de prueba gratis</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>14 días de prueba gratis con todo incluido</span>
               <span style={{fontSize:12,color:"#6b7280"}}>· sin tarjeta</span>
             </div>
           )}
@@ -8895,47 +8895,46 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",marginBottom:16}}>
           <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.6,marginBottom:16}}>Plan actual</div>
 
-          {/* Plan cards — Free / Plus / Full */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginBottom:16}}>
-            {[
-              {id:"free",nombre:"Free",precio_usdt:0,precio_ars:0,color:T.textSm,features_ok:["Dashboard básico","Envíos: hasta 30/mes","Reclamos: hasta 5","Canjes: hasta 3","1 tienda"],features_no:["Etiquetas PDF con SKU","Stock multi-canal","Facturador ARCA","Meta Ads"]},
-              {id:"plus",nombre:"Plus",precio_usdt:29,precio_ars:35000,color:T.blue,popular:true,features_ok:["Todo Free sin límites","Envíos + etiquetas PDF SKU","Reclamos ilimitados","Canjes ilimitados","Stock multi-canal","Facturador ARCA","Hasta 3 tiendas"],features_no:["Meta Ads","Reglas automáticas"]},
-              {id:"full",nombre:"Full",precio_usdt:79,precio_ars:95000,color:T.purple,features_ok:["Todo Plus","Meta Ads completo","Tiendas ilimitadas","Soporte prioritario WhatsApp","Reglas automáticas (próx.)"]},
-            ].map(p=>{
-              const esPlanActual=(!userDoc?.plan&&p.id==="free")||(userDoc?.plan===p.id);
-              return (
-                <div key={p.id} style={{border:`2px solid ${esPlanActual?p.color||T.accentSolid:T.border}`,borderRadius:12,padding:"18px 20px",position:"relative",background:esPlanActual?(p.color||T.accentSolid)+"0a":T.bg}}>
-                  {esPlanActual&&<div style={{position:"absolute",top:-10,left:16,background:p.color||T.accentSolid,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>PLAN ACTUAL</div>}
-                  {p.popular&&!esPlanActual&&<div style={{position:"absolute",top:-10,right:16,background:p.color,color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>POPULAR</div>}
-                  <div style={{fontSize:17,fontWeight:800,color:T.text,marginBottom:4}}>{p.nombre}</div>
-                  {p.precio_usdt===0
-                    ?<div style={{fontSize:24,fontWeight:800,color:T.text,marginBottom:12}}>Gratis</div>
-                    :<div style={{marginBottom:12}}>
-                      <div style={{fontSize:24,fontWeight:800,color:T.text}}>${p.precio_usdt} <span style={{fontSize:12,fontWeight:400,color:T.textSm}}>USDT/mes</span></div>
-                      <div style={{fontSize:11,color:T.textSm}}>${p.precio_ars.toLocaleString("es-AR")} ARS/mes</div>
-                    </div>
-                  }
-                  <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
-                    {(p.features_ok||[]).map(f=>(
-                      <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:12,color:T.textMd}}>
-                        <span style={{color:p.color||T.green,fontSize:11}}>✓</span>{f}
-                      </div>
-                    ))}
-                    {(p.features_no||[]).map(f=>(
-                      <div key={f} style={{display:"flex",alignItems:"center",gap:7,fontSize:12,color:T.textSm}}>
-                        <span style={{fontSize:11}}>✕</span>{f}
-                      </div>
-                    ))}
-                  </div>
-                  {p.id!=="free"&&(esPlanActual
-                    ?<AsyncButton onClick={async()=>{if(await appConfirm(`¿Cancelar suscripción ${p.nombre}?`,{danger:true,okLabel:"Cancelar plan"}))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),width:"100%",justifyContent:"center",fontSize:12}}>Cancelar suscripción</AsyncButton>
-                    :<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:12,background:p.color}}>Suscribirme →</button>
-                  )}
+          {/* Plan ÚNICO (Pro) — todo incluido. La prueba gratis de 14 días con
+              todo habilitado arranca sola al crear la cuenta (ensureUserDoc). */}
+          {(()=>{
+            const isPago = userDoc?.plan==="plus"||userDoc?.plan==="full";
+            const te = userDoc?.trialEnd;
+            const trialEnd = te?.toDate ? te.toDate() : (te?.seconds ? new Date(te.seconds*1000) : (te ? new Date(te) : null));
+            const diasTrial = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime()-Date.now())/86400000)) : 0;
+            const enTrial = !isPago && diasTrial>0;
+            return (
+              <div style={{border:`2px solid ${isPago?"#6366f1":(enTrial?"#22c55e":T.border)}`,borderRadius:12,padding:"20px 22px",position:"relative",background:isPago?"#6366f10a":(enTrial?"#22c55e08":T.bg),maxWidth:480}}>
+                <div style={{position:"absolute",top:-10,left:16,background:isPago?"#6366f1":(enTrial?"#22c55e":T.textSm),color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>
+                  {isPago?"PLAN PRO ACTIVO":(enTrial?"PRUEBA GRATIS":"PRUEBA FINALIZADA")}
                 </div>
-              );
-            })}
-          </div>
-          <div style={{fontSize:12,color:T.textSm,textAlign:"center"}}>¿Preguntas? Escribinos a <span style={{color:T.accent}}>hola@growith.app</span></div>
+                <div style={{display:"flex",alignItems:"baseline",gap:10,marginTop:6,marginBottom:4,flexWrap:"wrap"}}>
+                  <span style={{fontSize:18,fontWeight:800,color:T.text}}>Plan Pro</span>
+                  <span style={{fontSize:13,color:T.textSm,textDecoration:"line-through"}}>$99</span>
+                  <span style={{fontSize:22,fontWeight:800,color:T.text}}>$79 <span style={{fontSize:12,fontWeight:400,color:T.textSm}}>USD/mes</span></span>
+                  <span style={{fontSize:10,fontWeight:800,color:"#22c55e",background:"#22c55e18",border:"1px solid #22c55e44",borderRadius:12,padding:"2px 8px"}}>20% OFF lanzamiento</span>
+                </div>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:12,lineHeight:1.6}}>
+                  Un solo plan con <strong style={{color:T.text}}>todo incluido</strong>: Dashboard financiero, Envíos, Stock multicanal, Facturador ARCA, Meta Ads y Google Ads, Copilot IA, tiendas y equipo ilimitados.
+                </div>
+                {enTrial && (
+                  <div style={{fontSize:13,color:"#22c55e",fontWeight:700,marginBottom:12}}>
+                    Te quedan {diasTrial} día{diasTrial!==1?"s":""} de prueba con todo incluido — sin tarjeta.
+                  </div>
+                )}
+                {!isPago && !enTrial && (
+                  <div style={{fontSize:13,color:T.orange,fontWeight:600,marginBottom:12}}>
+                    Tu prueba de 14 días terminó — suscribite para seguir usando Growith con todo incluido.
+                  </div>
+                )}
+                {isPago
+                  ?<AsyncButton onClick={async()=>{if(await appConfirm("¿Cancelar tu suscripción Pro?",{danger:true,okLabel:"Cancelar plan"}))await updateDoc(doc(db,"users",user.uid),{plan:"free"});}} style={{...BtnDanger(T),justifyContent:"center",fontSize:12}}>Cancelar suscripción</AsyncButton>
+                  :<button onClick={()=>onNavigate("planes")} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:13}}>{enTrial?"Suscribirme ahora →":"Reactivar con el Plan Pro →"}</button>
+                }
+              </div>
+            );
+          })()}
+          <div style={{fontSize:12,color:T.textSm,textAlign:"center",marginTop:14}}>¿Preguntas? Escribinos a <span style={{color:T.accent}}>contacto.growith@gmail.com</span></div>
         </div>
       </div>
     </div>
