@@ -7928,7 +7928,14 @@ function AuthScreen({T, darkMode, onToggleDark}) {
             <GrowithLogo size={52} variant="color"/>
             <div style={{fontSize:32,fontWeight:800,color:T.text,letterSpacing:-1,lineHeight:1}}>Growith</div>
           </div>
-          <div style={{fontSize:13,color:T.textSm,marginTop:4}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
+          {/* Descripción pública del propósito de la app — requerida por la
+              verificación de marca de Google (la home no puede ser solo un login). */}
+          <div style={{fontSize:14,color:T.textMd,marginTop:8,lineHeight:1.6}}>
+            La plataforma de gestión integral para tu e-commerce: ventas, envíos, stock,
+            facturación y rentabilidad en tiempo real, con Tienda Nube, Shopify,
+            Mercado Libre, Meta Ads y Google Ads conectados en un solo lugar.
+          </div>
+          <div style={{fontSize:13,color:T.textSm,marginTop:10}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
           {switchingTo?.email && (
             <div style={{marginTop:10,padding:"8px 12px",background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,fontSize:12,color:T.text}}>
               Cambiando a <strong>{switchingTo.email}</strong>{switchingTo.provider==="google.com"?" — entrá con Google":" — poné tu contraseña"}
@@ -7980,6 +7987,22 @@ function AuthScreen({T, darkMode, onToggleDark}) {
             {mode==="login"?<>¿No tenés cuenta? <button onClick={()=>{setMode("register");setError("");}} style={{background:"none",border:"none",color:T.accent,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13}}>Registrate</button></>
             :<>¿Ya tenés cuenta? <button onClick={()=>{setMode("login");setError("");}} style={{background:"none",border:"none",color:T.accent,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13}}>Iniciá sesión</button></>}
           </div>
+        </div>
+
+        {/* Qué hace Growith + links legales — visibles sin iniciar sesión */}
+        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"6px 14px",marginTop:22,fontSize:12,color:T.textSm}}>
+          <span>📊 Dashboard financiero</span>
+          <span>📦 Envíos y etiquetas</span>
+          <span>🧾 Facturación ARCA</span>
+          <span>📣 Métricas de publicidad</span>
+          <span>🗂 Stock multicanal</span>
+        </div>
+        <div style={{textAlign:"center",marginTop:16,fontSize:11,color:T.textSm}}>
+          <a href="/privacidad.html" style={{color:T.textSm,textDecoration:"underline"}}>Política de Privacidad</a>
+          <span style={{margin:"0 8px"}}>·</span>
+          <a href="/terminos.html" style={{color:T.textSm,textDecoration:"underline"}}>Términos del Servicio</a>
+          <span style={{margin:"0 8px"}}>·</span>
+          <a href="mailto:contacto.growith@gmail.com" style={{color:T.textSm,textDecoration:"underline"}}>contacto.growith@gmail.com</a>
         </div>
       </div>
     </div>
