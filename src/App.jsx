@@ -22544,7 +22544,7 @@ function MargenesPnl({ T, uid }) {
     try {
       const c = JSON.parse(localStorage.getItem(cacheKey(mes))||"null");
       if (!c?.totals) return null;
-      if (c.v !== 5) return null; // motor viejo (pre-envío en facturación): recalcular
+      if (c.v !== 6) return null; // motor viejo (pre-envío en facturación): recalcular
       if (mes === mesActual && Date.now()-(c.ts||0) > 3600000) return null; // mes corriente: refresco horario
       return c.totals;
     } catch(_) { return null; }
@@ -22566,7 +22566,7 @@ function MargenesPnl({ T, uid }) {
       // Primero la caché del servidor (si otro dispositivo o el warmer ya
       // calculó este mes, es instantáneo); si no hay, cálculo en vivo (~30s).
       let j = null;
-      if (!force) { try { const rc = await fetch(base+"&cache=only"); const jc = await rc.json(); if (!jc.noCache && !jc.error && jc.totals && jc.engineV === 5) j = jc; } catch(_) {} }
+      if (!force) { try { const rc = await fetch(base+"&cache=only"); const jc = await rc.json(); if (!jc.noCache && !jc.error && jc.totals && jc.engineV === 6) j = jc; } catch(_) {} }
       if (!j) {
         const r = await fetch(base);
         j = await r.json();
@@ -22574,7 +22574,7 @@ function MargenesPnl({ T, uid }) {
       }
       const t = j.totals || {};
       setMeses(p=>({...p,[mes]:t}));
-      try { localStorage.setItem(cacheKey(mes), JSON.stringify({ v:5, ts:Date.now(), totals:t })); } catch(_) {}
+      try { localStorage.setItem(cacheKey(mes), JSON.stringify({ v:6, ts:Date.now(), totals:t })); } catch(_) {}
     } catch(e) { setErrorMes(p=>({...p,[mes]:e.message})); }
     finally { setCargando(null); }
   };
@@ -25244,7 +25244,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"Profit",      val:fmtM(tot.profit),    c:tot.profit,     p:prevTot.profit,     hero:true, accent:(tot.profit||0)>=0?MC.green:MC.red, valColor:(tot.profit||0)>=0?MC.green:MC.red, hint:(tot.profit||0)>=0?"Ganancia neta":"Pérdida neta", spk:dailyRows.map(r=>r.Profit), zero:true},
               {label:"Revenue",     val:fmtM(tot.revenue),   c:tot.revenue,    p:prevTot.revenue,    hero:true, accent:MC.blue,   hint:"Facturación total",      spk:dailyRows.map(r=>r.Revenue)},
               {label:"Ad Spend",    val:fmtM(tot.adSpend),   c:tot.adSpend,    p:prevTot.adSpend,    hero:true, accent:MC.gold,   hint:"Inversión publicitaria", spk:dailyRows.map(r=>r["Ad Spend"]), inv:true},
-              {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, accent:MC.violet, hint:"Tras comisiones",        spk:dailyRows.map(r=>r["Net Revenue"])},
+              {label:"Net Revenue", val:fmtM(tot.netRevenue),c:tot.netRevenue, p:prevTot.netRevenue, hero:true, accent:MC.violet, hint:"Todo descontado, antes de pauta", spk:dailyRows.map(r=>r["Net Revenue"])},
               {label:"Órdenes",     val:fmtInt(tot.orders),  c:tot.orders,     p:prevTot.orders,     hint:"Con revenue",            spk:dailyRows.map(r=>r["Ordenes > $0"]), bad:!((tot.orders||0)>0)},
               {label:"ROAS",        val:fmtX(tot.roas),      c:tot.roas,       p:prevTot.roas,       hint:`meta ≥ ${metas.roas}x`,  spk:dailyRows.map(r=>r.ROAS||0), bad:(tot.roas||0)<metas.roas},
               {label:"True ROAS",   val:fmtX(tot.trueRoas),  c:tot.trueRoas,   p:prevTot.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, spk:dailyRows.map(r=>r["True ROAS"]||0), bad:(tot.trueRoas||0)<metas.trueRoas},
@@ -25544,7 +25544,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 {label:"Profit",      val:fmtM(cSel.profit),    c:cSel.profit,     p:cPrev?.profit,     accent:(cSel.profit||0)>=0?MC.green:MC.red, valColor:(cSel.profit||0)>=0?MC.green:MC.red, hint:(cSel.profit||0)>=0?"Ganancia neta del canal":"Pérdida neta del canal", spk:canalRows.map(r=>r.Profit), zero:true},
                 {label:"Revenue",     val:fmtM(cSel.revenue),   c:cSel.revenue,    p:cPrev?.revenue,    accent:MC.blue,   hint:"Facturación del canal", spk:canalRows.map(r=>r.Revenue)},
                 {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    accent:MC.gold,   hint:esMl?(rendData?.meta?.mlAdsFuente==="auto"?"Mercado Ads (real, API)":"Mercado Ads (manual)"):"Meta Ads", spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
-                {label:"Net Revenue", val:fmtM(cSel.netRevenue),c:cSel.netRevenue, p:cPrev?.netRevenue, accent:MC.violet, hint:"Tras comisiones e impuestos", spk:canalRows.map(r=>r["Net Revenue"])},
+                {label:"Net Revenue", val:fmtM(cSel.netRevenue),c:cSel.netRevenue, p:cPrev?.netRevenue, accent:MC.violet, hint:"Todo descontado, antes de pauta", spk:canalRows.map(r=>r["Net Revenue"])},
                 {label:"Órdenes",     val:fmtInt(cSel.orders),  c:cSel.orders,     p:cPrev?.orders,     hint:"Con revenue", spk:canalRows.map(r=>r["Ordenes > $0"]), bad:!((cSel.orders||0)>0)},
                 {label:"ROAS",        val:fmtX(cSel.roas),      c:cSel.roas,       p:cPrev?.roas,       hint:`meta ≥ ${metas.roas}x`, bad:(cSel.adSpend>0)&&(cSel.roas||0)<metas.roas},
                 {label:"True ROAS",   val:fmtX(cSel.trueRoas),  c:cSel.trueRoas,   p:cPrev?.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, bad:(cSel.adSpend>0)&&(cSel.trueRoas||0)<metas.trueRoas},

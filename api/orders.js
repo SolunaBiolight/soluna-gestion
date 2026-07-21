@@ -736,8 +736,11 @@ export default async function handler(req, res) {
         // Mercado Ads: gasto REAL de la API si está disponible; sino el manual.
         const adSpendMl   = (mlAdsAuto!=null) ? mlAdsAuto : mlAdsPeriodo(sinceR, untilR);
         const adSpendEf = adSpendMeta + adSpendMl + adic.gastoAds;
-        const netRevenue= revenue - impuestos - comPlat - comPago;
         const profit    = revenue - cogs - impuestos - comPlat - comPago - envio - costosAdic - adSpendEf;
+        // Net Revenue = TODO descontado menos la pauta (contribución antes de ads).
+        // Así la cascada es limpia: Revenue → Net Revenue → (− pauta) → Profit,
+        // y True ROAS (netRevenue/adSpend) se lee directo: ≥1x = la pauta gana plata.
+        const netRevenue= profit + adSpendEf;
         return { ...tot,
           revenue, orders: ordersTot, adSpend: adSpendEf, adSpendMeta: +adSpendMeta.toFixed(2), adSpendMl: +adSpendMl.toFixed(2), adSpendExtra: +adic.gastoAds.toFixed(2), netRevenue: +netRevenue.toFixed(2), profit: +profit.toFixed(2),
           costoProductos: +cogs.toFixed(2), impuestos: +impuestos.toFixed(2),
@@ -898,8 +901,8 @@ export default async function handler(req, res) {
         return rowsArr.map(r => {
           const revD = r.Revenue||0;
           const adD  = (r["Ad Spend"]||0)*(1+feeAd) + adRepartoDia;
-          const netD = revD*(1-ratioDesc);
           const profitD = revD*(1-ratioDesc-ratioCosto) - fijoDia - adD;
+          const netD = profitD + adD; // neto = contribución antes de pauta
           const ordD = r["Ordenes > $0"]||0;
           return { ...r, "Ad Spend": +adD.toFixed(2), "Net Revenue": +netD.toFixed(2), Profit: +profitD.toFixed(2),
             "Profit Margin": revD>0 ? parseFloat((profitD/revD).toFixed(6)) : 0,
@@ -957,8 +960,8 @@ export default async function handler(req, res) {
           const revD = r.Revenue||0;
           const adD  = (r["Ad Spend"]||0)*(1+feeAd) + adRepartoDia;
           const costD = (porDia[r.Fecha]||0) + revD*residRatio;
-          const netD = revD*(1-ratioDesc);
           const profitD = revD - costD - fijoDia - adD;
+          const netD = profitD + adD; // neto = contribución antes de pauta
           const ordD = r["Ordenes > $0"]||0;
           return { ...r, "Ad Spend": +adD.toFixed(2), "Net Revenue": +netD.toFixed(2), Profit: +profitD.toFixed(2),
             "Profit Margin": revD>0 ? parseFloat((profitD/revD).toFixed(6)) : 0,
@@ -1005,8 +1008,8 @@ export default async function handler(req, res) {
               ? (raw.orders_detail||[]).reduce((s,o)=>s+(parseFloat(o.envioCosto)||0),0)
               : ord*envioProm)) + fulfillFee*ord;
         const ads = parseFloat(adSpend)||0;
-        const netRev = rev - impuestos - comis;
         const profit = rev - cogs - impuestos - comis - envio - ads;
+        const netRev = profit + ads; // neto = contribución antes de pauta
         return { orders:ord, revenue:+rev.toFixed(2), netRevenue:+netRev.toFixed(2), adSpend:+ads.toFixed(2),
           costoProductos:+cogs.toFixed(2), impuestos:+impuestos.toFixed(2),
           comisiones:+comis.toFixed(2), comisionPlataforma:+comPlat.toFixed(2), comisionPago:+comPago.toFixed(2),
@@ -1188,9 +1191,9 @@ export default async function handler(req, res) {
 
       // engineV: versión del motor de métricas. Se sube cuando cambia la DEFINICIÓN
       // de una métrica (v2 = facturación TN incluye envío cobrado al cliente;
-      // v3 = corte de día TN en hora argentina; v4 = envío ML real con descuentos; v5 = envío ML en cero para ventas devueltas) para que los caches del
+      // v3 = corte de día TN en hora argentina; v4 = envío ML real con descuentos; v5 = envío ML en cero para ventas devueltas; v6 = Net Revenue = contribución antes de pauta) para que los caches del
       // cliente (P&L mensual) descarten resultados viejos.
-      const responseBody = { engineV: 5, rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
+      const responseBody = { engineV: 6, rows, prevRows, totals, prevTotals, byDow, byChannel, byChannelDaily, sales, byProduct, clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         dolarSerie, dolarActual, quality,
         since, until, prevSince, prevUntil,
