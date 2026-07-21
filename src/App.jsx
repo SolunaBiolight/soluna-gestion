@@ -15497,7 +15497,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   function ordenPasaFiltros(id, o) {
     if (o._billed) return false; // las facturadas van a la sección colapsada, no a la lista principal
     if (canalSel !== "todos" && o._platform !== canalSel) return false;
-    if (metodoPagoSel !== "todos" && (o.metodo_pago || "") !== metodoPagoSel) return false;
+    if (metodoPagoSel !== "todos" && ((o.plataforma_pago || o.metodo_pago || "").trim()) !== metodoPagoSel) return false;
     const minN = montoMin === "" ? null : parseFloat(montoMin);
     const maxN = montoMax === "" ? null : parseFloat(montoMax);
     if (minN !== null && !isNaN(minN) && (o.total||0) < minN) return false;
@@ -16229,7 +16229,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     })()}
                     <select value={metodoPagoSel} onChange={e=>setMetodoPagoSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
                       <option value="todos">Todos los métodos de pago</option>
-                      {(()=>{const set=new Set();Object.values(tnData?.ordenes||{}).forEach(o=>{const m=(o.metodo_pago||"").trim();if(m)set.add(m);});return[...set].sort().map(m=><option key={m} value={m}>{m}</option>);})()}
+                      {/* Agrupado por PLATAFORMA de cobro (Pago Nube / Mercado Pago / Transferencia),
+                          no por tipo de tarjeta — sirve para facturar a distintos CUITs según
+                          por dónde entró la plata. Órdenes viejas sin el campo caen al método crudo. */}
+                      {(()=>{const set=new Set();Object.values(tnData?.ordenes||{}).forEach(o=>{const m=(o.plataforma_pago||o.metodo_pago||"").trim();if(m)set.add(m);});return[...set].sort((a,b)=>a.localeCompare(b,"es")).map(m=><option key={m} value={m}>{m}</option>);})()}
                     </select>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
                       <span style={{fontSize:11,color:T.textSm,flexShrink:0}}>$ mín</span>

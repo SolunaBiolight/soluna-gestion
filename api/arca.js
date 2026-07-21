@@ -18,6 +18,18 @@ async function mlVentasAcc(db, uid) {
 }
 
 // Filtra valores basura ("?", "-", "—", "S/N", "N/A", "null", undefined) y arma una dirección legible.
+// Plataforma de pago legible a partir del gateway de TN. La usa el filtro del
+// facturador: la dueña factura a distintos CUITs según por dónde entró la plata.
+function normPlataformaPago(gateway, method) {
+  const g = String(gateway || "").toLowerCase();
+  if (g.includes("mercadopago") || g.includes("mercado pago")) return "Mercado Pago";
+  if (g.includes("nuvempago") || g.includes("nuvem") || g.includes("pago nube") || g.includes("pagonube")) return "Pago Nube";
+  if (g === "offline" || g === "custom" || g.includes("transfer")) return "Personalizado / Transferencia";
+  if (g) return String(gateway); // otro gateway: mostrar como venga
+  if (String(method || "") === "custom") return "Personalizado / Transferencia";
+  return "";
+}
+
 function cleanAddr(parts) {
   // Sólo descartamos placeholders puros — "S/N" puede ser un número de calle real.
   const invalid = new Set(["", "?", "-", "—", "null", "undefined", "N/A", "n/a"]);
@@ -2545,6 +2557,7 @@ export default async function handler(req, res) {
               o.shipping_address?.floor || o.billing_floor || "",
             ].filter(Boolean).join(" ").trim(),
             metodo_pago: o.payment_details?.method || "Pagado",
+            plataforma_pago: normPlataformaPago(o.gateway_name || o.gateway, o.payment_details?.method),
             items: (o.products || []).map(p => ({
               nombre: p.name || "Producto",
               nombre_original: p.name || "Producto",
@@ -2648,6 +2661,7 @@ export default async function handler(req, res) {
               o.billing_address?.address2 || o.shipping_address?.address2 || "",
             ].filter(Boolean).join(", "),
             metodo_pago: o.payment_gateway_names?.join(", ") || "Pagado",
+            plataforma_pago: o.payment_gateway_names?.join(", ") || "",
             items: (o.line_items || []).map(li => ({
               nombre: li.title || "Producto",
               nombre_original: li.title || "Producto",
@@ -2779,6 +2793,7 @@ export default async function handler(req, res) {
                 provincia: shipAddr.state?.name || biAddr.state_name || biAddr.state?.name || "",
                 direccion: direccionStr,
                 metodo_pago: "Mercado Pago",
+                plataforma_pago: "Mercado Pago",
                 items: (o.order_items || []).map(it => ({
                   nombre: it.item?.title || "Producto",
                   nombre_original: it.item?.title || "Producto",
@@ -2908,6 +2923,7 @@ export default async function handler(req, res) {
             o.shipping_address?.floor || o.billing_floor || "",
           ].filter(Boolean).join(" ").trim(),
           metodo_pago: o.payment_details?.method || (o.payment_status === "paid" ? "Pagado" : ""),
+          plataforma_pago: normPlataformaPago(o.gateway_name || o.gateway, o.payment_details?.method),
           items: (o.products || []).map(p => ({
             nombre: p.name || "Producto",
             nombre_original: p.name || "Producto",
