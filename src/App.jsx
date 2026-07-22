@@ -744,7 +744,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, adminOnlySections=[
     { group:"FINANZAS" },
     // Sin subs: la navegación interna vive en las pills de la sección (tenerla
     // dos veces —sidebar y pills— duplicaba y ocupaba espacio).
-    {id:"margenes", label:"Dashboard", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"},
+    {id:"margenes", label:"Dashboard", icon:"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
+      subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"comisiones",label:"Comisiones"},{id:"costos",label:"Costos"},{id:"adicionales",label:"Adicionales"},{id:"dolar",label:"Dólar"},{id:"facturacion_externa",label:"Fact. Externa"}]},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
@@ -22901,9 +22902,9 @@ function FacturacionExternaPanel({ T, uid }) {
   );
 }
 
-// Barra de sub-tabs de Márgenes — en desktop duplica el sidebar (útil), en
-// mobile es la ÚNICA forma de llegar a la configuración (el bottom nav solo
-// navega a #/margenes = dashboard y el sidebar no existe).
+// Barra de sub-tabs de Márgenes — SOLO mobile: en desktop la navegación vive en
+// las subs del sidebar (tener las dos duplicaba y comía espacio); en mobile es
+// la única forma de llegar a la configuración (no hay sidebar).
 function MargenesTabsBar({ T, tab, setTab }) {
   if (!setTab) return null; // ruta legacy #/rendimiento sin navegación de tabs
   const TABS = [
@@ -22911,7 +22912,7 @@ function MargenesTabsBar({ T, tab, setTab }) {
     {id:"costos",label:"Costos"},{id:"adicionales",label:"Adicionales"},{id:"dolar",label:"Dólar"},{id:"facturacion_externa",label:"Fact. Externa"},
   ];
   return (
-    <div style={{display:"flex",gap:DS.sp.xs,overflowX:"auto",padding:"10px 24px 0",maxWidth:1440,margin:"0 auto",width:"100%",boxSizing:"border-box",WebkitOverflowScrolling:"touch"}}>
+    <div className="mobile-only no-scrollbar" style={{display:"flex",gap:DS.sp.xs,overflowX:"auto",padding:"10px 24px 0",maxWidth:1440,margin:"0 auto",width:"100%",boxSizing:"border-box",WebkitOverflowScrolling:"touch"}}>
       {TABS.map(t=>(
         <button key={t.id} onClick={()=>setTab(t.id)}
           style={{padding:"6px 12px",fontSize:DS.font.md,fontWeight:tab===t.id?DS.w.bold:DS.w.medium,border:`1px solid ${tab===t.id?T.accent+"55":T.border}`,borderRadius:DS.r.full,background:tab===t.id?T.accent+"16":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
@@ -25463,13 +25464,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           style={{...InputStyle(T),fontSize:11,padding:"5px 10px",width:"auto",cursor:"pointer",fontWeight:usdMode?700:500,color:usdMode?T.green:T.textMd,borderColor:usdMode?T.green+"66":T.inputBorder}}>
           {usdMode?"US$ Dólares":"ARS $"}
         </button>
-        <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:0}}>
-          {[{d:7,l:"7d"},{d:30,l:"30d"},{d:60,l:"60d"},{d:90,l:"90d"}].map(p=>(
-            <button key={p.d} onClick={()=>{setUseCustom(false);setDays(p.d);loadData(p.d,"","");}}
-              style={{padding:"4px 10px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:!useCustom&&days===p.d?T.card:"transparent",color:!useCustom&&days===p.d?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:!useCustom&&days===p.d?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>{p.l}</button>
-          ))}
-        </div>
+        {/* Los presets (7/30/60/90d) viven DENTRO del selector de fechas — una
+            sola fuente de período en el topbar, sin doble fila de controles. */}
         <DateRangePicker T={T}
+          presets={[
+            {id:"today",label:"Hoy",days:0},{id:"yest",label:"Ayer",days:-1},
+            {id:"7d",label:"Últimos 7 días",days:7},{id:"30d",label:"Últimos 30 días",days:30},
+            {id:"60d",label:"Últimos 60 días",days:60},{id:"90d",label:"Últimos 90 días",days:90},
+          ]}
           since={useCustom?dateFrom:new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
           until={useCustom?dateTo:new Date().toISOString().slice(0,10)}
           onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
@@ -25517,14 +25519,9 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           // pantalla vacía al cambiar período) — se atenúa levemente.
           return(<div style={{opacity:loading?0.55:1,transition:"opacity .2s",pointerEvents:loading?"none":"auto"}}>
 
-          {/* Status row */}
+          {/* Status row — la fecha vive SOLO en el selector del topbar; acá queda
+              el estado de actualización, alineado a la derecha. */}
           <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
-            <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:600,color:T.textMd,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:20,padding:"4px 12px"}}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-              {fmtDate(rendData.since)} – {fmtDate(rendData.until)}
-              <span style={{color:T.textSm,fontWeight:500,fontSize:10}}>· {dailyRows.length}d</span>
-            </span>
-            {hasPrev&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:T.textSm}}><span style={{opacity:0.7}}>↔ vs</span> {fmtDate(rendData.prevSince)} – {fmtDate(rendData.prevUntil)}</span>}
             <span style={{fontSize:10,color:T.textSm,marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:6}}>
               {revalidando && <span style={{display:"inline-flex",alignItems:"center",gap:5,color:T.accent,fontWeight:600}}><Spinner size={9} color={T.accent}/> actualizando en vivo…</span>}
               act. {new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}
