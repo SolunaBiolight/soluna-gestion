@@ -7789,7 +7789,142 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   );
 }
 
-function AuthScreen({T, darkMode, onToggleDark}) {
+// ─── Sitio público: landing de marketing en "/" + login como sección aparte ───
+// Un visitante sin sesión ve la landing (lo que revisan Google y los clientes);
+// "Iniciar sesión"/"Probar gratis" llevan a #/login. Con sesión, directo a la app.
+function PublicSite({T, darkMode, onToggleDark}) {
+  const [view, setView] = useState(() => {
+    const h = (typeof window !== "undefined" ? window.location.hash : "").toLowerCase();
+    return (h.includes("login") || h.includes("registro")) ? "login" : "landing";
+  });
+  const irLogin = () => { setView("login"); try { window.location.hash = "#/login"; } catch(_){} window.scrollTo(0,0); };
+  const irLanding = () => { setView("landing"); try { window.location.hash = ""; } catch(_){} window.scrollTo(0,0); };
+  if (view === "login") return <AuthScreen T={T} darkMode={darkMode} onToggleDark={onToggleDark} onBackToLanding={irLanding}/>;
+  return <LandingPage T={T} onLogin={irLogin}/>;
+}
+
+function LandingPage({T, onLogin}) {
+  const F = "'Inter',system-ui,sans-serif";
+  const FEATURES = [
+    {t:"Dashboard de rentabilidad", d:"Facturación, costos, publicidad y ganancia neta en tiempo real, por canal. Sabés cuánto ganás de verdad, no cuánto facturás."},
+    {t:"Stock multicanal", d:"Inventario unificado por SKU entre Tienda Nube, Shopify y Mercado Libre, con sincronización de stock, alertas de quiebre y proyección de demanda."},
+    {t:"Envíos y logística", d:"Etiquetas Andreani, seguimiento automático de cada paquete y alertas de envíos demorados o sin retirar."},
+    {t:"Facturación ARCA/AFIP", d:"Emití comprobantes electrónicos desde las ventas de tus canales, con CAE y PDF, filtrando por método de pago."},
+    {t:"Publicidad integrada", d:"El gasto real de Meta Ads, Google Ads y Mercado Ads entra directo a tu profit. ROAS verdadero, no estimado."},
+    {t:"Copilot con IA", d:"Preguntale a tu negocio en lenguaje natural: responde con tus números reales, te avisa lo importante y ejecuta acciones con tu confirmación."},
+  ];
+  const INTEGS = [["tiendanube","Tienda Nube"],["shopify","Shopify"],["mercadolibre","Mercado Libre"],["meta","Meta Ads"],["googleads","Google Ads"],["mercadopago","Mercado Pago"]];
+  const secTitle = {fontSize:26, fontWeight:800, color:T.text, letterSpacing:-0.6, textAlign:"center", marginBottom:10, fontFamily:F};
+  const secSub = {fontSize:14, color:T.textSm, textAlign:"center", maxWidth:560, margin:"0 auto 32px", lineHeight:1.6, fontFamily:F};
+  return (
+    <div style={{fontFamily:F, background:T.bg, minHeight:"100vh", color:T.text}}>
+      {/* Topnav */}
+      <div style={{position:"sticky",top:0,zIndex:50,background:T.bg+"f2",backdropFilter:"blur(10px)",borderBottom:`1px solid ${T.border}`}}>
+        <div style={{maxWidth:1080,margin:"0 auto",padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:16}}>
+          <img src="/logo-color.png" alt="Growith" style={{width:28,height:28,borderRadius:7}}/>
+          <span style={{fontSize:17,fontWeight:800,letterSpacing:-0.4}}>Growith</span>
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+            <button onClick={onLogin} style={{...BtnSecondary(T),fontSize:13,padding:"7px 16px"}}>Iniciar sesión</button>
+            <button onClick={onLogin} style={{...BtnPrimary(T),fontSize:13,padding:"7px 16px"}}>Probar gratis</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Hero */}
+      <div style={{maxWidth:820,margin:"0 auto",padding:"72px 20px 56px",textAlign:"center"}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.accentSolid+"16",border:`1px solid ${T.accentSolid}44`,borderRadius:20,padding:"4px 14px",marginBottom:20,fontSize:12,fontWeight:600,color:T.accent}}>
+          14 días de prueba gratis · Sin tarjeta
+        </div>
+        <h1 style={{fontSize:"clamp(30px, 5.5vw, 48px)",fontWeight:900,letterSpacing:-1.4,lineHeight:1.12,margin:"0 0 18px"}}>
+          Todo tu e-commerce,<br/>una sola plataforma.
+        </h1>
+        <p style={{fontSize:16,color:T.textMd,lineHeight:1.65,maxWidth:600,margin:"0 auto 28px"}}>
+          Growith unifica ventas, envíos, stock, facturación y publicidad de Tienda Nube, Shopify y Mercado Libre
+          en un tablero que te dice lo único que importa: <strong style={{color:T.text}}>cuánto estás ganando de verdad</strong>.
+        </p>
+        <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+          <button onClick={onLogin} style={{...BtnPrimary(T),fontSize:15,padding:"13px 28px"}}>Empezar gratis →</button>
+          <button onClick={onLogin} style={{...BtnSecondary(T),fontSize:15,padding:"13px 28px"}}>Ver la app</button>
+        </div>
+      </div>
+
+      {/* Integraciones */}
+      <div style={{borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,background:T.surface+"66",padding:"22px 20px"}}>
+        <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",gap:"14px 28px",flexWrap:"wrap"}}>
+          {INTEGS.map(([b,n])=>(
+            <span key={b} style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:T.textMd}}>
+              <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:26,height:26,borderRadius:6,background:"#fff",border:`1px solid ${T.border}`}}><BrandIcon name={b} size={16}/></span>
+              {n}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Features */}
+      <div style={{maxWidth:1020,margin:"0 auto",padding:"64px 20px"}}>
+        <h2 style={secTitle}>Una sección para cada parte de tu negocio</h2>
+        <p style={secSub}>Dejá de saltar entre planillas, el admin de tu tienda y cinco pestañas. Growith lo junta todo y lo convierte en decisiones.</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
+          {FEATURES.map(f=>(
+            <div key={f.t} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px"}}>
+              <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>{f.t}</div>
+              <div style={{fontSize:13,color:T.textSm,lineHeight:1.65}}>{f.d}</div>
+            </div>
+          ))}
+        </div>
+        {/* Google Ads API — contenido requerido por la revisión de Google */}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px 22px",marginTop:14}}>
+          <div style={{fontSize:15,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:8}}><span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:6,background:"#fff",border:`1px solid ${T.border}`}}><BrandIcon name="googleads" size={15}/></span>Cómo usa Growith la Google Ads API</div>
+          <div style={{fontSize:13,color:T.textSm,lineHeight:1.7}}>
+            Cada usuario conecta <strong style={{color:T.textMd}}>su propia cuenta de Google Ads</strong> mediante OAuth para que Growith importe su inversión
+            publicitaria (solo lectura de reportes de costo) y la incluya en su tablero privado de rentabilidad, junto al gasto de Meta Ads y Mercado Ads.
+            Growith no administra campañas, no publica anuncios y no comparte datos entre cuentas.
+          </div>
+          <div style={{fontSize:12,color:T.textSm,lineHeight:1.65,marginTop:8,fontStyle:"italic"}}>
+            Growith is a SaaS management platform for e-commerce merchants. Each merchant connects their own Google Ads account via OAuth so Growith can import
+            their advertising cost (read-only reporting) into their private profitability dashboard. No campaign management, no ad serving, no cross-account data sharing.
+          </div>
+        </div>
+      </div>
+
+      {/* Pricing */}
+      <div style={{background:T.surface+"66",borderTop:`1px solid ${T.borderL}`,borderBottom:`1px solid ${T.borderL}`,padding:"64px 20px"}}>
+        <h2 style={secTitle}>Un solo plan, todo incluido</h2>
+        <p style={secSub}>Sin niveles, sin funciones bloqueadas. Probás gratis 14 días con absolutamente todo.</p>
+        <div style={{maxWidth:420,margin:"0 auto",background:T.card,border:`2px solid #6366f1`,borderRadius:18,padding:"28px 28px",textAlign:"center",position:"relative"}}>
+          <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:"#22c55e",color:"#fff",fontSize:11,fontWeight:800,borderRadius:20,padding:"3px 14px",whiteSpace:"nowrap"}}>🔥 OFERTA DE LANZAMIENTO — 20% OFF</div>
+          <div style={{fontSize:15,fontWeight:800,color:"#6366f1",marginTop:6,marginBottom:10}}>Plan Pro</div>
+          <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",fontWeight:600}}>$99 USD/mes</div>
+          <div style={{fontSize:46,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$79 <span style={{fontSize:15,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
+          <div style={{fontSize:12,color:T.textSm,marginTop:4,marginBottom:18}}>o $65 USD/mes pagando anual</div>
+          <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:22}}>
+            {["Tiendas y envíos ilimitados","Dashboard de rentabilidad en tiempo real","Stock cruzado entre canales","Facturación ARCA/AFIP","Meta Ads + Google Ads + Mercado Ads","Copilot IA y gestión de equipo"].map(x=>(
+              <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:T.textMd}}>
+                <span style={{color:"#22c55e",fontWeight:800,flexShrink:0}}>✓</span>{x}
+              </div>
+            ))}
+          </div>
+          <button onClick={onLogin} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>Probar gratis 14 días</button>
+          <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Sin tarjeta · Sin renovación automática · Cancelás cuando quieras</div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{maxWidth:1020,margin:"0 auto",padding:"36px 20px 48px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700}}>
+          <img src="/logo-color.png" alt="" style={{width:20,height:20,borderRadius:5}}/> Growith
+        </div>
+        <div style={{fontSize:12,color:T.textSm,display:"flex",gap:14,flexWrap:"wrap"}}>
+          <a href="/privacidad.html" style={{color:T.textSm}}>Privacidad</a>
+          <a href="/terminos.html" style={{color:T.textSm}}>Términos</a>
+          <a href="mailto:contacto.growith@gmail.com" style={{color:T.textSm}}>contacto.growith@gmail.com</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
   const [mode,setMode]=useState("login"); // login | register
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
@@ -7870,6 +8005,7 @@ function AuthScreen({T, darkMode, onToggleDark}) {
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <button onClick={onToggleDark} style={{position:"fixed",top:20,right:20,background:"transparent",border:`1px solid ${T.border}`,borderRadius:7,padding:"5px 10px",fontSize:11,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{darkMode?"☀︎ Claro":"◑ Oscuro"}</button>
+      {onBackToLanding&&<button onClick={onBackToLanding} style={{position:"fixed",top:20,left:20,background:"transparent",border:`1px solid ${T.border}`,borderRadius:7,padding:"5px 12px",fontSize:11,color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>← Volver al sitio</button>}
       <div style={{width:"100%",maxWidth:400}}>
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:36}}>
@@ -26733,7 +26869,7 @@ export default function App() {
   );
 
   // Not logged in
-  if(!user) return <><AuthScreen T={T} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/><AppPromptHost T={T}/></>;
+  if(!user) return <><PublicSite T={T} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/><AppPromptHost T={T}/></>;
 
   // Onboarding (primera vez)
   const showOnboarding = !onboardingDone;
