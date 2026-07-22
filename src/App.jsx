@@ -8896,6 +8896,10 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
   const [nota,setNota]=useState("");
   const [anual,setAnual]=useState(false);
   const [faqOpen,setFaqOpen]=useState(null);
+  // Centavos identificatorios: cada pago pide un monto único (ej: 79.37) para
+  // poder matchear la transferencia en la blockchain con esta cuenta aunque el
+  // TxID venga mal o falte. Se generan una vez por sesión de pago.
+  const [centavosId]=useState(()=>Math.floor(Math.random()*99)+1);
 
   // Plan único — Pro (id Firestore: "plus", NO cambiar)
   const PLAN={
@@ -8938,7 +8942,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
         plan: PLAN.id,
         method: metodo,
         currency: metodo==="cripto"?"USDT":"ARS",
-        amount: metodo==="cripto"?precioU:precioARS,
+        amount: metodo==="cripto"?+(precioU+centavosId/100).toFixed(2):precioARS,
         txHash: metodo==="cripto"?txHash.trim():"",
         transferRef: metodo==="transfer"?transferRef.trim():"",
         nota: nota.trim(),
@@ -8976,10 +8980,11 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
         <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
           <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
           <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${precioU} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USDT/mes</span></div>
+          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${(precioU+centavosId/100).toFixed(2)} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>USDT/mes</span></div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Los centavos (,{String(centavosId).padStart(2,"0")}) identifican tu pago — enviá el monto exacto.</div>
         </div>
         <div style={{marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${precioU} USDT (TRC20) a:</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Enviá exactamente ${(precioU+centavosId/100).toFixed(2)} USDT (TRC20) a:</div>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
             <code style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",fontFamily:"monospace"}}>{USDT_ADDRESS}</code>
             <button onClick={()=>{navigator.clipboard.writeText(USDT_ADDRESS);toast("Dirección copiada","success");}} style={{...BtnSecondary(T),padding:"6px 10px",fontSize:12,flexShrink:0,display:"flex",alignItems:"center"}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
@@ -9524,7 +9529,8 @@ function AppAdmin({T, user, onBack}) {
                       <span style={{fontSize:11,width:22,textAlign:"center",flexShrink:0,fontWeight:700,color:p.isTrial?T.yellow:est==="confirmado"?T.green:est==="rechazado"?T.red:T.textSm}}>{p.isTrial?"P":est==="confirmado"?"✓":est==="rechazado"?"✕":"·"}</span>
                       <span style={{flex:1,fontSize:12,color:T.text,minWidth:130}}>{u?.email||p.email||p.uid}</span>
                       <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:PLAN_BG[p.plan]||T.surface,color:PLAN_C[p.plan]||T.textSm}}>{p.plan}</span>
-                      {!p.isTrial&&Number(p.amount)>0&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.currency==="USDT"?T.greenBg:T.blueBg,color:p.currency==="USDT"?T.green:T.blue}}>${p.amount} {p.currency}</span>}
+                      {!p.isTrial&&Number(p.amount)>0&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:p.currency==="USDT"?T.greenBg:T.blueBg,color:p.currency==="USDT"?T.green:T.blue}}>${Number(p.amount).toFixed(p.currency==="USDT"?2:0)} {p.currency}</span>}
+                      {p.txHash&&<a href={`https://tronscan.org/#/transaction/${encodeURIComponent(p.txHash)}`} target="_blank" rel="noreferrer" title={p.txHash} style={{fontSize:10,color:T.accent,textDecoration:"none",fontFamily:"monospace",background:T.surface,border:`1px solid ${T.border}`,borderRadius:4,padding:"2px 7px"}}>Tx {String(p.txHash).slice(0,8)}… ↗</a>}
                       {p.isTrial&&<span style={{fontSize:11,padding:"2px 7px",borderRadius:4,fontWeight:600,background:T.yellowBg,color:T.yellow}}>prueba</span>}
                       <span style={{fontSize:11,color:est==="pendiente"?T.yellow:est==="confirmado"?T.green:T.red,padding:"2px 7px",borderRadius:4,background:est==="pendiente"?T.yellowBg:est==="confirmado"?T.greenBg:T.redBg,fontWeight:600}}>{est}</span>
                       <span style={{fontSize:11,color:T.textSm,whiteSpace:"nowrap"}}>{fmtDate(p.createdAt)}</span>
