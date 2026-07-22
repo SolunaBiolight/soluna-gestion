@@ -21926,6 +21926,7 @@ function CostosPanel({ T, uid }) {
   const [metaAdAccts, setMetaAdAccts] = React.useState([]);     // cuentas de Meta accesibles
   const [loaded, setLoaded] = React.useState(false);
   const [loadingProds, setLoadingProds] = React.useState(true);
+  const [prodError, setProdError] = React.useState(null);
   const [busqProd, setBusqProd] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
@@ -21962,16 +21963,37 @@ function CostosPanel({ T, uid }) {
           setMetaAdAccts(Array.isArray(aaRes.ad_accounts) ? aaRes.ad_accounts : []);
         }
       } catch (_) {}
-      try {
-        // Mapeo de productos reales (como el mapeo de items de Stock)
-        const r = await fetch(`/api/stock?action=products&uid=${uid}&days=90`);
-        const j = await r.json();
-        setProducts(Array.isArray(j.products) ? j.products : []);
-        setMlItems(Array.isArray(j.ml_data?.ml_products) ? j.ml_data.ml_products : []);
-      } catch (_) {}
-      setLoadingProds(false);
+      await loadCatalogo();
     })();
   }, [uid]);
+
+  // Catálogo para el mapeo de COGS. Antes pedía 90 días de ventas en vivo (la
+  // consulta más pesada de la app) y tragaba errores → "No se encontraron
+  // productos" aunque la tienda estuviera conectada. Ahora: cache instantánea
+  // primero, período mínimo (7d — solo necesitamos la LISTA de productos), y
+  // el error real visible con botón de reintentar.
+  async function loadCatalogo() {
+    setLoadingProds(true); setProdError(null);
+    try {
+      const rc = await fetch(`/api/stock?action=products&uid=${uid}&days=7&cache=only`);
+      const jc = await rc.json();
+      if (Array.isArray(jc.products) && jc.products.length) {
+        setProducts(jc.products);
+        setMlItems(Array.isArray(jc.ml_data?.ml_products) ? jc.ml_data.ml_products : []);
+        setLoadingProds(false); // pintado instantáneo; refrescamos igual abajo
+      }
+    } catch (_) {}
+    try {
+      const r = await fetch(`/api/stock?action=products&uid=${uid}&days=7`);
+      const j = await r.json();
+      if (j.error) { setProdError(j.error); }
+      else {
+        setProducts(Array.isArray(j.products) ? j.products : []);
+        setMlItems(Array.isArray(j.ml_data?.ml_products) ? j.ml_data.ml_products : []);
+      }
+    } catch (e) { setProdError(e.message || "Error de red"); }
+    setLoadingProds(false);
+  }
 
   async function save() {
     setSaving(true);
@@ -22207,7 +22229,17 @@ function CostosPanel({ T, uid }) {
         <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Aparece cada producto de Shopify/TN y cada publicación de ML. Poné cuánto te cuesta cada uno.</div>
         {(prodRows.length+mlItems.length)>6 && <input value={busqProd} onChange={e=>setBusqProd(e.target.value)} placeholder="Buscar producto o SKU…" style={{...InputStyle(T),width:"100%",fontSize:13,marginBottom:10}}/>}
         {loadingProds && <div style={{padding:"24px 0",textAlign:"center",color:T.textSm,fontSize:12}}>Cargando productos…</div>}
-        {!loadingProds && prodRows.length===0 && mlItems.length===0 && <div style={{fontSize:12,color:T.textSm}}>No se encontraron productos. Conectá tu tienda desde Config.</div>}
+        {!loadingProds && prodRows.length===0 && mlItems.length===0 && (
+          prodError ? (
+            <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"12px 14px"}}>
+              <div style={{fontSize:12,color:T.red,fontWeight:600,marginBottom:6}}>No pude cargar tu catálogo</div>
+              <div style={{fontSize:12,color:T.textMd,marginBottom:10,lineHeight:1.5}}>{prodError}</div>
+              <button onClick={loadCatalogo} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>↻ Reintentar</button>
+            </div>
+          ) : (
+            <div style={{fontSize:12,color:T.textSm}}>No se encontraron productos en tu tienda. Verificá la conexión en Config → Integraciones o creá productos en tu tienda primero.</div>
+          )
+        )}
         {visRows.map(r=>(
           <div key={r.key} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
             {r.img
