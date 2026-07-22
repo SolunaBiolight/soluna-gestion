@@ -8969,7 +8969,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
   if(step==="pago_cripto") return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
-        <button onClick={()=>setStep("metodo")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
+        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pago con USDT (TRC20)</span>
       </div>
       <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
@@ -9005,86 +9005,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
     </div>
   );
 
-  /* ── Pantalla: pago transferencia ── */
-  if(step==="pago_transfer") return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
-      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
-        <button onClick={()=>setStep("metodo")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
-        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pago por transferencia bancaria</span>
-      </div>
-      <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
-        <div style={{background:T.card,border:`0.5px solid ${PLAN.color}44`,borderLeft:`3px solid ${PLAN.color}`,borderRadius:12,padding:"16px 20px",marginBottom:24}}>
-          <div style={{fontSize:12,color:T.textSm,marginBottom:2}}>Plan seleccionado</div>
-          <div style={{fontSize:17,fontWeight:700,color:PLAN.color}}>{PLAN.nombre}</div>
-          <div style={{fontSize:26,fontWeight:800,color:T.text,marginTop:4}}>${precioARS.toLocaleString("es-AR")} <span style={{fontSize:14,fontWeight:400,color:T.textSm}}>ARS/mes</span></div>
-        </div>
-        <div style={{marginBottom:20}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>Datos para transferir</div>
-          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
-            {[
-              {label:"Titular", value:TITULAR_PAGO},
-              {label:"Alias",   value:ALIAS_PAGO},
-              {label:"CVU",     value:CVU_PAGO},
-              {label:"Monto",   value:`$${precioARS.toLocaleString("es-AR")} ARS`},
-            ].map((row,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<3?`1px solid ${T.borderL}`:"none"}}>
-                <span style={{fontSize:12,color:T.textSm,width:65,flexShrink:0}}>{row.label}</span>
-                <span style={{flex:1,fontSize:13,color:T.text,fontFamily:row.label==="CVU"||row.label==="Alias"?"monospace":"inherit",wordBreak:"break-all"}}>{row.value}</span>
-                <button onClick={()=>{navigator.clipboard.writeText(row.value);toast(`${row.label} copiado`,"success");}} style={{...BtnSecondary(T),padding:"4px 8px",fontSize:11,flexShrink:0,marginLeft:8,display:"flex",alignItems:"center"}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Número de comprobante / referencia *</div>
-          <input style={{...iS,fontSize:13}} placeholder="Ej: 123456789 (nro de operación del banco)..." value={transferRef} onChange={e=>setTransferRef(e.target.value)}/>
-          <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Lo encontrás en el comprobante de tu app de banco.</div>
-        </div>
-        <div style={{marginBottom:28}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>Nota adicional (opcional)</div>
-          <textarea style={{...iS,minHeight:70,resize:"vertical",fontSize:13}} placeholder="Podés agregar screenshot URL u otras aclaraciones..." value={nota} onChange={e=>setNota(e.target.value)}/>
-        </div>
-        <AsyncButton onClick={enviarPago} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",fontSize:15,padding:"13px"}}>
-          Enviar comprobante
-        </AsyncButton>
-        <div style={{textAlign:"center",fontSize:12,color:T.textSm,marginTop:10}}>Confirmamos manualmente — generalmente en menos de 4hs hábiles.</div>
-      </div>
-    </div>
-  );
-
-  /* ── Pantalla: elegir método de pago ── */
-  if(step==="metodo") return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
-      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
-        <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
-        <span style={{fontWeight:700,fontSize:15,color:T.text}}>Plan {PLAN.nombre} — ¿Cómo pagás?</span>
-      </div>
-      <div style={{maxWidth:480,margin:"0 auto",padding:"32px 20px"}}>
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {/* Cripto — próximamente */}
-          <div style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:12,padding:"22px 20px",display:"flex",alignItems:"center",gap:16,opacity:0.45,cursor:"default",position:"relative"}}>
-            <div style={{position:"absolute",top:12,right:12,background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,fontSize:10,fontWeight:700,color:T.textSm,padding:"2px 9px"}}>Próximamente</div>
-            <div style={{fontSize:36,flexShrink:0,lineHeight:1}}>₮</div>
-            <div>
-              <div style={{fontSize:16,fontWeight:700,color:T.text}}>Cripto — USDT TRC20</div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Pronto podrás pagar con USDT.</div>
-            </div>
-          </div>
-          <div onClick={()=>{setMetodo("transfer");setStep("pago_transfer");}}
-            style={{background:T.card,border:`2px solid ${T.border}`,borderRadius:12,padding:"22px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,transition:"border-color 0.15s"}}
-            onMouseEnter={e=>e.currentTarget.style.borderColor=T.blue}
-            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-            <div style={{fontSize:36,flexShrink:0,lineHeight:1,display:"flex",alignItems:"center",color:T.textSm}}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg></div>
-            <div>
-              <div style={{fontSize:16,fontWeight:700,color:T.text}}>Transferencia bancaria (ARS)</div>
-              <div style={{fontSize:13,color:T.textMd,marginTop:2}}>${precioARS.toLocaleString("es-AR")} ARS/mes</div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:4}}>Confirmación manual en menos de 4hs hábiles.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  // (pantallas de transferencia ARS y selector de método eliminadas — pago SOLO con USDT TRC20 hasta nuevo aviso)
 
   /* ── Pantalla principal ── */
   return (
@@ -9160,13 +9081,13 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
               <span style={{fontSize:52,fontWeight:900,color:T.text,lineHeight:1}}>${precioU}</span>
               <span style={{fontSize:15,color:T.textSm,marginBottom:10}}>USD/mes</span>
             </div>
-            <div style={{fontSize:13,color:T.textSm}}>${precioARS.toLocaleString("es-AR")} ARS / mes</div>
+            <div style={{fontSize:13,color:T.textSm}}>Pago con USDT (red TRC20)</div>
             {anual&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600,marginTop:4}}>Ahorrás ${(PLAN.precio_usdt-PLAN.precio_usdt_anual)*12} USD al año pagando anual</div>}
             {!anual&&<div style={{fontSize:11,color:"#6366f1",fontWeight:600,marginTop:6}}>o ${PLAN.precio_usdt_anual} USD/mes pagando anual</div>}
           </div>
 
           {/* CTA */}
-          <button onClick={()=>setStep("metodo")}
+          <button onClick={()=>{setMetodo("cripto");setStep("pago_cripto");}}
             style={{width:"100%",padding:"14px",borderRadius:12,fontSize:15,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:"linear-gradient(135deg,#6366f1,#818cf8)",color:"#fff",marginBottom:24,transition:"opacity 0.15s",letterSpacing:"0.01em"}}
             onMouseEnter={e=>e.currentTarget.style.opacity="0.88"}
             onMouseLeave={e=>e.currentTarget.style.opacity="1"}>

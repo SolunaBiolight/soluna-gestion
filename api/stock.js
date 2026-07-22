@@ -726,6 +726,10 @@ export default async function handler(req, res) {
     return res.status(400).json({error:"Acción no reconocida"});
   }catch(e){
     console.error("[stock] error:",e.message, e.stack?.split("\n")[1]);
-    return res.status(500).json({error:`Error interno: ${e.message}`});
+    // Los timeouts/aborts contra TN/ML son transitorios — mensaje humano, no "operation was aborted"
+    const esTimeout = /abort|aborted|Tiempo agotado|timeout/i.test(e.message||"");
+    return res.status(esTimeout?504:500).json({error: esTimeout
+      ? "Tu tienda está respondiendo lento en este momento (pasa seguido con rangos largos). Reintentá en unos segundos — apenas cargue una vez, ese período queda cacheado y abre al instante."
+      : `Error interno: ${e.message}`});
   }
 }
