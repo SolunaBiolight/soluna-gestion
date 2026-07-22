@@ -7938,13 +7938,45 @@ function AuthScreen({T, darkMode, onToggleDark}) {
           </div>
         </div>
 
-        {/* Qué hace Growith + links legales — visibles sin iniciar sesión */}
+        {/* Qué hace Growith + links legales — visibles sin iniciar sesión.
+            Esta landing pública también la revisan Google (verificación de marca
+            y Google Ads API) — tiene que explicar el producto y el uso de la API. */}
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"6px 14px",marginTop:22,fontSize:12,color:T.textSm}}>
           <span>📊 Dashboard financiero</span>
           <span>📦 Envíos y etiquetas</span>
           <span>🧾 Facturación ARCA</span>
           <span>📣 Métricas de publicidad</span>
           <span>🗂 Stock multicanal</span>
+        </div>
+        <div style={{maxWidth:660,margin:"28px auto 0",textAlign:"left"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
+            {[
+              {t:"Dashboard de rentabilidad",d:"Facturación, costos, publicidad y ganancia neta en tiempo real, por canal (Tienda Nube, Shopify, Mercado Libre)."},
+              {t:"Stock multicanal",d:"Inventario unificado por SKU entre tus tiendas, con sincronización de stock, alertas de quiebre y proyección de demanda."},
+              {t:"Envíos y logística",d:"Etiquetas Andreani, seguimiento automático de paquetes y alertas de envíos demorados."},
+              {t:"Facturación ARCA/AFIP",d:"Emisión de comprobantes electrónicos desde las ventas de tus canales, con CAE y PDF."},
+              {t:"Publicidad integrada",d:"El gasto real de Meta Ads, Google Ads y Mercado Ads entra directo a tu profit — ROAS verdadero, no estimado."},
+              {t:"Copilot con IA",d:"Preguntale a tu negocio en lenguaje natural: responde con tus números reales y ejecuta acciones con tu confirmación."},
+            ].map(f=>(
+              <div key={f.t} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"13px 15px"}}>
+                <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:4}}>{f.t}</div>
+                <div style={{fontSize:11.5,color:T.textSm,lineHeight:1.55}}>{f.d}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",marginTop:12}}>
+            <div style={{fontSize:12.5,fontWeight:700,color:T.text,marginBottom:6}}>Cómo usa Growith la Google Ads API</div>
+            <div style={{fontSize:11.5,color:T.textSm,lineHeight:1.65}}>
+              Cada usuario conecta <strong style={{color:T.textMd}}>su propia cuenta de Google Ads</strong> mediante OAuth para que Growith importe su
+              inversión publicitaria (solo lectura de reportes de costo) y la incluya en su tablero privado de rentabilidad, junto con el gasto de Meta Ads
+              y Mercado Ads. Growith no administra campañas, no publica anuncios y no comparte datos entre cuentas.
+            </div>
+            <div style={{fontSize:11,color:T.textSm,lineHeight:1.6,marginTop:8,fontStyle:"italic"}}>
+              Growith is a SaaS management platform for Argentine e-commerce merchants. Each merchant connects their own Google Ads account via OAuth so
+              Growith can import their advertising cost (read-only reporting) into their private profitability dashboard. Growith does not manage campaigns,
+              serve ads, or share data across accounts.
+            </div>
+          </div>
         </div>
         <div style={{textAlign:"center",marginTop:16,fontSize:11,color:T.textSm}}>
           <a href="/privacidad.html" style={{color:T.textSm,textDecoration:"underline"}}>Política de Privacidad</a>
