@@ -26235,7 +26235,7 @@ export default function App() {
   const [adminOnlySections,setAdminOnlySections]=useState([]); // default, se sobreescribe al cargar ("rendimiento" legacy = "margenes")
 
   const ADMIN_UIDS=["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"]; // ADMIN_UID_2: completar cuando tengas el segundo
-  const USDT_ADDRESS="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; // ← completar: dirección TRC20
+  const USDT_ADDRESS="TXGtDab6Lf3jtSRgq7uB2WbRfqdRA3PTCD"; // dirección TRC20 de Growith (cargada 22/jul/2026)
   const CVU_PAGO="0000000000000000000000"; // ← completar: CVU para transferencias ARS
   const ALIAS_PAGO="growith.pagos.ar"; // ← completar: alias CBU
   const TITULAR_PAGO="Soluna Biolight"; // ← completar: titular de la cuenta
