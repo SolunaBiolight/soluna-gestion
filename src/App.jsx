@@ -25186,6 +25186,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     catch(_) { return VIS_DEFAULT; }
   });
   const [editSecKpis, setEditSecKpis] = useState(false);
+  const [editCanalCards, setEditCanalCards] = useState(false); // editor de métricas de la vista de canal (Tienda/ML)
   const [dragKpi, setDragKpi] = useState(null); // label del KPI que se está arrastrando
   // Desplegables compactos: alertas, precisión de datos y desgloses viven en
   // chips que se expanden a demanda (antes eran bloques fijos que comían espacio).
@@ -25365,8 +25366,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
   // ── Sistema de cards de métricas (compartido: Global / Tienda / ML) ──
   // Todas del mismo tamaño; se arrastran SOLO desde la agarradera ⠿ de la
-  // esquina (arrastrar la card entera molestaba al querer seleccionar/scrollear).
-  // Orden persistido por vista en vis[orderKey].
+  // esquina. Orden persistido por vista en vis[orderKey]; visibilidad por vista
+  // en vis[visKey]. El grid es BALANCEADO: las columnas se calculan según
+  // cuántas cards estén visibles y la última fila se reparte el ancho completo
+  // (nada de filas cortas con cards descolgadas).
+  const [winW,setWinW] = useState(typeof window!=="undefined"?window.innerWidth:1280);
+  useEffect(()=>{ const f=()=>setWinW(window.innerWidth); window.addEventListener("resize",f); return ()=>window.removeEventListener("resize",f); },[]);
   const cardsOrdered = (cards, orderKey) => {
     const order = Array.isArray(vis[orderKey]) ? vis[orderKey] : (orderKey==="cardsOrder" && Array.isArray(vis.secKpisOrder) ? vis.secKpisOrder : []);
     return [...cards].sort((a,b)=>{ const ia=order.indexOf(a.label), ib=order.indexOf(b.label); return (ia<0?999:ia)-(ib<0?999:ib); });
@@ -25383,13 +25388,28 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const renderCards = (cards, orderKey, filter) => {
     const ordered = cardsOrdered(cards, orderKey);
     const visibleCards = filter ? ordered.filter(filter) : ordered;
+    const n = visibleCards.length;
+    if (!n) return null;
+    // Columnas balanceadas: máx. 4 (desktop) / 3 / 2 (mobile); las filas se
+    // reparten parejas y la última fila estira sus cards para cerrar el ancho.
+    const maxCols = winW<520?2:winW<900?3:4;
+    let cols = Math.min(maxCols, Math.max(1,n));
+    const rows = Math.ceil(n/cols);
+    cols = Math.ceil(n/rows);
+    const rem = n % cols;
+    const lastStart = rem===0 ? n : n-rem;
+    const spanFor = (i) => {
+      if (rem===0 || i<lastStart) return 1;
+      const base = Math.floor(cols/rem), extra = cols%rem, idx = i-lastStart;
+      return idx<extra ? base+1 : base;
+    };
     return (
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:10,marginBottom:18}}>
-        {visibleCards.map(k=>(
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:10,marginBottom:18}}>
+        {visibleCards.map((k,ci)=>(
           <div key={k.label}
             onDragOver={e=>e.preventDefault()}
             onDrop={e=>{e.preventDefault(); cardsReorder(cards, orderKey, dragKpi, k.label); setDragKpi(null);}}
-            style={{background:T.card,border:`1px solid ${k.bad?MC.red+"44":T.border}`,borderRadius:14,padding:"14px 16px 12px",position:"relative",overflow:"hidden",minHeight:112,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s"}}>
+            style={{gridColumn:`span ${spanFor(ci)}`,background:T.card,border:`1px solid ${k.bad?MC.red+"44":T.border}`,borderRadius:14,padding:"14px 16px 12px",position:"relative",overflow:"hidden",minHeight:112,display:"flex",flexDirection:"column",opacity:dragKpi===k.label?0.4:1,transition:"opacity .12s"}}>
             <span draggable
               onDragStart={e=>{ setDragKpi(k.label); try{e.dataTransfer.effectAllowed="move";}catch(_){} }}
               onDragEnd={()=>setDragKpi(null)}
@@ -25998,9 +26018,16 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
                 <span style={{width:8,height:8,borderRadius:"50%",background:dotColor,flexShrink:0}}/>{titulo}
                 <span style={{fontSize:11,fontWeight:600,color:T.textSm}}>· solo este canal · sin costos fijos/adicionales (son globales)</span>
+                <button onClick={()=>setEditCanalCards(v=>!v)} title="Elegir qué métricas mostrar en este canal"
+                  style={{marginLeft:"auto",fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:8,border:`1px solid ${editCanalCards?T.accent:T.border}`,background:editCanalCards?T.accentSolid+"18":"transparent",color:editCanalCards?T.accent:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✎ Métricas</button>
               </div>
-              {/* Cards del canal — mismo sistema uniforme y arrastrable que Global */}
-              {renderCards([
+              {/* Cards del canal — mismo sistema uniforme y arrastrable que Global,
+                  con visibilidad PROPIA por vista (cardsVisTienda / cardsVisMl) */}
+              {(()=>{
+                const visKey = esMl?"cardsVisMl":"cardsVisTienda";
+                const orderKey = esMl?"cardsOrderMl":"cardsOrderTienda";
+                const visMap = vis[visKey]||{};
+                const CANAL_CARDS = [
                 {label:"Profit",      val:fmtM(cSel.profit),    c:cSel.profit,     p:cPrev?.profit,     accent:(cSel.profit||0)>=0?MC.green:MC.red, valColor:(cSel.profit||0)>=0?MC.green:MC.red, hint:(cSel.profit||0)>=0?"Ganancia neta del canal":"Pérdida neta del canal", spk:canalRows.map(r=>r.Profit), zero:true},
                 {label:"Revenue",     val:fmtM(cSel.revenue),   c:cSel.revenue,    p:cPrev?.revenue,    accent:MC.blue,   hint:"Facturación del canal", spk:canalRows.map(r=>r.Revenue)},
                 {label:"Ad Spend",    val:fmtM(cSel.adSpend),   c:cSel.adSpend,    p:cPrev?.adSpend,    accent:MC.gold,   hint:esMl?(rendData?.meta?.mlAdsFuente==="auto"?"Mercado Ads (real, API)":"Mercado Ads (manual)"):((rendData?.totals?.adSpendGoogle||0)>0?"Meta + Google Ads":"Meta Ads"), spk:canalRows.map(r=>r["Ad Spend"]), inv:true},
@@ -26015,7 +26042,27 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 {label:"Margen",      val:fmtPct(cSel.margin),  c:cSel.margin,     p:cPrev?.margin,     hint:`meta > ${metas.margen}%`, bad:(cSel.margin||0)<=metas.margen/100},
                 {label:"MER %",       val:fmtPct(cSel.mer),     c:cSel.mer,        p:cPrev?.mer,        hint:"Ad Spend / Revenue", inv:true},
                 {label:"Break Even",  val:fmtX(cSel.breakEvenRoas), c:cSel.breakEvenRoas, p:cPrev?.breakEvenRoas, hint:"ROAS de equilibrio", inv:true},
-              ], esMl?"cardsOrderMl":"cardsOrderTienda")}
+                ];
+                return (<>
+                  {editCanalCards && (
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px"}}>
+                      <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Métricas de {titulo} — tocá para mostrar/ocultar · arrastrá para reordenar:</span>
+                      {cardsOrdered(CANAL_CARDS,orderKey).map(k=>{
+                        const on=visMap[k.label]!==false;
+                        return <button key={k.label}
+                          draggable
+                          onDragStart={()=>setDragKpi(k.label)}
+                          onDragOver={e=>e.preventDefault()}
+                          onDrop={e=>{e.preventDefault(); cardsReorder(CANAL_CARDS,orderKey,dragKpi,k.label); setDragKpi(null);}}
+                          onDragEnd={()=>setDragKpi(null)}
+                          onClick={()=>updVis({[visKey]:{...visMap,[k.label]:!on}})}
+                          style={{fontSize:11,padding:"4px 10px",borderRadius:DS.r.full,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid:"transparent",color:on?"#fff":T.textMd,cursor:"grab",opacity:dragKpi===k.label?0.4:1,fontFamily:"'Inter',system-ui,sans-serif"}}>⠿ {k.label}</button>;
+                      })}
+                    </div>
+                  )}
+                  {renderCards(CANAL_CARDS, orderKey, k=>visMap[k.label]!==false)}
+                </>);
+              })()}
               {/* Gráfico del canal */}
               <RendChart T={T} rows={canalRows} cv={cv} fmtM={fmtM} fmtDate={fmtDate}/>
               {/* Costos del canal */}
