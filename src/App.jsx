@@ -25193,7 +25193,21 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const [openInfo, setOpenInfo] = useState(null); // null | "alertas" | "avisos" | "fb" | "ab"
   const [fullNums, setFullNums] = useState(()=>{ try{return localStorage.getItem("growith_margenes_fullnums")==="1";}catch(_){return false;} });
   const [canalSort, setCanalSort] = useState({k:null,dir:"desc"});
-  function updVis(patch){ setVis(v=>{ const n={...v,...patch}; try{localStorage.setItem(`growith_margenes_vis_${user?.uid}`,JSON.stringify(n));}catch(_){} return n; }); }
+  // Persistencia de la personalización del dashboard (orden/visibilidad de cards,
+  // secciones): localStorage para lectura instantánea + Firestore (users.margenesVis)
+  // para que sobreviva a otros dispositivos, incógnito y limpiezas de caché.
+  function updVis(patch){ setVis(v=>{ const n={...v,...patch}; try{localStorage.setItem(`growith_margenes_vis_${user?.uid}`,JSON.stringify(n));}catch(_){} if(user?.uid) setDoc(doc(db,"users",user.uid),{margenesVis:n},{merge:true}).catch(()=>{}); return n; }); }
+  useEffect(()=>{
+    if(!user?.uid) return;
+    getDoc(doc(db,"users",user.uid)).then(s=>{
+      const v=s.data()?.margenesVis;
+      if(v&&typeof v==="object"){
+        setVis(prev=>({...prev,...v,secKpis:{...(prev.secKpis||{}),...(v.secKpis||{})}}));
+        try{localStorage.setItem(`growith_margenes_vis_${user.uid}`,JSON.stringify(v));}catch(_){}
+      }
+    }).catch(()=>{});
+    /* eslint-disable-next-line */
+  },[user?.uid]);
   const EyeBtn = ({k}) => (
     <button onClick={()=>updVis({[k]:!vis[k]})} title={vis[k]!==false?"Ocultar sección":"Mostrar sección"} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"2px 4px",display:"inline-flex",alignItems:"center"}}>
       {vis[k]!==false
