@@ -2165,7 +2165,12 @@ export default async function handler(req, res) {
           else if (letra === "C") cbteC++;
           else cbteB++;
         } else {
-          resultados.push({ orden_id: orderId, ok: false, obs: result.obs, total: orden.total });
+          // Transparencia para diagnóstico: qué comprobante intentamos y con qué
+          // condición fiscal del emisor — sin esto, el "mismo error" de AFIP no
+          // dice si el server usó la config nueva o la vieja.
+          const intento = `[Intenté Factura ${letra || (isMonotributo ? "C" : "?")} · PV ${pv} · emisor ${cfg.condicion_fiscal || "?"}] `;
+          console.log(`[arca emit] ${orderId} RECHAZADA — tipo ${tipoCbte} pv ${pv} cond ${cfg.condicion_fiscal}: ${String(result.obs || "").slice(-180)}`);
+          resultados.push({ orden_id: orderId, ok: false, obs: intento + result.obs, total: orden.total });
         }
       }
 
