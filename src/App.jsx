@@ -2084,12 +2084,13 @@ function InputStyle(T) {
   };
 }
 
-// Ícono de estado para modales de resultado (reemplaza emojis ✅❌⚠️)
+// Ícono de estado para modales de resultado (reemplaza emojis ✅❌⚠️).
+// OJO: NO recibe T — usa colores fijos a propósito (scope sin tema).
 function StatusIcon({type="success", size=64}) {
   const cfg = {
-    success: { bg:"linear-gradient(135deg,"+T.green+","+T.green+")", glow:T.green, ring:T.green+"28", path:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/> },
-    error:   { bg:"linear-gradient(135deg,"+T.red+","+T.red+")", glow:T.red, ring:T.red+"28", path:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></> },
-    warning: { bg:"linear-gradient(135deg,"+T.yellow+","+T.yellow+")", glow:T.yellow, ring:T.yellow+"28", path:<><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/></> },
+    success: { bg:"linear-gradient(135deg,#22c55e,#16a34a)", glow:"#22c55e", ring:"#22c55e28", path:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/> },
+    error:   { bg:"linear-gradient(135deg,#ef4444,#dc2626)", glow:"#ef4444", ring:"#ef444428", path:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></> },
+    warning: { bg:"linear-gradient(135deg,#f59e0b,#d97706)", glow:"#f59e0b", ring:"#f59e0b28", path:<><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/></> },
   };
   const c = cfg[type]||cfg.success;
   const r = Math.round(size*0.27);
