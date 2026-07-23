@@ -25233,27 +25233,33 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     else{url+=`&days=${d}`;}
     // 0) Pintado en 0ms desde el snapshot local de la última visita, mientras
     //    llegan la caché del servidor y los datos en vivo.
-    const swrKey=`growith_rend_cache_${uid}_${from&&to?`${from}_${to}`:`d${d}`}`;
+    const periodSig = from&&to?`${from}_${to}`:`d${d}`;
+    const swrKey=`growith_rend_cache_${uid}_${periodSig}`;
+    let pintado=false;
     if(!silent){
       const local=ghSwrGet(swrKey);
-      if(local?.totals){ setRendData(local); setLoading(false); setRevalidando(true); }
+      if(local?.totals){ setRendData({...local,_sig:periodSig}); setLoading(false); setRevalidando(true); pintado=true; }
       else setLoading(true);
       // 1) Caché del servidor (~300ms vs 30-50s del cálculo en vivo)
       try{
         const rc=await fetch(url+"&cache=only");
         const jc=await rc.json();
         if(!jc.noCache&&!jc.error&&jc.totals){
-          setRendData({...jc, loadedAt:jc.cachedAt||new Date().toISOString()});
-          setLoading(false); setRevalidando(true);
+          setRendData({...jc, _sig:periodSig, loadedAt:jc.cachedAt||new Date().toISOString()});
+          setLoading(false); setRevalidando(true); pintado=true;
         }
       }catch(_){}
+      // Si cambió el período y no hay NINGÚN dato de ese rango, limpiar la vista:
+      // dejar los números del período anterior con el filtro nuevo mentía (ej:
+      // filtro "Hoy" mostrando el mes entero cuando el cálculo en vivo fallaba).
+      if(!pintado) setRendData(prev => (prev && prev._sig && prev._sig!==periodSig) ? null : prev);
     }
     // 2) Datos en vivo — el server los deja cacheados para la próxima carga.
     try {
       const r=await fetch(url);
       const j=await r.json();
       if(j.error) throw new Error(j.error);
-      const fresh={...j, loadedAt:new Date().toISOString()};
+      const fresh={...j, _sig:periodSig, loadedAt:new Date().toISOString()};
       setRendData(fresh);
       if(j.totals) ghSwrSet(swrKey, fresh);
     }catch(e){setError(e.message);}
