@@ -1279,7 +1279,7 @@ function AppPromptHost({ T }) {
 }
 
 // --- DateRangePicker (dropdown con calendario inline + presets) ---
-function DateRangePicker({ T, since, until, onChange, presets }) {
+function DateRangePicker({ T, since, until, onChange, presets, onPreset }) {
   const [open, setOpen] = React.useState(false);
   const wrapRef = React.useRef(null);
   const [tmpStart, setTmpStart] = React.useState(null); // primera fecha al elegir custom
@@ -1303,6 +1303,9 @@ function DateRangePicker({ T, since, until, onChange, presets }) {
     { id:"90d", label:"Últimos 90 días", days:90 },
   ];
   function applyPreset(p) {
+    // "Hoy" y "Últimos N días" via onPreset mantienen el modo days → pegan en la
+    // caché del servidor (instantáneo) en vez de un rango custom calculado en vivo.
+    if (onPreset && p.days >= 0) { onPreset(p.days === 0 ? 1 : p.days); setOpen(false); return; }
     const today = new Date();
     // Zona Argentina (UTC-3) — evita el corrimiento de día que dejaba fechas mal.
     const fmt = (d) => new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(d);
@@ -25476,6 +25479,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           ]}
           since={useCustom?dateFrom:new Date(Date.now()-days*86400000).toISOString().slice(0,10)}
           until={useCustom?dateTo:new Date().toISOString().slice(0,10)}
+          onPreset={(d)=>{ setUseCustom(false); setDateFrom(""); setDateTo(""); setDays(d); loadData(d,"",""); }}
           onChange={(s,u)=>{ setUseCustom(true); setDateFrom(s); setDateTo(u); const diff=Math.round((new Date(u)-new Date(s))/86400000)+1; setDays(diff); loadData(0,s,u); }}/>
         <button onClick={reprocesar60} disabled={reproc||loading} title="Re-sincroniza las ventas de los últimos 60 días desde las plataformas" style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>
           {reproc?<><Spinner size={11} color={T.textMd}/> Reprocesando…</>:"⟳ Reprocesar 60 días"}
