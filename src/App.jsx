@@ -11616,15 +11616,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       <AppTopbar T={T} section="Trabajo" onHome={onHome} top={colabMode?0:48}>
         {enRevision.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>🔁 {enRevision.length} en corrección</span>}
         {view==="todo"&&(
-          <div style={{display:"flex",borderRadius:10,border:`1.5px solid ${T.border}`,overflow:"hidden",flexShrink:0,background:T.surface}}>
-            <button onClick={()=>{setCalendarView(false);setKanbanSelected(null);}} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",fontSize:12,fontWeight:calendarView?400:700,background:calendarView?"transparent":T.accentSolid,color:calendarView?T.textMd:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-              Lista
-            </button>
-            <button onClick={()=>{setCalendarView(true);setKanbanSelected(null);}} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",fontSize:12,fontWeight:calendarView?700:400,background:calendarView?T.accentSolid:"transparent",color:calendarView?"#fff":T.textMd,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              Calendario
-            </button>
+          <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1,flexShrink:0}}>
+            {[{v:false,l:"Lista"},{v:true,l:"Calendario"}].map(o=>(
+              <button key={o.l} onClick={()=>{setCalendarView(o.v);setKanbanSelected(null);}}
+                style={{padding:"5px 12px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:calendarView===o.v?T.card:"transparent",color:calendarView===o.v?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:calendarView===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.12s"}}>
+                {o.l}
+              </button>
+            ))}
           </div>
         )}
         {view==="todo"&&!calendarView&&(!colabMode||colabMode.permisos?.verTareas)&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13,padding:"8px 18px",fontWeight:700,letterSpacing:"0.01em"}}>+ Tarea</button>}
@@ -11634,22 +11632,24 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {view==="todo"&&colabMode&&!colabMode.permisos?.verTareas&&<button onClick={()=>setShowNTColab(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>+ Proponer tarea</button>}
       </AppTopbar>
 
-      {/* Barra de tabs — 2 tabs principales */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:colabMode?52:100,zIndex:29}}>
-        <div style={{display:"flex",paddingLeft:24}}>
-          {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>{
-            if(!colabMode||colabMode.permisos?.verTareas) return true;
-            if(id==="equipo") return !!colabMode.permisos?.verEquipo;
-            return true;
-          }).map(([id,label])=>{
-            const isActive=view===id||(id==="todo"&&view!=="equipo"&&view!=="referencias");
-            return (
-              <button key={id} onClick={()=>{setActiveView(id);setKanbanSelected(null);}}
-                style={{padding:"0 20px",height:42,border:"none",borderBottom:`2px solid ${isActive?T.accent:"transparent"}`,background:"transparent",color:isActive?T.accent:T.textSm,fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:isActive?600:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,transition:"color 0.15s, border-color 0.15s"}}>
-                {label}
-              </button>
-            );
-          })}
+      {/* Barra de tabs principales — segmented estándar de la app */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.bg,position:"sticky",top:colabMode?52:100,zIndex:29}}>
+        <div style={{display:"flex",padding:"8px 24px"}}>
+          <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1}}>
+            {[["todo","Tareas"],["equipo","Equipo"],["referencias","Referencias"]].filter(([id])=>{
+              if(!colabMode||colabMode.permisos?.verTareas) return true;
+              if(id==="equipo") return !!colabMode.permisos?.verEquipo;
+              return true;
+            }).map(([id,label])=>{
+              const isActive=view===id||(id==="todo"&&view!=="equipo"&&view!=="referencias");
+              return (
+                <button key={id} onClick={()=>{setActiveView(id);setKanbanSelected(null);}}
+                  style={{padding:"6px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:isActive?T.card:"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:isActive?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap",flexShrink:0,transition:"all 0.12s"}}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
