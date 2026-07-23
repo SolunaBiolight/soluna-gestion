@@ -607,7 +607,7 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
   }
 
   return ReactDOM.createPortal(
-    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",padding:16}} onClick={()=>!saving&&onClose()}>
+    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onClose()}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px",boxShadow:DS.shadow.xl,animation:"growith-modalIn 0.22s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div>
@@ -675,7 +675,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   }
 
   return ReactDOM.createPortal(
-    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",padding:16}} onClick={()=>!saving&&onClose()}>
+    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:16}} onClick={()=>!saving&&onClose()}>
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:440,padding:"24px 26px",boxShadow:DS.shadow.xl,animation:"growith-modalIn 0.22s cubic-bezier(0.22,1,0.36,1) both"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
           <div style={{fontSize:17,fontWeight:700,color:T.text}}>Gestionar organización</div>
@@ -1243,7 +1243,7 @@ function AppPromptHost({ T }) {
     ? <><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>
     : <><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>;
   return ReactDOM.createPortal(
-    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
+    <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:99999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}
       onClick={() => isConfirm ? closeWith(false) : (isPromptInput ? closeWith(null) : closeWith(true))}>
       <div onClick={e => e.stopPropagation()}
         style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:20,width:"100%",maxWidth:420,boxShadow:`0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px ${accentColor}18`,animation:"growith-modalIn 0.28s cubic-bezier(0.34,1.4,0.64,1) both",overflow:"hidden"}}>
@@ -9141,7 +9141,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
   /* ── Pantalla: pago cripto ── */
   if(step==="pago_cripto") return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
-      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:60,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e8",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 20px",height:52,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
         <button onClick={()=>setStep("planes")} style={{...BtnSecondary(T),padding:"6px 12px",fontSize:13}}>← Volver</button>
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Pago con USDT (TRC20)</span>
       </div>
@@ -9185,7 +9185,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",paddingBottom:80}}>
       {/* Topbar */}
-      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:56,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e8",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 20px",height:52,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
         {!isTrialExpired&&<button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:13}}>← Inicio</button>}
         <span style={{fontWeight:700,fontSize:15,color:T.text}}>Suscripción</span>
       </div>
@@ -9514,7 +9514,7 @@ function AppAdmin({T, user, onBack}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
 
       {/* Topbar */}
-      <div style={{borderBottom:`0.5px solid ${T.border}`,background:T.surface,padding:"0 20px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.surface+"e8",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",padding:"0 20px",height:52,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <button onClick={onBack} style={{...BtnSecondary(T),padding:"5px 12px",fontSize:12}}>← Inicio</button>
           <span style={{fontWeight:700,fontSize:15,color:T.yellow}}>Admin</span>
@@ -14070,7 +14070,7 @@ function ColaboradorPublicView({T, token}) {
 
         {/* Modal: proponer tarea */}
         {showProponerTarea&&ReactDOM.createPortal(
-          <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget){setShowProponerTarea(false);}}}>
+          <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget){setShowProponerTarea(false);}}}>
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:460,padding:"24px 24px 20px",display:"flex",flexDirection:"column",gap:16}} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                 <div style={{fontSize:15,fontWeight:700,color:T.text}}>Proponer tarea</div>
@@ -16656,7 +16656,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
             {/* ── Unified emit modal ── */}
             {showEmitModal&&ReactDOM.createPortal(
-              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{if(!emitting)closeModal();}}>
+              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{if(!emitting)closeModal();}}>
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:18,width:"100%",maxWidth:520,maxHeight:"90vh",overflow:"auto",padding:"28px 28px 24px",display:"flex",flexDirection:"column",gap:18}} onClick={e=>e.stopPropagation()}>
 
                   {/* Phase: emitting */}
@@ -20888,7 +20888,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
               {/* ── Modal: Nueva campaña + AdSets ───────────── */}
               {showNewCampModal && ReactDOM.createPortal(
-                <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewCampModal(false)}>
+                <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewCampModal(false)}>
                   <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:560,maxHeight:"88vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
                       <h3 style={{margin:0,fontSize:18,fontWeight:800,background:`linear-gradient(90deg, ${T.green}, ${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Nueva campaña + AdSets</h3>
@@ -20963,7 +20963,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
               {/* ── Modal: Nuevo AdSet (en campaña existente) ───────── */}
               {showNewAdsetModal && ReactDOM.createPortal(
-                <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewAdsetModal(false)}>
+                <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowNewAdsetModal(false)}>
                   <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:460,fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
                       <h3 style={{margin:0,fontSize:18,fontWeight:800}}>Nuevo AdSet</h3>
@@ -21000,7 +21000,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
               {/* ── Modal: Cambiar recursos (ad accounts, pages, IG, pixels) ── */}
               {showResourcesModal && ReactDOM.createPortal(
-                <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowResourcesModal(false)}>
+                <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowResourcesModal(false)}>
                   <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"22px 24px",width:"100%",maxWidth:760,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                       <h3 style={{margin:0,fontSize:18,fontWeight:800,background:`linear-gradient(90deg, ${T.text}, ${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Cambiar recursos</h3>
@@ -21147,7 +21147,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
       {/* Modal preview HD del creative */}
       {previewingAd && ReactDOM.createPortal(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.9)",backdropFilter:"blur(6px)",padding:24}} onClick={()=>setPreviewingAd(null)}>
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",padding:24}} onClick={()=>setPreviewingAd(null)}>
           <div style={{position:"relative",width:"min(900px, 90vw)",maxHeight:"92vh",display:"flex",flexDirection:"column",gap:12,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setPreviewingAd(null)} style={{position:"absolute",top:-14,right:-14,zIndex:3,width:36,height:36,borderRadius:"50%",background:"#000",border:"2px solid #fff",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>✕</button>
             {previewingAd.creative_video_url ? (
@@ -21875,7 +21875,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
 
         {/* Modal Edit single */}
         {editingItem && ReactDOM.createPortal(
-          <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
+          <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
             <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:560,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif"}}>
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
                 {editingItem.thumbnail && <img src={editingItem.thumbnail} alt="" style={{width:60,height:60,borderRadius:8,objectFit:"cover"}}/>}
@@ -24413,7 +24413,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                 {/* Modal editar warehouse */}
                 {editingWarehouse && ReactDOM.createPortal(
-                  <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingWarehouse(null)}>
+                  <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingWarehouse(null)}>
                     <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:440,fontFamily:"'Inter',system-ui,sans-serif"}}>
                       <h3 style={{margin:"0 0 14px",fontSize:17,fontWeight:800,color:T.text}}>{editingWarehouse==="new"?"Nuevo depósito":"Editar depósito"}</h3>
                       <label style={{fontSize:11,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:5}}>Nombre</label>
@@ -24434,7 +24434,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
             {/* Modal transferencia entre depósitos */}
             {transferModal&&ReactDOM.createPortal(
-              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setTransferModal(null)}>
+              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setTransferModal(null)}>
                 <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"22px 24px",width:"100%",maxWidth:460,fontFamily:"'Inter',system-ui,sans-serif"}}>
                   <h3 style={{margin:"0 0 4px",fontSize:17,fontWeight:800,color:T.text}}>⇄ Transferir stock</h3>
                   <div style={{fontSize:11,color:T.textSm,marginBottom:18}}>Mover unidades de un producto entre depósitos. Queda registrado en Movimientos.</div>
@@ -24736,7 +24736,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
             {/* ── MODAL Crear/Editar Item ── */}
             {editingItem && ReactDOM.createPortal(
-              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
+              <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setEditingItem(null)}>
                 <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,width:"100%",maxWidth:720,maxHeight:"90vh",overflow:"auto",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
                   {/* Header */}
                   <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
@@ -27146,7 +27146,7 @@ export default function App() {
 
       {/* ── Overlay trial expirado ── */}
       {trialExpired&&page!=="planes"&&ReactDOM.createPortal(
-        <div style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.85)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter',system-ui,sans-serif"}}>
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:36,maxWidth:420,width:"100%",textAlign:"center",boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}}>
             <div style={{fontSize:52,marginBottom:16}}>⏰</div>
             <div style={{fontSize:22,fontWeight:800,color:T.text,marginBottom:8}}>Tu prueba gratuita terminó</div>
