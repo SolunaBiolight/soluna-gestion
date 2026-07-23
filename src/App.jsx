@@ -208,7 +208,7 @@ function Btn({T, variant="primary", size="md", icon, children, onClick, disabled
     secondary: {bg:"transparent", color:T.textMd, border:T.border, shadow:"none", shadowHov:`0 2px 12px rgba(0,0,0,0.12)`},
     ghost:     {bg:"transparent", color:T.textMd, border:"transparent", shadow:"none", shadowHov:"none"},
     danger:    {bg:T.redBg, color:T.red, border:T.red+"55", shadow:`0 0 0 1px ${T.red}15, 0 4px 16px ${T.red}22`, shadowHov:`0 0 0 1px ${T.red}28, 0 6px 24px ${T.red}40`},
-    success:   {bg:"rgba(22,163,74,0.13)", color:"#4ade80", border:"rgba(22,163,74,0.55)", shadow:"0 0 0 1px #16a34a15, 0 4px 20px #16a34a20", shadowHov:"0 0 0 1px #16a34a28, 0 6px 28px #16a34a40"},
+    success:   {bg:"rgba(22,163,74,0.13)", color:T.green, border:"rgba(22,163,74,0.55)", shadow:"0 0 0 1px "+T.green+"15"+", 0 4px 20px "+T.green+"20"+"", shadowHov:"0 0 0 1px "+T.green+"28"+", 0 6px 28px "+T.green+"40"+""},
   };
   const sizes = {
     sm: {padding:"5px 10px", fontSize:DS.font.sm, gap:5},
@@ -408,8 +408,8 @@ function DriveBtn({ T, onPick, size = "sm" }) {
 
   return (
     <button title="Conectar Google Drive" onClick={() => {
-      if (!GDRIVE_API_KEY || !GDRIVE_CLIENT_ID) { alert("Drive no configurado en Vercel."); return; }
-      if (!_gisReady) { alert("Cargando Drive, intentá en unos segundos..."); return; }
+      if (!GDRIVE_API_KEY || !GDRIVE_CLIENT_ID) { toast("Drive no configurado en Vercel.","error"); return; }
+      if (!_gisReady) { toast("Cargando Drive, intentá en unos segundos...","info"); return; }
       setStep("authing");
       // SINCRÓNICO — sin await para mantener gesto del usuario y evitar popup bloqueado
       _requestDriveToken(
@@ -594,7 +594,7 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
   const [name, setName] = React.useState("");
   const [color, setColor] = React.useState("#7c3aed");
   const [saving, setSaving] = React.useState(false);
-  const COLORS = ["#7c3aed","#ec4899","#f97316","#eab308","#22c55e","#06b6d4","#3b82f6","#ef4444"];
+  const COLORS = ["#7c3aed","#ec4899",T.orange,T.yellow,T.green,"#06b6d4",T.blue,T.red];
   const overLimit = userPlan !== "total" && existingCount >= 2;
 
   async function handleSave() {
@@ -617,7 +617,7 @@ function NewOrgModal({T, onClose, onCreate, existingCount, userPlan}) {
           <ModalCloseBtn T={T} onClick={onClose} disabled={saving} /></div>
 
         {overLimit ? (
-          <div style={{padding:"18px 16px",background:`linear-gradient(135deg,${T.yellowBg||"#eab30814"},${T.yellowBg||"#eab30808"})`,border:`1.5px solid ${T.yellow||"#eab308"}44`,borderRadius:12,marginBottom:14,boxShadow:`0 0 0 1px ${T.yellow||"#eab308"}18, 0 4px 16px ${T.yellow||"#eab308"}18`}}>
+          <div style={{padding:"18px 16px",background:`linear-gradient(135deg,${T.yellowBg||T.yellow+"14"},${T.yellowBg||T.yellow+"08"})`,border:`1.5px solid ${T.yellow||T.yellow}44`,borderRadius:12,marginBottom:14,boxShadow:`0 0 0 1px ${T.yellow||T.yellow}18, 0 4px 16px ${T.yellow||T.yellow}18`}}>
             <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:6}}>Llegaste al límite de tu plan</div>
             <div style={{fontSize:12,color:T.textMd,lineHeight:1.5}}>Tu plan permite hasta 2 organizaciones. Para tener más, pasate al plan <strong>Total</strong>.</div>
           </div>
@@ -657,7 +657,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
   const [color, setColor] = React.useState(org.color||"#7c3aed");
   const [saving, setSaving] = React.useState(false);
   const [confirmDel, setConfirmDel] = React.useState(false);
-  const COLORS = ["#7c3aed","#ec4899","#f97316","#eab308","#22c55e","#06b6d4","#3b82f6","#ef4444"];
+  const COLORS = ["#7c3aed","#ec4899",T.orange,T.yellow,T.green,"#06b6d4",T.blue,T.red];
   const canDelete = totalOrgs > 1; // no se puede borrar la única org
 
   async function handleSave() {
@@ -1170,7 +1170,9 @@ const ESTADOS_R = ["Nuevo","Contactado","Esperando producto","Producto recibido"
 const TIPOS_R = ["Cambio","Devolución"];
 const PRODUCTOS = ["Amarillo - Marco Negro","Amarillo - M. Transparente","Naranja - Marco Negro","Naranja - M. Transparente","Rojo - Marco Negro","Rojo - M. Transparente","Clip-On","Líquido Limpia Cristales"];
 const SKU_LENTE = { "AMARILLO-NN":"Amarillo","AMARILLO-TT":"Amarillo","NARAN-NN":"Naranja","NARAN-TT":"Naranja","ROJ-NN":"Rojo","ROJ-TT":"Rojo","N-N":"Negro","N-R":"Negro/Rojo","R-R":"Rojo/Rojo","CLIP-ON":"Clip-On","LIQ":"Líquido" };
-const LENTE_DOT = { Amarillo:"#fbbf24",Naranja:"#fb923c",Rojo:"#f87171",Negro:"#a1a1aa","Clip-On":"#c084fc",Líquido:"#60a5fa" };
+// Colores FIJOS de producto (representan el color físico del lente, no un estado
+// de UI) — a propósito NO usan tokens del tema; además es scope de módulo, sin T.
+const LENTE_DOT = { Amarillo:"#eab308",Naranja:"#f97316",Rojo:"#ef4444",Negro:"#a1a1aa","Clip-On":"#c084fc",Líquido:"#3b82f6" };
 const ESTADOS_C = ["Por enviar","Enviado","Contenido pendiente","Cerrado"];
 const REDES = ["Instagram","TikTok","YouTube","Twitter/X","Otro"];
 const ACTIVIDADES = ["Story","Reel","UGC","Review","Unboxing","Exp. Personal"];
@@ -1230,8 +1232,8 @@ function AppPromptHost({ T }) {
   const isPromptInput = s.kind === "prompt";
   const danger = s.danger;
   const closeWith = (val) => _appPromptClose(val);
-  const accentColor = danger ? "#ef4444" : isConfirm ? "#6366f1" : "#3b82f6";
-  const accentBg = danger ? "linear-gradient(135deg,#ef4444,#dc2626)" : isConfirm ? "linear-gradient(135deg,#6366f1,#4f46e5)" : "linear-gradient(135deg,#3b82f6,#2563eb)";
+  const accentColor = danger ? T.red : isConfirm ? "#6366f1" : T.blue;
+  const accentBg = danger ? "linear-gradient(135deg,"+T.red+","+T.red+")" : isConfirm ? "linear-gradient(135deg,#6366f1,#4f46e5)" : "linear-gradient(135deg,"+T.blue+","+T.blue+")";
   const accentTint = danger ? "rgba(239,68,68,0.13)" : isConfirm ? "rgba(99,102,241,0.13)" : "rgba(59,130,246,0.13)";
   const accentBorder = danger ? "rgba(239,68,68,0.55)" : isConfirm ? "rgba(99,102,241,0.55)" : "rgba(59,130,246,0.55)";
   const accentText = danger ? "#fca5a5" : isConfirm ? "#a5b4fc" : "#93c5fd";
@@ -1749,10 +1751,10 @@ function ToastContainer({T}){
   const toasts=useToast();
   if(!toasts.length) return null;
   const cfgMap={
-    success:{color:T.green,   bg:"#22c55e", icon:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>},
-    error:  {color:T.red,     bg:"#ef4444", icon:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
-    warning:{color:T.orange||"#f97316", bg:"#f97316", icon:<><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
-    info:   {color:T.blue||"#3b82f6", bg:"#3b82f6", icon:<><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
+    success:{color:T.green,   bg:T.green, icon:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>},
+    error:  {color:T.red,     bg:T.red, icon:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
+    warning:{color:T.orange||T.orange, bg:T.orange, icon:<><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
+    info:   {color:T.blue||T.blue, bg:T.blue, icon:<><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" fill="none"/><path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></>},
   };
   return(
     <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:9999,display:"flex",flexDirection:"column",gap:10,alignItems:"center",pointerEvents:"none"}}>
@@ -1944,7 +1946,7 @@ function AppTabs({T, tabs, active, onChange, size="normal"}) {
 function Avatar({src, name, size=36, radius=10, T}) {
   const [err, setErr] = React.useState(false);
   const initials = (name||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
-  const colors = ["#7c3aed","#2563eb","#059669","#d97706","#dc2626","#9333ea","#0891b2"];
+  const colors = ["#7c3aed",T.blue,"#059669",T.yellow,T.red,"#9333ea","#0891b2"];
   const color = colors[(name||"").charCodeAt(0)%colors.length] || colors[0];
   if(src&&!err) return (
     <img src={src} alt={name||""} onError={()=>setErr(true)}
@@ -2076,9 +2078,9 @@ function InputStyle(T) {
 // Ícono de estado para modales de resultado (reemplaza emojis ✅❌⚠️)
 function StatusIcon({type="success", size=64}) {
   const cfg = {
-    success: { bg:"linear-gradient(135deg,#22c55e,#16a34a)", glow:"#22c55e", ring:"#22c55e28", path:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/> },
-    error:   { bg:"linear-gradient(135deg,#ef4444,#dc2626)", glow:"#ef4444", ring:"#ef444428", path:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></> },
-    warning: { bg:"linear-gradient(135deg,#f59e0b,#d97706)", glow:"#f59e0b", ring:"#f59e0b28", path:<><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/></> },
+    success: { bg:"linear-gradient(135deg,"+T.green+","+T.green+")", glow:T.green, ring:T.green+"28", path:<polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/> },
+    error:   { bg:"linear-gradient(135deg,"+T.red+","+T.red+")", glow:T.red, ring:T.red+"28", path:<><line x1="18" y1="6" x2="6" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></> },
+    warning: { bg:"linear-gradient(135deg,"+T.yellow+","+T.yellow+")", glow:T.yellow, ring:T.yellow+"28", path:<><path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" fill="none"/></> },
   };
   const c = cfg[type]||cfg.success;
   const r = Math.round(size*0.27);
@@ -2699,7 +2701,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   </div>
                   {retiros.map((a,i)=>(
                     <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginTop:i>0?6:0,flexWrap:"wrap"}}>
-                      <span style={{fontSize:11,padding:"2px 7px",borderRadius:10,background:a.tipo==="cambio_sucursal"?"#3b82f620":"#22c55e20",color:a.tipo==="cambio_sucursal"?"#3b82f6":"#22c55e",fontWeight:600}}>
+                      <span style={{fontSize:11,padding:"2px 7px",borderRadius:10,background:a.tipo==="cambio_sucursal"?T.blue+"20":T.green+"20",color:a.tipo==="cambio_sucursal"?T.blue:T.green,fontWeight:600}}>
                         {a.tipo==="cambio_sucursal"?"CAMBIO":"DEVOLUCIÓN"}
                       </span>
                       <span style={{fontSize:12,color:T.textMd}}>
@@ -2717,10 +2719,10 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               </div>
             )}
             {recibidos.length>0&&(
-              <div style={{background:"linear-gradient(135deg,#0a1628,#0d1f35)",border:`1.5px solid #3b82f655`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease"}}>
-                <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:8,background:"#3b82f622"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+              <div style={{background:"linear-gradient(135deg,#0a1628,#0d1f35)",border:`1.5px solid ${T.blue}55`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:14,animation:"growith-fadeIn 0.4s ease"}}>
+                <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:8,background:T.blue+"22"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.blue} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                 <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:14,color:"#3b82f6",marginBottom:6}}>
+                  <div style={{fontWeight:700,fontSize:14,color:T.blue,marginBottom:6}}>
                     {recibidos.length===1?"Devolución recibida y registrada":"Devoluciones recibidas"}
                   </div>
                   {recibidos.map((a,i)=>(
@@ -2926,7 +2928,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                                   <span style={{fontSize:11,fontWeight:600,color:urgente?T.red:sc.text}}>{estado}</span>
                                 </div>
                                 <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                                  {urgente&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
+                                  {urgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                                   {hasTracking&&<span title="Tiene tracking" style={{fontSize:9,fontWeight:700,color:T.blue,background:T.blue+"15",borderRadius:4,padding:"2px 7px"}}>TRK</span>}
                                   {r.notasInternas&&<span title="Tiene notas" style={{fontSize:9,fontWeight:700,color:T.yellow,background:T.yellow+"15",borderRadius:4,padding:"2px 7px"}}>NOTA</span>}
                                 </div>
@@ -3269,7 +3271,7 @@ function HistorialReclamo({T, reclamo, onAdd}) {
     setTexto("");setGuardando(false);
   }
   function getEntryStyle(accion) {
-    if(accion.startsWith("Nota:")) return {icon:"·",color:"#60a5fa",bold:false};
+    if(accion.startsWith("Nota:")) return {icon:"·",color:T.blue,bold:false};
     if(accion.startsWith("Estado >")) return {icon:"→",color:"#a78bfa",bold:true};
     if(accion.startsWith("Reclamo creado")) return {icon:"✓",color:"#34d399",bold:true};
     return {icon:"·",color:"#94a3b8",bold:false};
@@ -3935,7 +3937,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                   <button onClick={()=>setDetail(a.canje._docId)} style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Ver canje</button>
                   {a.canje.telefono&&<a href={`https://wa.me/${a.canje.telefono.replace(/\D/g,"")}?text=${waCanjeMsg(a.canje)}`} target="_blank" rel="noreferrer"
-                    style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:"#22c55e",color:"#fff",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
+                    style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:T.green,color:"#fff",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                     Enviar WA
                   </a>}
@@ -3946,9 +3948,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               const otros=alertas.filter(a=>a.tipo!=="envio_programado");
               if(!otros.length) return null;
               const chipDefs=[
-                {tipo:"contenido", icon:"📋", label:"Deben\ncontenido", color:"#f97316"},
-                {tipo:"sinrespuesta", icon:"💬", label:"Sin respuesta\n+15 días", color:"#3b82f6"},
-                {tipo:"recordatorio", icon:"🔔", label:"Recordatorios\nvencidos", color:"#d97706"},
+                {tipo:"contenido", icon:"📋", label:"Deben\ncontenido", color:T.orange},
+                {tipo:"sinrespuesta", icon:"💬", label:"Sin respuesta\n+15 días", color:T.blue},
+                {tipo:"recordatorio", icon:"🔔", label:"Recordatorios\nvencidos", color:T.yellow},
               ];
               return (
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -4204,7 +4206,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                                 <span style={{fontSize:11,fontWeight:600,color:urgente?T.red:sc.text}}>{estado}</span>
                               </div>
                               <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                                {urgente&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
+                                {urgente&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                                 {diasEnvio!==null&&(c.estado==="Enviado"||c.estado==="Contenido pendiente")&&(
                                   <span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:4,background:diasEnvio>=15?T.redBg:diasEnvio>=7?T.orangeBg:T.greenBg,color:diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green,border:`1px solid ${diasEnvio>=15?T.red:diasEnvio>=7?T.orange:T.green}33`}}>
                                     {diasEnvio}d
@@ -4506,7 +4508,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       </div>
                       <div style={{textAlign:"center",borderLeft:`1px solid ${T.borderL}`,borderRight:`1px solid ${T.borderL}`}}>
                         <div style={{fontSize:10,color:T.textSm,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Comisión</div>
-                        <div style={{fontSize:16,fontWeight:800,color:T.orange||"#f97316"}}>{inf.comisionPct?inf.comisionPct+"%":"—"}</div>
+                        <div style={{fontSize:16,fontWeight:800,color:T.orange||T.orange}}>{inf.comisionPct?inf.comisionPct+"%":"—"}</div>
                         <div style={{fontSize:9,color:T.textSm}}>para inf.</div>
                       </div>
                       <div style={{textAlign:"center"}}>
@@ -4527,7 +4529,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     {(inf.email||inf.telefono)&&(
                       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
                         {inf.email&&<a href={"mailto:"+inf.email} style={{fontSize:11,color:T.accent,textDecoration:"none"}}>✉️ {inf.email}</a>}
-                        {inf.telefono&&<a href={"https://wa.me/"+inf.telefono.replace(/\D/g,"")} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#22c55e",textDecoration:"none"}}>💬 WA</a>}
+                        {inf.telefono&&<a href={"https://wa.me/"+inf.telefono.replace(/\D/g,"")} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.green,textDecoration:"none"}}>💬 WA</a>}
                       </div>
                     )}
                     {inf.notas&&<div style={{fontSize:11,color:T.textSm,borderTop:`1px solid ${T.borderL}`,paddingTop:8,marginTop:4,lineHeight:1.5}}>{inf.notas}</div>}
@@ -7617,7 +7619,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
     stock:[
       ...stockAlertas.filter(a=>a.status==="empty").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,titulo:`Sin stock: ${a.producto}`,sub:a.variante,badge:"Sin stock",badgeColor:T.red,accion:()=>onNavigate("stock")})),
       ...stockAlertas.filter(a=>a.status==="critical").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,titulo:`Stock crítico: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.red,accion:()=>onNavigate("stock")})),
-      ...stockAlertas.filter(a=>a.status==="low").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.yellow||"#eab308"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,titulo:`Stock bajo: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.yellow,accion:()=>onNavigate("stock")})),
+      ...stockAlertas.filter(a=>a.status==="low").map(a=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.yellow||T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,titulo:`Stock bajo: ${a.producto}`,sub:`${a.variante} · ${a.daysLeft}d restantes`,badge:`${a.daysLeft}d`,badgeColor:T.yellow,accion:()=>onNavigate("stock")})),
     ],
     canjes: notificacionesCanjes.slice(0,4).map(n=>({icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>,titulo:n.canje.influencer,sub:n.msg,badge:"Pendiente",badgeColor:T.orange,accion:()=>onNavigate("canjes",n.canje._docId)})),
   };
@@ -7699,13 +7701,13 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
         <div style={{display:"flex",gap:DS.sp.lg,marginBottom:DS.sp.lg,padding:"8px 14px",background:T.surface,borderRadius:DS.r.md,border:`1px solid ${T.border}`,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{fontSize:DS.font.xs,color:T.textSm,fontWeight:DS.w.bold,textTransform:"uppercase",letterSpacing:0.6,opacity:0.6}}>Desglose</span>
           <div style={{display:"flex",gap:4,alignItems:"center"}}>
-            <span style={{fontSize:10,background:"#2563eb22",color:"#2563eb",borderRadius:4,padding:"1px 6px",fontWeight:DS.w.bold}}>TN</span>
+            <span style={{fontSize:10,background:T.blue+"22",color:T.blue,borderRadius:4,padding:"1px 6px",fontWeight:DS.w.bold}}>TN</span>
             <span style={{fontSize:DS.font.sm,color:T.text,fontWeight:DS.w.semibold}}>{fmtARS(orderStats.breakdown.primary?.revenue||0)}</span>
             <span style={{fontSize:DS.font.xs,color:T.textSm}}>· {fmt(orderStats.breakdown.primary?.count||0)} pedidos</span>
           </div>
           <span style={{color:T.border,fontSize:DS.font.xs}}>+</span>
           <div style={{display:"flex",gap:4,alignItems:"center"}}>
-            <span style={{fontSize:10,background:"#f59e0b22",color:"#d97706",borderRadius:4,padding:"1px 6px",fontWeight:DS.w.bold}}>ML</span>
+            <span style={{fontSize:10,background:T.yellow+"22",color:T.yellow,borderRadius:4,padding:"1px 6px",fontWeight:DS.w.bold}}>ML</span>
             <span style={{fontSize:DS.font.sm,color:T.text,fontWeight:DS.w.semibold}}>{fmtARS(orderStats.breakdown.ml?.revenue||0)}</span>
             <span style={{fontSize:DS.font.xs,color:T.textSm}}>· {fmt(orderStats.breakdown.ml?.count||0)} pedidos</span>
           </div>
@@ -7893,7 +7895,7 @@ function LandingPage({T, onLogin}) {
         <h2 style={secTitle}>Un solo plan, todo incluido</h2>
         <p style={secSub}>Sin niveles, sin funciones bloqueadas. Probás gratis 14 días con absolutamente todo.</p>
         <div style={{maxWidth:420,margin:"0 auto",background:T.card,border:`2px solid #6366f1`,borderRadius:18,padding:"28px 28px",textAlign:"center",position:"relative"}}>
-          <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:"#22c55e",color:"#fff",fontSize:11,fontWeight:800,borderRadius:20,padding:"3px 14px",whiteSpace:"nowrap"}}>🔥 OFERTA DE LANZAMIENTO — 20% OFF</div>
+          <div style={{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:T.green,color:"#fff",fontSize:11,fontWeight:800,borderRadius:20,padding:"3px 14px",whiteSpace:"nowrap"}}>🔥 OFERTA DE LANZAMIENTO — 20% OFF</div>
           <div style={{fontSize:15,fontWeight:800,color:"#6366f1",marginTop:6,marginBottom:10}}>Plan Pro</div>
           <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",fontWeight:600}}>$99 USD/mes</div>
           <div style={{fontSize:46,fontWeight:900,letterSpacing:-1.5,lineHeight:1.1}}>$79 <span style={{fontSize:15,fontWeight:500,color:T.textSm}}>USD/mes</span></div>
@@ -7901,7 +7903,7 @@ function LandingPage({T, onLogin}) {
           <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:7,marginBottom:22}}>
             {["Tiendas y envíos ilimitados","Dashboard de rentabilidad en tiempo real","Stock cruzado entre canales","Facturación ARCA/AFIP","Meta Ads + Google Ads + Mercado Ads","Copilot IA y gestión de equipo"].map(x=>(
               <div key={x} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,color:T.textMd}}>
-                <span style={{color:"#22c55e",fontWeight:800,flexShrink:0}}>✓</span>{x}
+                <span style={{color:T.green,fontWeight:800,flexShrink:0}}>✓</span>{x}
               </div>
             ))}
           </div>
@@ -8028,9 +8030,9 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
             </div>
           )}
           {mode==="register"&&(
-            <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:10,background:"linear-gradient(135deg,#22c55e18,#22c55e08)",border:"1.5px solid #22c55e55",borderRadius:20,padding:"6px 14px"}}>
-              <span style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>14 días de prueba gratis con todo incluido</span>
-              <span style={{fontSize:12,color:"#6b7280"}}>· sin tarjeta</span>
+            <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:10,background:"linear-gradient(135deg,"+T.green+"18"+","+T.green+"08"+")",border:"1.5px solid "+T.green+"55"+"",borderRadius:20,padding:"6px 14px"}}>
+              <span style={{fontSize:13,fontWeight:700,color:T.green}}>14 días de prueba gratis con todo incluido</span>
+              <span style={{fontSize:12,color:T.textMd}}>· sin tarjeta</span>
             </div>
           )}
         </div>
@@ -8695,7 +8697,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:14,fontWeight:700,color:T.text}}>{p.label}</div>
                   {p.connected
-                    ? <div style={{fontSize:11,fontWeight:600,color:"#4ade80",marginTop:2,display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 6px #22c55e",display:"inline-block"}}/>✓ {p.sub}</div>
+                    ? <div style={{fontSize:11,fontWeight:600,color:T.green,marginTop:2,display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:"50%",background:T.green,boxShadow:"0 0 6px "+T.green+"",display:"inline-block"}}/>✓ {p.sub}</div>
                     : <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{p.sub}</div>}
                 </div>
                 {p.connected
@@ -8763,8 +8765,8 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
         {/* Troubleshooting: ya conectado pero sin publicaciones en Stock */}
         {(shStore || mlStore) && (
-          <details style={{background:T.card,border:`1px solid ${T.yellow||"#eab308"}55`,borderRadius:12,padding:"14px 18px",marginTop:14}}>
-            <summary style={{cursor:"pointer",fontSize:13,fontWeight:700,color:T.yellow||"#eab308",listStyle:"none",display:"flex",alignItems:"center",gap:8}}>
+          <details style={{background:T.card,border:`1px solid ${T.yellow||T.yellow}55`,borderRadius:12,padding:"14px 18px",marginTop:14}}>
+            <summary style={{cursor:"pointer",fontSize:13,fontWeight:700,color:T.yellow||T.yellow,listStyle:"none",display:"flex",alignItems:"center",gap:8}}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ¿Ya conectaste pero no aparecen publicaciones en Stock o Gestión ML?
             </summary>
             <div style={{marginTop:12,fontSize:12,color:T.textMd,lineHeight:1.65}}>
@@ -8829,7 +8831,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_customers</code>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>read_orders</code>
                       <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent}}>write_orders</code>
-                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent,border:`1px solid ${T.yellow||"#eab308"}55`}}>read_products ⚠</code>
+                      <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10,color:T.accent,border:`1px solid ${T.yellow||T.yellow}55`}}>read_products ⚠</code>
                     </div>
                     <div style={{fontSize:9,color:T.textSm,marginTop:3}}><strong>read_products</strong> es indispensable para Stock y Análisis. Si tu app vieja no lo tenía, creá una versión nueva ahora y publicala.</div>
                   </li>
@@ -8843,7 +8845,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
 
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div>
-                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Subdominio Shopify <span style={{color:T.yellow||"#eab308",textTransform:"none",fontWeight:500}}>(el .myshopify.com, NO tu dominio custom)</span></div>
+                  <div style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:600,letterSpacing:0.5,marginBottom:6}}>Subdominio Shopify <span style={{color:T.yellow||T.yellow,textTransform:"none",fontWeight:500}}>(el .myshopify.com, NO tu dominio custom)</span></div>
                   <input value={shopifyShop} onChange={e=>setShopifyShop(e.target.value)} placeholder="ej: tu-tienda-xx (solo el subdominio)" style={iS} disabled={connectingShopify} autoFocus/>
                   <div style={{fontSize:10,color:T.textSm,marginTop:4,lineHeight:1.5}}>
                     Tenés que poner el subdominio <strong style={{color:T.text}}>NATIVO</strong> de Shopify (ej: <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc.myshopify.com</code> → ponés solo <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>asdf-sc</code>).<br/>
@@ -8895,7 +8897,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
                   <li>Te redirige a Mercado Libre para que inicies sesión (si hace falta) y apruebes el acceso</li>
                   <li>Volvés automáticamente a Growith con la cuenta conectada</li>
                 </ol>
-                <div style={{marginTop:10,padding:"8px 10px",background:(T.yellow||"#eab308")+"15",border:`1px solid ${T.yellow||"#eab308"}33`,borderRadius:7,fontSize:10,color:T.textMd,lineHeight:1.6}}>
+                <div style={{marginTop:10,padding:"8px 10px",background:(T.yellow||T.yellow)+"15",border:`1px solid ${T.yellow||T.yellow}33`,borderRadius:7,fontSize:10,color:T.textMd,lineHeight:1.6}}>
                   <strong style={{color:T.text}}>Permisos que se solicitan:</strong> ver tus publicaciones, órdenes y envíos · editar precios/stock/imágenes · ver métricas de negocio
                 </div>
               </div>
@@ -8938,7 +8940,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
               <div style={{padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,fontSize:11,color:T.textMd,lineHeight:1.65,marginBottom:14}}>
                 <div style={{fontWeight:700,color:T.text,marginBottom:8}}>Cómo generar tu System User Token (5-8 min)</div>
 
-                <div style={{marginBottom:10,padding:"8px 11px",background:T.yellowBg,border:`1.5px solid ${T.yellow||"#eab308"}44`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5,boxShadow:`0 0 0 1px ${T.yellow||"#eab308"}18, 0 4px 12px ${T.yellow||"#eab308"}14`}}>
+                <div style={{marginBottom:10,padding:"8px 11px",background:T.yellowBg,border:`1.5px solid ${T.yellow||T.yellow}44`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5,boxShadow:`0 0 0 1px ${T.yellow||T.yellow}18, 0 4px 12px ${T.yellow||T.yellow}14`}}>
                   <strong style={{color:T.text}}>Antes de empezar:</strong> necesitás <strong style={{color:T.text}}>una app en Meta for Developers</strong> (no importa cuál, sirve cualquiera). Si no tenés, mirá el desplegable de abajo — se crea en 1 minuto.
                 </div>
 
@@ -9014,21 +9016,21 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark}) {
             const diasTrial = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime()-Date.now())/86400000)) : 0;
             const enTrial = !isPago && diasTrial>0;
             return (
-              <div style={{border:`2px solid ${isPago?"#6366f1":(enTrial?"#22c55e":T.border)}`,borderRadius:12,padding:"20px 22px",position:"relative",background:isPago?"#6366f10a":(enTrial?"#22c55e08":T.bg),maxWidth:480}}>
-                <div style={{position:"absolute",top:-10,left:16,background:isPago?"#6366f1":(enTrial?"#22c55e":T.textSm),color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>
+              <div style={{border:`2px solid ${isPago?"#6366f1":(enTrial?T.green:T.border)}`,borderRadius:12,padding:"20px 22px",position:"relative",background:isPago?"#6366f10a":(enTrial?T.green+"08":T.bg),maxWidth:480}}>
+                <div style={{position:"absolute",top:-10,left:16,background:isPago?"#6366f1":(enTrial?T.green:T.textSm),color:"#fff",fontSize:10,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>
                   {isPago?"PLAN PRO ACTIVO":(enTrial?"PRUEBA GRATIS":"PRUEBA FINALIZADA")}
                 </div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,marginTop:6,marginBottom:4,flexWrap:"wrap"}}>
                   <span style={{fontSize:18,fontWeight:800,color:T.text}}>Plan Pro</span>
                   <span style={{fontSize:13,color:T.textSm,textDecoration:"line-through"}}>$99</span>
                   <span style={{fontSize:22,fontWeight:800,color:T.text}}>$79 <span style={{fontSize:12,fontWeight:400,color:T.textSm}}>USD/mes</span></span>
-                  <span style={{fontSize:10,fontWeight:800,color:"#22c55e",background:"#22c55e18",border:"1px solid #22c55e44",borderRadius:12,padding:"2px 8px"}}>20% OFF lanzamiento</span>
+                  <span style={{fontSize:10,fontWeight:800,color:T.green,background:T.green+"18",border:"1px solid "+T.green+"44"+"",borderRadius:12,padding:"2px 8px"}}>20% OFF lanzamiento</span>
                 </div>
                 <div style={{fontSize:12,color:T.textMd,marginBottom:12,lineHeight:1.6}}>
                   Un solo plan con <strong style={{color:T.text}}>todo incluido</strong>: Dashboard financiero, Envíos, Stock multicanal, Facturador ARCA, Meta Ads y Google Ads, Copilot IA, tiendas y equipo ilimitados.
                 </div>
                 {enTrial && (
-                  <div style={{fontSize:13,color:"#22c55e",fontWeight:700,marginBottom:12}}>
+                  <div style={{fontSize:13,color:T.green,fontWeight:700,marginBottom:12}}>
                     Te quedan {diasTrial} día{diasTrial!==1?"s":""} de prueba con todo incluido — sin tarjeta.
                   </div>
                 )}
@@ -9194,9 +9196,9 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
 
         {/* Banner trial vencido o hero normal */}
         {isTrialExpired?(
-          <div style={{background:"#ef444412",border:"1px solid #ef444440",borderRadius:14,padding:"18px 22px",marginBottom:32,textAlign:"center"}}>
-            <div style={{display:"flex",justifyContent:"center",marginBottom:8}}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-            <div style={{fontSize:18,fontWeight:800,color:"#ef4444",marginBottom:6}}>Tu prueba gratuita terminó</div>
+          <div style={{background:T.red+"12",border:"1px solid "+T.red+"40"+"",borderRadius:14,padding:"18px 22px",marginBottom:32,textAlign:"center"}}>
+            <div style={{display:"flex",justifyContent:"center",marginBottom:8}}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <div style={{fontSize:18,fontWeight:800,color:T.red,marginBottom:6}}>Tu prueba gratuita terminó</div>
             <div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Suscribite para seguir usando Growith y no perder tus datos.</div>
           </div>
         ):(
@@ -9234,7 +9236,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
             </button>
             <button onClick={()=>setAnual(true)} style={{padding:"6px 20px",borderRadius:24,fontSize:13,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:anual?"#6366f1":T.surface,color:anual?"#fff":T.textMd,transition:"all 0.15s",display:"flex",alignItems:"center",gap:7}}>
               Anual
-              <span style={{background:"#22c55e",color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"1px 7px"}}>-17%</span>
+              <span style={{background:T.green,color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"1px 7px"}}>-17%</span>
             </button>
           </div>
         </div>
@@ -9247,8 +9249,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
 
           {/* Precio */}
           <div style={{textAlign:"center",marginBottom:22,marginTop:8}}>
-            <div style={{display:"inline-flex",alignItems:"center",gap:6,background:"#22c55e18",border:"1px solid #22c55e44",borderRadius:20,padding:"3px 12px",marginBottom:8}}>
-              <span style={{fontSize:11,fontWeight:800,color:"#22c55e",letterSpacing:"0.03em"}}>🔥 OFERTA DE LANZAMIENTO — 20% OFF</span>
+            <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.green+"18",border:"1px solid "+T.green+"44"+"",borderRadius:20,padding:"3px 12px",marginBottom:8}}>
+              <span style={{fontSize:11,fontWeight:800,color:T.green,letterSpacing:"0.03em"}}>🔥 OFERTA DE LANZAMIENTO — 20% OFF</span>
             </div>
             <div style={{fontSize:14,color:T.textSm,textDecoration:"line-through",marginBottom:2,fontWeight:600}}>${PLAN.precio_normal} USD/mes</div>
             <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:4}}>
@@ -9256,7 +9258,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, CVU_PAG
               <span style={{fontSize:15,color:T.textSm,marginBottom:10}}>USD/mes</span>
             </div>
             <div style={{fontSize:13,color:T.textSm}}>Pago con USDT (red TRC20)</div>
-            {anual&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600,marginTop:4}}>Ahorrás ${(PLAN.precio_usdt-PLAN.precio_usdt_anual)*12} USD al año pagando anual</div>}
+            {anual&&<div style={{fontSize:12,color:T.green,fontWeight:600,marginTop:4}}>Ahorrás ${(PLAN.precio_usdt-PLAN.precio_usdt_anual)*12} USD al año pagando anual</div>}
             {!anual&&<div style={{fontSize:11,color:"#6366f1",fontWeight:600,marginTop:6}}>o ${PLAN.precio_usdt_anual} USD/mes pagando anual</div>}
           </div>
 
@@ -13632,12 +13634,12 @@ function EditorProduccionView({T, token}) {
   }
 
   const CEST={
-    idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},
-    "brief-enviado":{l:"Brief enviado",c:"#3b82f6",bg:"#3b82f615"},
-    "en-produccion":{l:"En producción",c:"#f97316",bg:"#f9731615"},
-    entregado:{l:"Entregado",c:"#d97706",bg:"#d9770615"},
-    publicado:{l:"Publicado",c:"#22c55e",bg:"#22c55e15"},
-    archivado:{l:"Archivado",c:"#9ca3af",bg:"#9ca3af15"},
+    idea:{l:"Idea",c:T.textMd,bg:T.textMd+"15"},
+    "brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blue+"15"},
+    "en-produccion":{l:"En producción",c:T.orange,bg:T.orange+"15"},
+    entregado:{l:"Entregado",c:T.yellow,bg:T.yellow+"15"},
+    publicado:{l:"Publicado",c:T.green,bg:T.green+"15"},
+    archivado:{l:"Archivado",c:T.textSm,bg:T.textSm+"15"},
   };
 
   if(loading) return (
@@ -13679,7 +13681,7 @@ function EditorProduccionView({T, token}) {
       <div style={{maxWidth:860,margin:"0 auto",padding:"20px 16px"}}>
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:10,marginBottom:20}}>
-          {[{l:"Mis creativos",v:creativos.length,c:"#7c3aed"},{l:"En producción",v:creativos.filter(c=>c.estado==="en-produccion").length,c:"#f97316"},{l:"Entregados",v:creativos.filter(c=>c.estado==="entregado").length,c:"#d97706"},{l:"Publicados",v:creativos.filter(c=>c.estado==="publicado").length,c:"#22c55e"}].map(k=>(
+          {[{l:"Mis creativos",v:creativos.length,c:"#7c3aed"},{l:"En producción",v:creativos.filter(c=>c.estado==="en-produccion").length,c:T.orange},{l:"Entregados",v:creativos.filter(c=>c.estado==="entregado").length,c:T.yellow},{l:"Publicados",v:creativos.filter(c=>c.estado==="publicado").length,c:T.green}].map(k=>(
             <div key={k.l} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px",textAlign:"center"}}>
               <div style={{fontSize:24,fontWeight:800,color:k.c,lineHeight:1,marginBottom:4}}>{k.v}</div>
               <div style={{fontSize:10,color:T.textSm,fontWeight:500}}>{k.l}</div>
@@ -13825,12 +13827,12 @@ function ColaboradorPublicView({T, token}) {
   },[token]);
 
   const ESTADOS = {
-    pendiente:  {label:"⏳ Pendiente",  color:"#d97706",bg:"#d9770620"},
-    en_proceso: {label:"🔄 En proceso", color:"#3b82f6",bg:"#3b82f620"},
-    bloqueada:  {label:"🚫 Bloqueada",  color:"#6b7280",bg:"#6b728018"},
-    entregado:  {label:"📦 Entregado",  color:"#f97316",bg:"#f9731620"},
-    aprobado:   {label:"✅ Aprobado",   color:"#22c55e",bg:"#22c55e20"},
-    revision:   {label:"🔁 A revisar",  color:"#ef4444",bg:"#ef444420"},
+    pendiente:  {label:"⏳ Pendiente",  color:T.yellow,bg:T.yellow+"20"},
+    en_proceso: {label:"🔄 En proceso", color:T.blue,bg:T.blue+"20"},
+    bloqueada:  {label:"🚫 Bloqueada",  color:T.textMd,bg:T.textMd+"18"},
+    entregado:  {label:"📦 Entregado",  color:T.orange,bg:T.orange+"20"},
+    aprobado:   {label:"✅ Aprobado",   color:T.green,bg:T.green+"20"},
+    revision:   {label:"🔁 A revisar",  color:T.red,bg:T.red+"20"},
   };
 
   async function publicApi(body) {
@@ -14031,15 +14033,15 @@ function ColaboradorPublicView({T, token}) {
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(245,158,11,0.13),rgba(245,158,11,0.06))",borderRadius:12,border:"1.5px solid rgba(245,158,11,0.3)"}}>
               <span style={{fontSize:18}}>📌</span>
               <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#d97706"}}>Tablón del equipo</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.yellow}}>Tablón del equipo</div>
                 <div style={{fontSize:11,color:T.textSm}}>{tablon.length} publicación{tablon.length!==1?"es":""}</div>
               </div>
             </div>
             {[...tablon].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)).map((post,i)=>{
               const TIPO_META={
-                aviso:{label:"Aviso",color:"#f97316",bg:"#f9731618",border:"#f9731640"},
-                brief:{label:"Brief",color:"#3b82f6",bg:"#3b82f618",border:"#3b82f640"},
-                recurso:{label:"Recurso",color:"#22c55e",bg:"#22c55e18",border:"#22c55e40"},
+                aviso:{label:"Aviso",color:T.orange,bg:T.orange+"18",border:T.orange+"40"},
+                brief:{label:"Brief",color:T.blue,bg:T.blue+"18",border:T.blue+"40"},
+                recurso:{label:"Recurso",color:T.green,bg:T.green+"18",border:T.green+"40"},
               };
               const meta=TIPO_META[post.tipo]||TIPO_META.aviso;
               return (
@@ -14126,10 +14128,10 @@ function ColaboradorPublicView({T, token}) {
           const linksNorm = normalizeLinks(t.links);
           const lastEntregaJustSent = entregaEnviada[t._id];
           return (
-            <div key={t._id} style={{background:T.card,border:`1px solid ${isRevision?"#ef444455":isUrgente?"#ef444433":isAprobado?"#22c55e44":T.border}`,borderRadius:12,overflow:"hidden",opacity:isAprobado?0.85:1,gridColumn:expanded?"1 / -1":"auto"}}>
+            <div key={t._id} style={{background:T.card,border:`1px solid ${isRevision?T.red+"55":isUrgente?T.red+"33":isAprobado?T.green+"44":T.border}`,borderRadius:12,overflow:"hidden",opacity:isAprobado?0.85:1,gridColumn:expanded?"1 / -1":"auto"}}>
               {/* Banner deadline urgente */}
               {t.deadline&&days!==null&&days<=2&&!isAprobado&&(
-                <div style={{background:"#ef4444",padding:"6px 16px",fontSize:12,color:"#fff",fontWeight:600}}>
+                <div style={{background:T.red,padding:"6px 16px",fontSize:12,color:"#fff",fontWeight:600}}>
                   ⚠️ {days<0?`Vencido hace ${Math.abs(days)} día${Math.abs(days)!==1?"s":""}`:days===0?"¡Vence hoy!":days===1?"¡Vence mañana!":"Vence en 2 días"}
                 </div>
               )}
@@ -14138,20 +14140,20 @@ function ColaboradorPublicView({T, token}) {
                 <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,flexWrap:"wrap"}}>
-                      {isUrgente&&<span style={{fontSize:10,color:"#ef4444",fontWeight:800}}>🔴</span>}
+                      {isUrgente&&<span style={{fontSize:10,color:T.red,fontWeight:800}}>🔴</span>}
                       {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:600}}>#{t.tareaNumStr}</span>}
                       <span style={{fontSize:15,fontWeight:600,color:T.text}}>{t.titulo}</span>
                       {t.propuestaPor&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#6366f120",color:"#818cf8",fontWeight:700,flexShrink:0}}>Propuesta por vos</span>}
-                      {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:20,background:"#ef444420",color:"#ef4444",fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
-                      {t.leidoAt&&<span style={{fontSize:10,color:"#22c55e",flexShrink:0}}>👁</span>}
+                      {(t.correcciones||0)>0&&<span style={{fontSize:10,padding:"1px 5px",borderRadius:20,background:T.red+"20",color:T.red,fontWeight:700,flexShrink:0}}>{t.correcciones}ª corrección</span>}
+                      {t.leidoAt&&<span style={{fontSize:10,color:T.green,flexShrink:0}}>👁</span>}
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:briefPreview&&!expanded?7:0}}>
                       <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:600,background:est.bg,color:est.color}}>{est.label}</span>
-                      {t.deadline&&<span style={{fontSize:11,color:days!==null&&days<=2?"#ef4444":T.textSm,fontWeight:days!==null&&days<=2?600:400}}>
+                      {t.deadline&&<span style={{fontSize:11,color:days!==null&&days<=2?T.red:T.textSm,fontWeight:days!==null&&days<=2?600:400}}>
                         📅 {days!==null?(days<0?`Vencido hace ${Math.abs(days)}d`:days===0?"Hoy":`${days}d restantes`):fmtDate(t.deadline)}
                       </span>}
-                      {hasDels&&<span style={{fontSize:11,color:"#22c55e"}}>✓ {(t.deliverables||[]).length} enviada{(t.deliverables||[]).length!==1?"s":""}</span>}
-                      {t.estimacion&&<span style={{fontSize:11,color:"#3b82f6"}}>⏱ {t.estimacion}</span>}
+                      {hasDels&&<span style={{fontSize:11,color:T.green}}>✓ {(t.deliverables||[]).length} enviada{(t.deliverables||[]).length!==1?"s":""}</span>}
+                      {t.estimacion&&<span style={{fontSize:11,color:T.blue}}>⏱ {t.estimacion}</span>}
                     </div>
                     {briefPreview&&!expanded&&<div style={{fontSize:12,color:T.textSm,lineHeight:1.4,fontStyle:"italic"}}>{briefPreview}</div>}
                   </div>
@@ -14163,22 +14165,22 @@ function ColaboradorPublicView({T, token}) {
                 <div className="gh-accordion" style={{borderTop:`1px solid ${T.border}`,padding:"16px",background:T.bg}}>
                   {/* Banner revisión con feedback */}
                   {isRevision&&(
-                    <div style={{marginBottom:16,padding:"14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444418"}}>
-                      <div style={{fontSize:13,fontWeight:700,color:"#ef4444",marginBottom:t.feedbackActual?8:0}}>🔁 Te pidieron cambios</div>
+                    <div style={{marginBottom:16,padding:"14px",background:"linear-gradient(135deg,"+T.red+"14"+","+T.red+"08"+")",borderRadius:10,border:"1.5px solid "+T.red+"40"+"",boxShadow:"0 0 0 1px "+T.red+"15"+", 0 4px 16px "+T.red+"18"+""}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.red,marginBottom:t.feedbackActual?8:0}}>🔁 Te pidieron cambios</div>
                       {t.feedbackActual
-                        ?<div style={{fontSize:13,color:T.text,lineHeight:1.5,background:"rgba(239,68,68,0.08)",borderRadius:7,padding:"10px 12px",borderLeft:"3px solid #ef4444"}}>{t.feedbackActual}</div>
+                        ?<div style={{fontSize:13,color:T.text,lineHeight:1.5,background:"rgba(239,68,68,0.08)",borderRadius:7,padding:"10px 12px",borderLeft:"3px solid "+T.red+""}}>{t.feedbackActual}</div>
                         :<div style={{fontSize:12,color:T.textMd}}>Revisá el trabajo y subí una nueva versión cuando esté lista.</div>
                       }
                     </div>
                   )}
                   {isAprobado&&(
-                    <div style={{marginBottom:16,padding:"12px 14px",background:"linear-gradient(135deg,#22c55e14,#22c55e08)",borderRadius:10,border:"1.5px solid #22c55e40",boxShadow:"0 0 0 1px #22c55e15, 0 4px 16px #22c55e18"}}>
-                      <div style={{fontSize:13,fontWeight:600,color:"#22c55e"}}>✅ ¡Trabajo aprobado! Excelente trabajo.</div>
+                    <div style={{marginBottom:16,padding:"12px 14px",background:"linear-gradient(135deg,"+T.green+"14"+","+T.green+"08"+")",borderRadius:10,border:"1.5px solid "+T.green+"40"+"",boxShadow:"0 0 0 1px "+T.green+"15"+", 0 4px 16px "+T.green+"18"+""}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.green}}>✅ ¡Trabajo aprobado! Excelente trabajo.</div>
                     </div>
                   )}
                   {t.estado==="entregado"&&(
-                    <div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,#f9731614,#f9731608)",borderRadius:10,border:"1.5px solid #f9731640",boxShadow:"0 0 0 1px #f9731615, 0 4px 16px #f9731618"}}>
-                      <div style={{fontSize:12,color:"#f97316"}}>📦 Entrega recibida — esperando revisión del equipo.</div>
+                    <div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,"+T.orange+"14"+","+T.orange+"08"+")",borderRadius:10,border:"1.5px solid "+T.orange+"40"+"",boxShadow:"0 0 0 1px "+T.orange+"15"+", 0 4px 16px "+T.orange+"18"+""}}>
+                      <div style={{fontSize:12,color:T.orange}}>📦 Entrega recibida — esperando revisión del equipo.</div>
                     </div>
                   )}
 
@@ -14187,10 +14189,10 @@ function ColaboradorPublicView({T, token}) {
                     <div style={{marginBottom:14}}>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
                         <div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:"0.06em"}}>Brief / Instrucciones</div>
-                        {!t.leidoAt&&<AsyncButton onClick={()=>marcarLeido(t._id)} style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:"#22c55e20",color:"#22c55e",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>👁 Marcar como leído</AsyncButton>}
+                        {!t.leidoAt&&<AsyncButton onClick={()=>marcarLeido(t._id)} style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:T.green+"20",color:T.green,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>👁 Marcar como leído</AsyncButton>}
                       </div>
                       <div style={{fontSize:13,color:T.text,lineHeight:1.6,whiteSpace:"pre-wrap",background:T.surface,borderRadius:8,padding:"12px 14px"}}>{t.brief}</div>
-                      {t.leidoAt&&<div style={{fontSize:11,color:"#22c55e",marginTop:5}}>✓ Leído el {fmtDate(t.leidoAt)}</div>}
+                      {t.leidoAt&&<div style={{fontSize:11,color:T.green,marginTop:5}}>✓ Leído el {fmtDate(t.leidoAt)}</div>}
                     </div>
                   )}
                   {linksNorm.length>0&&(
@@ -14278,8 +14280,8 @@ function ColaboradorPublicView({T, token}) {
                                 </div>
                                 {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{del.nota}</div>}
                                 {del.feedbackRecibido&&(
-                                  <div style={{marginTop:8,padding:"8px 10px",background:"#ef444412",borderLeft:"3px solid #ef4444",borderRadius:4,fontSize:12,color:T.text}}>
-                                    <div style={{fontSize:10,color:"#ef4444",fontWeight:600,marginBottom:2}}>Feedback recibido:</div>
+                                  <div style={{marginTop:8,padding:"8px 10px",background:T.red+"12",borderLeft:"3px solid "+T.red+"",borderRadius:4,fontSize:12,color:T.text}}>
+                                    <div style={{fontSize:10,color:T.red,fontWeight:600,marginBottom:2}}>Feedback recibido:</div>
                                     {del.feedbackRecibido}
                                   </div>
                                 )}
@@ -14295,7 +14297,7 @@ function ColaboradorPublicView({T, token}) {
                                       setData(prev=>({...prev,tareas:prev.tareas.map(x=>x._id===t._id?{...x,deliverables:d.deliverables,estado:d.estado,feedbackActual:null}:x)}));
                                       setEntregaEnviada(prev=>({...prev,[t._id]:null}));
                                       toast("Entrega eliminada ↩","warning");
-                                    }} style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                    }} style={{fontSize:12,padding:"5px 12px",borderRadius:8,background:T.red+"08",color:T.red,border:"1px solid "+T.red+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                                       Eliminar
                                     </AsyncButton>
                                   </div>
@@ -14322,14 +14324,14 @@ function ColaboradorPublicView({T, token}) {
                         <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:8,background:T.surface,borderRadius:10,border:`1px solid ${T.borderL}`,overflow:"hidden"}}>
                           {STEPS.map((step,i)=>{
                             const active=step.isAction?!!showEntregarForm[t._id]:currentStep===step.id;
-                            const stepColor=step.id==="entregar"?"#22c55e":step.id==="en_proceso"?"#3b82f6":"#d97706";
+                            const stepColor=step.id==="entregar"?T.green:step.id==="en_proceso"?T.blue:T.yellow;
                             return (
                               <AsyncButton key={step.id}
                                 onClick={()=>{
                                   if(step.isAction){setShowEntregarForm(p=>({...p,[t._id]:!p[t._id]}));}
                                   else if(!active){publicSetEstado(t._id, step.estado, step.progresoLabel);}
                                 }}
-                                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"12px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="entregar"?"#22c55e18":step.id==="en_proceso"?"#3b82f615":"#d9770615":"transparent",transition:"background 0.18s, opacity 0.18s",cursor:active&&!step.isAction?"default":"pointer",border:"none",borderRadius:0,outline:"none",opacity:active?1:0.55,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"12px 4px",borderRight:i<STEPS.length-1?`1px solid ${T.border}`:"none",background:active?step.id==="entregar"?T.green+"18":step.id==="en_proceso"?T.blue+"15":T.yellow+"15":"transparent",transition:"background 0.18s, opacity 0.18s",cursor:active&&!step.isAction?"default":"pointer",border:"none",borderRadius:0,outline:"none",opacity:active?1:0.55,fontFamily:"'Inter',system-ui,sans-serif"}}>
                                 <span style={{fontSize:20,marginBottom:3}}>{step.icon}</span>
                                 <span style={{fontSize:10,fontWeight:active?700:500,color:active?stepColor:T.textSm,textAlign:"center",lineHeight:1.3}}>{step.label}</span>
                                 {active&&<div style={{width:20,height:2.5,borderRadius:2,background:stepColor,marginTop:5}}/>}
@@ -14339,28 +14341,28 @@ function ColaboradorPublicView({T, token}) {
                         </div>
                         {currentStep==="bloqueada"?(
                           <AsyncButton onClick={()=>publicSetEstado(t._id,"en_proceso","En proceso")}
-                            style={{width:"100%",fontSize:12,padding:"7px 0",borderRadius:8,background:"#3b82f612",color:"#3b82f6",border:"1px solid #3b82f630",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,textAlign:"center",display:"block",boxSizing:"border-box"}}>
+                            style={{width:"100%",fontSize:12,padding:"7px 0",borderRadius:8,background:T.blue+"12",color:T.blue,border:"1px solid "+T.blue+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,textAlign:"center",display:"block",boxSizing:"border-box"}}>
                             🔄 Retomé el trabajo
                           </AsyncButton>
                         ):(
                           <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:!p[t._id]}))}
-                            style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:8,border:"1px solid #ef444430",background:"#ef44440a",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box",letterSpacing:"0.01em"}}>
+                            style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:8,border:"1px solid "+T.red+"30"+"",background:T.red+"0a",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box",letterSpacing:"0.01em"}}>
                             🚫 Estoy bloqueado
                           </button>
                         )}
                         {showBloqueo[t._id]&&currentStep!=="bloqueada"&&(
-                          <div style={{marginTop:8,background:"linear-gradient(135deg,#ef444412,#ef444408)",borderRadius:10,padding:"12px",border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444414"}}>
-                            <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:0.7}}>(el equipo va a ver esto)</span></div>
+                          <div style={{marginTop:8,background:"linear-gradient(135deg,"+T.red+"12"+","+T.red+"08"+")",borderRadius:10,padding:"12px",border:"1.5px solid "+T.red+"40"+"",boxShadow:"0 0 0 1px "+T.red+"15"+", 0 4px 16px "+T.red+"14"+""}}>
+                            <div style={{fontSize:12,color:T.red,fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:0.7}}>(el equipo va a ver esto)</span></div>
                             <textarea value={bloqueoMotivo[t._id]||""} onChange={e=>setBloqueoMotivo(p=>({...p,[t._id]:e.target.value}))}
                               placeholder="Ej: No tengo acceso al Drive, falta el logo en alta resolución..."
-                              style={{...iS,fontSize:12,width:"100%",minHeight:55,resize:"none",marginBottom:8,borderColor:"#ef444444"}}/>
+                              style={{...iS,fontSize:12,width:"100%",minHeight:55,resize:"none",marginBottom:8,borderColor:T.red+"44"}}/>
                             <div style={{display:"flex",gap:7}}>
                               <AsyncButton onClick={async()=>{
                                 const motivo=(bloqueoMotivo[t._id]||"").trim();
                                 if(!motivo)return appAlert("Contanos qué te está frenando para poder ayudarte.");
                                 await publicSetEstado(t._id,"bloqueada","",motivo);
                                 setShowBloqueo(p=>({...p,[t._id]:false}));
-                              }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:"#ef4444",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                              }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:T.red,color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
                                 Avisar al equipo
                               </AsyncButton>
                               <button onClick={()=>setShowBloqueo(p=>({...p,[t._id]:false}))} style={{fontSize:12,padding:"7px 12px",borderRadius:8,background:"transparent",color:T.textMd,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cancelar</button>
@@ -14368,9 +14370,9 @@ function ColaboradorPublicView({T, token}) {
                           </div>
                         )}
                         {currentStep==="bloqueada"&&(
-                          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:10,border:"1.5px solid #ef444440",boxShadow:"0 0 0 1px #ef444415, 0 4px 16px #ef444414"}}>
+                          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,"+T.red+"14"+","+T.red+"08"+")",borderRadius:10,border:"1.5px solid "+T.red+"40"+"",boxShadow:"0 0 0 1px "+T.red+"15"+", 0 4px 16px "+T.red+"14"+""}}>
                             <span style={{fontSize:18}}>🚫</span>
-                            <div style={{flex:1,fontSize:12,color:"#ef4444",fontWeight:600}}>Bloqueado — el equipo ya fue notificado</div>
+                            <div style={{flex:1,fontSize:12,color:T.red,fontWeight:600}}>Bloqueado — el equipo ya fue notificado</div>
                           </div>
                         )}
                         <div style={{marginTop:10}}>
@@ -14392,7 +14394,7 @@ function ColaboradorPublicView({T, token}) {
                     );
                   })()}
                   {!isAprobado&&showEntregarForm[t._id]&&(
-                    <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?"#ef444440":T.borderL}`,marginBottom:14}}>
+                    <div style={{background:T.surface,borderRadius:10,padding:"16px",border:`1px solid ${isRevision?T.red+"40":T.borderL}`,marginBottom:14}}>
                       {lastEntregaJustSent?(
                         <div style={{textAlign:"center"}}>
                           <div style={{fontSize:32,marginBottom:8}}>{lastEntregaJustSent.esFinal===false?"📦":"🎉"}</div>
@@ -14401,7 +14403,7 @@ function ColaboradorPublicView({T, token}) {
                           <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
                             <button onClick={()=>setEntregaEnviada(prev=>({...prev,[t._id]:null}))} style={{...BtnSecondary(T),fontSize:12}}>+ Subir otra entrega</button>
                             <a href={`https://wa.me/${adminWa?adminWa.replace(/\D/g,""):""}?text=${encodeURIComponent(`Hola! Acabo de subir mi entrega para "${t.titulo}". Por favor revisala cuando puedas 👍`)}`} target="_blank" rel="noreferrer"
-                              style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5,color:"#22c55e",border:"1px solid #22c55e44"}}>
+                              style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:5,color:T.green,border:"1px solid "+T.green+"44"+""}}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                               Avisar por WhatsApp{adminWa?"":" →"}
                             </a>
@@ -14423,11 +14425,11 @@ function ColaboradorPublicView({T, token}) {
                             style={{...iS,fontSize:12,width:"100%",minHeight:50,resize:"vertical",marginBottom:10}}/>
                           <div style={{display:"flex",gap:8,alignItems:"center"}}>
                             <AsyncButton onClick={()=>submitEntrega(t._id,false)}
-                              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px 10px",borderRadius:10,border:"1.5px solid #f9731650",background:"#f9731612",color:"#fb923c",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
+                              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px 10px",borderRadius:10,border:"1.5px solid "+T.orange+"50"+"",background:T.orange+"12",color:T.orange,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
                               📦 Subir parcial
                             </AsyncButton>
                             <AsyncButton onClick={()=>submitEntrega(t._id,true)}
-                              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px 10px",borderRadius:10,border:"1.5px solid #22c55e50",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
+                              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px 10px",borderRadius:10,border:"1.5px solid "+T.green+"50"+"",background:T.green,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"opacity 0.15s"}}>
                               ✅ Entrega final
                             </AsyncButton>
                             <button onClick={()=>setShowEntregarForm(p=>({...p,[t._id]:false}))}
@@ -14471,10 +14473,10 @@ function ColaboradorPublicView({T, token}) {
                           <div style={{width:28,height:28,borderRadius:"50%",background:isMe?"#6366f120":"rgba(255,255,255,0.1)",border:`1px solid ${isMe?"#6366f140":T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:isMe?"#6366f1":T.textMd,flexShrink:0}}>
                             {isMe?c.autor[0]?.toUpperCase():"M"}
                           </div>
-                          <div style={{maxWidth:"75%",background:isMe?"#6366f112":T.surface,borderRadius:10,padding:"8px 12px",border:`1px solid ${isMe?isConsulta?"#3b82f640":"#6366f128":T.borderL}`}}>
+                          <div style={{maxWidth:"75%",background:isMe?"#6366f112":T.surface,borderRadius:10,padding:"8px 12px",border:`1px solid ${isMe?isConsulta?T.blue+"40":"#6366f128":T.borderL}`}}>
                             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
                               <span style={{fontSize:10,color:T.textSm}}>{isMe?"Vos":c.autor} · {fmtDate(c.fecha)}</span>
-                              {isConsulta&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:"#3b82f620",color:"#3b82f6",fontWeight:600}}>CONSULTA</span>}
+                              {isConsulta&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:T.blue+"20",color:T.blue,fontWeight:600}}>CONSULTA</span>}
                             </div>
                             <div style={{fontSize:13,color:T.text,lineHeight:1.4}}>{c.texto}</div>
                           </div>
@@ -14492,17 +14494,17 @@ function ColaboradorPublicView({T, token}) {
                     </div>
                     <div style={{marginTop:10}}>
                       {!showConsulta[t._id]?(
-                        <button onClick={()=>setShowConsulta(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:12,width:"100%",padding:"8px",textAlign:"center",color:"#3b82f6",border:`1px solid #3b82f630`}}>
+                        <button onClick={()=>setShowConsulta(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:12,width:"100%",padding:"8px",textAlign:"center",color:T.blue,border:`1px solid ${T.blue}30`}}>
                           ❓ Tengo una consulta sobre esta tarea
                         </button>
                       ):(
-                        <div style={{background:"#eff6ff",borderRadius:10,padding:"12px",border:"1px solid #3b82f630",marginTop:4}}>
-                          <div style={{fontSize:12,fontWeight:600,color:"#3b82f6",marginBottom:8}}>❓ Consulta — se enviará como notificación al equipo</div>
+                        <div style={{background:"#eff6ff",borderRadius:10,padding:"12px",border:"1px solid "+T.blue+"30"+"",marginTop:4}}>
+                          <div style={{fontSize:12,fontWeight:600,color:T.blue,marginBottom:8}}>❓ Consulta — se enviará como notificación al equipo</div>
                           <textarea value={consultaText[t._id]||""} onChange={e=>setConsultaText(prev=>({...prev,[t._id]:e.target.value}))}
                             placeholder="Escribí tu consulta detallada..."
                             style={{...iS,fontSize:13,width:"100%",minHeight:60,resize:"vertical",marginBottom:8}}/>
                           <div style={{display:"flex",gap:6}}>
-                            <AsyncButton onClick={()=>submitConsulta(t._id)} style={{...BtnPrimary(T),fontSize:12,background:"#3b82f6"}}>Enviar consulta</AsyncButton>
+                            <AsyncButton onClick={()=>submitConsulta(t._id)} style={{...BtnPrimary(T),fontSize:12,background:T.blue}}>Enviar consulta</AsyncButton>
                             <button onClick={()=>setShowConsulta(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:12}}>Cancelar</button>
                           </div>
                         </div>
@@ -14536,7 +14538,7 @@ function ColaboradorPublicView({T, token}) {
                   const lastDel=(t.deliverables||[]).slice(-1)[0];
                   const linksNorm=normalizeLinks(t.links);
                   return(
-                    <div key={t._id} style={{background:T.card,border:`1px solid #22c55e30`,borderRadius:10,padding:"12px 14px"}}>
+                    <div key={t._id} style={{background:T.card,border:`1px solid ${T.green}30`,borderRadius:10,padding:"12px 14px"}}>
                       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:lastDel||linksNorm.length?10:0}}>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
@@ -14545,7 +14547,7 @@ function ColaboradorPublicView({T, token}) {
                           </div>
                           {t.updatedAt&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>Completada el {fmtDate(t.updatedAt)}</div>}
                         </div>
-                        <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#22c55e18",color:"#22c55e",border:"1px solid #22c55e30",flexShrink:0}}>✅ Aprobada</span>
+                        <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.green+"18",color:T.green,border:"1px solid "+T.green+"30"+"",flexShrink:0}}>✅ Aprobada</span>
                       </div>
                       {(lastDel||linksNorm.length>0)&&(
                         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
@@ -14583,7 +14585,7 @@ function ColaboradorPublicView({T, token}) {
               </div>
             </div>
             {equipoTareas.map(({nombre,email,tareas:trs})=>{
-              const ECOLOR={pendiente:"#6b7280",en_proceso:"#f97316",bloqueada:"#ef4444",entregado:"#eab308",aprobado:"#22c55e",revision:"#ef4444"};
+              const ECOLOR={pendiente:T.textMd,en_proceso:T.orange,bloqueada:T.red,entregado:T.yellow,aprobado:T.green,revision:T.red};
               const ELABEL={pendiente:"Pendiente",en_proceso:"En proceso",bloqueada:"Bloqueado",entregado:"Entregado",aprobado:"Aprobado",revision:"En revisión"};
               const total=trs.length;
               const aprob=trs.filter(t=>t.estado==="aprobado").length;
@@ -14604,7 +14606,7 @@ function ColaboradorPublicView({T, token}) {
                     </div>
                     {total>0&&(
                       <div style={{width:48,height:4,borderRadius:4,background:T.surface,overflow:"hidden",flexShrink:0}}>
-                        <div style={{height:"100%",width:`${Math.round(aprob/total*100)}%`,background:"#22c55e",borderRadius:4,transition:"width 0.4s"}}/>
+                        <div style={{height:"100%",width:`${Math.round(aprob/total*100)}%`,background:T.green,borderRadius:4,transition:"width 0.4s"}}/>
                       </div>
                     )}
                   </div>
@@ -14612,20 +14614,20 @@ function ColaboradorPublicView({T, token}) {
                   <div style={{padding:"8px 14px 10px"}}>
                     {sorted.length===0&&<div style={{fontSize:11,color:T.textSm,padding:"6px 0"}}>Sin tareas asignadas</div>}
                     {sorted.map(t=>{
-                      const col=ECOLOR[t.estado]||"#6b7280";
+                      const col=ECOLOR[t.estado]||T.textMd;
                       const lbl=ELABEL[t.estado]||t.estado;
                       const daysLeft=t.deadline?Math.round((new Date(t.deadline)-new Date())/(1000*60*60*24)):null;
                       return (
                         <div key={t._id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`}}>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:12,fontWeight:500,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.titulo}</div>
-                            {t.deadline&&<div style={{fontSize:10,color:daysLeft!==null&&daysLeft<0?"#ef4444":daysLeft!==null&&daysLeft<=2?"#f97316":T.textSm,marginTop:1}}>
+                            {t.deadline&&<div style={{fontSize:10,color:daysLeft!==null&&daysLeft<0?T.red:daysLeft!==null&&daysLeft<=2?T.orange:T.textSm,marginTop:1}}>
                               📅 {daysLeft===null?"":daysLeft<0?`Vencida hace ${Math.abs(daysLeft)}d`:daysLeft===0?"Hoy":`${daysLeft}d`}
                             </div>}
                           </div>
                           <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${col}18`,color:col,border:`1px solid ${col}44`,flexShrink:0,whiteSpace:"nowrap"}}>{lbl}</span>
-                          {t.deadline&&daysUntil(t.deadline)!==null&&daysUntil(t.deadline)<=1&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",flexShrink:0}}>🔴</span>}
-                          {(t.correcciones||0)>0&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444418",borderRadius:4,padding:"1px 4px",flexShrink:0}}>{t.correcciones}ª corr.</span>}
+                          {t.deadline&&daysUntil(t.deadline)!==null&&daysUntil(t.deadline)<=1&&<span style={{fontSize:9,fontWeight:700,color:T.red,flexShrink:0}}>🔴</span>}
+                          {(t.correcciones||0)>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:4,padding:"1px 4px",flexShrink:0}}>{t.correcciones}ª corr.</span>}
                         </div>
                       );
                     })}
@@ -14638,7 +14640,7 @@ function ColaboradorPublicView({T, token}) {
 
         {/* ── SECCIÓN REFERENCIAS ── */}
         {referencias.length>0&&(()=>{
-          const TP={meta:{icon:"📊",color:"#1877f2"},instagram:{icon:"📷",color:"#e1306c"},tiktok:{icon:"🎵",color:"#111"},web:{icon:"🌐",color:"#6366f1"},drive:{icon:"📁",color:"#34a853"},youtube:{icon:"▶️",color:"#ff0000"},otro:{icon:"🔗",color:"#6b7280"}};
+          const TP={meta:{icon:"📊",color:"#1877f2"},instagram:{icon:"📷",color:"#e1306c"},tiktok:{icon:"🎵",color:"#111"},web:{icon:"🌐",color:"#6366f1"},drive:{icon:"📁",color:"#34a853"},youtube:{icon:"▶️",color:"#ff0000"},otro:{icon:"🔗",color:T.textMd}};
           return (
             <div style={{marginTop:28}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(20,184,166,0.13),rgba(20,184,166,0.06))",borderRadius:12,border:"1.5px solid rgba(20,184,166,0.3)"}}>
@@ -14702,7 +14704,7 @@ function ColaboradorPublicView({T, token}) {
               </div>
             )}
             {creativos.length>0&&(()=>{
-              const CEST_PUB={idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},"brief-enviado":{l:"Brief enviado",c:"#3b82f6",bg:"#3b82f615"},"en-produccion":{l:"En producción",c:"#f97316",bg:"#f9731615"},entregado:{l:"Entregado",c:"#d97706",bg:"#d9770615"},publicado:{l:"Publicado",c:"#22c55e",bg:"#22c55e15"},archivado:{l:"Archivado",c:"#9ca3af",bg:"#9ca3af10"}};
+              const CEST_PUB={idea:{l:"Idea",c:T.textMd,bg:T.textMd+"15"},"brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blue+"15"},"en-produccion":{l:"En producción",c:T.orange,bg:T.orange+"15"},entregado:{l:"Entregado",c:T.yellow,bg:T.yellow+"15"},publicado:{l:"Publicado",c:T.green,bg:T.green+"15"},archivado:{l:"Archivado",c:T.textSm,bg:T.textSm+"10"}};
               const activeGroups=Object.entries(CEST_PUB).map(([estado,meta])=>({estado,meta,items:creativos.filter(c=>c.estado===estado)})).filter(g=>g.items.length>0);
               return (
                 <div style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -14731,7 +14733,7 @@ function ColaboradorPublicView({T, token}) {
                                     {tanda&&<span>· 📦 {tanda.nombre}</span>}
                                   </div>
                                 </div>
-                                {c.pagado&&<span style={{fontSize:11,color:"#22c55e",fontWeight:600,flexShrink:0}}>✓ Pago</span>}
+                                {c.pagado&&<span style={{fontSize:11,color:T.green,fontWeight:600,flexShrink:0}}>✓ Pago</span>}
                               </div>
                             </div>
                           );
@@ -14807,21 +14809,21 @@ function ColaboradorBoardView({T, boardToken}) {
   }
 
   const ESTADOS={
-    pendiente: {label:"Pendiente",color:"#d97706",bg:"#d9770620",icon:"⏳"},
-    en_proceso:{label:"En proceso",color:"#3b82f6",bg:"#3b82f620",icon:"🔄"},
-    bloqueada: {label:"Bloqueada",color:"#6b7280",bg:"#6b728018",icon:"🚫"},
-    revision:  {label:"A revisar",color:"#ef4444",bg:"#ef444420",icon:"🔁"},
-    entregado: {label:"Entregado",color:"#f97316",bg:"#f9731620",icon:"📦"},
-    aprobado:  {label:"Aprobado",color:"#22c55e",bg:"#22c55e20",icon:"✅"},
+    pendiente: {label:"Pendiente",color:T.yellow,bg:T.yellow+"20",icon:"⏳"},
+    en_proceso:{label:"En proceso",color:T.blue,bg:T.blue+"20",icon:"🔄"},
+    bloqueada: {label:"Bloqueada",color:T.textMd,bg:T.textMd+"18",icon:"🚫"},
+    revision:  {label:"A revisar",color:T.red,bg:T.red+"20",icon:"🔁"},
+    entregado: {label:"Entregado",color:T.orange,bg:T.orange+"20",icon:"📦"},
+    aprobado:  {label:"Aprobado",color:T.green,bg:T.green+"20",icon:"✅"},
   };
   const KANBAN=[
-    {id:"pendiente",label:"Pendiente",icon:"⏳",color:"#d97706"},
-    {id:"en_proceso",label:"En proceso",icon:"🔄",color:"#3b82f6"},
-    {id:"bloqueada",label:"Bloqueada",icon:"🚫",color:"#6b7280"},
-    {id:"revision",label:"Para revisar",icon:"🔁",color:"#ef4444"},
-    {id:"entregado",label:"Entregado",icon:"📦",color:"#f97316"},
+    {id:"pendiente",label:"Pendiente",icon:"⏳",color:T.yellow},
+    {id:"en_proceso",label:"En proceso",icon:"🔄",color:T.blue},
+    {id:"bloqueada",label:"Bloqueada",icon:"🚫",color:T.textMd},
+    {id:"revision",label:"Para revisar",icon:"🔁",color:T.red},
+    {id:"entregado",label:"Entregado",icon:"📦",color:T.orange},
   ];
-  const AVATAR_COLORS=["#6366f1","#ec4899","#f97316","#22c55e","#3b82f6","#a855f7","#14b8a6","#0ea5e9"];
+  const AVATAR_COLORS=["#6366f1","#ec4899",T.orange,T.green,T.blue,"#a855f7","#14b8a6","#0ea5e9"];
 
   if(loading) return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -14851,10 +14853,10 @@ function ColaboradorBoardView({T, boardToken}) {
     if(!d) return null;
     const date=d._seconds?new Date(d._seconds*1000):d?.toDate?.()||new Date(d);
     const diff=Math.ceil((date-new Date())/86400000);
-    if(diff<0) return{label:`Vencida (${Math.abs(diff)}d)`,color:"#ef4444"};
-    if(diff===0) return{label:"Hoy",color:"#f97316"};
-    if(diff===1) return{label:"Mañana",color:"#f97316"};
-    if(diff<=3) return{label:`${diff}d`,color:"#d97706"};
+    if(diff<0) return{label:`Vencida (${Math.abs(diff)}d)`,color:T.red};
+    if(diff===0) return{label:"Hoy",color:T.orange};
+    if(diff===1) return{label:"Mañana",color:T.orange};
+    if(diff<=3) return{label:`${diff}d`,color:T.yellow};
     return{label:date.toLocaleDateString("es-AR",{day:"2-digit",month:"short"}),color:T.textSm};
   }
 
@@ -14865,7 +14867,7 @@ function ColaboradorBoardView({T, boardToken}) {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:T.bg}}>
       {/* Toast */}
       {toastMsg&&(
-        <div style={{position:"fixed",top:16,right:16,zIndex:9999,padding:"10px 16px",background:toastMsg.type==="error"?"#ef4444":"#22c55e",color:"#fff",borderRadius:10,fontSize:13,fontWeight:600,boxShadow:"0 4px 20px rgba(0,0,0,0.2)",fontFamily:"'Inter',system-ui,sans-serif",maxWidth:320}}>
+        <div style={{position:"fixed",top:16,right:16,zIndex:9999,padding:"10px 16px",background:toastMsg.type==="error"?T.red:T.green,color:"#fff",borderRadius:10,fontSize:13,fontWeight:600,boxShadow:"0 4px 20px rgba(0,0,0,0.2)",fontFamily:"'Inter',system-ui,sans-serif",maxWidth:320}}>
           {toastMsg.msg}
         </div>
       )}
@@ -14925,7 +14927,7 @@ function ColaboradorBoardView({T, boardToken}) {
                       <div key={t._id} onClick={()=>{setSelectedTask(t);setCommentText("");setEntregaLink("");setEntregaLabel("");setEntregaNota("");setShowEntregaForm(false);}}
                         style={{background:T.card,border:`1.5px solid ${mine?T.accent+"60":T.border}`,borderRadius:10,padding:"10px 11px",cursor:"pointer",transition:"box-shadow 0.12s",position:"relative"}}>
                         {mine&&<div style={{position:"absolute",top:0,left:0,width:3,bottom:0,borderRadius:"10px 0 0 10px",background:T.accent}}/>}
-                        {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{display:"inline-flex",alignItems:"center",gap:3,background:"#ef444420",color:"#ef4444",borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginBottom:5}}>🔴 URGENTE</div>):null;})()}
+                        {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{display:"inline-flex",alignItems:"center",gap:3,background:T.red+"20",color:T.red,borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginBottom:5}}>🔴 URGENTE</div>):null;})()}
                         <div style={{fontSize:12,fontWeight:600,color:T.text,lineHeight:1.4,marginBottom:7,paddingLeft:mine?6:0}}>{t.titulo}</div>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4,paddingLeft:mine?6:0}}>
                           <div style={{display:"flex"}}>
@@ -14963,7 +14965,7 @@ function ColaboradorBoardView({T, boardToken}) {
               {aprobadasTareas.map(t=>(
                 <div key={t._id} onClick={()=>{setSelectedTask(t);setCommentText("");setShowEntregaForm(false);}}
                   style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
-                  <span style={{fontSize:11,color:"#22c55e"}}>✅</span>
+                  <span style={{fontSize:11,color:T.green}}>✅</span>
                   <span style={{fontSize:12,color:T.textMd,fontWeight:500}}>{t.titulo}</span>
                   {getAssignees(t).map((a,i)=>(
                     <div key={a.email} style={{width:18,height:18,borderRadius:"50%",background:a.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:"#fff"}}>{a.initial}</div>
@@ -15052,7 +15054,7 @@ function ColaboradorBoardView({T, boardToken}) {
                     </div>
                   ))}
                   {dl&&<div style={{padding:"4px 10px",background:dl.color+"20",borderRadius:20,fontSize:12,fontWeight:600,color:dl.color}}>📅 {dl.label}</div>}
-                  {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{padding:"4px 10px",background:"#ef444420",borderRadius:20,fontSize:12,fontWeight:700,color:"#ef4444"}}>🔴 URGENTE</div>):null;})()}
+                  {(()=>{const d=t.deadline?._seconds?new Date(t.deadline._seconds*1000):t.deadline?new Date(t.deadline):null;return d&&Math.ceil((d-new Date())/86400000)<=1?(<div style={{padding:"4px 10px",background:T.red+"20",borderRadius:20,fontSize:12,fontWeight:700,color:T.red}}>🔴 URGENTE</div>):null;})()}
                   {t.tareaNumStr&&<div style={{padding:"4px 10px",background:T.surface,borderRadius:20,fontSize:11,color:T.textSm}}>#{t.tareaNumStr}</div>}
                 </div>
 
@@ -15102,7 +15104,7 @@ function ColaboradorBoardView({T, boardToken}) {
                           </div>
                           {d.nota&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>{d.nota}</div>}
                           {t.feedbackActual&&i===t.deliverables.length-1&&(
-                            <div style={{marginTop:6,padding:"6px 8px",background:"#ef444415",border:"1px solid #ef444430",borderRadius:6,fontSize:11,color:"#ef4444"}}>
+                            <div style={{marginTop:6,padding:"6px 8px",background:T.red+"15",border:"1px solid "+T.red+"30"+"",borderRadius:6,fontSize:11,color:T.red}}>
                               💬 Corrección: {t.feedbackActual}
                             </div>
                           )}
@@ -16081,7 +16083,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         const daysLeft = Math.ceil((exp - Date.now()) / 86400000);
         if (daysLeft > 30) return null;
         const isExpired = daysLeft <= 0;
-        const color = isExpired ? T.red : daysLeft <= 7 ? T.red : (T.yellow||"#eab308");
+        const color = isExpired ? T.red : daysLeft <= 7 ? T.red : (T.yellow||T.yellow);
         const bg = isExpired ? T.redBg : daysLeft <= 7 ? T.redBg : (T.yellowBg||T.yellow+"18");
         return (
           <div style={{background:bg,borderBottom:`1px solid ${color}44`,padding:"10px 24px",display:"flex",alignItems:"center",gap:10,fontFamily:"'Inter',system-ui,sans-serif"}}>
@@ -16203,7 +16205,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     value={dashboardStats?"$ "+dashboardStats.total_facturado.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
                     sub="IVA incluido"/>
                   {esRI&&(
-                    <KPI T={T} icon="📊" label={`IVA débito · ${mesActual}`} color={T.blue||"#3b82f6"}
+                    <KPI T={T} icon="📊" label={`IVA débito · ${mesActual}`} color={T.blue||T.blue}
                       value={dashboardStats?"$ "+dashboardStats.iva_debito.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0}):"$ 0"}
                       sub="Facturas A y B"/>
                   )}
@@ -16217,7 +16219,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const pendTotal=tnData?Object.values(tnData.ordenes||{}).filter(o=>!o.facturada).reduce((a,o)=>a+(o.total||0),0):null;
                     return (
                       <KPI T={T} icon="⏳" label="Sin facturar ahora"
-                        color={pendCount>0?(T.yellow||"#eab308"):T.textSm}
+                        color={pendCount>0?(T.yellow||T.yellow):T.textSm}
                         accent={pendCount>0}
                         value={tnData?String(pendCount):"—"}
                         sub={pendTotal!=null&&pendTotal>0?`$ ${pendTotal.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})} · Tocá para facturar`:"Cargá Pendientes para ver"}
@@ -16306,19 +16308,19 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{flex:1,minWidth:130}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
                             <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Ventas facturadas</span>
-                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>{_billed.length}<span style={{color:T.textSm,fontWeight:400}}>/{_mesTotal}</span> <span style={{color:_pctOrd>=80?T.green:_pctOrd>=50?"#f59e0b":T.textMd,fontWeight:700}}>{_pctOrd}%</span></span>
+                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>{_billed.length}<span style={{color:T.textSm,fontWeight:400}}>/{_mesTotal}</span> <span style={{color:_pctOrd>=80?T.green:_pctOrd>=50?T.yellow:T.textMd,fontWeight:700}}>{_pctOrd}%</span></span>
                           </div>
                           <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${_pctOrd}%`,background:_pctOrd>=80?T.green:_pctOrd>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
+                            <div style={{height:"100%",width:`${_pctOrd}%`,background:_pctOrd>=80?T.green:_pctOrd>=50?T.yellow:T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
                           </div>
                         </div>
                         <div style={{flex:2,minWidth:200}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
                             <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Monto facturado</span>
-                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>$ {_billedMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}<span style={{color:T.textSm,fontWeight:400}}> / $ {_mesMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span> <span style={{color:_pctMonto>=80?T.green:_pctMonto>=50?"#f59e0b":T.textMd,fontWeight:700}}>{_pctMonto}%</span></span>
+                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>$ {_billedMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}<span style={{color:T.textSm,fontWeight:400}}> / $ {_mesMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span> <span style={{color:_pctMonto>=80?T.green:_pctMonto>=50?T.yellow:T.textMd,fontWeight:700}}>{_pctMonto}%</span></span>
                           </div>
                           <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${_pctMonto}%`,background:_pctMonto>=80?T.green:_pctMonto>=50?"#f59e0b":T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
+                            <div style={{height:"100%",width:`${_pctMonto}%`,background:_pctMonto>=80?T.green:_pctMonto>=50?T.yellow:T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
                           </div>
                         </div>
                       </div>
@@ -16443,7 +16445,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   ) : !tnData?.connected ? (
                     <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:8,display:"flex",alignItems:"flex-start",gap:10}}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.yellow||"#eab308"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.yellow||T.yellow} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                       No tenés ninguna integración conectada todavía. Andá a la configuración de la app para conectar Tienda Nube, Shopify o Mercado Libre (o usá subir archivo manual abajo).
                     </div>
                   ) : Object.keys(tnData.ordenes||{}).length === 0 ? (
@@ -16591,7 +16593,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <span style={{fontSize:10,color:T.textSm,minWidth:68}}>{fechaHora}</span>
                                 <span style={{fontSize:10,padding:"2px 8px",borderRadius:5,background:badgeColor(plat)+"1a",color:plat==="mercadolibre"?"#92620c":plat==="shopify"?"#3b6b10":badgeColor(plat),fontWeight:700,border:`1px solid ${badgeColor(plat)}44`,letterSpacing:0.2,flexShrink:0,whiteSpace:"nowrap"}}>{label}</span>
                                 {wasAnulada&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"22",color:T.textSm,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>ANULADA</span>}
-                                {o.estado_pago==="authorized"&&!billed&&<span title="Pago autorizado por MercadoPago — aún no liquidado. Podés facturarla igual." style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:"#f59e0b18",color:"#f59e0b",fontWeight:700,whiteSpace:"nowrap",flexShrink:0,border:"1px solid #f59e0b33"}}>AUTORIZ.</span>}
+                                {o.estado_pago==="authorized"&&!billed&&<span title="Pago autorizado por MercadoPago — aún no liquidado. Podés facturarla igual." style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.yellow+"18",color:T.yellow,fontWeight:700,whiteSpace:"nowrap",flexShrink:0,border:"1px solid "+T.yellow+"33"+""}}>AUTORIZ.</span>}
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
                                   <div style={{fontSize:12,fontWeight:600,color:billed?T.green:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
                                   <div style={{fontSize:10,color:T.textSm}}>
@@ -16641,7 +16643,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               </>
                             ) : "Ninguna seleccionada"}
                           </div>
-                          <button onClick={facturarSeleccionadas} disabled={selectedCount===0||tnLoading} style={{background:"linear-gradient(135deg,#16a34a,#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:(selectedCount===0||tnLoading)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(selectedCount===0||tnLoading)?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:(selectedCount>0&&!tnLoading)?"0 4px 14px #16a34a40":"none",transition:"all 0.15s"}}>
+                          <button onClick={facturarSeleccionadas} disabled={selectedCount===0||tnLoading} style={{background:"linear-gradient(135deg,"+T.green+",#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:(selectedCount===0||tnLoading)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(selectedCount===0||tnLoading)?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:(selectedCount>0&&!tnLoading)?"0 4px 14px "+T.green+"40"+"":"none",transition:"all 0.15s"}}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
                             Facturar {selectedCount>0?selectedCount:""} {selectedCount>0?"→":""}
                           </button>
@@ -16668,7 +16670,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <>
                           <div style={{fontSize:13,color:T.textMd,textAlign:"center"}}>{emitProgress.current} de {emitProgress.total}</div>
                           <div style={{width:"100%",height:8,background:T.bg,borderRadius:99,overflow:"hidden"}}>
-                            <div style={{height:"100%",background:"#16a34a",borderRadius:99,transition:"width 0.3s ease",width:`${Math.round((emitProgress.current/emitProgress.total)*100)}%`}}/>
+                            <div style={{height:"100%",background:T.green,borderRadius:99,transition:"width 0.3s ease",width:`${Math.round((emitProgress.current/emitProgress.total)*100)}%`}}/>
                           </div>
                           {(emitProgress.ok>0||emitProgress.fail>0)&&<div style={{fontSize:12,color:T.textSm,display:"flex",alignItems:"center",gap:6}}><span style={{color:T.green,fontWeight:700}}>{emitProgress.ok} ok</span><span style={{color:T.textSm}}>·</span><span style={{color:T.red,fontWeight:700}}>{emitProgress.fail} errores</span></div>}
                         </>
@@ -16708,7 +16710,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                       <div style={{display:"flex",gap:10,marginTop:4}}>
                         {pdfs.length>0&&(
-                          <button onClick={downloadCurrentBatchZip} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 18px",background:"#16a34a",border:"none",color:"#fff",borderRadius:DS.r.md,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flex:1,boxShadow:"0 4px 14px rgba(22,163,74,0.3)"}}>
+                          <button onClick={downloadCurrentBatchZip} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 18px",background:T.green,border:"none",color:"#fff",borderRadius:DS.r.md,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flex:1,boxShadow:"0 4px 14px rgba(22,163,74,0.3)"}}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                             Descargar PDFs (.zip)
                           </button>
@@ -16778,7 +16780,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                         {/* Punto de venta / régimen IVA (físicos vs digitales exento) */}
                         {pvsDisponibles.length>1 && (
-                          <div style={{padding:"12px 16px",background:T.bg,border:`1px solid ${pvElegido?.exento?(T.yellow||"#eab308")+"66":T.borderL}`,borderRadius:10}}>
+                          <div style={{padding:"12px 16px",background:T.bg,border:`1px solid ${pvElegido?.exento?(T.yellow||T.yellow)+"66":T.borderL}`,borderRadius:10}}>
                             <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                               <span style={{fontSize:11,textTransform:"uppercase",color:T.textSm,fontWeight:700,letterSpacing:0.5,flexShrink:0}}>🧾 Punto de venta</span>
                               <select value={pvElegido?.numero||""} onChange={e=>{const n=parseInt(e.target.value); setPvEmit(pvsDisponibles.find(p=>p.numero===n)||null);}}
@@ -16786,18 +16788,18 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 {pvsDisponibles.map(p=>(<option key={p.numero} value={p.numero}>{p.nombre} · PV {String(p.numero).padStart(5,"0")}{p.exento?" · EXENTO":""}</option>))}
                               </select>
                             </div>
-                            {pvElegido?.exento && <div style={{fontSize:11,color:(T.yellow||"#eab308"),marginTop:6,fontWeight:600}}>⚠ Estas facturas saldrán SIN IVA (operación exenta). Usalo solo para productos digitales/exentos.</div>}
+                            {pvElegido?.exento && <div style={{fontSize:11,color:(T.yellow||T.yellow),marginTop:6,fontWeight:600}}>⚠ Estas facturas saldrán SIN IVA (operación exenta). Usalo solo para productos digitales/exentos.</div>}
                           </div>
                         )}
 
                         {/* Duplicate warning */}
                         {duplicatesInModal&&duplicatesInModal.length>0&&(
-                          <div style={{padding:"12px 14px",background:"#f9731610",border:`1.5px solid #f9731644`,borderRadius:8}}>
-                            <div style={{fontSize:13,fontWeight:700,color:"#f97316",marginBottom:6}}>⚠ {duplicatesInModal.length} órdenes ya fueron facturadas</div>
+                          <div style={{padding:"12px 14px",background:T.orange+"10",border:`1.5px solid ${T.orange}44`,borderRadius:8}}>
+                            <div style={{fontSize:13,fontWeight:700,color:T.orange,marginBottom:6}}>⚠ {duplicatesInModal.length} órdenes ya fueron facturadas</div>
                             <div style={{fontSize:11,color:T.textMd,marginBottom:10}}>
                               {duplicatesInModal.slice(0,3).join(", ")}{duplicatesInModal.length>3?` y ${duplicatesInModal.length-3} más`:""}.
                             </div>
-                            <button onClick={()=>handleEmit(true)} style={{fontSize:12,fontWeight:600,padding:"6px 14px",background:"#f97316",border:"none",color:"#fff",borderRadius:6,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                            <button onClick={()=>handleEmit(true)} style={{fontSize:12,fontWeight:600,padding:"6px 14px",background:T.orange,border:"none",color:"#fff",borderRadius:6,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                               Emitir de todas formas
                             </button>
                           </div>
@@ -16846,7 +16848,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{display:"flex",gap:10}}>
                           <button onClick={closeModal} style={{...BtnSecondary(T),flex:1,justifyContent:"center",fontSize:13,padding:"11px 0"}}>Cancelar</button>
                           <button onClick={()=>handleEmit(false)} disabled={!cuitSel}
-                            style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px 0",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:!cuitSel?"not-allowed":"pointer",background:!cuitSel?"#166534":"#16a34a",color:"#fff",boxShadow:!cuitSel?"none":"0 4px 18px rgba(22,163,74,0.35)",transition:"all 0.15s",opacity:!cuitSel?0.55:1}}>
+                            style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px 0",fontSize:13,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif",borderRadius:DS.r.md,border:"none",cursor:!cuitSel?"not-allowed":"pointer",background:!cuitSel?"#166534":T.green,color:"#fff",boxShadow:!cuitSel?"none":"0 4px 18px rgba(22,163,74,0.35)",transition:"all 0.15s",opacity:!cuitSel?0.55:1}}>
                             🧾 Confirmar y emitir
                           </button>
                         </div>
@@ -16934,7 +16936,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
 
                     <div style={{display:"flex",justifyContent:"flex-end"}}>
-                      <button onClick={handleEmitManual} disabled={emittingManual||!cuitSel} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:emittingManual?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:(!cuitSel||emittingManual)?0.5:1}}>
+                      <button onClick={handleEmitManual} disabled={emittingManual||!cuitSel} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:emittingManual?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6,opacity:(!cuitSel||emittingManual)?0.5:1}}>
                         {emittingManual?<><Spinner size={13} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir factura"}
                       </button>
                     </div>
@@ -16962,7 +16964,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           Descargar PDF
                         </button>
                       )}
-                      <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:10,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                      <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:T.green,border:"none",color:"#fff",borderRadius:10,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                         Emitir otra
                       </button>
                     </div>
@@ -17080,7 +17082,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:11,color:T.textMd,marginBottom:12}}>
                           <div style={{display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>{c.condicion_fiscal === "MONOTRIBUTO" ? "Responsable Monotributo" : "Responsable Inscripto"}</div>
                           <div style={{display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Punto de Venta {String(c.punto_venta || 1).padStart(5,"0")}</div>
-                          <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:"50%",background:c.arca_prod?T.green:"#eab308",flexShrink:0,display:"inline-block"}}/>{c.arca_prod ? "Producción" : "Homologación"}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:8,height:8,borderRadius:"50%",background:c.arca_prod?T.green:T.yellow,flexShrink:0,display:"inline-block"}}/>{c.arca_prod ? "Producción" : "Homologación"}</div>
                           {c.domicilio && <div style={{fontSize:10,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>{c.domicilio}</div>}
                         </div>
                         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -17398,7 +17400,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   Continuar →
                 </button>
               ):(
-                <button onClick={handleSaveCuit} disabled={savingCuit} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                <button onClick={handleSaveCuit} disabled={savingCuit} style={{background:T.green,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
                   {savingCuit?<><Spinner size={13} color="#fff"/> Guardando...</>:"✅ Guardar CUIT"}
                 </button>
               )}
@@ -17598,7 +17600,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     Cancelar
                   </button>
                   <div style={{flex:1}}/>
-                  <button onClick={handleEmitManual} disabled={emittingManual} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                  <button onClick={handleEmitManual} disabled={emittingManual} style={{background:T.green,border:"none",color:"#fff",borderRadius:8,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
                     {emittingManual?<><Spinner size={13} color="#fff"/> Emitiendo en ARCA...</>:"🧾 Emitir factura"}
                   </button>
                 </div>
@@ -17632,7 +17634,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </button>
                   )}
                   {manualResult.r?.ok && (
-                    <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:"#16a34a",border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <button onClick={()=>{setManualResult(null);setManualNombre("");setManualDocNro("");setManualItems([{nombre:"",cantidad:1,precio:0}]);}} style={{background:T.green,border:"none",color:"#fff",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       Emitir otra
                     </button>
                   )}
@@ -20445,7 +20447,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <div key={a.id} onClick={()=>{setActiveAccId(a.id);metaApi("set_active","POST",{id:a.id});}}
                     style={{background:activeAccId===a.id?T.accentSolid+"12":T.surface,border:`1px solid ${activeAccId===a.id?T.accentSolid+"55":T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,cursor:"pointer",transition:"all 0.15s"}}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{width:32,height:32,borderRadius:8,background:T.blueBg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.blue||"#3b82f6"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg></div>
+                      <div style={{width:32,height:32,borderRadius:8,background:T.blueBg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.blue||T.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg></div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.user_name||"Cuenta Meta"}</div>
                         <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{a.ad_account_name||"Sin ad account"}{a.ig_username?` · @${a.ig_username}`:""}</div>
@@ -20552,7 +20554,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             <div>
               {/* Studio Header */}
               <div style={{marginBottom:24}}>
-                <h1 style={{fontSize:38,fontWeight:800,margin:0,letterSpacing:-1,background:`linear-gradient(90deg, ${T.text}, ${T.accent}, ${T.blue||"#3b82f6"}, #ec4899)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>Meta Ads <span style={{fontWeight:800}}>Studio</span></h1>
+                <h1 style={{fontSize:38,fontWeight:800,margin:0,letterSpacing:-1,background:`linear-gradient(90deg, ${T.text}, ${T.accent}, ${T.blue||T.blue}, #ec4899)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>Meta Ads <span style={{fontWeight:800}}>Studio</span></h1>
                 <div style={{fontSize:13,color:T.textMd,marginTop:8}}>Facebook conectado: <strong style={{color:T.text}}>{activeAcc?.user_name || "—"}</strong></div>
               </div>
 
@@ -21823,7 +21825,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
                   {filtered.slice(mlPage*ML_PAGE_SIZE,(mlPage+1)*ML_PAGE_SIZE).map(it => {
                     const sel = selectedIds.has(it.id);
                     const hPct = it.health!=null ? Math.round(it.health*100) : null;
-                    const hColor = hPct==null ? T.textSm : hPct>=70 ? T.green : hPct>=40 ? (T.yellow||"#eab308") : T.red;
+                    const hColor = hPct==null ? T.textSm : hPct>=70 ? T.green : hPct>=40 ? (T.yellow||T.yellow) : T.red;
                     return (
                       <tr key={it.id} style={{borderBottom:`1px solid ${T.borderL}`,background:sel?T.accent+"08":"transparent"}}>
                         <td style={{padding:"10px 12px"}}><input type="checkbox" checked={sel} onChange={()=>toggleOne(it.id)} style={{width:14,height:14,cursor:"pointer"}}/></td>
@@ -23611,7 +23613,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const thresholdFor = p => alertConfig[p.id]?.threshold ?? globalThreshold;
   const enabledFor   = p => alertConfig[p.id]?.enabled   ?? true;
 
-  const stColor = d => d===null?T.textSm:d===0?T.red:d<=7?(T.red+"cc"):(d<=14?(T.yellow||"#eab308"):T.green);
+  const stColor = d => d===null?T.textSm:d===0?T.red:d<=7?(T.red+"cc"):(d<=14?(T.yellow||T.yellow):T.green);
   const stLabel = (stock,d) => stock===0?"Sin stock":d===null?"Sin ventas":d<=7?"Crítico":d<=14?"Reponer":"OK";
   const stBg    = d => stColor(d)+"22";
 
@@ -23694,7 +23696,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const entries=Object.entries(raw||{}).sort(([,a],[,b])=>b-a).slice(0,7);
     if(!entries.length) return <div style={{color:T.textSm,fontSize:12,textAlign:"center",padding:16}}>Sin datos</div>;
     const total=entries.reduce((a,[,v])=>a+v,0)||1;
-    const C=["#6366f1","#22c55e","#f59e0b","#ef4444","#3b82f6","#ec4899","#14b8a6"];
+    const C=["#6366f1",T.green,T.yellow,T.red,T.blue,"#ec4899","#14b8a6"];
     const r=size/2,ri=r-thickness,cx=r,cy=r;
     let angle=-Math.PI/2;
     const slices=entries.map(([label,val],i)=>{
@@ -23907,7 +23909,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </select>
                     {leadTime[p.id]&&r2>0&&(()=>{
                       const orderIn=Math.max(0,(dl??0)-leadTime[p.id]);
-                      return <span style={{fontSize:11,fontWeight:600,color:orderIn<=3?T.red:orderIn<=7?(T.yellow||"#eab308"):T.green}}>
+                      return <span style={{fontSize:11,fontWeight:600,color:orderIn<=3?T.red:orderIn<=7?(T.yellow||T.yellow):T.green}}>
                         {orderIn<=0?"Pedí ahora":`Pedido en ${orderIn}d`}
                       </span>;
                     })()}
@@ -23924,7 +23926,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         <span style={{fontSize:11,fontWeight:700,color:T.text,background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"2px 8px"}}>{fmt(it.stock_total||0)} uds</span>
                         {whsWithStock.map(([whId,q])=>{const w=warehouses.find(x=>x.id===whId);return <span key={whId} style={{fontSize:10,color:T.textMd,background:T.surface,borderRadius:5,padding:"2px 7px"}}>{w?.name||(whId==="main"?"Principal":whId)}: {q}</span>;})}
                         {it.costo_unitario>0&&<span style={{fontSize:10,color:T.textSm}}>Valorizado: <strong style={{color:T.text}}>${Math.round((it.stock_total||0)*it.costo_unitario).toLocaleString("es-AR")}</strong></span>}
-                        {desync&&<span title="El stock del inventario de Growith difiere del que reporta tu tienda. Editá el item o reprocesá ventas para alinearlos." style={{fontSize:10,fontWeight:600,color:T.yellow||"#eab308",background:(T.yellow||"#eab308")+"18",borderRadius:5,padding:"2px 7px"}}>≠ tienda ({fmt(p.stock_total||0)})</span>}
+                        {desync&&<span title="El stock del inventario de Growith difiere del que reporta tu tienda. Editá el item o reprocesá ventas para alinearlos." style={{fontSize:10,fontWeight:600,color:T.yellow||T.yellow,background:(T.yellow||T.yellow)+"18",borderRadius:5,padding:"2px 7px"}}>≠ tienda ({fmt(p.stock_total||0)})</span>}
                         <button onClick={(e)=>{e.stopPropagation();setTab("inventario");openEditItem(it);}} style={{fontSize:10,fontWeight:600,color:T.accent,background:"transparent",border:`1px solid ${T.accent}44`,borderRadius:5,padding:"2px 8px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar item</button>
                       </div>
                     );
@@ -24104,11 +24106,11 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 const unidadesPorVenta = totalOrders>0 ? (totalUnits/totalOrders).toFixed(1) : "—";
                 return [
                   {label:"Unidades vendidas",val:fmt(totalUnits),sub:`${avgRate.toFixed(1)}/día`,color:T.accentSolid,icon:"",delta:deltaU},
-                  {label:"Órdenes",val:fmt(totalOrders),sub:`${days}d`,color:T.blue||"#3b82f6",icon:"",delta:deltaO},
+                  {label:"Órdenes",val:fmt(totalOrders),sub:`${days}d`,color:T.blue||T.blue,icon:"",delta:deltaO},
                   {label:"Productos por venta",val:unidadesPorVenta,sub:"unidades/orden",color:T.purple||"#c084fc",icon:"",delta:null},
                   {label:"Facturación",val:fmtARS(totalRev),sub:`${fmtARS(totalOrders>0?totalRev/totalOrders:0)}/orden`,color:T.green,icon:"",delta:deltaR},
-                  {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||"#3b82f6",icon:"",delta:null},
-                  {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||"#eab308"):T.green,icon:"",delta:null},
+                  {label:"Stock total",val:fmt(totalStock),sub:`${allProducts.length} productos`,color:T.blue||T.blue,icon:"",delta:null},
+                  {label:"Días prom. stock",val:avgDays??"—",sub:"proyectado",color:avgDays&&avgDays<=globalThreshold?(T.yellow||T.yellow):T.green,icon:"",delta:null},
                   {label:"Sin stock",val:kpiEmpty,sub:"agotados",color:T.red,icon:"",delta:null},
                   {label:"Stock crítico",val:kpiCritical,sub:"<7 días",color:T.red+"cc",icon:"",delta:null},
                 ];
@@ -24292,13 +24294,13 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Ventas por provincia</div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Distribución geográfica</div>
                       {(() => { const prov = mergeMap(data.by_province||{}, ml?.by_province); return (
-                      <DonutChart data={prov} colors={["#22c55e","#f59e0b","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(prov).length,label:"provincias"}}/>
+                      <DonutChart data={prov} colors={[T.green,T.yellow,"#6366f1",T.red,T.blue,"#ec4899","#14b8a6"]} centerLabel={{val:Object.keys(prov).length,label:"provincias"}}/>
                       ); })()}
                     </div>
                     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 16px"}}>
                       <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:2}}>Método de pago</div>
                       <div style={{fontSize:11,color:T.textSm,marginBottom:14}}>Plataforma de cobro</div>
-                      <DonutChart data={mergeMap(data.by_payment||{}, ml?.by_payment)} colors={["#3b82f6","#f59e0b","#22c55e","#6366f1","#ec4899"]} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
+                      <DonutChart data={mergeMap(data.by_payment||{}, ml?.by_payment)} colors={[T.blue,T.yellow,T.green,"#6366f1","#ec4899"]} centerLabel={{val:fmt(totalUnits),label:"uds"}}/>
                       <div style={{marginTop:16}}>
                         <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:8}}>Hora del día</div>
                         <HourChart byHour={mergeMap(data.by_hour||{}, ml?.by_hour)} height={50}/>
@@ -24332,7 +24334,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           {allProducts.filter(p=>{const q=search.trim().toLowerCase();return !q||(p.nombre||"").toLowerCase().includes(q)||p.variants.some(v=>(v.sku||"").toLowerCase().includes(q));}).flatMap(p=>p.variants.map(v=>{
                             const vr=v.units_sold/Math.max(1,days);
                             const vd=vr>0?Math.round(v.stock/vr):null;
-                            const sc=v.stock===0?T.red:vd===null?T.textSm:vd<=7?T.red:vd<=globalThreshold?(T.yellow||"#eab308"):T.green;
+                            const sc=v.stock===0?T.red:vd===null?T.textSm:vd<=7?T.red:vd<=globalThreshold?(T.yellow||T.yellow):T.green;
                             const sl=v.stock===0?"Sin stock":vd===null?"Sin ventas":vd<=7?"Crítico":vd<=globalThreshold?"Reponer":"OK";
                             const lt=leadTime[p.id];
                             const daysToOrder=lt&&vd!==null?vd-lt:null;
@@ -24880,10 +24882,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             {tab==="config"&&(
               <div style={{display:"flex",flexDirection:"column",gap:16}}>
                 {/* Stock cruzado entre canales */}
-                <div style={{background:T.card,border:`1.5px solid ${syncMode==="on"?T.green+"66":syncMode==="simulacion"?(T.yellow||"#eab308")+"66":T.border}`,borderRadius:12,padding:"16px 20px"}}>
+                <div style={{background:T.card,border:`1.5px solid ${syncMode==="on"?T.green+"66":syncMode==="simulacion"?(T.yellow||T.yellow)+"66":T.border}`,borderRadius:12,padding:"16px 20px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
                     <div style={{fontSize:15,fontWeight:700,color:T.text}}>Stock cruzado entre canales</div>
-                    <span style={{fontSize:9,padding:"2px 8px",borderRadius:10,fontWeight:800,letterSpacing:0.5,background:syncMode==="on"?T.green+"22":syncMode==="simulacion"?(T.yellow||"#eab308")+"22":T.surface,color:syncMode==="on"?T.green:syncMode==="simulacion"?(T.yellow||"#eab308"):T.textSm}}>{syncMode==="on"?"ACTIVADO":syncMode==="simulacion"?"SIMULACIÓN":"APAGADO"}</span>
+                    <span style={{fontSize:9,padding:"2px 8px",borderRadius:10,fontWeight:800,letterSpacing:0.5,background:syncMode==="on"?T.green+"22":syncMode==="simulacion"?(T.yellow||T.yellow)+"22":T.surface,color:syncMode==="on"?T.green:syncMode==="simulacion"?(T.yellow||T.yellow):T.textSm}}>{syncMode==="on"?"ACTIVADO":syncMode==="simulacion"?"SIMULACIÓN":"APAGADO"}</span>
                   </div>
                   <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>
                     Cuando el stock del <strong>inventario central</strong> cambia (venta en cualquier canal, edición manual o transferencia), Growith lo escribe automáticamente en <strong>Tienda Nube</strong> y en las publicaciones de <strong>Mercado Libre</strong> vinculadas. Así una venta en un canal descuenta el stock en todos y evitás la sobreventa.
@@ -24891,7 +24893,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <div style={{display:"flex",background:T.surface,borderRadius:9,padding:3,gap:2,width:"fit-content",marginBottom:12}}>
                     {[{v:"off",l:"Apagado"},{v:"simulacion",l:"Simulación"},{v:"on",l:"Activado"}].map(o=>(
                       <button key={o.v} onClick={()=>cambiarSyncMode(o.v)}
-                        style={{padding:"6px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:syncMode===o.v?T.card:"transparent",color:syncMode===o.v?(o.v==="on"?T.green:o.v==="simulacion"?(T.yellow||"#eab308"):T.text):T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:syncMode===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>
+                        style={{padding:"6px 16px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:syncMode===o.v?T.card:"transparent",color:syncMode===o.v?(o.v==="on"?T.green:o.v==="simulacion"?(T.yellow||T.yellow):T.text):T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:syncMode===o.v?"0 1px 3px rgba(0,0,0,0.15)":"none"}}>
                         {o.l}
                       </button>
                     ))}
@@ -24921,7 +24923,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                             <span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:4,background:(r.platform==="tiendanube"?T.blue:r.platform==="mercadolibre"?T.yellow:T.textSm)+"22",color:r.platform==="tiendanube"?T.blue:r.platform==="mercadolibre"?T.yellow:T.textSm,flexShrink:0}}>{r.platform==="tiendanube"?"TN":r.platform==="mercadolibre"?"ML":"SH"}</span>
                             <span style={{flex:1,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.item_name}</span>
                             {r.ok
-                              ? <span style={{color:T.textMd,flexShrink:0,fontFamily:"monospace"}}>{r.from_qty??"?"} → <strong style={{color:T.text}}>{r.to_qty}</strong>{r.simulated&&<span style={{color:T.yellow||"#eab308",marginLeft:6,fontFamily:"'Inter',system-ui,sans-serif",fontSize:9,fontWeight:700}}>SIMULADO</span>}</span>
+                              ? <span style={{color:T.textMd,flexShrink:0,fontFamily:"monospace"}}>{r.from_qty??"?"} → <strong style={{color:T.text}}>{r.to_qty}</strong>{r.simulated&&<span style={{color:T.yellow||T.yellow,marginLeft:6,fontFamily:"'Inter',system-ui,sans-serif",fontSize:9,fontWeight:700}}>SIMULADO</span>}</span>
                               : <span style={{color:T.red,flexShrink:0,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.error}>{r.error}</span>}
                           </div>
                         ))}
@@ -25019,10 +25021,10 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{fontSize:12,color:T.textSm}}>
                       <strong style={{color:T.red}}>{alertas.filter(a=>a.status==="empty").length}</strong> sin stock ·{" "}
                       <strong style={{color:T.red+"cc"}}>{alertas.filter(a=>a.status==="critical").length}</strong> críticos ·{" "}
-                      <strong style={{color:T.yellow||"#eab308"}}>{alertas.filter(a=>a.status==="low").length}</strong> para reponer
+                      <strong style={{color:T.yellow||T.yellow}}>{alertas.filter(a=>a.status==="low").length}</strong> para reponer
                     </div>
                     {alertas.map((a,i)=>{
-                      const c=a.status==="empty"?T.red:a.status==="critical"?T.red+"cc":(T.yellow||"#eab308");
+                      const c=a.status==="empty"?T.red:a.status==="critical"?T.red+"cc":(T.yellow||T.yellow);
                       const icon=a.status==="empty"?"·":a.status==="critical"?"·":"·";
                       return (
                         <div key={i} style={{background:T.card,border:`1.5px solid ${c}44`,borderRadius:12,padding:"16px 18px",display:"flex",alignItems:"center",gap:14}}>
@@ -27051,7 +27053,7 @@ export default function App() {
             <div/>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               {isInTrial&&(
-                <button onClick={()=>setPage("planes")} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 12px",background:trialExpiring?"#ef444418":"#22c55e18",border:`1.5px solid ${trialExpiring?"#ef444455":"#22c55e55"}`,borderRadius:20,color:trialExpiring?"#ef4444":"#22c55e",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                <button onClick={()=>setPage("planes")} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 12px",background:trialExpiring?T.red+"18":T.green+"18",border:`1.5px solid ${trialExpiring?T.red+"55":T.green+"55"}`,borderRadius:20,color:trialExpiring?T.red:T.green,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
                   {trialExpiring?"⚠️":"🎁"} Prueba gratis · {trialDaysLeft === 1 ? "último día" : `${trialDaysLeft} días`}
                 </button>
               )}
@@ -27060,7 +27062,7 @@ export default function App() {
                   <button onClick={()=>setBellPanelOpen(p=>!p)} title={`${tareasForReview} entrega${tareasForReview!==1?"s":""} esperando revisión`}
                     style={{position:"relative",padding:"5px 8px",background:bellPanelOpen?T.surface:T.card,border:`1px solid ${bellPanelOpen?T.accent:T.border}`,borderRadius:DS.r.md,cursor:"pointer",display:"flex",alignItems:"center",color:T.text,animation:"bellShake 0.5s ease"}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                    <span style={{position:"absolute",top:-4,right:-4,minWidth:16,height:16,borderRadius:8,background:"#ef4444",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px",fontFamily:"'Inter',system-ui,sans-serif"}}>{tareasForReview}</span>
+                    <span style={{position:"absolute",top:-4,right:-4,minWidth:16,height:16,borderRadius:8,background:T.red,color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px",fontFamily:"'Inter',system-ui,sans-serif"}}>{tareasForReview}</span>
                   </button>
                   {bellPanelOpen&&(
                     <>
@@ -27101,11 +27103,11 @@ export default function App() {
             </div>
           </div>
           {_showExpiryBanner&&(
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 24px",background:expiryDays<=1?"#ef444415":"#f97316 15",backgroundImage:"none",backgroundColor:expiryDays<=1?"#ef444415":"#f9741615",borderBottom:`1px solid ${expiryDays<=1?"#ef444440":"#f9741640"}`,fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 24px",background:expiryDays<=1?T.red+"15":""+T.orange+" 15",backgroundImage:"none",backgroundColor:expiryDays<=1?T.red+"15":"#f9741615",borderBottom:`1px solid ${expiryDays<=1?T.red+"40":"#f9741640"}`,fontFamily:"'Inter',system-ui,sans-serif"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontSize:18}}>{expiryDays<=1?"🚨":"⏰"}</span>
                 <div>
-                  <span style={{fontSize:13,fontWeight:700,color:expiryDays<=1?"#ef4444":"#f97316"}}>
+                  <span style={{fontSize:13,fontWeight:700,color:expiryDays<=1?T.red:T.orange}}>
                     {expiryIsTrial
                       ? expiryDays<=1 ? "¡Hoy vence tu prueba gratuita!" : `Tu prueba gratuita vence en ${expiryDays} días`
                       : expiryDays<=1 ? "¡Hoy vence tu plan!" : `Tu plan vence en ${expiryDays} días`}
@@ -27116,7 +27118,7 @@ export default function App() {
                 </div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                <button onClick={()=>setPage("planes")} style={{padding:"5px 14px",background:expiryDays<=1?"#ef4444":"#f97316",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                <button onClick={()=>setPage("planes")} style={{padding:"5px 14px",background:expiryDays<=1?T.red:T.orange,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
                   {expiryIsTrial?"Ver planes":"Renovar plan"}
                 </button>
                 <button onClick={()=>{try{localStorage.setItem(_expiryDismissKey,"1");}catch(e){}setExpiryDismissed(true);}} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:18,lineHeight:1,padding:"2px 4px"}}>✕</button>
@@ -27134,7 +27136,7 @@ export default function App() {
       {/* ── Banner prueba activa ── */}
       {isInTrial&&ReactDOM.createPortal(
         <div style={{position:"fixed",bottom:72,left:"50%",transform:"translateX(-50%)",zIndex:9000,pointerEvents:"none",display:"flex",justifyContent:"center"}}>
-          <div style={{display:"inline-flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,#16a34a,#22c55e)",borderRadius:20,padding:"8px 18px",boxShadow:"0 4px 20px #22c55e44",fontFamily:"'Inter',system-ui,sans-serif"}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,"+T.green+","+T.green+")",borderRadius:20,padding:"8px 18px",boxShadow:"0 4px 20px "+T.green+"44"+"",fontFamily:"'Inter',system-ui,sans-serif"}}>
             <span style={{fontSize:14}}>🎁</span>
             <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>Prueba gratis</span>
             <span style={{fontSize:12,color:"#dcfce7",fontWeight:500}}>·</span>
