@@ -34,6 +34,12 @@ async function authFetch(url, opts = {}) {
 }
 // ── Multi-cuenta: recordar cuentas usadas (email/nombre, NO contraseñas) para
 // cambio rápido. El switch desloguea y deja un flag para pre-cargar el login. ──
+// Tras un deploy, una pestaña abierta con el HTML viejo pide chunks que ya no
+// existen → pantalla negra. Vite emite este evento en ese caso: recargamos solo.
+if (typeof window !== "undefined") {
+  window.addEventListener("vite:preloadError", () => { try { window.location.reload(); } catch(_) {} });
+}
+
 // ── Cache SWR local: pintar al instante lo último conocido y refrescar de fondo ──
 // (mismo patrón que growith_envios_cache — la app "abre" en 0ms y se actualiza sola)
 function ghSwrGet(key, maxAgeMs=6*3600000){ try{ const c=JSON.parse(localStorage.getItem(key)||"null"); if(c&&c.ts&&(Date.now()-c.ts)<maxAgeMs) return c.data; }catch(_){} return null; }
@@ -8130,6 +8136,32 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
       </div>
     </div>
   );
+}
+
+// Error Boundary global: un crash de render en una sección muestra el error y
+// un botón de recarga en vez de dejar la pantalla negra (imposible de diagnosticar).
+class GhErrorBoundary extends React.Component {
+  constructor(props){ super(props); this.state={err:null}; }
+  static getDerivedStateFromError(err){ return {err}; }
+  componentDidCatch(err, info){ try{ console.error("[growith crash]", err, info?.componentStack); }catch(_){} }
+  render(){
+    if(!this.state.err) return this.props.children;
+    const T=this.props.T||{};
+    return (
+      <div style={{minHeight:"60vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,padding:24,fontFamily:"'Inter',system-ui,sans-serif",background:T.bg||"#0b0d12",color:T.text||"#fff"}}>
+        <div style={{fontSize:40}}>🛠️</div>
+        <div style={{fontSize:18,fontWeight:800}}>Algo se rompió en esta sección</div>
+        <div style={{fontSize:12,color:T.textSm||"#9ca3af",maxWidth:560,textAlign:"center",wordBreak:"break-word",background:T.card||"#151922",border:`1px solid ${T.border||"#2a2f3a"}`,borderRadius:10,padding:"10px 14px",fontFamily:"monospace"}}>
+          {String(this.state.err?.message||this.state.err).slice(0,300)}
+        </div>
+        <button onClick={()=>{ this.setState({err:null}); try{window.location.hash="";}catch(_){} window.location.reload(); }}
+          style={{padding:"10px 24px",fontSize:14,fontWeight:700,border:"none",borderRadius:10,background:"#7c3aed",color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+          Recargar la app
+        </button>
+        <div style={{fontSize:11,color:T.textSm||"#9ca3af"}}>Si vuelve a pasar, mandale captura de este mensaje a soporte.</div>
+      </div>
+    );
+  }
 }
 
 // Toggle switch reutilizable (usado en ConfigScreen, MetaAds, etc.)
@@ -27135,7 +27167,7 @@ export default function App() {
               </div>
             </div>
           )}
-          <div key={page} style={{animation:"fadeIn 0.15s ease"}}>{pageContent}</div>
+          <div key={page} style={{animation:"fadeIn 0.15s ease"}}><GhErrorBoundary T={T}>{pageContent}</GhErrorBoundary></div>
         </div>
       </div>
       <MobileBottomNav/>
