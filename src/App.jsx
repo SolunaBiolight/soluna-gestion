@@ -10181,18 +10181,18 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [showBloqueoColab, setShowBloqueoColab] = useState({});
   const [bloqueoMotivoColab, setBloqueoMotivoColab] = useState({});
   const [refNombre, setRefNombre] = useState("");
-  const [refColor, setRefColor] = useState("#6366f1");
+  const [refColor, setRefColor] = useState(T.accent);
   const [refLinks, setRefLinks] = useState([]);
   const LINK_TIPOS = [
     {id:"meta",      label:"Meta Ads",  icon:"📊", color:"#1877f2"},
     {id:"instagram", label:"Instagram", icon:"📷", color:"#e1306c"},
     {id:"tiktok",    label:"TikTok",    icon:"🎵", color:"#111"},
-    {id:"web",       label:"Website",   icon:"🌐", color:"#6366f1"},
+    {id:"web",       label:"Website",   icon:"🌐", color:T.accent},
     {id:"drive",     label:"Drive",     icon:"📁", color:"#34a853"},
     {id:"youtube",   label:"YouTube",   icon:"▶️", color:"#ff0000"},
-    {id:"otro",      label:"Otro",      icon:"🔗", color:"#6b7280"},
+    {id:"otro",      label:"Otro",      icon:"🔗", color:T.textMd},
   ];
-  const REF_COLORS = ["#6366f1","#f97316","#22c55e","#ef4444","#ec4899","#14b8a6","#f59e0b","#8b5cf6","#3b82f6","#64748b"];
+  const REF_COLORS = [T.accent,T.orange,T.green,T.red,"#ec4899","#14b8a6",T.yellow,T.purple,T.blue,"#64748b"];
   // ── PRODUCCIÓN CREATIVA ──
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
@@ -10350,7 +10350,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     pendiente:  {label:"⏳ Pendiente",  color:T.yellow,  bg:T.yellowBg},
     en_proceso: {label:"🔄 En proceso", color:T.blue,    bg:T.blueBg},
     bloqueada:  {label:"🚫 Bloqueada",  color:T.textMd,  bg:T.textMd+"18"},
-    entregado:  {label:"📦 Entregado",  color:T.orange||"#f97316", bg:(T.orangeBg||"#f9731620")},
+    entregado:  {label:"📦 Entregado",  color:T.orange||T.orange, bg:(T.orangeBg||T.orange+"20")},
     aprobado:   {label:"✅ Aprobado",   color:T.green,   bg:T.greenBg},
     revision:   {label:"🔁 A revisar",  color:T.red,     bg:T.redBg},
   };
@@ -10694,10 +10694,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     // ── VISTA COLABORADOR — layout rediseñado ──────────────────────────────────
     if(colabMode&&!colabMode.permisos?.verTareas) {
       const STEPS=[
-        {key:"pendiente",  label:"Pendiente",   color:"#d97706"},
-        {key:"en_proceso", label:"En proceso",  color:"#3b82f6"},
-        {key:"entregado",  label:"Entregado",   color:"#f97316"},
-        {key:"aprobado",   label:"Aprobado",    color:"#22c55e"},
+        {key:"pendiente",  label:"Pendiente",   color:T.yellow},
+        {key:"en_proceso", label:"En proceso",  color:T.blue},
+        {key:"entregado",  label:"Entregado",   color:T.orange},
+        {key:"aprobado",   label:"Aprobado",    color:T.green},
       ];
       const stepIdx={pendiente:0,en_proceso:1,bloqueada:1,entregado:2,revision:2,aprobado:3};
       const curStep=stepIdx[t.estado]??0;
@@ -10727,19 +10727,19 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               {STEPS.map((step,i)=>{
                 const isDone=curStep>i;
                 const isCur=curStep===i&&!isBlocked&&!isRevision;
-                const dotColor=isDone?"#22c55e":isCur?step.color:T.border;
+                const dotColor=isDone?T.green:isCur?step.color:T.border;
                 return (
                   <React.Fragment key={step.key}>
-                    {i>0&&<div style={{flex:1,height:2,background:isDone?"#22c55e":T.border,margin:"0 2px",marginBottom:18}}/>}
+                    {i>0&&<div style={{flex:1,height:2,background:isDone?T.green:T.border,margin:"0 2px",marginBottom:18}}/>}
                     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
-                      <div style={{width:26,height:26,borderRadius:"50%",border:`2px solid ${dotColor}`,background:isDone?"#22c55e":isCur?`${step.color}18`:T.surface,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}}>
+                      <div style={{width:26,height:26,borderRadius:"50%",border:`2px solid ${dotColor}`,background:isDone?T.green:isCur?`${step.color}18`:T.surface,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}}>
                         {isDone?(
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>
                         ):isCur?(
                           <div style={{width:8,height:8,borderRadius:"50%",background:step.color}}/>
                         ):null}
                       </div>
-                      <span style={{fontSize:10,fontWeight:isCur?700:400,color:isDone?"#22c55e":isCur?step.color:T.textSm,whiteSpace:"nowrap"}}>{step.label}</span>
+                      <span style={{fontSize:10,fontWeight:isCur?700:400,color:isDone?T.green:isCur?step.color:T.textSm,whiteSpace:"nowrap"}}>{step.label}</span>
                     </div>
                   </React.Fragment>
                 );
@@ -10748,10 +10748,10 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
 
             {/* Alerta estado especial */}
             {(isBlocked||isRevision)&&(
-              <div style={{marginTop:10,display:"flex",alignItems:"flex-start",gap:10,padding:"10px 14px",background:"#ef444410",border:"1px solid #ef444435",borderLeft:"3px solid #ef4444",borderRadius:DS.r.lg}}>
+              <div style={{marginTop:10,display:"flex",alignItems:"flex-start",gap:10,padding:"10px 14px",background:T.red+"10",border:"1px solid "+T.red+"35"+"",borderLeft:"3px solid "+T.red+"",borderRadius:DS.r.lg}}>
                 <span style={{fontSize:16,flexShrink:0}}>{isBlocked?"🚫":"🔁"}</span>
                 <div>
-                  <div style={{fontSize:12,fontWeight:600,color:"#ef4444",marginBottom:isRevision&&t.feedbackActual?4:0}}>
+                  <div style={{fontSize:12,fontWeight:600,color:T.red,marginBottom:isRevision&&t.feedbackActual?4:0}}>
                     {isBlocked?"Bloqueada — el equipo fue notificado":"El equipo revisó tu entrega y pidió cambios"}
                   </div>
                   {isRevision&&t.feedbackActual&&(
@@ -10767,8 +10767,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <AsyncButton onClick={async()=>{
               await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"en_proceso",progresoLabel:"En proceso"})});
               toast("Tarea iniciada","success");loadData(true);
-            }} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",borderRadius:DS.r.lg,border:"1.5px solid #3b82f640",background:"#3b82f612",color:"#3b82f6",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:16,boxSizing:"border-box"}}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="#3b82f6"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            }} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",borderRadius:DS.r.lg,border:"1.5px solid "+T.blue+"40"+"",background:T.blue+"12",color:T.blue,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:16,boxSizing:"border-box"}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill={T.blue}><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Iniciar tarea
             </AsyncButton>
           )}
@@ -10776,7 +10776,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <AsyncButton onClick={async()=>{
               await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"en_proceso",progresoLabel:"En proceso"})});
               loadData(true);
-            }} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px",borderRadius:DS.r.lg,border:"1.5px solid #3b82f640",background:"#3b82f612",color:"#3b82f6",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:16,boxSizing:"border-box"}}>
+            }} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px",borderRadius:DS.r.lg,border:"1.5px solid "+T.blue+"40"+"",background:T.blue+"12",color:T.blue,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:16,boxSizing:"border-box"}}>
               Retomar trabajo
             </AsyncButton>
           )}
@@ -10910,8 +10910,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                   {del.nota&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{del.nota}</div>}
                   {del.feedbackRecibido&&(
-                    <div style={{marginTop:6,padding:"7px 10px",background:"#ef444410",borderLeft:"2px solid #ef4444",borderRadius:4}}>
-                      <div style={{fontSize:10,color:"#ef4444",fontWeight:600,marginBottom:2}}>Feedback del equipo:</div>
+                    <div style={{marginTop:6,padding:"7px 10px",background:T.red+"10",borderLeft:"2px solid "+T.red+"",borderRadius:4}}>
+                      <div style={{fontSize:10,color:T.red,fontWeight:600,marginBottom:2}}>Feedback del equipo:</div>
                       <div style={{fontSize:12,color:T.text,lineHeight:1.45}}>{del.feedbackRecibido}</div>
                     </div>
                   )}
@@ -10924,7 +10924,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         if(!r.ok||d.error) throw new Error(d.error||"Error");
                         toast("Entrega eliminada","warning");loadData(true);
                       }catch(e){toast("Error: "+e.message,"error");}
-                    }} style={{marginTop:8,fontSize:11,padding:"3px 10px",borderRadius:6,background:"transparent",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>
+                    }} style={{marginTop:8,fontSize:11,padding:"3px 10px",borderRadius:6,background:"transparent",color:T.red,border:"1px solid "+T.red+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>
                       Eliminar entrega
                     </AsyncButton>
                   )}
@@ -10955,15 +10955,15 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           {t.estado!=="aprobado"&&!isBlocked&&(
             <div style={{marginBottom:16}}>
               <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:!p[t._id]}))}
-                style={{width:"100%",fontSize:12,padding:"8px 0",borderRadius:DS.r.lg,border:"1px solid #ef444430",background:"#ef44440a",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box"}}>
+                style={{width:"100%",fontSize:12,padding:"8px 0",borderRadius:DS.r.lg,border:"1px solid "+T.red+"30"+"",background:T.red+"0a",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box"}}>
                 🚫 Estoy bloqueada
               </button>
               {showBloqueoColab[t._id]&&(
-                <div style={{marginTop:8,background:"#ef444410",borderRadius:DS.r.lg,padding:"12px",border:"1px solid #ef444435"}}>
-                  <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:.7}}>(el equipo lo va a ver)</span></div>
+                <div style={{marginTop:8,background:T.red+"10",borderRadius:DS.r.lg,padding:"12px",border:"1px solid "+T.red+"35"+""}}>
+                  <div style={{fontSize:12,color:T.red,fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:.7}}>(el equipo lo va a ver)</span></div>
                   <textarea value={bloqueoMotivoColab[t._id]||""} onChange={e=>setBloqueoMotivoColab(p=>({...p,[t._id]:e.target.value}))}
                     placeholder="Ej: No tengo acceso al Drive, falta el logo en alta resolución..."
-                    style={{...iS,fontSize:12,width:"100%",minHeight:55,resize:"none",marginBottom:8,borderColor:"#ef444440"}}/>
+                    style={{...iS,fontSize:12,width:"100%",minHeight:55,resize:"none",marginBottom:8,borderColor:T.red+"40"}}/>
                   <div style={{display:"flex",gap:7}}>
                     <AsyncButton onClick={async()=>{
                       const motivo=(bloqueoMotivoColab[t._id]||"").trim();
@@ -11022,11 +11022,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {/* Estados */}
         {(!colabMode||colabMode.permisos?.verTareas)&&(()=>{
           const ADMIN_STEPS=[
-            {key:"pendiente",  label:"Pendiente",  color:"#d97706"},
-            {key:"en_proceso", label:"En proceso", color:"#3b82f6"},
-            {key:"entregado",  label:"Entregado",  color:"#f97316"},
-            {key:"revision",   label:"En revisión",color:"#ef4444"},
-            {key:"aprobado",   label:"Aprobado",   color:"#22c55e"},
+            {key:"pendiente",  label:"Pendiente",  color:T.yellow},
+            {key:"en_proceso", label:"En proceso", color:T.blue},
+            {key:"entregado",  label:"Entregado",  color:T.orange},
+            {key:"revision",   label:"En revisión",color:T.red},
+            {key:"aprobado",   label:"Aprobado",   color:T.green},
           ];
           const stepOrder={pendiente:0,en_proceso:1,bloqueada:1,entregado:2,revision:3,aprobado:4};
           const curOrder=stepOrder[t.estado]??0;
@@ -11040,7 +11040,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   const isActive=t.estado===step.key||(step.key==="en_proceso"&&t.estado==="bloqueada");
                   const isPast=thisOrder<curOrder&&!isActive;
                   const isFuture=thisOrder>curOrder;
-                  const dotColor=isActive?step.color:isPast?"#22c55e":T.border;
+                  const dotColor=isActive?step.color:isPast?T.green:T.border;
                   return(
                     <React.Fragment key={step.key}>
                       <button
@@ -11055,7 +11055,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         </span>
                       </button>
                       {idx<ADMIN_STEPS.length-1&&(
-                        <div style={{flex:1,height:2,marginTop:11,background:isPast?"#22c55e":T.border,borderRadius:1,transition:"background 0.3s"}}/>
+                        <div style={{flex:1,height:2,marginTop:11,background:isPast?T.green:T.border,borderRadius:1,transition:"background 0.3s"}}/>
                       )}
                     </React.Fragment>
                   );
@@ -11064,7 +11064,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               {/* Bloqueada + form feedback En revisión */}
               <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                 <AsyncButton onClick={()=>updateEstado(t._id,"bloqueada")}
-                  style={{padding:"4px 11px",borderRadius:20,fontSize:11,border:`1px solid ${t.estado==="bloqueada"?"#6b7280":T.border}`,background:t.estado==="bloqueada"?"#6b728018":"transparent",color:t.estado==="bloqueada"?"#6b7280":T.textMd,cursor:"pointer",fontWeight:t.estado==="bloqueada"?700:500,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                  style={{padding:"4px 11px",borderRadius:20,fontSize:11,border:`1px solid ${t.estado==="bloqueada"?T.textMd:T.border}`,background:t.estado==="bloqueada"?T.textMd+"18":"transparent",color:t.estado==="bloqueada"?T.textMd:T.textMd,cursor:"pointer",fontWeight:t.estado==="bloqueada"?700:500,fontFamily:"'Inter',system-ui,sans-serif"}}>
                   Bloqueada
                 </AsyncButton>
               </div>
@@ -11079,7 +11079,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
                       <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
                         target="_blank" rel="noreferrer"
-                        style={{fontSize:12,padding:"7px 14px",borderRadius:8,background:"#22c55e12",color:"#22c55e",border:"1px solid #22c55e44",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
+                        style={{fontSize:12,padding:"7px 14px",borderRadius:8,background:T.green+"12",color:T.green,border:"1px solid "+T.green+"44"+"",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                         WA con feedback
                       </a>
@@ -11123,11 +11123,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <AsyncButton onClick={async()=>{
               await tareasApi({action:"sendRecordatorio",tareaId:t._id});
               toast(`📧 Recordatorio enviado a ${colab.nombre.split(" ")[0]}`,"success");
-            }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,background:"#6366f10a",border:"1px solid #6366f130",color:"#6366f1",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            }} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,background:T.accent+"0a",border:"1px solid "+T.accent+"30"+"",color:T.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
               Enviar recordatorio
             </AsyncButton>
-            {waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,background:"#22c55e0a",border:"1px solid #22c55e30",color:"#22c55e",fontSize:12,fontWeight:600,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            {waLink&&<a href={waLink} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:8,background:T.green+"0a",border:"1px solid "+T.green+"30"+"",color:T.green,fontSize:12,fontWeight:600,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
               WhatsApp
             </a>}
@@ -11386,12 +11386,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     )}
                     <div style={{display:"flex",gap:6,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`,flexWrap:"wrap",alignItems:"center"}}>
                       {(!colabMode||colabMode.permisos?.verTareas)&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
-                        <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#22c55e",color:"#fff",border:"1.5px solid #16a34a55",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>✓ Aprobar</AsyncButton>
+                        <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.green,color:"#fff",border:"1.5px solid "+T.green+"55"+"",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>✓ Aprobar</AsyncButton>
                         <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>🔁 Pedir cambios</button>
-                        {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:"#22c55e",border:"1px solid #22c55e44",background:"#22c55e10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
+                        {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:T.green,border:"1px solid "+T.green+"44"+"",background:T.green+"10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
                       </>}
                       {(!colabMode||colabMode.permisos?.verTareas)&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
-                      {(!colabMode||colabMode.permisos?.verTareas)&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
+                      {(!colabMode||colabMode.permisos?.verTareas)&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.red+"08",color:T.red,border:"1px solid "+T.red+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
                       {colabMode&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<AsyncButton onClick={async()=>{
                         if(!await appConfirm(`¿Eliminar tu entrega "${del.label||`v${i+1}`}"?`,{danger:true,okLabel:"Eliminar"})) return;
                         try{
@@ -11401,7 +11401,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           toast("Entrega eliminada","warning");
                           loadData(true);
                         }catch(e){toast("Error: "+e.message,"error");}
-                      }} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:"#ef444408",color:"#ef4444",border:"1px solid #ef444430",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
+                      }} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.red+"08",color:T.red,border:"1px solid "+T.red+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
                     </div>
                   </>
                 )}
@@ -11428,7 +11428,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             }catch(e){toast("Error: "+e.message,"error");}
           }
           if(!hasFinal) return (
-            <div style={{marginBottom:14,padding:"12px 14px",background:"#22c55e12",border:"1.5px solid #22c55e40",borderRadius:DS.r.lg}}>
+            <div style={{marginBottom:14,padding:"12px 14px",background:T.green+"12",border:"1.5px solid "+T.green+"40"+"",borderRadius:DS.r.lg}}>
               <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:8}}>📤 Subir entrega</div>
               <input value={colabEntregaNombre[t._id]||""} onChange={e=>setColabEntregaNombre(p=>({...p,[t._id]:e.target.value}))}
                 placeholder="Nombre (ej: Fotos look invierno, Reel batch 2)" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
@@ -11436,7 +11436,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 placeholder="Link de Drive, Dropbox, Figma, etc." style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
               <input value={colabEntregaNota[t._id]||""} onChange={e=>setColabEntregaNota(p=>({...p,[t._id]:e.target.value}))}
                 placeholder="Nota para el equipo (opcional)" style={{...iS,fontSize:12,width:"100%",marginBottom:10}}/>
-              <AsyncButton onClick={submitColabEntrega} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px",borderRadius:DS.r.lg,border:"none",background:"#22c55e",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <AsyncButton onClick={submitColabEntrega} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px",borderRadius:DS.r.lg,border:"none",background:T.green,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 ✅ Entregar
               </AsyncButton>
             </div>
@@ -11450,7 +11450,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 placeholder="Link del documento" style={{...iS,fontSize:12,width:"100%",marginBottom:6}}/>
               <input value={colabEntregaNota[t._id]||""} onChange={e=>setColabEntregaNota(p=>({...p,[t._id]:e.target.value}))}
                 placeholder="Nota (opcional)" style={{...iS,fontSize:12,width:"100%",marginBottom:10}}/>
-              <AsyncButton onClick={submitColabEntrega} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"1.5px solid #6366f150",background:"#6366f112",color:"#6366f1",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <AsyncButton onClick={submitColabEntrega} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px",borderRadius:DS.r.lg,border:"1.5px solid "+T.accent+"50"+"",background:T.accent+"12",color:T.accent,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                 📎 Agregar documento
               </AsyncButton>
             </div>
@@ -11461,29 +11461,29 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           <div style={{marginBottom:14}}>
             {t.estado==="bloqueada"?(
               <>
-                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,#ef444414,#ef444408)",borderRadius:DS.r.lg,border:"1.5px solid #ef444440",marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,"+T.red+"14"+","+T.red+"08"+")",borderRadius:DS.r.lg,border:"1.5px solid "+T.red+"40"+"",marginBottom:8}}>
                   <span style={{fontSize:16}}>🚫</span>
-                  <div style={{flex:1,fontSize:12,color:"#ef4444",fontWeight:600}}>Bloqueada — el equipo ya fue notificado</div>
+                  <div style={{flex:1,fontSize:12,color:T.red,fontWeight:600}}>Bloqueada — el equipo ya fue notificado</div>
                 </div>
                 <AsyncButton onClick={async()=>{
                   await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"en_proceso",progresoLabel:"En proceso"})});
                   loadData(true);
-                }} style={{width:"100%",fontSize:12,padding:"8px 0",borderRadius:DS.r.lg,background:"#3b82f612",color:"#3b82f6",border:"1px solid #3b82f630",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,textAlign:"center",display:"block",boxSizing:"border-box"}}>
+                }} style={{width:"100%",fontSize:12,padding:"8px 0",borderRadius:DS.r.lg,background:T.blue+"12",color:T.blue,border:"1px solid "+T.blue+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,textAlign:"center",display:"block",boxSizing:"border-box"}}>
                   🔄 Retomé el trabajo
                 </AsyncButton>
               </>
             ):(
               <>
                 <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:!p[t._id]}))}
-                  style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:DS.r.lg,border:"1px solid #ef444430",background:"#ef44440a",color:"#ef4444",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box"}}>
+                  style={{width:"100%",fontSize:11.5,padding:"6px 0",borderRadius:DS.r.lg,border:"1px solid "+T.red+"30"+"",background:T.red+"0a",color:T.red,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:500,textAlign:"center",display:"block",boxSizing:"border-box"}}>
                   🚫 Estoy bloqueada
                 </button>
                 {showBloqueoColab[t._id]&&(
-                  <div style={{marginTop:8,background:"linear-gradient(135deg,#ef444412,#ef444408)",borderRadius:DS.r.lg,padding:"12px",border:"1.5px solid #ef444440"}}>
-                    <div style={{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:.7}}>(el equipo va a ver esto)</span></div>
+                  <div style={{marginTop:8,background:"linear-gradient(135deg,"+T.red+"12"+","+T.red+"08"+")",borderRadius:DS.r.lg,padding:"12px",border:"1.5px solid "+T.red+"40"+""}}>
+                    <div style={{fontSize:12,color:T.red,fontWeight:600,marginBottom:7}}>¿Qué te está frenando? <span style={{fontWeight:400,opacity:.7}}>(el equipo va a ver esto)</span></div>
                     <textarea value={bloqueoMotivoColab[t._id]||""} onChange={e=>setBloqueoMotivoColab(p=>({...p,[t._id]:e.target.value}))}
                       placeholder="Ej: No tengo acceso al Drive, falta el logo en alta resolución..."
-                      style={{...iS,fontSize:12,width:"100%",minHeight:55,resize:"none",marginBottom:8,borderColor:"#ef444444"}}/>
+                      style={{...iS,fontSize:12,width:"100%",minHeight:55,resize:"none",marginBottom:8,borderColor:T.red+"44"}}/>
                     <div style={{display:"flex",gap:7}}>
                       <AsyncButton onClick={async()=>{
                         const motivo=(bloqueoMotivoColab[t._id]||"").trim();
@@ -11492,7 +11492,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         toast("🚫 Equipo notificado","success");
                         setShowBloqueoColab(p=>({...p,[t._id]:false}));
                         loadData(true);
-                      }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:"#ef4444",color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
+                      }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:T.red,color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
                         Avisar al equipo
                       </AsyncButton>
                       <button onClick={()=>setShowBloqueoColab(p=>({...p,[t._id]:false}))}
@@ -11512,16 +11512,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           {(t.comments||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin comentarios aún.</div>}
           {(t.comments||[]).map((c,i)=>(
             <div key={i} style={{marginBottom:8,display:"flex",gap:10,alignItems:"flex-start"}}>
-              <div style={{width:28,height:28,borderRadius:"50%",background:c.autor==="manager"?T.accent+"22":c.tipo==="consulta"?"#3b82f618":T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:c.autor==="manager"?T.accent:c.tipo==="consulta"?"#3b82f6":T.green,flexShrink:0}}>
+              <div style={{width:28,height:28,borderRadius:"50%",background:c.autor==="manager"?T.accent+"22":c.tipo==="consulta"?T.blue+"18":T.green+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:c.autor==="manager"?T.accent:c.tipo==="consulta"?T.blue:T.green,flexShrink:0}}>
                 {c.autor==="manager"?"M":c.autor[0]?.toUpperCase()}
               </div>
-              <div style={{flex:1,background:T.surface,borderRadius:DS.r.lg,padding:"10px 12px",border:`1px solid ${c.tipo==="consulta"?"#3b82f635":c.tipo==="progreso"?"#22c55e30":T.border}`}}>
+              <div style={{flex:1,background:T.surface,borderRadius:DS.r.lg,padding:"10px 12px",border:`1px solid ${c.tipo==="consulta"?T.blue+"35":c.tipo==="progreso"?T.green+"30":T.border}`}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
                   <span style={{fontSize:11,fontWeight:600,color:T.text}}>{c.autor==="manager"?"Vos":c.autor}</span>
                   <span style={{fontSize:10,color:T.textSm}}>{fmtDate(c.fecha)}</span>
-                  {c.tipo==="consulta"&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:4,background:"#3b82f618",color:"#3b82f6",fontWeight:700}}>CONSULTA</span>}
-                  {c.tipo==="progreso"&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:4,background:"#22c55e18",color:"#22c55e",fontWeight:700}}>ACTUALIZACIÓN</span>}
-                  {c.tipo==="bloqueo"&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:4,background:"#ef444418",color:"#ef4444",fontWeight:700}}>BLOQUEADO</span>}
+                  {c.tipo==="consulta"&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:4,background:T.blue+"18",color:T.blue,fontWeight:700}}>CONSULTA</span>}
+                  {c.tipo==="progreso"&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:4,background:T.green+"18",color:T.green,fontWeight:700}}>ACTUALIZACIÓN</span>}
+                  {c.tipo==="bloqueo"&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:4,background:T.red+"18",color:T.red,fontWeight:700}}>BLOQUEADO</span>}
                 </div>
                 <div style={{fontSize:13,color:T.text,lineHeight:1.45}}>{c.texto}</div>
               </div>
@@ -11598,7 +11598,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               {colab&&<button onClick={()=>copyLink(colab.token)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>📋 Link colaborador</button>}
               <AsyncButton onClick={()=>duplicateTarea(t._id)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>📋 Duplicar</AsyncButton>
-              {t.estado!=="pendiente"&&<AsyncButton onClick={()=>revertEstadoAdmin(t._id)} style={{fontSize:12,padding:"7px 12px",borderRadius:8,background:"#f59e0b0a",color:"#d97706",border:"1px solid #f59e0b30",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>↩ Revertir</AsyncButton>}
+              {t.estado!=="pendiente"&&<AsyncButton onClick={()=>revertEstadoAdmin(t._id)} style={{fontSize:12,padding:"7px 12px",borderRadius:8,background:T.yellow+"0a",color:T.yellow,border:"1px solid "+T.yellow+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>↩ Revertir</AsyncButton>}
             </div>
             <div style={{display:"flex",gap:6}}>
               <AsyncButton onClick={()=>deleteTarea(t._id)} style={{...BtnDanger(T),fontSize:12,padding:"7px 12px"}}>Eliminar</AsyncButton>
@@ -11722,7 +11722,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               if(sortTareas) arr=[...arr].sort((a,b)=>(dLeft(a.deadline)??9999)-(dLeft(b.deadline)??9999));
               return arr;
             })();
-            const CEST2={idea:{l:"Idea",c:"#6b7280"},"brief-enviado":{l:"Brief",c:T.blue},"en-produccion":{l:"En prod.",c:T.orange||"#f97316"},entregado:{l:"Entregado",c:T.yellow||"#d97706"},publicado:{l:"Publicado",c:T.green}};
+            const CEST2={idea:{l:"Idea",c:T.textMd},"brief-enviado":{l:"Brief",c:T.blue},"en-produccion":{l:"En prod.",c:T.orange||T.orange},entregado:{l:"Entregado",c:T.yellow||T.yellow},publicado:{l:"Publicado",c:T.green}};
             return(<>
               {/* Banner bienvenida colabMode */}
               {colabMode&&(
@@ -11760,7 +11760,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               {/* ── CALENDARIO ── */}
               {calendarView&&(()=>{
                 const MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-                const TIPO_COLOR={lanzamiento:"#6366f1",festividad:T.green,promo:T.orange,otro:T.textSm};
+                const TIPO_COLOR={lanzamiento:T.accent,festividad:T.green,promo:T.orange,otro:T.textSm};
                 const daysInMonth=new Date(calMonth.y,calMonth.m+1,0).getDate();
                 const firstDay=new Date(calMonth.y,calMonth.m,1).getDay();
                 const todayStr=new Date().toISOString().slice(0,10);
@@ -11885,7 +11885,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           </div>
                           <div style={{display:"flex",gap:6,flexShrink:0}}>
                             <button onClick={()=>setKanbanSelected(t)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Ver</button>
-                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:12,padding:"6px 14px",borderRadius:8,border:"none",background:"#22c55e",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
+                            <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:12,padding:"6px 14px",borderRadius:8,border:"none",background:T.green,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✓ Aprobar</AsyncButton>
                           </div>
                         </div>
                       );
@@ -11937,12 +11937,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               {/* ── GRID DE TAREAS — una card por tarea ── */}
               {tareasActivas.length>0&&(()=>{
                 const EST_CARD={
-                  pendiente: {l:"Pendiente",  c:"#9ca3af", dot:"#9ca3af", border:T.border},
-                  en_proceso:{l:"En proceso", c:"#3b82f6", dot:"#3b82f6", border:"#3b82f6"},
-                  entregado: {l:"Entregado",  c:"#f97316", dot:"#f97316", border:"#f97316"},
-                  revision:  {l:"A corregir", c:"#ef4444", dot:"#ef4444", border:"#ef4444"},
-                  bloqueada: {l:"Bloqueada",  c:"#6b7280", dot:"#6b7280", border:T.border},
-                  aprobado:  {l:"Aprobado",   c:"#22c55e", dot:"#22c55e", border:"#22c55e"},
+                  pendiente: {l:"Pendiente",  c:T.textSm, dot:T.textSm, border:T.border},
+                  en_proceso:{l:"En proceso", c:T.blue, dot:T.blue, border:T.blue},
+                  entregado: {l:"Entregado",  c:T.orange, dot:T.orange, border:T.orange},
+                  revision:  {l:"A corregir", c:T.red, dot:T.red, border:T.red},
+                  bloqueada: {l:"Bloqueada",  c:T.textMd, dot:T.textMd, border:T.border},
+                  aprobado:  {l:"Aprobado",   c:T.green, dot:T.green, border:T.green},
                 };
                 return(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12,marginBottom:16}}>
@@ -11956,8 +11956,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       const hasSlots=(t.slots||[]).length>0;
                       const isEntregado=t.estado==="entregado";
                       const isAprobado=t.estado==="aprobado";
-                      const cardBorder=isAprobado?`1.5px solid #22c55e`:isUrgente?`1.5px solid ${T.red}`:isEntregado?`1.5px dashed #22c55e`:t.estado==="pendiente"||t.estado==="bloqueada"?`1px solid ${T.border}`:`1px solid ${est.border}`;
-                      const cardBg=isEntregado?"#22c55e08":isAprobado?"#22c55e08":T.card;
+                      const cardBorder=isAprobado?`1.5px solid ${T.green}`:isUrgente?`1.5px solid ${T.red}`:isEntregado?`1.5px dashed ${T.green}`:t.estado==="pendiente"||t.estado==="bloqueada"?`1px solid ${T.border}`:`1px solid ${est.border}`;
+                      const cardBg=isEntregado?T.green+"08":isAprobado?T.green+"08":T.card;
                       return(
                         <div key={t._id} onClick={()=>setKanbanSelected(t)}
                           style={{background:cardBg,border:cardBorder,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"pointer",display:"flex",flexDirection:"column",minHeight:140,transition:"box-shadow 0.15s, background 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}
@@ -11971,11 +11971,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                               <span style={{fontSize:11,fontWeight:600,color:est.c}}>{est.l}</span>
                             </div>
                             <div style={{display:"flex",alignItems:"center",gap:5}}>
-                              {isUrgente&&!isAprobado&&<span style={{fontSize:9,fontWeight:700,color:"#ef4444",background:"#ef444412",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
+                              {isUrgente&&!isAprobado&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"12",borderRadius:4,padding:"2px 7px",letterSpacing:"0.04em"}}>URGENTE</span>}
                               {correcciones>0&&<span style={{fontSize:9,fontWeight:700,color:T.red,background:T.red+"15",borderRadius:4,padding:"2px 7px"}}>🔁 {correcciones}</span>}
                               {t.publicado&&<span style={{fontSize:9,fontWeight:700,color:"#06b6d4",background:"#06b6d412",borderRadius:4,padding:"2px 7px"}}>📤 Publicado</span>}
-                              {!t.publicado&&t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:"#8b5cf6",background:"#8b5cf612",borderRadius:4,padding:"2px 7px"}}>💰 Pauta</span>}
-                              {!t.publicado&&t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:"#22c55e",background:"#22c55e12",borderRadius:4,padding:"2px 7px"}}>📱 Redes</span>}
+                              {!t.publicado&&t.tipoContenido==="pauta"&&<span style={{fontSize:9,fontWeight:700,color:T.purple,background:T.purple+"12",borderRadius:4,padding:"2px 7px"}}>💰 Pauta</span>}
+                              {!t.publicado&&t.tipoContenido==="organico"&&<span style={{fontSize:9,fontWeight:700,color:T.green,background:T.green+"12",borderRadius:4,padding:"2px 7px"}}>📱 Redes</span>}
                               {t.tareaNumStr&&<span style={{fontSize:10,color:T.textSm,fontWeight:500}}>#{t.tareaNumStr}</span>}
                             </div>
                           </div>
@@ -12027,8 +12027,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             const MESES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
                             const deadlineDate=t.deadline?(t.deadline._seconds?new Date(t.deadline._seconds*1000):new Date(t.deadline)):null;
                             const deadlineLabel=deadlineDate?`${deadlineDate.getDate()} ${MESES[deadlineDate.getMonth()]}`:null;
-                            const dlColor=days===null?T.textSm:days<0?"#ef4444":days<=1?"#ef4444":days<=3?"#f97316":T.textSm;
-                            const dlBg=days===null?"transparent":days<0?"#ef444412":days<=1?"#ef444412":days<=3?"#f9731612":"transparent";
+                            const dlColor=days===null?T.textSm:days<0?T.red:days<=1?T.red:days<=3?T.orange:T.textSm;
+                            const dlBg=days===null?"transparent":days<0?T.red+"12":days<=1?T.red+"12":days<=3?T.orange+"12":"transparent";
                             const dlPad=days!==null&&days<=3?"2px 7px":"0";
                             return(
                               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
@@ -12047,7 +12047,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                 {/* Derecha: entregó + deadline */}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
                                   {hasDelivery&&t.estado!=="aprobado"&&(
-                                    <span style={{fontSize:9,fontWeight:700,color:"#22c55e",background:"#22c55e12",borderRadius:4,padding:"2px 7px",border:"1px solid #22c55e30",letterSpacing:"0.02em"}}>✓ Entregó</span>
+                                    <span style={{fontSize:9,fontWeight:700,color:T.green,background:T.green+"12",borderRadius:4,padding:"2px 7px",border:"1px solid "+T.green+"30"+"",letterSpacing:"0.02em"}}>✓ Entregó</span>
                                   )}
                                   {deadlineLabel&&(
                                     <span style={{fontSize:11,fontWeight:600,color:dlColor,background:dlBg,borderRadius:5,padding:dlPad}}>
@@ -12092,7 +12092,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 {produccion.tandas.map(tanda=>{
                   const tc=produccion.creativos.filter(c=>c.tanda_id===tanda.id);
                   const pub=tc.filter(c=>c.estado==="publicado").length;
-                  const EC={activa:{c:T.green,bg:T.greenBg,l:"Activa"},completada:{c:T.blue,bg:T.blueBg,l:"Completada"},pausada:{c:T.yellow||"#d97706",bg:T.yellowBg||"#d9770620",l:"Pausada"}};
+                  const EC={activa:{c:T.green,bg:T.greenBg,l:"Activa"},completada:{c:T.blue,bg:T.blueBg,l:"Completada"},pausada:{c:T.yellow||T.yellow,bg:T.yellowBg||T.yellow+"20",l:"Pausada"}};
                   const ec=EC[tanda.estado]||EC.activa;
                   return (
                     <div key={tanda.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
@@ -12143,7 +12143,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
           {/* ── Creativos ── */}
           {!prodLoading&&safeProdTab==="lista"&&(()=>{
             const {tanda:fT,editor:fE,estado:fSt,tipo:fTi,etapa:fEt}=prodFilter;
-            const CEST={idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},"brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blueBg},"en-produccion":{l:"En producción",c:T.orange||"#f97316",bg:(T.orangeBg||"#f9731615")},entregado:{l:"Entregado",c:T.yellow||"#d97706",bg:(T.yellowBg||"#d9770615")},publicado:{l:"Publicado",c:T.green,bg:T.greenBg},archivado:{l:"Archivado",c:T.textSm,bg:T.surface}};
+            const CEST={idea:{l:"Idea",c:T.textMd,bg:T.textMd+"15"},"brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blueBg},"en-produccion":{l:"En producción",c:T.orange||T.orange,bg:(T.orangeBg||T.orange+"15")},entregado:{l:"Entregado",c:T.yellow||T.yellow,bg:(T.yellowBg||T.yellow+"15")},publicado:{l:"Publicado",c:T.green,bg:T.greenBg},archivado:{l:"Archivado",c:T.textSm,bg:T.surface}};
             const filtered=produccion.creativos.filter(c=>(!fT||c.tanda_id===fT)&&(!fE||c.editor===fE)&&(!fSt||c.estado===fSt)&&(!fTi||c.tipo===fTi)&&(!fEt||c.etapa===fEt));
             const anyFilter=fT||fE||fSt||fTi||fEt;
             return (
@@ -12248,7 +12248,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                           const r = await tareasApi({action:"sendRecordatorio",to:editorColab.email,nombre:editorColab.nombre,titulo:c.angulo||c.codigo||"Creativo",codigo:c.codigo,estado:c.estado,deadline:c.deadline||null,nota:""});
                                           if(r?.ok) toast(`📧 Recordatorio enviado a ${editorColab.nombre}`,"success");
                                           else toast("Error al enviar: "+(r?.error||"desconocido"),"error");
-                                        }} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px",color:"#f59e0b",border:`1px solid #f59e0b44`}} title={`Recordar a ${editorColab.nombre}`}>
+                                        }} style={{...BtnSecondary(T),fontSize:10,padding:"3px 8px",color:T.yellow,border:`1px solid ${T.yellow}44`}} title={`Recordar a ${editorColab.nombre}`}>
                                           ⏰
                                         </AsyncButton>
                                       )}
@@ -12330,7 +12330,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               )}
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {[...produccion.ideas].sort((a,b)=>{const p={alta:0,media:1,baja:2};return (p[a.prioridad]||1)-(p[b.prioridad]||1);}).map(idea=>{
-                  const PC={alta:{l:"Alta",c:T.red,bg:T.redBg},media:{l:"Media",c:T.yellow||"#d97706",bg:T.yellowBg||"#d9770620"},baja:{l:"Baja",c:T.textMd,bg:T.surface}};
+                  const PC={alta:{l:"Alta",c:T.red,bg:T.redBg},media:{l:"Media",c:T.yellow||T.yellow,bg:T.yellowBg||T.yellow+"20"},baja:{l:"Baja",c:T.textMd,bg:T.surface}};
                   const pc=PC[idea.prioridad]||PC.media;
                   return (
                     <div key={idea.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
@@ -12482,7 +12482,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           <span style={{fontSize:14,fontWeight:600,color:T.text}}>{nombre}</span>
                           {c?.rol&&<span style={{fontSize:10,fontWeight:600,color:T.accent,background:T.accentSolid+"18",borderRadius:20,padding:"1px 8px"}}>{c.rol}</span>}
                           {!c&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:20,padding:"1px 8px",border:`1px solid ${T.border}`}}>Sin email</span>}
-                          {c?.permisos?.verTareas&&!(c?.rol||"").toLowerCase().includes("cm")&&<span style={{fontSize:10,fontWeight:700,background:"#8b5cf622",color:"#8b5cf6",borderRadius:20,padding:"1px 8px"}}>CM</span>}
+                          {c?.permisos?.verTareas&&!(c?.rol||"").toLowerCase().includes("cm")&&<span style={{fontSize:10,fontWeight:700,background:T.purple+"22",color:T.purple,borderRadius:20,padding:"1px 8px"}}>CM</span>}
                           {entregado>0&&<span style={{fontSize:10,fontWeight:700,color:T.orange,background:T.orange+"18",borderRadius:20,padding:"1px 8px"}}>📦 {entregado} para revisar</span>}
                         </div>
                         <div style={{fontSize:12,color:T.textSm,display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -12499,7 +12499,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {!c&&portalLink&&<button onClick={()=>navigator.clipboard.writeText(portalLink).then(()=>toast("Link copiado","success"))}
                           style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px"}}>📋 Copiar link</button>}
                         {waHref&&<a href={waHref} target="_blank" rel="noreferrer"
-                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px",textDecoration:"none",color:"#22c55e",border:`1px solid #22c55e33`}}>💬 WhatsApp</a>}
+                          style={{...BtnSecondary(T),fontSize:13,padding:"7px 14px",textDecoration:"none",color:T.green,border:`1px solid ${T.green}33`}}>💬 WhatsApp</a>}
                         <span onClick={e=>{e.stopPropagation();setExpandedEquipo(expanded?null:_key);setEditingMember(null);}}
                           style={{fontSize:11,color:T.textSm,marginLeft:2,cursor:"pointer",padding:"4px 6px"}}>{expanded?"▲":"▼"}</span>
                       </div>
@@ -12517,7 +12517,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {c&&!editing&&(()=>{
                           const activas=userTareas.filter(t=>t.estado!=="aprobado");
                           const ESTILO={
-                            pendiente:  {l:"Pendiente", c:"#9ca3af", bg:T.surface,       dot:"#9ca3af"},
+                            pendiente:  {l:"Pendiente", c:T.textSm, bg:T.surface,       dot:T.textSm},
                             en_proceso: {l:"En proceso",c:T.blue,    bg:T.blue+"18",     dot:T.blue},
                             entregado:  {l:"Entregado", c:T.orange,  bg:T.orange+"18",   dot:T.orange},
                             revision:   {l:"Corrección",c:T.red,     bg:T.red+"18",      dot:T.red},
@@ -12535,7 +12535,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                 ?<div style={{fontSize:12,color:T.textSm,padding:"10px 0"}}>Sin tareas activas</div>
                                 :<div style={{display:"flex",flexDirection:"column",gap:4}}>
                                   {activas.slice(0,8).map(t=>{
-                                    const est=ESTILO[t.estado]||{l:t.estado,c:T.textSm,bg:T.surface,dot:"#9ca3af"};
+                                    const est=ESTILO[t.estado]||{l:t.estado,c:T.textSm,bg:T.surface,dot:T.textSm};
                                     const isDragging=draggedTarea?.id===t._id;
                                     return (
                                       <div key={t._id}
@@ -12633,7 +12633,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                   <div style={{flex:1,marginRight:12}}>
                                     <div style={{display:"flex",alignItems:"center",gap:6}}>
                                       <span style={{fontSize:13,fontWeight:500,color:T.text}}>{label}</span>
-                                      {badge&&active&&<span style={{fontSize:10,fontWeight:700,background:"#8b5cf622",color:"#8b5cf6",borderRadius:4,padding:"1px 6px"}}>{badge}</span>}
+                                      {badge&&active&&<span style={{fontSize:10,fontWeight:700,background:T.purple+"22",color:T.purple,borderRadius:4,padding:"1px 6px"}}>{badge}</span>}
                                     </div>
                                     <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{desc}</div>
                                   </div>
@@ -12679,7 +12679,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       {creativoDetail&&(()=>{
         const c=produccion.creativos.find(cr=>cr.id===creativoDetail.id)||creativoDetail;
         const tanda=produccion.tandas.find(t=>t.id===c.tanda_id);
-        const CEST2={idea:{l:"Idea",c:"#6b7280",bg:"#6b728015"},"brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blueBg},"en-produccion":{l:"En producción",c:T.orange||"#f97316",bg:(T.orangeBg||"#f9731615")},entregado:{l:"Entregado",c:T.yellow||"#d97706",bg:(T.yellowBg||"#d9770615")},publicado:{l:"Publicado",c:T.green,bg:T.greenBg},archivado:{l:"Archivado",c:T.textSm,bg:T.surface}};
+        const CEST2={idea:{l:"Idea",c:T.textMd,bg:T.textMd+"15"},"brief-enviado":{l:"Brief enviado",c:T.blue,bg:T.blueBg},"en-produccion":{l:"En producción",c:T.orange||T.orange,bg:(T.orangeBg||T.orange+"15")},entregado:{l:"Entregado",c:T.yellow||T.yellow,bg:(T.yellowBg||T.yellow+"15")},publicado:{l:"Publicado",c:T.green,bg:T.greenBg},archivado:{l:"Archivado",c:T.textSm,bg:T.surface}};
         const ce=CEST2[c.estado]||CEST2.idea;
         const fmtC=v=>{if(!v)return"—";try{const d=v._seconds?new Date(v._seconds*1000):new Date(v);return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});}catch(e){return"—";}};
         return (
@@ -12850,7 +12850,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                               setAssigneeSelectKey(k=>k+1);
                             }
                           }}
-                          style={{...iS,fontSize:13,width:"100%",borderColor:ntAsignados.length===0?"#ef4444":undefined}}>
+                          style={{...iS,fontSize:13,width:"100%",borderColor:ntAsignados.length===0?T.red:undefined}}>
                           <option value="" disabled>{ntAsignados.length===0?"Elegir persona asignada…":"+ Agregar otra persona"}</option>
                           {colaboradores.filter(c=>!ntAsignados.includes(c.email)).map(c=>(
                             <option key={c._id} value={c.email}>{c.nombre}{c.rol?` · ${c.rol}`:""}</option>
@@ -12869,7 +12869,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{flex:1}}>
                   <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Tipo de contenido</div>
                   <div style={{display:"flex",borderRadius:DS.r.md,overflow:"hidden",border:`1px solid ${T.border}`}}>
-                    {[{v:"",emoji:"—",bg:T.surface,fg:T.text},{v:"organico",emoji:"📱 Redes",bg:"#22c55e",fg:"#fff"},{v:"pauta",emoji:"💰 Pauta",bg:"#8b5cf6",fg:"#fff"}].map((opt,i)=>{
+                    {[{v:"",emoji:"—",bg:T.surface,fg:T.text},{v:"organico",emoji:"📱 Redes",bg:T.green,fg:"#fff"},{v:"pauta",emoji:"💰 Pauta",bg:T.purple,fg:"#fff"}].map((opt,i)=>{
                       const sel=ntTipoContenido===opt.v;
                       return(
                         <button key={opt.v} onClick={()=>setNtTipoContenido(opt.v)}
@@ -13105,7 +13105,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         <div style={{fontSize:11,color:T.textSm}}>{desc}</div>
                       </div>
                       <button onClick={()=>updateColabPermisos(permisosModal.colabId,key,!val)}
-                        style={{width:38,height:22,borderRadius:11,border:"none",cursor:"pointer",background:val?T.green:"#6b7280",position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
+                        style={{width:38,height:22,borderRadius:11,border:"none",cursor:"pointer",background:val?T.green:T.textMd,position:"relative",transition:"background 0.2s",padding:0,flexShrink:0}}>
                         <div style={{position:"absolute",top:3,left:val?18:3,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.25)"}}/>
                       </button>
                     </div>
@@ -13377,7 +13377,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
 
       {/* ── TAB REFERENCIAS ── */}
       {!loading&&view==="referencias"&&(()=>{
-        const TIPO_META={meta:{icon:"📊",color:"#1877f2",label:"Meta Ads"},instagram:{icon:"📷",color:"#e1306c",label:"Instagram"},tiktok:{icon:"🎵",color:"#111",label:"TikTok"},web:{icon:"🌐",color:"#6366f1",label:"Website"},drive:{icon:"📁",color:"#34a853",label:"Drive"},youtube:{icon:"▶️",color:"#ff0000",label:"YouTube"},otro:{icon:"🔗",color:"#6b7280",label:"Otro"}};
+        const TIPO_META={meta:{icon:"📊",color:"#1877f2",label:"Meta Ads"},instagram:{icon:"📷",color:"#e1306c",label:"Instagram"},tiktok:{icon:"🎵",color:"#111",label:"TikTok"},web:{icon:"🌐",color:T.accent,label:"Website"},drive:{icon:"📁",color:"#34a853",label:"Drive"},youtube:{icon:"▶️",color:"#ff0000",label:"YouTube"},otro:{icon:"🔗",color:T.textMd,label:"Otro"}};
         return (
           <div style={{padding:"20px 24px"}}>
             {refLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
@@ -13499,7 +13499,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               href={`https://wa.me/${(notifPanel.colab.telefono||"").replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${notifPanel.colab.nombre.split(" ")[0]} 👋, te asigné una tarea en Growith:\n\n*${notifPanel.tarea?.titulo||""}*${(()=>{const dl=notifPanel.tarea?.deadline;const d=dl?._seconds?new Date(dl._seconds*1000):dl?new Date(dl):null;return d&&Math.ceil((d-new Date())/86400000)<=1?"\n🔴 URGENTE":"";})()} \n\nPodés verla acá:\n${colabLink(notifPanel.colab.token)}`)}`}
               target="_blank" rel="noreferrer"
               onClick={()=>setNotifPanel(null)}
-              style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%",padding:"8px 0",borderRadius:8,background:"#22c55e20",border:"1px solid #22c55e44",color:"#22c55e",fontWeight:600,fontSize:12,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
+              style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%",padding:"8px 0",borderRadius:8,background:T.green+"20",border:"1px solid "+T.green+"44"+"",color:T.green,fontWeight:600,fontSize:12,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer"}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
               Notificar por WhatsApp
             </a>
