@@ -11106,26 +11106,8 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   Bloqueada
                 </AsyncButton>
               </div>
-              {showFeedback[t._id]&&(
-                <div style={{marginTop:10,background:T.surface,borderRadius:DS.r.lg,padding:"14px",border:`1px solid ${T.red}40`}}>
-                  <div style={{fontSize:12,fontWeight:600,color:T.red,marginBottom:8}}>¿Qué debe corregir? <span style={{fontWeight:700}}>*</span> <span style={{fontWeight:400,color:T.textSm}}>— el colaborador ve este texto</span></div>
-                  <textarea value={feedbackText[t._id]||""} onChange={e=>setFeedbackText(p=>({...p,[t._id]:e.target.value}))}
-                    placeholder="Describí exactamente qué cambiar (este mensaje le llega al colaborador por email y WA)..."
-                    style={{...iS,fontSize:12,width:"100%",minHeight:72,resize:"vertical",marginBottom:10,borderColor:(feedbackText[t._id]||"").trim()?"":T.red+"66",boxSizing:"border-box"}}/>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                    <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador — es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:12,padding:"7px 14px"}}>Pedir cambios</AsyncButton>
-                    {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
-                      <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
-                        target="_blank" rel="noreferrer"
-                        style={{fontSize:12,padding:"7px 14px",borderRadius:8,background:T.green+"12",color:T.green,border:"1px solid "+T.green+"44"+"",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                        WA con feedback
-                      </a>
-                    )}
-                    <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Cancelar</button>
-                  </div>
-                </div>
-              )}
+              {/* (El form de "pedir cambios" ahora vive INLINE en la entrega — antes
+                  aparecía acá arriba, lejos del botón que lo abría, y confundía.) */}
             </div>
           );
         })()}
@@ -11422,14 +11404,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         {del.feedbackRecibido}
                       </div>
                     )}
-                    <div style={{display:"flex",gap:6,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`,flexWrap:"wrap",alignItems:"center"}}>
+                    <div style={{display:"flex",gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`,flexWrap:"wrap",alignItems:"center"}}>
                       {(!colabMode||colabMode.permisos?.verTareas)&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<>
-                        <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.green,color:"#fff",border:"1.5px solid "+T.green+"55"+"",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:4}}>✓ Aprobar</AsyncButton>
-                        <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:true}))} style={{...BtnSecondary(T),fontSize:11,padding:"4px 10px",color:T.red,border:`1px solid ${T.red}44`}}>🔁 Pedir cambios</button>
-                        {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:11,padding:"4px 10px",borderRadius:7,color:T.green,border:"1px solid "+T.green+"44"+"",background:T.green+"10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:3}}>💬 WA</a>}
+                        <AsyncButton onClick={()=>updateEstado(t._id,"aprobado")} style={{fontSize:13,padding:"9px 18px",borderRadius:9,background:T.green,color:"#fff",border:"none",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6}}>✓ Aprobar entrega</AsyncButton>
+                        <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:!p[t._id]}))} style={{fontSize:13,padding:"9px 18px",borderRadius:9,background:showFeedback[t._id]?T.red+"18":"transparent",color:T.red,border:`1.5px solid ${T.red}55`,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6}}>🔁 Pedir cambios</button>
+                        {colab?.telefono&&<a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, recibí tu entrega para "${t.titulo}" y necesito ver algo antes de aprobar. Te mando feedback enseguida.`)}`} target="_blank" rel="noreferrer" style={{fontSize:12,padding:"8px 14px",borderRadius:9,color:T.green,border:"1px solid "+T.green+"44"+"",background:T.green+"10",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>💬 WA</a>}
                       </>}
-                      {(!colabMode||colabMode.permisos?.verTareas)&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✏️ Editar</button>}
-                      {(!colabMode||colabMode.permisos?.verTareas)&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.red+"08",color:T.red,border:"1px solid "+T.red+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
+                      {(!colabMode||colabMode.permisos?.verTareas)&&t.estado!=="aprobado"&&<button onClick={()=>setEditDeliverable(p=>({...p,[edKey]:{}}))} style={{fontSize:12,padding:"8px 14px",borderRadius:9,background:T.accent+"10",color:T.accent,border:`1px solid ${T.accent}30`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>✏️ Editar</button>}
+                      {(!colabMode||colabMode.permisos?.verTareas)&&<AsyncButton onClick={()=>deleteDeliverable(t._id,i)} style={{fontSize:12,padding:"8px 14px",borderRadius:9,background:"transparent",color:T.textSm,border:`1px solid ${T.border}`,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
                       {colabMode&&i===(t.deliverables||[]).length-1&&t.estado!=="aprobado"&&<AsyncButton onClick={async()=>{
                         if(!await appConfirm(`¿Eliminar tu entrega "${del.label||`v${i+1}`}"?`,{danger:true,okLabel:"Eliminar"})) return;
                         try{
@@ -11441,6 +11423,26 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         }catch(e){toast("Error: "+e.message,"error");}
                       }} style={{fontSize:11,padding:"4px 10px",borderRadius:7,background:T.red+"08",color:T.red,border:"1px solid "+T.red+"30"+"",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",marginLeft:"auto"}}>Eliminar</AsyncButton>}
                     </div>
+                    {/* Form de "pedir cambios" INLINE — aparece pegado a la entrega, no arriba */}
+                    {showFeedback[t._id]&&i===(t.deliverables||[]).length-1&&(
+                      <div style={{marginTop:12,background:T.surface,borderRadius:DS.r.lg,padding:"14px 16px",border:`1.5px solid ${T.red}44`}}>
+                        <div style={{fontSize:13,fontWeight:700,color:T.red,marginBottom:8}}>¿Qué debe corregir? <span style={{fontWeight:400,fontSize:11,color:T.textSm}}>— este texto le llega al colaborador</span></div>
+                        <textarea autoFocus value={feedbackText[t._id]||""} onChange={e=>setFeedbackText(p=>({...p,[t._id]:e.target.value}))}
+                          placeholder="Describí exactamente qué cambiar (le llega por email y WhatsApp)..."
+                          style={{...iS,fontSize:13,width:"100%",minHeight:80,resize:"vertical",marginBottom:10,borderColor:(feedbackText[t._id]||"").trim()?"":T.red+"66",boxSizing:"border-box"}}/>
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                          <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador — es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:13,padding:"9px 18px",fontWeight:700}}>Enviar pedido de cambios</AsyncButton>
+                          {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
+                            <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]} 👋, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista 💪`)}`}
+                              target="_blank" rel="noreferrer"
+                              style={{fontSize:12,padding:"9px 16px",borderRadius:9,background:T.green+"12",color:T.green,border:"1px solid "+T.green+"44"+"",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}>
+                              💬 WA con este feedback
+                            </a>
+                          )}
+                          <button onClick={()=>setShowFeedback(p=>({...p,[t._id]:false}))} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px"}}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
