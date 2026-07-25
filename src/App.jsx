@@ -11734,7 +11734,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Topbar */}
       <AppTopbar T={T} section="Trabajo" onHome={onHome} top={colabMode?0:48}>
-        {enRevision.length>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:20,padding:"2px 10px"}}>🔁 {enRevision.length} en corrección</span>}
+        {enRevision.length>0&&(
+          <button onClick={()=>{setActiveView("todo");setKanbanSelected(null);}} title="Ver tareas en corrección"
+            style={{display:"inline-flex",alignItems:"center",gap:6,background:T.red+"14",color:T.red,border:`1px solid ${T.red}30`,fontSize:11,fontWeight:600,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:T.red,flexShrink:0}}/>
+            {enRevision.length} en corrección
+          </button>
+        )}
         {view==="todo"&&(
           <div style={{display:"flex",background:T.surface,borderRadius:8,padding:2,gap:1,flexShrink:0}}>
             {[{v:false,l:"Lista"},{v:true,l:"Calendario"}].map(o=>(
@@ -11748,7 +11754,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         {view==="todo"&&!calendarView&&(!colabMode||colabMode.permisos?.verTareas)&&<button onClick={()=>setShowNT(true)} style={{...BtnPrimary(T),fontSize:13,padding:"8px 18px",fontWeight:700,letterSpacing:"0.01em"}}>+ Tarea</button>}
         {view==="equipo"&&!colabMode&&<button onClick={()=>setShowNC(true)} style={{...BtnPrimary(T),fontSize:12,padding:"6px 12px"}}>+ Equipo</button>}
         {view==="equipo"&&!colabMode&&<button onClick={async()=>{setShowBoardModal(true);if(!boardToken){setBoardLinkLoading(true);try{const d=await tareasApi({action:"generateBoardToken"});setBoardTokenAdmin(d.token);}catch(e){toast("Error generando link","error");}finally{setBoardLinkLoading(false);}}}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>🔗 Tablero compartido</button>}
-        {view==="referencias"&&!colabMode&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>+ Marca</button>}
         {view==="todo"&&colabMode&&!colabMode.permisos?.verTareas&&<button onClick={()=>setShowNTColab(true)} style={{...BtnSecondary(T),fontSize:12,padding:"6px 14px"}}>+ Proponer tarea</button>}
       </AppTopbar>
 
@@ -13511,7 +13516,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>📁 Material de trabajo</div>
                         <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Links a Drive, plantillas, guías de marca y todo lo que el equipo necesita para trabajar</div>
                       </div>
-                      {!colabMode&&<Btn T={T} variant="secondary" size="sm" onClick={()=>openMatModal()}>+ Material</Btn>}
+                      {!colabMode&&<button onClick={()=>openMatModal()} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",fontWeight:700,flexShrink:0}}>+ Material</button>}
                     </div>
                     {materiales.length===0
                       ? <div style={{fontSize:DS.font.md,color:T.textSm,fontStyle:"italic",padding:"14px 16px",background:T.surface,border:`1px dashed ${T.border}`,borderRadius:DS.r.lg}}>Sin materiales todavía — agregá links a carpetas de Drive, plantillas de Canva o guías de marca. Tu equipo los va a ver acá y en su portal.</div>
@@ -13526,6 +13531,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>🔍 Marcas de referencia</div>
                     <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Competencia e inspiración: sus redes, ads y sitios a un click</div>
                   </div>
+                  {!colabMode&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",fontWeight:700,flexShrink:0}}>+ Marca</button>}
                 </div>
                 {referencias.length===0&&(
                   colabMode
