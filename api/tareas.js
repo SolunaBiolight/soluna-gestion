@@ -710,9 +710,9 @@ export default async function handler(req, res) {
       if (colSnap.empty) return res.status(404).json({ error:"Token inválido" });
       const colabUid = colSnap.docs[0].data().uid;
       const gSnap = await db.collection("general").doc(colabUid).get();
-      if (!gSnap.exists) return res.json({ posts:[], referencias:[] });
+      if (!gSnap.exists) return res.json({ posts:[], referencias:[], materiales:[] });
       const gd = gSnap.data();
-      return res.json({ posts:gd.posts||[], referencias:gd.referencias||[] });
+      return res.json({ posts:gd.posts||[], referencias:gd.referencias||[], materiales:gd.materiales||[] });
     }
 
     // ── ACCIONES AUTENTICADAS (uid requerido) ─────────────────────────────────
@@ -1281,9 +1281,9 @@ export default async function handler(req, res) {
 
     if (action === "getGeneral") {
       const snap = await db.collection("general").doc(uid).get();
-      if (!snap.exists) return res.json({ posts: [], referencias: [] });
+      if (!snap.exists) return res.json({ posts: [], referencias: [], materiales: [] });
       const d = snap.data();
-      return res.json({ posts: d.posts||[], referencias: d.referencias||[] });
+      return res.json({ posts: d.posts||[], referencias: d.referencias||[], materiales: d.materiales||[] });
     }
 
     if (action === "addPost") {
@@ -1346,6 +1346,19 @@ export default async function handler(req, res) {
         await ref.set({ posts:[], referencias });
       } else {
         await ref.update({ referencias });
+      }
+      return res.json({ ok:true });
+    }
+
+    if (action === "saveMateriales") {
+      const { materiales } = body;
+      if (!Array.isArray(materiales)) return res.status(400).json({ error:"materiales debe ser un array" });
+      const ref = db.collection("general").doc(uid);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set({ posts:[], referencias:[], materiales });
+      } else {
+        await ref.update({ materiales });
       }
       return res.json({ ok:true });
     }
@@ -1623,6 +1636,7 @@ export default async function handler(req, res) {
         colaboradores: colaboradores.map(c=>({ _id:c._id, nombre:c.nombre, email:c.email, rol:c.rol||"", token:c.token })),
         posts: general.posts || [],
         referencias: general.referencias || [],
+        materiales: general.materiales || [],
       });
     }
 

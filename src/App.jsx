@@ -10130,6 +10130,58 @@ function RefCard({T, refData, colabMode, onEdit, onDelete}) {
   );
 }
 
+// ── MATERIAL DE TRABAJO — links compartidos del equipo (Drive, plantillas, guías) ──
+const MAT_TIPOS = {
+  drive:      { icon:"📁", label:"Drive",      color:"#34a853" },
+  doc:        { icon:"📄", label:"Google Doc", color:"#4285f4" },
+  sheet:      { icon:"📊", label:"Sheet",      color:"#0f9d58" },
+  figma:      { icon:"🎨", label:"Figma",      color:"#a259ff" },
+  canva:      { icon:"🖌️", label:"Canva",      color:"#00c4cc" },
+  notion:     { icon:"🗒️", label:"Notion",     color:"#8b95a5" },
+  dropbox:    { icon:"📦", label:"Dropbox",    color:"#0061ff" },
+  wetransfer: { icon:"📤", label:"WeTransfer", color:"#409fff" },
+  youtube:    { icon:"▶️", label:"YouTube",    color:"#ff0000" },
+  instagram:  { icon:"📷", label:"Instagram",  color:"#e1306c" },
+  link:       { icon:"🔗", label:"Link",       color:"#8b95a5" },
+};
+function matDetectTipo(url) {
+  const u = (url||"").toLowerCase();
+  if (u.includes("drive.google")) return "drive";
+  if (u.includes("docs.google")) return "doc";
+  if (u.includes("sheets.google")||u.includes("spreadsheets")) return "sheet";
+  if (u.includes("figma.com")) return "figma";
+  if (u.includes("canva.com")) return "canva";
+  if (u.includes("notion.")) return "notion";
+  if (u.includes("dropbox.")) return "dropbox";
+  if (u.includes("wetransfer.")||u.includes("we.tl")) return "wetransfer";
+  if (u.includes("youtube.")||u.includes("youtu.be")) return "youtube";
+  if (u.includes("instagram.")) return "instagram";
+  return "link";
+}
+function MatCard({T, mat, colabMode, onEdit, onDelete}) {
+  const [h,setH]=React.useState(false);
+  const meta=MAT_TIPOS[mat.tipo||matDetectTipo(mat.url)]||MAT_TIPOS.link;
+  return (
+    <div onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{position:"relative",background:T.card,border:`1px solid ${h?meta.color+"55":T.border}`,borderRadius:DS.r.xl,transition:`all 0.15s ${DS.ease}`,transform:h?"translateY(-2px)":"none",boxShadow:h?"0 8px 24px rgba(0,0,0,0.18)":"0 1px 3px rgba(0,0,0,0.08)"}}>
+      <a href={mat.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <span style={{display:"grid",placeItems:"center",width:36,height:36,borderRadius:10,background:meta.color+"1c",fontSize:17,flexShrink:0}}>{meta.icon}</span>
+        <span style={{flex:1,minWidth:0}}>
+          <span style={{display:"block",fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{mat.nombre}</span>
+          <span style={{display:"block",fontSize:DS.font.sm,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{mat.nota||meta.label}</span>
+        </span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{color:meta.color,opacity:h?0.9:0.35,flexShrink:0,transition:"opacity 0.15s"}}><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
+      </a>
+      {!colabMode&&h&&(
+        <div style={{position:"absolute",top:6,right:6,display:"flex",gap:2,background:T.card,borderRadius:7,border:`1px solid ${T.border}`,padding:1}}>
+          <button onClick={e=>{e.preventDefault();onEdit(mat);}} title="Editar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:12,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✏️</button>
+          <button onClick={e=>{e.preventDefault();onDelete(mat.id);}} title="Eliminar" style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,padding:"3px 6px",borderRadius:6,fontSize:12,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===========================================
 // APP TAREAS — Delegación a colaboradores externos
 // ===========================================
@@ -10231,6 +10283,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     {id:"otro",      label:"Otro",      icon:"🔗", color:T.textMd},
   ];
   const REF_COLORS = [T.accent,T.orange,T.green,T.red,"#ec4899","#14b8a6",T.yellow,T.purple,T.blue,"#64748b"];
+  // ── MATERIAL DE TRABAJO ──
+  const [materiales, setMateriales] = useState([]);
+  const [showMatModal, setShowMatModal] = useState(false);
+  const [editingMat, setEditingMat] = useState(null);
+  const [matNombre, setMatNombre] = useState("");
+  const [matUrl, setMatUrl] = useState("");
+  const [matNota, setMatNota] = useState("");
   // ── PRODUCCIÓN CREATIVA ──
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
@@ -10323,8 +10382,29 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         d=await tareasApi({action:"getGeneral"});
       }
       setReferencias(Array.isArray(d.referencias)?d.referencias:[]);
+      setMateriales(Array.isArray(d.materiales)?d.materiales:[]);
     } catch(e){}
     if(!silent) setRefLoading(false);
+  }
+  async function saveMatRemote(newMats) {
+    await tareasApi({action:"saveMateriales", materiales:newMats});
+    setMateriales(newMats);
+  }
+  function openMatModal(mat=null) {
+    setEditingMat(mat); setMatNombre(mat?.nombre||""); setMatUrl(mat?.url||""); setMatNota(mat?.nota||""); setShowMatModal(true);
+  }
+  async function handleSaveMat() {
+    if(!matNombre.trim()) return appAlert("Poné un nombre al material (ej: Fotos de producto)");
+    if(!matUrl.trim()) return appAlert("Pegá el link (Drive, Figma, Canva...)");
+    const url=matUrl.trim();
+    const id=editingMat?.id||Math.random().toString(36).slice(2,14);
+    const mat={id,nombre:matNombre.trim(),url,nota:matNota.trim(),tipo:matDetectTipo(url)};
+    const updated=editingMat?materiales.map(m=>m.id===editingMat.id?mat:m):[...materiales,mat];
+    await saveMatRemote(updated); setShowMatModal(false);
+  }
+  async function handleDeleteMat(matId) {
+    if(!await appConfirm("¿Eliminar este material?",{danger:true,okLabel:"Eliminar"})) return;
+    await saveMatRemote(materiales.filter(m=>m.id!==matId));
   }
   async function saveRefRemote(newRefs) {
     await tareasApi({action:"saveReferencias", referencias:newRefs});
@@ -13421,17 +13501,45 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         return (
           <div style={{padding:"20px 24px"}}>
             {refLoading&&<div style={{textAlign:"center",padding:48}}><Spinner size={28} color={T.accent}/></div>}
-            {!refLoading&&referencias.length===0&&(
-              colabMode
-                ? <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Todavía no hay marcas de referencia cargadas. El equipo las agrega desde el panel."/>
-                : <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Agregá marcas o tiendas de referencia para que tu equipo pueda acceder rápido a sus redes, ads y sitios." action={<Btn T={T} variant="primary" onClick={()=>openRefModal()}>+ Primera marca</Btn>}/>
-            )}
-            {!refLoading&&referencias.length>0&&(
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(264px,1fr))",gap:16}}>
-                {referencias.map(ref=>(
-                  <RefCard key={ref.id} T={T} refData={ref} colabMode={colabMode} onEdit={openRefModal} onDelete={handleDeleteRef}/>
-                ))}
-              </div>
+            {!refLoading&&(
+              <React.Fragment>
+                {/* ── MATERIAL DE TRABAJO ── */}
+                {(materiales.length>0||!colabMode)&&(
+                  <div style={{marginBottom:32}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>📁 Material de trabajo</div>
+                        <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Links a Drive, plantillas, guías de marca y todo lo que el equipo necesita para trabajar</div>
+                      </div>
+                      {!colabMode&&<Btn T={T} variant="secondary" size="sm" onClick={()=>openMatModal()}>+ Material</Btn>}
+                    </div>
+                    {materiales.length===0
+                      ? <div style={{fontSize:DS.font.md,color:T.textSm,fontStyle:"italic",padding:"14px 16px",background:T.surface,border:`1px dashed ${T.border}`,borderRadius:DS.r.lg}}>Sin materiales todavía — agregá links a carpetas de Drive, plantillas de Canva o guías de marca. Tu equipo los va a ver acá y en su portal.</div>
+                      : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
+                          {materiales.map(m=><MatCard key={m.id} T={T} mat={m} colabMode={colabMode} onEdit={openMatModal} onDelete={handleDeleteMat}/>)}
+                        </div>}
+                  </div>
+                )}
+                {/* ── MARCAS DE REFERENCIA ── */}
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>🔍 Marcas de referencia</div>
+                    <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Competencia e inspiración: sus redes, ads y sitios a un click</div>
+                  </div>
+                </div>
+                {referencias.length===0&&(
+                  colabMode
+                    ? <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Todavía no hay marcas de referencia cargadas. El equipo las agrega desde el panel."/>
+                    : <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Agregá marcas o tiendas de referencia para que tu equipo pueda acceder rápido a sus redes, ads y sitios." action={<Btn T={T} variant="primary" onClick={()=>openRefModal()}>+ Primera marca</Btn>}/>
+                )}
+                {referencias.length>0&&(
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(264px,1fr))",gap:16}}>
+                    {referencias.map(ref=>(
+                      <RefCard key={ref.id} T={T} refData={ref} colabMode={colabMode} onEdit={openRefModal} onDelete={handleDeleteRef}/>
+                    ))}
+                  </div>
+                )}
+              </React.Fragment>
             )}
           </div>
         );
@@ -13460,6 +13568,34 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
               <Btn T={T} variant="secondary" onClick={()=>setShowNTColab(false)}>Cancelar</Btn>
               <AsyncButton onClick={proponerTareaColab} style={BtnPrimary(T)}>Proponer</AsyncButton>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL Material de trabajo — agregar / editar */}
+      {showMatModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setShowMatModal(false);}}>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:440}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontSize:15,fontWeight:700,color:T.text}}>{editingMat?"Editar material":"Nuevo material"}</div>
+              <ModalCloseBtn T={T} onClick={()=>setShowMatModal(false)}/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Nombre *</div>
+              <input value={matNombre} onChange={e=>setMatNombre(e.target.value)} placeholder="ej: Fotos de producto, Guía de marca, Plantillas Canva" style={{...iS,width:"100%",fontSize:13}}/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Link *</div>
+              <input value={matUrl} onChange={e=>setMatUrl(e.target.value)} placeholder="https://drive.google.com/..." style={{...iS,width:"100%",fontSize:13}}/>
+              {matUrl.trim()&&(()=>{const tm=MAT_TIPOS[matDetectTipo(matUrl)]||MAT_TIPOS.link;return <div style={{fontSize:11,color:T.textSm,marginTop:5}}>{tm.icon} Detectado: <strong style={{color:T.textMd}}>{tm.label}</strong></div>;})()}
+            </div>
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Descripción corta (opcional)</div>
+              <input value={matNota} onChange={e=>setMatNota(e.target.value)} placeholder="ej: Fotos finales listas para usar en ads" style={{...iS,width:"100%",fontSize:13}} onKeyDown={e=>e.key==="Enter"&&handleSaveMat()}/>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn T={T} variant="secondary" onClick={()=>setShowMatModal(false)}>Cancelar</Btn>
+              <AsyncButton onClick={handleSaveMat} style={BtnPrimary(T)}>Guardar</AsyncButton>
             </div>
           </div>
         </div>
@@ -13995,6 +14131,7 @@ function ColaboradorPublicView({T, token}) {
   const { colab, tareas=[], creativos=null, tandas=[], adminWaPhone:adminWa=null, equipoTareas=null } = data;
   const tablon = generalData?.posts||[];
   const referencias = generalData?.referencias||[];
+  const materiales = generalData?.materiales||[];
   const aprobadas = tareas.filter(t=>t.estado==="aprobado");
   const totalTareas = tareas.length;
   const progressPct = totalTareas>0?Math.round(aprobadas.length/totalTareas*100):0;
@@ -14673,6 +14810,22 @@ function ColaboradorPublicView({T, token}) {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ── SECCIÓN MATERIAL DE TRABAJO ── */}
+        {materiales.length>0&&(
+          <div style={{marginTop:28}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(52,168,83,0.13),rgba(52,168,83,0.06))",borderRadius:12,border:"1.5px solid rgba(52,168,83,0.3)"}}>
+              <span style={{fontSize:18}}>📁</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#34a853"}}>Material de trabajo</div>
+                <div style={{fontSize:11,color:T.textSm}}>Carpetas, plantillas y guías para tus tareas</div>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
+              {materiales.map(m=><MatCard key={m.id} T={T} mat={m} colabMode={true}/>)}
+            </div>
           </div>
         )}
 
