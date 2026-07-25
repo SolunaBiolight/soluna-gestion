@@ -10158,6 +10158,13 @@ function matDetectTipo(url) {
   if (u.includes("instagram.")) return "instagram";
   return "link";
 }
+const MAT_CATS = [
+  { id:"fotos",      label:"Fotos",      icon:"📷" },
+  { id:"videos",     label:"Videos",     icon:"🎬" },
+  { id:"plantillas", label:"Plantillas", icon:"🎨" },
+  { id:"guias",      label:"Guías",      icon:"📘" },
+  { id:"otros",      label:"Otros",      icon:"📎" },
+];
 function MatCard({T, mat, colabMode, onEdit, onDelete}) {
   const [h,setH]=React.useState(false);
   const meta=MAT_TIPOS[mat.tipo||matDetectTipo(mat.url)]||MAT_TIPOS.link;
@@ -10290,6 +10297,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [matNombre, setMatNombre] = useState("");
   const [matUrl, setMatUrl] = useState("");
   const [matNota, setMatNota] = useState("");
+  const [matCat, setMatCat] = useState("");
+  const [matCatFilter, setMatCatFilter] = useState("");
+  const [refSearch, setRefSearch] = useState("");
   // ── PRODUCCIÓN CREATIVA ──
   const [produccion, setProduccion] = useState({editores:["Val","Editor IA","Editor Video","Hector"],tandas:[],creativos:[],ideas:[]});
   const [prodLoading, setProdLoading] = useState(false);
@@ -10391,14 +10401,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     setMateriales(newMats);
   }
   function openMatModal(mat=null) {
-    setEditingMat(mat); setMatNombre(mat?.nombre||""); setMatUrl(mat?.url||""); setMatNota(mat?.nota||""); setShowMatModal(true);
+    setEditingMat(mat); setMatNombre(mat?.nombre||""); setMatUrl(mat?.url||""); setMatNota(mat?.nota||""); setMatCat(mat?.cat||""); setShowMatModal(true);
   }
   async function handleSaveMat() {
     if(!matNombre.trim()) return appAlert("Poné un nombre al material (ej: Fotos de producto)");
     if(!matUrl.trim()) return appAlert("Pegá el link (Drive, Figma, Canva...)");
     const url=matUrl.trim();
     const id=editingMat?.id||Math.random().toString(36).slice(2,14);
-    const mat={id,nombre:matNombre.trim(),url,nota:matNota.trim(),tipo:matDetectTipo(url)};
+    const mat={id,nombre:matNombre.trim(),url,nota:matNota.trim(),tipo:matDetectTipo(url),cat:matCat};
     const updated=editingMat?materiales.map(m=>m.id===editingMat.id?mat:m):[...materiales,mat];
     await saveMatRemote(updated); setShowMatModal(false);
   }
@@ -11735,7 +11745,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       {/* Topbar */}
       <AppTopbar T={T} section="Trabajo" onHome={onHome} top={colabMode?0:48}>
         {enRevision.length>0&&(
-          <button onClick={()=>{setActiveView("todo");setKanbanSelected(null);}} title="Ver tareas en corrección"
+          <button onClick={()=>{setActiveView("todo");setKanbanSelected(null);setCalendarView(false);setFilterCompletadas(false);setFilterEstado("revision");setFilterColab("");}} title="Ver tareas en corrección"
             style={{display:"inline-flex",alignItems:"center",gap:6,background:T.red+"14",color:T.red,border:`1px solid ${T.red}30`,fontSize:11,fontWeight:600,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
             <span style={{width:6,height:6,borderRadius:"50%",background:T.red,flexShrink:0}}/>
             {enRevision.length} en corrección
@@ -11988,6 +11998,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   </div>
                 );
               })()}
+              {filterEstado==="revision"&&(
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,padding:"8px 14px",background:T.red+"10",border:`1px solid ${T.red}30`,borderRadius:9}}>
+                  <span style={{width:6,height:6,borderRadius:"50%",background:T.red,flexShrink:0}}/>
+                  <span style={{fontSize:12,fontWeight:600,color:T.red}}>Mostrando solo tareas en corrección</span>
+                  <button onClick={()=>setFilterEstado("")} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.red,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>✕ Quitar filtro</button>
+                </div>
+              )}
               {(!colabMode||colabMode.permisos?.verTareas)&&paraRevisar.length>0&&(
                 <div style={{marginBottom:20}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:showParaRevisar?10:0,cursor:"pointer"}} onClick={()=>setShowParaRevisar(p=>!p)}>
@@ -13520,9 +13537,28 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     </div>
                     {materiales.length===0
                       ? <div style={{fontSize:DS.font.md,color:T.textSm,fontStyle:"italic",padding:"14px 16px",background:T.surface,border:`1px dashed ${T.border}`,borderRadius:DS.r.lg}}>Sin materiales todavía — agregá links a carpetas de Drive, plantillas de Canva o guías de marca. Tu equipo los va a ver acá y en su portal.</div>
-                      : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
-                          {materiales.map(m=><MatCard key={m.id} T={T} mat={m} colabMode={colabMode} onEdit={openMatModal} onDelete={handleDeleteMat}/>)}
-                        </div>}
+                      : (()=>{
+                          const catsPresentes=MAT_CATS.filter(c=>materiales.some(m=>m.cat===c.id));
+                          const matsFiltrados=matCatFilter?materiales.filter(m=>m.cat===matCatFilter):materiales;
+                          return (
+                            <React.Fragment>
+                              {catsPresentes.length>=2&&(
+                                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+                                  {[{id:"",label:"Todas",icon:""},...catsPresentes].map(c=>{
+                                    const act=matCatFilter===c.id;
+                                    return <button key={c.id||"all"} onClick={()=>setMatCatFilter(c.id)}
+                                      style={{padding:"4px 12px",fontSize:11,fontWeight:act?700:500,borderRadius:99,border:`1.5px solid ${act?T.accentSolid:T.border}`,background:act?T.accentSolid:"transparent",color:act?"#fff":T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
+                                      {c.icon?c.icon+" ":""}{c.label}
+                                    </button>;
+                                  })}
+                                </div>
+                              )}
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
+                                {matsFiltrados.map(m=><MatCard key={m.id} T={T} mat={m} colabMode={colabMode} onEdit={openMatModal} onDelete={handleDeleteMat}/>)}
+                              </div>
+                            </React.Fragment>
+                          );
+                        })()}
                   </div>
                 )}
                 {/* ── MARCAS DE REFERENCIA ── */}
@@ -13531,6 +13567,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>🔍 Marcas de referencia</div>
                     <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Competencia e inspiración: sus redes, ads y sitios a un click</div>
                   </div>
+                  {referencias.length>3&&<input value={refSearch} onChange={e=>setRefSearch(e.target.value)} placeholder="🔍 Buscar marca..." style={{...iS,fontSize:12,width:180,flexShrink:0}}/>}
                   {!colabMode&&<button onClick={()=>openRefModal()} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",fontWeight:700,flexShrink:0}}>+ Marca</button>}
                 </div>
                 {referencias.length===0&&(
@@ -13538,13 +13575,18 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     ? <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Todavía no hay marcas de referencia cargadas. El equipo las agrega desde el panel."/>
                     : <DSEmpty T={T} icon="🔍" title="Sin referencias aún" subtitle="Agregá marcas o tiendas de referencia para que tu equipo pueda acceder rápido a sus redes, ads y sitios." action={<Btn T={T} variant="primary" onClick={()=>openRefModal()}>+ Primera marca</Btn>}/>
                 )}
-                {referencias.length>0&&(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(264px,1fr))",gap:16}}>
-                    {referencias.map(ref=>(
-                      <RefCard key={ref.id} T={T} refData={ref} colabMode={colabMode} onEdit={openRefModal} onDelete={handleDeleteRef}/>
-                    ))}
-                  </div>
-                )}
+                {referencias.length>0&&(()=>{
+                  const q=refSearch.trim().toLowerCase();
+                  const refsFiltradas=q?referencias.filter(r=>(r.nombre||"").toLowerCase().includes(q)):referencias;
+                  if(refsFiltradas.length===0) return <div style={{fontSize:DS.font.md,color:T.textSm,fontStyle:"italic",padding:"14px 16px",background:T.surface,border:`1px dashed ${T.border}`,borderRadius:DS.r.lg}}>Ninguna marca coincide con "{refSearch.trim()}"</div>;
+                  return (
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(264px,1fr))",gap:16}}>
+                      {refsFiltradas.map(ref=>(
+                        <RefCard key={ref.id} T={T} refData={ref} colabMode={colabMode} onEdit={openRefModal} onDelete={handleDeleteRef}/>
+                      ))}
+                    </div>
+                  );
+                })()}
               </React.Fragment>
             )}
           </div>
@@ -13595,9 +13637,16 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <input value={matUrl} onChange={e=>setMatUrl(e.target.value)} placeholder="https://drive.google.com/..." style={{...iS,width:"100%",fontSize:13}}/>
               {matUrl.trim()&&(()=>{const tm=MAT_TIPOS[matDetectTipo(matUrl)]||MAT_TIPOS.link;return <div style={{fontSize:11,color:T.textSm,marginTop:5}}>{tm.icon} Detectado: <strong style={{color:T.textMd}}>{tm.label}</strong></div>;})()}
             </div>
-            <div style={{marginBottom:20}}>
+            <div style={{marginBottom:12}}>
               <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Descripción corta (opcional)</div>
               <input value={matNota} onChange={e=>setMatNota(e.target.value)} placeholder="ej: Fotos finales listas para usar en ads" style={{...iS,width:"100%",fontSize:13}} onKeyDown={e=>e.key==="Enter"&&handleSaveMat()}/>
+            </div>
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:5}}>Categoría (opcional)</div>
+              <select value={matCat} onChange={e=>setMatCat(e.target.value)} style={{...iS,width:"100%",fontSize:13}}>
+                <option value="">Sin categoría</option>
+                {MAT_CATS.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+              </select>
             </div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
               <Btn T={T} variant="secondary" onClick={()=>setShowMatModal(false)}>Cancelar</Btn>
