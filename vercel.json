@@ -17,6 +17,7 @@
     { "path": "/api/meta?action=cron_run_all", "schedule": "0 11 * * *" },
     { "path": "/api/orders?action=warm_margenes", "schedule": "*/5 * * * *" },
     { "path": "/api/stock?action=warm_all", "schedule": "*/15 * * * *" },
-    { "path": "/api/update-shipping?action=track_all", "schedule": "*/30 * * * *" }
+    { "path": "/api/update-shipping?action=track_all", "schedule": "*/30 * * * *" },
+    { "path": "/api/tareas?action=cron_deadlines", "schedule": "30 12 * * *" }
   ]
 }

@@ -323,6 +323,102 @@ export default async function handler(req, res) {
     const origin = req.headers.origin || req.headers.referer || "";
     const now = new Date();
 
+    // ── CRON diario (vercel.json): recordatorios de deadline + resumen semanal ──
+    // (a) 24-36h antes del vencimiento → email al colaborador asignado.
+    // (b) Venció sin aprobar → email al colaborador + UN aviso a los admins.
+    // (c) Lunes → resumen semanal SOLO a administradores (users/{uid}.email +
+    //     notifEmails); los colaboradores/editores nunca lo reciben.
+    // Idempotente: remPreAt / remVencidaAt en la tarea, tareasWeeklyAt en el user.
+    if (action === "cron_deadlines") {
+      const ahora = new Date();
+      const en36h = new Date(ahora.getTime() + 36 * 3600000);
+      const desde = new Date(ahora.getTime() - 14 * 86400000);
+      const hasta = new Date(ahora.getTime() + 8 * 86400000);
+      const snapT = await db.collection("tareas").where("deadline", ">=", desde).where("deadline", "<=", hasta).get();
+      const dlOf = t => t.deadline?.toDate ? t.deadline.toDate() : new Date(t.deadline?._seconds ? t.deadline._seconds * 1000 : t.deadline);
+      const pendTareas = snapT.docs.map(d => ({ _id: d.id, _ref: d.ref, ...d.data() })).filter(t => t.estado !== "aprobado" && t.deadline);
+      const uids = [...new Set(pendTareas.map(t => t.uid).filter(Boolean))];
+      const colabsByUid = {};
+      for (const u of uids) {
+        const cs = await db.collection("colaboradores").where("uid", "==", u).get();
+        colabsByUid[u] = {};
+        cs.docs.forEach(d => { const c = d.data(); if (c.email) colabsByUid[u][c.email.toLowerCase()] = c; });
+      }
+      const fmtDL = d => d.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Argentina/Buenos_Aires" });
+      const mailColab = async (t, esPre) => {
+        const dl = dlOf(t);
+        for (const em of (t.asignadosEmails || [t.asignadoEmail]).filter(Boolean)) {
+          const colab = (colabsByUid[t.uid] || {})[em.toLowerCase()];
+          const link = colab?.token ? colabPortalLink("", colab.token) : "";
+          const html = `<div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,${esPre ? "#f59e0b,#f97316" : "#ef4444,#f97316"});padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:18px;font-weight:700;color:#fff">${esPre ? "Tu tarea vence mañana" : "Tu tarea está vencida"}</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px">${t.titulo}</div>
+  </div>
+  <p style="font-size:14px;color:#374151">${esPre ? `La tarea <strong>${t.titulo}</strong> vence el <strong>${fmtDL(dl)}</strong>. Si ya la tenés lista, subí la entrega desde tu portal.` : `La tarea <strong>${t.titulo}</strong> venció el <strong>${fmtDL(dl)}</strong> y todavía no está aprobada. Subí la entrega o avisá si estás trabado/a.`}</p>
+  ${link ? `<div style="text-align:center;margin:18px 0"><a href="${link}" style="background:#6366f1;color:#fff;padding:11px 26px;border-radius:9px;text-decoration:none;font-size:14px;font-weight:700">Abrir mi portal</a></div>` : ""}
+  <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Tareas</p>
+</div>`;
+          await sendEmail({ to: em, subject: esPre ? `Vence mañana: ${t.titulo}` : `Tarea vencida: ${t.titulo}`, html });
+        }
+      };
+      let pre = 0, venc = 0;
+      const vencidasPorUid = {};
+      for (const t of pendTareas) {
+        const dl = dlOf(t);
+        if (dl > ahora && dl <= en36h && !t.remPreAt) {
+          await t._ref.set({ remPreAt: now }, { merge: true });
+          await mailColab(t, true); pre++;
+        } else if (dl < ahora && !t.remVencidaAt) {
+          await t._ref.set({ remVencidaAt: now }, { merge: true });
+          await mailColab(t, false); venc++;
+          (vencidasPorUid[t.uid] = vencidasPorUid[t.uid] || []).push(t);
+        }
+      }
+      // Aviso a admins: solo las que ACABAN de vencer, agrupadas en un solo mail
+      for (const [u, ts] of Object.entries(vencidasPorUid)) {
+        const lista = ts.map(t => `<li style="margin-bottom:6px"><strong>${t.titulo}</strong> — ${t.asignadoNombre || t.asignadoEmail || ""} · venció el ${fmtDL(dlOf(t))}</li>`).join("");
+        const html = `<div style="font-family:Inter,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#ef4444,#f97316);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:18px;font-weight:700;color:#fff">Tareas vencidas sin entregar</div>
+  </div>
+  <ul style="font-size:13px;color:#374151;padding-left:18px;line-height:1.6">${lista}</ul>
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:18px">Growith — Tareas</p>
+</div>`;
+        await notifyManagers(db, u, ts[0]?.managerEmail || "", `${ts.length} tarea${ts.length !== 1 ? "s" : ""} vencida${ts.length !== 1 ? "s" : ""} sin entregar`, html);
+      }
+      // Resumen semanal — lunes en Argentina, una vez por día, solo admins
+      const diaAR = new Intl.DateTimeFormat("en-US", { timeZone: "America/Argentina/Buenos_Aires", weekday: "short" }).format(ahora);
+      let weekly = 0;
+      if (diaAR === "Mon") {
+        const hoyISO = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(ahora);
+        for (const u of uids) {
+          const uref = db.collection("users").doc(u);
+          const usnap = await uref.get();
+          if ((usnap.data() || {}).tareasWeeklyAt === hoyISO) continue;
+          const tsU = pendTareas.filter(t => t.uid === u);
+          const vencidas = tsU.filter(t => dlOf(t) < ahora);
+          const proximas = tsU.filter(t => { const d = dlOf(t); return d >= ahora && d <= new Date(ahora.getTime() + 7 * 86400000); });
+          const entregadasSnap = await db.collection("tareas").where("uid", "==", u).where("estado", "==", "entregado").get();
+          if (!vencidas.length && !proximas.length && !entregadasSnap.size) continue;
+          const li = t => `<li style="margin-bottom:5px"><strong>${t.titulo}</strong> — ${t.asignadoNombre || t.asignadoEmail || ""} · ${fmtDL(dlOf(t))}</li>`;
+          const html = `<div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;background:#fff">
+  <div style="background:linear-gradient(135deg,#6366f1,#a78bfa);padding:22px;border-radius:12px;text-align:center;margin-bottom:22px">
+    <div style="font-size:18px;font-weight:700;color:#fff">Resumen semanal del equipo</div>
+  </div>
+  ${entregadasSnap.size ? `<p style="font-size:14px;color:#374151"><strong>${entregadasSnap.size}</strong> entrega${entregadasSnap.size !== 1 ? "s" : ""} esperando tu revisión.</p>` : ""}
+  ${vencidas.length ? `<div style="font-size:13px;color:#dc2626;font-weight:700;margin-top:14px">Vencidas sin aprobar (${vencidas.length})</div><ul style="font-size:13px;color:#374151;padding-left:18px;line-height:1.6">${vencidas.map(li).join("")}</ul>` : ""}
+  ${proximas.length ? `<div style="font-size:13px;color:#d97706;font-weight:700;margin-top:14px">Vencen esta semana (${proximas.length})</div><ul style="font-size:13px;color:#374151;padding-left:18px;line-height:1.6">${proximas.map(li).join("")}</ul>` : ""}
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:20px">Growith — Tareas</p>
+</div>`;
+          await uref.set({ tareasWeeklyAt: hoyISO }, { merge: true });
+          await notifyManagers(db, u, "", `Resumen semanal: ${vencidas.length} vencidas · ${proximas.length} vencen esta semana`, html);
+          weekly++;
+        }
+      }
+      return res.json({ ok: true, enVentana: pendTareas.length, preAvisos: pre, vencidas: venc, resumenes: weekly });
+    }
+
     // ── ACCIONES PÚBLICAS (solo token, sin uid) ───────────────────────────────
 
     if (action === "getPublicData") {

@@ -10395,6 +10395,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   const [filterCompletadas, setFilterCompletadas] = useState(false);
   const [filterEstado, setFilterEstado] = useState(""); // "" | "entregado" | "bloqueada"
   const [sortTareas, setSortTareas] = useState(false);
+  const [tareaSearch, setTareaSearch] = useState(""); // búsqueda libre por título/brief/número
   const [showParaRevisar, setShowParaRevisar] = useState(true);
   // Edición inline del detalle
   const [editModeDetalle, setEditModeDetalle] = useState(false);
@@ -12009,6 +12010,11 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                   return t.estado!=="aprobado";
                 })
                 .filter(t=>!filterColab||(t.asignadoEmail===filterColab||(t.asignadosEmails||[]).includes(filterColab)))
+                .filter(t=>{
+                  if(!tareaSearch.trim()) return true;
+                  const s=tareaSearch.toLowerCase();
+                  return [t.titulo,t.descripcion,t.brief,t.tareaNumStr,t.asignadoNombre].some(v=>String(v||"").toLowerCase().includes(s));
+                })
                 .filter(t=>!colabMode||colabMode.permisos?.verTareas||(t.asignadosEmails||[t.asignadoEmail]).includes(colabMode.email));
               if(sortTareas) arr=[...arr].sort((a,b)=>(dLeft(a.deadline)??9999)-(dLeft(b.deadline)??9999));
               return arr;
@@ -12224,6 +12230,13 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 </button>
                 {/* Separador */}
                 <div style={{flex:1}}/>
+                {/* Buscador libre — título, brief, número o asignado */}
+                <div style={{position:"relative"}}>
+                  <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:T.textSm,display:"inline-flex",pointerEvents:"none"}}><GhI n="search" size={11}/></span>
+                  <input value={tareaSearch} onChange={e=>setTareaSearch(e.target.value)} placeholder="Buscar tarea…"
+                    style={{...iS,fontSize:12,padding:"5px 26px 5px 27px",width:180,borderRadius:99}}/>
+                  {tareaSearch&&<button onClick={()=>setTareaSearch("")} style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,padding:2,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>}
+                </div>
                 {/* Ordenar por prioridad — visible para todos */}
                 <button onClick={()=>setSortTareas(p=>!p)}
                   style={{padding:"5px 12px",fontSize:12,fontWeight:sortTareas?600:500,borderRadius:99,border:`1.5px solid ${sortTareas?T.accentSolid:T.border}`,background:sortTareas?T.accentSolid+"14":"transparent",color:sortTareas?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5}}>
