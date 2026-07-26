@@ -15535,6 +15535,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   // Ventas pendientes de las integraciones (TN/Shopify/ML)
   const [tnLoading, setTnLoading] = useState(false);
+  // true mientras hay cache pintada y el fetch en vivo sigue en vuelo — la UI
+  // DEBE avisarlo y bloquear la emisión: facturar sobre datos viejos es peligroso.
+  const [tnRevalidando, setTnRevalidando] = useState(false);
   const [tnData, setTnData] = useState(null); // {connected, store_name, ordenes, total_pending}
   const [tnSelected, setTnSelected] = useState({}); // {orderId: true|false}
   const [periodoModo, setPeriodoModo] = useState("7"); // "1"|"7"|"15"|"30"|"60"|"90"|"custom"
@@ -15859,9 +15862,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const pintoCache = !!(cached && !tnData);
     if (pintoCache) setTnData(cached);
     setTnLoading(!pintoCache); // con cache pintada no bloqueamos la UI con spinner
+    setTnRevalidando(true);    // ...pero SIEMPRE avisamos que se está actualizando en vivo
     const d = await api("pending_orders","GET",null,params);
     setTnLoading(false);
-    if(d.error) { toast("Error: "+d.error,"error"); return; }
+    setTnRevalidando(false);
+    if(d.error) { toast("Error al actualizar las ventas: "+d.error,"error"); return; }
     // Normalizar para mantener compat: connections es array, agregamos flag connected si hay al menos 1
     d.connected = (d.connections||[]).some(c => c.connected);
     setTnData(d);
@@ -15920,6 +15925,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
   function facturarSeleccionadas() {
     if(!tnData?.ordenes) return;
+    if(tnLoading||tnRevalidando) return toast("Esperá a que terminen de actualizarse las ventas antes de facturar","warning");
     const filtered = {};
     Object.entries(tnData.ordenes).forEach(([id,o])=>{
       if(tnSelected[id] && !o._billed && ordenPasaFiltros(id,o)) filtered[id] = o;
@@ -16577,6 +16583,15 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   </div>
 
+                  {/* Aviso GRANDE mientras el fetch en vivo sigue en vuelo: la cache pintada
+                      puede estar incompleta y facturar sobre eso es peligroso. */}
+                  {(tnRevalidando||tnLoading) && tnData && (
+                    <div style={{display:"flex",alignItems:"center",gap:10,background:T.accent+"12",border:`1.5px solid ${T.accent}55`,borderRadius:10,padding:"11px 14px",marginBottom:12,fontSize:12,color:T.accent,fontWeight:600,lineHeight:1.5}}>
+                      <Spinner size={14} color={T.accent}/>
+                      <span>Actualizando ventas en vivo desde tus tiendas… Los totales y la lista pueden estar incompletos hasta que termine — la facturación queda deshabilitada mientras tanto.</span>
+                    </div>
+                  )}
+
                   {/* Panel de progreso de facturación del período — solo cuando terminó de cargar */}
                   {!tnLoading && tnData && (()=>{
                     const _all = Object.entries(tnData.ordenes||{});
@@ -16928,7 +16943,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               </>
                             ) : "Ninguna seleccionada"}
                           </div>
-                          <button onClick={facturarSeleccionadas} disabled={selectedCount===0||tnLoading} style={{background:"linear-gradient(135deg,"+T.green+",#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:(selectedCount===0||tnLoading)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(selectedCount===0||tnLoading)?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:(selectedCount>0&&!tnLoading)?"0 4px 14px "+T.green+"40"+"":"none",transition:"all 0.15s"}}>
+                          <button onClick={facturarSeleccionadas} disabled={selectedCount===0||tnLoading||tnRevalidando} title={tnRevalidando?"Esperá a que terminen de actualizarse las ventas":undefined} style={{background:"linear-gradient(135deg,"+T.green+",#15803d)",border:"none",color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:(selectedCount===0||tnLoading||tnRevalidando)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(selectedCount===0||tnLoading||tnRevalidando)?0.45:1,display:"flex",alignItems:"center",gap:6,boxShadow:(selectedCount>0&&!tnLoading&&!tnRevalidando)?"0 4px 14px "+T.green+"40"+"":"none",transition:"all 0.15s"}}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
                             Facturar {selectedCount>0?selectedCount:""} {selectedCount>0?"→":""}
                           </button>
