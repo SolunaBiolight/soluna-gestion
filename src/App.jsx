@@ -4763,11 +4763,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
                       {c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}
                     </a>}
-                    {c.email&&<a href={"mailto:"+c.email}
-                      style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:T.accent,textDecoration:"none",background:T.accentSolid+"15",border:"1px solid "+T.accentSolid+"33",borderRadius:7,padding:"5px 12px"}}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                      Mail
-                    </a>}
                     {c.telefono&&<button onClick={()=>{
                       const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
                       const brief=`Hola ${c.influencer||c.usuario||""}! 👋\n\nTe mandamos el canje de Soluna Biolight:\n📦 Producto: ${(c.productosCanje||[]).map(p=>`${p.nombre}${p.cantidad>1?` x${p.cantidad}`:""}`).join(", ")||c.producto||"Anteojos"}\n${c.codigoDescuento?`🎁 Código: ${c.codigoDescuento}\n`:""}${c.comisionPct?`💰 Tu comisión: ${c.comisionPct}%\n`:""}\n${cont.length>0?`📸 Contenido acordado:\n${cont.map(x=>`• ${x.tipo}: ${x.acordados}`).join("\n")}\n\n`:""}✨ ¡Gracias por ser parte del equipo Soluna! 💬`;
@@ -4954,10 +4949,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 })}
               </div>
 
-              {/* Notas inline */}
-              <NotasInline value={c.notas} onSave={v=>save({notas:v})} T={T} iS={iS}/>
-
-              <NotasRapidas T={T} canje={c} onAdd={addNota}/>
+              {/* ── NOTAS + HISTORIAL en una sola card (antes eran dos bloques sueltos) ── */}
+              <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:"14px 16px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Notas y seguimiento</div>
+                <NotasInline value={c.notas} onSave={v=>save({notas:v})} T={T} iS={iS}/>
+                <NotasRapidas T={T} canje={c} onAdd={addNota}/>
+              </div>
 
               {/* Footer */}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:10,borderTop:"1px solid "+T.borderL}}>
@@ -5069,10 +5066,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
             </div>
 
-            {/* Nº de pedido */}
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nº de pedido</label>
-              <input style={iS} value={form.pedidoRef||""} onChange={e=>setForm(f=>({...f,pedidoRef:e.target.value}))} placeholder="Ej: 12345"/>
+            {/* Nº de pedido + Tracking en una fila */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Nº de pedido</label>
+                <input style={iS} value={form.pedidoRef||""} onChange={e=>setForm(f=>({...f,pedidoRef:e.target.value}))} placeholder="Ej: 12345"/>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textSm,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Tracking Andreani</label>
+                <input style={iS} value={form.tracking||""} onChange={e=>setForm(f=>({...f,tracking:e.target.value}))} placeholder="3600029..."/>
+              </div>
             </div>
 
             {/* Productos — líneas con selector + cantidad */}
